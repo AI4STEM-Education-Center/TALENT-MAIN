@@ -35,6 +35,16 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-${{ github.sha }}
 
+      - name: Copy docker-compose.dev.yml to EC2
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "docker/docker-compose.dev.yml"
+          target: "~/app"
+          strip_components: 1
+
       - name: Deploy dev container to EC2
         uses: appleboy/ssh-action@v1.2.5
         with:
