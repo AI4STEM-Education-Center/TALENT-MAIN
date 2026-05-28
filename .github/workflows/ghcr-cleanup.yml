@@ -1,0 +1,64 @@
+name: Cleanup GHCR Images
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "List versions that would be deleted without actually deleting them"
+        type: boolean
+        default: true
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      ORG: ai4stem-education-center
+      PACKAGE: talent-main
+      DRY_RUN: ${{ inputs.dry_run }}
+    steps:
+      - name: Delete all GHCR versions except the latest prod and dev images
+        run: |
+          set -euo pipefail
+
+          if ! gh api "/orgs/$ORG/packages/container/$PACKAGE" > /dev/null 2>&1; then
+            echo "Package $ORG/$PACKAGE not found — nothing to clean up."
+            exit 0
+          fi
+
+          versions=$(gh api --paginate "/orgs/$ORG/packages/container/$PACKAGE/versions")
+
+          keep_latest=$(echo "$versions" | jq -r \
+            '[.[] | select(.metadata.container.tags | index("latest"))]
+             | sort_by(.created_at) | reverse | .[0].id // empty')
+          keep_dev=$(echo "$versions" | jq -r \
+            '[.[] | select(.metadata.container.tags | index("dev-latest"))]
+             | sort_by(.created_at) | reverse | .[0].id // empty')
+
+          echo "Keeping version tagged 'latest':     ${keep_latest:-<none>}"
+          echo "Keeping version tagged 'dev-latest': ${keep_dev:-<none>}"
+          echo
+
+          total=0
+          deleted=0
+          for row in $(echo "$versions" | jq -r '.[] | "\(.id)|\(.metadata.container.tags | join(","))"'); do
+            id=${row%%|*}
+            tags=${row#*|}
+            total=$((total + 1))
+            if [[ "$id" == "$keep_latest" || "$id" == "$keep_dev" ]]; then
+              echo "  keep   $id  tags=[$tags]"
+              continue
+            fi
+            if [[ "$DRY_RUN" == "true" ]]; then
+              echo "  would delete  $id  tags=[$tags]"
+            else
+              echo "  deleting      $id  tags=[$tags]"
+              gh api -X DELETE "/orgs/$ORG/packages/container/$PACKAGE/versions/$id"
+              deleted=$((deleted + 1))
+            fi
+          done
+
+          echo
+          echo "Scanned $total version(s); deleted $deleted (dry_run=$DRY_RUN)."

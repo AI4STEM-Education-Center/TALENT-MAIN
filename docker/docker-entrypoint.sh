@@ -10,6 +10,13 @@ if [ -z "${DATABASE_URL:-}" ]; then
   exit 1
 fi
 
+# If launched as the background worker, skip migrations (web handles them)
+# and run the bundled worker script directly.
+if [ "${1:-}" = "worker" ]; then
+  echo "Starting background worker..."
+  exec node worker.js
+fi
+
 echo "Applying database schema..."
 node ./node_modules/prisma/build/index.js db push --skip-generate --accept-data-loss 2>&1 || {
   echo "WARNING: prisma db push failed — the app will start but may have schema issues" >&2

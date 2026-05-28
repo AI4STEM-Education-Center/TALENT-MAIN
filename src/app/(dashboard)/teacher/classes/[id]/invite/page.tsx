@@ -72,13 +72,13 @@ export default function InvitePage() {
   }
 
   return (
-    <div className="p-6 space-y-6 max-w-2xl">
+    <div className="p-4 md:p-6 space-y-6 max-w-2xl">
       <Button variant="ghost" size="sm" asChild>
-        <Link href={`/teacher/classes/${classId}`}><ArrowLeft className="w-4 h-4" /> Back to class</Link>
+        <Link href={`/teacher/classes/${classId}`}><ArrowLeft className="size-4" /> Back to class</Link>
       </Button>
 
       <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2"><Link2 className="w-5 h-5" /> Invite Students</h1>
+        <h1 className="text-2xl font-bold flex items-center gap-2"><Link2 className="size-5" /> Invite Students</h1>
         <p className="text-muted-foreground text-sm mt-1">Share an invitation link with students to let them join this class.</p>
       </div>
 
@@ -88,7 +88,7 @@ export default function InvitePage() {
       <Card>
         <CardHeader><CardTitle>Generate New Link</CardTitle></CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="expires">Expires in (days)</Label>
               <Input id="expires" type="number" min="1" placeholder="Never" value={expiresInDays} onChange={(e) => setExpiresInDays(e.target.value)} />
@@ -99,7 +99,7 @@ export default function InvitePage() {
             </div>
           </div>
           <Button onClick={generateLink} disabled={loading}>
-            <Plus className="w-4 h-4" /> {loading ? "Generating..." : "Generate Link"}
+            <Plus className="size-4" /> {loading ? "Generating..." : "Generate Link"}
           </Button>
         </CardContent>
       </Card>
@@ -112,9 +112,9 @@ export default function InvitePage() {
             {invitations.map((inv) => (
               <div key={inv.id} className="p-3 rounded-lg border space-y-2">
                 <div className="flex items-center gap-2">
-                  <code className="flex-1 text-sm bg-muted px-2 py-1 rounded font-mono truncate">{inv.url}</code>
-                  <Button size="sm" variant="outline" onClick={() => copyLink(inv.url, inv.id)}>
-                    {copiedId === inv.id ? <><Check className="w-3 h-3" /> Copied</> : <><Copy className="w-3 h-3" /> Copy</>}
+                  <code className="flex-1 text-sm bg-muted px-2 py-1 rounded font-mono truncate min-w-0">{inv.url}</code>
+                  <Button size="sm" variant="outline" className="shrink-0" onClick={() => copyLink(inv.url, inv.id)}>
+                    {copiedId === inv.id ? <><Check className="size-3" /> Copied</> : <><Copy className="size-3" /> Copy</>}
                   </Button>
                 </div>
                 <div className="flex gap-4 text-xs text-muted-foreground">

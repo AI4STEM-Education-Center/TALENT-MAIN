@@ -72,13 +72,13 @@ export default function ClassTopicsPage() {
     }
   }
 
-  if (loading) return <div className="p-6 text-muted-foreground">Loading...</div>;
+  if (loading) return <div className="p-6 text-muted-foreground">Loading…</div>;
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-6">
       <div>
         <Button variant="ghost" size="sm" asChild>
-          <Link href={`/teacher/classes/${classId}`}><ArrowLeft className="w-4 h-4" /> Back to class</Link>
+          <Link href={`/teacher/classes/${classId}`}><ArrowLeft className="size-4" /> Back to class</Link>
         </Button>
       </div>
 
@@ -102,10 +102,10 @@ export default function ClassTopicsPage() {
           ) : (
             <div className="space-y-3">
               {classTopics.map((ct) => (
-                <div key={ct.id} className="flex items-center justify-between p-3 rounded-lg border">
+                <div key={ct.id} className="flex items-start justify-between gap-2 flex-wrap p-3 rounded-lg border">
                   <div>
-                    <div className="flex items-center gap-2">
-                      <BookOpen className="w-4 h-4 text-muted-foreground" />
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <BookOpen className="size-4 text-muted-foreground shrink-0" />
                       <span className="font-medium">{ct.topic.name}</span>
                       <Badge variant={ct.published ? "success" : "warning"}>
                         {ct.published ? "Published" : "Draft"}
@@ -115,16 +115,16 @@ export default function ClassTopicsPage() {
                       {ct.topic.subtopics.length} module{ct.topic.subtopics.length !== 1 ? "s" : ""}
                     </p>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 shrink-0">
                     <Button
                       size="sm"
                       variant={ct.published ? "secondary" : "default"}
                       onClick={() => togglePublish(ct.topicId, ct.published)}
                     >
-                      {ct.published ? <><EyeOff className="w-3 h-3" /> Unpublish</> : <><Eye className="w-3 h-3" /> Publish</>}
+                      {ct.published ? <><EyeOff className="size-3" /> Unpublish</> : <><Eye className="size-3" /> Publish</>}
                     </Button>
                     <Button size="sm" variant="ghost" onClick={() => removeTopic(ct.topicId)}>
-                      <Trash2 className="w-3 h-3 text-destructive" />
+                      <Trash2 className="size-3 text-destructive" />
                     </Button>
                   </div>
                 </div>
@@ -149,7 +149,7 @@ export default function ClassTopicsPage() {
                     <p className="text-xs text-muted-foreground">{t.subtopics.length} modules</p>
                   </div>
                   <Button size="sm" variant="outline" onClick={() => addTopic(t.id)}>
-                    <Plus className="w-3 h-3" /> Add
+                    <Plus className="size-3" /> Add
                   </Button>
                 </div>
               ))}
@@ -169,7 +169,7 @@ export default function ClassTopicsPage() {
         <Card>
           <CardContent className="text-center py-10">
             <p className="text-muted-foreground mb-3">No topics exist yet.</p>
-            <Button asChild><Link href="/teacher/topics"><Plus className="w-4 h-4" /> Create Topics</Link></Button>
+            <Button asChild><Link href="/teacher/topics"><Plus className="size-4" /> Create Topics</Link></Button>
           </CardContent>
         </Card>
       )}

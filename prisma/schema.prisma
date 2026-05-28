@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -29,31 +29,62 @@ model Teacher {
   userId String @unique
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  classes            Class[]
-  topics             Topic[]             @relation("TeacherTopics")
-  subtopics          Subtopic[]          @relation("TeacherSubtopics")
-  questions          Question[]          @relation("TeacherQuestions")
-  learningMaterials  LearningMaterial[]
+  classes           Class[]
+  topics            Topic[]            @relation("TeacherTopics")
+  subtopics         Subtopic[]         @relation("TeacherSubtopics")
+  questions         Question[]         @relation("TeacherQuestions")
+  questionImports   QuestionImport[]
+  learningMaterials LearningMaterial[]
 }
 
 // Uploaded learning materials (S3 only). uploadStatus: "PENDING" | "READY" | "FAILED"
 model LearningMaterial {
-  id           String @id @default(cuid())
+  id           String  @id @default(cuid())
   teacherId    String
+  classId      String
   title        String?
   originalName String
   mimeType     String
   sizeBytes    Int
   storageKey   String
   bucket       String
-  uploadStatus String @default("PENDING")
+  uploadStatus String  @default("PENDING")
+  processingStatus String @default("IDLE")
+  folder       String?
+  totalPages     Int     @default(0)
+  processedPages Int     @default(0)
+  errorMessage   String?
+  batchDescription  String?
+  batchKeyConcepts  String  @default("[]")
 
   teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  class   Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
+  pages   MaterialPage[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([teacherId])
+  @@index([classId])
+}
+
+model MaterialPage {
+  id           String  @id @default(cuid())
+  materialId   String
+  pageNumber   Int
+  storageKey   String
+
+  // Tier 1 VLM results (null = not yet processed)
+  needed       Boolean?
+  keyConcept   String?
+  description  String?
+
+  material LearningMaterial @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([materialId, pageNumber])
+  @@index([materialId])
 }
 
 model Student {
@@ -81,6 +112,23 @@ model Class {
   classTopics    ClassTopic[]
   moduleProgress ModuleProgress[]
   quizAttempts   QuizAttempt[]
+  studentList    ClassStudentList[]
+  learningMaterials LearningMaterial[]
+}
+
+model ClassStudentList {
+  id           String   @id @default(cuid())
+  classId      String
+  orgDefinedId String   // stored WITHOUT "#" prefix, e.g. "811947904"
+  firstName    String
+  lastName     String
+  isRegistered Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  class Class @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@unique([classId, orgDefinedId])
+  @@index([orgDefinedId])
 }
 
 model ClassEnrollment {
@@ -118,10 +166,11 @@ model Topic {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  createdBy   Teacher?     @relation("TeacherTopics", fields: [createdById], references: [id], onDelete: SetNull)
+  createdBy   Teacher?         @relation("TeacherTopics", fields: [createdById], references: [id], onDelete: SetNull)
   subtopics   Subtopic[]
   questions   Question[]
   classTopics ClassTopic[]
+  imports     QuestionImport[]
 }
 
 model Subtopic {
@@ -138,24 +187,66 @@ model Subtopic {
   questions      Question[]
   moduleProgress ModuleProgress[]
   quizAttempts   QuizAttempt[]
+  imports        QuestionImport[]
 }
 
 // difficultyLevel: "BEGINNER" | "INTERMEDIATE" | "ADVANCED"
 model Question {
-  id              String   @id @default(cuid())
-  text            String
-  topicId         String
-  subtopicId      String
-  difficultyLevel String   @default("BEGINNER")
-  createdById     String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                String   @id @default(cuid())
+  title             String?
+  text              String
+  topicId           String
+  subtopicId        String
+  difficultyLevel   String   @default("BEGINNER")
+  answerMode        String   @default("SINGLE_SELECT")
+  points            Int?
+  feedbackGeneral   String?
+  feedbackCorrect   String?
+  feedbackIncorrect String?
+  sourceQuestionId  String?
+  importId          String?
+  createdById       String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  topic       Topic        @relation(fields: [topicId], references: [id], onDelete: Cascade)
-  subtopic    Subtopic     @relation(fields: [subtopicId], references: [id], onDelete: Cascade)
-  createdBy   Teacher?     @relation("TeacherQuestions", fields: [createdById], references: [id], onDelete: SetNull)
+  topic       Topic           @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  subtopic    Subtopic        @relation(fields: [subtopicId], references: [id], onDelete: Cascade)
+  createdBy   Teacher?        @relation("TeacherQuestions", fields: [createdById], references: [id], onDelete: SetNull)
+  import      QuestionImport? @relation(fields: [importId], references: [id], onDelete: SetNull)
   options     Option[]
   quizAnswers QuizAnswer[]
+
+  @@index([importId])
+  @@index([topicId])
+  @@index([subtopicId])
+}
+
+// status: "COMPLETED" | "FAILED"
+model QuestionImport {
+  id            String   @id @default(cuid())
+  teacherId     String
+  topicId       String
+  subtopicId    String
+  originalName  String
+  sourcePath    String?
+  bankId        String?
+  bankTitle     String?
+  status        String   @default("COMPLETED")
+  importedCount Int      @default(0)
+  skippedCount  Int      @default(0)
+  errorCount    Int      @default(0)
+  errors        String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  teacher   Teacher    @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  topic     Topic      @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  subtopic  Subtopic   @relation(fields: [subtopicId], references: [id], onDelete: Cascade)
+  questions Question[]
+
+  @@index([teacherId])
+  @@index([topicId])
+  @@index([subtopicId])
 }
 
 model Option {
@@ -214,16 +305,70 @@ model QuizAttempt {
   class    Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
   subtopic Subtopic     @relation(fields: [subtopicId], references: [id], onDelete: Cascade)
   answers  QuizAnswer[]
+
+  @@index([studentId])
+  @@index([classId])
 }
 
 model QuizAnswer {
-  id               String  @id @default(cuid())
-  quizAttemptId    String
-  questionId       String
-  selectedOptionId String?
-  isCorrect        Boolean @default(false)
+  id                String   @id @default(cuid())
+  quizAttemptId     String
+  questionId        String
+  selectedOptionId  String?
+  selectedOptionIds String   @default("[]")
+  isCorrect         Boolean  @default(false)
 
   quizAttempt    QuizAttempt @relation(fields: [quizAttemptId], references: [id], onDelete: Cascade)
   question       Question    @relation(fields: [questionId], references: [id], onDelete: Cascade)
   selectedOption Option?     @relation(fields: [selectedOptionId], references: [id], onDelete: SetNull)
+
+  @@index([quizAttemptId])
+}
+
+// ─── AI Provider Configuration ────────────────────────────────────────────────
+// providerType: "openai" | "local"
+
+model AiProvider {
+  id           String   @id @default(cuid())
+  name         String                // human label, e.g. "Production OpenAI"
+  providerType String                // "openai" | "local"
+  baseUrl      String?               // null for OpenAI (uses default), URL for local
+  apiKeyEnc    String?               // AES-256-GCM encrypted API key
+  apiKeyIv     String?               // IV for decryption
+  apiKeyTag    String?               // Auth tag for decryption
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  models      AiModel[]
+  assignments AiUseCaseAssignment[]
+}
+
+model AiModel {
+  id          String   @id @default(cuid())
+  providerId  String
+  modelId     String                // e.g. "gpt-5.1", "llama-3.3-70b"
+  displayName String?               // optional friendly name
+  serviceTier String?               // "flex" | "auto" | "default" | null
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  provider    AiProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  assignments AiUseCaseAssignment[]
+
+  @@unique([providerId, modelId, serviceTier])
+  @@index([providerId])
+}
+
+// useCase: "teacher_chat" | "student_chat" | "pdf_description"
+model AiUseCaseAssignment {
+  id         String   @id @default(cuid())
+  useCase    String   @unique       // only one assignment per use case
+  providerId String
+  modelId    String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  provider AiProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  model    AiModel    @relation(fields: [modelId], references: [id], onDelete: Cascade)
 }

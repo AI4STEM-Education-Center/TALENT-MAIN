@@ -3,6 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { VersionModal } from "@/components/version-modal";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 import {
   BookOpen,
   Users,
@@ -12,6 +13,8 @@ import {
   FileUp,
   LogOut,
   ChevronRight,
+  Settings,
+  FolderOpen,
 } from "lucide-react";
 
 interface NavItem {
@@ -21,37 +24,57 @@ interface NavItem {
 }
 
 interface SidebarProps {
-  role: "TEACHER" | "STUDENT";
+  role: "TEACHER" | "STUDENT" | "ADMIN";
   firstName: string;
   lastName: string;
   onSignOut: () => void;
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
 }
 
-export function Sidebar({ role, firstName, lastName, onSignOut }: SidebarProps) {
+function SidebarContent({
+  role,
+  firstName,
+  lastName,
+  onSignOut,
+  onNavigate,
+}: {
+  role: "TEACHER" | "STUDENT" | "ADMIN";
+  firstName: string;
+  lastName: string;
+  onSignOut: () => void;
+  onNavigate?: () => void;
+}) {
   const pathname = usePathname();
 
   const teacherNav: NavItem[] = [
-    { href: "/teacher", label: "Dashboard", icon: <LayoutDashboard className="w-4 h-4" /> },
-    { href: "/teacher/classes", label: "My Classes", icon: <Users className="w-4 h-4" /> },
-    { href: "/teacher/topics", label: "Topics & Modules", icon: <BookOpen className="w-4 h-4" /> },
-    { href: "/teacher/questions", label: "Question Bank", icon: <FileQuestion className="w-4 h-4" /> },
-    { href: "/teacher/materials", label: "Materials", icon: <FileUp className="w-4 h-4" /> },
+    { href: "/teacher", label: "Dashboard", icon: <LayoutDashboard className="size-4" /> },
+    { href: "/teacher/classes", label: "My Classes", icon: <Users className="size-4" /> },
+    { href: "/teacher/topics", label: "Topics & Modules", icon: <BookOpen className="size-4" /> },
+    { href: "/teacher/questions", label: "Question Bank", icon: <FileQuestion className="size-4" /> },
   ];
 
   const studentNav: NavItem[] = [
-    { href: "/student", label: "Dashboard", icon: <LayoutDashboard className="w-4 h-4" /> },
-    { href: "/student/classes", label: "My Classes", icon: <GraduationCap className="w-4 h-4" /> },
+    { href: "/student", label: "Dashboard", icon: <LayoutDashboard className="size-4" /> },
+    { href: "/student/classes", label: "My Classes", icon: <GraduationCap className="size-4" /> },
   ];
 
-  const navItems = role === "TEACHER" ? teacherNav : studentNav;
+  const adminNav: NavItem[] = [
+    { href: "/admin", label: "Overview", icon: <LayoutDashboard className="size-4" /> },
+    { href: "/admin/materials", label: "Materials Processing", icon: <FolderOpen className="size-4" /> },
+    { href: "/admin/users", label: "Users", icon: <Users className="size-4" /> },
+    { href: "/admin/ai-config", label: "AI Config", icon: <Settings className="size-4" /> },
+  ];
+
+  const navItems = role === "ADMIN" ? adminNav : role === "TEACHER" ? teacherNav : studentNav;
 
   return (
-    <aside className="w-64 min-h-screen bg-sidebar flex flex-col border-r border-sidebar-border">
+    <div className="flex flex-col h-full">
       {/* Logo */}
       <div className="p-6 border-b border-sidebar-border">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center">
-            <BookOpen className="w-4 h-4 text-blue-400" />
+          <div className="size-8 rounded-lg bg-blue-500/20 flex items-center justify-center">
+            <BookOpen className="size-4 text-blue-400" />
           </div>
           <span className="font-bold text-sidebar-foreground">AI4Talent</span>
         </div>
@@ -60,13 +83,19 @@ export function Sidebar({ role, firstName, lastName, onSignOut }: SidebarProps) 
       {/* Nav */}
       <nav className="flex-1 p-4 space-y-1">
         {navItems.map((item) => {
-          const isActive = pathname === item.href || (item.href !== "/teacher" && item.href !== "/student" && pathname.startsWith(item.href));
+          const isActive =
+            pathname === item.href ||
+            (item.href !== "/teacher" &&
+              item.href !== "/student" &&
+              item.href !== "/admin" &&
+              pathname.startsWith(item.href));
           return (
             <Link
               key={item.href}
               href={item.href}
+              onClick={onNavigate}
               className={cn(
-                "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
                 isActive
                   ? "bg-sidebar-accent text-sidebar-accent-foreground"
                   : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
@@ -74,7 +103,7 @@ export function Sidebar({ role, firstName, lastName, onSignOut }: SidebarProps) 
             >
               {item.icon}
               {item.label}
-              {isActive && <ChevronRight className="w-3 h-3 ml-auto" />}
+              {isActive && <ChevronRight className="size-3 ml-auto" />}
             </Link>
           );
         })}
@@ -83,25 +112,59 @@ export function Sidebar({ role, firstName, lastName, onSignOut }: SidebarProps) 
       {/* User */}
       <div className="p-4 border-t border-sidebar-border">
         <div className="flex items-center gap-3 px-3 py-2 mb-2">
-          <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center text-xs font-bold text-blue-400">
+          <div className="size-8 rounded-full bg-blue-500/20 flex items-center justify-center text-xs font-bold text-blue-400 shrink-0">
             {firstName[0]}{lastName[0]}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-sidebar-foreground truncate">{firstName} {lastName}</p>
-            <p className="text-xs text-sidebar-foreground/50 capitalize">{role.toLowerCase()}</p>
+            <p className="text-sm font-medium text-sidebar-foreground truncate">
+              {firstName} {lastName}
+            </p>
+            <p className="text-xs text-sidebar-foreground/50 capitalize">
+              {role.toLowerCase()}
+            </p>
           </div>
         </div>
-        <button
+        <button type="button"
           onClick={onSignOut}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground transition-colors"
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground transition-colors"
         >
-          <LogOut className="w-4 h-4" />
+          <LogOut className="size-4" />
           Sign out
         </button>
         <div className="mt-3 px-3">
           <VersionModal />
         </div>
       </div>
-    </aside>
+    </div>
+  );
+}
+
+export function Sidebar({
+  role,
+  firstName,
+  lastName,
+  onSignOut,
+  mobileOpen = false,
+  onMobileClose,
+}: SidebarProps) {
+  const contentProps = { role, firstName, lastName, onSignOut };
+
+  return (
+    <>
+      {/* Desktop sidebar — hidden below md */}
+      <aside className="hidden md:flex w-64 min-h-screen bg-sidebar flex-col border-r border-sidebar-border shrink-0">
+        <SidebarContent {...contentProps} />
+      </aside>
+
+      {/* Mobile drawer — shown below md */}
+      <Sheet open={mobileOpen} onOpenChange={(open) => !open && onMobileClose?.()}>
+        <SheetContent side="left" className="p-0 w-64">
+          <SidebarContent
+            {...contentProps}
+            onNavigate={onMobileClose}
+          />
+        </SheetContent>
+      </Sheet>
+    </>
   );
 }

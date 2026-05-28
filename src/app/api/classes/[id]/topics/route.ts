@@ -31,9 +31,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { topicId } = await req.json();
+  const [{ topicId }, { id }] = await Promise.all([req.json(), params]);
   if (!topicId) return NextResponse.json({ error: "topicId required" }, { status: 400 });
-  const { id } = await params;
 
   try {
     const ct = await prisma.classTopic.create({
@@ -53,9 +52,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { topicId, published } = await req.json();
+  const [{ topicId, published }, { id }] = await Promise.all([req.json(), params]);
   if (!topicId) return NextResponse.json({ error: "topicId required" }, { status: 400 });
-  const { id } = await params;
 
   const ct = await prisma.classTopic.updateMany({
     where: { classId: id, topicId },
@@ -72,8 +70,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { topicId } = await req.json();
-  const { id } = await params;
+  const [{ topicId }, { id }] = await Promise.all([req.json(), params]);
   await prisma.classTopic.deleteMany({ where: { classId: id, topicId } });
   return NextResponse.json({ success: true });
 }

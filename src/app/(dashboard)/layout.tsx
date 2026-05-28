@@ -1,16 +1,19 @@
 "use client";
+import { useState } from "react";
 import { signOut, useSession } from "next-auth/react";
 import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { SessionProvider } from "next-auth/react";
+import { Menu, BookOpen } from "lucide-react";
 
 function DashboardContent({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   if (status === "loading") {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        <div className="animate-spin rounded-full size-8 border-b-2 border-primary"></div>
       </div>
     );
   }
@@ -19,7 +22,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     redirect("/login");
   }
 
-  const role = session.user.role as "TEACHER" | "STUDENT";
+  const role = session.user.role as "TEACHER" | "STUDENT" | "ADMIN";
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -31,10 +34,32 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
           await signOut({ redirect: false });
           window.location.href = `${window.location.origin}/login`;
         }}
+        mobileOpen={sidebarOpen}
+        onMobileClose={() => setSidebarOpen(false)}
       />
-      <main className="flex-1 overflow-auto">
-        {children}
-      </main>
+
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Mobile top bar — hidden on md+ */}
+        <header className="md:hidden sticky top-0 z-40 flex items-center gap-3 px-4 py-3 bg-background border-b border-border">
+          <button type="button"
+            aria-label="Open navigation menu"
+            onClick={() => setSidebarOpen(true)}
+            className="p-2 rounded-md text-foreground/70 hover:text-foreground hover:bg-accent transition-colors"
+          >
+            <Menu className="size-5" />
+          </button>
+          <div className="flex items-center gap-2">
+            <div className="size-7 rounded-lg bg-blue-500/20 flex items-center justify-center">
+              <BookOpen className="size-3.5 text-blue-400" />
+            </div>
+            <span className="font-bold text-sm text-foreground">AI4Talent</span>
+          </div>
+        </header>
+
+        <main className="flex-1 overflow-auto">
+          {children}
+        </main>
+      </div>
     </div>
   );
 }

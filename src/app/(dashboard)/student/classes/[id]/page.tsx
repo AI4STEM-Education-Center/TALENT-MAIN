@@ -49,9 +49,9 @@ export default async function StudentClassPage({ params }: { params: Promise<{ i
   const progressMap = new Map(progressRecords.map((p) => [p.subtopicId, p]));
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-6">
       <Button variant="ghost" size="sm" asChild>
-        <Link href="/student"><ArrowLeft className="w-4 h-4" /> Dashboard</Link>
+        <Link href="/student"><ArrowLeft className="size-4" /> Dashboard</Link>
       </Button>
 
       <div>
@@ -62,7 +62,7 @@ export default async function StudentClassPage({ params }: { params: Promise<{ i
       {cls.classTopics.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center py-12 text-center">
-            <BookOpen className="w-12 h-12 text-muted-foreground mb-3" />
+            <BookOpen className="size-12 text-muted-foreground mb-3" />
             <p className="text-lg font-medium">No content available yet</p>
             <p className="text-muted-foreground text-sm mt-1">Your teacher hasn&apos;t published any topics yet. Check back soon!</p>
           </CardContent>
@@ -76,12 +76,12 @@ export default async function StudentClassPage({ params }: { params: Promise<{ i
             return (
               <Card key={ct.id}>
                 <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-start justify-between gap-2 flex-wrap">
                     <CardTitle className="flex items-center gap-2">
-                      <BookOpen className="w-5 h-5 text-primary" />
+                      <BookOpen className="size-5 text-primary shrink-0" />
                       {ct.topic.name}
                     </CardTitle>
-                    <Badge variant="secondary">{completed}/{subtopics.length} completed</Badge>
+                    <Badge variant="secondary" className="shrink-0">{completed}/{subtopics.length} completed</Badge>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -92,23 +92,23 @@ export default async function StudentClassPage({ params }: { params: Promise<{ i
                       const score = progress?.bestScore;
 
                       return (
-                        <div key={subtopic.id} className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/30 transition-colors">
-                          <div className="flex items-center gap-3">
+                        <div key={subtopic.id} className="flex items-center justify-between gap-2 p-3 rounded-lg border hover:bg-muted/30 transition-colors">
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
                             {status === "COMPLETED" ? (
-                              <CheckCircle className="w-5 h-5 text-green-500" />
+                              <CheckCircle className="size-5 text-green-500 shrink-0" />
                             ) : status === "IN_PROGRESS" ? (
-                              <PlayCircle className="w-5 h-5 text-blue-500" />
+                              <PlayCircle className="size-5 text-blue-500 shrink-0" />
                             ) : (
-                              <Circle className="w-5 h-5 text-muted-foreground" />
+                              <Circle className="size-5 text-muted-foreground shrink-0" />
                             )}
-                            <div>
+                            <div className="min-w-0">
                               <p className="font-medium text-sm">{idx + 1}. {subtopic.name}</p>
                               {score !== null && score !== undefined && (
                                 <p className="text-xs text-muted-foreground">Best score: {Math.round(score)}%</p>
                               )}
                             </div>
                           </div>
-                          <Button size="sm" variant={status === "COMPLETED" ? "secondary" : "default"} asChild>
+                          <Button size="sm" variant={status === "COMPLETED" ? "secondary" : "default"} asChild className="shrink-0">
                             <Link href={`/student/classes/${id}/module/${subtopic.id}`}>
                               {status === "COMPLETED" ? "Retry" : status === "IN_PROGRESS" ? "Continue" : "Start"}
                             </Link>

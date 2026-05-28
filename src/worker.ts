@@ -1,0 +1,63 @@
+import honker from "@russellthehippo/honker-node";
+import path from "path";
+import { processMaterial } from "./lib/vlm-engine";
+import { prisma } from "./lib/prisma";
+
+// Parse DATABASE_URL from process.env
+const dbUrl = process.env.DATABASE_URL || "file:./dev.db";
+let dbPath = dbUrl.replace("file:", "").split("?")[0];
+
+// Prisma resolves file:./... relative to the prisma directory.
+// The worker is typically run from the project root.
+if (dbPath === "./dev.db") {
+  dbPath = path.join(process.cwd(), "prisma", "dev.db");
+} else if (dbPath === "./data/prod.db") {
+  dbPath = path.join(process.cwd(), "prisma", "data", "prod.db");
+} else if (!path.isAbsolute(dbPath)) {
+  dbPath = path.join(process.cwd(), "prisma", dbPath);
+}
+
+console.log(`[Worker] Connecting to SQLite at ${dbPath}`);
+
+const db = honker.open(dbPath);
+const materialsQueue = db.queue("materials");
+
+async function startWorker() {
+  console.log("[Worker] Starting Honker queue consumer for 'materials'...");
+  
+  try {
+    for await (const job of materialsQueue.claim("worker-1")) {
+      const payload = job.payload as { materialId: string };
+      const materialId = payload.materialId;
+      console.log(`[Worker] Picked up job ${job.id} for material ${materialId}`);
+      try {
+        await processMaterial(materialId);
+        job.ack();
+        console.log(`[Worker] Successfully processed and acked job ${job.id}`);
+      } catch (err: any) {
+        console.error(`[Worker] Error processing job ${job.id}:`, err.message);
+        
+        // Mark material as FAILED in the database if processMaterial threw an unhandled error
+        try {
+          await prisma.learningMaterial.update({
+            where: { id: materialId },
+            data: { 
+              processingStatus: "FAILED",
+              errorMessage: err.message || "Unknown error during background processing"
+            }
+          });
+        } catch (dbErr) {
+          console.error(`[Worker] Could not update material status to FAILED:`, dbErr);
+        }
+
+        // Ack the job so it doesn't block the queue with infinite retries on permanent failures
+        job.ack();
+      }
+    }
+  } catch (err) {
+    console.error("[Worker] Fatal error in worker loop:", err);
+    process.exit(1);
+  }
+}
+
+startWorker();

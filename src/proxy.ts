@@ -29,7 +29,7 @@ export default auth((req) => {
   const session = req.auth;
 
   // Public routes
-  const publicRoutes = ["/", "/login", "/register"];
+  const publicRoutes = ["/", "/login", "/register", "/admin-register"];
   const isPublicRoute = publicRoutes.includes(pathname);
   const isInviteRoute = pathname.startsWith("/invite/");
   const isApiAuth = pathname.startsWith("/api/auth");

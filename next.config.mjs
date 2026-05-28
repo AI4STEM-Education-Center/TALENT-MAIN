@@ -16,6 +16,7 @@ const changelogText = fs.existsSync(changelogFilePath)
 const nextConfig = {
   // Produce a self-contained server for Docker deployment
   output: "standalone",
+  serverExternalPackages: ["@russellthehippo/honker-node"],
   env: {
     NEXT_PUBLIC_APP_VERSION: versionData.version,
     NEXT_PUBLIC_RELEASE_DATE: versionData.date,
