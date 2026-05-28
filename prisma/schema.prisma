@@ -1,0 +1,229 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Users ────────────────────────────────────────────────────────────────────
+// role: "TEACHER" | "STUDENT"
+
+model User {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  username       String   @unique
+  hashedPassword String
+  firstName      String
+  lastName       String
+  role           String   @default("STUDENT")
+  createdAt      DateTime @default(now())
+
+  teacher Teacher?
+  student Student?
+}
+
+model Teacher {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  classes            Class[]
+  topics             Topic[]             @relation("TeacherTopics")
+  subtopics          Subtopic[]          @relation("TeacherSubtopics")
+  questions          Question[]          @relation("TeacherQuestions")
+  learningMaterials  LearningMaterial[]
+}
+
+// Uploaded learning materials (S3 only). uploadStatus: "PENDING" | "READY" | "FAILED"
+model LearningMaterial {
+  id           String @id @default(cuid())
+  teacherId    String
+  title        String?
+  originalName String
+  mimeType     String
+  sizeBytes    Int
+  storageKey   String
+  bucket       String
+  uploadStatus String @default("PENDING")
+
+  teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([teacherId])
+}
+
+model Student {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  enrollments    ClassEnrollment[]
+  moduleProgress ModuleProgress[]
+  quizAttempts   QuizAttempt[]
+}
+
+// ─── Classes ──────────────────────────────────────────────────────────────────
+
+model Class {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  teacherId   String
+  createdAt   DateTime @default(now())
+
+  teacher        Teacher           @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  enrollments    ClassEnrollment[]
+  invitations    Invitation[]
+  classTopics    ClassTopic[]
+  moduleProgress ModuleProgress[]
+  quizAttempts   QuizAttempt[]
+}
+
+model ClassEnrollment {
+  id        String   @id @default(cuid())
+  classId   String
+  studentId String
+  joinedAt  DateTime @default(now())
+
+  class   Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([classId, studentId])
+}
+
+model Invitation {
+  id        String    @id @default(cuid())
+  classId   String
+  token     String    @unique @default(cuid())
+  expiresAt DateTime?
+  maxUses   Int?
+  usedCount Int       @default(0)
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+
+  class Class @relation(fields: [classId], references: [id], onDelete: Cascade)
+}
+
+// ─── Content ──────────────────────────────────────────────────────────────────
+
+model Topic {
+  id          String   @id @default(cuid())
+  name        String
+  order       Int      @default(0)
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  createdBy   Teacher?     @relation("TeacherTopics", fields: [createdById], references: [id], onDelete: SetNull)
+  subtopics   Subtopic[]
+  questions   Question[]
+  classTopics ClassTopic[]
+}
+
+model Subtopic {
+  id          String   @id @default(cuid())
+  name        String
+  order       Int      @default(0)
+  topicId     String
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  topic          Topic            @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  createdBy      Teacher?         @relation("TeacherSubtopics", fields: [createdById], references: [id], onDelete: SetNull)
+  questions      Question[]
+  moduleProgress ModuleProgress[]
+  quizAttempts   QuizAttempt[]
+}
+
+// difficultyLevel: "BEGINNER" | "INTERMEDIATE" | "ADVANCED"
+model Question {
+  id              String   @id @default(cuid())
+  text            String
+  topicId         String
+  subtopicId      String
+  difficultyLevel String   @default("BEGINNER")
+  createdById     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  topic       Topic        @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  subtopic    Subtopic     @relation(fields: [subtopicId], references: [id], onDelete: Cascade)
+  createdBy   Teacher?     @relation("TeacherQuestions", fields: [createdById], references: [id], onDelete: SetNull)
+  options     Option[]
+  quizAnswers QuizAnswer[]
+}
+
+model Option {
+  id         String  @id @default(cuid())
+  text       String
+  isCorrect  Boolean @default(false)
+  questionId String
+
+  question    Question     @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  quizAnswers QuizAnswer[]
+}
+
+// ─── Class <-> Topic (with publish control) ───────────────────────────────────
+
+model ClassTopic {
+  id        String  @id @default(cuid())
+  classId   String
+  topicId   String
+  published Boolean @default(false)
+
+  class Class @relation(fields: [classId], references: [id], onDelete: Cascade)
+  topic Topic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@unique([classId, topicId])
+}
+
+// ─── Learning Progress ────────────────────────────────────────────────────────
+// status: "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED"
+
+model ModuleProgress {
+  id         String   @id @default(cuid())
+  studentId  String
+  classId    String
+  subtopicId String
+  status     String   @default("NOT_STARTED")
+  bestScore  Float?
+  updatedAt  DateTime @updatedAt
+
+  student  Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  class    Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  subtopic Subtopic @relation(fields: [subtopicId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, classId, subtopicId])
+}
+
+model QuizAttempt {
+  id          String    @id @default(cuid())
+  studentId   String
+  classId     String
+  subtopicId  String
+  score       Float?
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  student  Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  class    Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
+  subtopic Subtopic     @relation(fields: [subtopicId], references: [id], onDelete: Cascade)
+  answers  QuizAnswer[]
+}
+
+model QuizAnswer {
+  id               String  @id @default(cuid())
+  quizAttemptId    String
+  questionId       String
+  selectedOptionId String?
+  isCorrect        Boolean @default(false)
+
+  quizAttempt    QuizAttempt @relation(fields: [quizAttemptId], references: [id], onDelete: Cascade)
+  question       Question    @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  selectedOption Option?     @relation(fields: [selectedOptionId], references: [id], onDelete: SetNull)
+}

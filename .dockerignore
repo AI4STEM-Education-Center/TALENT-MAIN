@@ -1,0 +1,36 @@
+# Dependencies (rebuilt in Docker)
+node_modules
+.pnp
+.pnp.js
+
+# Next.js build output
+.next
+out
+
+# Git
+.git
+.gitignore
+
+# Environment
+.env
+.env.*
+
+# IDE / OS
+.vscode
+.idea
+.DS_Store
+*.pem
+
+# Python legacy
+.venv
+__pycache__
+*.pyc
+*.pyo
+
+# Docker
+docker-compose*.yml
+data/
+
+# Misc
+README.md
+.github

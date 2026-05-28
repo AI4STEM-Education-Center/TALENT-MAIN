@@ -1,0 +1,17 @@
+services:
+  web:
+    image: ghcr.io/ec061/adaptive_learning_webapp:latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    pull_policy: always
+    ports:
+      - "3000:3000"
+    env_file:
+      - ./.env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${PROD_DATABASE_URL}
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

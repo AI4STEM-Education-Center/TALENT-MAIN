@@ -1,0 +1,283 @@
+edward@856fdec85fe8:~/data/adaptive_learning_webapp$ uv run benchmark/comprehensive_test.py   --url "https://dev.ai4talent.org"   --username "edwardcheng@uga.edu"   --password "nY*H1#6i#t8kqeP"
+ 
+🚀 Starting sweep across 9 size configurations...
+
+=======================================================
+🔄 CONFIGURATION: 5 Topics, 10 Subtopics (50 items total)
+=======================================================
+
+--- 🚧 Setting up Data (5 Topics, 10 Subtopics/Topic) 🚧 ---
+1. Creating Mega Class...
+2. Creating 5 Topics and 50 Subtopics...
+Topics Setup: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 5/5 [00:02<00:00,  2.43it/s]
+3. Generating Invitation Link...
+4. Enrolling 20 Students (Reduced to speed up iteration)...
+Student Setup: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 20/20 [00:09<00:00,  2.17it/s]
+   -> Data setup complete.
+Testing GET_All_Classes: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [00:06<00:00, 82.64it/s]
+Testing GET_Heavy_Class_Payload: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [00:07<00:00, 62.90it/s]
+Testing GET_Topics_List: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [00:05<00:00, 93.19it/s]
+Testing GET_Class_Topics: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [00:06<00:00, 71.83it/s]
+
+--- 📊 SUMMARY FOR CONFIGURATION (50 items) 📊 ---
+[GET_All_Classes] Avg Latency: 0.5846s | Throughput: 82.64 req/s
+[GET_Heavy_Class_Payload] Avg Latency: 0.7672s | Throughput: 62.90 req/s
+[GET_Topics_List] Avg Latency: 0.5241s | Throughput: 93.18 req/s
+[GET_Class_Topics] Avg Latency: 0.6212s | Throughput: 71.83 req/s
+
+=======================================================
+🔄 CONFIGURATION: 5 Topics, 20 Subtopics (100 items total)
+=======================================================
+
+--- 🚧 Setting up Data (5 Topics, 20 Subtopics/Topic) 🚧 ---
+1. Creating Mega Class...
+2. Creating 5 Topics and 100 Subtopics...
+Topics Setup: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 5/5 [00:02<00:00,  1.87it/s]
+3. Generating Invitation Link...
+4. Enrolling 20 Students (Reduced to speed up iteration)...
+Student Setup: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 20/20 [00:09<00:00,  2.11it/s]
+   -> Data setup complete.
+Testing GET_All_Classes: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [00:04<00:00, 113.48it/s]
+Testing GET_Heavy_Class_Payload: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [00:07<00:00, 63.58it/s]
+Testing GET_Topics_List: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [00:06<00:00, 72.77it/s]
+Testing GET_Class_Topics: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [00:06<00:00, 80.78it/s]
+
+--- 📊 SUMMARY FOR CONFIGURATION (100 items) 📊 ---
+[GET_All_Classes] Avg Latency: 0.4261s | Throughput: 113.47 req/s
+[GET_Heavy_Class_Payload] Avg Latency: 0.7606s | Throughput: 63.57 req/s
+[GET_Topics_List] Avg Latency: 0.6683s | Throughput: 72.77 req/s
+[GET_Class_Topics] Avg Latency: 0.5961s | Throughput: 80.77 req/s
+
+=======================================================
+🔄 CONFIGURATION: 5 Topics, 50 Subtopics (250 items total)
+=======================================================
+
+--- 🚧 Setting up Data (5 Topics, 50 Subtopics/Topic) 🚧 ---
+1. Creating Mega Class...
+2. Creating 5 Topics and 250 Subtopics...
+Topics Setup: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 5/5 [00:05<00:00,  1.02s/it]
+3. Generating Invitation Link...
+4. Enrolling 20 Students (Reduced to speed up iteration)...
+Student Setup: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 20/20 [00:09<00:00,  2.09it/s]
+   -> Data setup complete.
+Testing GET_All_Classes: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [00:05<00:00, 96.78it/s]
+Testing GET_Heavy_Class_Payload: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [00:10<00:00, 49.35it/s]
+Testing GET_Topics_List: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [00:11<00:00, 43.47it/s]
+Testing GET_Class_Topics: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [00:08<00:00, 55.92it/s]
+
+--- 📊 SUMMARY FOR CONFIGURATION (250 items) 📊 ---
+[GET_All_Classes] Avg Latency: 0.5063s | Throughput: 96.77 req/s
+[GET_Heavy_Class_Payload] Avg Latency: 0.9681s | Throughput: 49.35 req/s
+[GET_Topics_List] Avg Latency: 1.1079s | Throughput: 43.47 req/s
+[GET_Class_Topics] Avg Latency: 0.8657s | Throughput: 55.91 req/s
+
+=======================================================
+🔄 CONFIGURATION: 5 Topics, 100 Subtopics (500 items total)
+=======================================================
+
+--- 🚧 Setting up Data (5 Topics, 100 Subtopics/Topic) 🚧 ---
+1. Creating Mega Class...
+2. Creating 5 Topics and 500 Subtopics...
+Topics Setup: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 5/5 [00:09<00:00,  1.81s/it]
+3. Generating Invitation Link...
+4. Enrolling 20 Students (Reduced to speed up iteration)...
+Student Setup: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 20/20 [00:09<00:00,  2.12it/s]
+   -> Data setup complete.
+Testing GET_All_Classes: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [00:04<00:00, 108.38it/s]
+Testing GET_Heavy_Class_Payload: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [00:15<00:00, 32.06it/s]
+Testing GET_Topics_List: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [00:20<00:00, 23.96it/s]
+Testing GET_Class_Topics: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [00:13<00:00, 37.28it/s]
+
+--- 📊 SUMMARY FOR CONFIGURATION (500 items) 📊 ---
+[GET_All_Classes] Avg Latency: 0.4302s | Throughput: 108.36 req/s
+[GET_Heavy_Class_Payload] Avg Latency: 1.4952s | Throughput: 32.06 req/s
+[GET_Topics_List] Avg Latency: 1.9912s | Throughput: 23.95 req/s
+[GET_Class_Topics] Avg Latency: 1.2873s | Throughput: 37.28 req/s
+
+=======================================================
+🔄 CONFIGURATION: 5 Topics, 1000 Subtopics (5000 items total)
+=======================================================
+
+--- 🚧 Setting up Data (5 Topics, 1000 Subtopics/Topic) 🚧 ---
+1. Creating Mega Class...
+2. Creating 5 Topics and 5000 Subtopics...
+Topics Setup: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 5/5 [00:59<00:00, 11.95s/it]
+3. Generating Invitation Link...
+4. Enrolling 20 Students (Reduced to speed up iteration)...
+Student Setup: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 20/20 [00:10<00:00,  1.91it/s]
+   -> Data setup complete.
+Testing GET_All_Classes: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [00:04<00:00, 121.28it/s]
+Testing GET_Heavy_Class_Payload: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [01:35<00:00,  5.24it/s]
+Testing GET_Topics_List: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [01:49<00:00,  4.55it/s]
+Testing GET_Class_Topics: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [01:33<00:00,  5.33it/s]
+
+--- 📊 SUMMARY FOR CONFIGURATION (5000 items) 📊 ---
+[GET_All_Classes] Avg Latency: 0.4025s | Throughput: 121.26 req/s
+[GET_Heavy_Class_Payload] Avg Latency: 8.9748s | Throughput: 5.24 req/s
+[GET_Topics_List] Avg Latency: 10.2218s | Throughput: 4.55 req/s
+[GET_Class_Topics] Avg Latency: 8.6698s | Throughput: 5.33 req/s
+
+=======================================================
+🔄 CONFIGURATION: 10 Topics, 50 Subtopics (500 items total)
+=======================================================
+
+--- 🚧 Setting up Data (10 Topics, 50 Subtopics/Topic) 🚧 ---
+1. Creating Mega Class...
+2. Creating 10 Topics and 500 Subtopics...
+Topics Setup: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 10/10 [00:10<00:00,  1.04s/it]
+3. Generating Invitation Link...
+4. Enrolling 20 Students (Reduced to speed up iteration)...
+Student Setup: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 20/20 [00:09<00:00,  2.10it/s]
+   -> Data setup complete.
+Testing GET_All_Classes: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [00:04<00:00, 115.76it/s]
+Testing GET_Heavy_Class_Payload: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [00:15<00:00, 31.34it/s]
+Testing GET_Topics_List: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [02:06<00:00,  3.95it/s]
+Testing GET_Class_Topics: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [00:15<00:00, 32.60it/s]
+
+--- 📊 SUMMARY FOR CONFIGURATION (500 items) 📊 ---
+[GET_All_Classes] Avg Latency: 0.4171s | Throughput: 115.74 req/s
+[GET_Heavy_Class_Payload] Avg Latency: 1.5108s | Throughput: 31.34 req/s
+[GET_Topics_List] Avg Latency: 11.5973s | Throughput: 3.95 req/s
+[GET_Class_Topics] Avg Latency: 1.4761s | Throughput: 32.60 req/s
+
+=======================================================
+🔄 CONFIGURATION: 20 Topics, 25 Subtopics (500 items total)
+=======================================================
+
+--- 🚧 Setting up Data (20 Topics, 25 Subtopics/Topic) 🚧 ---
+1. Creating Mega Class...
+2. Creating 20 Topics and 500 Subtopics...
+Topics Setup: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 20/20 [00:13<00:00,  1.44it/s]
+3. Generating Invitation Link...
+4. Enrolling 20 Students (Reduced to speed up iteration)...
+Student Setup: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 20/20 [00:09<00:00,  2.13it/s]
+   -> Data setup complete.
+Testing GET_All_Classes: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [00:04<00:00, 116.44it/s]
+Testing GET_Heavy_Class_Payload: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [00:16<00:00, 30.52it/s]
+Testing GET_Topics_List: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [02:09<00:00,  3.87it/s]
+Testing GET_Class_Topics: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [00:14<00:00, 34.10it/s]
+
+--- 📊 SUMMARY FOR CONFIGURATION (500 items) 📊 ---
+[GET_All_Classes] Avg Latency: 0.4087s | Throughput: 116.42 req/s
+[GET_Heavy_Class_Payload] Avg Latency: 1.5698s | Throughput: 30.52 req/s
+[GET_Topics_List] Avg Latency: 12.0499s | Throughput: 3.87 req/s
+[GET_Class_Topics] Avg Latency: 1.4097s | Throughput: 34.10 req/s
+
+=======================================================
+🔄 CONFIGURATION: 50 Topics, 10 Subtopics (500 items total)
+=======================================================
+
+--- 🚧 Setting up Data (50 Topics, 10 Subtopics/Topic) 🚧 ---
+1. Creating Mega Class...
+2. Creating 50 Topics and 500 Subtopics...
+Topics Setup: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 50/50 [00:17<00:00,  2.84it/s]
+3. Generating Invitation Link...
+4. Enrolling 20 Students (Reduced to speed up iteration)...
+Student Setup: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 20/20 [00:09<00:00,  2.21it/s]
+   -> Data setup complete.
+Testing GET_All_Classes: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [00:04<00:00, 119.55it/s]
+Testing GET_Heavy_Class_Payload: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [00:18<00:00, 27.25it/s]
+Testing GET_Topics_List: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [02:22<00:00,  3.50it/s]
+Testing GET_Class_Topics: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [00:17<00:00, 29.37it/s]
+
+--- 📊 SUMMARY FOR CONFIGURATION (500 items) 📊 ---
+[GET_All_Classes] Avg Latency: 0.4064s | Throughput: 119.54 req/s
+[GET_Heavy_Class_Payload] Avg Latency: 1.7008s | Throughput: 27.24 req/s
+[GET_Topics_List] Avg Latency: 13.2590s | Throughput: 3.50 req/s
+[GET_Class_Topics] Avg Latency: 1.6198s | Throughput: 29.37 req/s
+
+=======================================================
+🔄 CONFIGURATION: 100 Topics, 5 Subtopics (500 items total)
+=======================================================
+
+--- 🚧 Setting up Data (100 Topics, 5 Subtopics/Topic) 🚧 ---
+1. Creating Mega Class...
+2. Creating 100 Topics and 500 Subtopics...
+Topics Setup: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 100/100 [00:30<00:00,  3.31it/s]
+3. Generating Invitation Link...
+4. Enrolling 20 Students (Reduced to speed up iteration)...
+Student Setup: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 20/20 [00:09<00:00,  2.20it/s]
+   -> Data setup complete.
+Testing GET_All_Classes: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [00:04<00:00, 115.09it/s]
+Testing GET_Heavy_Class_Payload: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [00:18<00:00, 26.59it/s]
+Testing GET_Topics_List: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [02:34<00:00,  3.23it/s]
+Testing GET_Class_Topics: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [00:17<00:00, 28.06it/s]
+
+--- 📊 SUMMARY FOR CONFIGURATION (500 items) 📊 ---
+[GET_All_Classes] Avg Latency: 0.4065s | Throughput: 115.08 req/s
+[GET_Heavy_Class_Payload] Avg Latency: 1.7434s | Throughput: 26.59 req/s
+[GET_Topics_List] Avg Latency: 14.5402s | Throughput: 3.23 req/s
+[GET_Class_Topics] Avg Latency: 1.6803s | Throughput: 28.06 req/s
+
+💾 Saving results to ./benchmark/benchmark_results.json...
+
+--- 📈 GENERATING PLOTS 📈 ---
+
+✅ Done! Visualization saved to ./benchmark/benchmark_effects_plot.png.
+
+=======================================================
+📊 FINAL BENCHMARK STATS (PRETTYTABLE) 📊
+=======================================================
+
++---------------------------+-------------------------+-----------------+-----------------+--------------------+
+| Size (Topics x Subtopics) |         Endpoint        | Avg Latency (s) | Max Latency (s) | Throughput (req/s) |
++---------------------------+-------------------------+-----------------+-----------------+--------------------+
+|           5 x 10          |     GET_All_Classes     |      0.5846     |      1.5046     |       82.64        |
+|           5 x 10          | GET_Heavy_Class_Payload |      0.7672     |      1.0503     |       62.90        |
+|           5 x 10          |     GET_Topics_List     |      0.5241     |      0.7244     |       93.18        |
+|           5 x 10          |     GET_Class_Topics    |      0.6212     |      1.4887     |       71.83        |
+|           5 x 20          |     GET_All_Classes     |      0.4261     |      0.8112     |       113.47       |
+|           5 x 20          | GET_Heavy_Class_Payload |      0.7606     |      0.9874     |       63.57        |
+|           5 x 20          |     GET_Topics_List     |      0.6683     |      0.8409     |       72.77        |
+|           5 x 20          |     GET_Class_Topics    |      0.5961     |      0.8330     |       80.77        |
+|           5 x 50          |     GET_All_Classes     |      0.5063     |      1.1429     |       96.77        |
+|           5 x 50          | GET_Heavy_Class_Payload |      0.9681     |      1.3106     |       49.35        |
+|           5 x 50          |     GET_Topics_List     |      1.1079     |      1.6900     |       43.47        |
+|           5 x 50          |     GET_Class_Topics    |      0.8657     |      1.1347     |       55.91        |
+|          5 x 100          |     GET_All_Classes     |      0.4302     |      0.6597     |       108.36       |
+|          5 x 100          | GET_Heavy_Class_Payload |      1.4952     |      2.8119     |       32.06        |
+|          5 x 100          |     GET_Topics_List     |      1.9912     |      2.6831     |       23.95        |
+|          5 x 100          |     GET_Class_Topics    |      1.2873     |      2.3809     |       37.28        |
+|          5 x 1000         |     GET_All_Classes     |      0.4025     |      0.7450     |       121.26       |
+|          5 x 1000         | GET_Heavy_Class_Payload |      8.9748     |     15.2833     |        5.24        |
+|          5 x 1000         |     GET_Topics_List     |     10.2218     |     17.9652     |        4.55        |
+|          5 x 1000         |     GET_Class_Topics    |      8.6698     |     16.5943     |        5.33        |
+|          10 x 50          |     GET_All_Classes     |      0.4171     |      0.7298     |       115.74       |
+|          10 x 50          | GET_Heavy_Class_Payload |      1.5108     |      2.3032     |       31.34        |
+|          10 x 50          |     GET_Topics_List     |     11.5973     |     20.6400     |        3.95        |
+|          10 x 50          |     GET_Class_Topics    |      1.4761     |      2.5382     |       32.60        |
+|          20 x 25          |     GET_All_Classes     |      0.4087     |      0.9453     |       116.42       |
+|          20 x 25          | GET_Heavy_Class_Payload |      1.5698     |      2.3029     |       30.52        |
+|          20 x 25          |     GET_Topics_List     |     12.0499     |     21.6946     |        3.87        |
+|          20 x 25          |     GET_Class_Topics    |      1.4097     |      2.0867     |       34.10        |
+|          50 x 10          |     GET_All_Classes     |      0.4064     |      0.8868     |       119.54       |
+|          50 x 10          | GET_Heavy_Class_Payload |      1.7008     |      3.1038     |       27.24        |
+|          50 x 10          |     GET_Topics_List     |     13.2590     |     24.8338     |        3.50        |
+|          50 x 10          |     GET_Class_Topics    |      1.6198     |      2.4037     |       29.37        |
+|          100 x 5          |     GET_All_Classes     |      0.4065     |      0.8548     |       115.08       |
+|          100 x 5          | GET_Heavy_Class_Payload |      1.7434     |      3.0853     |       26.59        |
+|          100 x 5          |     GET_Topics_List     |     14.5402     |     25.7371     |        3.23        |
+|          100 x 5          |     GET_Class_Topics    |      1.6803     |      3.4448     |       28.06        |
++---------------------------+-------------------------+-----------------+-----------------+--------------------+
+
+--- 🏁 RUNNING 1000 STUDENTS WRITE TEST 🏁 ---
+
+--- 🏁 FINAL TEST: 1000 Concurrent Student Registrations 🏁 ---
+1. Creating dummy class for final write test...
+2. Generating Invitation Link...
+3. Enrolling 1000 Students...
+Enrolling 1000 students: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1000/1000 [07:21<00:00,  2.26it/s]
+
+--- 🏁 1000 Concurrent Student Write DB Test 🏁 ---
++-------------------------+----------+
+|          Metric         |  Value   |
++-------------------------+----------+
+| Total Students Enrolled |   1000   |
+|      Success Count      |   957    |
+|       Failed Count      |    43    |
+|    Total Duration (s)   |  441.51  |
+|   Throughput (req/sec)  |   2.26   |
+|     Avg Latency (s)     | 43.8336  |
+|     Min Latency (s)     |  0.2420  |
+|     Max Latency (s)     | 125.2608 |
++-------------------------+----------+
