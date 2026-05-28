@@ -4,6 +4,7 @@ import {
   HeadObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
+  ListObjectsV2Command,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -22,9 +23,13 @@ export function sanitizeFilename(name: string): string {
   return base.slice(0, 200) || "file";
 }
 
-export function buildStorageKey(teacherId: string, materialId: string, originalName: string): string {
+export function buildStorageKey(teacherId: string, classId: string, materialId: string, originalName: string): string {
   const safe = sanitizeFilename(originalName);
-  return `learning-materials/${teacherId}/${materialId}/${safe}`;
+  return `learning-materials/${teacherId}/${classId}/${materialId}/${safe}`;
+}
+
+export function buildPageStorageKey(teacherId: string, classId: string, materialId: string, pageNumber: number): string {
+  return `learning-materials/${teacherId}/${classId}/${materialId}/pages/page-${pageNumber}.png`;
 }
 
 export function getS3Config(): { bucket: string; region: string } {
@@ -71,6 +76,12 @@ export async function presignPutUpload(
   return getSignedUrl(client, cmd, { expiresIn: PRESIGN_EXPIRES_SEC });
 }
 
+export async function presignGetUrl(bucket: string, key: string, expiresIn = PRESIGN_EXPIRES_SEC): Promise<string> {
+  const client = getS3Client();
+  const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
+  return getSignedUrl(client, cmd, { expiresIn });
+}
+
 export async function headS3Object(bucket: string, key: string): Promise<{ contentLength: number }> {
   const client = getS3Client();
   const out = await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
@@ -89,4 +100,41 @@ export async function readS3ObjectBytes(bucket: string, key: string): Promise<Bu
 export async function deleteS3Object(bucket: string, key: string): Promise<void> {
   const client = getS3Client();
   await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+}
+
+export async function listS3Objects(bucket: string, prefix: string): Promise<string[]> {
+  const client = getS3Client();
+  let isTruncated = true;
+  let continuationToken: string | undefined;
+  const keys: string[] = [];
+
+  while (isTruncated) {
+    const response = await client.send(
+      new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: prefix,
+        ContinuationToken: continuationToken,
+      })
+    );
+
+    if (response.Contents) {
+      for (const item of response.Contents) {
+        if (item.Key) keys.push(item.Key);
+      }
+    }
+
+    isTruncated = response.IsTruncated ?? false;
+    continuationToken = response.NextContinuationToken;
+  }
+
+  return keys;
+}
+
+export async function deleteS3Objects(bucket: string, keys: string[]): Promise<void> {
+  const client = getS3Client();
+  // AWS limits delete batch to 1000 objects.
+  for (let i = 0; i < keys.length; i += 1000) {
+    const chunk = keys.slice(i, i + 1000);
+    await Promise.all(chunk.map((key) => client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }))));
+  }
 }

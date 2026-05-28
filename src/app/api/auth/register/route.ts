@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { normalizeEmail, normalizeUsername, validatePassword } from "@/lib/account-validation";
 
 export async function POST(req: NextRequest) {
   try {
@@ -23,26 +25,27 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!firstName || !lastName || !username || !email || !password) {
+    if (!firstName?.trim() || !lastName?.trim() || !username?.trim() || !email?.trim() || !password) {
       return NextResponse.json({ error: "All fields are required." }, { status: 400 });
     }
 
-    if (password.length < 8) {
-      return NextResponse.json(
-        { error: "Password must be at least 8 characters." },
-        { status: 400 }
-      );
+    const passwordError = validatePassword(password);
+    if (passwordError) {
+      return NextResponse.json({ error: passwordError }, { status: 400 });
     }
 
+    const normalizedEmail = normalizeEmail(email);
+    const normalizedUsername = normalizeUsername(username);
+
     const existingEmail = await prisma.user.findUnique({
-      where: { email: email.toLowerCase() },
+      where: { email: normalizedEmail },
     });
     if (existingEmail) {
       return NextResponse.json({ error: "Email already in use." }, { status: 409 });
     }
 
     const existingUsername = await prisma.user.findUnique({
-      where: { username: username.toLowerCase() },
+      where: { username: normalizedUsername },
     });
     if (existingUsername) {
       return NextResponse.json({ error: "Username already taken." }, { status: 409 });
@@ -52,11 +55,11 @@ export async function POST(req: NextRequest) {
 
     await prisma.user.create({
       data: {
-        email: email.toLowerCase(),
-        username: username.toLowerCase(),
+        email: normalizedEmail,
+        username: normalizedUsername,
         hashedPassword,
-        firstName,
-        lastName,
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
         role: "TEACHER",
         teacher: { create: {} },
       },
@@ -64,6 +67,12 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true }, { status: 201 });
   } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      const target = Array.isArray(err.meta?.target) ? err.meta.target.join(", ") : "";
+      const field = target.includes("username") ? "Username" : "Email";
+      return NextResponse.json({ error: `${field} already in use.` }, { status: 409 });
+    }
+
     console.error("[REGISTER]", err);
     return NextResponse.json({ error: "Internal server error." }, { status: 500 });
   }

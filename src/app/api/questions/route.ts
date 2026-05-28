@@ -34,8 +34,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const teacher = await prisma.teacher.findUnique({ where: { userId: session.user.id } });
-  const { text, topicId, subtopicId, difficultyLevel, options } = await req.json();
+  const [teacher, { text, topicId, subtopicId, difficultyLevel, answerMode, options }] = await Promise.all([
+    prisma.teacher.findUnique({ where: { userId: session.user.id } }),
+    req.json(),
+  ]);
+  const normalizedAnswerMode = answerMode === "MULTI_SELECT" ? "MULTI_SELECT" : "SINGLE_SELECT";
 
   if (!text?.trim() || !topicId || !subtopicId) {
     return NextResponse.json({ error: "text, topicId, and subtopicId are required." }, { status: 400 });
@@ -46,6 +49,9 @@ export async function POST(req: NextRequest) {
   if (!options.some((o: { isCorrect: boolean }) => o.isCorrect)) {
     return NextResponse.json({ error: "At least one option must be marked as correct." }, { status: 400 });
   }
+  if (normalizedAnswerMode === "SINGLE_SELECT" && options.filter((o: { isCorrect: boolean }) => o.isCorrect).length > 1) {
+    return NextResponse.json({ error: "Single-select questions can only have one correct option." }, { status: 400 });
+  }
 
   const question = await prisma.question.create({
     data: {
@@ -53,6 +59,7 @@ export async function POST(req: NextRequest) {
       topicId,
       subtopicId,
       difficultyLevel: difficultyLevel || "BEGINNER",
+      answerMode: normalizedAnswerMode,
       createdById: teacher?.id,
       options: { create: options.map((o: { text: string; isCorrect: boolean }) => ({ text: o.text.trim(), isCorrect: o.isCorrect })) },
     },
@@ -67,14 +74,28 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { id, text, difficultyLevel, options } = await req.json();
+  const { id, text, difficultyLevel, answerMode, options } = await req.json();
   if (!id) return NextResponse.json({ error: "Question id required." }, { status: 400 });
+  const normalizedAnswerMode = answerMode === "MULTI_SELECT" ? "MULTI_SELECT" : answerMode === "SINGLE_SELECT" ? "SINGLE_SELECT" : undefined;
+
+  if (options) {
+    if (options.length < 2) {
+      return NextResponse.json({ error: "At least 2 options are required." }, { status: 400 });
+    }
+    if (!options.some((o: { isCorrect: boolean }) => o.isCorrect)) {
+      return NextResponse.json({ error: "At least one option must be marked as correct." }, { status: 400 });
+    }
+    if (normalizedAnswerMode === "SINGLE_SELECT" && options.filter((o: { isCorrect: boolean }) => o.isCorrect).length > 1) {
+      return NextResponse.json({ error: "Single-select questions can only have one correct option." }, { status: 400 });
+    }
+  }
 
   const question = await prisma.question.update({
     where: { id },
     data: {
       text: text?.trim(),
       difficultyLevel,
+      answerMode: normalizedAnswerMode,
     },
   });
 

@@ -31,7 +31,7 @@ export function VersionModal() {
             <div className="border-b border-sidebar-border px-5 py-4 flex items-start justify-between gap-4">
               <div className="space-y-2">
                 <Dialog.Title className="flex items-center gap-2 text-lg font-semibold text-foreground">
-                  <BookText className="h-5 w-5" />
+                  <BookText className="size-5" />
                   Release Notes
                 </Dialog.Title>
                 <Dialog.Description className="text-sm text-muted-foreground">
@@ -41,7 +41,7 @@ export function VersionModal() {
               </div>
               <Dialog.Close asChild>
                 <Button variant="ghost" size="icon" aria-label="Close changelog modal">
-                  <X className="h-4 w-4" />
+                  <X className="size-4" />
                 </Button>
               </Dialog.Close>
             </div>

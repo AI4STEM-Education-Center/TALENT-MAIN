@@ -48,10 +48,10 @@ export default function TopicsPage() {
     if (res.ok) setTopics((prev) => prev.filter((t) => t.id !== id));
   }
 
-  if (loading) return <div className="p-6 text-muted-foreground">Loading...</div>;
+  if (loading) return <div className="p-6 text-muted-foreground">Loading…</div>;
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Topics & Modules</h1>
         <p className="text-muted-foreground text-sm mt-1">Manage the learning topics and their subtopic modules.</p>
@@ -63,10 +63,10 @@ export default function TopicsPage() {
       <Card>
         <CardHeader><CardTitle>Create New Topic</CardTitle></CardHeader>
         <CardContent>
-          <div className="flex gap-3">
+          <div className="flex flex-col sm:flex-row gap-3">
             <Input placeholder="Topic name (e.g. Thermodynamics)" value={newName} onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && createTopic()} />
-            <Button onClick={createTopic} disabled={!newName.trim()}><Plus className="w-4 h-4" /> Create</Button>
+              onKeyDown={(e) => e.key === "Enter" && createTopic()} className="flex-1" />
+            <Button onClick={createTopic} disabled={!newName.trim()} className="shrink-0"><Plus className="size-4" /> Create</Button>
           </div>
         </CardContent>
       </Card>
@@ -76,7 +76,7 @@ export default function TopicsPage() {
         {topics.length === 0 && (
           <Card>
             <CardContent className="text-center py-12 text-muted-foreground">
-              <BookOpen className="w-10 h-10 mx-auto mb-3" />
+              <BookOpen className="size-10 mx-auto mb-3" />
               <p>No topics yet. Create one above to get started.</p>
             </CardContent>
           </Card>
@@ -84,9 +84,9 @@ export default function TopicsPage() {
         {topics.map((topic) => (
           <Card key={topic.id} className="hover:shadow-sm transition-shadow">
             <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3 flex-1">
-                  <BookOpen className="w-5 h-5 text-primary" />
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-start gap-3 flex-1 min-w-0">
+                  <BookOpen className="size-5 text-primary" />
                   {editingId === topic.id ? (
                     <div className="flex items-center gap-2 flex-1">
                       <Input value={editName} onChange={(e) => setEditName(e.target.value)} className="h-8" autoFocus />
@@ -94,8 +94,8 @@ export default function TopicsPage() {
                         await fetch("/api/topics", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: topic.id, name: editName }) });
                         setTopics((prev) => prev.map((t) => t.id === topic.id ? { ...t, name: editName } : t));
                         setEditingId(null);
-                      }}><Check className="w-3 h-3" /></Button>
-                      <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}><X className="w-3 h-3" /></Button>
+                      }}><Check className="size-3" /></Button>
+                      <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}><X className="size-3" /></Button>
                     </div>
                   ) : (
                     <div className="flex-1">
@@ -107,15 +107,15 @@ export default function TopicsPage() {
                     </div>
                   )}
                 </div>
-                <div className="flex gap-1">
+                <div className="flex gap-1 shrink-0">
                   <Button size="sm" variant="ghost" onClick={() => { setEditingId(topic.id); setEditName(topic.name); }}>
-                    <Pencil className="w-3 h-3" />
+                    <Pencil className="size-3" />
                   </Button>
                   <Button size="sm" variant="ghost" asChild>
-                    <Link href={`/teacher/topics/${topic.id}`}><ChevronRight className="w-4 h-4" /> Modules</Link>
+                    <Link href={`/teacher/topics/${topic.id}`}><ChevronRight className="size-4" /> Modules</Link>
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => deleteTopic(topic.id)}>
-                    <Trash2 className="w-3 h-3 text-destructive" />
+                    <Trash2 className="size-3 text-destructive" />
                   </Button>
                 </div>
               </div>

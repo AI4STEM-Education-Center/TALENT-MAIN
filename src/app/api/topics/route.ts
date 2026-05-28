@@ -22,8 +22,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const teacher = await prisma.teacher.findUnique({ where: { userId: session.user.id } });
-  const { name, order } = await req.json();
+  const [teacher, { name, order }] = await Promise.all([
+    prisma.teacher.findUnique({ where: { userId: session.user.id } }),
+    req.json(),
+  ]);
   if (!name?.trim()) return NextResponse.json({ error: "Topic name required." }, { status: 400 });
 
   const topic = await prisma.topic.create({

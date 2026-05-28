@@ -1,0 +1,169 @@
+import { NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { invalidateProviderCache } from "@/lib/ai-provider";
+
+/**
+ * GET /api/admin/ai-providers/[id]/models
+ * List all models for a given provider.
+ */
+export async function GET(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await auth();
+  if (!session?.user || session.user.role !== "ADMIN") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const { id } = await params;
+
+  try {
+    const provider = await prisma.aiProvider.findUnique({ where: { id } });
+    if (!provider) {
+      return NextResponse.json({ error: "Provider not found" }, { status: 404 });
+    }
+
+    const models = await prisma.aiModel.findMany({
+      where: { providerId: id },
+      orderBy: { modelId: "asc" },
+    });
+
+    return NextResponse.json({
+      models: models.map((m) => ({
+        id: m.id,
+        modelId: m.modelId,
+        displayName: m.displayName,
+        serviceTier: m.serviceTier,
+        isDefault: m.isDefault,
+      })),
+    });
+  } catch (error) {
+    console.error("[AI_MODELS_GET]", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+/**
+ * POST /api/admin/ai-providers/[id]/models
+ * Add a model to a provider.
+ */
+export async function POST(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await auth();
+  if (!session?.user || session.user.role !== "ADMIN") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const { id } = await params;
+
+  try {
+    const provider = await prisma.aiProvider.findUnique({ where: { id } });
+    if (!provider) {
+      return NextResponse.json({ error: "Provider not found" }, { status: 404 });
+    }
+
+    const body = await req.json();
+    const modelId = typeof body.modelId === "string" ? body.modelId.trim() : "";
+    const displayName = typeof body.displayName === "string" ? body.displayName.trim() || null : null;
+    const serviceTier = typeof body.serviceTier === "string" ? body.serviceTier.trim() || null : null;
+    const isDefault = body.isDefault === true;
+
+    if (!modelId) {
+      return NextResponse.json({ error: "Model ID is required" }, { status: 400 });
+    }
+
+    // Validate service tier
+    if (serviceTier && !["flex", "auto", "default"].includes(serviceTier)) {
+      return NextResponse.json(
+        { error: "Service tier must be 'flex', 'auto', 'default', or empty" },
+        { status: 400 }
+      );
+    }
+
+    // If this model should be default, unset all other defaults for this provider
+    if (isDefault) {
+      await prisma.aiModel.updateMany({
+        where: { providerId: id, isDefault: true },
+        data: { isDefault: false },
+      });
+    }
+
+    const model = await prisma.aiModel.create({
+      data: {
+        providerId: id,
+        modelId,
+        displayName,
+        serviceTier,
+        isDefault,
+      },
+    });
+
+    invalidateProviderCache();
+
+    return NextResponse.json({
+      model: {
+        id: model.id,
+        modelId: model.modelId,
+        displayName: model.displayName,
+        serviceTier: model.serviceTier,
+        isDefault: model.isDefault,
+      },
+    }, { status: 201 });
+  } catch (error: any) {
+    // Handle unique constraint violation
+    if (error?.code === "P2002") {
+      return NextResponse.json(
+        { error: "This model ID already exists for this provider" },
+        { status: 409 }
+      );
+    }
+
+    console.error("[AI_MODELS_POST]", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+/**
+ * DELETE /api/admin/ai-providers/[id]/models
+ * Delete a model by its model record ID (sent in body).
+ */
+export async function DELETE(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await auth();
+  if (!session?.user || session.user.role !== "ADMIN") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const { id: providerId } = await params;
+
+  try {
+    const body = await req.json();
+    const modelRecordId = typeof body.modelId === "string" ? body.modelId.trim() : "";
+
+    if (!modelRecordId) {
+      return NextResponse.json({ error: "Model record ID is required" }, { status: 400 });
+    }
+
+    const model = await prisma.aiModel.findFirst({
+      where: { id: modelRecordId, providerId },
+    });
+
+    if (!model) {
+      return NextResponse.json({ error: "Model not found" }, { status: 404 });
+    }
+
+    await prisma.aiModel.delete({ where: { id: modelRecordId } });
+
+    invalidateProviderCache();
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("[AI_MODELS_DELETE]", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}

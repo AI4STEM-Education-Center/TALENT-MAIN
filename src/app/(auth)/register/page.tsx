@@ -7,9 +7,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { GraduationCap, Info } from "lucide-react";
+import { PASSWORD_REQUIREMENTS, validatePassword } from "@/lib/account-validation";
 
 export default function RegisterPage() {
-  const router = useRouter();
+  const { push } = useRouter();
   const [form, setForm] = useState({
     firstName: "",
     lastName: "",
@@ -22,7 +23,7 @@ export default function RegisterPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+  function updateFormField(e: React.ChangeEvent<HTMLInputElement>) {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   }
 
@@ -34,8 +35,9 @@ export default function RegisterPage() {
       setError("Passwords do not match.");
       return;
     }
-    if (form.password.length < 8) {
-      setError("Password must be at least 8 characters.");
+    const passwordError = validatePassword(form.password);
+    if (passwordError) {
+      setError(passwordError);
       return;
     }
 
@@ -50,7 +52,7 @@ export default function RegisterPage() {
       if (!res.ok) {
         setError(data.error || "Registration failed.");
       } else {
-        router.push("/login?registered=1");
+        push("/login?registered=1");
       }
     } catch {
       setError("An unexpected error occurred.");
@@ -65,16 +67,16 @@ export default function RegisterPage() {
 
         {/* Student notice */}
         <div className="flex items-start gap-3 p-4 rounded-lg bg-blue-500/10 border border-blue-400/20 text-sm text-blue-200">
-          <Info className="w-4 h-4 mt-0.5 flex-shrink-0 text-blue-400" />
+          <Info className="size-4 mt-0.5 flex-shrink-0 text-blue-400" />
           <span>
-            <strong>Students:</strong> You cannot sign up here. Ask your teacher for an invitation link — it will create your account and enroll you in the class automatically.
+            <strong>Students:</strong> You cannot sign up here. Ask your teacher for an invitation link: you&apos;ll need your 81 number to verify your identity and create your account.
           </span>
         </div>
 
         <Card>
           <CardHeader className="space-y-1">
             <div className="flex items-center gap-2">
-              <GraduationCap className="w-5 h-5 text-primary" />
+              <GraduationCap className="size-5 text-primary" />
               <CardTitle className="text-2xl font-bold">Teacher Registration</CardTitle>
             </div>
             <CardDescription>
@@ -89,14 +91,14 @@ export default function RegisterPage() {
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="firstName">First name</Label>
                   <Input
                     id="firstName"
                     name="firstName"
                     value={form.firstName}
-                    onChange={handleChange}
+                    onChange={updateFormField}
                     required
                   />
                 </div>
@@ -106,7 +108,7 @@ export default function RegisterPage() {
                     id="lastName"
                     name="lastName"
                     value={form.lastName}
-                    onChange={handleChange}
+                    onChange={updateFormField}
                     required
                   />
                 </div>
@@ -118,7 +120,7 @@ export default function RegisterPage() {
                   id="username"
                   name="username"
                   value={form.username}
-                  onChange={handleChange}
+                  onChange={updateFormField}
                   required
                   placeholder="e.g. jsmith"
                 />
@@ -131,7 +133,7 @@ export default function RegisterPage() {
                   name="email"
                   type="email"
                   value={form.email}
-                  onChange={handleChange}
+                  onChange={updateFormField}
                   required
                   placeholder="you@school.edu"
                 />
@@ -144,10 +146,13 @@ export default function RegisterPage() {
                   name="password"
                   type="password"
                   value={form.password}
-                  onChange={handleChange}
+                  onChange={updateFormField}
                   required
-                  placeholder="At least 8 characters"
+                  placeholder="Create a strong password"
                 />
+                <p className="text-xs text-muted-foreground">
+                  {PASSWORD_REQUIREMENTS}
+                </p>
               </div>
 
               <div className="space-y-2">
@@ -157,7 +162,7 @@ export default function RegisterPage() {
                   name="confirmPassword"
                   type="password"
                   value={form.confirmPassword}
-                  onChange={handleChange}
+                  onChange={updateFormField}
                   required
                 />
               </div>
@@ -171,7 +176,7 @@ export default function RegisterPage() {
                   name="teacherToken"
                   type="password"
                   value={form.teacherToken}
-                  onChange={handleChange}
+                  onChange={updateFormField}
                   required
                   placeholder="Enter the code provided by your administrator"
                 />

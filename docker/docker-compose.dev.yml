@@ -1,7 +1,7 @@
 services:
   web-dev:
     container_name: adaptive-learning-webapp-dev
-    image: ghcr.io/ec061/adaptive_learning_webapp:dev-latest
+    image: ghcr.io/ai4stem-education-center/talent-main:dev-latest
     build:
       context: ..
       dockerfile: docker/Dockerfile
@@ -13,6 +13,26 @@ services:
     environment:
       NODE_ENV: production
       DATABASE_URL: ${DEV_DATABASE_URL}
+    volumes:
+      - ./data/db/dev:/app/prisma/data
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
+  worker-dev:
+    container_name: adaptive-learning-webapp-worker-dev
+    image: ghcr.io/ai4stem-education-center/talent-main:dev-latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command: ["worker"]
+    pull_policy: always
+    env_file:
+      - ./.env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DEV_DATABASE_URL}
+    volumes:
+      - ./data/db/dev:/app/prisma/data
+    restart: unless-stopped
+    depends_on:
+      - web-dev

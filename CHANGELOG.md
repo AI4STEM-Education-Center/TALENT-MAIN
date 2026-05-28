@@ -54,6 +54,64 @@
 - Organize uploaded materials into folders.
 - File size validation and clearer error messages during upload.
 
+## v0.0.16 - 2026-05-26
+
+- Updated Dockerfile base image and dependencies for improved build stability.
+- Added worker service configuration and standardized volume paths in Docker Compose (dev/prod).
+- Added honker-node to Next.js server external packages.
+- Removed obsolete LearningMaterial migration fixes (folder column and pre-migration cleanup).
+
+## v0.0.15 - 2026-05-24
+
+- Migrated to SQLite and introduced a honker-based background worker with concurrency optimizations.
+- Implemented database-backed AI configuration with admin dashboard controls.
+- Restructured learning materials flow with class-scoped routing and detail page viewing; added materials section to class detail page.
+- Added material deletion, job cancellation, and migration safeguards for existing LearningMaterial data.
+- Implemented a custom ReadableStream for Server-Sent Events in the chat API route.
+- Updated AI model schema constraints and switched to `max_completion_tokens` with expanded connection test prompts/limits.
+- Added lazy initialization for the OpenAI client to reduce resource usage.
+
+## v0.0.14 - 2026-05-14
+
+- Added /admin-register to the list of public routes in proxy middleware.
+- Implemented admin registration, dashboard, user management, and authorization system.
+- Added enrollment status tracking and filtering to student roster and migrated classes list to client-side data fetching.
+- Implemented class roster management with CSV upload support and student list synchronization.
+
+## v0.0.13 - 2026-05-08
+
+- Increased max completion tokens for quiz review and enhanced message handling in Chatbot.
+- Enhanced chat API to support max_tokens for local provider.
+- Enhanced local chat model selection and API integration.
+
+## v0.0.12 - 2026-04-30
+
+- Implemented QTI ZIP file import functionality for question management.
+- Normalized inline block scalar headers in YAML parsing.
+- Added YAML support and enhanced question handling in quiz functionality.
+- Enhanced authentication and chat functionality with local API support.
+
+## v0.0.11 - 2026-04-17
+
+- Updated dependencies and enhanced chat functionality.
+- Enhanced chat API and UI for quiz review functionality.
+- Added prebuilt seeding functionality and updated deployment workflow.
+
+## v0.0.10 - 2026-04-03
+
+- Updated default OpenAI service tier to flex and model to gpt-5.4.
+- Added debug logging for OpenAI API configuration in chat route.
+- Implemented streaming responses with retry logic and performance metrics in chat API and UI.
+- Implemented AI chatbot component with OpenAI API integration.
+- Enhanced dashboard layout and UI components for improved responsiveness.
+
+## v0.0.9 - 2026-03-27
+
+- Added folder support to learning materials and enhanced UI for organization.
+- Improved error handling in MaterialUploadForm and API routes.
+- Enhanced MaterialUploadForm with file size validation and cleanup logic.
+- Implemented learning materials upload feature with S3 integration.
+
 ## v0.0.8 - 2026-03-20
 
 - In-app version modal so you can see what's new in each release.

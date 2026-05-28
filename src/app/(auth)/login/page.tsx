@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 function LoginForm() {
-  const router = useRouter();
+  const { push, refresh } = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") || undefined;
   const [identifier, setIdentifier] = useState("");
@@ -36,13 +36,15 @@ function LoginForm() {
         const session = await res.json();
         const role = session?.user?.role;
         if (callbackUrl) {
-          router.push(callbackUrl);
+          push(callbackUrl);
         } else if (role === "TEACHER") {
-          router.push("/teacher");
+          push("/teacher");
+        } else if (role === "ADMIN") {
+          push("/admin");
         } else {
-          router.push("/student");
+          push("/student");
         }
-        router.refresh();
+        refresh();
       }
     } catch {
       setError("An unexpected error occurred.");

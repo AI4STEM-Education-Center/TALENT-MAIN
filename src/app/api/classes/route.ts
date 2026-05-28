@@ -45,11 +45,30 @@ export async function POST(req: NextRequest) {
   const teacher = await prisma.teacher.findUnique({ where: { userId: session.user.id } });
   if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
 
-  const { name, description } = await req.json();
+  const { name, description, studentList } = await req.json();
   if (!name?.trim()) return NextResponse.json({ error: "Class name is required." }, { status: 400 });
 
-  const cls = await prisma.class.create({
-    data: { name: name.trim(), description: description?.trim() || null, teacherId: teacher.id },
+  // studentList is optional but expected: [{ orgDefinedId, firstName, lastName }]
+  const students: { orgDefinedId: string; firstName: string; lastName: string }[] = Array.isArray(studentList) ? studentList : [];
+
+  const result = await prisma.$transaction(async (tx) => {
+    const cls = await tx.class.create({
+      data: { name: name.trim(), description: description?.trim() || null, teacherId: teacher.id },
+    });
+
+    if (students.length > 0) {
+      await tx.classStudentList.createMany({
+        data: students.map((s) => ({
+          classId: cls.id,
+          orgDefinedId: s.orgDefinedId.replace(/^#/, "").trim(),
+          firstName: s.firstName.trim(),
+          lastName: s.lastName.trim(),
+        })),
+      });
+    }
+
+    return cls;
   });
-  return NextResponse.json(cls, { status: 201 });
+
+  return NextResponse.json(result, { status: 201 });
 }

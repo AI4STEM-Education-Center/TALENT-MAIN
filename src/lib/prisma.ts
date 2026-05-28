@@ -16,4 +16,9 @@ export const prisma =
     datasources: { db: { url: urlWithPool } },
   });
 
+// Execute PRAGMA statements to optimize SQLite for concurrent access
+if (process.env.DB_PROVIDER === "sqlite") {
+  prisma.$executeRawUnsafe(`PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;`).catch(console.error);
+}
+
 globalForPrisma.prisma = prisma;

@@ -71,7 +71,7 @@ export async function PATCH(req: NextRequest) {
   if (!student) return NextResponse.json({ error: "Student not found" }, { status: 404 });
 
   const { attemptId, answers } = await req.json();
-  // answers: [{ questionId, selectedOptionId }]
+  // answers: [{ questionId, selectedOptionId }] or [{ questionId, selectedOptionIds }]
   if (!attemptId || !answers) {
     return NextResponse.json({ error: "attemptId and answers required" }, { status: 400 });
   }
@@ -81,39 +81,66 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Attempt not found" }, { status: 404 });
   }
 
+  if (!Array.isArray(answers)) {
+    return NextResponse.json({ error: "answers must be an array" }, { status: 400 });
+  }
+
   // Score the answers
   let correct = 0;
   const answerRecords = [];
 
   for (const ans of answers) {
-    const option = ans.selectedOptionId
-      ? await prisma.option.findUnique({ where: { id: ans.selectedOptionId } })
-      : null;
-    const isCorrect = option?.isCorrect ?? false;
+    const question = await prisma.question.findUnique({
+      where: { id: ans.questionId },
+      include: { options: true },
+    });
+
+    if (!question) {
+      return NextResponse.json({ error: "Question not found" }, { status: 404 });
+    }
+
+    const selectedOptionIds = Array.isArray(ans.selectedOptionIds)
+      ? ans.selectedOptionIds.filter((id: unknown): id is string => typeof id === "string")
+      : typeof ans.selectedOptionId === "string"
+        ? [ans.selectedOptionId]
+        : [];
+
+    const selectedSet = new Set(selectedOptionIds);
+    const correctOptionIds = question.options.filter((option) => option.isCorrect).map((option) => option.id);
+    const isCorrect =
+      question.answerMode === "MULTI_SELECT"
+        ? selectedSet.size === correctOptionIds.length && correctOptionIds.every((id) => selectedSet.has(id))
+        : question.options.some((option) => option.id === selectedOptionIds[0] && option.isCorrect);
+
     if (isCorrect) correct++;
 
     answerRecords.push({
       quizAttemptId: attemptId,
       questionId: ans.questionId,
-      selectedOptionId: ans.selectedOptionId ?? null,
+      selectedOptionId: question.answerMode === "MULTI_SELECT" ? null : selectedOptionIds[0] ?? null,
+      selectedOptionIds,
       isCorrect,
     });
   }
 
-  await prisma.quizAnswer.createMany({ data: answerRecords });
-
   const score = answers.length > 0 ? (correct / answers.length) * 100 : 0;
 
-  await prisma.quizAttempt.update({
-    where: { id: attemptId },
-    data: { score, completedAt: new Date() },
-  });
+  const [_, __, existing, questionsWithAnswers] = await Promise.all([
+    prisma.quizAnswer.createMany({ data: answerRecords }),
+    prisma.quizAttempt.update({
+      where: { id: attemptId },
+      data: { score, completedAt: new Date() },
+    }),
+    prisma.moduleProgress.findUnique({
+      where: { studentId_classId_subtopicId: { studentId: student.id, classId: attempt.classId, subtopicId: attempt.subtopicId } },
+    }),
+    prisma.question.findMany({
+      where: { id: { in: answers.map((a: { questionId: string }) => a.questionId) } },
+      include: { options: true },
+    })
+  ]);
 
   // Update ModuleProgress: COMPLETED + bestScore
-  const existing = await prisma.moduleProgress.findUnique({
-    where: { studentId_classId_subtopicId: { studentId: student.id, classId: attempt.classId, subtopicId: attempt.subtopicId } },
-  });
-
   await prisma.moduleProgress.upsert({
     where: { studentId_classId_subtopicId: { studentId: student.id, classId: attempt.classId, subtopicId: attempt.subtopicId } },
     update: {
@@ -127,12 +154,6 @@ export async function PATCH(req: NextRequest) {
       status: "COMPLETED",
       bestScore: score,
     },
-  });
-
-  // Return results with correct answers
-  const questionsWithAnswers = await prisma.question.findMany({
-    where: { id: { in: answers.map((a: { questionId: string }) => a.questionId) } },
-    include: { options: true },
   });
 
   return NextResponse.json({
