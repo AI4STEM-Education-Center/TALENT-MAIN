@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { resolveProvider, type UseCase } from "@/lib/ai-provider";
+import { resolveProvider, buildProviderHeaders, type UseCase } from "@/lib/ai-provider";
 
 const VALID_USE_CASES: UseCase[] = [
   "teacher_chat",
@@ -43,10 +43,12 @@ export async function POST(req: Request) {
     }
 
     const isLocal = provider.providerType === "local";
+    const isCloudflare = provider.providerType === "cloudflare";
+
     const { OpenAI } = await import("openai");
 
     let baseURL: string | undefined;
-    if (isLocal && provider.baseUrl) {
+    if ((isLocal || isCloudflare) && provider.baseUrl) {
       const normalized = provider.baseUrl.replace(/\/+$/, "");
       baseURL = normalized.endsWith("/chat/completions")
         ? normalized.slice(0, -"/chat/completions".length)
@@ -56,6 +58,7 @@ export async function POST(req: Request) {
     const openai = new OpenAI({
       apiKey: provider.apiKey || "dummy-key-for-local",
       baseURL,
+      defaultHeaders: buildProviderHeaders(provider),
     });
 
     const startTime = Date.now();

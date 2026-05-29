@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { encryptApiKey, maskApiKey, decryptApiKey } from "@/lib/crypto";
 
+const VALID_TYPES = new Set(["openai", "local", "cloudflare"]);
+
 /**
  * GET /api/admin/ai-providers
  * List all AI providers. API keys are returned masked.
@@ -26,7 +28,6 @@ export async function GET() {
       },
     });
 
-    // Mask API keys - never return the encrypted values
     const masked = providers.map((p) => {
       let maskedKey: string | null = null;
       if (p.apiKeyEnc && p.apiKeyIv && p.apiKeyTag) {
@@ -45,6 +46,7 @@ export async function GET() {
         baseUrl: p.baseUrl,
         hasApiKey: !!p.apiKeyEnc,
         maskedApiKey: maskedKey,
+        cfAigByokAlias: p.cfAigByokAlias,
         isActive: p.isActive,
         createdAt: p.createdAt,
         updatedAt: p.updatedAt,
@@ -68,7 +70,8 @@ export async function GET() {
 
 /**
  * POST /api/admin/ai-providers
- * Create a new AI provider. Encrypts the API key before storing.
+ * Create a new AI provider. Encrypts the bearer token before storing.
+ * For cloudflare providers, apiKey holds the CF_AIG_TOKEN.
  */
 export async function POST(req: Request) {
   const session = await auth();
@@ -83,14 +86,17 @@ export async function POST(req: Request) {
     const providerType = typeof body.providerType === "string" ? body.providerType.trim() : "";
     const baseUrl = typeof body.baseUrl === "string" ? body.baseUrl.trim() || null : null;
     const apiKey = typeof body.apiKey === "string" ? body.apiKey.trim() || null : null;
+    const cfAigByokAlias = typeof body.cfAigByokAlias === "string"
+      ? body.cfAigByokAlias.trim() || null
+      : null;
 
     if (!name) {
       return NextResponse.json({ error: "Provider name is required" }, { status: 400 });
     }
 
-    if (providerType !== "openai" && providerType !== "local") {
+    if (!VALID_TYPES.has(providerType)) {
       return NextResponse.json(
-        { error: "Provider type must be 'openai' or 'local'" },
+        { error: "Provider type must be 'openai', 'local', or 'cloudflare'" },
         { status: 400 }
       );
     }
@@ -102,20 +108,32 @@ export async function POST(req: Request) {
       );
     }
 
-    // Encrypt the API key if provided
-    let encrypted: { encrypted: string; iv: string; tag: string } | null = null;
-    if (apiKey) {
-      encrypted = encryptApiKey(apiKey);
+    if (providerType === "cloudflare") {
+      if (!baseUrl) {
+        return NextResponse.json(
+          { error: "Base URL is required for Cloudflare AI Gateway providers" },
+          { status: 400 }
+        );
+      }
+      if (!apiKey) {
+        return NextResponse.json(
+          { error: "CF_AIG_TOKEN is required for Cloudflare AI Gateway providers" },
+          { status: 400 }
+        );
+      }
     }
+
+    const encryptedKey = apiKey ? encryptApiKey(apiKey) : null;
 
     const provider = await prisma.aiProvider.create({
       data: {
         name,
         providerType,
         baseUrl,
-        apiKeyEnc: encrypted?.encrypted ?? null,
-        apiKeyIv: encrypted?.iv ?? null,
-        apiKeyTag: encrypted?.tag ?? null,
+        apiKeyEnc: encryptedKey?.encrypted ?? null,
+        apiKeyIv: encryptedKey?.iv ?? null,
+        apiKeyTag: encryptedKey?.tag ?? null,
+        cfAigByokAlias: providerType === "cloudflare" ? cfAigByokAlias : null,
       },
     });
 
@@ -125,8 +143,9 @@ export async function POST(req: Request) {
         name: provider.name,
         providerType: provider.providerType,
         baseUrl: provider.baseUrl,
-        hasApiKey: !!encrypted,
+        hasApiKey: !!encryptedKey,
         maskedApiKey: apiKey ? maskApiKey(apiKey) : null,
+        cfAigByokAlias: provider.cfAigByokAlias,
         isActive: provider.isActive,
       },
     }, { status: 201 });

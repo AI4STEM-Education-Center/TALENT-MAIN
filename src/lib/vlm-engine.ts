@@ -1,7 +1,7 @@
 import { OpenAI } from "openai";
 import { prisma } from "@/lib/prisma";
 import { getS3Config, presignGetUrl } from "@/lib/storage";
-import { resolveProvider } from "@/lib/ai-provider";
+import { resolveProvider, buildProviderHeaders } from "@/lib/ai-provider";
 
 // In-memory set of material IDs whose processing should be aborted.
 const cancelledMaterials = new Set<string>();
@@ -92,6 +92,7 @@ async function getConfiguredOpenAI(): Promise<{
   const client = new OpenAI({
     apiKey: provider.apiKey,
     baseURL: provider.baseUrl || undefined,
+    defaultHeaders: buildProviderHeaders(provider),
   });
 
   return {

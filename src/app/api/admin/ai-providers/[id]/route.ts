@@ -4,10 +4,13 @@ import { prisma } from "@/lib/prisma";
 import { encryptApiKey, maskApiKey } from "@/lib/crypto";
 import { invalidateProviderCache } from "@/lib/ai-provider";
 
+const VALID_TYPES = new Set(["openai", "local", "cloudflare"]);
+
 /**
  * PATCH /api/admin/ai-providers/[id]
  * Update an existing AI provider.
- * If apiKey is sent as "••••..." (masked placeholder), the key is left unchanged.
+ * If apiKey is sent as "••••..." (masked placeholder), the field is left unchanged.
+ * Sending an empty string clears the field.
  */
 export async function PATCH(
   req: Request,
@@ -35,7 +38,7 @@ export async function PATCH(
 
     if (typeof body.providerType === "string") {
       const pt = body.providerType.trim();
-      if (pt === "openai" || pt === "local") {
+      if (VALID_TYPES.has(pt)) {
         data.providerType = pt;
       }
     }
@@ -48,22 +51,27 @@ export async function PATCH(
       data.isActive = body.isActive;
     }
 
-    // Handle API key update
+    // Handle API key / CF_AIG_TOKEN update
     if (typeof body.apiKey === "string") {
       const rawKey = body.apiKey.trim();
-      // If it starts with "••••" it's the masked placeholder — skip update
       if (rawKey && !rawKey.startsWith("••••")) {
         const encrypted = encryptApiKey(rawKey);
         data.apiKeyEnc = encrypted.encrypted;
         data.apiKeyIv = encrypted.iv;
         data.apiKeyTag = encrypted.tag;
-      }
-      // If explicitly empty string, clear the API key
-      if (rawKey === "") {
+      } else if (rawKey === "") {
         data.apiKeyEnc = null;
         data.apiKeyIv = null;
         data.apiKeyTag = null;
       }
+    }
+
+    // Handle BYOK alias (plain string, optional)
+    if (body.cfAigByokAlias !== undefined) {
+      data.cfAigByokAlias =
+        typeof body.cfAigByokAlias === "string" && body.cfAigByokAlias.trim()
+          ? body.cfAigByokAlias.trim()
+          : null;
     }
 
     const updated = await prisma.aiProvider.update({
@@ -71,7 +79,6 @@ export async function PATCH(
       data,
     });
 
-    // Invalidate cache since provider config changed
     invalidateProviderCache();
 
     return NextResponse.json({
@@ -86,6 +93,7 @@ export async function PATCH(
           : existing.apiKeyEnc
             ? "••••(unchanged)"
             : null,
+        cfAigByokAlias: updated.cfAigByokAlias,
         isActive: updated.isActive,
       },
     });
@@ -118,7 +126,6 @@ export async function DELETE(
 
     await prisma.aiProvider.delete({ where: { id } });
 
-    // Invalidate cache since provider was deleted
     invalidateProviderCache();
 
     return NextResponse.json({ success: true });
