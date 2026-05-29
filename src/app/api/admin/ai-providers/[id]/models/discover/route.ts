@@ -5,7 +5,7 @@ import { decryptApiKey } from "@/lib/crypto";
 
 /**
  * POST /api/admin/ai-providers/[id]/models/discover
- * For local providers: fetch the /models endpoint to discover available models.
+ * For local / Cloudflare providers: fetch the /models endpoint to discover available models.
  */
 export async function POST(
   _req: Request,
@@ -31,7 +31,7 @@ export async function POST(
       );
     }
 
-    // Decrypt API key if present
+    // Decrypt bearer token if present (CF_AIG_TOKEN for cloudflare)
     let apiKey: string | null = null;
     if (provider.apiKeyEnc && provider.apiKeyIv && provider.apiKeyTag) {
       try {
@@ -58,11 +58,14 @@ export async function POST(
     if (apiKey) {
       headers["Authorization"] = `Bearer ${apiKey}`;
     }
+    if (provider.providerType === "cloudflare" && provider.cfAigByokAlias) {
+      headers["cf-aig-byok-alias"] = provider.cfAigByokAlias;
+    }
 
     const response = await fetch(modelsUrl, {
       method: "GET",
       headers,
-      signal: AbortSignal.timeout(10000), // 10 second timeout
+      signal: AbortSignal.timeout(10000),
     });
 
     if (!response.ok) {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { resolveProvider, roleToChatUseCase } from "@/lib/ai-provider";
+import { resolveProvider, roleToChatUseCase, buildProviderHeaders } from "@/lib/ai-provider";
 
 type ChatMessage = {
   role: "system" | "user" | "assistant";
@@ -168,32 +168,35 @@ async function sendChatCompletion(
   }
 
   const isLocal = provider.providerType === "local";
+  const isCloudflare = provider.providerType === "cloudflare";
 
+  // OpenAI and Cloudflare both require a bearer token (the upstream key, or CF_AIG_TOKEN for cloudflare)
   if (!isLocal && !provider.apiKey) {
-    console.error("[Chat] OpenAI provider has no API key configured");
+    console.error(`[Chat] ${provider.providerType} provider has no API key configured`);
     return NextResponse.json(
-      { error: "OpenAI integration is not properly configured." },
+      { error: `${provider.providerType} integration is not properly configured.` },
       { status: 503 }
     );
   }
 
-  if (isLocal && !provider.baseUrl) {
-    console.error("[Chat] Local provider has no base URL configured");
+  if ((isLocal || isCloudflare) && !provider.baseUrl) {
+    console.error(`[Chat] ${provider.providerType} provider has no base URL configured`);
     return NextResponse.json(
-      { error: "Local chat integration is not properly configured." },
+      { error: `${provider.providerType} chat integration is not properly configured.` },
       { status: 503 }
     );
   }
 
   // Construct the OpenAI SDK client from resolved config
   const { OpenAI } = await import("openai");
-  const baseURL = isLocal
+  const baseURL = (isLocal || isCloudflare)
     ? resolveLocalChatEndpoint(provider.baseUrl!).replace(/\/chat\/completions$/, "")
     : undefined;
 
   const openai = new OpenAI({
     apiKey: provider.apiKey || "dummy-key-for-local",
     baseURL,
+    defaultHeaders: buildProviderHeaders(provider),
   });
 
   const serviceTier = provider.serviceTier;
@@ -244,7 +247,7 @@ async function sendChatCompletion(
   } catch (error: any) {
     console.error(`[Chat] ${provider.providerType} error:`, error);
     return NextResponse.json(
-      { error: `Failed to communicate with ${isLocal ? "local chat endpoint" : "OpenAI"}` },
+      { error: `Failed to communicate with ${isLocal ? "local chat endpoint" : isCloudflare ? "Cloudflare AI Gateway" : "OpenAI"}` },
       { status: error.status || 500 }
     );
   }

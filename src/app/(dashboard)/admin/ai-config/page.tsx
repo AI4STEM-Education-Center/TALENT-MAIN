@@ -13,6 +13,7 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  Cloud,
   Globe,
   Key,
   Loader2,
@@ -36,13 +37,16 @@ interface AiModel {
   isDefault: boolean;
 }
 
+type ProviderType = "openai" | "local" | "cloudflare";
+
 interface AiProvider {
   id: string;
   name: string;
-  providerType: "openai" | "local";
+  providerType: ProviderType;
   baseUrl: string | null;
   hasApiKey: boolean;
   maskedApiKey: string | null;
+  cfAigByokAlias: string | null;
   isActive: boolean;
   models: AiModel[];
   assignmentCount: number;
@@ -64,9 +68,10 @@ type Assignments = Record<string, Assignment | null>;
 
 interface ProviderForm {
   name: string;
-  providerType: "openai" | "local";
+  providerType: ProviderType;
   baseUrl: string;
   apiKey: string;
+  cfAigByokAlias: string;
 }
 
 interface ModelForm {
@@ -89,6 +94,7 @@ const EMPTY_PROVIDER_FORM: ProviderForm = {
   providerType: "openai",
   baseUrl: "",
   apiKey: "",
+  cfAigByokAlias: "",
 };
 
 const EMPTY_MODEL_FORM: ModelForm = {
@@ -203,6 +209,7 @@ export default function AiConfigPage() {
       providerType: p.providerType,
       baseUrl: p.baseUrl || "",
       apiKey: p.maskedApiKey || "",
+      cfAigByokAlias: p.cfAigByokAlias || "",
     });
     setEditingProviderId(p.id);
     setShowProviderForm(true);
@@ -510,7 +517,7 @@ export default function AiConfigPage() {
                     onValueChange={(v) =>
                       setProviderForm((f) => ({
                         ...f,
-                        providerType: v as "openai" | "local",
+                        providerType: v as ProviderType,
                       }))
                     }
                   >
@@ -526,6 +533,11 @@ export default function AiConfigPage() {
                       <SelectItem value="local">
                         <span className="flex items-center gap-2">
                           <Monitor className="size-3.5" /> Local
+                        </span>
+                      </SelectItem>
+                      <SelectItem value="cloudflare">
+                        <span className="flex items-center gap-2">
+                          <Cloud className="size-3.5" /> Cloudflare AI Gateway
                         </span>
                       </SelectItem>
                     </SelectContent>
@@ -550,15 +562,21 @@ export default function AiConfigPage() {
                     placeholder={
                       providerForm.providerType === "local"
                         ? "http://localhost:11434/v1"
-                        : "https://api.openai.com/v1"
+                        : providerForm.providerType === "cloudflare"
+                          ? "https://gateway.ai.cloudflare.com/v1/{account}/{gateway}/openai"
+                          : "https://api.openai.com/v1"
                     }
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
                   />
                 </div>
                 <div>
                   <label htmlFor="provider-key" className="block text-sm font-medium mb-1">
-                    API Key{" "}
-                    <span className="text-muted-foreground font-normal">(encrypted at rest)</span>
+                    {providerForm.providerType === "cloudflare" ? "CF_AIG_TOKEN" : "API Key"}{" "}
+                    <span className="text-muted-foreground font-normal">
+                      {providerForm.providerType === "cloudflare"
+                        ? "(required — sent as Authorization: Bearer)"
+                        : "(encrypted at rest)"}
+                    </span>
                   </label>
                   <input
                     id="provider-key"
@@ -567,10 +585,34 @@ export default function AiConfigPage() {
                     onChange={(e) =>
                       setProviderForm((f) => ({ ...f, apiKey: e.target.value }))
                     }
-                    placeholder={editingProviderId ? "Leave unchanged or enter new key" : "sk-..."}
+                    placeholder={
+                      editingProviderId
+                        ? "Leave unchanged or enter new value"
+                        : providerForm.providerType === "cloudflare"
+                          ? "Cloudflare AI Gateway token"
+                          : "sk-..."
+                    }
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
                   />
                 </div>
+                {providerForm.providerType === "cloudflare" && (
+                  <div>
+                    <label htmlFor="provider-cf-byok" className="block text-sm font-medium mb-1">
+                      cf-aig-byok-alias{" "}
+                      <span className="text-muted-foreground font-normal">(optional)</span>
+                    </label>
+                    <input
+                      id="provider-cf-byok"
+                      type="text"
+                      value={providerForm.cfAigByokAlias}
+                      onChange={(e) =>
+                        setProviderForm((f) => ({ ...f, cfAigByokAlias: e.target.value }))
+                      }
+                      placeholder="my-stored-key-alias"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
+                    />
+                  </div>
+                )}
               </div>
               <div className="flex items-center gap-2 mt-4">
                 <button type="button"
@@ -634,11 +676,15 @@ export default function AiConfigPage() {
                         className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
                           p.providerType === "openai"
                             ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                            : "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
+                            : p.providerType === "cloudflare"
+                              ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
+                              : "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
                         }`}
                       >
                         {p.providerType === "openai" ? (
                           <Globe className="size-3" />
+                        ) : p.providerType === "cloudflare" ? (
+                          <Cloud className="size-3" />
                         ) : (
                           <Monitor className="size-3" />
                         )}
@@ -647,6 +693,14 @@ export default function AiConfigPage() {
                       {p.hasApiKey && (
                         <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                           <Key className="size-3" /> {p.maskedApiKey}
+                        </span>
+                      )}
+                      {p.providerType === "cloudflare" && p.cfAigByokAlias && (
+                        <span
+                          className="inline-flex items-center gap-1 rounded-full bg-orange-50 px-1.5 py-0.5 text-xs text-orange-700 dark:bg-orange-950/40 dark:text-orange-300"
+                          title="BYOK alias"
+                        >
+                          alias: {p.cfAigByokAlias}
                         </span>
                       )}
                     </div>
@@ -707,7 +761,7 @@ export default function AiConfigPage() {
                         Models ({p.models.length})
                       </h4>
                       <div className="flex items-center gap-2">
-                        {p.providerType === "local" && (
+                        {(p.providerType === "local" || p.providerType === "cloudflare") && (
                           <button type="button"
                             onClick={() => handleDiscover(p.id)}
                             disabled={discovering === p.id}
@@ -961,6 +1015,8 @@ export default function AiConfigPage() {
                                 <span className="flex items-center gap-2">
                                   {p.providerType === "openai" ? (
                                     <Globe className="size-3" />
+                                  ) : p.providerType === "cloudflare" ? (
+                                    <Cloud className="size-3" />
                                   ) : (
                                     <Monitor className="size-3" />
                                   )}

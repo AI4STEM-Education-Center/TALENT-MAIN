@@ -326,16 +326,20 @@ model QuizAnswer {
 }
 
 // ─── AI Provider Configuration ────────────────────────────────────────────────
-// providerType: "openai" | "local"
+// providerType: "openai" | "local" | "cloudflare"
 
 model AiProvider {
   id           String   @id @default(cuid())
   name         String                // human label, e.g. "Production OpenAI"
-  providerType String                // "openai" | "local"
-  baseUrl      String?               // null for OpenAI (uses default), URL for local
-  apiKeyEnc    String?               // AES-256-GCM encrypted API key
-  apiKeyIv     String?               // IV for decryption
-  apiKeyTag    String?               // Auth tag for decryption
+  providerType String                // "openai" | "local" | "cloudflare"
+  baseUrl      String?               // null for OpenAI (uses default); URL for local or Cloudflare AI Gateway
+  apiKeyEnc    String?               // AES-256-GCM encrypted bearer token (OpenAI key, or CF_AIG_TOKEN for cloudflare)
+  apiKeyIv     String?
+  apiKeyTag    String?
+
+  // Cloudflare AI Gateway — only used when providerType = "cloudflare"
+  cfAigByokAlias String?             // optional BYOK alias (sent as cf-aig-byok-alias header)
+
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt

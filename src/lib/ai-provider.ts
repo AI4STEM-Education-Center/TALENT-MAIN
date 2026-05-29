@@ -2,13 +2,15 @@ import { prisma } from "@/lib/prisma";
 import { decryptApiKey } from "@/lib/crypto";
 
 export type UseCase = "teacher_chat" | "student_chat" | "pdf_description";
+export type ProviderType = "openai" | "local" | "cloudflare";
 
 export interface ResolvedProvider {
-  providerType: "openai" | "local";
+  providerType: ProviderType;
   baseUrl: string | null;
-  apiKey: string | null;
+  apiKey: string | null;          // for cloudflare, this holds CF_AIG_TOKEN
   model: string;
   serviceTier: string | null;
+  cfAigByokAlias: string | null;  // null unless providerType === "cloudflare"
 }
 
 // In-memory cache to avoid per-request DB hits
@@ -27,6 +29,22 @@ export function invalidateProviderCache(useCase?: UseCase) {
   } else {
     _cache.clear();
   }
+}
+
+/**
+ * Extra HTTP headers for a resolved provider.
+ * Currently only used to inject cf-aig-byok-alias for Cloudflare AI Gateway.
+ * The CF_AIG_TOKEN is sent via the standard Authorization: Bearer header
+ * (set by the OpenAI SDK from `apiKey`), matching Cloudflare's compat-mode sample.
+ */
+export function buildProviderHeaders(
+  provider: ResolvedProvider
+): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (provider.providerType === "cloudflare" && provider.cfAigByokAlias) {
+    headers["cf-aig-byok-alias"] = provider.cfAigByokAlias;
+  }
+  return headers;
 }
 
 /**
@@ -62,7 +80,7 @@ export async function resolveProvider(
     return null;
   }
 
-  // Decrypt API key if present
+  // Decrypt API key / CF_AIG_TOKEN if present
   let apiKey: string | null = null;
   if (
     assignment.provider.apiKeyEnc &&
@@ -85,11 +103,12 @@ export async function resolveProvider(
   }
 
   const resolved: ResolvedProvider = {
-    providerType: assignment.provider.providerType as "openai" | "local",
+    providerType: assignment.provider.providerType as ProviderType,
     baseUrl: assignment.provider.baseUrl,
     apiKey,
     model: assignment.model.modelId,
     serviceTier: assignment.model.serviceTier,
+    cfAigByokAlias: assignment.provider.cfAigByokAlias,
   };
 
   // Cache the result
