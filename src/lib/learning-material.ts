@@ -28,6 +28,14 @@ export async function deleteLearningMaterialById(materialId: string): Promise<vo
   await prisma.learningMaterial.delete({ where: { id: materialId } });
 }
 
+/** True when the material is linked to the given class via the MaterialClass junction. */
+export async function materialLinkedToClass(materialId: string, classId: string): Promise<boolean> {
+  const link = await prisma.materialClass.findUnique({
+    where: { materialId_classId: { materialId, classId } },
+  });
+  return link !== null;
+}
+
 export async function resolveLearningMaterialLocation(
   materialId: string
 ): Promise<{ material: LearningMaterial; location: LearningMaterialLocation } | null> {

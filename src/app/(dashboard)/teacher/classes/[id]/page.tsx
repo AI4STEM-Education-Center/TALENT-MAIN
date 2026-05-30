@@ -22,8 +22,12 @@ export default async function ClassDetailPage({ params }: { params: Promise<{ id
       classTopics: { include: { topic: { include: { subtopics: true } } }, orderBy: { topic: { order: "asc" } } },
       invitations: { where: { active: true }, orderBy: { createdAt: "desc" }, take: 3 },
       studentList: { orderBy: [{ lastName: "asc" }, { firstName: "asc" }] },
-      learningMaterials: { orderBy: { createdAt: "desc" }, take: 3 },
-      _count: { select: { enrollments: true, studentList: true, learningMaterials: true } },
+      materialLinks: {
+        orderBy: { material: { createdAt: "desc" } },
+        take: 3,
+        include: { material: true },
+      },
+      _count: { select: { enrollments: true, studentList: true, materialLinks: true } },
     },
   });
 
@@ -109,7 +113,7 @@ export default async function ClassDetailPage({ params }: { params: Promise<{ id
               </Button>
             </CardHeader>
             <CardContent>
-              {cls.learningMaterials.length === 0 ? (
+              {cls.materialLinks.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <p className="mb-3">No materials uploaded yet.</p>
                   <Button size="sm" variant="outline" asChild>
@@ -118,27 +122,35 @@ export default async function ClassDetailPage({ params }: { params: Promise<{ id
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {cls.learningMaterials.map((mat) => (
-                    <div key={mat.id} className="flex items-center justify-between p-3 rounded-lg border">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 bg-blue-50 rounded-md">
-                          <FileText className="size-5 text-blue-600" />
-                        </div>
-                        <div>
-                          <MaterialTitleEdit classId={cls.id} materialId={mat.id} title={mat.title} originalName={mat.originalName} className="font-medium text-sm" />
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-                            <span>{(mat.sizeBytes / 1024 / 1024).toFixed(2)} MB</span>
-                            <span>•</span>
-                            <span>{mat.processingStatus === "SUCCESS" ? "Ready" : mat.processingStatus === "FAILED" ? "Failed" : "Processing"}</span>
+                  {cls.materialLinks.map((link) => {
+                    const mat = link.material;
+                    return (
+                      <div key={mat.id} className="flex items-center justify-between p-3 rounded-lg border">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-blue-50 rounded-md">
+                            <FileText className="size-5 text-blue-600" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <MaterialTitleEdit classId={cls.id} materialId={mat.id} title={mat.title} originalName={mat.originalName} className="font-medium text-sm" />
+                              {mat.classId !== cls.id && (
+                                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Imported</Badge>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+                              <span>{(mat.sizeBytes / 1024 / 1024).toFixed(2)} MB</span>
+                              <span>•</span>
+                              <span>{mat.processingStatus === "SUCCESS" ? "Ready" : mat.processingStatus === "FAILED" ? "Failed" : "Processing"}</span>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
-                  {cls._count.learningMaterials > 3 && (
+                    );
+                  })}
+                  {cls._count.materialLinks > 3 && (
                     <Button variant="ghost" size="sm" className="w-full mt-2" asChild>
                       <Link href={`/teacher/classes/${cls.id}/materials`}>
-                        View all {cls._count.learningMaterials} materials
+                        View all {cls._count.materialLinks} materials
                       </Link>
                     </Button>
                   )}

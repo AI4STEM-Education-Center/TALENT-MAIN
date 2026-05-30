@@ -18,6 +18,7 @@ export interface MaterialItem {
   processingStatus: string;
   errorMessage: string | null;
   createdAt: string | Date;
+  isImported?: boolean;
 }
 
 interface MaterialsListProps {
@@ -100,13 +101,20 @@ export default function MaterialsList({ classId, initialMaterials }: MaterialsLi
                 <FileText className="size-6 text-blue-600" />
               </div>
               <div>
-                <MaterialTitleEdit
-                  classId={classId}
-                  materialId={mat.id}
-                  title={mat.title}
-                  originalName={mat.originalName}
-                  className="text-lg font-medium text-gray-900"
-                />
+                <div className="flex items-center gap-x-2">
+                  <MaterialTitleEdit
+                    classId={classId}
+                    materialId={mat.id}
+                    title={mat.title}
+                    originalName={mat.originalName}
+                    className="text-lg font-medium text-gray-900"
+                  />
+                  {mat.isImported && (
+                    <span className="inline-flex items-center rounded-full bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700">
+                      Imported
+                    </span>
+                  )}
+                </div>
                 <div className="flex items-center gap-x-2 text-sm text-gray-500 mt-1">
                   <span>{(mat.sizeBytes / 1024 / 1024).toFixed(2)} MB</span>
                   <span>•</span>
@@ -163,7 +171,7 @@ export default function MaterialsList({ classId, initialMaterials }: MaterialsLi
                 {mat.processingStatus === "FAILED" && (
                   <MaterialRetryButton classId={classId} materialId={mat.id} />
                 )}
-                <MaterialDeleteButton classId={classId} materialId={mat.id} />
+                <MaterialDeleteButton classId={classId} materialId={mat.id} isImported={mat.isImported} />
               </div>
             </div>
           </div>

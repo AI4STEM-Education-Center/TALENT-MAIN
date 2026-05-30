@@ -32,6 +32,16 @@ export function buildPageStorageKey(teacherId: string, classId: string, material
   return `learning-materials/${teacherId}/${classId}/${materialId}/pages/page-${pageNumber}.png`;
 }
 
+/**
+ * Returns the material directory prefix for a given object storage key, i.e.
+ * everything up to and including the `{materialId}/` segment. Works for both the
+ * original file key and page keys since pages live under `{materialId}/pages/`.
+ * This decouples S3 cleanup from the classId embedded in the key.
+ */
+export function materialPrefixFromStorageKey(storageKey: string): string {
+  return storageKey.slice(0, storageKey.lastIndexOf("/") + 1);
+}
+
 export function getS3Config(): { bucket: string; region: string } {
   const bucket = process.env.AWS_S3_BUCKET;
   const region = process.env.AWS_REGION;

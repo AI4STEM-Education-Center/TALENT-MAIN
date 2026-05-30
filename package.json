@@ -7,6 +7,7 @@
     "seed": "tsx prisma/seed.ts",
     "seed:prebuilt": "tsx prisma/seed-prebuilt.ts",
     "seed:demo": "tsx prisma/seed-demo.ts",
+    "backfill:material-class": "tsx prisma/backfill-material-class.ts",
     "setup": "npm run db:push && npm run seed && npm run seed:demo",
     "dev": "next dev",
     "build": "next build",

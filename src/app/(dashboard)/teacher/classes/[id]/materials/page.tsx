@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import MaterialUploadForm from "./material-upload";
 import Link from "next/link";
 import MaterialsList, { MaterialItem } from "./materials-list";
+import MaterialImportDialog from "./material-import-dialog";
 
 export default async function ClassMaterialsPage(props: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -26,27 +27,36 @@ export default async function ClassMaterialsPage(props: { params: Promise<{ id: 
 
   if (!cls) redirect("/teacher/classes");
 
-  const materials = await prisma.learningMaterial.findMany({
+  const links = await prisma.materialClass.findMany({
     where: { classId },
-    orderBy: { createdAt: "desc" },
+    orderBy: { material: { createdAt: "desc" } },
     select: {
-      id: true,
-      title: true,
-      originalName: true,
-      sizeBytes: true,
-      totalPages: true,
-      processedPages: true,
-      uploadStatus: true,
-      processingStatus: true,
-      errorMessage: true,
-      createdAt: true,
+      material: {
+        select: {
+          id: true,
+          classId: true,
+          title: true,
+          originalName: true,
+          sizeBytes: true,
+          totalPages: true,
+          processedPages: true,
+          uploadStatus: true,
+          processingStatus: true,
+          errorMessage: true,
+          createdAt: true,
+        },
+      },
     },
   });
 
-  const initialMaterials: MaterialItem[] = materials.map((m) => ({
-    ...m,
-    createdAt: m.createdAt.toISOString(),
-  }));
+  const initialMaterials: MaterialItem[] = links.map((link) => {
+    const { classId: originClassId, createdAt, ...rest } = link.material;
+    return {
+      ...rest,
+      createdAt: createdAt.toISOString(),
+      isImported: originClassId !== classId,
+    };
+  });
 
   return (
     <div className="max-w-5xl mx-auto p-6">
@@ -55,12 +65,15 @@ export default async function ClassMaterialsPage(props: { params: Promise<{ id: 
           <h1 className="text-2xl font-bold text-gray-900">Learning Materials</h1>
           <p className="text-gray-600">Upload and manage AI-processed documents for {cls.name}.</p>
         </div>
-        <Link
-          href={`/teacher/classes/${classId}`}
-          className="text-sm font-medium text-blue-600 hover:text-blue-500"
-        >
-          Back to Class
-        </Link>
+        <div className="flex items-center gap-x-6">
+          <MaterialImportDialog classId={classId} />
+          <Link
+            href={`/teacher/classes/${classId}`}
+            className="text-sm font-medium text-blue-600 hover:text-blue-500"
+          >
+            Back to Class
+          </Link>
+        </div>
       </div>
 
       <div className="mb-10">

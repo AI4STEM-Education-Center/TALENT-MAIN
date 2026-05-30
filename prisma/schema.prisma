@@ -41,7 +41,7 @@ model Teacher {
 model LearningMaterial {
   id           String  @id @default(cuid())
   teacherId    String
-  classId      String
+  classId      String?
   title        String?
   originalName String
   mimeType     String
@@ -58,14 +58,30 @@ model LearningMaterial {
   batchKeyConcepts  String  @default("[]")
 
   teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
-  class   Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
+  class   Class?  @relation(fields: [classId], references: [id], onDelete: SetNull)
   pages   MaterialPage[]
+  classLinks MaterialClass[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([teacherId])
   @@index([classId])
+}
+
+// Junction: a material can be shared across multiple of a teacher's classes.
+model MaterialClass {
+  id         String   @id @default(cuid())
+  materialId String
+  classId    String
+  createdAt  DateTime @default(now())
+
+  material LearningMaterial @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  class    Class            @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@unique([materialId, classId])
+  @@index([classId])
+  @@index([materialId])
 }
 
 model MaterialPage {
@@ -114,6 +130,7 @@ model Class {
   quizAttempts   QuizAttempt[]
   studentList    ClassStudentList[]
   learningMaterials LearningMaterial[]
+  materialLinks  MaterialClass[]
 }
 
 model ClassStudentList {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { deleteS3Object, deleteS3Objects, getS3Config, listS3Objects } from "@/lib/storage";
+import { deleteS3Object, deleteS3Objects, getS3Config, listS3Objects, materialPrefixFromStorageKey } from "@/lib/storage";
 
 export const runtime = "nodejs";
 
@@ -45,8 +45,8 @@ export async function DELETE(
       await deleteS3Objects(bucket, pageKeys).catch(console.error);
     }
     
-    // Fallback: list prefix and delete in case DB missed some
-    const prefix = `learning-materials/${material.teacherId}/${material.classId}/${material.id}/pages/`;
+    // Fallback: list the material prefix and delete in case DB missed some
+    const prefix = materialPrefixFromStorageKey(material.storageKey);
     const remainingKeys = await listS3Objects(bucket, prefix);
     if (remainingKeys.length > 0) {
       await deleteS3Objects(bucket, remainingKeys).catch(console.error);

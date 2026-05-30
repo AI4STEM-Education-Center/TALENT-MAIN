@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { deleteS3Objects, listS3Objects, getS3Config } from "@/lib/storage";
+import { deleteS3Objects, listS3Objects, getS3Config, materialPrefixFromStorageKey } from "@/lib/storage";
 import { cancelMaterial } from "@/lib/vlm-engine";
+import { materialLinkedToClass } from "@/lib/learning-material";
 
 export const runtime = "nodejs";
 
@@ -23,10 +24,13 @@ export async function PATCH(
 
   const material = await prisma.learningMaterial.findUnique({
     where: { id: materialId },
-    include: { class: true },
   });
 
-  if (!material || material.classId !== classId || material.class.teacherId !== teacher.id) {
+  if (
+    !material ||
+    material.teacherId !== teacher.id ||
+    !(await materialLinkedToClass(materialId, classId))
+  ) {
     return NextResponse.json({ error: "Material not found" }, { status: 404 });
   }
 
@@ -93,17 +97,32 @@ export async function DELETE(
 
   const material = await prisma.learningMaterial.findUnique({
     where: { id: materialId },
-    include: { class: true },
   });
 
-  if (!material || material.classId !== classId || material.class.teacherId !== teacher.id) {
+  if (
+    !material ||
+    material.teacherId !== teacher.id ||
+    !(await materialLinkedToClass(materialId, classId))
+  ) {
     return NextResponse.json({ error: "Material not found" }, { status: 404 });
   }
 
-  let bucket: string | undefined;
+  // Remove only this class's link.
+  await prisma.materialClass.delete({
+    where: { materialId_classId: { materialId, classId } },
+  });
+
+  // Reference counting: only tear down the underlying material + S3 files
+  // once the last class link is removed.
+  const remaining = await prisma.materialClass.count({ where: { materialId } });
+  if (remaining > 0) {
+    return NextResponse.json({ success: true, deleted: false, remaining });
+  }
 
   // Signal any in-flight processing to stop before we remove the data
   cancelMaterial(materialId);
+
+  let bucket: string | undefined;
   try {
     bucket = getS3Config().bucket;
   } catch (e) {
@@ -113,8 +132,7 @@ export async function DELETE(
   // Cleanup S3 storage if configured
   if (bucket) {
     try {
-      // The prefix for this material is usually learning-materials/{teacherId}/{classId}/{materialId}/
-      const prefix = `learning-materials/${teacher.id}/${classId}/${materialId}/`;
+      const prefix = materialPrefixFromStorageKey(material.storageKey);
       const keys = await listS3Objects(bucket, prefix);
       if (keys.length > 0) {
         await deleteS3Objects(bucket, keys);
@@ -135,5 +153,5 @@ export async function DELETE(
     where: { id: materialId },
   });
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({ success: true, deleted: true });
 }
