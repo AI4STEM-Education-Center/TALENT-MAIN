@@ -7,14 +7,18 @@ import { Trash2, Loader2 } from "lucide-react";
 interface MaterialDeleteButtonProps {
   classId: string;
   materialId: string;
+  isImported?: boolean;
 }
 
-export default function MaterialDeleteButton({ classId, materialId }: MaterialDeleteButtonProps) {
+export default function MaterialDeleteButton({ classId, materialId, isImported }: MaterialDeleteButtonProps) {
   const { refresh } = useRouter();
   const [isDeleting, setIsDeleting] = useState(false);
 
   const handleDelete = async () => {
-    if (!confirm("Are you sure you want to terminate/delete this job and its material?")) return;
+    const message = isImported
+      ? "Remove this material from this class? It stays in your other classes; the file is permanently deleted only if no other class uses it."
+      : "Remove this material from this class? The file is permanently deleted only if no other class uses it.";
+    if (!confirm(message)) return;
 
     setIsDeleting(true);
     try {

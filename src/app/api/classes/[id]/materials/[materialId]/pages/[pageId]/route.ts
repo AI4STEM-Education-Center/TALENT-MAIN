@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { materialLinkedToClass } from "@/lib/learning-material";
 
 export const runtime = "nodejs";
 
@@ -32,7 +33,11 @@ export async function PATCH(
   const material = await prisma.learningMaterial.findUnique({
     where: { id: materialId },
   });
-  if (!material || material.classId !== classId || material.teacherId !== teacher.id) {
+  if (
+    !material ||
+    material.teacherId !== teacher.id ||
+    !(await materialLinkedToClass(materialId, classId))
+  ) {
     return NextResponse.json({ error: "Material not found" }, { status: 404 });
   }
 

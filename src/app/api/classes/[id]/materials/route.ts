@@ -32,24 +32,34 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: "Class not found" }, { status: 404 });
   }
 
-  const items = await prisma.learningMaterial.findMany({
-    where: { classId: classId },
-    orderBy: { createdAt: "desc" },
+  const links = await prisma.materialClass.findMany({
+    where: { classId },
+    orderBy: { material: { createdAt: "desc" } },
     select: {
-      id: true,
-      title: true,
-      originalName: true,
-      mimeType: true,
-      sizeBytes: true,
-      bucket: true,
-      uploadStatus: true,
-      processingStatus: true,
-      totalPages: true,
-      processedPages: true,
-      errorMessage: true,
-      folder: true,
-      createdAt: true,
+      material: {
+        select: {
+          id: true,
+          classId: true,
+          title: true,
+          originalName: true,
+          mimeType: true,
+          sizeBytes: true,
+          bucket: true,
+          uploadStatus: true,
+          processingStatus: true,
+          totalPages: true,
+          processedPages: true,
+          errorMessage: true,
+          folder: true,
+          createdAt: true,
+        },
+      },
     },
+  });
+
+  const items = links.map((link) => {
+    const { classId: originClassId, ...rest } = link.material;
+    return { ...rest, isImported: originClassId !== classId };
   });
 
   return NextResponse.json({ materials: items });

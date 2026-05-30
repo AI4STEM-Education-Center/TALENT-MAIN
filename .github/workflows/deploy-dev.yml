@@ -56,4 +56,7 @@ jobs:
             docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-latest
             docker compose -f docker-compose.dev.yml up -d --force-recreate --no-build
             docker exec adaptive-learning-webapp-dev node prisma/seed-prebuilt.js
+            # TEMPORARY: one-time backfill of the MaterialClass join table from legacy
+            # LearningMaterial.classId. Idempotent (upsert). Remove this step once it has run.
+            docker exec adaptive-learning-webapp-dev node prisma/backfill-material-class.js
             docker image prune -f

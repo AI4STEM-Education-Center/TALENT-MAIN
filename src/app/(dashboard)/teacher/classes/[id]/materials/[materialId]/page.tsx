@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { ArrowLeft, AlertCircle } from "lucide-react";
 import MaterialAnalysisEditor from "./material-analysis-editor";
+import { materialLinkedToClass } from "@/lib/learning-material";
 
 export default async function MaterialViewerPage(props: { params: Promise<{ id: string; materialId: string }> }) {
   const session = await auth();
@@ -29,7 +30,11 @@ export default async function MaterialViewerPage(props: { params: Promise<{ id: 
     },
   });
 
-  if (!material || material.classId !== classId || material.teacherId !== teacher.id) {
+  if (
+    !material ||
+    material.teacherId !== teacher.id ||
+    !(await materialLinkedToClass(materialId, classId))
+  ) {
     redirect(`/teacher/classes/${classId}/materials`);
   }
 

@@ -7,6 +7,7 @@ import {
   presignPutUpload,
   getS3Config,
 } from "@/lib/storage";
+import { materialLinkedToClass } from "@/lib/learning-material";
 
 export const runtime = "nodejs";
 
@@ -31,13 +32,21 @@ export async function POST(
   });
   if (!cls) return NextResponse.json({ error: "Class not found" }, { status: 404 });
 
-  // Verify material belongs to this class and teacher
+  // Verify material is linked to this class and owned by the teacher
   const material = await prisma.learningMaterial.findUnique({
     where: { id: materialId },
   });
-  if (!material || material.classId !== classId || material.teacherId !== teacher.id) {
+  if (
+    !material ||
+    material.teacherId !== teacher.id ||
+    !(await materialLinkedToClass(materialId, classId))
+  ) {
     return NextResponse.json({ error: "Material not found" }, { status: 404 });
   }
+
+  // Page keys are built from the material's origin classId so imported-context
+  // calls still write to the same storage prefix as the original upload.
+  const storageClassId = material.classId ?? classId;
 
   let bucket: string;
   try {
@@ -76,7 +85,7 @@ export async function POST(
         return { pageNumber: page.pageNumber, error: `sizeBytes must be between 1 and ${maxBytes}` };
       }
 
-      const storageKey = buildPageStorageKey(teacher.id, classId, materialId, page.pageNumber);
+      const storageKey = buildPageStorageKey(teacher.id, storageClassId, materialId, page.pageNumber);
       
       try {
         const presignedUrl = await presignPutUpload(bucket, storageKey, mimeType, page.sizeBytes);
