@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { parseQtiQuestionBank } from "@/lib/question-import/qti";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Plus, Pencil, Trash2, Check, X, ArrowLeft, FileQuestion, Upload } from "lucide-react";
 
 type AnswerMode = "SINGLE_SELECT" | "MULTI_SELECT";
@@ -38,6 +39,7 @@ interface ImportSummary { importedCount: number; skippedCount: number; errorCoun
 const emptyOptions = () => [{ id: crypto.randomUUID(), text: "", isCorrect: false }, { id: crypto.randomUUID(), text: "", isCorrect: false }, { id: crypto.randomUUID(), text: "", isCorrect: false }, { id: crypto.randomUUID(), text: "", isCorrect: false }];
 
 function QuestionsContent() {
+  const confirm = useConfirm();
   const searchParams = useSearchParams();
   const filterSubtopicId = searchParams.get("subtopicId") || "";
   const filterTopicId = searchParams.get("topicId") || "";
@@ -138,7 +140,12 @@ function QuestionsContent() {
   }
 
   async function deleteQuestion(id: string) {
-    if (!confirm("Delete this question?")) return;
+    const ok = await confirm({
+      title: "Delete this question?",
+      confirmText: "Delete",
+      variant: "destructive",
+    });
+    if (!ok) return;
     await fetch("/api/questions", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
     setQuestions((prev) => prev.filter((q) => q.id !== id));
   }

@@ -56,10 +56,4 @@ jobs:
             docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-latest
             docker compose -f docker-compose.dev.yml up -d --force-recreate --no-build
             docker exec adaptive-learning-webapp-dev node prisma/seed-prebuilt.js
-            # Reconcile the MaterialClass join table from legacy LearningMaterial.classId.
-            # Idempotent (upsert) and the script waits for the schema migration to finish,
-            # so it is safe to re-run. Fail the deploy loudly if it errors -- the first run
-            # raced `db push` and failed silently, which is why the links were never created.
-            docker exec adaptive-learning-webapp-dev node prisma/backfill-material-class.js \
-              || { echo "::error::MaterialClass backfill failed"; exit 1; }
             docker image prune -f

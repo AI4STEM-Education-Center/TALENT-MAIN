@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { RotateCcw, Loader2 } from "lucide-react";
+import { useConfirm, useAlert } from "@/components/ui/confirm-dialog";
 
 interface MaterialRetryButtonProps {
   classId: string;
@@ -11,10 +12,16 @@ interface MaterialRetryButtonProps {
 
 export default function MaterialRetryButton({ classId, materialId }: MaterialRetryButtonProps) {
   const { refresh } = useRouter();
+  const confirm = useConfirm();
+  const alert = useAlert();
   const [isRetrying, setIsRetrying] = useState(false);
 
   const handleRetry = async () => {
-    if (!confirm("Retry processing this material?")) return;
+    const ok = await confirm({
+      title: "Retry processing this material?",
+      confirmText: "Retry",
+    });
+    if (!ok) return;
 
     setIsRetrying(true);
     try {
@@ -29,7 +36,7 @@ export default function MaterialRetryButton({ classId, materialId }: MaterialRet
       refresh();
     } catch (err) {
       console.error(err);
-      alert("An error occurred while retrying the material.");
+      await alert("An error occurred while retrying the material.");
     } finally {
       setIsRetrying(false);
     }
