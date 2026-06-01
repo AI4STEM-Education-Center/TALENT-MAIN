@@ -146,6 +146,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       uploadStatus: "PENDING",
       processingStatus: "IDLE",
       totalPages,
+      // Link the material to its origin class. MaterialClass is the source of
+      // truth for which classes show a material, so without this link the
+      // upload is invisible in the class and the pages/complete steps (which
+      // gate on materialLinkedToClass) would 404.
+      classLinks: {
+        create: { classId },
+      },
     },
   });
 
