@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   Folder,
   FolderOpen,
@@ -65,6 +66,7 @@ function totalMaterialCount(group: TeacherGroup): number {
 }
 
 export default function AdminMaterialsPage() {
+  const confirm = useConfirm();
   const [materials, setMaterials] = useState<Material[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTeacher, setSelectedTeacher] = useState<string | null>(null);
@@ -111,7 +113,12 @@ export default function AdminMaterialsPage() {
   };
 
   const handleRegenerate = async (materialId: string) => {
-    if (!confirm("This will fully re-process all pages from scratch. Continue?")) return;
+    const ok = await confirm({
+      title: "Re-process this material?",
+      description: "This will fully re-process all pages from scratch.",
+      confirmText: "Re-process",
+    });
+    if (!ok) return;
     try {
       await fetch(`/api/admin/materials/${materialId}/regenerate`, { method: "POST" });
       fetchMaterials();
@@ -121,7 +128,13 @@ export default function AdminMaterialsPage() {
   };
 
   const handleDelete = async (materialId: string) => {
-    if (!confirm("Are you sure you want to delete this material and all its files?")) return;
+    const ok = await confirm({
+      title: "Delete this material?",
+      description: "This permanently deletes the material and all of its files. This cannot be undone.",
+      confirmText: "Delete",
+      variant: "destructive",
+    });
+    if (!ok) return;
     try {
       await fetch(`/api/admin/materials/${materialId}`, { method: "DELETE" });
       fetchMaterials();

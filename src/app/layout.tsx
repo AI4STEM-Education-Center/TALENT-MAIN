@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import Chatbot from "@/components/Chatbot";
+import { ConfirmDialogProvider } from "@/components/ui/confirm-dialog";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -23,8 +24,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        {children}
-        <Chatbot />
+        <ConfirmDialogProvider>
+          {children}
+          <Chatbot />
+        </ConfirmDialogProvider>
       </body>
     </html>
   );

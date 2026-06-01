@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { ArrowLeft, Plus, Eye, EyeOff, Trash2, BookOpen } from "lucide-react";
 
 interface Subtopic { id: string; name: string; order: number }
@@ -14,6 +15,7 @@ interface ClassTopic { id: string; topicId: string; published: boolean; topic: T
 export default function ClassTopicsPage() {
   const { id: classId } = useParams<{ id: string }>();
   const router = useRouter();
+  const confirm = useConfirm();
   const [classTopics, setClassTopics] = useState<ClassTopic[]>([]);
   const [allTopics, setAllTopics] = useState<Topic[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,7 +62,12 @@ export default function ClassTopicsPage() {
   }
 
   async function removeTopic(topicId: string) {
-    if (!confirm("Remove this topic from the class?")) return;
+    const ok = await confirm({
+      title: "Remove this topic from the class?",
+      confirmText: "Remove",
+      variant: "destructive",
+    });
+    if (!ok) return;
     const res = await fetch(`/api/classes/${classId}/topics`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },

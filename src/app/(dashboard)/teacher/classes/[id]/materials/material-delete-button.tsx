@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2, Loader2 } from "lucide-react";
+import { useConfirm, useAlert } from "@/components/ui/confirm-dialog";
 
 interface MaterialDeleteButtonProps {
   classId: string;
@@ -12,13 +13,21 @@ interface MaterialDeleteButtonProps {
 
 export default function MaterialDeleteButton({ classId, materialId, isImported }: MaterialDeleteButtonProps) {
   const { refresh } = useRouter();
+  const confirm = useConfirm();
+  const alert = useAlert();
   const [isDeleting, setIsDeleting] = useState(false);
 
   const handleDelete = async () => {
-    const message = isImported
-      ? "Remove this material from this class? It stays in your other classes; the file is permanently deleted only if no other class uses it."
-      : "Remove this material from this class? The file is permanently deleted only if no other class uses it.";
-    if (!confirm(message)) return;
+    const description = isImported
+      ? "It stays in your other classes; the file is permanently deleted only if no other class uses it."
+      : "The file is permanently deleted only if no other class uses it.";
+    const ok = await confirm({
+      title: "Remove this material from this class?",
+      description,
+      confirmText: "Remove",
+      variant: "destructive",
+    });
+    if (!ok) return;
 
     setIsDeleting(true);
     try {
@@ -33,7 +42,7 @@ export default function MaterialDeleteButton({ classId, materialId, isImported }
       refresh();
     } catch (err) {
       console.error(err);
-      alert("An error occurred while deleting the material.");
+      await alert("An error occurred while deleting the material.");
     } finally {
       setIsDeleting(false);
     }

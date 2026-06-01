@@ -4,6 +4,7 @@ import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useAlert } from "@/components/ui/confirm-dialog";
 import { Search, Trash2, Shield, Users, GraduationCap } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +20,7 @@ interface User {
 
 export default function AdminUsersPage() {
   const { data: session } = useSession();
+  const alert = useAlert();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -55,11 +57,11 @@ export default function AdminUsersPage() {
         setDeleteUser(null);
       } else {
         const data = await res.json();
-        alert(data.error || "Failed to delete user");
+        await alert({ title: "Couldn't delete user", description: data.error || "Failed to delete user" });
       }
     } catch (err) {
       console.error("Error deleting user", err);
-      alert("Error deleting user");
+      await alert({ title: "Couldn't delete user", description: "Error deleting user" });
     } finally {
       setIsDeleting(false);
     }

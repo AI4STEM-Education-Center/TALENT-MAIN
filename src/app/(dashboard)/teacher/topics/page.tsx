@@ -5,12 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Plus, BookOpen, ChevronRight, Pencil, Trash2, Check, X } from "lucide-react";
 
 interface Subtopic { id: string; name: string; order: number }
 interface Topic { id: string; name: string; order: number; subtopics: Subtopic[]; _count: { questions: number } }
 
 export default function TopicsPage() {
+  const confirm = useConfirm();
   const [topics, setTopics] = useState<Topic[]>([]);
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState("");
@@ -39,7 +41,13 @@ export default function TopicsPage() {
   }
 
   async function deleteTopic(id: string) {
-    if (!confirm("Delete this topic and all its subtopics and questions?")) return;
+    const ok = await confirm({
+      title: "Delete this topic?",
+      description: "This removes the topic and all of its subtopics and questions. This cannot be undone.",
+      confirmText: "Delete",
+      variant: "destructive",
+    });
+    if (!ok) return;
     const res = await fetch("/api/topics", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },

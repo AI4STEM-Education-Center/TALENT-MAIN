@@ -8,6 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   AlertTriangle,
   Check,
@@ -107,6 +108,7 @@ const EMPTY_MODEL_FORM: ModelForm = {
 // ─── Component ──────────────────────────────────────────────────────────────────
 
 export default function AiConfigPage() {
+  const confirm = useConfirm();
   const [providers, setProviders] = useState<AiProvider[]>([]);
   const [assignments, setAssignments] = useState<Assignments>({});
   const [loading, setLoading] = useState(true);
@@ -216,9 +218,13 @@ export default function AiConfigPage() {
   };
 
   const handleDeleteProvider = async (id: string) => {
-    if (!window.confirm("Delete this provider? All associated models and assignments will be removed.")) {
-      return;
-    }
+    const ok = await confirm({
+      title: "Delete this provider?",
+      description: "All associated models and assignments will be removed.",
+      confirmText: "Delete",
+      variant: "destructive",
+    });
+    if (!ok) return;
     try {
       const res = await fetch(`/api/admin/ai-providers/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to delete provider");
