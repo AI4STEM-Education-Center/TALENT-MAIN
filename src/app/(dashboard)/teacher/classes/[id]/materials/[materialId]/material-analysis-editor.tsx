@@ -341,10 +341,11 @@ export default function MaterialAnalysisEditor({
                       </div>
 
                       <div>
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                        <label htmlFor={`key-concept-${page.id}`} className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
                           Key concept
                         </label>
                         <Input
+                          id={`key-concept-${page.id}`}
                           value={page.keyConcept}
                           onChange={(e) => updatePageField(page.id, "keyConcept", e.target.value)}
                           placeholder="Short key concept"
@@ -354,10 +355,11 @@ export default function MaterialAnalysisEditor({
                       </div>
 
                       <div>
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                        <label htmlFor={`description-${page.id}`} className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
                           Description
                         </label>
                         <Textarea
+                          id={`description-${page.id}`}
                           value={page.description}
                           onChange={(e) => updatePageField(page.id, "description", e.target.value)}
                           placeholder="Describe what students should learn from this page."

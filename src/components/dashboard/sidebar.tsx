@@ -32,6 +32,25 @@ interface SidebarProps {
   onMobileClose?: () => void;
 }
 
+const teacherNav: NavItem[] = [
+  { href: "/teacher", label: "Dashboard", icon: <LayoutDashboard className="size-4" /> },
+  { href: "/teacher/classes", label: "My Classes", icon: <Users className="size-4" /> },
+  { href: "/teacher/topics", label: "Topics & Modules", icon: <BookOpen className="size-4" /> },
+  { href: "/teacher/questions", label: "Question Bank", icon: <FileQuestion className="size-4" /> },
+];
+
+const studentNav: NavItem[] = [
+  { href: "/student", label: "Dashboard", icon: <LayoutDashboard className="size-4" /> },
+  { href: "/student/classes", label: "My Classes", icon: <GraduationCap className="size-4" /> },
+];
+
+const adminNav: NavItem[] = [
+  { href: "/admin", label: "Overview", icon: <LayoutDashboard className="size-4" /> },
+  { href: "/admin/materials", label: "Materials Processing", icon: <FolderOpen className="size-4" /> },
+  { href: "/admin/users", label: "Users", icon: <Users className="size-4" /> },
+  { href: "/admin/ai-config", label: "AI Config", icon: <Settings className="size-4" /> },
+];
+
 function SidebarContent({
   role,
   firstName,
@@ -46,25 +65,6 @@ function SidebarContent({
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
-
-  const teacherNav: NavItem[] = [
-    { href: "/teacher", label: "Dashboard", icon: <LayoutDashboard className="size-4" /> },
-    { href: "/teacher/classes", label: "My Classes", icon: <Users className="size-4" /> },
-    { href: "/teacher/topics", label: "Topics & Modules", icon: <BookOpen className="size-4" /> },
-    { href: "/teacher/questions", label: "Question Bank", icon: <FileQuestion className="size-4" /> },
-  ];
-
-  const studentNav: NavItem[] = [
-    { href: "/student", label: "Dashboard", icon: <LayoutDashboard className="size-4" /> },
-    { href: "/student/classes", label: "My Classes", icon: <GraduationCap className="size-4" /> },
-  ];
-
-  const adminNav: NavItem[] = [
-    { href: "/admin", label: "Overview", icon: <LayoutDashboard className="size-4" /> },
-    { href: "/admin/materials", label: "Materials Processing", icon: <FolderOpen className="size-4" /> },
-    { href: "/admin/users", label: "Users", icon: <Users className="size-4" /> },
-    { href: "/admin/ai-config", label: "AI Config", icon: <Settings className="size-4" /> },
-  ];
 
   const navItems = role === "ADMIN" ? adminNav : role === "TEACHER" ? teacherNav : studentNav;
 

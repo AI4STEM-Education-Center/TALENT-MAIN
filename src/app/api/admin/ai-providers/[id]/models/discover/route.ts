@@ -88,17 +88,17 @@ export async function POST(
 
     const modelIds = Array.from(
       new Set(
-        rawModels
-          .map((entry: unknown) => {
-            if (typeof entry === "string") return entry.trim();
-            if (entry && typeof entry === "object") {
-              const obj = entry as { id?: unknown; name?: unknown; model?: unknown };
-              const id = obj.id ?? obj.name ?? obj.model;
-              return typeof id === "string" ? id.trim() : "";
-            }
-            return "";
-          })
-          .filter(Boolean)
+        rawModels.flatMap((entry: unknown) => {
+          let id = "";
+          if (typeof entry === "string") {
+            id = entry.trim();
+          } else if (entry && typeof entry === "object") {
+            const obj = entry as { id?: unknown; name?: unknown; model?: unknown };
+            const raw = obj.id ?? obj.name ?? obj.model;
+            id = typeof raw === "string" ? raw.trim() : "";
+          }
+          return id ? [id] : [];
+        })
       )
     ).sort((a, b) => a.localeCompare(b));
 

@@ -123,14 +123,17 @@ export default function MaterialUploadForm({ classId }: MaterialUploadProps) {
         let uploadedCount = 0;
         const uploadedPagesForComplete: { pageNumber: number; storageKey: string }[] = [];
 
+        // Index page blobs by page number for O(1) lookup during upload
+        const blobsByPageNumber = new Map(pageBlobs.map((p) => [p.pageNumber, p]));
+
         // Upload in batches of 5 to avoid overwhelming network
         for (let i = 0; i < pageUrls.length; i += 5) {
           const batch = pageUrls.slice(i, i + 5);
           await Promise.all(
             batch.map(async (pageData: any) => {
               if (pageData.error) throw new Error(`Server error for page ${pageData.pageNumber}: ${pageData.error}`);
-              
-              const blobData = pageBlobs.find((p) => p.pageNumber === pageData.pageNumber);
+
+              const blobData = blobsByPageNumber.get(pageData.pageNumber);
               if (!blobData) throw new Error(`Missing blob for page ${pageData.pageNumber}`);
 
               const res = await fetch(pageData.presignedUrl, {

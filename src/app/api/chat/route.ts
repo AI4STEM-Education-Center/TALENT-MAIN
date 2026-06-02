@@ -63,9 +63,9 @@ function buildQuizReviewPrompt(attempt: {
   ];
 
   incorrectAnswers.forEach((answer, index) => {
-    const correctOptions = answer.question.options
-      .filter((option) => option.isCorrect)
-      .map((option) => option.text);
+    const correctOptions = answer.question.options.flatMap((option) =>
+      option.isCorrect ? [option.text] : []
+    );
 
     lines.push(
       `${index + 1}. Question: ${answer.question.text}`,

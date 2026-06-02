@@ -106,7 +106,7 @@ export async function PATCH(req: NextRequest) {
         : [];
 
     const selectedSet = new Set(selectedOptionIds);
-    const correctOptionIds = question.options.filter((option) => option.isCorrect).map((option) => option.id);
+    const correctOptionIds = question.options.flatMap((option) => (option.isCorrect ? [option.id] : []));
     const isCorrect =
       question.answerMode === "MULTI_SELECT"
         ? selectedSet.size === correctOptionIds.length && correctOptionIds.every((id) => selectedSet.has(id))

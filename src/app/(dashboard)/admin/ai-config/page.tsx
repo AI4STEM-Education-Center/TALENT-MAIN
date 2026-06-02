@@ -516,7 +516,7 @@ export default function AiConfigPage() {
                   />
                 </div>
                 <div>
-                  <label id="provider-type-label" className="block text-sm font-medium mb-1">Type</label>
+                  <label id="provider-type-label" htmlFor="provider-type" className="block text-sm font-medium mb-1">Type</label>
                   <Select
                     aria-labelledby="provider-type-label"
                     value={providerForm.providerType}
@@ -527,7 +527,7 @@ export default function AiConfigPage() {
                       }))
                     }
                   >
-                    <SelectTrigger className="h-10">
+                    <SelectTrigger id="provider-type" className="h-10">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -995,7 +995,7 @@ export default function AiConfigPage() {
 
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div>
-                      <label id={`provider-label-${useCase}`} className="block text-xs font-medium text-muted-foreground mb-1">
+                      <label id={`provider-label-${useCase}`} htmlFor={`provider-select-${useCase}`} className="block text-xs font-medium text-muted-foreground mb-1">
                         Provider
                       </label>
                       <Select
@@ -1009,32 +1009,34 @@ export default function AiConfigPage() {
                           )
                         }
                       >
-                        <SelectTrigger className="h-9">
+                        <SelectTrigger id={`provider-select-${useCase}`} className="h-9">
                           <SelectValue placeholder="Select a provider" />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="none"> -  Not assigned - </SelectItem>
-                          {providers
-                            .filter((p) => p.isActive)
-                            .map((p) => (
-                              <SelectItem key={p.id} value={p.id}>
-                                <span className="flex items-center gap-2">
-                                  {p.providerType === "openai" ? (
-                                    <Globe className="size-3" />
-                                  ) : p.providerType === "cloudflare" ? (
-                                    <Cloud className="size-3" />
-                                  ) : (
-                                    <Monitor className="size-3" />
-                                  )}
-                                  {p.name}
-                                </span>
-                              </SelectItem>
-                            ))}
+                          {providers.flatMap((p) =>
+                            p.isActive
+                              ? [
+                                  <SelectItem key={p.id} value={p.id}>
+                                    <span className="flex items-center gap-2">
+                                      {p.providerType === "openai" ? (
+                                        <Globe className="size-3" />
+                                      ) : p.providerType === "cloudflare" ? (
+                                        <Cloud className="size-3" />
+                                      ) : (
+                                        <Monitor className="size-3" />
+                                      )}
+                                      {p.name}
+                                    </span>
+                                  </SelectItem>,
+                                ]
+                              : []
+                          )}
                         </SelectContent>
                       </Select>
                     </div>
                     <div>
-                      <label id={`model-label-${useCase}`} className="block text-xs font-medium text-muted-foreground mb-1">
+                      <label id={`model-label-${useCase}`} htmlFor={`model-select-${useCase}`} className="block text-xs font-medium text-muted-foreground mb-1">
                         Model
                       </label>
                       <Select
