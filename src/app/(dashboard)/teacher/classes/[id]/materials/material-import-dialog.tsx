@@ -110,7 +110,7 @@ export default function MaterialImportDialog({ classId }: MaterialImportDialogPr
         <DialogHeader>
           <DialogTitle>Import Materials</DialogTitle>
           <DialogDescription>
-            Share a material from another of your classes. The same file is reused — no re-upload needed.
+            Share a material from another of your classes. The same file is reused, so no re-upload is needed.
           </DialogDescription>
         </DialogHeader>
 

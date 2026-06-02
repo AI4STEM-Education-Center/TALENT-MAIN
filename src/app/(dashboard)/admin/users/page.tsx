@@ -18,6 +18,14 @@ interface User {
   createdAt: string;
 }
 
+const getRoleIcon = (role: string) => {
+  switch (role) {
+    case "ADMIN": return <Shield className="size-4 text-purple-500" />;
+    case "TEACHER": return <Users className="size-4 text-blue-500" />;
+    default: return <GraduationCap className="size-4 text-green-500" />;
+  }
+};
+
 export default function AdminUsersPage() {
   const { data: session } = useSession();
   const alert = useAlert();
@@ -76,14 +84,6 @@ export default function AdminUsersPage() {
       u.lastName.toLowerCase().includes(term)
     );
   });
-
-  const getRoleIcon = (role: string) => {
-    switch (role) {
-      case "ADMIN": return <Shield className="size-4 text-purple-500" />;
-      case "TEACHER": return <Users className="size-4 text-blue-500" />;
-      default: return <GraduationCap className="size-4 text-green-500" />;
-    }
-  };
 
   return (
     <div className="p-8 max-w-7xl mx-auto">

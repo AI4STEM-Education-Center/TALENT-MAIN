@@ -210,7 +210,7 @@ export default function AdminMaterialsPage() {
                 className="text-left"
               >
                 <Card className="hover:bg-accent/50 transition-colors cursor-pointer">
-                  <CardHeader className="flex flex-row items-center gap-3 space-y-0 pb-2">
+                  <CardHeader className="flex flex-row items-center gap-3 gap-y-0 pb-2">
                     <Folder className="size-5 text-blue-500 shrink-0" />
                     <CardTitle className="text-base font-semibold">
                       {group.displayName === group.username
@@ -250,7 +250,7 @@ export default function AdminMaterialsPage() {
                   className="text-left"
                 >
                   <Card className="hover:bg-accent/50 transition-colors cursor-pointer">
-                    <CardHeader className="flex flex-row items-center gap-3 space-y-0 pb-2">
+                    <CardHeader className="flex flex-row items-center gap-3 gap-y-0 pb-2">
                       <FolderOpen className="size-5 text-amber-500 shrink-0" />
                       <CardTitle className="text-base font-semibold">{className}</CardTitle>
                     </CardHeader>

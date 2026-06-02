@@ -53,7 +53,7 @@ export function getS3Config(): { bucket: string; region: string } {
 
 let s3Client: S3Client | null = null;
 
-export function getS3Client(): S3Client {
+function getS3Client(): S3Client {
   if (!s3Client) {
     const endpoint = process.env.AWS_S3_ENDPOINT;
     s3Client = new S3Client({
@@ -97,14 +97,6 @@ export async function headS3Object(bucket: string, key: string): Promise<{ conte
   const out = await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
   const len = out.ContentLength ?? 0;
   return { contentLength: len };
-}
-
-export async function readS3ObjectBytes(bucket: string, key: string): Promise<Buffer> {
-  const client = getS3Client();
-  const out = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
-  const body = out.Body;
-  if (!body) throw new Error("Empty S3 object body");
-  return Buffer.from(await body.transformToByteArray());
 }
 
 export async function deleteS3Object(bucket: string, key: string): Promise<void> {
