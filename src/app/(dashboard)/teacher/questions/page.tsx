@@ -261,7 +261,7 @@ function QuestionsContent() {
             </div>
             <div className="space-y-2">
               <Label>Source folder/path (optional)</Label>
-              <Input value={importSourcePath} onChange={(e) => setImportSourcePath(e.target.value)} placeholder="e.g. data/3_Forces/PHY1-F-IFBDF-091725" />
+              <Input value={importSourcePath} onChange={(e) => setImportSourcePath(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !importBusy && importTopicId && importSubtopicId && importFile) importQuestions(); }} placeholder="e.g. data/3_Forces/PHY1-F-IFBDF-091725" />
             </div>
           </div>
           <Button onClick={importQuestions} disabled={importBusy || !importTopicId || !importSubtopicId || !importFile}>
