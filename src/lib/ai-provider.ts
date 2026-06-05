@@ -130,3 +130,28 @@ export function roleToChatUseCase(
   // ADMIN and TEACHER both use teacher_chat
   return "teacher_chat";
 }
+
+/**
+ * Construct an OpenAI SDK client from a resolved provider. Mirrors the inline
+ * client setup in the chat route: local/cloudflare providers point the SDK at
+ * their base URL (with any trailing `/chat/completions` stripped), while OpenAI
+ * uses the default endpoint. Cloudflare's BYOK alias header is injected via
+ * `buildProviderHeaders`.
+ */
+export async function createOpenAIClient(provider: ResolvedProvider) {
+  const { OpenAI } = await import("openai");
+
+  const isLocal = provider.providerType === "local";
+  const isCloudflare = provider.providerType === "cloudflare";
+
+  let baseURL: string | undefined;
+  if ((isLocal || isCloudflare) && provider.baseUrl) {
+    baseURL = provider.baseUrl.replace(/\/+$/, "").replace(/\/chat\/completions$/, "");
+  }
+
+  return new OpenAI({
+    apiKey: provider.apiKey || "dummy-key-for-local",
+    baseURL,
+    defaultHeaders: buildProviderHeaders(provider),
+  });
+}

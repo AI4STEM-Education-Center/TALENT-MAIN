@@ -1,15 +1,37 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Eraser, MessageCircle, Send, Square, X } from "lucide-react";
+import { BookOpen, Eraser, MessageCircle, Send, Square, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { Rnd } from "react-rnd";
 import remarkGfm from "remark-gfm";
 
-type Message = {
+type Recommendation = {
+  questionText: string;
+  materialTitle: string;
+  pageRange: { start: number; end: number };
+  fileReason: string;
+  pageReason: string;
+  pages: { pageNumber: number; imageUrl: string }[];
+};
+
+type TextMessage = {
   role: "user" | "assistant";
   content: string;
 };
+
+type RecommendationsMessage = {
+  role: "assistant";
+  kind: "recommendations";
+  recommendations: Recommendation[];
+  truncated?: boolean;
+};
+
+type Message = TextMessage | RecommendationsMessage;
+
+function isRecommendationsMessage(message: Message): message is RecommendationsMessage {
+  return "kind" in message && message.kind === "recommendations";
+}
 
 type ChatMode = "chat" | "quiz-review";
 
@@ -38,9 +60,10 @@ function getInitialMessages(): Message[] {
   return [{ role: "assistant", content: INITIAL_ASSISTANT_MESSAGE }];
 }
 
-function getApiMessages(messages: Message[]) {
+function getApiMessages(messages: Message[]): TextMessage[] {
   return messages.filter(
-    (message, index) =>
+    (message, index): message is TextMessage =>
+      !isRecommendationsMessage(message) &&
       !(index === 0 && message.role === "assistant" && message.content === INITIAL_ASSISTANT_MESSAGE)
   );
 }
@@ -112,6 +135,7 @@ export default function Chatbot() {
   const [messages, setMessages] = useState<Message[]>(getInitialMessages);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isRecommending, setIsRecommending] = useState(false);
   const hasAutoReviewTriggeredRef = useRef(false);
   const [viewportSize, setViewportSize] = useState<ViewportSize>({ width: 0, height: 0 });
   const [panelState, setPanelState] = useState<PanelState | null>(null);
@@ -127,7 +151,7 @@ export default function Chatbot() {
     if (isOpen) {
       scrollToBottom();
     }
-  }, [messages, isOpen]);
+  }, [messages, isOpen, isRecommending]);
 
   useEffect(() => {
     const syncViewport = () => {
@@ -148,10 +172,13 @@ export default function Chatbot() {
     if (!isOpen || hasAutoReviewTriggeredRef.current) return;
 
     hasAutoReviewTriggeredRef.current = true;
-    void sendRequest({
-      messages: getInitialMessages(),
-      mode: "quiz-review",
-    });
+    void (async () => {
+      await sendRequest({
+        messages: getInitialMessages(),
+        mode: "quiz-review",
+      });
+      await fetchRecommendations();
+    })();
   }, [isOpen]);
 
   const cancelActiveRequest = () => {
@@ -159,6 +186,7 @@ export default function Chatbot() {
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
     setIsLoading(false);
+    setIsRecommending(false);
   };
 
   const resetConversation = () => {
@@ -265,7 +293,7 @@ export default function Chatbot() {
 
                     const nextMessages = [...prev];
                     const lastMessage = nextMessages[nextMessages.length - 1];
-                    if (lastMessage.content) {
+                    if (isRecommendationsMessage(lastMessage) || lastMessage.content) {
                       return prev;
                     }
 
@@ -365,6 +393,46 @@ export default function Chatbot() {
     }
   };
 
+  const fetchRecommendations = async () => {
+    const requestId = activeRequestIdRef.current;
+    setIsRecommending(true);
+
+    try {
+      const response = await fetch("/api/chat/recommend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      const data = await response.json();
+      if (activeRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      const recommendations = data?.recommendations;
+      if (Array.isArray(recommendations) && recommendations.length > 0) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            kind: "recommendations",
+            recommendations: recommendations as Recommendation[],
+            truncated: data?.truncated === true,
+          },
+        ]);
+      }
+    } catch {
+      // The text review is already shown; silently skip recommendations on error.
+    } finally {
+      if (activeRequestIdRef.current === requestId) {
+        setIsRecommending(false);
+      }
+    }
+  };
+
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
 
@@ -442,26 +510,81 @@ export default function Chatbot() {
             </div>
 
             <div className="chatbot-no-drag flex-1 space-y-4 overflow-y-auto bg-gray-50 p-4 dark:bg-gray-950">
-              {messages.map((message, index) => (
-                <div
-                  key={`${index}-${message.role}-${message.content.substring(0, 20)}`}
-                  className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
-                >
+              {messages.map((message, index) => {
+                if (isRecommendationsMessage(message)) {
+                  return (
+                    <div key="recommendations-message" className="flex justify-start">
+                      <div className="w-full max-w-[90%] space-y-3">
+                        <p className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300">
+                          <BookOpen size={14} /> Recommended materials
+                        </p>
+                        {message.recommendations.map((rec) => (
+                          <div
+                            key={`${rec.questionText}-${rec.materialTitle}-${rec.pageRange.start}`}
+                            className="rounded-2xl rounded-tl-sm border border-gray-100 bg-white p-3 text-sm shadow-sm dark:border-gray-700 dark:bg-gray-800"
+                          >
+                            <p className="mb-1 text-xs text-gray-500 dark:text-gray-400">
+                              For: <span className="italic">{rec.questionText}</span>
+                            </p>
+                            <p className="font-medium text-gray-800 dark:text-gray-100">
+                              {rec.materialTitle}
+                              <span className="ml-1 font-normal text-gray-500 dark:text-gray-400">
+                                ·{" "}
+                                {rec.pageRange.start === rec.pageRange.end
+                                  ? `page ${rec.pageRange.start}`
+                                  : `pages ${rec.pageRange.start}–${rec.pageRange.end}`}
+                              </span>
+                            </p>
+                            {(rec.pageReason || rec.fileReason) && (
+                              <p className="mt-1 text-xs text-gray-600 dark:text-gray-300">
+                                {rec.pageReason || rec.fileReason}
+                              </p>
+                            )}
+                            <div className="mt-2 max-h-72 space-y-2 overflow-y-auto">
+                              {rec.pages.map((pg) => (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  key={pg.pageNumber}
+                                  src={pg.imageUrl}
+                                  alt={`Page ${pg.pageNumber} of ${rec.materialTitle}`}
+                                  loading="lazy"
+                                  className="h-auto w-full rounded-lg border border-gray-200 dark:border-gray-700"
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                        {message.truncated && (
+                          <p className="text-xs text-gray-400">
+                            You missed more questions than shown here. Start with these.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
                   <div
-                    className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm ${
-                      message.role === "user"
-                        ? "rounded-tr-sm bg-blue-600 whitespace-pre-wrap text-white"
-                        : `rounded-tl-sm border border-gray-100 bg-white text-gray-800 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 ${ASSISTANT_MARKDOWN_CLASS_NAME}`
-                    }`}
+                    key={`${index}-${message.role}-${message.content.substring(0, 20)}`}
+                    className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
                   >
-                    {message.role === "assistant" ? (
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
-                    ) : (
-                      message.content
-                    )}
+                    <div
+                      className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm ${
+                        message.role === "user"
+                          ? "rounded-tr-sm bg-blue-600 whitespace-pre-wrap text-white"
+                          : `rounded-tl-sm border border-gray-100 bg-white text-gray-800 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 ${ASSISTANT_MARKDOWN_CLASS_NAME}`
+                      }`}
+                    >
+                      {message.role === "assistant" ? (
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+                      ) : (
+                        message.content
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
               {isLoading && (
                 <div className="flex justify-start">
                   <div className="flex items-center gap-x-1 rounded-2xl rounded-tl-sm border border-gray-100 bg-white px-4 py-2 shadow-sm dark:border-gray-700 dark:bg-gray-800">
@@ -474,6 +597,14 @@ export default function Chatbot() {
                       className="size-2 rounded-full bg-gray-400 animate-pulse"
                       style={{ animationDelay: "0.4s" }}
                     ></div>
+                  </div>
+                </div>
+              )}
+              {isRecommending && (
+                <div className="flex justify-start">
+                  <div className="flex items-center gap-x-2 rounded-2xl rounded-tl-sm border border-gray-100 bg-white px-4 py-2 text-xs text-gray-500 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
+                    <div className="size-2 rounded-full bg-gray-400 animate-pulse"></div>
+                    Finding materials to help you…
                   </div>
                 </div>
               )}
