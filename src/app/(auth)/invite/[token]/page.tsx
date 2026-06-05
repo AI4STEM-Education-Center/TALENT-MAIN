@@ -60,7 +60,8 @@ function InviteContent() {
       .catch(() => { setError("Failed to validate invitation."); setLoading(false); });
   }, [token]);
 
-  async function handleVerify() {
+  async function handleVerify(e?: React.FormEvent) {
+    e?.preventDefault();
     const cleanId = orgDefinedId.replace(/^#/, "").trim();
     if (!cleanId) {
       setLookupResult({ found: false, error: "Please enter your 81 number." });
@@ -202,7 +203,7 @@ function InviteContent() {
                 <Label htmlFor="orgDefinedId" className="text-sm font-medium">
                   Enter your 81 Number to verify your identity
                 </Label>
-                <div className="flex gap-2">
+                <form onSubmit={handleVerify} className="flex gap-2">
                   <Input
                     id="orgDefinedId"
                     value={orgDefinedId}
@@ -215,13 +216,12 @@ function InviteContent() {
                     className="font-mono"
                   />
                   <Button
-                    type="button"
-                    onClick={handleVerify}
+                    type="submit"
                     disabled={lookupLoading || !orgDefinedId.trim()}
                   >
                     {lookupLoading ? <Loader2 className="size-4 animate-spin" /> : "Verify"}
                   </Button>
-                </div>
+                </form>
 
                 {/* Lookup result */}
                 {lookupResult && !lookupResult.found && (

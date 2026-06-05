@@ -41,7 +41,8 @@ export default function InvitePage() {
       });
   }, [classId, appUrl]);
 
-  async function generateLink() {
+  async function generateLink(e?: React.FormEvent) {
+    e?.preventDefault();
     setLoading(true);
     try {
       const res = await fetch("/api/invitations", {
@@ -87,20 +88,22 @@ export default function InvitePage() {
       {/* Generate Form */}
       <Card>
         <CardHeader><CardTitle>Generate New Link</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="expires">Expires in (days)</Label>
-              <Input id="expires" type="number" min="1" placeholder="Never" value={expiresInDays} onChange={(e) => setExpiresInDays(e.target.value)} />
+        <CardContent>
+          <form onSubmit={generateLink} className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="expires">Expires in (days)</Label>
+                <Input id="expires" type="number" min="1" placeholder="Never" value={expiresInDays} onChange={(e) => setExpiresInDays(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="maxUses">Max uses</Label>
+                <Input id="maxUses" type="number" min="1" placeholder="Unlimited" value={maxUses} onChange={(e) => setMaxUses(e.target.value)} />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="maxUses">Max uses</Label>
-              <Input id="maxUses" type="number" min="1" placeholder="Unlimited" value={maxUses} onChange={(e) => setMaxUses(e.target.value)} />
-            </div>
-          </div>
-          <Button onClick={generateLink} disabled={loading}>
-            <Plus className="size-4" /> {loading ? "Generating..." : "Generate Link"}
-          </Button>
+            <Button type="submit" disabled={loading}>
+              <Plus className="size-4" /> {loading ? "Generating..." : "Generate Link"}
+            </Button>
+          </form>
         </CardContent>
       </Card>
 
