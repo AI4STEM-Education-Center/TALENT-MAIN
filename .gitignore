@@ -38,6 +38,13 @@ next-env.d.ts
 /prisma/dev.db
 /prisma/dev.db-journal
 
+# Test artifacts
+/test/test.db
+/test/test.db-journal
+/test/test.db-wal
+/test/test.db-shm
+/coverage
+
 # Python legacy (keep .venv ignored)
 .venv/
 __pycache__/

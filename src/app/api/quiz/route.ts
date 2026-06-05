@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { scoreQuiz, type ScorableQuestion } from "@/lib/quiz-scoring";
 
 // POST: Start a quiz attempt
 export async function POST(req: NextRequest) {
@@ -85,48 +86,32 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "answers must be an array" }, { status: 400 });
   }
 
-  // Score the answers
-  let correct = 0;
-  const answerRecords = [];
+  // Fetch every answered question once (with options) — used for both scoring
+  // and the response payload.
+  const questionIds = answers.map((a: { questionId: string }) => a.questionId);
+  const questionsWithAnswers = await prisma.question.findMany({
+    where: { id: { in: questionIds } },
+    include: { options: true },
+  });
+  const questionsById = new Map<string, ScorableQuestion>(
+    questionsWithAnswers.map((q) => [q.id, q])
+  );
 
-  for (const ans of answers) {
-    const question = await prisma.question.findUnique({
-      where: { id: ans.questionId },
-      include: { options: true },
-    });
-
-    if (!question) {
-      return NextResponse.json({ error: "Question not found" }, { status: 404 });
-    }
-
-    const selectedOptionIds = Array.isArray(ans.selectedOptionIds)
-      ? ans.selectedOptionIds.filter((id: unknown): id is string => typeof id === "string")
-      : typeof ans.selectedOptionId === "string"
-        ? [ans.selectedOptionId]
-        : [];
-
-    const selectedSet = new Set(selectedOptionIds);
-    const correctOptionIds = question.options.flatMap((option) => (option.isCorrect ? [option.id] : []));
-    const isCorrect =
-      question.answerMode === "MULTI_SELECT"
-        ? selectedSet.size === correctOptionIds.length && correctOptionIds.every((id) => selectedSet.has(id))
-        : question.options.some((option) => option.id === selectedOptionIds[0] && option.isCorrect);
-
-    if (isCorrect) correct++;
-
-    answerRecords.push({
-      quizAttemptId: attemptId,
-      questionId: ans.questionId,
-      selectedOptionId: question.answerMode === "MULTI_SELECT" ? null : selectedOptionIds[0] ?? null,
-      selectedOptionIds,
-      isCorrect,
-    });
+  // Any answer referencing an unknown question is rejected (matches prior behavior).
+  if (answers.some((a: { questionId: string }) => !questionsById.has(a.questionId))) {
+    return NextResponse.json({ error: "Question not found" }, { status: 404 });
   }
 
-  const score = answers.length > 0 ? (correct / answers.length) * 100 : 0;
+  const { correct, score, answerRecords } = scoreQuiz({ attemptId, questionsById, answers });
 
-  const [_, __, existing, questionsWithAnswers] = await Promise.all([
-    prisma.quizAnswer.createMany({ data: answerRecords }),
+  const [_, __, existing] = await Promise.all([
+    // selectedOptionIds is persisted as a JSON string (schema: String @default("[]")).
+    prisma.quizAnswer.createMany({
+      data: answerRecords.map((record) => ({
+        ...record,
+        selectedOptionIds: JSON.stringify(record.selectedOptionIds),
+      })),
+    }),
     prisma.quizAttempt.update({
       where: { id: attemptId },
       data: { score, completedAt: new Date() },
@@ -134,10 +119,6 @@ export async function PATCH(req: NextRequest) {
     prisma.moduleProgress.findUnique({
       where: { studentId_classId_subtopicId: { studentId: student.id, classId: attempt.classId, subtopicId: attempt.subtopicId } },
     }),
-    prisma.question.findMany({
-      where: { id: { in: answers.map((a: { questionId: string }) => a.questionId) } },
-      include: { options: true },
-    })
   ]);
 
   // Update ModuleProgress: COMPLETED + bestScore
