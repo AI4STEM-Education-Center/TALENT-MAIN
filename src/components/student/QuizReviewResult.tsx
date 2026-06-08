@@ -125,19 +125,18 @@ export function QuizReviewList({
   return (
     <div className="space-y-3">
       <h2 className="text-lg font-semibold">Review</h2>
-      {questions.map((q, i) => {
-        const card = <QuestionCard question={q} index={i} />;
-        // Correct answers need no recommendation — show the question full width.
-        if (q.isCorrect) return <div key={i}>{card}</div>;
-        // Incorrect: pair the question with its recommendation. They sit side by
-        // side once there's room (xl), and stack (question first) below that.
-        return (
-          <div key={i} className="grid gap-3 xl:grid-cols-2 xl:items-start">
-            {card}
+      {/* One self-contained row per question, so a tall recommendation never
+          leaves a gap before the next question. The question keeps a consistent
+          (left) width; incorrect questions get their recommendation aligned in
+          the right column on wide screens and stacked below it on narrow ones. */}
+      {questions.map((q, i) => (
+        <div key={i} className="grid gap-3 xl:grid-cols-2 xl:items-start">
+          <QuestionCard question={q} index={i} />
+          {!q.isCorrect && (
             <RecommendationCell rec={recByQuestion.get(q.text)} status={recommendationsStatus} />
-          </div>
-        );
-      })}
+          )}
+        </div>
+      ))}
       {truncated && (
         <p className="text-xs text-muted-foreground">
           You missed more questions than we could build recommendations for — start with the ones shown.
