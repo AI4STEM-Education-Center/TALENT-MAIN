@@ -8,7 +8,7 @@ import type { PresignedRecommendation } from "@/lib/exam-results";
  */
 export function RecommendationCard({ rec }: { rec: PresignedRecommendation }) {
   return (
-    <div className="rounded-xl border bg-card p-4 text-sm shadow-sm">
+    <div className="flex h-full flex-col rounded-xl border bg-card p-4 text-sm shadow-sm">
       <p className="flex items-center gap-1.5 text-xs font-semibold text-primary">
         <BookOpen className="size-4" /> Recommended material
       </p>
@@ -25,7 +25,9 @@ export function RecommendationCard({ rec }: { rec: PresignedRecommendation }) {
         <p className="mt-1 text-xs text-muted-foreground">{rec.pageReason || rec.fileReason}</p>
       )}
       {rec.pages.length > 0 && (
-        <div className="mt-3 max-h-96 space-y-2 overflow-y-auto rounded-lg border bg-muted/30 p-2">
+        // Document viewer: the box is exactly one page tall; additional pages are
+        // reached by scrolling, snapping one page into view at a time.
+        <div className="mt-3 aspect-[4/3] w-full snap-y snap-mandatory overflow-y-auto rounded-lg border bg-muted/30">
           {rec.pages.map((pg) => (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -33,10 +35,15 @@ export function RecommendationCard({ rec }: { rec: PresignedRecommendation }) {
               src={pg.imageUrl}
               alt={`Page ${pg.pageNumber} of ${rec.materialTitle}`}
               loading="lazy"
-              className="h-auto w-full rounded-md border"
+              className="block h-full w-full snap-start object-contain"
             />
           ))}
         </div>
+      )}
+      {rec.pages.length > 1 && (
+        <p className="mt-1.5 text-center text-[11px] text-muted-foreground">
+          Scroll for {rec.pages.length - 1} more page{rec.pages.length - 1 > 1 ? "s" : ""}
+        </p>
       )}
     </div>
   );

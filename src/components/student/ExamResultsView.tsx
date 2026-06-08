@@ -7,7 +7,7 @@ import remarkGfm from "remark-gfm";
 import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ScoreSummaryCard, QuizReviewList } from "@/components/student/QuizReviewResult";
+import { ScoreBanner, QuizReviewList } from "@/components/student/QuizReviewResult";
 import {
   RESULT_STATUS,
   type ResultStatus,
@@ -30,42 +30,28 @@ type AiState = {
 const isPending = (status: ResultStatus) =>
   status === RESULT_STATUS.PENDING || status === RESULT_STATUS.GENERATING;
 
-function LoadingCard({ label }: { label: string }) {
+/** The AI summary body — rendered inside the unified results card (no border). */
+function SummaryBody({ ai }: { ai: AiState }) {
   return (
-    <Card>
-      <CardContent className="flex items-center gap-3 py-6 text-sm text-muted-foreground">
-        <Loader2 className="size-4 animate-spin text-primary" />
-        {label}
-      </CardContent>
-    </Card>
-  );
-}
-
-function SummarySection({ ai }: { ai: AiState }) {
-  if (ai.summaryStatus === RESULT_STATUS.READY && ai.summary) {
-    return (
-      <div className="space-y-2">
-        <h2 className="flex items-center gap-1.5 text-lg font-semibold">
-          <Sparkles className="size-5 text-primary" /> Summary &amp; next steps
-        </h2>
-        <Card>
-          <CardContent className={`py-4 ${MARKDOWN_CLASS}`}>
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{ai.summary}</ReactMarkdown>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-  if (ai.summaryStatus === RESULT_STATUS.FAILED) {
-    return (
-      <Card>
-        <CardContent className="py-4 text-sm text-muted-foreground">
+    <div className="space-y-2">
+      <h2 className="flex items-center gap-1.5 text-base font-semibold">
+        <Sparkles className="size-5 text-primary" /> Summary &amp; next steps
+      </h2>
+      {ai.summaryStatus === RESULT_STATUS.READY && ai.summary ? (
+        <div className={MARKDOWN_CLASS}>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{ai.summary}</ReactMarkdown>
+        </div>
+      ) : ai.summaryStatus === RESULT_STATUS.FAILED ? (
+        <p className="text-sm text-muted-foreground">
           We couldn&apos;t generate a summary for this attempt.
-        </CardContent>
-      </Card>
-    );
-  }
-  return <LoadingCard label="Generating your summary…" />;
+        </p>
+      ) : (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin text-primary" /> Generating your summary…
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function ExamResultsView({
@@ -142,16 +128,15 @@ export function ExamResultsView({
         </Button>
       )}
 
-      {/* Score and AI summary sit side by side on wide screens (summary gets the
-          wider share), stacking on smaller ones (score first). */}
-      <div className="grid gap-6 lg:grid-cols-3 lg:items-start">
-        <div className="lg:col-span-1">
-          <ScoreSummaryCard score={score} correct={correct} total={total} />
-        </div>
-        <div className="lg:col-span-2">
-          <SummarySection ai={ai} />
-        </div>
-      </div>
+      {/* Unified header: the score banner and the AI summary live in one
+          full-width card (one column). */}
+      <Card>
+        <CardContent className="space-y-4 py-5">
+          <ScoreBanner score={score} correct={correct} total={total} />
+          <div className="border-t" />
+          <SummaryBody ai={ai} />
+        </CardContent>
+      </Card>
 
       {/* Review: each incorrect question is paired with its recommended
           materials card; the page images inside scroll. */}
