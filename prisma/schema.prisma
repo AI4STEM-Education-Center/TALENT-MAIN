@@ -342,6 +342,48 @@ model QuizAnswer {
   @@index([quizAttemptId])
 }
 
+// ─── Exam Results (durable archival snapshot) ─────────────────────────────────
+// Deliberately RELATION-FREE: it stores plain id columns (no @relation), so no
+// cascade can delete it when a Student/Class/Subtopic/Question/QuizAttempt is
+// removed, and a full self-contained snapshot of everything needed to render the
+// results, so teacher edits/deletions of quiz questions never alter a past
+// result. AI fields are populated asynchronously by the background worker.
+// summaryStatus / recommendationsStatus: "PENDING" | "GENERATING" | "READY" | "FAILED"
+model ExamResult {
+  id            String @id @default(cuid())
+  quizAttemptId String @unique
+  studentId     String
+  classId       String
+  subtopicId    String
+
+  // identity snapshot — survives rename/deletion of the live rows
+  studentName  String?
+  className    String
+  topicName    String
+  subtopicName String
+
+  // score snapshot
+  score        Float
+  correctCount Int
+  totalCount   Int
+  completedAt  DateTime
+
+  // self-contained per-question review snapshot (JSON string)
+  reviewSnapshot String
+
+  // AI content + independent generation status
+  summary               String?
+  summaryStatus         String  @default("PENDING")
+  recommendations       String? // JSON: { items: StoredRecommendation[], truncated: boolean }
+  recommendationsStatus String  @default("PENDING")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([studentId, completedAt])
+  @@index([classId])
+}
+
 // ─── AI Provider Configuration ────────────────────────────────────────────────
 // providerType: "openai" | "local" | "cloudflare"
 

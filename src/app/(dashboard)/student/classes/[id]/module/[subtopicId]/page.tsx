@@ -4,8 +4,9 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, CheckCircle, XCircle, RotateCcw, Trophy } from "lucide-react";
+import { ArrowLeft, XCircle, RotateCcw } from "lucide-react";
+import { ExamResultsView } from "@/components/student/ExamResultsView";
+import { buildReviewSnapshot, RESULT_STATUS } from "@/lib/exam-results";
 
 interface Option { id: string; text: string; isCorrect?: boolean }
 interface Question { id: string; text: string; answerMode: "SINGLE_SELECT" | "MULTI_SELECT"; options: Option[] }
@@ -130,68 +131,50 @@ export default function ModulePage() {
   }
 
   if (phase === "results" && result) {
-    const pct = Math.round(result.score);
-    const passed = pct >= 60;
+    // Build the durable snapshot shape from the submit response so the inline
+    // view uses the exact same component (and layout) as the history results
+    // page. AI sections start PENDING and the view polls until the worker fills
+    // them in — generation continues server-side even if the student leaves.
+    const snapshot = buildReviewSnapshot(
+      result.questions.map((q) => ({
+        id: q.id,
+        text: q.text,
+        options: q.options.map((o) => ({ id: o.id, text: o.text, isCorrect: o.isCorrect ?? false })),
+      })),
+      result.answers.map((a) => ({
+        questionId: a.questionId,
+        selectedOptionIds: a.selectedOptionIds ?? (a.selectedOptionId ? [a.selectedOptionId] : []),
+        isCorrect: a.isCorrect,
+      }))
+    );
 
     return (
-      <div className="p-4 md:p-6 max-w-2xl space-y-6">
-        <Button variant="ghost" size="sm" asChild>
-          <Link href={`/student/classes/${classId}`}><ArrowLeft className="size-4" /> Back to class</Link>
-        </Button>
-
-        <Card>
-          <CardContent className="flex flex-col items-center py-8 text-center">
-            <Trophy className={`size-14 mb-3 ${passed ? "text-yellow-500" : "text-muted-foreground"}`} />
-            <p className="text-4xl font-bold mb-1">{pct}%</p>
-            <p className="text-muted-foreground">{result.correct} / {result.total} correct</p>
-            <Badge variant={passed ? "success" : "destructive"} className="mt-3 text-sm px-3 py-1">
-              {passed ? "Passed!" : "Keep practicing"}
-            </Badge>
-          </CardContent>
-        </Card>
-
-        {/* Review */}
-        <div className="space-y-3">
-          <h2 className="text-lg font-semibold">Review</h2>
-          {result.questions.map((q, i) => {
-            const answer = result.answers.find((a) => a.questionId === q.id);
-            const selectedIds = new Set(answer?.selectedOptionIds ?? (answer?.selectedOptionId ? [answer.selectedOptionId] : []));
-            const correct = answer?.isCorrect;
-
-            return (
-              <Card key={q.id} className={correct ? "border-green-200" : "border-red-200"}>
-                <CardContent className="p-4 space-y-2">
-                  <div className="flex items-start gap-2">
-                    {correct ? <CheckCircle className="size-4 text-green-500 mt-0.5 flex-shrink-0" /> : <XCircle className="size-4 text-red-500 mt-0.5 flex-shrink-0" />}
-                    <p className="font-medium text-sm">{i + 1}. {q.text}</p>
-                  </div>
-                  <div className="space-y-1 ml-6">
-                    {q.options.map((opt) => {
-                      const isSelected = selectedIds.has(opt.id);
-                      const isCorrect = opt.isCorrect;
-                      return (
-                        <div key={opt.id} className={`text-sm px-2 py-1 rounded flex items-center gap-2 ${isCorrect ? "bg-green-50 text-green-700" : isSelected && !isCorrect ? "bg-red-50 text-red-700" : "text-muted-foreground"}`}>
-                          <span className="flex-shrink-0">{isCorrect ? "✓" : isSelected ? "✗" : " "}</span>
-                          {opt.text}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-
-        <div className="flex gap-3">
-          <Button onClick={() => startQuiz()} variant="outline">
-            <RotateCcw className="size-4" /> Retry Quiz
-          </Button>
-          <Button asChild>
-            <Link href={`/student/classes/${classId}`}>Back to Class</Link>
-          </Button>
-        </div>
-      </div>
+      <ExamResultsView
+        attemptId={attemptId}
+        score={result.score}
+        correct={result.correct}
+        total={result.total}
+        questions={snapshot.questions}
+        initial={{
+          summary: null,
+          summaryStatus: RESULT_STATUS.PENDING,
+          recommendations: [],
+          recommendationsStatus: RESULT_STATUS.PENDING,
+          truncated: false,
+        }}
+        backHref={`/student/classes/${classId}`}
+        backLabel="Back to class"
+        actions={
+          <>
+            <Button onClick={() => startQuiz()} variant="outline">
+              <RotateCcw className="size-4" /> Retry Quiz
+            </Button>
+            <Button asChild>
+              <Link href={`/student/classes/${classId}`}>Back to Class</Link>
+            </Button>
+          </>
+        }
+      />
     );
   }
 
