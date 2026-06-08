@@ -8,7 +8,6 @@ import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScoreSummaryCard, QuizReviewList } from "@/components/student/QuizReviewResult";
-import { RecommendationCards } from "@/components/student/RecommendationCards";
 import {
   RESULT_STATUS,
   type ResultStatus,
@@ -67,23 +66,6 @@ function SummarySection({ ai }: { ai: AiState }) {
     );
   }
   return <LoadingCard label="Generating your summary…" />;
-}
-
-function RecommendationsSection({ ai }: { ai: AiState }) {
-  if (ai.recommendationsStatus === RESULT_STATUS.READY) {
-    // Empty is a valid terminal state (perfect score / no materials) — show nothing.
-    return (
-      <RecommendationCards recommendations={ai.recommendations} truncated={ai.truncated} />
-    );
-  }
-  if (ai.recommendationsStatus === RESULT_STATUS.FAILED) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        We couldn&apos;t generate study recommendations for this attempt.
-      </p>
-    );
-  }
-  return <LoadingCard label="Finding study materials for the questions you missed…" />;
 }
 
 export function ExamResultsView({
@@ -151,7 +133,7 @@ export function ExamResultsView({
   }, [attemptId, needPoll]);
 
   return (
-    <div className="p-4 md:p-6 max-w-2xl space-y-6">
+    <div className="p-4 md:p-6 max-w-5xl space-y-6">
       {backHref && (
         <Button variant="ghost" size="sm" asChild>
           <Link href={backHref}>
@@ -160,10 +142,21 @@ export function ExamResultsView({
         </Button>
       )}
 
-      <ScoreSummaryCard score={score} correct={correct} total={total} />
-      <SummarySection ai={ai} />
-      <RecommendationsSection ai={ai} />
-      <QuizReviewList questions={questions} />
+      {/* Score and AI summary sit side by side on wide screens, stacking on
+          smaller ones (score first). */}
+      <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
+        <ScoreSummaryCard score={score} correct={correct} total={total} />
+        <SummarySection ai={ai} />
+      </div>
+
+      {/* Review: each incorrect question is paired with its recommended
+          materials card; the page images inside scroll. */}
+      <QuizReviewList
+        questions={questions}
+        recommendations={ai.recommendations}
+        recommendationsStatus={ai.recommendationsStatus}
+        truncated={ai.truncated}
+      />
 
       {actions && <div className="flex flex-wrap gap-3">{actions}</div>}
     </div>
