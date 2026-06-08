@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { scoreQuiz, type ScorableQuestion } from "@/lib/quiz-scoring";
+import { buildReviewSnapshot } from "@/lib/exam-results";
+import { enqueueExamResult } from "@/lib/queue";
 
 // POST: Start a quiz attempt
 export async function POST(req: NextRequest) {
@@ -103,6 +105,7 @@ export async function PATCH(req: NextRequest) {
   }
 
   const { correct, score, answerRecords } = scoreQuiz({ attemptId, questionsById, answers });
+  const completedAt = new Date();
 
   const [_, __, existing] = await Promise.all([
     // selectedOptionIds is persisted as a JSON string (schema: String @default("[]")).
@@ -114,7 +117,7 @@ export async function PATCH(req: NextRequest) {
     }),
     prisma.quizAttempt.update({
       where: { id: attemptId },
-      data: { score, completedAt: new Date() },
+      data: { score, completedAt },
     }),
     prisma.moduleProgress.findUnique({
       where: { studentId_classId_subtopicId: { studentId: student.id, classId: attempt.classId, subtopicId: attempt.subtopicId } },
@@ -136,6 +139,52 @@ export async function PATCH(req: NextRequest) {
       bestScore: score,
     },
   });
+
+  // Build a durable, self-contained ExamResult snapshot and kick off background
+  // AI generation. Best-effort: a failure here must never fail quiz submission,
+  // and the ExamResult is deliberately decoupled from the quiz rows so it
+  // survives later deletion/edits of the questions or the student account.
+  try {
+    const names = await prisma.quizAttempt.findUnique({
+      where: { id: attemptId },
+      select: {
+        class: { select: { name: true } },
+        subtopic: { select: { name: true, topic: { select: { name: true } } } },
+      },
+    });
+
+    const snapshot = buildReviewSnapshot(
+      questionsWithAnswers.map((q) => ({ id: q.id, text: q.text, options: q.options })),
+      answerRecords
+    );
+
+    const examResult = await prisma.examResult.create({
+      data: {
+        quizAttemptId: attemptId,
+        studentId: student.id,
+        classId: attempt.classId,
+        subtopicId: attempt.subtopicId,
+        studentName:
+          [session.user.firstName, session.user.lastName].filter(Boolean).join(" ") || null,
+        className: names?.class.name ?? "",
+        topicName: names?.subtopic.topic.name ?? "",
+        subtopicName: names?.subtopic.name ?? "",
+        score,
+        correctCount: correct,
+        totalCount: answers.length,
+        completedAt,
+        reviewSnapshot: JSON.stringify(snapshot),
+      },
+    });
+
+    try {
+      enqueueExamResult(examResult.id);
+    } catch (err) {
+      console.error("[Quiz] Failed to enqueue exam-result generation:", err);
+    }
+  } catch (err) {
+    console.error("[Quiz] Failed to create ExamResult snapshot:", err);
+  }
 
   return NextResponse.json({
     score,

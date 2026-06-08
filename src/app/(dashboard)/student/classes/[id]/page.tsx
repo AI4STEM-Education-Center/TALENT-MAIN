@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, CheckCircle, Circle, PlayCircle, BookOpen } from "lucide-react";
+import { ArrowLeft, CheckCircle, Circle, PlayCircle, BookOpen, History } from "lucide-react";
 
 export default async function StudentClassPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -54,9 +54,14 @@ export default async function StudentClassPage({ params }: { params: Promise<{ i
         <Link href="/student"><ArrowLeft className="size-4" /> Dashboard</Link>
       </Button>
 
-      <div>
-        <h1 className="text-3xl font-bold">{cls.name}</h1>
-        <p className="text-muted-foreground text-sm mt-1">Teacher: {cls.teacher.user.firstName} {cls.teacher.user.lastName}</p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-3xl font-bold">{cls.name}</h1>
+          <p className="text-muted-foreground text-sm mt-1">Teacher: {cls.teacher.user.firstName} {cls.teacher.user.lastName}</p>
+        </div>
+        <Button variant="outline" size="sm" asChild className="shrink-0">
+          <Link href={`/student/classes/${id}/history`}><History className="size-4" /> Exam history</Link>
+        </Button>
       </div>
 
       {cls.classTopics.length === 0 ? (
