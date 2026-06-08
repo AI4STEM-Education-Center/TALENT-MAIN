@@ -125,23 +125,19 @@ export function QuizReviewList({
   return (
     <div className="space-y-3">
       <h2 className="text-lg font-semibold">Review</h2>
-      <div className="grid gap-3 lg:grid-cols-2 lg:items-start">
-        {questions.flatMap((q, i) => {
-          const card = <QuestionCard key={`q-${i}`} question={q} index={i} />;
-          if (q.isCorrect) {
-            // Keep the grid aligned on wide screens; collapse the empty cell on mobile.
-            return [card, <div key={`r-${i}`} className="hidden lg:block" aria-hidden />];
-          }
-          return [
-            card,
-            <RecommendationCell
-              key={`r-${i}`}
-              rec={recByQuestion.get(q.text)}
-              status={recommendationsStatus}
-            />,
-          ];
-        })}
-      </div>
+      {questions.map((q, i) => {
+        const card = <QuestionCard question={q} index={i} />;
+        // Correct answers need no recommendation — show the question full width.
+        if (q.isCorrect) return <div key={i}>{card}</div>;
+        // Incorrect: pair the question with its recommendation. They sit side by
+        // side once there's room (xl), and stack (question first) below that.
+        return (
+          <div key={i} className="grid gap-3 xl:grid-cols-2 xl:items-start">
+            {card}
+            <RecommendationCell rec={recByQuestion.get(q.text)} status={recommendationsStatus} />
+          </div>
+        );
+      })}
       {truncated && (
         <p className="text-xs text-muted-foreground">
           You missed more questions than we could build recommendations for — start with the ones shown.

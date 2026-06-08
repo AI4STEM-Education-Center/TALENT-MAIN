@@ -133,7 +133,7 @@ export function ExamResultsView({
   }, [attemptId, needPoll]);
 
   return (
-    <div className="p-4 md:p-6 max-w-5xl space-y-6">
+    <div className="p-4 md:p-6 max-w-6xl space-y-6">
       {backHref && (
         <Button variant="ghost" size="sm" asChild>
           <Link href={backHref}>
@@ -142,11 +142,15 @@ export function ExamResultsView({
         </Button>
       )}
 
-      {/* Score and AI summary sit side by side on wide screens, stacking on
-          smaller ones (score first). */}
-      <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
-        <ScoreSummaryCard score={score} correct={correct} total={total} />
-        <SummarySection ai={ai} />
+      {/* Score and AI summary sit side by side on wide screens (summary gets the
+          wider share), stacking on smaller ones (score first). */}
+      <div className="grid gap-6 lg:grid-cols-3 lg:items-start">
+        <div className="lg:col-span-1">
+          <ScoreSummaryCard score={score} correct={correct} total={total} />
+        </div>
+        <div className="lg:col-span-2">
+          <SummarySection ai={ai} />
+        </div>
       </div>
 
       {/* Review: each incorrect question is paired with its recommended
