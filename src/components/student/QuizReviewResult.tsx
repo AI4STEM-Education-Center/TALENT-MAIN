@@ -11,8 +11,11 @@ import {
 
 const PASS_THRESHOLD = 60;
 
-/** Top score card: percentage, correct/total, pass/fail badge. */
-export function ScoreSummaryCard({
+/**
+ * Compact horizontal score banner. Has no border of its own — it sits at the
+ * top of the unified results card, above the AI summary.
+ */
+export function ScoreBanner({
   score,
   correct,
   total,
@@ -25,24 +28,24 @@ export function ScoreSummaryCard({
   const passed = pct >= PASS_THRESHOLD;
 
   return (
-    <Card>
-      <CardContent className="flex flex-col items-center py-8 text-center">
-        <Trophy className={`size-14 mb-3 ${passed ? "text-yellow-500" : "text-muted-foreground"}`} />
-        <p className="text-4xl font-bold mb-1">{pct}%</p>
-        <p className="text-muted-foreground">
+    <div className="flex items-center gap-4">
+      <Trophy className={`size-10 shrink-0 ${passed ? "text-yellow-500" : "text-muted-foreground"}`} />
+      <div className="flex flex-1 flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="text-3xl font-bold leading-none">{pct}%</span>
+        <span className="text-sm text-muted-foreground">
           {correct} / {total} correct
-        </p>
-        <Badge variant={passed ? "success" : "destructive"} className="mt-3 text-sm px-3 py-1">
-          {passed ? "Passed!" : "Keep practicing"}
-        </Badge>
-      </CardContent>
-    </Card>
+        </span>
+      </div>
+      <Badge variant={passed ? "success" : "destructive"} className="shrink-0 px-3 py-1 text-sm">
+        {passed ? "Passed!" : "Keep practicing"}
+      </Badge>
+    </div>
   );
 }
 
 function QuestionCard({ question, index }: { question: SnapshotQuestion; index: number }) {
   return (
-    <Card className={question.isCorrect ? "border-green-200" : "border-red-200"}>
+    <Card className={`h-full ${question.isCorrect ? "border-green-200" : "border-red-200"}`}>
       <CardContent className="p-4 space-y-2">
         <div className="flex items-start gap-2">
           {question.isCorrect ? (
@@ -90,7 +93,7 @@ function RecommendationCell({
 
   if (status === RESULT_STATUS.PENDING || status === RESULT_STATUS.GENERATING) {
     return (
-      <div className="flex items-center gap-2 rounded-xl border p-4 text-xs text-muted-foreground">
+      <div className="flex h-full items-center gap-2 rounded-xl border p-4 text-xs text-muted-foreground">
         <Loader2 className="size-4 animate-spin text-primary" />
         Finding study material…
       </div>
@@ -98,16 +101,17 @@ function RecommendationCell({
   }
 
   return (
-    <div className="rounded-xl border border-dashed p-4 text-xs text-muted-foreground">
+    <div className="flex h-full items-center rounded-xl border border-dashed p-4 text-xs text-muted-foreground">
       No specific material recommendation for this question.
     </div>
   );
 }
 
 /**
- * Per-question review. Each incorrect question is paired side-by-side (on wide
- * screens) with a card holding its recommended materials; correct questions
- * span the full width. Matching is by question text.
+ * Per-question review. Each row is self-contained, so a tall recommendation
+ * never leaves a gap before the next question. An incorrect question and its
+ * recommendation share the same row height (the grid stretches both cells);
+ * correct questions keep the left (question) column with the right side empty.
  */
 export function QuizReviewList({
   questions,
@@ -125,12 +129,8 @@ export function QuizReviewList({
   return (
     <div className="space-y-3">
       <h2 className="text-lg font-semibold">Review</h2>
-      {/* One self-contained row per question, so a tall recommendation never
-          leaves a gap before the next question. The question keeps a consistent
-          (left) width; incorrect questions get their recommendation aligned in
-          the right column on wide screens and stacked below it on narrow ones. */}
       {questions.map((q, i) => (
-        <div key={i} className="grid gap-3 xl:grid-cols-2 xl:items-start">
+        <div key={i} className="grid gap-3 xl:grid-cols-2">
           <QuestionCard question={q} index={i} />
           {!q.isCorrect && (
             <RecommendationCell rec={recByQuestion.get(q.text)} status={recommendationsStatus} />
