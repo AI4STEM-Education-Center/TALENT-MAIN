@@ -1,4 +1,4 @@
-FROM node:20-slim AS base
+FROM node:26-slim AS base
 RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -24,7 +24,7 @@ RUN npx esbuild src/worker.ts --bundle --platform=node --target=node20 \
       --external:@prisma/client
 
 # ── Stage 3: Production runner ────────────────────────────────────────────────
-FROM node:20-slim AS runner
+FROM node:26-slim AS runner
 RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
