@@ -1,0 +1,50 @@
+# Dependabot version updates
+# Docs: https://docs.github.com/code-security/dependabot/dependabot-version-updates
+#
+# NOTE: This file is only read from the repository's DEFAULT branch (main).
+# It opens its update PRs against `dev` (target-branch) but stays inert until
+# this config is promoted to main via the normal dev -> main merge flow.
+# Security updates/alerts are toggled separately in Settings -> Code security.
+version: 2
+updates:
+  # ── JavaScript / TypeScript deps (package.json + package-lock.json) ──
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    target-branch: "dev"
+    open-pull-requests-limit: 10
+    groups:
+      radix-ui:
+        patterns: ["@radix-ui/*"]
+      aws-sdk:
+        patterns: ["@aws-sdk/*"]
+      types:
+        patterns: ["@types/*"]
+      production-minor-patch:
+        dependency-type: "production"
+        update-types: ["minor", "patch"]
+      development-minor-patch:
+        dependency-type: "development"
+        update-types: ["minor", "patch"]
+    ignore:
+      # next-auth is pinned to a beta line; major bumps need manual review.
+      - dependency-name: "next-auth"
+        update-types: ["version-update:semver-major"]
+
+  # ── GitHub Actions used across .github/workflows ──
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    target-branch: "dev"
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  # ── Dockerfile base image (node:20-slim) ──
+  - package-ecosystem: "docker"
+    directory: "/docker"
+    schedule:
+      interval: "daily"
+    target-branch: "dev"
