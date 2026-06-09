@@ -10,6 +10,14 @@ import {
 } from "@/components/ui/select";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   AlertTriangle,
   Check,
   ChevronDown,
@@ -19,6 +27,7 @@ import {
   Key,
   Loader2,
   Monitor,
+  Pencil,
   Plus,
   RefreshCw,
   Save,
@@ -128,6 +137,24 @@ export default function AiConfigPage() {
   const [modelForm, setModelForm] = useState<ModelForm>(EMPTY_MODEL_FORM);
   const [modelSaving, setModelSaving] = useState(false);
   const [discovering, setDiscovering] = useState<string | null>(null);
+
+  // Discover modal state
+  const [discoverModal, setDiscoverModal] = useState<{
+    providerId: string;
+    providerName: string;
+    available: string[];
+    existing: Set<string>;
+  } | null>(null);
+  const [selectedDiscover, setSelectedDiscover] = useState<Set<string>>(new Set());
+  const [discoverAdding, setDiscoverAdding] = useState(false);
+
+  // Edit-model modal state
+  const [editingModel, setEditingModel] = useState<{
+    providerId: string;
+    id: string;
+  } | null>(null);
+  const [editModelForm, setEditModelForm] = useState<ModelForm>(EMPTY_MODEL_FORM);
+  const [editModelSaving, setEditModelSaving] = useState(false);
 
   // Assignment state
   const [assignmentEdits, setAssignmentEdits] = useState<
@@ -290,6 +317,7 @@ export default function AiConfigPage() {
 
   const handleDiscover = async (providerId: string) => {
     setDiscovering(providerId);
+    setError("");
     try {
       const res = await fetch(
         `/api/admin/ai-providers/${providerId}/models/discover`,
@@ -302,24 +330,22 @@ export default function AiConfigPage() {
       }
 
       if (data.models && data.models.length > 0) {
-        // Auto-add discovered models that don't already exist
+        // Open a modal listing the discovered models; the admin chooses which to add.
         const provider = providers.find((p) => p.id === providerId);
-        const existingIds = new Set(provider?.models.map((m) => m.modelId) || []);
-        const newModels = data.models.filter((m: string) => !existingIds.has(m));
-
-        for (const modelId of newModels) {
-          await fetch(`/api/admin/ai-providers/${providerId}/models`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ modelId, isDefault: false }),
-          });
-        }
-
-        if (newModels.length > 0) {
-          await fetchProviders();
-        }
-
-        setError("");
+        const existing = new Set<string>(
+          provider?.models.map((m) => m.modelId) || []
+        );
+        // Pre-select models that aren't already added.
+        const preselected = new Set<string>(
+          (data.models as string[]).filter((m) => !existing.has(m))
+        );
+        setDiscoverModal({
+          providerId,
+          providerName: provider?.name || "this provider",
+          available: data.models,
+          existing,
+        });
+        setSelectedDiscover(preselected);
       } else {
         setError("No models were discovered from this endpoint.");
       }
@@ -327,6 +353,83 @@ export default function AiConfigPage() {
       setError(err.message);
     } finally {
       setDiscovering(null);
+    }
+  };
+
+  const closeDiscoverModal = () => {
+    setDiscoverModal(null);
+    setSelectedDiscover(new Set());
+  };
+
+  const toggleDiscoverModel = (modelId: string) => {
+    setSelectedDiscover((prev) => {
+      const next = new Set(prev);
+      if (next.has(modelId)) next.delete(modelId);
+      else next.add(modelId);
+      return next;
+    });
+  };
+
+  const handleAddSelectedModels = async () => {
+    if (!discoverModal) return;
+    setDiscoverAdding(true);
+    try {
+      for (const modelId of selectedDiscover) {
+        const res = await fetch(
+          `/api/admin/ai-providers/${discoverModal.providerId}/models`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ modelId, isDefault: false }),
+          }
+        );
+        // 409 means it already exists — safe to ignore.
+        if (!res.ok && res.status !== 409) {
+          const d = await res.json().catch(() => ({}));
+          throw new Error(d.error || `Failed to add "${modelId}"`);
+        }
+      }
+      await fetchProviders();
+      closeDiscoverModal();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setDiscoverAdding(false);
+    }
+  };
+
+  const handleEditModelOpen = (providerId: string, m: AiModel) => {
+    setEditModelForm({
+      modelId: m.modelId,
+      displayName: m.displayName || "",
+      serviceTier: m.serviceTier || "",
+      isDefault: m.isDefault,
+    });
+    setEditingModel({ providerId, id: m.id });
+  };
+
+  const handleEditModelSubmit = async () => {
+    if (!editingModel) return;
+    setEditModelSaving(true);
+    try {
+      const res = await fetch(
+        `/api/admin/ai-providers/${editingModel.providerId}/models`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: editingModel.id, ...editModelForm }),
+        }
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to update model");
+      }
+      setEditingModel(null);
+      await Promise.all([fetchProviders(), fetchAssignments()]);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setEditModelSaving(false);
     }
   };
 
@@ -443,6 +546,13 @@ export default function AiConfigPage() {
   };
 
   // ─── Render ─────────────────────────────────────────────────────────────────
+
+  const discoverNewModels = discoverModal
+    ? discoverModal.available.filter((m) => !discoverModal.existing.has(m))
+    : [];
+  const allNewSelected =
+    discoverNewModels.length > 0 &&
+    discoverNewModels.every((m) => selectedDiscover.has(m));
 
   if (loading) {
     return (
@@ -914,12 +1024,22 @@ export default function AiConfigPage() {
                                 </span>
                               )}
                             </div>
-                            <button type="button"
-                              onClick={() => handleDeleteModel(p.id, m.id)}
-                              className="rounded p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                            >
-                              <Trash2 className="size-3.5" />
-                            </button>
+                            <div className="flex items-center gap-1">
+                              <button type="button"
+                                onClick={() => handleEditModelOpen(p.id, m)}
+                                className="rounded p-1 text-muted-foreground hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                                title="Edit model"
+                              >
+                                <Pencil className="size-3.5" />
+                              </button>
+                              <button type="button"
+                                onClick={() => handleDeleteModel(p.id, m.id)}
+                                className="rounded p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                title="Delete model"
+                              >
+                                <Trash2 className="size-3.5" />
+                              </button>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -1101,6 +1221,214 @@ export default function AiConfigPage() {
           })}
         </div>
       </section>
+
+      {/* ─── Discover Models Modal ────────────────────────────────────────── */}
+      <Dialog
+        open={!!discoverModal}
+        onOpenChange={(next) => {
+          if (!next && !discoverAdding) closeDiscoverModal();
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Discover Models</DialogTitle>
+            <DialogDescription>
+              {discoverModal
+                ? `Select the models you want to add to ${discoverModal.providerName}.`
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+
+          {discoverModal && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>{discoverModal.available.length} model(s) found</span>
+                {discoverNewModels.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSelectedDiscover(
+                        allNewSelected ? new Set() : new Set(discoverNewModels)
+                      )
+                    }
+                    className="font-medium text-blue-600 hover:text-blue-800"
+                  >
+                    {allNewSelected ? "Deselect all" : "Select all"}
+                  </button>
+                )}
+              </div>
+              <div className="max-h-72 overflow-y-auto rounded-lg border border-gray-200 divide-y divide-gray-100 dark:border-gray-800 dark:divide-gray-800">
+                {discoverModal.available.map((modelId) => {
+                  const alreadyAdded = discoverModal.existing.has(modelId);
+                  return (
+                    <label
+                      key={modelId}
+                      className={`flex items-center gap-2 px-3 py-2 text-sm ${
+                        alreadyAdded
+                          ? "opacity-60"
+                          : "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        aria-label={`Select model ${modelId}`}
+                        className="rounded"
+                        disabled={alreadyAdded}
+                        checked={alreadyAdded || selectedDiscover.has(modelId)}
+                        onChange={() => toggleDiscoverModel(modelId)}
+                      />
+                      <code className="font-mono">{modelId}</code>
+                      {alreadyAdded && (
+                        <span className="ml-auto text-xs text-muted-foreground">
+                          already added
+                        </span>
+                      )}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <button
+              type="button"
+              onClick={closeDiscoverModal}
+              disabled={discoverAdding}
+              className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleAddSelectedModels}
+              disabled={discoverAdding || selectedDiscover.size === 0}
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {discoverAdding ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Plus className="size-4" />
+              )}
+              Add{selectedDiscover.size > 0 ? ` ${selectedDiscover.size}` : ""} Model
+              {selectedDiscover.size === 1 ? "" : "s"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Edit Model Modal ─────────────────────────────────────────────── */}
+      <Dialog
+        open={!!editingModel}
+        onOpenChange={(next) => {
+          if (!next && !editModelSaving) setEditingModel(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Model</DialogTitle>
+            <DialogDescription>
+              Update the model identifier, display name, and service tier.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div>
+              <label htmlFor="edit-model-id" className="block text-sm font-medium mb-1">
+                Model ID <span className="text-muted-foreground font-normal">(name)</span>
+              </label>
+              <input
+                id="edit-model-id"
+                type="text"
+                value={editModelForm.modelId}
+                onChange={(e) =>
+                  setEditModelForm((f) => ({ ...f, modelId: e.target.value }))
+                }
+                placeholder="e.g. gpt-5.1"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
+              />
+            </div>
+            <div>
+              <label htmlFor="edit-model-name" className="block text-sm font-medium mb-1">
+                Display Name{" "}
+                <span className="text-muted-foreground font-normal">(alias, optional)</span>
+              </label>
+              <input
+                id="edit-model-name"
+                type="text"
+                value={editModelForm.displayName}
+                onChange={(e) =>
+                  setEditModelForm((f) => ({ ...f, displayName: e.target.value }))
+                }
+                placeholder="Friendly name"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
+              />
+            </div>
+            <div>
+              <label id="edit-model-tier-label" className="block text-sm font-medium mb-1">
+                Service Tier{" "}
+                <span className="text-muted-foreground font-normal">(service level)</span>
+              </label>
+              <Select
+                aria-labelledby="edit-model-tier-label"
+                value={editModelForm.serviceTier || "none"}
+                onValueChange={(v) =>
+                  setEditModelForm((f) => ({
+                    ...f,
+                    serviceTier: v === "none" ? "" : v,
+                  }))
+                }
+              >
+                <SelectTrigger className="h-10">
+                  <SelectValue placeholder="Service Tier" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No Service Tier</SelectItem>
+                  <SelectItem value="flex">Flex</SelectItem>
+                  <SelectItem value="auto">Auto</SelectItem>
+                  <SelectItem value="default">Default</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <label className="flex items-center gap-1.5 text-sm">
+              <input
+                type="checkbox"
+                aria-label="Default model"
+                checked={editModelForm.isDefault}
+                onChange={(e) =>
+                  setEditModelForm((f) => ({ ...f, isDefault: e.target.checked }))
+                }
+                className="rounded"
+              />
+              Default model
+            </label>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <button
+              type="button"
+              onClick={() => setEditingModel(null)}
+              disabled={editModelSaving}
+              className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleEditModelSubmit}
+              disabled={editModelSaving || !editModelForm.modelId.trim()}
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {editModelSaving ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Save className="size-4" />
+              )}
+              Save Changes
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

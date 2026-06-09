@@ -127,6 +127,114 @@ export async function POST(
 }
 
 /**
+ * PATCH /api/admin/ai-providers/[id]/models
+ * Update an existing model's editable fields.
+ * Body: { id: <model record ID>, modelId?, displayName?, serviceTier?, isDefault? }
+ */
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await auth();
+  if (!session?.user || session.user.role !== "ADMIN") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const { id: providerId } = await params;
+
+  try {
+    const body = await req.json();
+    const recordId = typeof body.id === "string" ? body.id.trim() : "";
+
+    if (!recordId) {
+      return NextResponse.json({ error: "Model record ID is required" }, { status: 400 });
+    }
+
+    const existing = await prisma.aiModel.findFirst({
+      where: { id: recordId, providerId },
+    });
+    if (!existing) {
+      return NextResponse.json({ error: "Model not found" }, { status: 404 });
+    }
+
+    const data: {
+      modelId?: string;
+      displayName?: string | null;
+      serviceTier?: string | null;
+      isDefault?: boolean;
+    } = {};
+
+    if (body.modelId !== undefined) {
+      const modelId = typeof body.modelId === "string" ? body.modelId.trim() : "";
+      if (!modelId) {
+        return NextResponse.json({ error: "Model ID cannot be empty" }, { status: 400 });
+      }
+      data.modelId = modelId;
+    }
+
+    if (body.displayName !== undefined) {
+      data.displayName =
+        typeof body.displayName === "string" && body.displayName.trim()
+          ? body.displayName.trim()
+          : null;
+    }
+
+    if (body.serviceTier !== undefined) {
+      const serviceTier =
+        typeof body.serviceTier === "string" && body.serviceTier.trim()
+          ? body.serviceTier.trim()
+          : null;
+      if (serviceTier && !["flex", "auto", "default"].includes(serviceTier)) {
+        return NextResponse.json(
+          { error: "Service tier must be 'flex', 'auto', 'default', or empty" },
+          { status: 400 }
+        );
+      }
+      data.serviceTier = serviceTier;
+    }
+
+    if (body.isDefault !== undefined) {
+      data.isDefault = body.isDefault === true;
+    }
+
+    // If this model is being set as default, unset any other default for this provider.
+    if (data.isDefault === true) {
+      await prisma.aiModel.updateMany({
+        where: { providerId, isDefault: true, NOT: { id: recordId } },
+        data: { isDefault: false },
+      });
+    }
+
+    const model = await prisma.aiModel.update({
+      where: { id: recordId },
+      data,
+    });
+
+    invalidateProviderCache();
+
+    return NextResponse.json({
+      model: {
+        id: model.id,
+        modelId: model.modelId,
+        displayName: model.displayName,
+        serviceTier: model.serviceTier,
+        isDefault: model.isDefault,
+      },
+    });
+  } catch (error: any) {
+    if (error?.code === "P2002") {
+      return NextResponse.json(
+        { error: "A model with this ID and service tier already exists for this provider" },
+        { status: 409 }
+      );
+    }
+
+    console.error("[AI_MODELS_PATCH]", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+/**
  * DELETE /api/admin/ai-providers/[id]/models
  * Delete a model by its model record ID (sent in body).
  */
