@@ -24,8 +24,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const teacher = await prisma.teacher.findUnique({ where: { userId: session.user.id } });
   if (!name?.trim()) return NextResponse.json({ error: "Subtopic name required." }, { status: 400 });
+  const teacher = await prisma.teacher.findUnique({ where: { userId: session.user.id } });
 
   const subtopic = await prisma.subtopic.create({
     data: { name: name.trim(), order: order ?? 0, topicId: id, createdById: teacher?.id },

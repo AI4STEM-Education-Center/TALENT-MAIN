@@ -176,7 +176,7 @@ export function clampPageRange(
 ): { start: number; end: number } | null {
   if (availablePageNumbers.length === 0) return null;
 
-  const sorted = [...availablePageNumbers].sort((a, b) => a - b);
+  const sorted = availablePageNumbers.toSorted((a, b) => a - b);
   const min = sorted[0];
   const max = sorted[sorted.length - 1];
 

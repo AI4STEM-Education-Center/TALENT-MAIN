@@ -130,7 +130,7 @@ export function QuizReviewList({
     <div className="space-y-3">
       <h2 className="text-lg font-semibold">Review</h2>
       {questions.map((q, i) => (
-        <div key={i} className="grid gap-3 xl:grid-cols-2">
+        <div key={q.text} className="grid gap-3 xl:grid-cols-2">
           <QuestionCard question={q} index={i} />
           {!q.isCorrect && (
             <RecommendationCell rec={recByQuestion.get(q.text)} status={recommendationsStatus} />
