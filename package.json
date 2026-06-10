@@ -2,6 +2,9 @@
   "name": "adaptive-learning-webapp",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "db:push": "prisma db push",
     "seed": "tsx prisma/seed.ts",
@@ -14,7 +17,7 @@
     "deploy": "npm run db:push && next build && next start",
     "deploy:full": "npm run db:push && npm run seed && npm run seed:demo && next build && next start",
     "worker": "tsx src/worker.ts",
-    "worker:build": "esbuild src/worker.ts --bundle --platform=node --target=node20 --outfile=dist/worker.js --external:@russellthehippo/honker-node --external:@prisma/client --external:@prisma/adapter-better-sqlite3 --external:better-sqlite3",
+    "worker:build": "esbuild src/worker.ts --bundle --platform=node --target=node24 --outfile=dist/worker.js --external:@russellthehippo/honker-node --external:@prisma/client --external:@prisma/adapter-better-sqlite3 --external:better-sqlite3",
     "doctor": "npx react-doctor@latest",
     "test": "vitest run",
     "test:watch": "vitest",
