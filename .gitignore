@@ -10,6 +10,8 @@
 
 # Production
 /build
+# Bundled background worker (built by `worker:build` / in the Docker image)
+/dist/
 
 # Misc
 .DS_Store

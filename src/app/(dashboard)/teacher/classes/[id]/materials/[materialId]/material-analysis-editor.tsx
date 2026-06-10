@@ -288,7 +288,7 @@ export default function MaterialAnalysisEditor({
                 {keyConcepts.map((concept, idx) => (
                   <span
                     key={`${concept}-${idx}`}
-                    className="px-3 py-1 bg-white text-blue-700 rounded-full text-sm font-medium shadow-sm border border-blue-200"
+                    className="px-3 py-1 bg-white text-blue-700 rounded-full text-sm font-medium shadow-xs border border-blue-200"
                   >
                     {concept}
                   </span>
@@ -318,7 +318,7 @@ export default function MaterialAnalysisEditor({
                 page.needed !== page.original.needed;
 
               return (
-                <div key={page.id} className="bg-white border rounded-xl overflow-hidden shadow-sm">
+                <div key={page.id} className="bg-white border rounded-xl overflow-hidden shadow-xs">
                   <div className="flex flex-col md:flex-row">
                     <div className="md:w-1/3 bg-gray-100 flex items-center justify-center p-4 border-b md:border-b-0 md:border-r border-gray-200">
                       <PageViewer classId={classId} materialId={materialId} pageId={page.id} />
