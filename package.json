@@ -47,7 +47,7 @@
     "next": "^16.2.9",
     "next-auth": "^5.0.0-beta.31",
     "openai": "^6.42.0",
-    "pdfjs-dist": "^4.0.379",
+    "pdfjs-dist": "^6.0.227",
     "react": "^18",
     "react-dom": "^18",
     "react-markdown": "^10.1.0",
