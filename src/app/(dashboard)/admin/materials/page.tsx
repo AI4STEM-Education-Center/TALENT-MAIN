@@ -275,7 +275,7 @@ export default function AdminMaterialsPage() {
             <ArrowLeft className="size-4" />
             Back to classes
           </button>
-          <div className="bg-white border rounded-lg overflow-hidden shadow-sm">
+          <div className="bg-white border rounded-lg overflow-hidden shadow-xs">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
