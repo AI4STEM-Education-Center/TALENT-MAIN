@@ -8,7 +8,7 @@ import type { PresignedRecommendation } from "@/lib/exam-results";
  */
 export function RecommendationCard({ rec }: { rec: PresignedRecommendation }) {
   return (
-    <div className="flex h-full flex-col rounded-xl border bg-card p-4 text-sm shadow-sm">
+    <div className="flex h-full flex-col rounded-xl border bg-card p-4 text-sm shadow-xs">
       <p className="flex items-center gap-1.5 text-xs font-semibold text-primary">
         <BookOpen className="size-4" /> Recommended material
       </p>
@@ -27,7 +27,7 @@ export function RecommendationCard({ rec }: { rec: PresignedRecommendation }) {
       {rec.pages.length > 0 && (
         // Document viewer: the box is exactly one page tall; additional pages are
         // reached by scrolling, snapping one page into view at a time.
-        <div className="mt-3 aspect-[4/3] w-full snap-y snap-mandatory overflow-y-auto rounded-lg border bg-muted/30">
+        <div className="mt-3 aspect-4/3 w-full snap-y snap-mandatory overflow-y-auto rounded-lg border bg-muted/30">
           {rec.pages.map((pg) => (
             // eslint-disable-next-line @next/next/no-img-element
             <img

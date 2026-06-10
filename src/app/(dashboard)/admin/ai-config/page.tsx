@@ -622,7 +622,7 @@ export default function AiConfigPage() {
                       setProviderForm((f) => ({ ...f, name: e.target.value }))
                     }
                     placeholder="e.g. Production OpenAI"
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-hidden focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
                   />
                 </div>
                 <div>
@@ -682,7 +682,7 @@ export default function AiConfigPage() {
                           ? "https://gateway.ai.cloudflare.com/v1/{account}/{gateway}/openai"
                           : "https://api.openai.com/v1"
                     }
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-hidden focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
                   />
                 </div>
                 <div>
@@ -708,7 +708,7 @@ export default function AiConfigPage() {
                           ? "Cloudflare AI Gateway token"
                           : "sk-..."
                     }
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono focus:border-blue-500 focus:outline-hidden focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
                   />
                 </div>
                 {providerForm.providerType === "cloudflare" && (
@@ -725,7 +725,7 @@ export default function AiConfigPage() {
                         setProviderForm((f) => ({ ...f, cfAigByokAlias: e.target.value }))
                       }
                       placeholder="my-stored-key-alias"
-                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono focus:border-blue-500 focus:outline-hidden focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
                     />
                   </div>
                 )}
@@ -918,7 +918,7 @@ export default function AiConfigPage() {
                                 modelId: e.target.value,
                               }))
                             }
-                            className="rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
+                            className="rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-hidden focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
                           />
                           <input
                             type="text"
@@ -931,7 +931,7 @@ export default function AiConfigPage() {
                                 displayName: e.target.value,
                               }))
                             }
-                            className="rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
+                            className="rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-hidden focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
                           />
                           <Select
                             value={modelForm.serviceTier || "none"}
@@ -1345,7 +1345,7 @@ export default function AiConfigPage() {
                   setEditModelForm((f) => ({ ...f, modelId: e.target.value }))
                 }
                 placeholder="e.g. gpt-5.1"
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono focus:border-blue-500 focus:outline-hidden focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
               />
             </div>
             <div>
@@ -1361,7 +1361,7 @@ export default function AiConfigPage() {
                   setEditModelForm((f) => ({ ...f, displayName: e.target.value }))
                 }
                 placeholder="Friendly name"
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-hidden focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
               />
             </div>
             <div>

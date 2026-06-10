@@ -94,7 +94,7 @@ export default function MaterialsList({ classId, initialMaterials }: MaterialsLi
         return (
           <div
             key={mat.id}
-            className="bg-white border rounded-lg p-5 flex items-center justify-between shadow-sm"
+            className="bg-white border rounded-lg p-5 flex items-center justify-between shadow-xs"
           >
             <div className="flex items-center gap-x-4">
               <div className="p-3 bg-blue-50 rounded-full">
