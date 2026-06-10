@@ -6,6 +6,12 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # ── Stage 1: Install dependencies ──────────────────────────────────────────────
 FROM base AS deps
 
+# better-sqlite3 (Prisma 7's SQLite driver adapter) compiles native bindings on
+# install; node:26-slim has no prebuilt binary for this ABI yet, so a C/C++
+# toolchain is required. These build tools stay in the deps stage and never
+# reach the runner image.
+RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
+
 COPY package.json package-lock.json ./
 RUN npm install
 
@@ -21,7 +27,9 @@ RUN mkdir -p public && npx prisma generate && npx next build
 RUN npx esbuild src/worker.ts --bundle --platform=node --target=node20 \
       --outfile=dist/worker.js \
       --external:@russellthehippo/honker-node \
-      --external:@prisma/client
+      --external:@prisma/client \
+      --external:@prisma/adapter-better-sqlite3 \
+      --external:better-sqlite3
 
 # ── Stage 3: Production runner ────────────────────────────────────────────────
 FROM node:26-slim AS runner
@@ -55,6 +63,9 @@ COPY --from=builder /app/version.json ./version.json
 COPY --from=builder /app/CHANGELOG.md ./CHANGELOG.md
 COPY --from=builder /app/dist/worker.js ./worker.js
 COPY --from=builder /app/node_modules/@russellthehippo ./node_modules/@russellthehippo
+# better-sqlite3 ships a native binary that can't be bundled; the worker keeps it
+# external and the web server's traced copy also resolves it from here.
+COPY --from=builder /app/node_modules/better-sqlite3 ./node_modules/better-sqlite3
 
 COPY docker/docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x ./docker-entrypoint.sh && \
