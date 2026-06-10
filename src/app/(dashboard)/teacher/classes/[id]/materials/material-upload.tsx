@@ -2,13 +2,8 @@
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import * as pdfjsLib from "pdfjs-dist";
+import { PDFiumLibrary } from "@hyzyla/pdfium/browser/base64";
 import { UploadCloud, Loader2 } from "lucide-react";
-
-// Configure PDF.js worker
-if (typeof window !== "undefined") {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
-}
 
 interface MaterialUploadProps {
   classId: string;
@@ -66,40 +61,58 @@ export default function MaterialUploadForm({ classId }: MaterialUploadProps) {
         if (!uploadRes.ok) throw new Error("Failed to upload PDF to storage");
 
         setStatusText("Processing pages locally...");
-        // 3. Slice PDF in browser
+        // 3. Rasterize PDF pages in the browser via PDFium (WASM).
         const arrayBuffer = await file.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
-        const numPages = pdf.numPages;
-
-        if (numPages > 100) {
-          throw new Error(`PDF exceeds maximum limit of 100 pages (has ${numPages}).`);
-        }
-
-        // Render pages to blobs
         const pageBlobs: { pageNumber: number; blob: Blob; sizeBytes: number }[] = [];
-        for (let i = 1; i <= numPages; i++) {
-          setStatusText(`Rendering page ${i} of ${numPages}...`);
-          setProgress((i / numPages) * 30); // First 30% is rendering
+        let numPages = 0;
 
-          const page = await pdf.getPage(i);
-          const viewport = page.getViewport({ scale: 2.0 }); // Good quality for VLM
-          const canvas = document.createElement("canvas");
-          const ctx = canvas.getContext("2d");
-          
-          if (!ctx) throw new Error("Could not create canvas context");
-          
-          canvas.width = viewport.width;
-          canvas.height = viewport.height;
-          
-          await page.render({ canvasContext: ctx, viewport }).promise;
-          
-          const blob = await new Promise<Blob | null>((resolve) =>
-            canvas.toBlob(resolve, "image/png")
-          );
-          
-          if (!blob) throw new Error(`Failed to create blob for page ${i}`);
-          
-          pageBlobs.push({ pageNumber: i, blob, sizeBytes: blob.size });
+        // The base64 build inlines the WASM, so there's no worker/CDN to load.
+        const library = await PDFiumLibrary.init({ disableBase64Warning: true });
+        try {
+          const pdfDoc = await library.loadDocument(new Uint8Array(arrayBuffer));
+          try {
+            numPages = pdfDoc.getPageCount();
+
+            if (numPages > 100) {
+              throw new Error(`PDF exceeds maximum limit of 100 pages (has ${numPages}).`);
+            }
+
+            for (let i = 1; i <= numPages; i++) {
+              setStatusText(`Rendering page ${i} of ${numPages}...`);
+              setProgress((i / numPages) * 30); // First 30% is rendering
+
+              // PDFium renders to a raw BGRA bitmap; scale 2.0 keeps quality high for the VLM.
+              const { data, width, height } = await pdfDoc
+                .getPage(i - 1) // PDFium pages are 0-indexed
+                .render({ scale: 2.0, render: "bitmap" });
+
+              // Canvas ImageData is RGBA, so swap each pixel's B and R bytes in place.
+              for (let p = 0; p < data.length; p += 4) {
+                const b = data[p];
+                data[p] = data[p + 2];
+                data[p + 2] = b;
+              }
+
+              const canvas = document.createElement("canvas");
+              canvas.width = width;
+              canvas.height = height;
+              const ctx = canvas.getContext("2d");
+              if (!ctx) throw new Error("Could not create canvas context");
+              ctx.putImageData(new ImageData(new Uint8ClampedArray(data), width, height), 0, 0);
+
+              const blob = await new Promise<Blob | null>((resolve) =>
+                canvas.toBlob(resolve, "image/png")
+              );
+
+              if (!blob) throw new Error(`Failed to create blob for page ${i}`);
+
+              pageBlobs.push({ pageNumber: i, blob, sizeBytes: blob.size });
+            }
+          } finally {
+            pdfDoc.destroy();
+          }
+        } finally {
+          library.destroy();
         }
 
         setStatusText("Requesting upload URLs for pages...");
