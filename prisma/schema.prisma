@@ -21,6 +21,8 @@ model User {
 
   teacher Teacher?
   student Student?
+
+  @@index([role])
 }
 
 model Teacher {
@@ -157,6 +159,8 @@ model ClassEnrollment {
   student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
   @@unique([classId, studentId])
+  // Student "my classes" list: WHERE studentId ORDER BY joinedAt DESC
+  @@index([studentId, joinedAt])
 }
 
 model Invitation {
@@ -170,6 +174,8 @@ model Invitation {
   createdAt DateTime  @default(now())
 
   class Class @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@index([classId])
 }
 
 // ─── Content ──────────────────────────────────────────────────────────────────
@@ -204,6 +210,8 @@ model Subtopic {
   moduleProgress ModuleProgress[]
   quizAttempts   QuizAttempt[]
   imports        QuestionImport[]
+
+  @@index([topicId])
 }
 
 // difficultyLevel: "BEGINNER" | "INTERMEDIATE" | "ADVANCED"
@@ -234,7 +242,9 @@ model Question {
 
   @@index([importId])
   @@index([topicId])
-  @@index([subtopicId])
+  // Quiz generation: WHERE subtopicId ORDER BY createdAt ASC
+  @@index([subtopicId, createdAt])
+  @@index([createdById])
 }
 
 // status: "COMPLETED" | "FAILED"
@@ -273,6 +283,10 @@ model Option {
 
   question    Question     @relation(fields: [questionId], references: [id], onDelete: Cascade)
   quizAnswers QuizAnswer[]
+
+  // Loaded on every quiz fetch (include: { options }) and bulk-replaced on
+  // question edit (deleteMany({ questionId })) — SQLite does not index FKs.
+  @@index([questionId])
 }
 
 // ─── Class <-> Topic (with publish control) ───────────────────────────────────
@@ -287,6 +301,7 @@ model ClassTopic {
   topic Topic @relation(fields: [topicId], references: [id], onDelete: Cascade)
 
   @@unique([classId, topicId])
+  @@index([topicId])
 }
 
 // ─── Learning Progress ────────────────────────────────────────────────────────
@@ -306,6 +321,8 @@ model ModuleProgress {
   subtopic Subtopic @relation(fields: [subtopicId], references: [id], onDelete: Cascade)
 
   @@unique([studentId, classId, subtopicId])
+  @@index([classId])
+  @@index([subtopicId])
 }
 
 model QuizAttempt {
@@ -322,8 +339,11 @@ model QuizAttempt {
   subtopic Subtopic     @relation(fields: [subtopicId], references: [id], onDelete: Cascade)
   answers  QuizAnswer[]
 
-  @@index([studentId])
+  // Latest-completed-attempt lookups: WHERE studentId AND completedAt IS NOT
+  // NULL ORDER BY completedAt DESC (also serves plain studentId filters)
+  @@index([studentId, completedAt])
   @@index([classId])
+  @@index([subtopicId])
 }
 
 model QuizAnswer {
@@ -339,6 +359,10 @@ model QuizAnswer {
   selectedOption Option?     @relation(fields: [selectedOptionId], references: [id], onDelete: SetNull)
 
   @@index([quizAttemptId])
+  // FK cascade/SetNull targets — question delete and option delete (bulk
+  // option replacement on question edit) scan this table without these.
+  @@index([questionId])
+  @@index([selectedOptionId])
 }
 
 // ─── Exam Results (durable archival snapshot) ─────────────────────────────────
