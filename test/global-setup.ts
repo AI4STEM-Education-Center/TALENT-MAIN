@@ -21,7 +21,10 @@ export default function setup() {
     if (existsSync(f)) rmSync(f);
   }
 
-  execSync("npx prisma db push --skip-generate --accept-data-loss", {
+  // Prisma 7 removed `--skip-generate` from `db push` (push no longer triggers
+  // client generation). The datasource URL is read from prisma.config.ts, which
+  // picks up the DATABASE_URL passed below.
+  execSync("npx prisma db push --accept-data-loss", {
     stdio: "inherit",
     env: { ...process.env, DATABASE_URL: testDbUrl() },
   });

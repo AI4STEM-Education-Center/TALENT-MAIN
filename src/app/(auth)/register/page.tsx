@@ -62,12 +62,12 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 flex items-center justify-center px-4 py-8">
+    <div className="min-h-screen bg-linear-to-br from-slate-900 via-blue-950 to-slate-900 flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-md space-y-4">
 
         {/* Student notice */}
         <div className="flex items-start gap-3 p-4 rounded-lg bg-blue-500/10 border border-blue-400/20 text-sm text-blue-200">
-          <Info className="size-4 mt-0.5 flex-shrink-0 text-blue-400" />
+          <Info className="size-4 mt-0.5 shrink-0 text-blue-400" />
           <span>
             <strong>Students:</strong> You cannot sign up here. Ask your teacher for an invitation link: you&apos;ll need your 81 number to verify your identity and create your account.
           </span>

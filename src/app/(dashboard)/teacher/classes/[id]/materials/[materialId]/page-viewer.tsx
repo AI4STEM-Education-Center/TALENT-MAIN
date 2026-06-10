@@ -55,7 +55,7 @@ export default function PageViewer({
     <img
       src={imageUrl}
       alt="Document Page"
-      className="max-w-full h-auto object-contain rounded border border-gray-200 shadow-sm"
+      className="max-w-full h-auto object-contain rounded border border-gray-200 shadow-xs"
       loading="lazy"
     />
   );

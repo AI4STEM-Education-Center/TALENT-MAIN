@@ -49,9 +49,9 @@ function QuestionCard({ question, index }: { question: SnapshotQuestion; index: 
       <CardContent className="p-4 space-y-2">
         <div className="flex items-start gap-2">
           {question.isCorrect ? (
-            <CheckCircle className="size-4 text-green-500 mt-0.5 flex-shrink-0" />
+            <CheckCircle className="size-4 text-green-500 mt-0.5 shrink-0" />
           ) : (
-            <XCircle className="size-4 text-red-500 mt-0.5 flex-shrink-0" />
+            <XCircle className="size-4 text-red-500 mt-0.5 shrink-0" />
           )}
           <p className="font-medium text-sm">
             {index + 1}. {question.text}
@@ -69,7 +69,7 @@ function QuestionCard({ question, index }: { question: SnapshotQuestion; index: 
                   : "text-muted-foreground"
               }`}
             >
-              <span className="flex-shrink-0">
+              <span className="shrink-0">
                 {opt.isCorrect ? "✓" : opt.selected ? "✗" : " "}
               </span>
               {opt.text}

@@ -90,7 +90,7 @@ export default function TopicsPage() {
           </Card>
         )}
         {topics.map((topic) => (
-          <Card key={topic.id} className="hover:shadow-sm transition-shadow">
+          <Card key={topic.id} className="hover:shadow-xs transition-shadow">
             <CardContent className="p-4">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-start gap-3 flex-1 min-w-0">

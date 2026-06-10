@@ -521,7 +521,7 @@ export default function Chatbot() {
                         {message.recommendations.map((rec) => (
                           <div
                             key={`${rec.questionText}-${rec.materialTitle}-${rec.pageRange.start}`}
-                            className="rounded-2xl rounded-tl-sm border border-gray-100 bg-white p-3 text-sm shadow-sm dark:border-gray-700 dark:bg-gray-800"
+                            className="rounded-2xl rounded-tl-sm border border-gray-100 bg-white p-3 text-sm shadow-xs dark:border-gray-700 dark:bg-gray-800"
                           >
                             <p className="mb-1 text-xs text-gray-500 dark:text-gray-400">
                               For: <span className="italic">{rec.questionText}</span>
@@ -573,7 +573,7 @@ export default function Chatbot() {
                       className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm ${
                         message.role === "user"
                           ? "rounded-tr-sm bg-blue-600 whitespace-pre-wrap text-white"
-                          : `rounded-tl-sm border border-gray-100 bg-white text-gray-800 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 ${ASSISTANT_MARKDOWN_CLASS_NAME}`
+                          : `rounded-tl-sm border border-gray-100 bg-white text-gray-800 shadow-xs dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 ${ASSISTANT_MARKDOWN_CLASS_NAME}`
                       }`}
                     >
                       {message.role === "assistant" ? (
@@ -587,7 +587,7 @@ export default function Chatbot() {
               })}
               {isLoading && (
                 <div className="flex justify-start">
-                  <div className="flex items-center gap-x-1 rounded-2xl rounded-tl-sm border border-gray-100 bg-white px-4 py-2 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+                  <div className="flex items-center gap-x-1 rounded-2xl rounded-tl-sm border border-gray-100 bg-white px-4 py-2 shadow-xs dark:border-gray-700 dark:bg-gray-800">
                     <div className="size-2 rounded-full bg-gray-400 animate-pulse"></div>
                     <div
                       className="size-2 rounded-full bg-gray-400 animate-pulse"
@@ -602,7 +602,7 @@ export default function Chatbot() {
               )}
               {isRecommending && (
                 <div className="flex justify-start">
-                  <div className="flex items-center gap-x-2 rounded-2xl rounded-tl-sm border border-gray-100 bg-white px-4 py-2 text-xs text-gray-500 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
+                  <div className="flex items-center gap-x-2 rounded-2xl rounded-tl-sm border border-gray-100 bg-white px-4 py-2 text-xs text-gray-500 shadow-xs dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
                     <div className="size-2 rounded-full bg-gray-400 animate-pulse"></div>
                     Finding materials to help you…
                   </div>
@@ -624,7 +624,7 @@ export default function Chatbot() {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   placeholder="Type your message..."
-                  className="flex-1 rounded-full border border-gray-300 bg-gray-50 p-2 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                  className="flex-1 rounded-full border border-gray-300 bg-gray-50 p-2 text-sm focus:border-transparent focus:outline-hidden focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                   disabled={isLoading}
                   aria-label="Chat message"
                 />

@@ -26,8 +26,8 @@ export function VersionModal() {
 
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/45" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[95vw] max-w-2xl -translate-x-1/2 -translate-y-1/2 focus:outline-none">
-          <Card className="max-h-[85vh] overflow-hidden border-sidebar-border bg-card/95 backdrop-blur">
+        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[95vw] max-w-2xl -translate-x-1/2 -translate-y-1/2 focus:outline-hidden">
+          <Card className="max-h-[85vh] overflow-hidden border-sidebar-border bg-card/95 backdrop-blur-sm">
             <div className="border-b border-sidebar-border px-5 py-4 flex items-start justify-between gap-4">
               <div className="space-y-2">
                 <Dialog.Title className="flex items-center gap-2 text-lg font-semibold text-foreground">

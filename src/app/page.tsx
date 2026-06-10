@@ -18,7 +18,7 @@ export default async function HomePage() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 flex items-center justify-center px-4">
+    <main className="min-h-screen bg-linear-to-br from-slate-900 via-blue-950 to-slate-900 flex items-center justify-center px-4">
       <div className="max-w-2xl w-full text-center space-y-8">
         <div className="space-y-4">
           <div className="inline-flex items-center justify-center size-20 rounded-2xl bg-blue-500/20 border border-blue-400/30 mb-4">
