@@ -31,6 +31,23 @@ RUN npx esbuild src/worker.ts --bundle --platform=node --target=node20 \
       --external:@prisma/adapter-better-sqlite3 \
       --external:better-sqlite3
 
+# ── Stage 2.5: Standalone Prisma CLI for the startup migration ──────────────────
+# docker-entrypoint.sh runs `prisma db push` at container start. The Prisma 7 CLI
+# loads @prisma/dev, whose dependencies (pathe, hono, @electric-sql/pglite, …) npm
+# hoists to the TOP level of node_modules — they are not under node_modules/@prisma
+# or node_modules/prisma, so the runner's selective copies missed them and the CLI
+# died with "Cannot find module 'pathe'". An isolated install lets npm resolve the
+# CLI's complete dependency closure for us, with no manual tracking of transitives.
+# Pinned to the exact version the app locks so the migration CLI never drifts from
+# the generated client.
+FROM base AS migrator
+WORKDIR /migrator
+COPY package-lock.json ./
+RUN PRISMA_VERSION="$(node -p "require('./package-lock.json').packages['node_modules/prisma'].version")" && \
+    rm package-lock.json && \
+    npm init -y >/dev/null 2>&1 && \
+    npm install --no-audit --no-fund --omit=optional "prisma@${PRISMA_VERSION}"
+
 # ── Stage 3: Production runner ────────────────────────────────────────────────
 FROM node:26-slim AS runner
 RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
@@ -57,8 +74,17 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
-COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
+# Prisma CLI + its full dependency closure (replaces a bare `prisma` copy that
+# left the @prisma/dev transitive deps behind). Merged into node_modules so the
+# CLI resolves its own requires AND prisma.config.ts's `import "prisma/config"`
+# resolves from /app. @prisma/client/adapter from the copy above survive the merge
+# (the CLI install does not contain them).
+COPY --from=migrator /migrator/node_modules ./node_modules
 COPY --from=builder /app/prisma ./prisma
+# The CLI reads the datasource URL from prisma.config.ts (Prisma 7 no longer takes
+# it from schema.prisma); its only import, src/lib/db-url, must resolve too.
+COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
+COPY --from=builder /app/src/lib/db-url.ts ./src/lib/db-url.ts
 COPY --from=builder /app/version.json ./version.json
 COPY --from=builder /app/CHANGELOG.md ./CHANGELOG.md
 COPY --from=builder /app/dist/worker.js ./worker.js
