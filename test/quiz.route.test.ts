@@ -5,7 +5,7 @@ vi.mock("@/lib/auth", () => ({ auth: vi.fn() }));
 import { POST, PATCH } from "@/app/api/quiz/route";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { resetDb, createTeacher, createStudent, createClass, createPublishedModule } from "./db";
+import { resetDb, createTeacher, createStudent, createClass, createPublishedQuiz } from "./db";
 
 const mockAuth = vi.mocked(auth);
 
@@ -26,8 +26,9 @@ async function setup(opts: { published?: boolean; answerMode?: "SINGLE_SELECT" |
   const cls = await createClass(teacher.id);
   const { user: studentUser, student } = await createStudent();
   await prisma.classEnrollment.create({ data: { classId: cls.id, studentId: student.id } });
-  const mod = await createPublishedModule({
+  const mod = await createPublishedQuiz({
     classId: cls.id,
+    teacherId: teacher.id,
     answerMode: opts.answerMode ?? "SINGLE_SELECT",
     published: opts.published ?? true,
   });
@@ -47,11 +48,11 @@ afterAll(async () => {
 describe("POST /api/quiz (start attempt)", () => {
   it("rejects a non-student with 401", async () => {
     mockAuth.mockResolvedValue({ user: { id: "x", role: "TEACHER" } } as never);
-    const res = await POST(jsonReq({ classId: "c", subtopicId: "s" }));
+    const res = await POST(jsonReq({ classId: "c", quizId: "q" }));
     expect(res.status).toBe(401);
   });
 
-  it("requires classId and subtopicId", async () => {
+  it("requires classId and quizId", async () => {
     const { studentUser } = await setup();
     asStudent(studentUser.id);
     const res = await POST(jsonReq({ classId: "c" }));
@@ -59,24 +60,24 @@ describe("POST /api/quiz (start attempt)", () => {
   });
 
   it("rejects a student not enrolled in the class with 403", async () => {
-    const { cls, subtopic } = await setup();
+    const { cls, quiz } = await setup();
     const { user: outsider } = await createStudent();
     asStudent(outsider.id);
-    const res = await POST(jsonReq({ classId: cls.id, subtopicId: subtopic.id }));
+    const res = await POST(jsonReq({ classId: cls.id, quizId: quiz.id }));
     expect(res.status).toBe(403);
   });
 
-  it("rejects an unpublished module with 403", async () => {
-    const { studentUser, cls, subtopic } = await setup({ published: false });
+  it("rejects an unpublished quiz with 403", async () => {
+    const { studentUser, cls, quiz } = await setup({ published: false });
     asStudent(studentUser.id);
-    const res = await POST(jsonReq({ classId: cls.id, subtopicId: subtopic.id }));
+    const res = await POST(jsonReq({ classId: cls.id, quizId: quiz.id }));
     expect(res.status).toBe(403);
   });
 
   it("starts an attempt and returns questions without leaking isCorrect", async () => {
-    const { studentUser, cls, subtopic } = await setup();
+    const { studentUser, cls, quiz } = await setup();
     asStudent(studentUser.id);
-    const res = await POST(jsonReq({ classId: cls.id, subtopicId: subtopic.id }));
+    const res = await POST(jsonReq({ classId: cls.id, quizId: quiz.id }));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.attemptId).toBeTruthy();
@@ -85,20 +86,20 @@ describe("POST /api/quiz (start attempt)", () => {
     expect(body.questions[0].options[0]).not.toHaveProperty("isCorrect");
 
     // Progress is marked IN_PROGRESS.
-    const progress = await prisma.moduleProgress.findFirst({ where: { subtopicId: subtopic.id } });
+    const progress = await prisma.quizProgress.findFirst({ where: { quizId: quiz.id } });
     expect(progress?.status).toBe("IN_PROGRESS");
   });
 });
 
 describe("PATCH /api/quiz (submit answers)", () => {
-  async function startAttempt(studentId: string, classId: string, subtopicId: string) {
-    return prisma.quizAttempt.create({ data: { studentId, classId, subtopicId } });
+  async function startAttempt(studentId: string, classId: string, quizId: string) {
+    return prisma.quizAttempt.create({ data: { studentId, classId, quizId } });
   }
 
   it("scores a correct single-select answer as 100 and persists a JSON-string selection", async () => {
     const s = await setup({ answerMode: "SINGLE_SELECT" });
     asStudent(s.studentUser.id);
-    const attempt = await startAttempt(s.student.id, s.cls.id, s.subtopic.id);
+    const attempt = await startAttempt(s.student.id, s.cls.id, s.quiz.id);
 
     const res = await PATCH(
       jsonReq({ attemptId: attempt.id, answers: [{ questionId: s.question.id, selectedOptionId: s.optionId("4") }] })
@@ -119,7 +120,7 @@ describe("PATCH /api/quiz (submit answers)", () => {
     const updated = await prisma.quizAttempt.findUnique({ where: { id: attempt.id } });
     expect(updated?.score).toBe(100);
     expect(updated?.completedAt).not.toBeNull();
-    const progress = await prisma.moduleProgress.findFirst({ where: { subtopicId: s.subtopic.id } });
+    const progress = await prisma.quizProgress.findFirst({ where: { quizId: s.quiz.id } });
     expect(progress?.status).toBe("COMPLETED");
     expect(progress?.bestScore).toBe(100);
   });
@@ -127,7 +128,7 @@ describe("PATCH /api/quiz (submit answers)", () => {
   it("scores a wrong single-select answer as 0", async () => {
     const s = await setup({ answerMode: "SINGLE_SELECT" });
     asStudent(s.studentUser.id);
-    const attempt = await startAttempt(s.student.id, s.cls.id, s.subtopic.id);
+    const attempt = await startAttempt(s.student.id, s.cls.id, s.quiz.id);
     const res = await PATCH(
       jsonReq({ attemptId: attempt.id, answers: [{ questionId: s.question.id, selectedOptionId: s.optionId("3") }] })
     );
@@ -140,14 +141,14 @@ describe("PATCH /api/quiz (submit answers)", () => {
     asStudent(s.studentUser.id);
 
     // Exact set -> correct.
-    const a1 = await startAttempt(s.student.id, s.cls.id, s.subtopic.id);
+    const a1 = await startAttempt(s.student.id, s.cls.id, s.quiz.id);
     const exact = await PATCH(
       jsonReq({ attemptId: a1.id, answers: [{ questionId: s.question.id, selectedOptionIds: [s.optionId("4"), s.optionId("5")] }] })
     );
     expect((await exact.json()).score).toBe(100);
 
     // Partial set -> wrong.
-    const a2 = await startAttempt(s.student.id, s.cls.id, s.subtopic.id);
+    const a2 = await startAttempt(s.student.id, s.cls.id, s.quiz.id);
     const partial = await PATCH(
       jsonReq({ attemptId: a2.id, answers: [{ questionId: s.question.id, selectedOptionIds: [s.optionId("4")] }] })
     );
@@ -158,20 +159,20 @@ describe("PATCH /api/quiz (submit answers)", () => {
     const s = await setup({ answerMode: "SINGLE_SELECT" });
     asStudent(s.studentUser.id);
 
-    const good = await startAttempt(s.student.id, s.cls.id, s.subtopic.id);
+    const good = await startAttempt(s.student.id, s.cls.id, s.quiz.id);
     await PATCH(jsonReq({ attemptId: good.id, answers: [{ questionId: s.question.id, selectedOptionId: s.optionId("4") }] }));
 
-    const bad = await startAttempt(s.student.id, s.cls.id, s.subtopic.id);
+    const bad = await startAttempt(s.student.id, s.cls.id, s.quiz.id);
     await PATCH(jsonReq({ attemptId: bad.id, answers: [{ questionId: s.question.id, selectedOptionId: s.optionId("3") }] }));
 
-    const progress = await prisma.moduleProgress.findFirst({ where: { subtopicId: s.subtopic.id } });
+    const progress = await prisma.quizProgress.findFirst({ where: { quizId: s.quiz.id } });
     expect(progress?.bestScore).toBe(100); // not overwritten by the later 0
   });
 
   it("rejects submitting to another student's attempt with 404", async () => {
     const s = await setup();
     const other = await createStudent();
-    const attempt = await startAttempt(other.student.id, s.cls.id, s.subtopic.id);
+    const attempt = await startAttempt(other.student.id, s.cls.id, s.quiz.id);
     asStudent(s.studentUser.id);
     const res = await PATCH(jsonReq({ attemptId: attempt.id, answers: [{ questionId: s.question.id, selectedOptionId: s.optionId("4") }] }));
     expect(res.status).toBe(404);
@@ -180,7 +181,7 @@ describe("PATCH /api/quiz (submit answers)", () => {
   it("returns 404 when an answer references an unknown question", async () => {
     const s = await setup();
     asStudent(s.studentUser.id);
-    const attempt = await startAttempt(s.student.id, s.cls.id, s.subtopic.id);
+    const attempt = await startAttempt(s.student.id, s.cls.id, s.quiz.id);
     const res = await PATCH(jsonReq({ attemptId: attempt.id, answers: [{ questionId: "ghost", selectedOptionId: "x" }] }));
     expect(res.status).toBe(404);
   });

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { canManage, getContentActor } from "@/lib/quiz-access";
 import { QuestionImportError, validateParsedQuestionBank } from "@/lib/question-import/qti";
 
 export const runtime = "nodejs";
@@ -17,14 +17,11 @@ function serializeErrors(errors: QuestionImportError[]) {
   }));
 }
 
+// POST: import a parsed QTI question bank into a quiz. Teachers import into
+// their own quizzes; admins import straight into global-pool quizzes.
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "TEACHER") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const teacher = await prisma.teacher.findUnique({ where: { userId: session.user.id } });
-  if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
+  const actor = await getContentActor();
+  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   let payload: unknown;
   try {
@@ -34,22 +31,21 @@ export async function POST(req: NextRequest) {
   }
 
   const importPayload = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
-  const topicId = cleanString(importPayload.topicId);
-  const subtopicId = cleanString(importPayload.subtopicId);
+  const quizId = cleanString(importPayload.quizId);
   const originalName = cleanString(importPayload.originalName);
   const sourcePath = cleanString(importPayload.sourcePath) || null;
 
-  if (!topicId || !subtopicId) {
-    return NextResponse.json({ error: "topicId and subtopicId are required." }, { status: 400 });
+  if (!quizId) {
+    return NextResponse.json({ error: "quizId is required." }, { status: 400 });
   }
 
   if (!originalName) {
     return NextResponse.json({ error: "originalName is required." }, { status: 400 });
   }
 
-  const subtopic = await prisma.subtopic.findUnique({ where: { id: subtopicId } });
-  if (!subtopic || subtopic.topicId !== topicId) {
-    return NextResponse.json({ error: "Selected module does not belong to the selected topic." }, { status: 400 });
+  const quiz = await prisma.quiz.findUnique({ where: { id: quizId } });
+  if (!quiz || !canManage(actor, quiz)) {
+    return NextResponse.json({ error: "Quiz not found" }, { status: 404 });
   }
 
   let parsed;
@@ -65,9 +61,8 @@ export async function POST(req: NextRequest) {
   const result = await prisma.$transaction(async (tx) => {
     const questionImport = await tx.questionImport.create({
       data: {
-        teacherId: teacher.id,
-        topicId,
-        subtopicId,
+        teacherId: actor.teacherId,
+        quizId,
         originalName,
         sourcePath,
         bankId: parsed.bankId,
@@ -86,13 +81,11 @@ export async function POST(req: NextRequest) {
     for (const question of parsed.questions) {
       const duplicate = await tx.question.findFirst({
         where: {
-          topicId,
-          subtopicId,
-          createdById: teacher.id,
+          quizId,
           ...(question.sourceQuestionId ? { sourceQuestionId: question.sourceQuestionId } : { text: question.text }),
           import: {
             is: {
-              teacherId: teacher.id,
+              teacherId: actor.teacherId,
               originalName,
               sourcePath,
             },
@@ -109,8 +102,7 @@ export async function POST(req: NextRequest) {
         data: {
           title: question.title,
           text: question.text,
-          topicId,
-          subtopicId,
+          quizId,
           difficultyLevel: "BEGINNER",
           answerMode: question.answerMode,
           points: question.points,
@@ -119,7 +111,7 @@ export async function POST(req: NextRequest) {
           feedbackIncorrect: question.feedbackIncorrect,
           sourceQuestionId: question.sourceQuestionId,
           importId: questionImport.id,
-          createdById: teacher.id,
+          createdById: actor.teacherId,
           options: {
             create: question.options,
           },

@@ -13,10 +13,10 @@ export default async function TeacherDashboard() {
   const teacher = await prisma.teacher.findUnique({ where: { userId: session.user.id } });
   if (!teacher) redirect("/login");
 
-  const [classCount, topicCount, questionCount, recentClasses] = await Promise.all([
+  const [classCount, quizCount, questionCount, recentClasses] = await Promise.all([
     prisma.class.count({ where: { teacherId: teacher.id } }),
-    prisma.topic.count(),
-    prisma.question.count(),
+    prisma.quiz.count({ where: { teacherId: teacher.id } }),
+    prisma.question.count({ where: { quiz: { teacherId: teacher.id } } }),
     prisma.class.findMany({
       where: { teacherId: teacher.id },
       include: { _count: { select: { enrollments: true } } },
@@ -52,11 +52,11 @@ export default async function TeacherDashboard() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Topics</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Quizzes</CardTitle>
             <BookOpen className="size-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold">{topicCount}</p>
+            <p className="text-3xl font-bold">{quizCount}</p>
           </CardContent>
         </Card>
         <Card>

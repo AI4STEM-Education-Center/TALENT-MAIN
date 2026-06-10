@@ -41,7 +41,7 @@ function makeAttempt(overrides: Partial<QuizReviewAttempt> = {}): QuizReviewAtte
     score: 50,
     completedAt: new Date("2026-03-01T12:00:00.000Z"),
     class: { name: "Physics 101" },
-    subtopic: { name: "Kinematics", topic: { name: "Mechanics" } },
+    quiz: { name: "Kinematics", topic: { name: "Mechanics" } },
     answers: [
       {
         isCorrect: false,
@@ -68,11 +68,11 @@ function makeAttempt(overrides: Partial<QuizReviewAttempt> = {}): QuizReviewAtte
 }
 
 describe("buildQuizReviewPrompt", () => {
-  it("includes class, topic, module and score metadata", () => {
+  it("includes class, topic, quiz and score metadata", () => {
     const prompt = buildQuizReviewPrompt(makeAttempt());
     expect(prompt).toContain("Class: Physics 101");
     expect(prompt).toContain("Topic: Mechanics");
-    expect(prompt).toContain("Module: Kinematics");
+    expect(prompt).toContain("Quiz: Kinematics");
     expect(prompt).toContain("Score: 50%");
     expect(prompt).toContain("Completed at: 2026-03-01T12:00:00.000Z");
     expect(prompt).toContain("Questions answered: 2");

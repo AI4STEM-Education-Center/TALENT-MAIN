@@ -52,7 +52,7 @@ export default async function ExamResultsPage({
       backLabel="Exam history"
       actions={
         <Button asChild variant="outline">
-          <Link href={`/student/classes/${examResult.classId}/module/${examResult.subtopicId}`}>
+          <Link href={`/student/classes/${examResult.classId}/quiz/${examResult.quizId}`}>
             <RotateCcw className="size-4" /> Retake quiz
           </Link>
         </Button>

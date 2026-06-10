@@ -119,14 +119,14 @@ export function snapshotToSummaryAttempt(
     completedAt: Date | null;
     className: string;
     topicName: string;
-    subtopicName: string;
+    quizName: string;
   }
 ): QuizReviewAttempt {
   return {
     score: meta.score,
     completedAt: meta.completedAt,
     class: { name: meta.className },
-    subtopic: { name: meta.subtopicName, topic: { name: meta.topicName } },
+    quiz: { name: meta.quizName, topic: meta.topicName ? { name: meta.topicName } : null },
     answers: snapshot.questions.map((q) => {
       const selected = joinTexts(q.options, (o) => o.selected);
       return {

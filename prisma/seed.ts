@@ -12,13 +12,13 @@ async function main() {
   await prisma.$transaction([
     prisma.quizAnswer.deleteMany(),
     prisma.quizAttempt.deleteMany(),
-    prisma.moduleProgress.deleteMany(),
-    prisma.classTopic.deleteMany(),
+    prisma.quizProgress.deleteMany(),
+    prisma.classQuiz.deleteMany(),
     prisma.classEnrollment.deleteMany(),
     prisma.invitation.deleteMany(),
     prisma.option.deleteMany(),
     prisma.question.deleteMany(),
-    prisma.subtopic.deleteMany(),
+    prisma.quiz.deleteMany(),
     prisma.topic.deleteMany(),
     prisma.class.deleteMany(),
     prisma.student.deleteMany(),
@@ -36,10 +36,10 @@ async function main() {
 
   await Promise.all(
     prebuiltSubtopics.map(async (subtopicData) => {
-      const subtopic = await prisma.subtopic.create({
+      const quiz = await prisma.quiz.create({
         data: { ...subtopicData, topicId: topic.id },
       });
-      console.log(`  Subtopic: ${subtopic.name}`);
+      console.log(`  Quiz: ${quiz.name}`);
     })
   );
 
@@ -48,8 +48,7 @@ async function main() {
       prisma.question.create({
         data: {
           text: questionData.text,
-          topicId: topic.id,
-          subtopicId: questionData.subtopicId,
+          quizId: questionData.subtopicId,
           difficultyLevel: questionData.difficulty,
           options: { create: questionData.options },
         },
