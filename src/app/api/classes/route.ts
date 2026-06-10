@@ -13,7 +13,7 @@ export async function GET() {
     const classes = await prisma.class.findMany({
       where: { teacherId: teacher.id },
       include: {
-        _count: { select: { enrollments: true, classTopics: true } },
+        _count: { select: { enrollments: true, classQuizzes: true } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -28,7 +28,7 @@ export async function GET() {
     where: { studentId: student.id },
     include: {
       class: {
-        include: { _count: { select: { enrollments: true, classTopics: true } } },
+        include: { _count: { select: { enrollments: true, classQuizzes: true } } },
       },
     },
     orderBy: { joinedAt: "desc" },

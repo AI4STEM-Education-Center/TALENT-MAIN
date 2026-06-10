@@ -19,7 +19,7 @@ export default async function ClassDetailPage({ params }: { params: Promise<{ id
     where: { id, teacherId: teacher?.id ?? "" },
     include: {
       enrollments: { include: { student: { include: { user: true } } }, orderBy: { joinedAt: "desc" } },
-      classTopics: { include: { topic: { include: { subtopics: true } } }, orderBy: { topic: { order: "asc" } } },
+      classQuizzes: { include: { quiz: { include: { topic: true, _count: { select: { questions: true } } } } }, orderBy: { quiz: { order: "asc" } } },
       invitations: { where: { active: true }, orderBy: { createdAt: "desc" }, take: 3 },
       studentList: { orderBy: [{ lastName: "asc" }, { firstName: "asc" }] },
       materialLinks: {
@@ -70,32 +70,33 @@ export default async function ClassDetailPage({ params }: { params: Promise<{ id
         <div className="md:col-span-2 space-y-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-3">
-              <CardTitle className="flex items-center gap-2"><BookOpen className="size-4" /> Topics</CardTitle>
+              <CardTitle className="flex items-center gap-2"><BookOpen className="size-4" /> Quizzes</CardTitle>
               <Button size="sm" asChild>
-                <Link href={`/teacher/classes/${cls.id}/topics`}>Manage Topics</Link>
+                <Link href={`/teacher/classes/${cls.id}/quizzes`}>Manage Quizzes</Link>
               </Button>
             </CardHeader>
             <CardContent>
-              {cls.classTopics.length === 0 ? (
+              {cls.classQuizzes.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  <p className="mb-3">No topics assigned yet.</p>
+                  <p className="mb-3">No quizzes assigned yet.</p>
                   <Button size="sm" asChild>
-                    <Link href={`/teacher/classes/${cls.id}/topics`}>Add Topics</Link>
+                    <Link href={`/teacher/classes/${cls.id}/quizzes`}>Add Quizzes</Link>
                   </Button>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {cls.classTopics.map((ct) => (
-                    <div key={ct.id} className="flex items-center justify-between p-3 rounded-lg border">
+                  {cls.classQuizzes.map((cq) => (
+                    <div key={cq.id} className="flex items-center justify-between p-3 rounded-lg border">
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="font-medium">{ct.topic.name}</span>
-                          <Badge variant={ct.published ? "success" : "secondary"}>
-                            {ct.published ? "Published" : "Draft"}
+                          <span className="font-medium">{cq.quiz.name}</span>
+                          {cq.quiz.topic && <Badge variant="outline">{cq.quiz.topic.name}</Badge>}
+                          <Badge variant={cq.published ? "success" : "secondary"}>
+                            {cq.published ? "Published" : "Draft"}
                           </Badge>
                         </div>
                         <p className="text-xs text-muted-foreground mt-0.5">
-                          {ct.topic.subtopics.length} module{ct.topic.subtopics.length !== 1 ? "s" : ""}
+                          {cq.quiz._count.questions} question{cq.quiz._count.questions !== 1 ? "s" : ""}
                         </p>
                       </div>
                     </div>

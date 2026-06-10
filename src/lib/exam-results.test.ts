@@ -181,13 +181,13 @@ describe("snapshotToSummaryAttempt", () => {
     completedAt: new Date("2026-01-02T03:04:05.000Z"),
     className: "Physics 101",
     topicName: "Forces",
-    subtopicName: "Newton's Laws",
+    quizName: "Newton's Laws",
   };
 
   it("maps metadata and per-question answers into the QuizReviewAttempt shape", () => {
     const attempt = snapshotToSummaryAttempt(snapshot, meta);
     expect(attempt.class.name).toBe("Physics 101");
-    expect(attempt.subtopic.topic.name).toBe("Forces");
+    expect(attempt.quiz?.topic?.name).toBe("Forces");
     expect(attempt.answers[0].selectedOption).toEqual({ text: "Forces vanish" });
     expect(attempt.answers[0].isCorrect).toBe(false);
   });
@@ -204,7 +204,7 @@ describe("snapshotToSummaryAttempt", () => {
     const prompt = buildQuizReviewPrompt(snapshotToSummaryAttempt(snapshot, meta));
     expect(prompt).toContain("Class: Physics 101");
     expect(prompt).toContain("Topic: Forces");
-    expect(prompt).toContain("Module: Newton's Laws");
+    expect(prompt).toContain("Quiz: Newton's Laws");
     expect(prompt).toContain("Newton's third law?");
   });
 });

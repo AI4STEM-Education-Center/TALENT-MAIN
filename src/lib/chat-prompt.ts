@@ -25,7 +25,7 @@ export type QuizReviewAttempt = {
   score: number | null;
   completedAt: Date | null;
   class: { name: string };
-  subtopic: { name: string; topic: { name: string } };
+  quiz: { name: string; topic: { name: string } | null } | null;
   answers: Array<{
     isCorrect: boolean;
     selectedOption: { text: string } | null;
@@ -56,8 +56,8 @@ export function buildQuizReviewPrompt(attempt: QuizReviewAttempt): string {
     "Only mention a specific question if it is essential evidence for a broader misconception.",
     "",
     `Class: ${attempt.class.name}`,
-    `Topic: ${attempt.subtopic.topic.name}`,
-    `Module: ${attempt.subtopic.name}`,
+    ...(attempt.quiz?.topic ? [`Topic: ${attempt.quiz.topic.name}`] : []),
+    `Quiz: ${attempt.quiz?.name ?? "Unknown"}`,
     `Score: ${attempt.score ?? 0}%`,
     `Completed at: ${attempt.completedAt?.toISOString() ?? "Unknown"}`,
     `Questions answered: ${attempt.answers.length}`,

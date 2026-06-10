@@ -63,7 +63,7 @@ type ExamResultRow = {
   completedAt: Date;
   className: string;
   topicName: string;
-  subtopicName: string;
+  quizName: string;
   reviewSnapshot: string;
   summaryStatus: string;
   recommendationsStatus: string;
@@ -224,7 +224,7 @@ async function generateSummary(examResult: ExamResultRow): Promise<string> {
     completedAt: examResult.completedAt,
     className: examResult.className,
     topicName: examResult.topicName,
-    subtopicName: examResult.subtopicName,
+    quizName: examResult.quizName,
   });
 
   const summary = await runChatCompletionText(
