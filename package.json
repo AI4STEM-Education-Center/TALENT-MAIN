@@ -48,7 +48,7 @@
     "next": "^16.2.9",
     "next-auth": "^5.0.0-beta.31",
     "openai": "^6.42.0",
-    "react": "^18",
+    "react": "^19",
     "react-dom": "^18",
     "react-markdown": "^10.1.0",
     "react-rnd": "^10.5.3",
@@ -60,7 +60,7 @@
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^25",
-    "@types/react": "^18",
+    "@types/react": "^19",
     "@types/react-dom": "^18",
     "@vitest/coverage-v8": "^3.2.6",
     "autoprefixer": "^10.5.0",
