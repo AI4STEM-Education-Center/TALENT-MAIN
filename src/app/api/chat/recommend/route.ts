@@ -101,7 +101,7 @@ async function runStructuredStep<T>(
 }
 
 function correctAnswerText(options: Array<{ text: string; isCorrect: boolean }>): string | null {
-  const correct = options.filter((o) => o.isCorrect).map((o) => o.text);
+  const correct = options.flatMap((o) => (o.isCorrect ? [o.text] : []));
   return correct.length > 0 ? correct.join(" | ") : null;
 }
 
@@ -244,14 +244,14 @@ export async function POST() {
       },
     });
 
-    const materials: MaterialRow[] = links
-      .map((l) => l.material)
-      .filter(
-        (m) =>
-          m.processingStatus === PROCESSED_STATUS &&
-          !!m.batchDescription?.trim() &&
-          m.pages.length > 0
-      );
+    const materials: MaterialRow[] = links.flatMap((l) => {
+      const m = l.material;
+      return m.processingStatus === PROCESSED_STATUS &&
+        !!m.batchDescription?.trim() &&
+        m.pages.length > 0
+        ? [m]
+        : [];
+    });
 
     if (materials.length === 0) return EMPTY;
 
