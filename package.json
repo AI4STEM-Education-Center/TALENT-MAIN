@@ -42,7 +42,7 @@
     "@radix-ui/react-tabs": "^1.1.14",
     "@radix-ui/react-toast": "^1.2.16",
     "@russellthehippo/honker-node": "^0.3.3",
-    "bcryptjs": "^2.4.3",
+    "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.10.0",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
@@ -61,7 +61,7 @@
     "uuid": "^14.0.0"
   },
   "devDependencies": {
-    "@types/bcryptjs": "^2.4.6",
+    "@types/bcryptjs": "^3.0.0",
     "@types/node": "^25",
     "@types/react": "^18",
     "@types/react-dom": "^18",
