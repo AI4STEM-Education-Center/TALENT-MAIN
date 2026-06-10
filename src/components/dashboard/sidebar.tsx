@@ -16,6 +16,7 @@ import {
   Settings,
   FolderOpen,
   History,
+  PanelLeftClose,
 } from "lucide-react";
 
 interface NavItem {
@@ -31,6 +32,8 @@ interface SidebarProps {
   onSignOut: () => void;
   mobileOpen?: boolean;
   onMobileClose?: () => void;
+  desktopOpen?: boolean;
+  onDesktopClose?: () => void;
 }
 
 const teacherNav: NavItem[] = [
@@ -59,19 +62,21 @@ function SidebarContent({
   lastName,
   onSignOut,
   onNavigate,
+  onCollapse,
 }: {
   role: "TEACHER" | "STUDENT" | "ADMIN";
   firstName: string;
   lastName: string;
   onSignOut: () => void;
   onNavigate?: () => void;
+  onCollapse?: () => void;
 }) {
   const pathname = usePathname();
 
   const navItems = role === "ADMIN" ? adminNav : role === "TEACHER" ? teacherNav : studentNav;
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col min-h-full">
       {/* Logo */}
       <div className="p-6 border-b border-sidebar-border">
         <div className="flex items-center gap-2">
@@ -79,6 +84,15 @@ function SidebarContent({
             <BookOpen className="size-4 text-blue-400" />
           </div>
           <span className="font-bold text-sidebar-foreground">AI4Talent</span>
+          {onCollapse && (
+            <button type="button"
+              aria-label="Hide sidebar"
+              onClick={onCollapse}
+              className="ml-auto p-1.5 rounded-md text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors"
+            >
+              <PanelLeftClose className="size-4" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -148,19 +162,26 @@ export function Sidebar({
   onSignOut,
   mobileOpen = false,
   onMobileClose,
+  desktopOpen = true,
+  onDesktopClose,
 }: SidebarProps) {
   const contentProps = { role, firstName, lastName, onSignOut };
 
   return (
     <>
-      {/* Desktop sidebar — hidden below md */}
-      <aside className="hidden md:flex w-64 min-h-screen bg-sidebar flex-col border-r border-sidebar-border shrink-0">
-        <SidebarContent {...contentProps} />
+      {/* Desktop sidebar — hidden below md, collapsible on md+ */}
+      <aside
+        className={cn(
+          "w-64 h-screen sticky top-0 overflow-y-auto bg-sidebar flex-col border-r border-sidebar-border shrink-0",
+          desktopOpen ? "hidden md:flex" : "hidden"
+        )}
+      >
+        <SidebarContent {...contentProps} onCollapse={onDesktopClose} />
       </aside>
 
       {/* Mobile drawer — shown below md */}
       <Sheet open={mobileOpen} onOpenChange={(open) => !open && onMobileClose?.()}>
-        <SheetContent side="left" className="p-0 w-64">
+        <SheetContent side="left" className="p-0 w-64 overflow-y-auto">
           <SidebarContent
             {...contentProps}
             onNavigate={onMobileClose}
