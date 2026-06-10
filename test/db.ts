@@ -10,12 +10,12 @@ export async function resetDb() {
   // Children first, parents last.
   await prisma.quizAnswer.deleteMany();
   await prisma.quizAttempt.deleteMany();
-  await prisma.moduleProgress.deleteMany();
+  await prisma.quizProgress.deleteMany();
   await prisma.option.deleteMany();
   await prisma.question.deleteMany();
   await prisma.questionImport.deleteMany();
-  await prisma.classTopic.deleteMany();
-  await prisma.subtopic.deleteMany();
+  await prisma.classQuiz.deleteMany();
+  await prisma.quiz.deleteMany();
   await prisma.topic.deleteMany();
   await prisma.materialPage.deleteMany();
   await prisma.materialClass.deleteMany();
@@ -77,24 +77,26 @@ export async function createClass(teacherId: string, name = "Physics 101") {
 }
 
 /**
- * Build a published topic + subtopic + a single/multi-select question with options.
- * Returns the ids a quiz flow needs.
+ * Build a published quiz (with an optional topic label) + a single/multi-select
+ * question with options. Returns the ids a quiz flow needs.
  */
-export async function createPublishedModule(opts: {
+export async function createPublishedQuiz(opts: {
   classId: string;
+  teacherId?: string;
   answerMode?: "SINGLE_SELECT" | "MULTI_SELECT";
   published?: boolean;
 }) {
-  const { classId, answerMode = "SINGLE_SELECT", published = true } = opts;
-  const topic = await prisma.topic.create({ data: { name: uniq("topic") } });
-  const subtopic = await prisma.subtopic.create({ data: { name: uniq("subtopic"), topicId: topic.id } });
-  await prisma.classTopic.create({ data: { classId, topicId: topic.id, published } });
+  const { classId, teacherId, answerMode = "SINGLE_SELECT", published = true } = opts;
+  const topic = await prisma.topic.create({ data: { name: uniq("topic"), teacherId: teacherId ?? null } });
+  const quiz = await prisma.quiz.create({
+    data: { name: uniq("quiz"), topicId: topic.id, teacherId: teacherId ?? null },
+  });
+  await prisma.classQuiz.create({ data: { classId, quizId: quiz.id, published } });
 
   const question = await prisma.question.create({
     data: {
       text: "What is 2 + 2?",
-      topicId: topic.id,
-      subtopicId: subtopic.id,
+      quizId: quiz.id,
       answerMode,
       options: {
         create: [
@@ -107,5 +109,5 @@ export async function createPublishedModule(opts: {
     include: { options: true },
   });
 
-  return { topic, subtopic, question };
+  return { topic, quiz, question };
 }

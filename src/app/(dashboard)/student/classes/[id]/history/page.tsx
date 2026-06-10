@@ -37,7 +37,7 @@ export default async function ClassExamHistoryPage({
       quizAttemptId: true,
       className: true,
       topicName: true,
-      subtopicName: true,
+      quizName: true,
       score: true,
       completedAt: true,
     },
@@ -47,7 +47,7 @@ export default async function ClassExamHistoryPage({
     attemptId: r.quizAttemptId,
     className: r.className,
     topicName: r.topicName,
-    subtopicName: r.subtopicName,
+    quizName: r.quizName,
     score: r.score,
     completedAt: r.completedAt.toISOString(),
   }));

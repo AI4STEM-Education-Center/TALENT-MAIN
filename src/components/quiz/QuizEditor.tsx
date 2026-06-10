@@ -1,7 +1,7 @@
 "use client";
-import { useEffect, useState, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import JSZip from "jszip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { parseQtiQuestionBank } from "@/lib/question-import/qti";
 import { useConfirm } from "@/components/ui/confirm-dialog";
-import { Plus, Pencil, Trash2, Check, X, ArrowLeft, FileQuestion, Upload } from "lucide-react";
+import { Plus, Pencil, Trash2, Check, X, ArrowLeft, FileQuestion, Upload, Download } from "lucide-react";
 
 type AnswerMode = "SINGLE_SELECT" | "MULTI_SELECT";
 interface Option { id?: string; text: string; isCorrect: boolean }
@@ -23,71 +23,113 @@ interface Question {
   answerMode: AnswerMode;
   points?: number | null;
   feedbackGeneral?: string | null;
-  feedbackCorrect?: string | null;
-  feedbackIncorrect?: string | null;
   sourceQuestionId?: string | null;
-  subtopicId: string;
-  topicId: string;
   options: Option[];
-  subtopic: { name: string };
-  topic: { name: string };
 }
-interface Subtopic { id: string; name: string }
-interface Topic { id: string; name: string; subtopics: Subtopic[] }
+interface Topic { id: string; name: string }
+interface QuizDetail {
+  id: string;
+  name: string;
+  topicId: string | null;
+  topic: Topic | null;
+  teacherId: string | null;
+  questions: Question[];
+  editable: boolean;
+}
 interface ImportSummary { importedCount: number; skippedCount: number; errorCount: number; bankTitle?: string; errors?: { index: number; sourceQuestionId?: string; message: string }[] }
 
 const emptyOptions = () => [{ id: crypto.randomUUID(), text: "", isCorrect: false }, { id: crypto.randomUUID(), text: "", isCorrect: false }, { id: crypto.randomUUID(), text: "", isCorrect: false }, { id: crypto.randomUUID(), text: "", isCorrect: false }];
 
-function QuestionsContent() {
+/**
+ * Full quiz editor: rename/regroup the quiz, add/edit/delete questions, import
+ * a QTI ZIP into it. Renders read-only (with an optional "import a copy"
+ * action) when the caller can't manage the quiz — e.g. a teacher previewing a
+ * global-pool quiz.
+ */
+export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; backHref: string; backLabel: string }) {
   const confirm = useConfirm();
-  const searchParams = useSearchParams();
-  const filterSubtopicId = searchParams.get("subtopicId") || "";
-  const filterTopicId = searchParams.get("topicId") || "";
+  const router = useRouter();
 
-  const [questions, setQuestions] = useState<Question[]>([]);
+  const [quiz, setQuiz] = useState<QuizDetail | null>(null);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
-  const [form, setForm] = useState({ text: "", topicId: filterTopicId, subtopicId: filterSubtopicId, difficultyLevel: "BEGINNER", answerMode: "SINGLE_SELECT" as AnswerMode, options: emptyOptions() });
-  const [importTopicId, setImportTopicId] = useState(filterTopicId);
-  const [importSubtopicId, setImportSubtopicId] = useState(filterSubtopicId);
+  const [form, setForm] = useState({ text: "", difficultyLevel: "BEGINNER", answerMode: "SINGLE_SELECT" as AnswerMode, options: emptyOptions() });
   const [importSourcePath, setImportSourcePath] = useState("");
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importBusy, setImportBusy] = useState(false);
   const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
+  const [poolImportBusy, setPoolImportBusy] = useState(false);
   const [msg, setMsg] = useState("");
 
-  const subtopicsForTopic = topics.find((t) => t.id === form.topicId)?.subtopics || [];
-  const subtopicsForImport = topics.find((t) => t.id === importTopicId)?.subtopics || [];
-
   useEffect(() => {
-    const params = new URLSearchParams();
-    if (filterTopicId) params.set("topicId", filterTopicId);
-    if (filterSubtopicId) params.set("subtopicId", filterSubtopicId);
-
     Promise.all([
-      fetch(`/api/questions?${params}`).then((r) => r.json()),
+      fetch(`/api/quizzes/${quizId}`).then((r) => (r.ok ? r.json() : null)),
       fetch("/api/topics").then((r) => r.json()),
-    ]).then(([qs, ts]) => { setQuestions(qs); setTopics(ts); setLoading(false); });
-  }, [filterTopicId, filterSubtopicId]);
+    ]).then(([q, ts]) => {
+      if (!q) setNotFound(true);
+      else setQuiz(q);
+      setTopics(ts);
+      setLoading(false);
+    });
+  }, [quizId]);
 
   async function refreshQuestions() {
-    const params = new URLSearchParams();
-    if (filterTopicId) params.set("topicId", filterTopicId);
-    if (filterSubtopicId) params.set("subtopicId", filterSubtopicId);
-    const qs = await fetch(`/api/questions?${params}`).then((r) => r.json());
-    setQuestions(qs);
+    const q = await fetch(`/api/quizzes/${quizId}`).then((r) => r.json());
+    setQuiz(q);
+  }
+
+  async function saveName() {
+    if (!nameDraft.trim() || !quiz) return;
+    const res = await fetch(`/api/quizzes/${quizId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: nameDraft.trim() }),
+    });
+    if (res.ok) {
+      setQuiz({ ...quiz, name: nameDraft.trim() });
+      setEditingName(false);
+    }
+  }
+
+  async function changeTopic(topicId: string) {
+    if (!quiz) return;
+    const res = await fetch(`/api/quizzes/${quizId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topicId: topicId || null }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setQuiz({ ...quiz, topicId: updated.topicId, topic: updated.topic });
+    }
+  }
+
+  // Teacher previewing a pool quiz: pull an independent copy into their own list.
+  async function importPoolCopy() {
+    setPoolImportBusy(true);
+    try {
+      const res = await fetch(`/api/quizzes/pool/${quizId}/import`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) { setMsg(data.error ?? "Import failed."); return; }
+      router.push(`/teacher/quizzes/${data.id}`);
+    } finally {
+      setPoolImportBusy(false);
+    }
   }
 
   function startEdit(q: Question) {
     setEditingQuestion(q);
-    setForm({ text: q.text, topicId: q.topicId, subtopicId: q.subtopicId, difficultyLevel: q.difficultyLevel, answerMode: q.answerMode ?? "SINGLE_SELECT", options: q.options.map((o) => ({ id: o.id ?? crypto.randomUUID(), text: o.text, isCorrect: o.isCorrect })) });
+    setForm({ text: q.text, difficultyLevel: q.difficultyLevel, answerMode: q.answerMode ?? "SINGLE_SELECT", options: q.options.map((o) => ({ id: o.id ?? crypto.randomUUID(), text: o.text, isCorrect: o.isCorrect })) });
     setShowForm(true);
   }
 
   function resetForm() {
-    setForm({ text: "", topicId: filterTopicId, subtopicId: filterSubtopicId, difficultyLevel: "BEGINNER", answerMode: "SINGLE_SELECT", options: emptyOptions() });
+    setForm({ text: "", difficultyLevel: "BEGINNER", answerMode: "SINGLE_SELECT", options: emptyOptions() });
     setEditingQuestion(null);
     setShowForm(false);
   }
@@ -118,24 +160,20 @@ function QuestionsContent() {
 
   async function saveQuestion() {
     const validOptions = form.options.filter((o) => o.text.trim());
-    if (!form.text.trim() || !form.topicId || !form.subtopicId) { setMsg("Fill in question text, topic and module."); return; }
+    if (!form.text.trim()) { setMsg("Fill in the question text."); return; }
     if (validOptions.length < 2) { setMsg("Add at least 2 options."); return; }
     if (!validOptions.some((o) => o.isCorrect)) { setMsg("Mark one option as correct."); return; }
 
     const method = editingQuestion ? "PATCH" : "POST";
-    const body = editingQuestion ? { id: editingQuestion.id, text: form.text, difficultyLevel: form.difficultyLevel, answerMode: form.answerMode, options: validOptions } : { ...form, options: validOptions };
+    const body = editingQuestion
+      ? { id: editingQuestion.id, text: form.text, difficultyLevel: form.difficultyLevel, answerMode: form.answerMode, options: validOptions }
+      : { ...form, quizId, options: validOptions };
 
     const res = await fetch("/api/questions", { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (res.ok) {
-      const q = await res.json();
-      if (editingQuestion) {
-        setQuestions((prev) => prev.map((x) => x.id === q.id ? { ...x, ...q } : x));
-        setMsg("Question updated.");
-      } else {
-        setQuestions((prev) => [...prev, q]);
-        setMsg("Question created.");
-      }
+      setMsg(editingQuestion ? "Question updated." : "Question created.");
       resetForm();
+      await refreshQuestions();
     }
   }
 
@@ -147,14 +185,14 @@ function QuestionsContent() {
     });
     if (!ok) return;
     await fetch("/api/questions", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
-    setQuestions((prev) => prev.filter((q) => q.id !== id));
+    setQuiz((prev) => prev ? { ...prev, questions: prev.questions.filter((q) => q.id !== id) } : prev);
   }
 
   async function importQuestions() {
     setMsg("");
     setImportSummary(null);
-    if (!importTopicId || !importSubtopicId || !importFile) {
-      setMsg("Choose a topic, module, and QTI ZIP file to import.");
+    if (!importFile) {
+      setMsg("Choose a QTI ZIP file to import.");
       return;
     }
     if (!importFile.name.toLowerCase().endsWith(".zip")) {
@@ -181,8 +219,7 @@ function QuestionsContent() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          topicId: importTopicId,
-          subtopicId: importSubtopicId,
+          quizId,
           originalName: importFile.name,
           sourcePath: importSourcePath.trim() || undefined,
           ...parsed,
@@ -206,108 +243,116 @@ function QuestionsContent() {
   }
 
   if (loading) return <div className="p-6 text-muted-foreground">Loading…</div>;
+  if (notFound || !quiz) return <div className="p-6 text-muted-foreground">Quiz not found.</div>;
 
-  const subtopicName = filterSubtopicId ? questions[0]?.subtopic?.name : null;
-  const topicName = filterTopicId ? questions[0]?.topic?.name : null;
+  const readOnly = !quiz.editable;
+  const isPoolQuiz = quiz.teacherId === null;
 
   return (
     <div className="p-4 md:p-6 space-y-6">
-      {filterTopicId && (
-        <Button variant="ghost" size="sm" asChild>
-          <Link href={`/teacher/topics/${filterTopicId}`}><ArrowLeft className="size-4" /> Back to modules</Link>
-        </Button>
-      )}
+      <Button variant="ghost" size="sm" asChild>
+        <Link href={backHref}><ArrowLeft className="size-4" /> {backLabel}</Link>
+      </Button>
 
       <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-3xl font-bold">Question Bank</h1>
-          {subtopicName && topicName && <p className="text-muted-foreground text-sm mt-1">Filtered: {topicName} › {subtopicName}</p>}
+        <div className="min-w-0">
+          {editingName ? (
+            <div className="flex items-center gap-2">
+              <Input value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveName()} className="h-9 text-lg font-bold" autoFocus />
+              <Button size="sm" variant="ghost" onClick={saveName}><Check className="size-3" /></Button>
+              <Button size="sm" variant="ghost" onClick={() => setEditingName(false)}><X className="size-3" /></Button>
+            </div>
+          ) : (
+            <h1 className="text-3xl font-bold flex items-center gap-2">
+              {quiz.name}
+              {!readOnly && (
+                <Button size="sm" variant="ghost" onClick={() => { setNameDraft(quiz.name); setEditingName(true); }} aria-label="Rename quiz">
+                  <Pencil className="size-3" />
+                </Button>
+              )}
+            </h1>
+          )}
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            {isPoolQuiz && <Badge variant="secondary">Global pool</Badge>}
+            <Badge variant="outline">{quiz.questions.length} question{quiz.questions.length !== 1 ? "s" : ""}</Badge>
+            {readOnly ? (
+              quiz.topic && <Badge variant="outline">{quiz.topic.name}</Badge>
+            ) : (
+              <select
+                className="flex h-8 rounded-md border border-input bg-background px-2 text-sm"
+                value={quiz.topicId ?? ""}
+                onChange={(e) => changeTopic(e.target.value)}
+                aria-label="Topic"
+              >
+                <option value="">No topic</option>
+                {topics.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            )}
+          </div>
         </div>
-        <Button className="shrink-0" onClick={() => { resetForm(); setShowForm(true); }}>
-          <Plus className="size-4" /> Add Question
-        </Button>
+        <div className="flex gap-2 shrink-0">
+          {readOnly ? (
+            <Button onClick={importPoolCopy} disabled={poolImportBusy}>
+              <Download className="size-4" /> {poolImportBusy ? "Importing…" : "Import to my quizzes"}
+            </Button>
+          ) : (
+            <Button onClick={() => { resetForm(); setShowForm(true); }}>
+              <Plus className="size-4" /> Add Question
+            </Button>
+          )}
+        </div>
       </div>
 
       {msg && <div className="p-3 rounded-md bg-primary/10 text-primary text-sm">{msg}</div>}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Upload className="size-5" /> Import Questions</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            Upload a QTI ZIP question bank into a topic module. The ZIP is opened in your browser, and only parsed questions are sent to the server.
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Topic</Label>
-              <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={importTopicId} onChange={(e) => { setImportTopicId(e.target.value); setImportSubtopicId(""); }}>
-                <option value="">Select topic</option>
-                {topics.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-              </select>
+      {!readOnly && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><Upload className="size-5" /> Import Questions</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Upload a QTI ZIP question bank into this quiz. The ZIP is opened in your browser, and only parsed questions are sent to the server.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>QTI ZIP File</Label>
+                <Input type="file" accept=".zip,application/zip" onChange={(e) => setImportFile(e.target.files?.[0] ?? null)} />
+              </div>
+              <div className="space-y-2">
+                <Label>Source folder/path (optional)</Label>
+                <Input value={importSourcePath} onChange={(e) => setImportSourcePath(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !importBusy && importFile) importQuestions(); }} placeholder="e.g. data/3_Forces/PHY1-F-IFBDF-091725" />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label>Module</Label>
-              <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={importSubtopicId} onChange={(e) => setImportSubtopicId(e.target.value)} disabled={!importTopicId}>
-                <option value="">Select module</option>
-                {subtopicsForImport.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>QTI ZIP File</Label>
-              <Input type="file" accept=".zip,application/zip" onChange={(e) => setImportFile(e.target.files?.[0] ?? null)} />
-            </div>
-            <div className="space-y-2">
-              <Label>Source folder/path (optional)</Label>
-              <Input value={importSourcePath} onChange={(e) => setImportSourcePath(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !importBusy && importTopicId && importSubtopicId && importFile) importQuestions(); }} placeholder="e.g. data/3_Forces/PHY1-F-IFBDF-091725" />
-            </div>
-          </div>
-          <Button onClick={importQuestions} disabled={importBusy || !importTopicId || !importSubtopicId || !importFile}>
-            {importBusy ? "Importing..." : "Import QTI ZIP"}
-          </Button>
-          {importSummary && (
-            <div className="rounded-md border p-3 text-sm space-y-2">
-              <p className="font-medium">{importSummary.bankTitle ?? "Question bank"} import complete</p>
-              <p className="text-muted-foreground">
-                Imported {importSummary.importedCount}, skipped {importSummary.skippedCount}, validation errors {importSummary.errorCount}.
-              </p>
-              {importSummary.errors && importSummary.errors.length > 0 && (
-                <div className="space-y-1 text-destructive">
-                  {importSummary.errors.slice(0, 5).map((error) => (
-                    <p key={`${error.index}-${error.sourceQuestionId ?? "unknown"}`}>Question {error.sourceQuestionId ?? error.index + 1}: {error.message}</p>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            <Button onClick={importQuestions} disabled={importBusy || !importFile}>
+              {importBusy ? "Importing..." : "Import QTI ZIP"}
+            </Button>
+            {importSummary && (
+              <div className="rounded-md border p-3 text-sm space-y-2">
+                <p className="font-medium">{importSummary.bankTitle ?? "Question bank"} import complete</p>
+                <p className="text-muted-foreground">
+                  Imported {importSummary.importedCount}, skipped {importSummary.skippedCount}, validation errors {importSummary.errorCount}.
+                </p>
+                {importSummary.errors && importSummary.errors.length > 0 && (
+                  <div className="space-y-1 text-destructive">
+                    {importSummary.errors.slice(0, 5).map((error) => (
+                      <p key={`${error.index}-${error.sourceQuestionId ?? "unknown"}`}>Question {error.sourceQuestionId ?? error.index + 1}: {error.message}</p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Form */}
-      {showForm && (
+      {showForm && !readOnly && (
         <Card>
           <CardHeader>
             <CardTitle>{editingQuestion ? "Edit Question" : "New Question"}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Topic</Label>
-                <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={form.topicId} onChange={(e) => setForm((p) => ({ ...p, topicId: e.target.value, subtopicId: "" }))}>
-                  <option value="">Select topic</option>
-                  {topics.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </select>
-              </div>
-              <div className="space-y-2">
-                <Label>Module</Label>
-                <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={form.subtopicId} onChange={(e) => setForm((p) => ({ ...p, subtopicId: e.target.value }))} disabled={!form.topicId}>
-                  <option value="">Select module</option>
-                  {subtopicsForTopic.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
-              </div>
-            </div>
             <div className="space-y-2">
               <Label>Difficulty</Label>
               <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={form.difficultyLevel} onChange={(e) => setForm((p) => ({ ...p, difficultyLevel: e.target.value }))}>
@@ -348,16 +393,16 @@ function QuestionsContent() {
       )}
 
       {/* Questions List */}
-      {questions.length === 0 ? (
+      {quiz.questions.length === 0 ? (
         <Card>
           <CardContent className="text-center py-12 text-muted-foreground">
             <FileQuestion className="size-10 mx-auto mb-3" />
-            <p>No questions yet. Add one above.</p>
+            <p>{readOnly ? "This quiz has no questions." : "No questions yet. Add one above."}</p>
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-3">
-          {questions.map((q, i) => (
+          {quiz.questions.map((q, i) => (
             <Card key={q.id}>
               <CardContent className="p-4">
                 <div className="flex items-start justify-between gap-3">
@@ -366,7 +411,6 @@ function QuestionsContent() {
                       <span className="text-sm text-muted-foreground font-mono">Q{i + 1}</span>
                       <Badge variant="outline" className="text-xs">{q.difficultyLevel}</Badge>
                       <Badge variant="outline" className="text-xs">{q.answerMode === "MULTI_SELECT" ? "Multi-select" : "Single-select"}</Badge>
-                      <Badge variant="secondary" className="text-xs">{q.subtopic?.name}</Badge>
                       {q.sourceQuestionId && <Badge variant="secondary" className="text-xs">{q.sourceQuestionId}</Badge>}
                     </div>
                     {q.title && <p className="text-sm font-semibold">{q.title}</p>}
@@ -386,10 +430,12 @@ function QuestionsContent() {
                       </div>
                     )}
                   </div>
-                  <div className="flex gap-1 shrink-0">
-                    <Button size="sm" variant="ghost" onClick={() => startEdit(q)}><Pencil className="size-3" /></Button>
-                    <Button size="sm" variant="ghost" onClick={() => deleteQuestion(q.id)}><Trash2 className="size-3 text-destructive" /></Button>
-                  </div>
+                  {!readOnly && (
+                    <div className="flex gap-1 shrink-0">
+                      <Button size="sm" variant="ghost" onClick={() => startEdit(q)}><Pencil className="size-3" /></Button>
+                      <Button size="sm" variant="ghost" onClick={() => deleteQuestion(q.id)}><Trash2 className="size-3 text-destructive" /></Button>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -397,13 +443,5 @@ function QuestionsContent() {
         </div>
       )}
     </div>
-  );
-}
-
-export default function QuestionsPage() {
-  return (
-    <Suspense fallback={<div className="p-6 text-muted-foreground">Loading…</div>}>
-      <QuestionsContent />
-    </Suspense>
   );
 }

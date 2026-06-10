@@ -25,28 +25,36 @@ export default async function StudentClassPage({ params }: { params: Promise<{ i
     where: { id },
     include: {
       teacher: { include: { user: true } },
-      classTopics: {
+      classQuizzes: {
         where: { published: true },
-        include: {
-          topic: {
-            include: {
-              subtopics: { orderBy: { order: "asc" } },
-            },
-          },
-        },
-        orderBy: { topic: { order: "asc" } },
+        include: { quiz: { include: { topic: true } } },
+        orderBy: [{ quiz: { order: "asc" } }, { quiz: { createdAt: "asc" } }],
       },
     },
   });
 
   if (!cls) notFound();
 
-  // Get progress for all subtopics in this class
-  const allSubtopicIds = cls.classTopics.flatMap((ct) => ct.topic.subtopics.map((s) => s.id));
-  const progressRecords = await prisma.moduleProgress.findMany({
-    where: { studentId: student.id, classId: id, subtopicId: { in: allSubtopicIds } },
+  const quizzes = cls.classQuizzes.map((cq) => cq.quiz);
+  const progressRecords = await prisma.quizProgress.findMany({
+    where: { studentId: student.id, classId: id, quizId: { in: quizzes.map((q) => q.id) } },
   });
-  const progressMap = new Map(progressRecords.map((p) => [p.subtopicId, p]));
+  const progressMap = new Map(progressRecords.map((p) => [p.quizId, p]));
+
+  // Topic is an optional grouping label: quizzes with one are grouped under it,
+  // the rest land in a single ungrouped section at the end.
+  const groups = new Map<string, { topicName: string | null; quizzes: typeof quizzes }>();
+  for (const quiz of quizzes) {
+    const key = quiz.topic ? `topic:${quiz.topic.id}` : "ungrouped";
+    const group = groups.get(key) ?? { topicName: quiz.topic?.name ?? null, quizzes: [] };
+    group.quizzes.push(quiz);
+    groups.set(key, group);
+  }
+  const orderedGroups = Array.from(groups.values()).toSorted((a, b) => {
+    if (a.topicName === null) return 1;
+    if (b.topicName === null) return -1;
+    return 0;
+  });
 
   return (
     <div className="p-4 md:p-6 space-y-6">
@@ -64,40 +72,39 @@ export default async function StudentClassPage({ params }: { params: Promise<{ i
         </Button>
       </div>
 
-      {cls.classTopics.length === 0 ? (
+      {quizzes.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center py-12 text-center">
             <BookOpen className="size-12 text-muted-foreground mb-3" />
-            <p className="text-lg font-medium">No content available yet</p>
-            <p className="text-muted-foreground text-sm mt-1">Your teacher hasn&apos;t published any topics yet. Check back soon!</p>
+            <p className="text-lg font-medium">No quizzes available yet</p>
+            <p className="text-muted-foreground text-sm mt-1">Your teacher hasn&apos;t published any quizzes yet. Check back soon!</p>
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-6">
-          {cls.classTopics.map((ct) => {
-            const subtopics = ct.topic.subtopics;
-            const completed = subtopics.filter((s) => progressMap.get(s.id)?.status === "COMPLETED").length;
+          {orderedGroups.map((group) => {
+            const completed = group.quizzes.filter((q) => progressMap.get(q.id)?.status === "COMPLETED").length;
 
             return (
-              <Card key={ct.id}>
+              <Card key={group.topicName ?? "__ungrouped"}>
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between gap-2 flex-wrap">
                     <CardTitle className="flex items-center gap-2">
                       <BookOpen className="size-5 text-primary shrink-0" />
-                      {ct.topic.name}
+                      {group.topicName ?? "Quizzes"}
                     </CardTitle>
-                    <Badge variant="secondary" className="shrink-0">{completed}/{subtopics.length} completed</Badge>
+                    <Badge variant="secondary" className="shrink-0">{completed}/{group.quizzes.length} completed</Badge>
                   </div>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
-                    {subtopics.map((subtopic, idx) => {
-                      const progress = progressMap.get(subtopic.id);
+                    {group.quizzes.map((quiz, idx) => {
+                      const progress = progressMap.get(quiz.id);
                       const status = progress?.status || "NOT_STARTED";
                       const score = progress?.bestScore;
 
                       return (
-                        <div key={subtopic.id} className="flex items-center justify-between gap-2 p-3 rounded-lg border hover:bg-muted/30 transition-colors">
+                        <div key={quiz.id} className="flex items-center justify-between gap-2 p-3 rounded-lg border hover:bg-muted/30 transition-colors">
                           <div className="flex items-center gap-3 min-w-0 flex-1">
                             {status === "COMPLETED" ? (
                               <CheckCircle className="size-5 text-green-500 shrink-0" />
@@ -107,14 +114,14 @@ export default async function StudentClassPage({ params }: { params: Promise<{ i
                               <Circle className="size-5 text-muted-foreground shrink-0" />
                             )}
                             <div className="min-w-0">
-                              <p className="font-medium text-sm">{idx + 1}. {subtopic.name}</p>
+                              <p className="font-medium text-sm">{idx + 1}. {quiz.name}</p>
                               {score !== null && score !== undefined && (
                                 <p className="text-xs text-muted-foreground">Best score: {Math.round(score)}%</p>
                               )}
                             </div>
                           </div>
                           <Button size="sm" variant={status === "COMPLETED" ? "secondary" : "default"} asChild className="shrink-0">
-                            <Link href={`/student/classes/${id}/module/${subtopic.id}`}>
+                            <Link href={`/student/classes/${id}/quiz/${quiz.id}`}>
                               {status === "COMPLETED" ? "Retry" : status === "IN_PROGRESS" ? "Continue" : "Start"}
                             </Link>
                           </Button>

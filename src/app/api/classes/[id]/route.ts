@@ -19,7 +19,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     include: {
       teacher: { include: { user: true } },
       enrollments: { include: { student: { include: { user: true } } }, orderBy: { joinedAt: "desc" } },
-      classTopics: { include: { topic: { include: { subtopics: { orderBy: { order: "asc" } } } } }, orderBy: { topic: { order: "asc" } } },
+      classQuizzes: { include: { quiz: { include: { topic: true, _count: { select: { questions: true } } } } }, orderBy: { quiz: { order: "asc" } } },
       invitations: { where: { active: true }, orderBy: { createdAt: "desc" } },
       _count: { select: { enrollments: true } },
     },

@@ -55,5 +55,7 @@ jobs:
             cd ~/app
             docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-latest
             docker compose -f docker-compose.dev.yml up -d --force-recreate --no-build
+            # ONE-TIME quiz-pool backfill (self-guarding; remove this line after it has run once)
+            docker exec adaptive-learning-webapp-dev node prisma/backfill-quiz-pool.js
             docker exec adaptive-learning-webapp-dev node prisma/seed-prebuilt.js
             docker image prune -f

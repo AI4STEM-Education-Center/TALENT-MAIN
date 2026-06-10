@@ -32,7 +32,7 @@ model Teacher {
 
   classes           Class[]
   topics            Topic[]            @relation("TeacherTopics")
-  subtopics         Subtopic[]         @relation("TeacherSubtopics")
+  quizzes           Quiz[]             @relation("TeacherQuizzes")
   questions         Question[]         @relation("TeacherQuestions")
   questionImports   QuestionImport[]
   learningMaterials LearningMaterial[]
@@ -109,9 +109,9 @@ model Student {
   userId String @unique
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  enrollments    ClassEnrollment[]
-  moduleProgress ModuleProgress[]
-  quizAttempts   QuizAttempt[]
+  enrollments  ClassEnrollment[]
+  quizProgress QuizProgress[]
+  quizAttempts QuizAttempt[]
 }
 
 // ─── Classes ──────────────────────────────────────────────────────────────────
@@ -126,8 +126,8 @@ model Class {
   teacher        Teacher           @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   enrollments    ClassEnrollment[]
   invitations    Invitation[]
-  classTopics    ClassTopic[]
-  moduleProgress ModuleProgress[]
+  classQuizzes   ClassQuiz[]
+  quizProgress   QuizProgress[]
   quizAttempts   QuizAttempt[]
   studentList    ClassStudentList[]
   learningMaterials LearningMaterial[]
@@ -179,39 +179,51 @@ model Invitation {
 }
 
 // ─── Content ──────────────────────────────────────────────────────────────────
+// Ownership convention: teacherId = NULL means the row lives in the GLOBAL POOL
+// (admin-managed); a non-null teacherId means it is private to that teacher.
+// Promote (admin) and import (teacher) both deep-copy, so pool and teacher
+// content never affect each other.
+// Physical table/column names are pinned with @map — deploys apply the schema
+// with `prisma db push`, and a real rename would drop the data.
 
 model Topic {
-  id          String   @id @default(cuid())
-  name        String
-  order       Int      @default(0)
-  createdById String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  name      String
+  order     Int      @default(0)
+  teacherId String?  @map("createdById")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  createdBy   Teacher?         @relation("TeacherTopics", fields: [createdById], references: [id], onDelete: SetNull)
-  subtopics   Subtopic[]
-  questions   Question[]
-  classTopics ClassTopic[]
-  imports     QuestionImport[]
+  teacher Teacher? @relation("TeacherTopics", fields: [teacherId], references: [id], onDelete: Cascade)
+  quizzes Quiz[]
+
+  @@index([teacherId])
 }
 
-model Subtopic {
-  id          String   @id @default(cuid())
-  name        String
-  order       Int      @default(0)
-  topicId     String
-  createdById String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+// A quiz (formerly "Subtopic" / "Module") is the unit students take: a named,
+// owned set of questions. topicId is an optional grouping label only —
+// deleting a topic detaches its quizzes, never deletes them.
+model Quiz {
+  id           String   @id @default(cuid())
+  name         String
+  order        Int      @default(0)
+  topicId      String?
+  teacherId    String?  @map("createdById")
+  sourceQuizId String? // lineage: the pool quiz this was imported from, or the teacher quiz a pool copy was promoted from
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  topic          Topic            @relation(fields: [topicId], references: [id], onDelete: Cascade)
-  createdBy      Teacher?         @relation("TeacherSubtopics", fields: [createdById], references: [id], onDelete: SetNull)
-  questions      Question[]
-  moduleProgress ModuleProgress[]
-  quizAttempts   QuizAttempt[]
-  imports        QuestionImport[]
+  topic        Topic?           @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  teacher      Teacher?         @relation("TeacherQuizzes", fields: [teacherId], references: [id], onDelete: Cascade)
+  questions    Question[]
+  quizProgress QuizProgress[]
+  quizAttempts QuizAttempt[]
+  imports      QuestionImport[]
+  classQuizzes ClassQuiz[]
 
   @@index([topicId])
+  @@index([teacherId])
+  @@map("Subtopic")
 }
 
 // difficultyLevel: "BEGINNER" | "INTERMEDIATE" | "ADVANCED"
@@ -219,8 +231,7 @@ model Question {
   id                String   @id @default(cuid())
   title             String?
   text              String
-  topicId           String
-  subtopicId        String
+  quizId            String   @map("subtopicId")
   difficultyLevel   String   @default("BEGINNER")
   answerMode        String   @default("SINGLE_SELECT")
   points            Int?
@@ -233,26 +244,24 @@ model Question {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  topic       Topic           @relation(fields: [topicId], references: [id], onDelete: Cascade)
-  subtopic    Subtopic        @relation(fields: [subtopicId], references: [id], onDelete: Cascade)
+  quiz        Quiz            @relation(fields: [quizId], references: [id], onDelete: Cascade)
   createdBy   Teacher?        @relation("TeacherQuestions", fields: [createdById], references: [id], onDelete: SetNull)
   import      QuestionImport? @relation(fields: [importId], references: [id], onDelete: SetNull)
   options     Option[]
   quizAnswers QuizAnswer[]
 
   @@index([importId])
-  @@index([topicId])
-  // Quiz generation: WHERE subtopicId ORDER BY createdAt ASC
-  @@index([subtopicId, createdAt])
+  // Quiz generation: WHERE quizId ORDER BY createdAt ASC
+  @@index([quizId, createdAt])
   @@index([createdById])
 }
 
 // status: "COMPLETED" | "FAILED"
+// teacherId is NULL when an admin imported straight into the global pool.
 model QuestionImport {
   id            String   @id @default(cuid())
-  teacherId     String
-  topicId       String
-  subtopicId    String
+  teacherId     String?
+  quizId        String   @map("subtopicId")
   originalName  String
   sourcePath    String?
   bankId        String?
@@ -265,14 +274,12 @@ model QuestionImport {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  teacher   Teacher    @relation(fields: [teacherId], references: [id], onDelete: Cascade)
-  topic     Topic      @relation(fields: [topicId], references: [id], onDelete: Cascade)
-  subtopic  Subtopic   @relation(fields: [subtopicId], references: [id], onDelete: Cascade)
+  teacher   Teacher?   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  quiz      Quiz       @relation(fields: [quizId], references: [id], onDelete: Cascade)
   questions Question[]
 
   @@index([teacherId])
-  @@index([topicId])
-  @@index([subtopicId])
+  @@index([quizId])
 }
 
 model Option {
@@ -289,61 +296,64 @@ model Option {
   @@index([questionId])
 }
 
-// ─── Class <-> Topic (with publish control) ───────────────────────────────────
+// ─── Class <-> Quiz (with publish control) ────────────────────────────────────
 
-model ClassTopic {
+model ClassQuiz {
   id        String  @id @default(cuid())
   classId   String
-  topicId   String
+  quizId    String
   published Boolean @default(false)
 
   class Class @relation(fields: [classId], references: [id], onDelete: Cascade)
-  topic Topic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  quiz  Quiz  @relation(fields: [quizId], references: [id], onDelete: Cascade)
 
-  @@unique([classId, topicId])
-  @@index([topicId])
+  @@unique([classId, quizId])
+  @@index([quizId])
 }
 
 // ─── Learning Progress ────────────────────────────────────────────────────────
 // status: "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED"
 
-model ModuleProgress {
-  id         String   @id @default(cuid())
-  studentId  String
-  classId    String
-  subtopicId String
-  status     String   @default("NOT_STARTED")
-  bestScore  Float?
-  updatedAt  DateTime @updatedAt
+model QuizProgress {
+  id        String   @id @default(cuid())
+  studentId String
+  classId   String
+  quizId    String   @map("subtopicId")
+  status    String   @default("NOT_STARTED")
+  bestScore Float?
+  updatedAt DateTime @updatedAt
 
-  student  Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  class    Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
-  subtopic Subtopic @relation(fields: [subtopicId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  class   Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
+  quiz    Quiz    @relation(fields: [quizId], references: [id], onDelete: Cascade)
 
-  @@unique([studentId, classId, subtopicId])
+  @@unique([studentId, classId, quizId])
   @@index([classId])
-  @@index([subtopicId])
+  @@index([quizId])
+  @@map("ModuleProgress")
 }
 
 model QuizAttempt {
   id          String    @id @default(cuid())
   studentId   String
   classId     String
-  subtopicId  String
+  quizId      String?   @map("subtopicId")
   score       Float?
   startedAt   DateTime  @default(now())
   completedAt DateTime?
 
-  student  Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  class    Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
-  subtopic Subtopic     @relation(fields: [subtopicId], references: [id], onDelete: Cascade)
-  answers  QuizAnswer[]
+  student Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  class   Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
+  // SetNull (not Cascade): deleting a quiz — e.g. an admin pruning the global
+  // pool — must never erase students' attempt history.
+  quiz    Quiz?        @relation(fields: [quizId], references: [id], onDelete: SetNull)
+  answers QuizAnswer[]
 
   // Latest-completed-attempt lookups: WHERE studentId AND completedAt IS NOT
   // NULL ORDER BY completedAt DESC (also serves plain studentId filters)
   @@index([studentId, completedAt])
   @@index([classId])
-  @@index([subtopicId])
+  @@index([quizId])
 }
 
 model QuizAnswer {
@@ -367,7 +377,7 @@ model QuizAnswer {
 
 // ─── Exam Results (durable archival snapshot) ─────────────────────────────────
 // Deliberately RELATION-FREE: it stores plain id columns (no @relation), so no
-// cascade can delete it when a Student/Class/Subtopic/Question/QuizAttempt is
+// cascade can delete it when a Student/Class/Quiz/Question/QuizAttempt is
 // removed, and a full self-contained snapshot of everything needed to render the
 // results, so teacher edits/deletions of quiz questions never alter a past
 // result. AI fields are populated asynchronously by the background worker.
@@ -377,13 +387,13 @@ model ExamResult {
   quizAttemptId String @unique
   studentId     String
   classId       String
-  subtopicId    String
+  quizId        String @map("subtopicId")
 
   // identity snapshot — survives rename/deletion of the live rows
-  studentName  String?
-  className    String
-  topicName    String
-  subtopicName String
+  studentName String?
+  className   String
+  topicName   String
+  quizName    String @map("subtopicName")
 
   // score snapshot
   score        Float

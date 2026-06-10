@@ -20,17 +20,14 @@ export default async function StudentDashboard() {
       include: {
         class: {
           include: {
-            classTopics: {
-              where: { published: true },
-              include: { topic: { include: { subtopics: true } } },
-            },
+            classQuizzes: { where: { published: true } },
           },
         },
       },
       orderBy: { joinedAt: "desc" },
     }),
     // Get overall progress counts
-    prisma.moduleProgress.count({
+    prisma.quizProgress.count({
       where: { studentId: student.id, status: "COMPLETED" },
     }),
   ]);
@@ -52,7 +49,7 @@ export default async function StudentDashboard() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Modules Completed</CardTitle>
+            <CardTitle className="text-sm text-muted-foreground">Quizzes Completed</CardTitle>
           </CardHeader>
           <CardContent><p className="text-3xl font-bold">{completedCount}</p></CardContent>
         </Card>
@@ -72,7 +69,7 @@ export default async function StudentDashboard() {
         ) : (
           <div className="grid gap-4">
             {enrollments.map((e) => {
-              const totalModules = e.class.classTopics.reduce((sum, ct) => sum + ct.topic.subtopics.length, 0);
+              const totalQuizzes = e.class.classQuizzes.length;
               return (
                 <Card key={e.classId} className="hover:shadow-md transition-shadow">
                   <CardContent className="flex items-start justify-between gap-3 flex-wrap p-5">
@@ -81,10 +78,9 @@ export default async function StudentDashboard() {
                       <div className="flex flex-wrap gap-3 text-sm text-muted-foreground">
                         <span className="flex items-center gap-1">
                           <BookOpen className="size-3" />
-                          {e.class.classTopics.length} topic{e.class.classTopics.length !== 1 ? "s" : ""}
+                          {totalQuizzes} quiz{totalQuizzes !== 1 ? "zes" : ""}
                         </span>
-                        <span>{totalModules} module{totalModules !== 1 ? "s" : ""}</span>
-                        {e.class.classTopics.length > 0 && (
+                        {totalQuizzes > 0 && (
                           <Badge variant="success">Active</Badge>
                         )}
                       </div>

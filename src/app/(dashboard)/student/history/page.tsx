@@ -20,7 +20,7 @@ export default async function StudentHistoryPage() {
       quizAttemptId: true,
       className: true,
       topicName: true,
-      subtopicName: true,
+      quizName: true,
       score: true,
       completedAt: true,
     },
@@ -30,7 +30,7 @@ export default async function StudentHistoryPage() {
     attemptId: r.quizAttemptId,
     className: r.className,
     topicName: r.topicName,
-    subtopicName: r.subtopicName,
+    quizName: r.quizName,
     score: r.score,
     completedAt: r.completedAt.toISOString(),
   }));

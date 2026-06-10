@@ -20,8 +20,8 @@ interface QuizResult {
 
 type Phase = "loading" | "quiz" | "results" | "error";
 
-export default function ModulePage() {
-  const { id: classId, subtopicId } = useParams<{ id: string; subtopicId: string }>();
+export default function QuizPage() {
+  const { id: classId, quizId } = useParams<{ id: string; quizId: string }>();
   const [phase, setPhase] = useState<Phase>("loading");
   const [questions, setQuestions] = useState<Question[]>([]);
   const [attemptId, setAttemptId] = useState("");
@@ -42,7 +42,7 @@ export default function ModulePage() {
       const res = await fetch("/api/quiz", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ classId, subtopicId }),
+        body: JSON.stringify({ classId, quizId }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error); setPhase("error"); return; }
