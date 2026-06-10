@@ -8,6 +8,7 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
+  statuses: write
 
 concurrency:
   group: react-doctor-${{ github.event.pull_request.number || github.ref }}
@@ -18,4 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: millionco/react-doctor@main
+      # Pinned to a stable release — `@main` regressed on 2026-06-10 (#769
+      # "consolidate scan scope into one --scope flag") with "too many
+      # arguments. Expected 1 argument but got 2". v2.1.0 (2026-06-08) predates it.
+      - uses: millionco/react-doctor@v2.1.0
