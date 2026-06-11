@@ -73,7 +73,10 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         </header>
 
         <main className="flex-1 overflow-auto">
-          <div className="w-full">{children}</div>
+          {/* Cap content width so inputs/bars/boxes don't stretch the full
+              viewport, but stay left-aligned (no mx-auto) so content hugs the
+              sidebar instead of floating centered. */}
+          <div className="w-full max-w-7xl">{children}</div>
         </main>
       </div>
     </div>

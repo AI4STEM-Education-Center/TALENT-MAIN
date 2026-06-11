@@ -31,6 +31,12 @@ updates:
       # next-auth is pinned to a beta line; major bumps need manual review.
       - dependency-name: "next-auth"
         update-types: ["version-update:semver-major"]
+      # eslint is held at 9.x: eslint-config-next@16's bundled plugins
+      # (eslint-plugin-import/react/jsx-a11y) declare peer eslint <=9, so v10
+      # triggers ERESOLVE override warnings. Re-allow once Next's plugins ship
+      # eslint 10 support.
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
 
   # ── GitHub Actions used across .github/workflows ──
   - package-ecosystem: "github-actions"

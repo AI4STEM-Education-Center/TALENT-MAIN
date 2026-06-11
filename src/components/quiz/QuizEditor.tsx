@@ -309,7 +309,7 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
   const isPoolQuiz = quiz.teacherId === null;
 
   return (
-    <div className="mx-auto max-w-6xl p-4 md:p-6 space-y-6">
+    <div className="max-w-6xl p-4 md:p-6 space-y-6">
       <Button variant="ghost" size="sm" asChild>
         <Link href={backHref}><ArrowLeft className="size-4" /> {backLabel}</Link>
       </Button>
