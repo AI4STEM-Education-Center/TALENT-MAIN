@@ -7,12 +7,12 @@ import { type ChatMessage, isChatMessageArray, buildQuizReviewPrompt } from "@/l
 type ChatMode = "chat" | "quiz-review";
 
 async function buildMessages(mode: ChatMode, messages: ChatMessage[]) {
-  const session = await auth();
-  const isStudent = session?.user?.role === "STUDENT";
-
   if (mode !== "quiz-review") {
     return { messages, autoReviewAvailable: false };
   }
+
+  const session = await auth();
+  const isStudent = session?.user?.role === "STUDENT";
 
   if (!isStudent || !session?.user?.id) {
     return { messages: [], autoReviewAvailable: false };

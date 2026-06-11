@@ -276,14 +276,14 @@ async function generateRecommendations(examResult: ExamResultRow): Promise<Store
     },
   });
 
-  const materials: MaterialRow[] = links
-    .map((l) => l.material)
-    .filter(
-      (m) =>
-        m.processingStatus === PROCESSED_STATUS &&
-        !!m.batchDescription?.trim() &&
-        m.pages.length > 0
-    );
+  const materials: MaterialRow[] = links.flatMap((l) => {
+    const m = l.material;
+    return m.processingStatus === PROCESSED_STATUS &&
+      !!m.batchDescription?.trim() &&
+      m.pages.length > 0
+      ? [m]
+      : [];
+  });
   if (materials.length === 0) return { items: [], truncated };
 
   const client = await createOpenAIClient(provider);

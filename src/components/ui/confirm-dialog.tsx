@@ -124,7 +124,7 @@ export function ConfirmDialogProvider({ children }: { children: React.ReactNode 
 }
 
 function useDialogContext() {
-  const ctx = React.useContext(DialogContext);
+  const ctx = React.use(DialogContext);
   if (!ctx) {
     throw new Error("useConfirm/useAlert must be used within a ConfirmDialogProvider");
   }

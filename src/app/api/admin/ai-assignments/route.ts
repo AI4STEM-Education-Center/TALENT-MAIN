@@ -29,8 +29,9 @@ export async function GET() {
 
     // Build a map of all use cases, filling in unassigned ones with null
     const assignmentMap: Record<string, unknown> = {};
+    const assignmentByUseCase = new Map(assignments.map((a) => [a.useCase, a]));
     for (const uc of VALID_USE_CASES) {
-      const assignment = assignments.find((a) => a.useCase === uc);
+      const assignment = assignmentByUseCase.get(uc);
       assignmentMap[uc] = assignment
         ? {
             id: assignment.id,

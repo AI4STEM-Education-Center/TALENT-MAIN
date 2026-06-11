@@ -82,7 +82,7 @@ export function parseReviewSnapshot(raw: string | null): ReviewSnapshot {
 // ─── Snapshot → generator inputs ────────────────────────────────────────────────
 
 const joinTexts = (opts: SnapshotOption[], pick: (o: SnapshotOption) => boolean): string[] =>
-  opts.filter(pick).map((o) => o.text);
+  opts.flatMap((o) => (pick(o) ? [o.text] : []));
 
 /**
  * Derive the misconception inputs for the recommendation engine from the
