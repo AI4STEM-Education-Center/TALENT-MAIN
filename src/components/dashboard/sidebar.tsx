@@ -39,8 +39,7 @@ interface SidebarProps {
 const teacherNav: NavItem[] = [
   { href: "/teacher", label: "Dashboard", icon: <LayoutDashboard className="size-4" /> },
   { href: "/teacher/classes", label: "My Classes", icon: <Users className="size-4" /> },
-  { href: "/teacher/topics", label: "Topics & Modules", icon: <BookOpen className="size-4" /> },
-  { href: "/teacher/questions", label: "Question Bank", icon: <FileQuestion className="size-4" /> },
+  { href: "/teacher/quizzes", label: "Quizzes", icon: <FileQuestion className="size-4" /> },
 ];
 
 const studentNav: NavItem[] = [
@@ -51,6 +50,7 @@ const studentNav: NavItem[] = [
 
 const adminNav: NavItem[] = [
   { href: "/admin", label: "Overview", icon: <LayoutDashboard className="size-4" /> },
+  { href: "/admin/quizzes", label: "Quiz Pool", icon: <FileQuestion className="size-4" /> },
   { href: "/admin/materials", label: "Materials Processing", icon: <FolderOpen className="size-4" /> },
   { href: "/admin/users", label: "Users", icon: <Users className="size-4" /> },
   { href: "/admin/ai-config", label: "AI Config", icon: <Settings className="size-4" /> },

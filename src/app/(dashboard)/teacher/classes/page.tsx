@@ -22,7 +22,7 @@ interface ClassItem {
   createdAt: string;
   _count: {
     enrollments: number;
-    classTopics: number;
+    classQuizzes: number;
   };
 }
 
@@ -117,7 +117,7 @@ export default function ClassesPage() {
                   {cls.description && <p className="text-sm text-muted-foreground">{cls.description}</p>}
                   <div className="flex flex-wrap gap-3 text-xs text-muted-foreground pt-1">
                     <span className="flex items-center gap-1"><Users className="size-3" />{cls._count.enrollments} students</span>
-                    <span className="flex items-center gap-1"><BookOpen className="size-3" />{cls._count.classTopics} topics</span>
+                    <span className="flex items-center gap-1"><BookOpen className="size-3" />{cls._count.classQuizzes} quizzes</span>
                     <span>Created {formatDate(cls.createdAt)}</span>
                   </div>
                 </div>
@@ -153,7 +153,7 @@ export default function ClassesPage() {
             <DialogTitle>Delete Class</DialogTitle>
             <DialogDescription>
               Are you sure you want to delete <strong>{deleteTarget?.name}</strong>? This will remove
-              all student enrollments, roster entries, topics, and invite links associated with this class.
+              all student enrollments, roster entries, quiz assignments, and invite links associated with this class.
               This action cannot be undone.
             </DialogDescription>
           </DialogHeader>

@@ -15,9 +15,9 @@ export async function POST(req: NextRequest) {
   const student = await prisma.student.findUnique({ where: { userId: session.user.id } });
   if (!student) return NextResponse.json({ error: "Student not found" }, { status: 404 });
 
-  const { classId, subtopicId } = await req.json();
-  if (!classId || !subtopicId) {
-    return NextResponse.json({ error: "classId and subtopicId required" }, { status: 400 });
+  const { classId, quizId } = await req.json();
+  if (!classId || !quizId) {
+    return NextResponse.json({ error: "classId and quizId required" }, { status: 400 });
   }
 
   // Verify student is enrolled
@@ -26,38 +26,35 @@ export async function POST(req: NextRequest) {
   });
   if (!enrollment) return NextResponse.json({ error: "Not enrolled in this class" }, { status: 403 });
 
-  // Verify topic is published for this class
-  const subtopic = await prisma.subtopic.findUnique({ where: { id: subtopicId }, include: { topic: true } });
-  if (!subtopic) return NextResponse.json({ error: "Subtopic not found" }, { status: 404 });
-
-  const classTopic = await prisma.classTopic.findUnique({
-    where: { classId_topicId: { classId, topicId: subtopic.topicId } },
+  // Verify the quiz is published for this class
+  const classQuiz = await prisma.classQuiz.findUnique({
+    where: { classId_quizId: { classId, quizId } },
   });
-  if (!classTopic?.published) {
-    return NextResponse.json({ error: "This module is not yet available." }, { status: 403 });
+  if (!classQuiz?.published) {
+    return NextResponse.json({ error: "This quiz is not yet available." }, { status: 403 });
   }
 
-  // Get questions for this subtopic
+  // Get questions for this quiz
   const questions = await prisma.question.findMany({
-    where: { subtopicId },
+    where: { quizId },
     include: { options: { select: { id: true, text: true } } }, // don't expose isCorrect
     orderBy: { createdAt: "asc" },
   });
 
   if (questions.length === 0) {
-    return NextResponse.json({ error: "No questions available for this module." }, { status: 404 });
+    return NextResponse.json({ error: "No questions available for this quiz." }, { status: 404 });
   }
 
   // Create attempt
   const attempt = await prisma.quizAttempt.create({
-    data: { studentId: student.id, classId, subtopicId },
+    data: { studentId: student.id, classId, quizId },
   });
 
-  // Update ModuleProgress to IN_PROGRESS
-  await prisma.moduleProgress.upsert({
-    where: { studentId_classId_subtopicId: { studentId: student.id, classId, subtopicId } },
+  // Update QuizProgress to IN_PROGRESS
+  await prisma.quizProgress.upsert({
+    where: { studentId_classId_quizId: { studentId: student.id, classId, quizId } },
     update: { status: "IN_PROGRESS" },
-    create: { studentId: student.id, classId, subtopicId, status: "IN_PROGRESS" },
+    create: { studentId: student.id, classId, quizId, status: "IN_PROGRESS" },
   });
 
   return NextResponse.json({ attemptId: attempt.id, questions });
@@ -82,6 +79,11 @@ export async function PATCH(req: NextRequest) {
   const attempt = await prisma.quizAttempt.findUnique({ where: { id: attemptId } });
   if (!attempt || attempt.studentId !== student.id) {
     return NextResponse.json({ error: "Attempt not found" }, { status: 404 });
+  }
+  // quizId is null only if the quiz was deleted mid-attempt — nothing left to score against.
+  const quizId = attempt.quizId;
+  if (!quizId) {
+    return NextResponse.json({ error: "This quiz no longer exists." }, { status: 410 });
   }
 
   if (!Array.isArray(answers)) {
@@ -119,14 +121,14 @@ export async function PATCH(req: NextRequest) {
       where: { id: attemptId },
       data: { score, completedAt },
     }),
-    prisma.moduleProgress.findUnique({
-      where: { studentId_classId_subtopicId: { studentId: student.id, classId: attempt.classId, subtopicId: attempt.subtopicId } },
+    prisma.quizProgress.findUnique({
+      where: { studentId_classId_quizId: { studentId: student.id, classId: attempt.classId, quizId } },
     }),
   ]);
 
-  // Update ModuleProgress: COMPLETED + bestScore
-  await prisma.moduleProgress.upsert({
-    where: { studentId_classId_subtopicId: { studentId: student.id, classId: attempt.classId, subtopicId: attempt.subtopicId } },
+  // Update QuizProgress: COMPLETED + bestScore
+  await prisma.quizProgress.upsert({
+    where: { studentId_classId_quizId: { studentId: student.id, classId: attempt.classId, quizId } },
     update: {
       status: "COMPLETED",
       bestScore: Math.max(score, existing?.bestScore ?? 0),
@@ -134,7 +136,7 @@ export async function PATCH(req: NextRequest) {
     create: {
       studentId: student.id,
       classId: attempt.classId,
-      subtopicId: attempt.subtopicId,
+      quizId,
       status: "COMPLETED",
       bestScore: score,
     },
@@ -149,7 +151,7 @@ export async function PATCH(req: NextRequest) {
       where: { id: attemptId },
       select: {
         class: { select: { name: true } },
-        subtopic: { select: { name: true, topic: { select: { name: true } } } },
+        quiz: { select: { name: true, topic: { select: { name: true } } } },
       },
     });
 
@@ -163,12 +165,12 @@ export async function PATCH(req: NextRequest) {
         quizAttemptId: attemptId,
         studentId: student.id,
         classId: attempt.classId,
-        subtopicId: attempt.subtopicId,
+        quizId,
         studentName:
           [session.user.firstName, session.user.lastName].filter(Boolean).join(" ") || null,
         className: names?.class.name ?? "",
-        topicName: names?.subtopic.topic.name ?? "",
-        subtopicName: names?.subtopic.name ?? "",
+        topicName: names?.quiz?.topic?.name ?? "",
+        quizName: names?.quiz?.name ?? "",
         score,
         correctCount: correct,
         totalCount: answers.length,

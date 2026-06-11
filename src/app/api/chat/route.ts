@@ -35,7 +35,7 @@ async function buildMessages(mode: ChatMode, messages: ChatMessage[]) {
     orderBy: { completedAt: "desc" },
     include: {
       class: { select: { name: true } },
-      subtopic: {
+      quiz: {
         select: {
           name: true,
           topic: { select: { name: true } },

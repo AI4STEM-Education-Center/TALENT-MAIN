@@ -9,7 +9,7 @@ export type ExamHistoryItem = {
   attemptId: string;
   className: string;
   topicName: string;
-  subtopicName: string;
+  quizName: string;
   score: number;
   /** ISO string — formatted on the client to avoid SSR/runtime mismatch. */
   completedAt: string;
@@ -57,7 +57,7 @@ export function ExamHistoryList({
             <Card className="transition-colors hover:bg-muted/30">
               <CardContent className="flex items-center justify-between gap-3 p-4">
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium text-sm truncate">{item.subtopicName}</p>
+                  <p className="font-medium text-sm truncate">{item.quizName}</p>
                   <p className="text-xs text-muted-foreground truncate">
                     {showClass && (
                       <>
@@ -65,8 +65,9 @@ export function ExamHistoryList({
                         {" · "}
                       </>
                     )}
-                    {item.topicName}
-                    {item.completedAt && <> · {formatDate(item.completedAt)}</>}
+                    {/* topicName can be empty — quizzes may be ungrouped */}
+                    {item.topicName && <>{item.topicName} · </>}
+                    {item.completedAt && formatDate(item.completedAt)}
                   </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
