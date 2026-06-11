@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,6 +37,7 @@ function groupByTopic(quizzes: Quiz[]) {
 
 export default function TeacherQuizzesPage() {
   const confirm = useConfirm();
+  const router = useRouter();
   const [tab, setTab] = useState<"mine" | "pool">("mine");
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
   const [pool, setPool] = useState<Quiz[]>([]);
@@ -71,9 +73,8 @@ export default function TeacherQuizzesPage() {
     });
     if (res.ok) {
       const quiz = await res.json();
-      setQuizzes((prev) => [...prev, quiz]);
-      setNewQuizName("");
-      setMsg("Quiz created.");
+      // Jump straight into the new quiz so questions can be added right away.
+      router.push(`/teacher/quizzes/${quiz.id}`);
     }
   }
 
@@ -224,7 +225,7 @@ export default function TeacherQuizzesPage() {
                     <Card key={quiz.id} className="hover:shadow-xs transition-shadow">
                       <CardContent className="flex items-center justify-between gap-3 p-4">
                         <div className="min-w-0 flex-1">
-                          <Link href={`/teacher/quizzes/${quiz.id}`} className="font-semibold hover:underline">{quiz.name}</Link>
+                          <span className="font-semibold">{quiz.name}</span>
                           <div className="flex gap-2 mt-1">
                             <Badge variant="outline">{quiz._count.questions} question{quiz._count.questions !== 1 ? "s" : ""}</Badge>
                           </div>
