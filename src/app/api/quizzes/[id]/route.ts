@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { canManage, canRead, getContentActor } from "@/lib/quiz-access";
+import { attachFigureUrls } from "@/lib/question-figures";
 
 // GET: quiz detail with questions. Own quizzes are fully visible; pool quizzes
 // are readable by any teacher/admin (so the pool can be previewed before import).
@@ -18,7 +19,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   if (!quiz || !canRead(actor, quiz)) {
     return NextResponse.json({ error: "Quiz not found" }, { status: 404 });
   }
-  return NextResponse.json({ ...quiz, editable: canManage(actor, quiz) });
+  // Teacher-only route: the numeric answer scalars (answerNumeric etc.) are fine
+  // to return. Swap the raw figure key/bucket for a transient presigned
+  // `figureUrl` so the editor can show a thumbnail without leaking storage keys.
+  const questions = await attachFigureUrls(quiz.questions);
+  return NextResponse.json({ ...quiz, questions, editable: canManage(actor, quiz) });
 }
 
 // PATCH: rename / regroup a quiz (owner only)

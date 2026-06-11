@@ -23,14 +23,43 @@ export const MAX_RECOMMENDATIONS = 6;
 // ─── Review snapshot ──────────────────────────────────────────────────────────
 
 export type SnapshotOption = { text: string; isCorrect: boolean; selected: boolean };
-export type SnapshotQuestion = { text: string; isCorrect: boolean; options: SnapshotOption[] };
+export type SnapshotQuestion = {
+  text: string;
+  isCorrect: boolean;
+  options: SnapshotOption[];
+  // NUMERIC questions only (omitted entirely for choice questions so old
+  // choice-only snapshots stay byte-identical):
+  answerMode?: string;
+  correctNumeric?: number | null;
+  tolerance?: number | null;
+  unit?: string | null;
+  submittedNumeric?: number | null;
+  // Any question that carried a figure (omitted when absent):
+  figureStorageKey?: string | null;
+  figureAlt?: string | null;
+  // TRANSIENT, render-time only: a presigned GET URL attached by callers just
+  // before rendering (server pages presign from figureStorageKey; the student
+  // quiz page reuses the figureUrl it already received). buildReviewSnapshot
+  // never sets it and it must never be persisted.
+  figureUrl?: string | null;
+};
 export type ReviewSnapshot = { questions: SnapshotQuestion[] };
 
-/** A question as it exists at submit time (live options carry ids + isCorrect). */
+/**
+ * A question as it exists at submit time (live options carry ids + isCorrect).
+ * The numeric/figure fields are OPTIONAL so existing callers (e.g. the inline
+ * results view in the student quiz page) compile unchanged.
+ */
 export type SnapshotQuestionInput = {
   id: string;
   text: string;
   options: { id: string; text: string; isCorrect: boolean }[];
+  answerMode?: string;
+  answerNumeric?: number | null;
+  answerTolerance?: number | null;
+  answerUnit?: string | null;
+  figureStorageKey?: string | null;
+  figureAlt?: string | null;
 };
 
 /** A graded answer record (selection already normalized to a string[] of ids). */
@@ -38,6 +67,7 @@ export type SnapshotAnswerInput = {
   questionId: string;
   selectedOptionIds: string[];
   isCorrect: boolean;
+  numericValue?: number | null;
 };
 
 /**
@@ -55,7 +85,7 @@ export function buildReviewSnapshot(
     questions: questions.map((q) => {
       const answer = answerByQuestion.get(q.id);
       const selected = new Set(answer?.selectedOptionIds ?? []);
-      return {
+      const base: SnapshotQuestion = {
         text: q.text,
         isCorrect: answer?.isCorrect ?? false,
         options: q.options.map((opt) => ({
@@ -64,6 +94,22 @@ export function buildReviewSnapshot(
           selected: selected.has(opt.id),
         })),
       };
+      // NUMERIC questions carry no options; persist the numeric grading data and
+      // the student's submitted value so the durable snapshot can render/score
+      // without the live rows. Choice questions stay byte-identical (no keys).
+      if (q.answerMode === "NUMERIC") {
+        base.answerMode = q.answerMode;
+        base.correctNumeric = q.answerNumeric ?? null;
+        base.tolerance = q.answerTolerance ?? null;
+        base.unit = q.answerUnit ?? null;
+        base.submittedNumeric = answer?.numericValue ?? null;
+      }
+      // Figure fields apply to any question that carries one.
+      if (q.figureStorageKey) {
+        base.figureStorageKey = q.figureStorageKey;
+        base.figureAlt = q.figureAlt ?? null;
+      }
+      return base;
     }),
   };
 }
@@ -84,6 +130,21 @@ export function parseReviewSnapshot(raw: string | null): ReviewSnapshot {
 const joinTexts = (opts: SnapshotOption[], pick: (o: SnapshotOption) => boolean): string[] =>
   opts.flatMap((o) => (pick(o) ? [o.text] : []));
 
+/** Append a unit suffix (e.g. "9.8 m/s^2"). LaTeX in the unit passes through raw. */
+const withUnit = (value: string, unit: string | null | undefined): string =>
+  unit ? `${value} ${unit}` : value;
+
+/** True for snapshot questions persisted from a NUMERIC question (no options). */
+const isNumeric = (q: SnapshotQuestion): boolean => q.answerMode === "NUMERIC";
+
+/** Student-facing text of a NUMERIC submission, or "No answer" when absent. */
+const numericWrongAnswer = (q: SnapshotQuestion): string =>
+  q.submittedNumeric != null ? withUnit(String(q.submittedNumeric), q.unit) : "No answer";
+
+/** Text of a NUMERIC question's correct value (always present for a graded q). */
+const numericCorrectAnswer = (q: SnapshotQuestion): string =>
+  withUnit(String(q.correctNumeric), q.unit);
+
 /**
  * Derive the misconception inputs for the recommendation engine from the
  * snapshot's incorrect questions. Capped at `maxCount`; reports whether more
@@ -96,6 +157,15 @@ export function snapshotToMisconceptions(
   const wrong = snapshot.questions.filter((q) => !q.isCorrect);
   const truncated = wrong.length > maxCount;
   const inputs = wrong.slice(0, maxCount).map((q) => {
+    // NUMERIC questions carry no options; surface the submitted/correct numbers
+    // (+unit) instead of option text. Choice questions are byte-identical.
+    if (isNumeric(q)) {
+      return {
+        questionText: q.text,
+        wrongAnswer: numericWrongAnswer(q),
+        correctAnswer: numericCorrectAnswer(q),
+      };
+    }
     const selected = joinTexts(q.options, (o) => o.selected);
     const correct = joinTexts(q.options, (o) => o.isCorrect);
     return {
@@ -128,6 +198,23 @@ export function snapshotToSummaryAttempt(
     class: { name: meta.className },
     quiz: { name: meta.quizName, topic: meta.topicName ? { name: meta.topicName } : null },
     answers: snapshot.questions.map((q) => {
+      // NUMERIC questions carry the submitted/correct numbers through to the
+      // prompt builder (which formats them, +unit); choice answers stay
+      // byte-identical, leaving the numeric fields undefined.
+      if (isNumeric(q)) {
+        return {
+          isCorrect: q.isCorrect,
+          selectedOption: null,
+          numericValue: q.submittedNumeric ?? null,
+          question: {
+            text: q.text,
+            options: [],
+            answerMode: q.answerMode,
+            answerNumeric: q.correctNumeric ?? null,
+            answerUnit: q.unit ?? null,
+          },
+        };
+      }
       const selected = joinTexts(q.options, (o) => o.selected);
       return {
         isCorrect: q.isCorrect,

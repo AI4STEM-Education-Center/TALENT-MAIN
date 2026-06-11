@@ -1,7 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import { decryptApiKey } from "@/lib/crypto";
 
-export type UseCase = "teacher_chat" | "student_chat" | "pdf_description";
+export type UseCase =
+  | "teacher_chat"
+  | "student_chat"
+  | "pdf_description"
+  | "quiz_extraction";
 export type ProviderType = "openai" | "local" | "cloudflare";
 
 export interface ResolvedProvider {

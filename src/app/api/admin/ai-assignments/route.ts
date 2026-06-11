@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { invalidateProviderCache } from "@/lib/ai-provider";
 
-const VALID_USE_CASES = ["teacher_chat", "student_chat", "pdf_description"] as const;
+const VALID_USE_CASES = ["teacher_chat", "student_chat", "pdf_description", "quiz_extraction"] as const;
 
 /**
  * GET /api/admin/ai-assignments

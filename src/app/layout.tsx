@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import "katex/dist/katex.min.css";
 import Chatbot from "@/components/Chatbot";
 import { ConfirmDialogProvider } from "@/components/ui/confirm-dialog";
 

@@ -7,6 +7,7 @@ import { RotateCcw } from "lucide-react";
 import { ExamResultsView } from "@/components/student/ExamResultsView";
 import { parseReviewSnapshot, RESULT_STATUS, type ResultStatus } from "@/lib/exam-results";
 import { presignStoredRecommendations } from "@/lib/exam-results-engine";
+import { presignQuestionFigure } from "@/lib/question-figures";
 
 export default async function ExamResultsPage({
   params,
@@ -29,6 +30,21 @@ export default async function ExamResultsPage({
   if (!examResult || examResult.studentId !== student.id) notFound();
 
   const snapshot = parseReviewSnapshot(examResult.reviewSnapshot);
+
+  // Attach transient presigned figure URLs (never persisted) so QuestionCard can
+  // render question figures. The snapshot stores only figureStorageKey, not a
+  // bucket, so we pass figureBucket: null → the default bucket is used.
+  await Promise.all(
+    snapshot.questions.map(async (q) => {
+      if (q.figureStorageKey) {
+        q.figureUrl = await presignQuestionFigure({
+          figureStorageKey: q.figureStorageKey,
+          figureBucket: null,
+        });
+      }
+    })
+  );
+
   const recsReady = examResult.recommendationsStatus === RESULT_STATUS.READY;
   const presigned = recsReady
     ? await presignStoredRecommendations(examResult.recommendations)

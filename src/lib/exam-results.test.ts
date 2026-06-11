@@ -76,6 +76,72 @@ describe("buildReviewSnapshot", () => {
     const selected = snapshot.questions[0].options.filter((o) => o.selected).map((o) => o.text);
     expect(selected).toEqual(["2", "4"]);
   });
+
+  it("persists numeric grading data + submitted value for NUMERIC questions", () => {
+    const snapshot = buildReviewSnapshot(
+      [
+        {
+          id: "n1",
+          text: "Coefficient of friction $\\mu_s$?",
+          options: [],
+          answerMode: "NUMERIC",
+          answerNumeric: 9.8,
+          answerTolerance: 0.1,
+          answerUnit: "m/s^2",
+        },
+      ],
+      [{ questionId: "n1", selectedOptionIds: [], isCorrect: false, numericValue: 9.5 }]
+    );
+    expect(snapshot.questions[0]).toEqual({
+      text: "Coefficient of friction $\\mu_s$?",
+      isCorrect: false,
+      options: [],
+      answerMode: "NUMERIC",
+      correctNumeric: 9.8,
+      tolerance: 0.1,
+      unit: "m/s^2",
+      submittedNumeric: 9.5,
+    });
+  });
+
+  it("records a null submittedNumeric when the student left a NUMERIC question blank", () => {
+    const snapshot = buildReviewSnapshot(
+      [{ id: "n1", text: "Q", options: [], answerMode: "NUMERIC", answerNumeric: 5 }],
+      []
+    );
+    expect(snapshot.questions[0].submittedNumeric).toBeNull();
+    expect(snapshot.questions[0].correctNumeric).toBe(5);
+    expect(snapshot.questions[0].tolerance).toBeNull();
+    expect(snapshot.questions[0].unit).toBeNull();
+  });
+
+  it("omits all numeric keys for choice questions (byte-identical legacy shape)", () => {
+    const snapshot = buildReviewSnapshot(questions, [
+      { questionId: "q1", selectedOptionIds: ["o2"], isCorrect: true },
+    ]);
+    const keys = Object.keys(snapshot.questions[0]);
+    expect(keys).toEqual(["text", "isCorrect", "options"]);
+    expect("answerMode" in snapshot.questions[0]).toBe(false);
+    expect("figureStorageKey" in snapshot.questions[0]).toBe(false);
+  });
+
+  it("attaches figure metadata for any question carrying a figure", () => {
+    const snapshot = buildReviewSnapshot(
+      [
+        {
+          id: "f1",
+          text: "What is shown?",
+          options: [{ id: "a", text: "A circuit", isCorrect: true }],
+          figureStorageKey: "figs/abc.png",
+          figureAlt: "A series circuit",
+        },
+      ],
+      [{ questionId: "f1", selectedOptionIds: ["a"], isCorrect: true }]
+    );
+    expect(snapshot.questions[0].figureStorageKey).toBe("figs/abc.png");
+    expect(snapshot.questions[0].figureAlt).toBe("A series circuit");
+    // The raw storage key/bucket are durable snapshot data, not presigned here.
+  });
 });
 
 // ─── parseReviewSnapshot ─────────────────────────────────────────────────────────
@@ -92,6 +158,24 @@ describe("parseReviewSnapshot", () => {
     expect(parseReviewSnapshot(null)).toEqual({ questions: [] });
     expect(parseReviewSnapshot("not json")).toEqual({ questions: [] });
     expect(parseReviewSnapshot("{}")).toEqual({ questions: [] });
+  });
+
+  it("parses a legacy choice-only snapshot unchanged (no numeric/figure keys)", () => {
+    // A snapshot serialized before NUMERIC/figure support existed.
+    const legacy =
+      '{"questions":[{"text":"2 + 2?","isCorrect":true,' +
+      '"options":[{"text":"3","isCorrect":false,"selected":false},' +
+      '{"text":"4","isCorrect":true,"selected":true}]}]}';
+    const parsed = parseReviewSnapshot(legacy);
+    expect(parsed.questions[0]).toEqual({
+      text: "2 + 2?",
+      isCorrect: true,
+      options: [
+        { text: "3", isCorrect: false, selected: false },
+        { text: "4", isCorrect: true, selected: true },
+      ],
+    });
+    expect(Object.keys(parsed.questions[0])).toEqual(["text", "isCorrect", "options"]);
   });
 });
 
@@ -159,6 +243,52 @@ describe("snapshotToMisconceptions", () => {
     };
     expect(snapshotToMisconceptions(perfect)).toEqual({ inputs: [], truncated: false });
   });
+
+  it("formats NUMERIC wrong/correct answers with the unit", () => {
+    const numeric: ReviewSnapshot = {
+      questions: [
+        {
+          text: "Acceleration of gravity?",
+          isCorrect: false,
+          options: [],
+          answerMode: "NUMERIC",
+          correctNumeric: 9.8,
+          tolerance: 0.1,
+          unit: "m/s^2",
+          submittedNumeric: 8,
+        },
+      ],
+    };
+    const { inputs } = snapshotToMisconceptions(numeric);
+    expect(inputs[0]).toEqual({
+      questionText: "Acceleration of gravity?",
+      wrongAnswer: "8 m/s^2",
+      correctAnswer: "9.8 m/s^2",
+    });
+  });
+
+  it("uses 'No answer' for a blank NUMERIC submission (no unit appended)", () => {
+    const numeric: ReviewSnapshot = {
+      questions: [
+        {
+          text: "Mass?",
+          isCorrect: false,
+          options: [],
+          answerMode: "NUMERIC",
+          correctNumeric: 5,
+          tolerance: null,
+          unit: null,
+          submittedNumeric: null,
+        },
+      ],
+    };
+    const { inputs } = snapshotToMisconceptions(numeric);
+    expect(inputs[0]).toEqual({
+      questionText: "Mass?",
+      wrongAnswer: "No answer",
+      correctAnswer: "5",
+    });
+  });
 });
 
 // ─── snapshotToSummaryAttempt (+ buildQuizReviewPrompt integration) ───────────────
@@ -206,6 +336,33 @@ describe("snapshotToSummaryAttempt", () => {
     expect(prompt).toContain("Topic: Forces");
     expect(prompt).toContain("Quiz: Newton's Laws");
     expect(prompt).toContain("Newton's third law?");
+  });
+
+  it("carries NUMERIC submitted/correct values through to the prompt builder", () => {
+    const numeric: ReviewSnapshot = {
+      questions: [
+        {
+          text: "Acceleration of gravity?",
+          isCorrect: false,
+          options: [],
+          answerMode: "NUMERIC",
+          correctNumeric: 9.8,
+          tolerance: 0.1,
+          unit: "m/s^2",
+          submittedNumeric: 8,
+        },
+      ],
+    };
+    const attempt = snapshotToSummaryAttempt(numeric, meta);
+    expect(attempt.answers[0].selectedOption).toBeNull();
+    expect(attempt.answers[0].numericValue).toBe(8);
+    expect(attempt.answers[0].question.answerMode).toBe("NUMERIC");
+    expect(attempt.answers[0].question.answerNumeric).toBe(9.8);
+    expect(attempt.answers[0].question.answerUnit).toBe("m/s^2");
+
+    const prompt = buildQuizReviewPrompt(attempt);
+    expect(prompt).toContain("Student answer: 8 m/s^2");
+    expect(prompt).toContain("Correct answer: 9.8 m/s^2");
   });
 });
 

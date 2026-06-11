@@ -97,6 +97,16 @@ export async function deepCopyQuiz(sourceQuizId: string, targetTeacherId: string
           feedbackIncorrect: question.feedbackIncorrect,
           sourceQuestionId: question.sourceQuestionId,
           createdById: targetTeacherId,
+          // NUMERIC grading data — without these, a copied numeric question
+          // would lose its correct answer and silently grade as wrong.
+          answerNumeric: question.answerNumeric,
+          answerTolerance: question.answerTolerance,
+          answerUnit: question.answerUnit,
+          // Figure reference. The S3 object is intentionally shared between
+          // copies — figures are immutable, so pointing at the same key is safe.
+          figureStorageKey: question.figureStorageKey,
+          figureBucket: question.figureBucket,
+          figureAlt: question.figureAlt,
           options: {
             create: question.options.map((o) => ({ text: o.text, isCorrect: o.isCorrect })),
           },

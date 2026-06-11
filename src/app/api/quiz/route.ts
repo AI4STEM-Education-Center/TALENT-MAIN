@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { scoreQuiz, type ScorableQuestion } from "@/lib/quiz-scoring";
 import { buildReviewSnapshot } from "@/lib/exam-results";
+import { attachFigureUrls } from "@/lib/question-figures";
 import { enqueueExamResult } from "@/lib/queue";
 
 // POST: Start a quiz attempt
@@ -34,16 +35,25 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "This quiz is not yet available." }, { status: 403 });
   }
 
-  // Get questions for this quiz
-  const questions = await prisma.question.findMany({
+  // Get questions for this quiz. SECURITY: students must never receive the
+  // grading data — `omit` strips the NUMERIC answer/tolerance scalars, options
+  // are selected without `isCorrect`, and the raw figure storage key/bucket are
+  // replaced below with a short-lived presigned URL. Students see only:
+  // id, text, answerMode, answerUnit, points, figureAlt, options { id, text },
+  // plus the transient figureUrl.
+  const questionRows = await prisma.question.findMany({
     where: { quizId },
-    include: { options: { select: { id: true, text: true } } }, // don't expose isCorrect
+    omit: { answerNumeric: true, answerTolerance: true },
+    include: { options: { select: { id: true, text: true } } },
     orderBy: { createdAt: "asc" },
   });
 
-  if (questions.length === 0) {
+  if (questionRows.length === 0) {
     return NextResponse.json({ error: "No questions available for this quiz." }, { status: 404 });
   }
+
+  // Replace figureStorageKey/figureBucket with a transient presigned figureUrl.
+  const questions = await attachFigureUrls(questionRows);
 
   // Create attempt
   const attempt = await prisma.quizAttempt.create({
@@ -71,7 +81,9 @@ export async function PATCH(req: NextRequest) {
   if (!student) return NextResponse.json({ error: "Student not found" }, { status: 404 });
 
   const { attemptId, answers } = await req.json();
-  // answers: [{ questionId, selectedOptionId }] or [{ questionId, selectedOptionIds }]
+  // answers: [{ questionId, selectedOptionId }] | [{ questionId, selectedOptionIds }]
+  // | [{ questionId, numericValue }] (NUMERIC). The raw array is handed straight
+  // to scoreQuiz, which reads/normalizes the relevant field per question mode.
   if (!attemptId || !answers) {
     return NextResponse.json({ error: "attemptId and answers required" }, { status: 400 });
   }
@@ -156,7 +168,19 @@ export async function PATCH(req: NextRequest) {
     });
 
     const snapshot = buildReviewSnapshot(
-      questionsWithAnswers.map((q) => ({ id: q.id, text: q.text, options: q.options })),
+      questionsWithAnswers.map((q) => ({
+        id: q.id,
+        text: q.text,
+        options: q.options,
+        // NUMERIC grading data + figure metadata flow into the durable snapshot
+        // (see buildReviewSnapshot); ignored for plain choice questions.
+        answerMode: q.answerMode,
+        answerNumeric: q.answerNumeric,
+        answerTolerance: q.answerTolerance,
+        answerUnit: q.answerUnit,
+        figureStorageKey: q.figureStorageKey,
+        figureAlt: q.figureAlt,
+      })),
       answerRecords
     );
 
@@ -188,11 +212,21 @@ export async function PATCH(req: NextRequest) {
     console.error("[Quiz] Failed to create ExamResult snapshot:", err);
   }
 
+  // Student-safe question payload for the inline results view. Post-submit, the
+  // review intentionally reveals the grading data — options keep isCorrect, and
+  // the NUMERIC scalars (answerNumeric/answerTolerance/answerUnit) are revealed
+  // too — exactly like the durable snapshot, so the inline ExamResultsView can
+  // show the correct numeric value. (Pre-submission, the POST handler still
+  // omits answerNumeric/answerTolerance — secrecy only matters before grading.)
+  // The raw figure key/bucket are still swapped for a transient presigned
+  // figureUrl by attachFigureUrls.
+  const safeQuestions = await attachFigureUrls(questionsWithAnswers);
+
   return NextResponse.json({
     score,
     correct,
     total: answers.length,
-    questions: questionsWithAnswers,
+    questions: safeQuestions,
     answers: answerRecords,
   });
 }

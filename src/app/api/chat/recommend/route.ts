@@ -105,6 +105,48 @@ function correctAnswerText(options: Array<{ text: string; isCorrect: boolean }>)
   return correct.length > 0 ? correct.join(" | ") : null;
 }
 
+/** Append a unit suffix; LaTeX in the unit passes through raw (display-only). */
+function withUnit(value: string, unit: string | null | undefined): string {
+  return unit ? `${value} ${unit}` : value;
+}
+
+/**
+ * Build the misconception input for one wrong answer. NUMERIC questions carry no
+ * options, so surface the student's submitted number (or "No answer") and the
+ * correct number (+unit); choice questions keep their option-text behavior.
+ */
+function misconceptionFor(answer: {
+  numericValue: number | null;
+  selectedOption: { text: string } | null;
+  question: {
+    text: string;
+    options: Array<{ text: string; isCorrect: boolean }>;
+    answerMode?: string;
+    answerNumeric?: number | null;
+    answerUnit?: string | null;
+  };
+}): MisconceptionInput {
+  const { question } = answer;
+  if (question.answerMode === "NUMERIC") {
+    return {
+      questionText: question.text,
+      wrongAnswer:
+        answer.numericValue != null
+          ? withUnit(String(answer.numericValue), question.answerUnit)
+          : "No answer",
+      correctAnswer:
+        question.answerNumeric != null
+          ? withUnit(String(question.answerNumeric), question.answerUnit)
+          : null,
+    };
+  }
+  return {
+    questionText: question.text,
+    wrongAnswer: answer.selectedOption?.text ?? "No answer selected",
+    correctAnswer: correctAnswerText(question.options),
+  };
+}
+
 async function recommendForAnswer(
   client: OpenAI,
   model: string,
@@ -197,12 +239,19 @@ export async function POST() {
       orderBy: { completedAt: "desc" },
       include: {
         answers: {
-          include: {
+          select: {
+            isCorrect: true,
+            numericValue: true, // NUMERIC questions: the student's submitted number
             selectedOption: { select: { text: true } },
             question: {
               select: {
                 text: true,
                 options: { select: { text: true, isCorrect: true } },
+                // NUMERIC grading data so the misconception input reflects the
+                // numeric answer rather than (absent) option text.
+                answerMode: true,
+                answerNumeric: true,
+                answerUnit: true,
               },
             },
           },
@@ -280,11 +329,7 @@ export async function POST() {
 
     const results = await Promise.all(
       toProcess.map(async (answer) => {
-        const input: MisconceptionInput = {
-          questionText: answer.question.text,
-          wrongAnswer: answer.selectedOption?.text ?? "No answer selected",
-          correctAnswer: correctAnswerText(answer.question.options),
-        };
+        const input = misconceptionFor(answer);
         try {
           return await recommendForAnswer(client, provider.model, bucket, input, catalog, materials);
         } catch (err) {
