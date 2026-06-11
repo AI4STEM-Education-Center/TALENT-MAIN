@@ -40,6 +40,21 @@ function pageImageFor(pages: PageImage[], pageNumber: number | null): string | n
   return pages.find((p) => p.pageNumber === pageNumber)?.url ?? null;
 }
 
+/**
+ * Rendered-LaTeX preview box, captioned "Preview" so a teacher reads it as a
+ * render of the input beside/above it rather than another editable field.
+ */
+function MathPreview({ text, className }: { text: string; className?: string }) {
+  return (
+    <div className={className}>
+      <span className="block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Preview</span>
+      <div className="rounded border bg-muted/30 p-2 text-sm">
+        <MathText text={text} />
+      </div>
+    </div>
+  );
+}
+
 function QuestionCard({
   q,
   index,
@@ -114,102 +129,113 @@ function QuestionCard({
 
       {q.needsReview && q.reviewNote && <p className="text-xs text-amber-700">{q.reviewNote}</p>}
 
-      <div className="space-y-1">
-        <label className="text-xs font-medium text-muted-foreground">Question text (LaTeX in $…$)</label>
-        <Textarea value={q.text} onChange={(e) => onChange({ ...q, text: e.target.value })} rows={3} />
-        <div className="rounded border bg-muted/30 p-2 text-sm">
-          <MathText text={q.text} />
-        </div>
-      </div>
+      {/* Editing fields on the left; the source page is always shown on the right
+          (a draggable figure crop when the question has a figure, otherwise a
+          plain reference image) so the teacher never has to expand a toggle. */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="min-w-0 space-y-3">
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Question text (LaTeX in $…$)</label>
+            <Textarea value={q.text} onChange={(e) => onChange({ ...q, text: e.target.value })} rows={3} />
+            <MathPreview text={q.text} />
+          </div>
 
-      {isChoice ? (
-        <div className="space-y-2">
-          <label className="text-xs font-medium text-muted-foreground">
-            Options{" "}
-            <span className="font-normal">
-              ({q.type === "MULTI_SELECT" ? "check all correct" : "select the one correct"})
-            </span>
-          </label>
-          {q.options.map((opt, oi) => (
-            <div key={oi} className="flex items-center gap-2">
-              <button
-                type="button"
-                aria-label={opt.isCorrect ? "Marked correct" : "Mark correct"}
-                aria-pressed={opt.isCorrect === true}
-                onClick={() => toggleCorrect(oi)}
-                className={`size-4 shrink-0 border-2 ${q.type === "MULTI_SELECT" ? "rounded" : "rounded-full"} ${
-                  opt.isCorrect === true
-                    ? "border-green-500 bg-green-500"
-                    : opt.isCorrect === null
-                      ? "border-amber-400"
-                      : "border-muted-foreground"
-                }`}
-              />
-              <Input value={opt.text} onChange={(e) => setOptionText(oi, e.target.value)} placeholder={`Option ${oi + 1}`} />
-              <div className="hidden sm:block min-w-24 text-sm"><MathText text={opt.text} /></div>
+          {isChoice ? (
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-muted-foreground">
+                Options{" "}
+                <span className="font-normal">
+                  ({q.type === "MULTI_SELECT" ? "check all correct" : "select the one correct"})
+                </span>
+              </label>
+              {q.options.map((opt, oi) => (
+                <div key={oi} className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    aria-label={opt.isCorrect ? "Marked correct" : "Mark correct"}
+                    aria-pressed={opt.isCorrect === true}
+                    onClick={() => toggleCorrect(oi)}
+                    className={`size-4 shrink-0 border-2 ${q.type === "MULTI_SELECT" ? "rounded" : "rounded-full"} ${
+                      opt.isCorrect === true
+                        ? "border-green-500 bg-green-500"
+                        : opt.isCorrect === null
+                          ? "border-amber-400"
+                          : "border-muted-foreground"
+                    }`}
+                  />
+                  <Input value={opt.text} onChange={(e) => setOptionText(oi, e.target.value)} placeholder={`Option ${oi + 1}`} />
+                  {/* Rendered preview only earns its space for LaTeX; for plain
+                      text (e.g. True/False) it just echoed the input, so omit it. */}
+                  {opt.text.includes("$") && <MathPreview text={opt.text} className="hidden min-w-24 sm:block" />}
+                  {q.type !== "TRUE_FALSE" && (
+                    <Button size="sm" variant="ghost" onClick={() => removeOption(oi)} aria-label={`Remove option ${oi + 1}`}>
+                      <X className="size-3" />
+                    </Button>
+                  )}
+                </div>
+              ))}
               {q.type !== "TRUE_FALSE" && (
-                <Button size="sm" variant="ghost" onClick={() => removeOption(oi)} aria-label={`Remove option ${oi + 1}`}>
-                  <X className="size-3" />
+                <Button size="sm" variant="ghost" onClick={addOption}>
+                  <Plus className="size-3" /> Add option
                 </Button>
               )}
             </div>
-          ))}
-          {q.type !== "TRUE_FALSE" && (
-            <Button size="sm" variant="ghost" onClick={addOption}>
-              <Plus className="size-3" /> Add option
-            </Button>
-          )}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Correct answer</label>
-            <Input
-              inputMode="decimal"
-              value={q.numericAnswer ?? ""}
-              onChange={(e) => onChange({ ...q, numericAnswer: normalizeNumericValue(e.target.value) })}
-              placeholder="e.g. 9.81"
-            />
-            {q.numericAnswerText && (
-              <p className="text-xs text-muted-foreground">Printed answer: {q.numericAnswerText}</p>
-            )}
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Unit (display only)</label>
-            <Input
-              value={q.numericUnit ?? ""}
-              onChange={(e) => onChange({ ...q, numericUnit: e.target.value || null })}
-              placeholder="supports $LaTeX$"
-            />
-          </div>
-        </div>
-      )}
-
-      {q.hasFigure ? (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">
-              Figure crop {q.figureCaption ? `— ${q.figureCaption}` : ""}
-            </span>
-            <Button size="sm" variant="ghost" onClick={removeFigure}>Remove figure</Button>
-          </div>
-          {figureUrl ? (
-            <FigureCropper pageUrl={figureUrl} bbox={figureBbox} onChange={setBbox} />
           ) : (
-            <p className="text-xs text-destructive">Source page image unavailable for cropping.</p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Correct answer</label>
+                <Input
+                  inputMode="decimal"
+                  value={q.numericAnswer ?? ""}
+                  onChange={(e) => onChange({ ...q, numericAnswer: normalizeNumericValue(e.target.value) })}
+                  placeholder="e.g. 9.81"
+                />
+                {q.numericAnswerText && (
+                  <p className="text-xs text-muted-foreground">Printed answer: {q.numericAnswerText}</p>
+                )}
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Unit (display only)</label>
+                <Input
+                  value={q.numericUnit ?? ""}
+                  onChange={(e) => onChange({ ...q, numericUnit: e.target.value || null })}
+                  placeholder="supports $LaTeX$"
+                />
+              </div>
+            </div>
           )}
         </div>
-      ) : (
-        sourceUrl && (
-          <details className="text-xs">
-            <summary className="cursor-pointer text-muted-foreground">Source page {q.sourcePage}</summary>
-            {/* Plain <img>: short-lived presigned S3 URL, not a static asset, so
-                next/image can't optimize it. Mirrors QuizReviewResult. */}
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={sourceUrl} alt={`Source page ${q.sourcePage}`} className="mt-2 max-h-96 rounded border" />
-          </details>
-        )
-      )}
+
+        {/* Source page — always visible, kept in view next to the (often taller)
+            editing column on wide screens. */}
+        <div className="space-y-2 self-start lg:sticky lg:top-4">
+          {q.hasFigure ? (
+            <>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Figure crop {q.figureCaption ? `— ${q.figureCaption}` : ""}
+                </span>
+                <Button size="sm" variant="ghost" onClick={removeFigure}>Remove figure</Button>
+              </div>
+              {figureUrl ? (
+                <FigureCropper pageUrl={figureUrl} bbox={figureBbox} onChange={setBbox} />
+              ) : (
+                <p className="text-xs text-destructive">Source page image unavailable for cropping.</p>
+              )}
+            </>
+          ) : sourceUrl ? (
+            <>
+              <span className="text-xs font-medium text-muted-foreground">Source page {q.sourcePage}</span>
+              {/* Plain <img>: short-lived presigned S3 URL, not a static asset, so
+                  next/image can't optimize it. Mirrors QuizReviewResult. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={sourceUrl} alt={`Source page ${q.sourcePage}`} className="max-h-[36rem] w-auto max-w-full rounded border" />
+            </>
+          ) : (
+            <p className="text-xs text-muted-foreground">No source page image available.</p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
