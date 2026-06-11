@@ -43,12 +43,22 @@ function pageImageFor(pages: PageImage[], pageNumber: number | null): string | n
 /**
  * Rendered-LaTeX preview box, captioned "Preview" so a teacher reads it as a
  * render of the input beside/above it rather than another editable field.
+ *
+ * `inline` sizes the box to one input row (h-10) so it lines up with the option
+ * Input it sits beside; the caption still rides above it. The default (block)
+ * variant grows with its content and is used under the multi-line question text.
  */
-function MathPreview({ text, className }: { text: string; className?: string }) {
+function MathPreview({ text, className, inline }: { text: string; className?: string; inline?: boolean }) {
   return (
     <div className={className}>
       <span className="block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Preview</span>
-      <div className="rounded border bg-muted/30 p-2 text-sm">
+      <div
+        className={
+          inline
+            ? "flex h-10 min-w-24 items-center overflow-x-auto rounded-md border bg-muted/30 px-3 text-sm"
+            : "rounded border bg-muted/30 p-2 text-sm"
+        }
+      >
         <MathText text={text} />
       </div>
     </div>
@@ -148,29 +158,37 @@ function QuestionCard({
                   ({q.type === "MULTI_SELECT" ? "check all correct" : "select the one correct"})
                 </span>
               </label>
+              {/* items-end so the rendered preview lines up with the Input row;
+                  its "Preview" caption then rides above without nudging the
+                  controls. The radio + remove buttons get their own h-10 box so
+                  they stay vertically centered on the input. */}
               {q.options.map((opt, oi) => (
-                <div key={oi} className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    aria-label={opt.isCorrect ? "Marked correct" : "Mark correct"}
-                    aria-pressed={opt.isCorrect === true}
-                    onClick={() => toggleCorrect(oi)}
-                    className={`size-4 shrink-0 border-2 ${q.type === "MULTI_SELECT" ? "rounded" : "rounded-full"} ${
-                      opt.isCorrect === true
-                        ? "border-green-500 bg-green-500"
-                        : opt.isCorrect === null
-                          ? "border-amber-400"
-                          : "border-muted-foreground"
-                    }`}
-                  />
+                <div key={oi} className="flex items-end gap-2">
+                  <div className="flex h-10 shrink-0 items-center">
+                    <button
+                      type="button"
+                      aria-label={opt.isCorrect ? "Marked correct" : "Mark correct"}
+                      aria-pressed={opt.isCorrect === true}
+                      onClick={() => toggleCorrect(oi)}
+                      className={`size-4 border-2 ${q.type === "MULTI_SELECT" ? "rounded" : "rounded-full"} ${
+                        opt.isCorrect === true
+                          ? "border-green-500 bg-green-500"
+                          : opt.isCorrect === null
+                            ? "border-amber-400"
+                            : "border-muted-foreground"
+                      }`}
+                    />
+                  </div>
                   <Input value={opt.text} onChange={(e) => setOptionText(oi, e.target.value)} placeholder={`Option ${oi + 1}`} />
                   {/* Rendered preview only earns its space for LaTeX; for plain
                       text (e.g. True/False) it just echoed the input, so omit it. */}
-                  {opt.text.includes("$") && <MathPreview text={opt.text} className="hidden min-w-24 sm:block" />}
+                  {opt.text.includes("$") && <MathPreview text={opt.text} inline className="hidden shrink-0 sm:block" />}
                   {q.type !== "TRUE_FALSE" && (
-                    <Button size="sm" variant="ghost" onClick={() => removeOption(oi)} aria-label={`Remove option ${oi + 1}`}>
-                      <X className="size-3" />
-                    </Button>
+                    <div className="flex h-10 shrink-0 items-center">
+                      <Button size="sm" variant="ghost" onClick={() => removeOption(oi)} aria-label={`Remove option ${oi + 1}`}>
+                        <X className="size-3" />
+                      </Button>
+                    </div>
                   )}
                 </div>
               ))}
