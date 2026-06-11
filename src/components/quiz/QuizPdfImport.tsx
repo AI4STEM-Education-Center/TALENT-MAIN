@@ -99,7 +99,15 @@ async function cropToPngBlob(pageUrl: string, bbox: FigureBbox): Promise<Blob> {
  * On mount it lists prior extractions and auto-resumes the newest non-committed
  * one. Everything is plain fetch + useState in the repo house style.
  */
-export function QuizPdfImport({ quizId, onCommitted }: { quizId: string; onCommitted: () => void }) {
+export function QuizPdfImport({
+  quizId,
+  onCommitted,
+  onActiveChange,
+}: {
+  quizId: string;
+  onCommitted: () => void;
+  onActiveChange?: (active: boolean) => void;
+}) {
   const confirm = useConfirm();
   const base = `/api/quizzes/${quizId}/pdf-extractions`;
 
@@ -173,6 +181,12 @@ export function QuizPdfImport({ quizId, onCommitted }: { quizId: string; onCommi
       stopPolling();
     };
   }, [base, poll, stopPolling]);
+
+  // Let the parent reclaim space (e.g. hide the QTI import card) while a PDF
+  // import is in progress — any phase past idle means the teacher is mid-flow.
+  useEffect(() => {
+    onActiveChange?.(phase !== "idle");
+  }, [phase, onActiveChange]);
 
   const resetFlow = useCallback(() => {
     stopPolling();

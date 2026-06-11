@@ -83,6 +83,8 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
   const [importBusy, setImportBusy] = useState(false);
   const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
   const [poolImportBusy, setPoolImportBusy] = useState(false);
+  // True while a PDF import is in progress; hides the QTI card to free up space.
+  const [pdfImportActive, setPdfImportActive] = useState(false);
   const [msg, setMsg] = useState("");
 
   useEffect(() => {
@@ -307,7 +309,7 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
   const isPoolQuiz = quiz.teacherId === null;
 
   return (
-    <div className="p-4 md:p-6 space-y-6">
+    <div className="mx-auto max-w-6xl p-4 md:p-6 space-y-6">
       <Button variant="ghost" size="sm" asChild>
         <Link href={backHref}><ArrowLeft className="size-4" /> {backLabel}</Link>
       </Button>
@@ -363,10 +365,10 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
 
       {msg && <div className="p-3 rounded-md bg-primary/10 text-primary text-sm">{msg}</div>}
 
-      {!readOnly && (
+      {!readOnly && !pdfImportActive && (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Upload className="size-5" /> Import Questions</CardTitle>
+            <CardTitle className="flex items-center gap-2"><Upload className="size-5" /> Import from QTI ZIP</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
@@ -404,7 +406,7 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
         </Card>
       )}
 
-      {!readOnly && <QuizPdfImport quizId={quiz.id} onCommitted={refreshQuestions} />}
+      {!readOnly && <QuizPdfImport quizId={quiz.id} onCommitted={refreshQuestions} onActiveChange={setPdfImportActive} />}
 
       {/* Form */}
       {showForm && !readOnly && (
