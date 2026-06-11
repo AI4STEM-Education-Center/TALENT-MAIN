@@ -148,7 +148,7 @@ export default function AdminMaterialsPage() {
   const teacherDisplayName = selectedTeacher ? (groups[selectedTeacher]?.displayName ?? selectedTeacher) : null;
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
+    <div className="p-8">
       <div className="mb-6">
         <h1 className="text-3xl font-bold tracking-tight">Materials Processing</h1>
         <p className="text-muted-foreground mt-1">
@@ -207,9 +207,9 @@ export default function AdminMaterialsPage() {
                 key={group.username}
                 type="button"
                 onClick={() => setSelectedTeacher(group.username)}
-                className="text-left"
+                className="text-left h-full"
               >
-                <Card className="hover:bg-accent/50 transition-colors cursor-pointer">
+                <Card className="hover:bg-accent/50 transition-colors cursor-pointer h-full">
                   <CardHeader className="flex flex-row items-center gap-3 gap-y-0 pb-2">
                     <Folder className="size-5 text-blue-500 shrink-0" />
                     <CardTitle className="text-base font-semibold">
@@ -247,9 +247,9 @@ export default function AdminMaterialsPage() {
                   key={className}
                   type="button"
                   onClick={() => setSelectedClass(className)}
-                  className="text-left"
+                  className="text-left h-full"
                 >
-                  <Card className="hover:bg-accent/50 transition-colors cursor-pointer">
+                  <Card className="hover:bg-accent/50 transition-colors cursor-pointer h-full">
                     <CardHeader className="flex flex-row items-center gap-3 gap-y-0 pb-2">
                       <FolderOpen className="size-5 text-amber-500 shrink-0" />
                       <CardTitle className="text-base font-semibold">{className}</CardTitle>

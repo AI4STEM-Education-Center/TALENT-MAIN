@@ -59,7 +59,7 @@
     "@types/react-dom": "^19",
     "@vitest/coverage-v8": "^4.1.8",
     "esbuild": "^0.28.0",
-    "eslint": "^10",
+    "eslint": "^9",
     "eslint-config-next": "^16.2.9",
     "jsdom": "^29.1.1",
     "postcss": "^8",

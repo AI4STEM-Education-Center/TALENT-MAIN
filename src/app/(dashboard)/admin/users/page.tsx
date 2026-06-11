@@ -26,6 +26,13 @@ const getRoleIcon = (role: string) => {
   }
 };
 
+// Boxes are rendered in this order: admins, then teachers, then students.
+const ROLE_GROUPS = [
+  { role: "ADMIN", label: "Admins" },
+  { role: "TEACHER", label: "Teachers" },
+  { role: "STUDENT", label: "Students" },
+] as const;
+
 export default function AdminUsersPage() {
   const { data: session } = useSession();
   const alert = useAlert();
@@ -86,7 +93,7 @@ export default function AdminUsersPage() {
   });
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
+    <div className="p-8">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Users</h1>
@@ -105,68 +112,73 @@ export default function AdminUsersPage() {
         </div>
       </div>
 
-      <div className="border border-border rounded-lg bg-card overflow-x-auto">
-        <table className="w-full text-sm text-left">
-          <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b border-border">
-            <tr>
-              <th className="px-6 py-4 font-medium">User</th>
-              <th className="px-6 py-4 font-medium">Role</th>
-              <th className="px-6 py-4 font-medium">Joined</th>
-              <th className="px-6 py-4 font-medium text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {loading ? (
-              <tr>
-                <td colSpan={4} className="px-6 py-8 text-center text-muted-foreground">
-                  Loading users…
-                </td>
-              </tr>
-            ) : filteredUsers.length === 0 ? (
-              <tr>
-                <td colSpan={4} className="px-6 py-8 text-center text-muted-foreground">
-                  No users found.
-                </td>
-              </tr>
-            ) : (
-              filteredUsers.map((user) => (
-                <tr key={user.id} className="hover:bg-muted/50 transition-colors">
-                  <td className="px-6 py-4">
-                    <div className="flex flex-col">
-                      <span className="font-medium text-foreground">{user.firstName} {user.lastName}</span>
-                      <span className="text-xs text-muted-foreground">{user.email} &bull; @{user.username}</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2">
-                      {getRoleIcon(user.role)}
-                      <span className="capitalize">{user.role.toLowerCase()}</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-muted-foreground">
-                    {new Date(user.createdAt).toLocaleDateString()}
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setDeleteUser(user)}
-                      disabled={user.id === session?.user?.id}
-                      className={cn(
-                        "text-destructive hover:text-destructive hover:bg-destructive/10 size-8",
-                        user.id === session?.user?.id && "opacity-50 cursor-not-allowed"
+      {loading ? (
+        <div className="border border-border rounded-lg bg-card px-6 py-8 text-center text-muted-foreground">
+          Loading users…
+        </div>
+      ) : (
+        <div className="space-y-8">
+          {ROLE_GROUPS.map((group) => {
+            const groupUsers = filteredUsers.filter((u) => u.role === group.role);
+            return (
+              <section key={group.role} className="space-y-3">
+                <h2 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+                  {getRoleIcon(group.role)} {group.label} ({groupUsers.length})
+                </h2>
+                <div className="border border-border rounded-lg bg-card overflow-x-auto">
+                  <table className="w-full text-sm text-left">
+                    <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b border-border">
+                      <tr>
+                        <th className="px-6 py-4 font-medium">User</th>
+                        <th className="px-6 py-4 font-medium">Joined</th>
+                        <th className="px-6 py-4 font-medium text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {groupUsers.length === 0 ? (
+                        <tr>
+                          <td colSpan={3} className="px-6 py-8 text-center text-muted-foreground">
+                            {search ? `No ${group.label.toLowerCase()} match your search.` : `No ${group.label.toLowerCase()} yet.`}
+                          </td>
+                        </tr>
+                      ) : (
+                        groupUsers.map((user) => (
+                          <tr key={user.id} className="hover:bg-muted/50 transition-colors">
+                            <td className="px-6 py-4">
+                              <div className="flex flex-col">
+                                <span className="font-medium text-foreground">{user.firstName} {user.lastName}</span>
+                                <span className="text-xs text-muted-foreground">{user.email} &bull; @{user.username}</span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-muted-foreground">
+                              {new Date(user.createdAt).toLocaleDateString()}
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => setDeleteUser(user)}
+                                disabled={user.id === session?.user?.id}
+                                className={cn(
+                                  "text-destructive hover:text-destructive hover:bg-destructive/10 size-8",
+                                  user.id === session?.user?.id && "opacity-50 cursor-not-allowed"
+                                )}
+                                title={user.id === session?.user?.id ? "Cannot delete yourself" : "Delete user"}
+                              >
+                                <Trash2 className="size-4" />
+                              </Button>
+                            </td>
+                          </tr>
+                        ))
                       )}
-                      title={user.id === session?.user?.id ? "Cannot delete yourself" : "Delete user"}
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      )}
 
       <Dialog open={!!deleteUser} onOpenChange={(o) => !o && setDeleteUser(null)}>
         <DialogContent>
