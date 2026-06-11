@@ -7,8 +7,10 @@ import path from "path";
 // materials `process` route so all producers/consumers open the same file.
 
 export const EXAM_RESULTS_QUEUE = "exam-results";
+export const QUIZ_EXTRACTIONS_QUEUE = "quiz-extractions";
 
 export type ExamResultsJobPayload = { examResultId: string };
+export type QuizExtractionJobPayload = { extractionId: string };
 
 /**
  * Resolve the absolute SQLite path Honker should open from DATABASE_URL,
@@ -36,4 +38,15 @@ export function enqueueExamResult(examResultId: string): void {
   const db = honker.open(resolveQueueDbPath());
   const payload: ExamResultsJobPayload = { examResultId };
   db.queue(EXAM_RESULTS_QUEUE).enqueue(payload);
+}
+
+/**
+ * Enqueue a background job to run vision-LLM extraction for an uploaded quiz
+ * PDF. Unlike enqueueExamResult, callers must NOT swallow failures: the job is
+ * the feature, so the complete route marks the extraction FAILED if this throws.
+ */
+export function enqueueQuizExtraction(extractionId: string): void {
+  const db = honker.open(resolveQueueDbPath());
+  const payload: QuizExtractionJobPayload = { extractionId };
+  db.queue(QUIZ_EXTRACTIONS_QUEUE).enqueue(payload);
 }

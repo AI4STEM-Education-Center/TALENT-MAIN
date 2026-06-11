@@ -3,7 +3,13 @@ import path from "path";
 import { processMaterial } from "./lib/vlm-engine";
 import { prisma } from "./lib/prisma";
 import { generateExamResult } from "./lib/exam-results-engine";
-import { EXAM_RESULTS_QUEUE, type ExamResultsJobPayload } from "./lib/queue";
+import { runQuizExtraction } from "./lib/quiz-extraction-engine";
+import {
+  EXAM_RESULTS_QUEUE,
+  QUIZ_EXTRACTIONS_QUEUE,
+  type ExamResultsJobPayload,
+  type QuizExtractionJobPayload,
+} from "./lib/queue";
 
 // Parse DATABASE_URL from process.env
 const dbUrl = process.env.DATABASE_URL || "file:./dev.db";
@@ -24,6 +30,7 @@ console.log(`[Worker] Connecting to SQLite at ${dbPath}`);
 const db = honker.open(dbPath);
 const materialsQueue = db.queue("materials");
 const examResultsQueue = db.queue(EXAM_RESULTS_QUEUE);
+const quizExtractionsQueue = db.queue(QUIZ_EXTRACTIONS_QUEUE);
 
 async function consumeMaterials() {
   console.log("[Worker] Starting Honker queue consumer for 'materials'...");
@@ -75,10 +82,28 @@ async function consumeExamResults() {
   }
 }
 
+async function consumeQuizExtractions() {
+  console.log(`[Worker] Starting Honker queue consumer for '${QUIZ_EXTRACTIONS_QUEUE}'...`);
+  for await (const job of quizExtractionsQueue.claim("quiz-extraction-worker")) {
+    const { extractionId } = job.payload as QuizExtractionJobPayload;
+    console.log(`[Worker] Picked up job ${job.id} for quiz extraction ${extractionId}`);
+    try {
+      // runQuizExtraction is idempotent + records FAILED internally, so it
+      // always returns; ack unconditionally to avoid blocking the queue.
+      await runQuizExtraction(extractionId);
+      console.log(`[Worker] Finished quiz-extraction job ${job.id}`);
+    } catch (err: any) {
+      console.error(`[Worker] Error on quiz-extraction job ${job.id}:`, err?.message ?? err);
+    } finally {
+      job.ack();
+    }
+  }
+}
+
 async function startWorker() {
   try {
-    // Run both consumers concurrently; each blocks on its own queue.
-    await Promise.all([consumeMaterials(), consumeExamResults()]);
+    // Run all consumers concurrently; each blocks on its own queue.
+    await Promise.all([consumeMaterials(), consumeExamResults(), consumeQuizExtractions()]);
   } catch (err) {
     console.error("[Worker] Fatal error in worker loop:", err);
     process.exit(1);

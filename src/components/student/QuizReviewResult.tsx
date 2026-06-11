@@ -2,6 +2,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle, XCircle, Trophy, Loader2 } from "lucide-react";
 import { RecommendationCard } from "@/components/student/RecommendationCard";
+import { MathText } from "@/components/ui/math-text";
 import {
   RESULT_STATUS,
   type ResultStatus,
@@ -43,10 +44,72 @@ export function ScoreBanner({
   );
 }
 
+/**
+ * Two rows for a NUMERIC question, styled to match the choice option rows:
+ * the student's submitted value (green when correct, red otherwise) and the
+ * correct value (always the correct-answer styling). Values + units render
+ * through MathText (units may contain LaTeX). Uses nullish checks so a literal
+ * 0 (value or tolerance) is preserved.
+ */
+function NumericRows({ question }: { question: SnapshotQuestion }) {
+  const unit = question.unit ?? null;
+  const withUnit = (value: string) => (unit ? `${value} ${unit}` : value);
+
+  const submitted =
+    question.submittedNumeric != null ? withUnit(String(question.submittedNumeric)) : null;
+
+  const correctValue =
+    question.correctNumeric != null ? String(question.correctNumeric) : null;
+  const correctText =
+    correctValue != null
+      ? withUnit(
+          question.tolerance != null
+            ? `${correctValue} ± ${question.tolerance}`
+            : correctValue
+        )
+      : null;
+
+  return (
+    <>
+      <div
+        className={`text-sm px-2 py-1 rounded flex items-center gap-2 ${
+          question.isCorrect ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
+        }`}
+      >
+        <span className="shrink-0">{question.isCorrect ? "✓" : "✗"}</span>
+        <span>
+          Your answer:{" "}
+          {submitted != null ? <MathText text={submitted} /> : "No answer"}
+        </span>
+      </div>
+      <div className="text-sm px-2 py-1 rounded flex items-center gap-2 bg-green-50 text-green-700">
+        <span className="shrink-0">✓</span>
+        <span>
+          Correct answer: {correctText != null ? <MathText text={correctText} /> : "—"}
+        </span>
+      </div>
+    </>
+  );
+}
+
 function QuestionCard({ question, index }: { question: SnapshotQuestion; index: number }) {
+  const isNumeric = question.answerMode === "NUMERIC";
+
   return (
     <Card className={`h-full ${question.isCorrect ? "border-green-200" : "border-red-200"}`}>
       <CardContent className="p-4 space-y-2">
+        {question.figureUrl && (
+          // Plain <img>: the src is a short-lived presigned S3 URL, which
+          // next/image can't optimize (it would need remote-pattern config and
+          // the URL expires). Mirrors RecommendationCard's presigned-image img.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={question.figureUrl}
+            alt={question.figureAlt ?? "Question figure"}
+            loading="lazy"
+            className="max-h-64 rounded-md border mb-3"
+          />
+        )}
         <div className="flex items-start gap-2">
           {question.isCorrect ? (
             <CheckCircle className="size-4 text-green-500 mt-0.5 shrink-0" />
@@ -54,27 +117,31 @@ function QuestionCard({ question, index }: { question: SnapshotQuestion; index: 
             <XCircle className="size-4 text-red-500 mt-0.5 shrink-0" />
           )}
           <p className="font-medium text-sm">
-            {index + 1}. {question.text}
+            {index + 1}. <MathText text={question.text} />
           </p>
         </div>
         <div className="space-y-1 ml-6">
-          {question.options.map((opt, j) => (
-            <div
-              key={j}
-              className={`text-sm px-2 py-1 rounded flex items-center gap-2 ${
-                opt.isCorrect
-                  ? "bg-green-50 text-green-700"
-                  : opt.selected && !opt.isCorrect
-                  ? "bg-red-50 text-red-700"
-                  : "text-muted-foreground"
-              }`}
-            >
-              <span className="shrink-0">
-                {opt.isCorrect ? "✓" : opt.selected ? "✗" : " "}
-              </span>
-              {opt.text}
-            </div>
-          ))}
+          {isNumeric ? (
+            <NumericRows question={question} />
+          ) : (
+            question.options.map((opt, j) => (
+              <div
+                key={j}
+                className={`text-sm px-2 py-1 rounded flex items-center gap-2 ${
+                  opt.isCorrect
+                    ? "bg-green-50 text-green-700"
+                    : opt.selected && !opt.isCorrect
+                    ? "bg-red-50 text-red-700"
+                    : "text-muted-foreground"
+                }`}
+              >
+                <span className="shrink-0">
+                  {opt.isCorrect ? "✓" : opt.selected ? "✗" : " "}
+                </span>
+                <MathText text={opt.text} />
+              </div>
+            ))
+          )}
         </div>
       </CardContent>
     </Card>
