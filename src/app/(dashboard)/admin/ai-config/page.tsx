@@ -564,7 +564,7 @@ export default function AiConfigPage() {
   }
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-10">
+    <div className="p-8 space-y-10">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">AI Configuration</h1>
         <p className="text-muted-foreground mt-1">

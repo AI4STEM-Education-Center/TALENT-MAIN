@@ -148,7 +148,7 @@ export default function AdminMaterialsPage() {
   const teacherDisplayName = selectedTeacher ? (groups[selectedTeacher]?.displayName ?? selectedTeacher) : null;
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
+    <div className="p-8">
       <div className="mb-6">
         <h1 className="text-3xl font-bold tracking-tight">Materials Processing</h1>
         <p className="text-muted-foreground mt-1">
