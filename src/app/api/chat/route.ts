@@ -42,12 +42,18 @@ async function buildMessages(mode: ChatMode, messages: ChatMessage[]) {
         },
       },
       answers: {
-        include: {
+        select: {
+          isCorrect: true,
+          numericValue: true, // NUMERIC questions: the student's submitted number
           selectedOption: { select: { text: true } },
           question: {
             select: {
               text: true,
               options: { select: { text: true, isCorrect: true } },
+              // NUMERIC grading data so the prompt can show numeric evidence.
+              answerMode: true,
+              answerNumeric: true,
+              answerUnit: true,
             },
           },
         },

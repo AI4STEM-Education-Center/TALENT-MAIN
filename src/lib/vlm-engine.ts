@@ -2,6 +2,7 @@ import { OpenAI } from "openai";
 import { prisma } from "@/lib/prisma";
 import { getS3Config, presignGetUrl } from "@/lib/storage";
 import { resolveProvider, buildProviderHeaders } from "@/lib/ai-provider";
+import { retryWithExponentialBackoff } from "./retry";
 
 // In-memory set of material IDs whose processing should be aborted.
 const cancelledMaterials = new Set<string>();
@@ -42,30 +43,6 @@ const TIER2_SCHEMA = {
     additionalProperties: false,
   },
 };
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-async function retryWithExponentialBackoff<T>(
-  fn: () => Promise<T>,
-  maxRetries = 3,
-  baseDelayMs = 500,
-  maxDelayMs = 5000
-): Promise<T> {
-  let attempt = 0;
-  while (attempt < maxRetries) {
-    try {
-      return await fn();
-    } catch (error: any) {
-      attempt++;
-      if (attempt >= maxRetries) throw error;
-      
-      const delay = Math.min(baseDelayMs * Math.pow(2, attempt), maxDelayMs);
-      console.warn(`[VLM Engine] Attempt ${attempt} failed: ${error.message}. Retrying in ${delay}ms...`);
-      await sleep(delay);
-    }
-  }
-  throw new Error("Unreachable");
-}
 
 /**
  * Build an OpenAI client from the resolved PDF description provider config.

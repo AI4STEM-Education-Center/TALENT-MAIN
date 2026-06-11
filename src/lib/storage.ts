@@ -42,6 +42,48 @@ export function materialPrefixFromStorageKey(storageKey: string): string {
   return storageKey.slice(0, storageKey.lastIndexOf("/") + 1);
 }
 
+// ─── Quiz PDF extraction keys ─────────────────────────────────────────────────
+// Quizzes are not class-scoped; pool quizzes have no teacher, so the owner
+// segment falls back to "pool". Everything for one extraction lives under its
+// {extractionId}/ prefix so quizExtractionPrefix() can clean it up in one sweep.
+
+export function quizExtractionScope(teacherId: string | null): string {
+  return teacherId ?? "pool";
+}
+
+export function buildQuizExtractionPdfKey(
+  teacherId: string | null,
+  quizId: string,
+  extractionId: string,
+  originalName: string
+): string {
+  const safe = sanitizeFilename(originalName);
+  return `quiz-extractions/${quizExtractionScope(teacherId)}/${quizId}/${extractionId}/${safe}`;
+}
+
+export function buildQuizExtractionPageKey(
+  teacherId: string | null,
+  quizId: string,
+  extractionId: string,
+  pageNumber: number
+): string {
+  return `quiz-extractions/${quizExtractionScope(teacherId)}/${quizId}/${extractionId}/pages/page-${pageNumber}.png`;
+}
+
+export function buildQuizExtractionFigureKey(
+  teacherId: string | null,
+  quizId: string,
+  extractionId: string,
+  questionIndex: number
+): string {
+  return `quiz-extractions/${quizExtractionScope(teacherId)}/${quizId}/${extractionId}/figures/figure-${questionIndex}.png`;
+}
+
+/** Prefix covering every object of one extraction (PDF, pages, figures). */
+export function quizExtractionPrefix(pdfStorageKey: string): string {
+  return pdfStorageKey.slice(0, pdfStorageKey.lastIndexOf("/") + 1);
+}
+
 export function getS3Config(): { bucket: string; region: string } {
   const bucket = process.env.AWS_S3_BUCKET;
   const region = process.env.AWS_REGION;

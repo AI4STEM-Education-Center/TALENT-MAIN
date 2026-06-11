@@ -29,12 +29,24 @@ export type QuizReviewAttempt = {
   answers: Array<{
     isCorrect: boolean;
     selectedOption: { text: string } | null;
+    // NUMERIC questions only: the student's submitted number (null when absent).
+    numericValue?: number | null;
     question: {
       text: string;
       options: Array<{ text: string; isCorrect: boolean }>;
+      // NUMERIC questions only (undefined / "SINGLE_SELECT"|"MULTI_SELECT" for
+      // choice questions, which keep their option-based evidence lines):
+      answerMode?: string;
+      answerNumeric?: number | null;
+      answerUnit?: string | null;
     };
   }>;
 };
+
+// $...$ LaTeX in question text, units, and option text is emitted RAW on purpose:
+// the downstream chat/markdown renderer handles math, and the LLM reads it fine.
+const withUnit = (value: string, unit: string | null | undefined): string =>
+  unit ? `${value} ${unit}` : value;
 
 /**
  * Build the LLM prompt that asks for a concise, three-section review of a
@@ -70,6 +82,29 @@ export function buildQuizReviewPrompt(attempt: QuizReviewAttempt): string {
   ];
 
   incorrectAnswers.forEach((answer, index) => {
+    // NUMERIC questions carry no options; show the student's submitted number
+    // (or "No answer") and the correct number, each with the optional unit.
+    // Choice questions keep their byte-identical option-based evidence lines.
+    if (answer.question.answerMode === "NUMERIC") {
+      const { numericValue } = answer;
+      const studentAnswer =
+        numericValue != null
+          ? withUnit(String(numericValue), answer.question.answerUnit)
+          : "No answer";
+      const correctNumeric = answer.question.answerNumeric;
+      const correctAnswer =
+        correctNumeric != null
+          ? withUnit(String(correctNumeric), answer.question.answerUnit)
+          : "Unknown";
+
+      lines.push(
+        `${index + 1}. Question: ${answer.question.text}`,
+        `   Student answer: ${studentAnswer}`,
+        `   Correct answer: ${correctAnswer}`
+      );
+      return;
+    }
+
     const correctOptions = answer.question.options.flatMap((option) =>
       option.isCorrect ? [option.text] : []
     );
