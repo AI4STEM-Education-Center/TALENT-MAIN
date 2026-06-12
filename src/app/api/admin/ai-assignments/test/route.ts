@@ -73,7 +73,6 @@ export async function POST(req: Request) {
         },
       ],
       max_completion_tokens: 2000,
-      temperature: 0,
       service_tier:
         !isLocal &&
           provider.serviceTier &&

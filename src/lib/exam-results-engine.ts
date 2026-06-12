@@ -114,7 +114,6 @@ async function runChatCompletionText(
     {
       model: provider.model,
       messages: messages as never,
-      temperature: 0.7,
       stream: false,
       max_completion_tokens: !isLocal ? maxTokens : undefined,
       max_tokens: isLocal ? maxTokens : undefined,
