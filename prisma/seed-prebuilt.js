@@ -1,11 +1,31 @@
+const path = require("node:path");
 const { PrismaClient } = require("@prisma/client");
+const { PrismaBetterSqlite3 } = require("@prisma/adapter-better-sqlite3");
 const {
   topic: prebuiltTopic,
   subtopics: prebuiltSubtopics,
   questions: prebuiltQuestions,
 } = require("./prebuilt-questions.json");
 
-const prisma = new PrismaClient();
+// Prisma 7's better-sqlite3 driver adapter must be passed explicitly — a bare
+// `new PrismaClient()` throws "needs a non-empty, valid PrismaClientOptions".
+// This script runs as plain CommonJS inside the production image (no tsx), so we
+// inline the URL resolution from src/lib/db-url.ts instead of importing the .ts:
+// a relative `file:` path must re-anchor to <cwd>/prisma, otherwise the adapter
+// resolves it against cwd and we'd seed a *different* SQLite file than the app
+// and `prisma db push` use. Keep in sync with src/lib/db-url.ts.
+function resolveDatabaseUrl(raw = process.env.DATABASE_URL) {
+  if (!raw || !raw.startsWith("file:")) return raw ?? "";
+  const filePath = raw.slice("file:".length).split("?")[0];
+  if (filePath === ":memory:") return raw;
+  const absolute = path.isAbsolute(filePath)
+    ? filePath
+    : path.join(process.cwd(), "prisma", filePath);
+  return `file:${absolute}`;
+}
+
+const adapter = new PrismaBetterSqlite3({ url: resolveDatabaseUrl() });
+const prisma = new PrismaClient({ adapter });
 
 async function main() {
   console.log("Backfilling prebuilt topic, quizzes, and questions...");
