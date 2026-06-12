@@ -22,7 +22,18 @@ export const MAX_RECOMMENDATIONS = 6;
 
 // ─── Review snapshot ──────────────────────────────────────────────────────────
 
-export type SnapshotOption = { text: string; isCorrect: boolean; selected: boolean };
+export type SnapshotOption = {
+  text: string;
+  isCorrect: boolean;
+  selected: boolean;
+  // Image answer-choice (omitted entirely for text options so existing
+  // choice-only snapshots stay byte-identical):
+  imageStorageKey?: string | null;
+  imageAlt?: string | null;
+  // TRANSIENT, render-time only: a presigned GET URL attached by callers just
+  // before rendering. buildReviewSnapshot never sets it; never persist it.
+  imageUrl?: string | null;
+};
 export type SnapshotQuestion = {
   text: string;
   isCorrect: boolean;
@@ -53,7 +64,14 @@ export type ReviewSnapshot = { questions: SnapshotQuestion[] };
 export type SnapshotQuestionInput = {
   id: string;
   text: string;
-  options: { id: string; text: string; isCorrect: boolean }[];
+  options: {
+    id: string;
+    text: string;
+    isCorrect: boolean;
+    imageStorageKey?: string | null;
+    imageBucket?: string | null;
+    imageAlt?: string | null;
+  }[];
   answerMode?: string;
   answerNumeric?: number | null;
   answerTolerance?: number | null;
@@ -88,11 +106,20 @@ export function buildReviewSnapshot(
       const base: SnapshotQuestion = {
         text: q.text,
         isCorrect: answer?.isCorrect ?? false,
-        options: q.options.map((opt) => ({
-          text: opt.text,
-          isCorrect: opt.isCorrect,
-          selected: selected.has(opt.id),
-        })),
+        options: q.options.map((opt) => {
+          const snap: SnapshotOption = {
+            text: opt.text,
+            isCorrect: opt.isCorrect,
+            selected: selected.has(opt.id),
+          };
+          // Image answer-choice: persist its key + alt (omitted for text options
+          // so plain choice snapshots stay byte-identical).
+          if (opt.imageStorageKey) {
+            snap.imageStorageKey = opt.imageStorageKey;
+            snap.imageAlt = opt.imageAlt ?? null;
+          }
+          return snap;
+        }),
       };
       // NUMERIC questions carry no options; persist the numeric grading data and
       // the student's submitted value so the durable snapshot can render/score
@@ -127,8 +154,12 @@ export function parseReviewSnapshot(raw: string | null): ReviewSnapshot {
 
 // ─── Snapshot → generator inputs ────────────────────────────────────────────────
 
+/** Display text for an option — its alt/caption when the choice is an image. */
+const optionDisplayText = (o: SnapshotOption): string =>
+  o.text || o.imageAlt || (o.imageStorageKey ? "(image choice)" : "");
+
 const joinTexts = (opts: SnapshotOption[], pick: (o: SnapshotOption) => boolean): string[] =>
-  opts.flatMap((o) => (pick(o) ? [o.text] : []));
+  opts.flatMap((o) => (pick(o) ? [optionDisplayText(o)] : []));
 
 /** Append a unit suffix (e.g. "9.8 m/s^2"). LaTeX in the unit passes through raw. */
 const withUnit = (value: string, unit: string | null | undefined): string =>
@@ -221,7 +252,7 @@ export function snapshotToSummaryAttempt(
         selectedOption: selected.length > 0 ? { text: selected.join(" | ") } : null,
         question: {
           text: q.text,
-          options: q.options.map((o) => ({ text: o.text, isCorrect: o.isCorrect })),
+          options: q.options.map((o) => ({ text: optionDisplayText(o), isCorrect: o.isCorrect })),
         },
       };
     }),

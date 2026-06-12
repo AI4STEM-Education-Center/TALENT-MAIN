@@ -36,6 +36,7 @@ import { enqueueQuizExtraction } from "@/lib/queue";
 import {
   buildQuizExtractionPageKey,
   buildQuizExtractionFigureKey,
+  buildQuizExtractionOptionImageKey,
 } from "@/lib/storage";
 import { resetDb, createTeacher, createStudent } from "./db";
 
@@ -450,24 +451,48 @@ describe("POST .../figures", () => {
 
   it("400 when not AWAITING_REVIEW", async () => {
     const { quiz, ext } = await setup("EXTRACTING");
-    const res = await figuresPost(jsonReq({ questionIndexes: [0] }), extCtx(quiz.id, ext.id));
+    const res = await figuresPost(jsonReq({ questionFigures: [0] }), extCtx(quiz.id, ext.id));
     expect(res.status).toBe(400);
   });
 
-  it("returns presigned PUTs keyed by the real figure key builder", async () => {
+  it("400 when neither questionFigures nor optionImages is given", async () => {
+    const { quiz, ext } = await setup("AWAITING_REVIEW");
+    const res = await figuresPost(jsonReq({}), extCtx(quiz.id, ext.id));
+    expect(res.status).toBe(400);
+  });
+
+  it("returns presigned PUTs keyed by the real question-figure key builder (deduped)", async () => {
     const { teacher, quiz, ext } = await setup("AWAITING_REVIEW");
-    const res = await figuresPost(jsonReq({ questionIndexes: [0, 2, 0] }), extCtx(quiz.id, ext.id));
+    const res = await figuresPost(jsonReq({ questionFigures: [0, 2, 0] }), extCtx(quiz.id, ext.id));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.figures).toHaveLength(2); // deduped
-    const keys = body.figures.map((f: { storageKey: string }) => f.storageKey).sort();
+    expect(body.questionFigures).toHaveLength(2); // deduped
+    const keys = body.questionFigures.map((f: { storageKey: string }) => f.storageKey).sort();
     expect(keys).toEqual(
       [
         buildQuizExtractionFigureKey(teacher.id, quiz.id, ext.id, 0),
         buildQuizExtractionFigureKey(teacher.id, quiz.id, ext.id, 2),
       ].sort()
     );
-    expect(body.figures[0].presignedUrl).toBe("https://s3.example/put");
+    expect(body.questionFigures[0].presignedUrl).toBe("https://s3.example/put");
+  });
+
+  it("returns presigned PUTs for per-option image crops keyed by the option-image builder", async () => {
+    const { teacher, quiz, ext } = await setup("AWAITING_REVIEW");
+    const res = await figuresPost(
+      jsonReq({ optionImages: [{ questionIndex: 1, optionIndex: 0 }, { questionIndex: 1, optionIndex: 2 }] }),
+      extCtx(quiz.id, ext.id)
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.optionImages).toHaveLength(2);
+    const keys = body.optionImages.map((f: { storageKey: string }) => f.storageKey).sort();
+    expect(keys).toEqual(
+      [
+        buildQuizExtractionOptionImageKey(teacher.id, quiz.id, ext.id, 1, 0),
+        buildQuizExtractionOptionImageKey(teacher.id, quiz.id, ext.id, 1, 2),
+      ].sort()
+    );
   });
 });
 
@@ -536,6 +561,29 @@ describe("POST .../commit", () => {
       figurePage: 1,
       figureCaption: "diagram",
       figureStorageKey: "quiz-extractions/other-teacher/other-quiz/other-ext/figures/figure-0.png",
+    };
+    const res = await commitPost(jsonReq({ questions: [foreign] }), extCtx(quiz.id, ext.id));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain("does not belong");
+  });
+
+  it("400 for an option-image key outside this extraction's prefix", async () => {
+    const { quiz, ext } = await setup();
+    const foreign = {
+      type: "MULTIPLE_CHOICE",
+      text: "Pick the correct graph.",
+      points: 1,
+      options: [
+        { text: "", isCorrect: true, isImage: true, imageStorageKey: "quiz-extractions/other/other/other/figures/option-0-0.png" },
+        { text: "b", isCorrect: false },
+      ],
+      numericAnswer: null,
+      sourcePage: 1,
+      confidence: 0.9,
+      needsReview: false,
+      reviewNote: null,
+      hasFigure: false,
+      figureStorageKey: null,
     };
     const res = await commitPost(jsonReq({ questions: [foreign] }), extCtx(quiz.id, ext.id));
     expect(res.status).toBe(400);

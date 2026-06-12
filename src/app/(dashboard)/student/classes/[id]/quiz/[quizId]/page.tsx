@@ -5,13 +5,14 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, XCircle, RotateCcw } from "lucide-react";
+import { ArrowLeft, XCircle, RotateCcw, Maximize2 } from "lucide-react";
 import { ExamResultsView } from "@/components/student/ExamResultsView";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { MathText } from "@/components/ui/math-text";
 import { buildReviewSnapshot, RESULT_STATUS } from "@/lib/exam-results";
 import { normalizeNumericValue } from "@/lib/quiz-scoring";
 
-interface Option { id: string; text: string; isCorrect?: boolean }
+interface Option { id: string; text: string; isCorrect?: boolean; imageUrl?: string | null; imageAlt?: string | null }
 interface Question {
   id: string;
   text: string;
@@ -48,6 +49,8 @@ export default function QuizPage() {
   const [result, setResult] = useState<QuizResult | null>(null);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // Click-to-enlarge for question figures and image answer-choices.
+  const [zoom, setZoom] = useState<{ url: string; alt: string } | null>(null);
 
   // startQuiz is wrapped in useCallback so it is a stable dependency for the
   // mount effect (exhaustive-deps): it only depends on classId/quizId, which
@@ -270,14 +273,24 @@ export default function QuizPage() {
         <Card>
           <CardHeader>
             {currentQuestion.figureUrl && (
-              // Presigned S3 URLs don't fit next/image (no static dimensions /
-              // remote-pattern config), so use a plain img by design.
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={currentQuestion.figureUrl}
-                alt={currentQuestion.figureAlt ?? "Question figure"}
-                className="max-h-64 rounded-md border mb-3"
-              />
+              <button
+                type="button"
+                onClick={() => setZoom({ url: currentQuestion.figureUrl!, alt: currentQuestion.figureAlt ?? "Question figure" })}
+                aria-label="Enlarge figure"
+                className="group relative mb-3 block"
+              >
+                {/* Presigned S3 URLs don't fit next/image (no static dimensions /
+                    remote-pattern config), so use a plain img by design. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={currentQuestion.figureUrl}
+                  alt={currentQuestion.figureAlt ?? "Question figure"}
+                  className="max-h-64 rounded-md border"
+                />
+                <span className="absolute right-1 top-1 rounded bg-black/50 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100">
+                  <Maximize2 className="size-4" />
+                </span>
+              </button>
             )}
             <CardTitle className="text-lg leading-relaxed">
               <MathText text={currentQuestion.text} />
@@ -319,22 +332,41 @@ export default function QuizPage() {
                   const selectedIds = selections[currentQuestion.id] ?? [];
                   const isSelected = selectedIds.includes(opt.id);
                   return (
-                    <button type="button"
-                      key={opt.id}
-                      onClick={() => currentQuestion.answerMode === "MULTI_SELECT" ? toggleOption(currentQuestion.id, opt.id) : selectOption(currentQuestion.id, opt.id)}
-                      className={`w-full text-left p-3 rounded-lg border transition-all text-sm ${
-                        isSelected
-                          ? "border-primary bg-primary/10 text-primary font-medium"
-                          : "border-border hover:border-primary/50 hover:bg-muted/50"
-                      }`}
-                    >
-                      <span className="flex items-start gap-2">
-                        <span className={`mt-0.5 flex size-4 shrink-0 items-center justify-center border ${currentQuestion.answerMode === "MULTI_SELECT" ? "rounded" : "rounded-full"} ${isSelected ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground"}`}>
-                          {isSelected ? "✓" : ""}
+                    <div key={opt.id} className="flex items-stretch gap-2">
+                      <button type="button"
+                        onClick={() => currentQuestion.answerMode === "MULTI_SELECT" ? toggleOption(currentQuestion.id, opt.id) : selectOption(currentQuestion.id, opt.id)}
+                        className={`grow text-left p-3 rounded-lg border transition-all text-sm ${
+                          isSelected
+                            ? "border-primary bg-primary/10 text-primary font-medium"
+                            : "border-border hover:border-primary/50 hover:bg-muted/50"
+                        }`}
+                      >
+                        <span className="flex items-start gap-2">
+                          <span className={`mt-0.5 flex size-4 shrink-0 items-center justify-center border ${currentQuestion.answerMode === "MULTI_SELECT" ? "rounded" : "rounded-full"} ${isSelected ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground"}`}>
+                            {isSelected ? "✓" : ""}
+                          </span>
+                          {opt.imageUrl ? (
+                            <span className="flex flex-col gap-1">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={opt.imageUrl} alt={opt.imageAlt ?? "Answer choice"} className="max-h-40 w-auto max-w-full rounded border bg-white" />
+                              {opt.text && <MathText text={opt.text} />}
+                            </span>
+                          ) : (
+                            <MathText text={opt.text} />
+                          )}
                         </span>
-                        <MathText text={opt.text} />
-                      </span>
-                    </button>
+                      </button>
+                      {opt.imageUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setZoom({ url: opt.imageUrl!, alt: opt.imageAlt ?? "Answer choice" })}
+                          aria-label="Enlarge choice image"
+                          className="flex shrink-0 items-center rounded-lg border px-2 text-muted-foreground hover:bg-muted/50"
+                        >
+                          <Maximize2 className="size-4" />
+                        </button>
+                      )}
+                    </div>
                   );
                 })}
               </>
@@ -342,6 +374,19 @@ export default function QuizPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Click-to-enlarge lightbox for figures and image answer-choices. */}
+      <Dialog open={!!zoom} onOpenChange={(open) => !open && setZoom(null)}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle className="text-sm font-normal text-muted-foreground">{zoom?.alt ?? "Image"}</DialogTitle>
+          </DialogHeader>
+          {zoom && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={zoom.url} alt={zoom.alt} className="mx-auto block max-h-[80vh] w-auto max-w-full" />
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Navigation */}
       <div className="space-y-3">

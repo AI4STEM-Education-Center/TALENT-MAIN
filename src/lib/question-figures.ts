@@ -41,3 +41,48 @@ export async function attachFigureUrls<
     })
   );
 }
+
+/** The image-location columns we read off an Option row (an image answer-choice). */
+type OptionImageSource = { imageStorageKey?: string | null; imageBucket?: string | null };
+
+/**
+ * Presign a short-lived GET URL for an image answer-choice, or null when the
+ * option has no image or presigning fails. Mirrors `presignQuestionFigure`.
+ */
+export async function presignOptionImage(o: OptionImageSource): Promise<string | null> {
+  if (!o.imageStorageKey) return null;
+  try {
+    const bucket = o.imageBucket ?? getS3Config().bucket;
+    return await presignGetUrl(bucket, o.imageStorageKey, 3600);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Map a list of question rows so each option's raw image key + bucket are
+ * dropped and replaced with a transient presigned `imageUrl` (null when absent
+ * or un-presignable). The question fields and every other option field pass
+ * through. Compose after `attachFigureUrls` to cover both figures and choices.
+ */
+export async function attachOptionImageUrls<
+  O extends OptionImageSource,
+  T extends { options: O[] }
+>(
+  questions: T[]
+): Promise<
+  Array<Omit<T, "options"> & { options: Array<Omit<O, "imageStorageKey" | "imageBucket"> & { imageUrl: string | null }> }>
+> {
+  return Promise.all(
+    questions.map(async (q) => {
+      const options = await Promise.all(
+        q.options.map(async (o) => {
+          const imageUrl = await presignOptionImage(o);
+          const { imageStorageKey: _key, imageBucket: _bucket, ...rest } = o;
+          return { ...rest, imageUrl };
+        })
+      );
+      return { ...q, options };
+    })
+  );
+}

@@ -138,7 +138,21 @@ function QuestionCard({ question, index }: { question: SnapshotQuestion; index: 
                 <span className="shrink-0">
                   {opt.isCorrect ? "✓" : opt.selected ? "✗" : " "}
                 </span>
-                <MathText text={opt.text} />
+                {opt.imageUrl ? (
+                  <span className="flex flex-wrap items-center gap-2">
+                    {/* Plain <img>: short-lived presigned S3 URL (see figure img above). */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={opt.imageUrl}
+                      alt={opt.imageAlt ?? "Answer choice"}
+                      loading="lazy"
+                      className="max-h-28 rounded border bg-white"
+                    />
+                    {opt.text && <MathText text={opt.text} />}
+                  </span>
+                ) : (
+                  <MathText text={opt.text} />
+                )}
               </div>
             ))
           )}
