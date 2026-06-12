@@ -52,6 +52,7 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
+            set -e
             cd ~/app
             docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-latest
             docker compose -f docker-compose.dev.yml up -d --force-recreate --no-build
