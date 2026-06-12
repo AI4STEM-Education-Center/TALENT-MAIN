@@ -17,7 +17,7 @@ import { QuizPdfImport } from "@/components/quiz/QuizPdfImport";
 import { Plus, Pencil, Trash2, Check, X, ArrowLeft, FileQuestion, Upload, Download } from "lucide-react";
 
 type AnswerMode = "SINGLE_SELECT" | "MULTI_SELECT" | "NUMERIC";
-interface Option { id?: string; text: string; isCorrect: boolean }
+interface Option { id?: string; text: string; isCorrect: boolean; imageUrl?: string | null; imageAlt?: string | null }
 interface Question {
   id: string;
   title?: string | null;
@@ -512,7 +512,13 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
                         {q.options.map((opt) => (
                           <div key={opt.id} className={`text-sm flex items-center gap-2 ${opt.isCorrect ? "text-green-700 font-medium" : "text-muted-foreground"}`}>
                             <span className={`size-3 rounded-full shrink-0 ${opt.isCorrect ? "bg-green-500" : "bg-muted-foreground/30"}`} />
-                            <MathText text={opt.text} />
+                            {opt.imageUrl ? (
+                              // Plain <img>: short-lived presigned S3 URL (see figure img above).
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={opt.imageUrl} alt={opt.imageAlt ?? "Answer choice"} className="max-h-20 rounded border bg-white" />
+                            ) : (
+                              <MathText text={opt.text} />
+                            )}
                           </div>
                         ))}
                       </div>

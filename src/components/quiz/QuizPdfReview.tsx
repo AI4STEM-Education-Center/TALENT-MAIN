@@ -1,14 +1,16 @@
 "use client";
 
-import { Plus, Trash2, X } from "lucide-react";
+import { useState } from "react";
+import { Image as ImageIcon, Maximize2, Plus, Trash2, Type, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { MathText } from "@/components/ui/math-text";
 import { normalizeNumericValue } from "@/lib/quiz-scoring";
-import type { FigureBbox, StagedQuestion } from "@/lib/quiz-extraction";
-import { FigureCropper } from "./FigureCropper";
+import type { FigureBbox, StagedOption, StagedQuestion } from "@/lib/quiz-extraction";
+import { MultiBoxCropper, type CropBox } from "./MultiBoxCropper";
 
 export type PageImage = { pageNumber: number; url: string };
 
@@ -19,10 +21,23 @@ const TYPE_LABEL: Record<StagedQuestion["type"], string> = {
   NUMERIC: "Numeric",
 };
 
+const DEFAULT_FIGURE_BBOX: FigureBbox = { x: 0.08, y: 0.08, w: 0.5, h: 0.4 };
+
+/** Letter shown for an answer choice (A, B, C, …) and reused as its crop-box label. */
+function optionLetter(index: number): string {
+  return index < 26 ? String.fromCharCode(65 + index) : `#${index + 1}`;
+}
+
+/** Staggered default crop box for a freshly-flagged image option so boxes don't stack. */
+function defaultOptionBbox(order: number): FigureBbox {
+  return { x: 0.1, y: Math.min(0.05 + order * 0.16, 0.8), w: 0.35, h: 0.14 };
+}
+
 /**
- * Local mirror of the server's commit-completeness rules. A figure with a still
- * pending crop (hasFigure but no figureStorageKey) counts as complete here,
- * because the crop is drawn + uploaded during the commit step.
+ * Local mirror of the server's commit-completeness rules. A figure or image
+ * option with a still-pending crop (a bbox but no storage key) counts as
+ * complete here, because the crop is drawn + uploaded during the commit step.
+ * An image option with NO crop box yet is incomplete — there is nothing to crop.
  */
 export function isQuestionComplete(q: StagedQuestion): boolean {
   if (q.type === "NUMERIC") {
@@ -30,6 +45,7 @@ export function isQuestionComplete(q: StagedQuestion): boolean {
   }
   if (q.options.length < 2) return false;
   if (q.options.some((o) => o.isCorrect === null)) return false;
+  if (q.options.some((o) => o.isImage === true && !(o.imageBbox ?? o.imageStorageKey))) return false;
   const correct = q.options.filter((o) => o.isCorrect === true).length;
   if (q.type === "MULTI_SELECT") return correct >= 1;
   return correct === 1; // MULTIPLE_CHOICE / TRUE_FALSE
@@ -41,12 +57,38 @@ function pageImageFor(pages: PageImage[], pageNumber: number | null): string | n
 }
 
 /**
+ * The crop boxes a question needs (its figure + every image option), grouped by
+ * the page each lives on. The page resolution matches the commit-time crop
+ * (`figurePage ?? sourcePage`; an option's `imagePage` overrides) so a box drawn
+ * here is read back against the same page image at commit. Module-scope + pure.
+ */
+function cropBoxesByPage(q: StagedQuestion): { page: number; boxes: CropBox[] }[] {
+  const figurePage = q.figurePage ?? q.sourcePage;
+  const entries: { page: number; box: CropBox }[] = [];
+  if (q.hasFigure) {
+    entries.push({ page: figurePage, box: { id: "figure", label: "Figure", bbox: q.figureBbox ?? DEFAULT_FIGURE_BBOX } });
+  }
+  let imageOrder = 0;
+  q.options.forEach((o, oi) => {
+    if (o.isImage !== true) return;
+    entries.push({
+      page: o.imagePage ?? figurePage,
+      box: { id: `opt-${oi}`, label: optionLetter(oi), bbox: o.imageBbox ?? defaultOptionBbox(imageOrder) },
+    });
+    imageOrder += 1;
+  });
+  const byPage = new Map<number, CropBox[]>();
+  for (const e of entries) {
+    const list = byPage.get(e.page);
+    if (list) list.push(e.box);
+    else byPage.set(e.page, [e.box]);
+  }
+  return [...byPage.entries()].map(([page, boxes]) => ({ page, boxes }));
+}
+
+/**
  * Rendered-LaTeX preview box, captioned "Preview" so a teacher reads it as a
  * render of the input beside/above it rather than another editable field.
- *
- * `inline` sizes the box to one input row (h-10) so it lines up with the option
- * Input it sits beside; the caption still rides above it. The default (block)
- * variant grows with its content and is used under the multi-line question text.
  */
 function MathPreview({ text, className, inline }: { text: string; className?: string; inline?: boolean }) {
   return (
@@ -81,8 +123,20 @@ function QuestionCard({
   const complete = isQuestionComplete(q);
   const isChoice = q.type !== "NUMERIC";
 
+  const pageGroups = cropBoxesByPage(q);
+  const allBoxIds = pageGroups.flatMap((g) => g.boxes.map((b) => b.id));
+  const [activeBoxId, setActiveBoxId] = useState<string | null>(null);
+  const [enlarged, setEnlarged] = useState(false);
+  // Resolve the active box to one that still exists (boxes come and go as the
+  // teacher toggles options); default to the first.
+  const resolvedActiveId = activeBoxId && allBoxIds.includes(activeBoxId) ? activeBoxId : allBoxIds[0] ?? null;
+
   function setOptionText(oi: number, text: string) {
     onChange({ ...q, options: q.options.map((o, i) => (i === oi ? { ...o, text } : o)) });
+  }
+
+  function setOption(oi: number, patch: Partial<StagedOption>) {
+    onChange({ ...q, options: q.options.map((o, i) => (i === oi ? { ...o, ...patch } : o)) });
   }
 
   function toggleCorrect(oi: number) {
@@ -105,18 +159,68 @@ function QuestionCard({
     onChange({ ...q, options: q.options.filter((_, i) => i !== oi) });
   }
 
+  function toggleOptionIsImage(oi: number) {
+    const o = q.options[oi];
+    if (o.isImage === true) {
+      setOption(oi, { isImage: false, imageBbox: null, imagePage: null, imageStorageKey: null, imageAlt: null });
+    } else {
+      const imageOrder = q.options.slice(0, oi).filter((x) => x.isImage === true).length;
+      setOption(oi, { isImage: true, imageBbox: defaultOptionBbox(imageOrder), imageStorageKey: null });
+    }
+  }
+
   function removeFigure() {
     onChange({ ...q, hasFigure: false, figureBbox: null, figureStorageKey: null });
   }
 
-  function setBbox(bbox: FigureBbox) {
-    // Editing the crop invalidates any previously uploaded key.
-    onChange({ ...q, figureBbox: bbox, figureStorageKey: null });
+  // A crop box moved: route it to the figure or the matching option. Editing a
+  // crop invalidates any previously uploaded key for that target.
+  function setBoxBbox(id: string, bbox: FigureBbox) {
+    if (id === "figure") {
+      onChange({ ...q, figureBbox: bbox, figureStorageKey: null });
+      return;
+    }
+    const oi = Number(id.slice("opt-".length));
+    if (!Number.isInteger(oi)) return;
+    setOption(oi, { imageBbox: bbox, imageStorageKey: null });
   }
 
   const sourceUrl = pageImageFor(pageImages, q.sourcePage);
-  const figureUrl = pageImageFor(pageImages, q.figurePage ?? q.sourcePage);
-  const figureBbox: FigureBbox = q.figureBbox ?? { x: 0.1, y: 0.1, w: 0.5, h: 0.4 };
+  const hasCrops = pageGroups.length > 0;
+
+  function renderCroppers(large: boolean) {
+    return (
+      <div className="space-y-3">
+        {pageGroups.map((g) => {
+          const url = pageImageFor(pageImages, g.page);
+          if (!url) {
+            return (
+              <p key={g.page} className="text-xs text-destructive">
+                Source page {g.page} image unavailable for cropping.
+              </p>
+            );
+          }
+          return (
+            <div key={g.page} className="space-y-1">
+              {pageGroups.length > 1 && (
+                <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Page {g.page}
+                </span>
+              )}
+              <MultiBoxCropper
+                pageUrl={url}
+                boxes={g.boxes}
+                activeId={resolvedActiveId}
+                onSelect={setActiveBoxId}
+                onChange={setBoxBbox}
+                imgClassName={large ? "block max-h-[78vh] w-auto max-w-full" : undefined}
+              />
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
 
   return (
     <div className={`rounded-lg border p-4 space-y-3 ${complete ? "" : "border-amber-300 bg-amber-50/40"}`}>
@@ -124,12 +228,8 @@ function QuestionCard({
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-sm text-muted-foreground">Q{index + 1}</span>
           <Badge variant="outline" className="text-xs">{TYPE_LABEL[q.type]}</Badge>
-          {q.needsReview && (
-            <Badge variant="warning" className="text-xs">Needs review</Badge>
-          )}
-          {q.confidence < 0.7 && (
-            <Badge variant="warning" className="text-xs">Low confidence</Badge>
-          )}
+          {q.needsReview && <Badge variant="warning" className="text-xs">Needs review</Badge>}
+          {q.confidence < 0.7 && <Badge variant="warning" className="text-xs">Low confidence</Badge>}
           {!complete && <Badge variant="destructive" className="text-xs">Incomplete</Badge>}
         </div>
         <Button size="sm" variant="ghost" onClick={onRemove} aria-label={`Remove question ${index + 1}`}>
@@ -139,9 +239,9 @@ function QuestionCard({
 
       {q.needsReview && q.reviewNote && <p className="text-xs text-amber-700">{q.reviewNote}</p>}
 
-      {/* Editing fields on the left; the source page is always shown on the right
-          (a draggable figure crop when the question has a figure, otherwise a
-          plain reference image) so the teacher never has to expand a toggle. */}
+      {/* Editing fields on the left; the source page is shown on the right (a
+          draggable multi-box cropper when the question has a figure and/or image
+          choices, otherwise a plain reference image). */}
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="min-w-0 space-y-3">
           <div className="space-y-1">
@@ -158,40 +258,64 @@ function QuestionCard({
                   ({q.type === "MULTI_SELECT" ? "check all correct" : "select the one correct"})
                 </span>
               </label>
-              {/* items-end so the rendered preview lines up with the Input row;
-                  its "Preview" caption then rides above without nudging the
-                  controls. The radio + remove buttons get their own h-10 box so
-                  they stay vertically centered on the input. */}
-              {q.options.map((opt, oi) => (
-                <div key={oi} className="flex items-end gap-2">
-                  <div className="flex h-10 shrink-0 items-center">
-                    <button
-                      type="button"
-                      aria-label={opt.isCorrect ? "Marked correct" : "Mark correct"}
-                      aria-pressed={opt.isCorrect === true}
-                      onClick={() => toggleCorrect(oi)}
-                      className={`size-4 border-2 ${q.type === "MULTI_SELECT" ? "rounded" : "rounded-full"} ${
-                        opt.isCorrect === true
-                          ? "border-green-500 bg-green-500"
-                          : opt.isCorrect === null
-                            ? "border-amber-400"
-                            : "border-muted-foreground"
-                      }`}
-                    />
-                  </div>
-                  <Input value={opt.text} onChange={(e) => setOptionText(oi, e.target.value)} placeholder={`Option ${oi + 1}`} />
-                  {/* Rendered preview only earns its space for LaTeX; for plain
-                      text (e.g. True/False) it just echoed the input, so omit it. */}
-                  {opt.text.includes("$") && <MathPreview text={opt.text} inline className="hidden shrink-0 sm:block" />}
-                  {q.type !== "TRUE_FALSE" && (
-                    <div className="flex h-10 shrink-0 items-center">
-                      <Button size="sm" variant="ghost" onClick={() => removeOption(oi)} aria-label={`Remove option ${oi + 1}`}>
-                        <X className="size-3" />
-                      </Button>
+              {q.options.map((opt, oi) => {
+                const isImageOpt = opt.isImage === true;
+                return (
+                  <div key={oi} className="flex items-end gap-2">
+                    <div className="flex h-10 shrink-0 items-center gap-1">
+                      <button
+                        type="button"
+                        aria-label={opt.isCorrect ? "Marked correct" : "Mark correct"}
+                        aria-pressed={opt.isCorrect === true}
+                        onClick={() => toggleCorrect(oi)}
+                        className={`size-4 border-2 ${q.type === "MULTI_SELECT" ? "rounded" : "rounded-full"} ${
+                          opt.isCorrect === true
+                            ? "border-green-500 bg-green-500"
+                            : opt.isCorrect === null
+                              ? "border-amber-400"
+                              : "border-muted-foreground"
+                        }`}
+                      />
+                      <span className="font-mono text-xs text-muted-foreground">{optionLetter(oi)}</span>
                     </div>
-                  )}
-                </div>
-              ))}
+
+                    {isImageOpt ? (
+                      <div className="flex grow items-center gap-2 rounded-md border bg-muted/20 px-2 py-1.5">
+                        <ImageIcon className="size-4 shrink-0 text-muted-foreground" />
+                        <Input
+                          value={opt.imageAlt ?? ""}
+                          onChange={(e) => setOption(oi, { imageAlt: e.target.value || null })}
+                          placeholder="Image label / caption (optional)"
+                          className="h-8 border-0 bg-transparent px-1 shadow-none focus-visible:ring-0"
+                        />
+                      </div>
+                    ) : (
+                      <Input value={opt.text} onChange={(e) => setOptionText(oi, e.target.value)} placeholder={`Option ${oi + 1}`} />
+                    )}
+
+                    {!isImageOpt && opt.text.includes("$") && (
+                      <MathPreview text={opt.text} inline className="hidden shrink-0 sm:block" />
+                    )}
+
+                    {q.type !== "TRUE_FALSE" && (
+                      <div className="flex h-10 shrink-0 items-center">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => toggleOptionIsImage(oi)}
+                          aria-label={isImageOpt ? `Make option ${oi + 1} text` : `Make option ${oi + 1} an image`}
+                          title={isImageOpt ? "Switch to text" : "Switch to image"}
+                        >
+                          {isImageOpt ? <Type className="size-3" /> : <ImageIcon className="size-3" />}
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => removeOption(oi)} aria-label={`Remove option ${oi + 1}`}>
+                          <X className="size-3" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
               {q.type !== "TRUE_FALSE" && (
                 <Button size="sm" variant="ghost" onClick={addOption}>
                   <Plus className="size-3" /> Add option
@@ -224,28 +348,35 @@ function QuestionCard({
           )}
         </div>
 
-        {/* Source page — always visible, kept in view next to the (often taller)
-            editing column on wide screens. */}
+        {/* Source page — always visible next to the (often taller) editing column. */}
         <div className="space-y-2 self-start lg:sticky lg:top-4">
-          {q.hasFigure ? (
+          {hasCrops ? (
             <>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-medium text-muted-foreground">
-                  Figure crop {q.figureCaption ? `— ${q.figureCaption}` : ""}
+                  {q.options.some((o) => o.isImage === true)
+                    ? "Drag each labeled box onto its choice image"
+                    : `Figure crop${q.figureCaption ? ` — ${q.figureCaption}` : ""}`}
                 </span>
-                <Button size="sm" variant="ghost" onClick={removeFigure}>Remove figure</Button>
+                <div className="flex items-center gap-1">
+                  <Button size="sm" variant="ghost" onClick={() => setEnlarged(true)} aria-label="Enlarge page">
+                    <Maximize2 className="size-4" />
+                  </Button>
+                  {q.hasFigure && (
+                    <Button size="sm" variant="ghost" onClick={removeFigure}>Remove figure</Button>
+                  )}
+                </div>
               </div>
-              {figureUrl ? (
-                <FigureCropper pageUrl={figureUrl} bbox={figureBbox} onChange={setBbox} />
-              ) : (
-                <p className="text-xs text-destructive">Source page image unavailable for cropping.</p>
-              )}
+              {renderCroppers(false)}
             </>
           ) : sourceUrl ? (
             <>
-              <span className="text-xs font-medium text-muted-foreground">Source page {q.sourcePage}</span>
-              {/* Plain <img>: short-lived presigned S3 URL, not a static asset, so
-                  next/image can't optimize it. Mirrors QuizReviewResult. */}
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-medium text-muted-foreground">Source page {q.sourcePage}</span>
+                <Button size="sm" variant="ghost" onClick={() => setEnlarged(true)} aria-label="Enlarge page">
+                  <Maximize2 className="size-4" />
+                </Button>
+              </div>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={sourceUrl} alt={`Source page ${q.sourcePage}`} className="max-h-[36rem] w-auto max-w-full rounded border" />
             </>
@@ -254,6 +385,22 @@ function QuestionCard({
           )}
         </div>
       </div>
+
+      <Dialog open={enlarged} onOpenChange={setEnlarged}>
+        <DialogContent className="max-w-5xl">
+          <DialogHeader>
+            <DialogTitle>Q{index + 1} — source page</DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[82vh] overflow-auto">
+            {hasCrops ? (
+              renderCroppers(true)
+            ) : sourceUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={sourceUrl} alt={`Source page ${q.sourcePage}`} className="mx-auto block max-h-[78vh] w-auto max-w-full" />
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

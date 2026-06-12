@@ -1,13 +1,22 @@
 import { describe, it, expect } from "vitest";
 import {
   QUIZ_EXTRACTION_SCHEMA,
+  QUIZ_LOCALIZATION_SCHEMA,
   buildExtractionPrompt,
+  buildLocalizationPrompt,
   validateExtractedQuiz,
   normalizeExtractedQuiz,
   validateCommitQuestions,
   mapStagedToQuestionData,
   parseStagedQuestions,
+  buildTargetId,
+  collectLocalizationTargets,
+  needsLocalization,
+  groupTargetsByPage,
+  validateLocalizationResult,
+  mergeLocalizedBoxes,
   LATEX_INLINE_DELIMITER,
+  type ExtractedQuiz,
   type StagedQuestion,
 } from "./quiz-extraction";
 
@@ -643,5 +652,281 @@ describe("QUIZ_EXTRACTION_SCHEMA", () => {
     expect(QUIZ_EXTRACTION_SCHEMA.strict).toBe(true);
     expect(QUIZ_EXTRACTION_SCHEMA.schema.additionalProperties).toBe(false);
     expect(QUIZ_EXTRACTION_SCHEMA.schema.required).toEqual(["has_answer_key", "quiz_title", "questions"]);
+  });
+});
+
+// ─── Image answer-choices: validate / normalize / commit / map ──────────────────
+
+function rawImageOption(alt: string, isCorrect: boolean | null, page = 1): Record<string, unknown> {
+  return { text: "", is_correct: isCorrect, is_image: true, image_bbox: { x: 0.1, y: 0.1, w: 0.3, h: 0.2 }, image_page: page, image_alt: alt };
+}
+
+describe("image answer-choices", () => {
+  it("validates an image option and keeps its bbox / page / alt", () => {
+    const quiz = validateExtractedQuiz(
+      rawQuizPayload({ questions: [rawQuestion({ options: [rawImageOption("graph A", true), rawImageOption("graph B", false)] })] })
+    );
+    const opt = quiz.questions[0].options[0];
+    expect(opt.isImage).toBe(true);
+    expect(opt.imageBbox).toEqual({ x: 0.1, y: 0.1, w: 0.3, h: 0.2 });
+    expect(opt.imagePage).toBe(1);
+    expect(opt.imageAlt).toBe("graph A");
+  });
+
+  it("keeps an empty-text image option through normalize (not stripped as junk) and forces review", () => {
+    const quiz = validateExtractedQuiz(
+      rawQuizPayload({ questions: [rawQuestion({ options: [rawImageOption("A", true), rawImageOption("B", false)] })] })
+    );
+    const result = normalizeExtractedQuiz(quiz);
+    expect(result.questions[0].options).toHaveLength(2);
+    expect(result.questions[0].options.every((o) => o.isImage === true)).toBe(true);
+    expect(result.questions[0].needsReview).toBe(true);
+    expect(result.questions[0].reviewNote).toMatch(/image-choice crops/i);
+  });
+});
+
+describe("validateCommitQuestions — image options", () => {
+  it("accepts an image option with empty text but an uploaded key", () => {
+    const result = validateCommitQuestions([
+      commitQuestion({
+        options: [
+          { text: "", isCorrect: true, isImage: true, imageStorageKey: "k/figures/option-0-0.png", imageAlt: "A" },
+          { text: "", isCorrect: false, isImage: true, imageStorageKey: "k/figures/option-0-1.png", imageAlt: "B" },
+        ],
+      }),
+    ]);
+    expect(result[0].options[0].isImage).toBe(true);
+    expect(result[0].options[0].imageStorageKey).toBe("k/figures/option-0-0.png");
+  });
+
+  it("rejects an image option without an uploaded key", () => {
+    expect(() =>
+      validateCommitQuestions([
+        commitQuestion({
+          options: [
+            { text: "", isCorrect: true, isImage: true, imageStorageKey: null },
+            { text: "b", isCorrect: false },
+          ],
+        }),
+      ])
+    ).toThrow(/image option requires an uploaded image/i);
+  });
+
+  it("still rejects a text option with empty text", () => {
+    expect(() =>
+      validateCommitQuestions([commitQuestion({ options: [{ text: "", isCorrect: true }, { text: "b", isCorrect: false }] })])
+    ).toThrow(/text is required/i);
+  });
+
+  it("rejects image options on TRUE_FALSE", () => {
+    expect(() =>
+      validateCommitQuestions([
+        commitQuestion({
+          type: "TRUE_FALSE",
+          options: [
+            { text: "", isCorrect: true, isImage: true, imageStorageKey: "k/figures/option-0-0.png" },
+            { text: "False", isCorrect: false },
+          ],
+        }),
+      ])
+    ).toThrow(/TRUE_FALSE options cannot be images/i);
+  });
+
+  it("rejects duplicate image options (same key)", () => {
+    expect(() =>
+      validateCommitQuestions([
+        commitQuestion({
+          options: [
+            { text: "", isCorrect: true, isImage: true, imageStorageKey: "k/figures/dup.png" },
+            { text: "", isCorrect: false, isImage: true, imageStorageKey: "k/figures/dup.png" },
+          ],
+        }),
+      ])
+    ).toThrow(/options must be distinct/i);
+  });
+});
+
+describe("mapStagedToQuestionData — image options", () => {
+  it("emits image fields only for image options", () => {
+    const data = mapStagedToQuestionData(
+      staged({
+        options: [
+          { text: "", isCorrect: true, isImage: true, imageStorageKey: "k/figures/option-0-0.png", imageAlt: "A" },
+          { text: "plain", isCorrect: false },
+        ],
+      }),
+      CTX
+    );
+    expect(data.options.create[0]).toEqual({
+      text: "",
+      isCorrect: true,
+      imageStorageKey: "k/figures/option-0-0.png",
+      imageBucket: "bucket-1",
+      imageAlt: "A",
+    });
+    expect(data.options.create[1]).toEqual({ text: "plain", isCorrect: false });
+  });
+});
+
+// ─── Pass-2 localization helpers ─────────────────────────────────────────────────
+
+const quizOf = (questions: StagedQuestion[]): ExtractedQuiz => ({
+  hasAnswerKey: true,
+  quizTitle: null,
+  questions,
+  warnings: [],
+});
+
+function imageOptionsQuestion(): StagedQuestion {
+  return staged({
+    sourcePage: 1,
+    options: [
+      { text: "", isCorrect: true, isImage: true, imageBbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, imagePage: 1, imageAlt: "A" },
+      { text: "", isCorrect: false, isImage: true, imageBbox: { x: 0.4, y: 0.1, w: 0.2, h: 0.2 }, imagePage: 1, imageAlt: "B" },
+    ],
+  });
+}
+
+describe("buildTargetId", () => {
+  it("formats figure and option ids deterministically", () => {
+    expect(buildTargetId(3, "figure", null)).toBe("q3.figure");
+    expect(buildTargetId(3, "option", 2)).toBe("q3.opt2");
+  });
+});
+
+describe("collectLocalizationTargets / needsLocalization", () => {
+  it("returns nothing for a text-only quiz", () => {
+    const quiz = quizOf([staged()]);
+    expect(collectLocalizationTargets(quiz)).toEqual([]);
+    expect(needsLocalization(quiz)).toBe(false);
+  });
+
+  it("collects the figure then each image option in order", () => {
+    const quiz = quizOf([
+      staged({ hasFigure: true, figurePage: 2, figureBbox: { x: 0.1, y: 0.1, w: 0.4, h: 0.3 }, figureCaption: "diagram", sourcePage: 2,
+        options: [{ text: "", isCorrect: true, isImage: true, imageBbox: { x: 0.1, y: 0.5, w: 0.2, h: 0.2 }, imagePage: 2, imageAlt: "A" }] }),
+    ]);
+    const targets = collectLocalizationTargets(quiz);
+    expect(targets.map((t) => t.targetId)).toEqual(["q0.figure", "q0.opt0"]);
+    expect(targets[0].kind).toBe("figure");
+    expect(targets[0].page).toBe(2);
+    expect(needsLocalization(quiz)).toBe(true);
+  });
+
+  it("resolves an option page to the source page when image_page is null", () => {
+    const quiz = quizOf([
+      staged({ sourcePage: 3, options: [
+        { text: "", isCorrect: true, isImage: true, imageBbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, imageAlt: "A" },
+        { text: "x", isCorrect: false },
+      ] }),
+    ]);
+    const targets = collectLocalizationTargets(quiz);
+    expect(targets).toHaveLength(1);
+    expect(targets[0].page).toBe(3);
+  });
+});
+
+describe("groupTargetsByPage", () => {
+  it("groups targets by their page", () => {
+    const quiz = quizOf([
+      staged({ hasFigure: true, figurePage: 2, figureBbox: { x: 0.1, y: 0.1, w: 0.4, h: 0.3 }, figureCaption: "d", sourcePage: 2 }),
+      imageOptionsQuestion(),
+    ]);
+    const byPage = groupTargetsByPage(collectLocalizationTargets(quiz));
+    expect(byPage.get(2)?.map((t) => t.targetId)).toEqual(["q0.figure"]);
+    expect(byPage.get(1)?.map((t) => t.targetId)).toEqual(["q1.opt0", "q1.opt1"]);
+  });
+});
+
+describe("buildLocalizationPrompt", () => {
+  const targets = collectLocalizationTargets(quizOf([imageOptionsQuestion()]));
+  const prompt = buildLocalizationPrompt(1, targets);
+
+  it("names the page and lists every target id in order", () => {
+    expect(prompt).toContain("page 1");
+    expect(prompt.indexOf("q0.opt0")).toBeGreaterThan(-1);
+    expect(prompt.indexOf("q0.opt0")).toBeLessThan(prompt.indexOf("q0.opt1"));
+  });
+  it("asks for tight, non-overlapping boxes", () => {
+    expect(prompt).toMatch(/tight/i);
+    expect(prompt).toMatch(/overlap/i);
+  });
+  it("is deterministic", () => {
+    expect(buildLocalizationPrompt(1, targets)).toBe(buildLocalizationPrompt(1, targets));
+  });
+});
+
+describe("validateLocalizationResult", () => {
+  const known = new Set(["q0.figure", "q0.opt0"]);
+
+  it("keeps found boxes with known ids and clamps the bbox", () => {
+    const out = validateLocalizationResult(
+      { boxes: [{ target_id: "q0.opt0", found: true, bbox: { x: -0.1, y: 0.2, w: 0.3, h: 0.2 } }] },
+      known
+    );
+    expect(out).toEqual([{ targetId: "q0.opt0", bbox: { x: 0, y: 0.2, w: 0.3, h: 0.2 } }]);
+  });
+
+  it("drops unknown ids, found:false and malformed bboxes, and dedupes", () => {
+    const out = validateLocalizationResult(
+      {
+        boxes: [
+          { target_id: "nope", found: true, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 } },
+          { target_id: "q0.figure", found: false, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 } },
+          { target_id: "q0.opt0", found: true, bbox: { x: 0.1, y: 0.1, w: "bad", h: 0.2 } },
+          { target_id: "q0.opt0", found: true, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 } },
+          { target_id: "q0.opt0", found: true, bbox: { x: 0.5, y: 0.5, w: 0.1, h: 0.1 } },
+        ],
+      },
+      known
+    );
+    expect(out).toEqual([{ targetId: "q0.opt0", bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 } }]);
+  });
+
+  it("returns [] for junk input", () => {
+    expect(validateLocalizationResult(null, known)).toEqual([]);
+    expect(validateLocalizationResult({}, known)).toEqual([]);
+  });
+});
+
+describe("mergeLocalizedBoxes", () => {
+  it("tightens an option box from pass 2 and keeps the other option's coarse box", () => {
+    const merged = mergeLocalizedBoxes(quizOf([imageOptionsQuestion()]), [
+      { targetId: "q0.opt0", bbox: { x: 0.11, y: 0.12, w: 0.13, h: 0.14 } },
+    ]);
+    expect(merged.questions[0].options[0].imageBbox).toEqual({ x: 0.11, y: 0.12, w: 0.13, h: 0.14 });
+    expect(merged.questions[0].options[1].imageBbox).toEqual({ x: 0.4, y: 0.1, w: 0.2, h: 0.2 });
+  });
+
+  it("forces needsReview when a figure has neither a tight nor a coarse box", () => {
+    const merged = mergeLocalizedBoxes(
+      quizOf([staged({ hasFigure: true, figurePage: 1, figureBbox: null, figureCaption: "x" })]),
+      []
+    );
+    expect(merged.questions[0].needsReview).toBe(true);
+    expect(merged.questions[0].reviewNote).toMatch(/could not locate the figure/i);
+  });
+
+  it("does not mutate a deep-frozen input", () => {
+    const quiz = quizOf([imageOptionsQuestion()]);
+    const deepFreeze = (obj: unknown): void => {
+      if (obj && typeof obj === "object") {
+        Object.values(obj).forEach(deepFreeze);
+        Object.freeze(obj);
+      }
+    };
+    deepFreeze(quiz);
+    expect(() =>
+      mergeLocalizedBoxes(quiz, [{ targetId: "q0.opt0", bbox: { x: 0.2, y: 0.2, w: 0.2, h: 0.2 } }])
+    ).not.toThrow();
+    expect(quiz.questions[0].options[0].imageBbox).toEqual({ x: 0.1, y: 0.1, w: 0.2, h: 0.2 });
+  });
+});
+
+describe("QUIZ_LOCALIZATION_SCHEMA", () => {
+  it("is a strict json_schema payload named quiz_localization", () => {
+    expect(QUIZ_LOCALIZATION_SCHEMA.name).toBe("quiz_localization");
+    expect(QUIZ_LOCALIZATION_SCHEMA.strict).toBe(true);
+    expect(QUIZ_LOCALIZATION_SCHEMA.schema.required).toEqual(["boxes"]);
   });
 });

@@ -7,7 +7,7 @@ import { RotateCcw } from "lucide-react";
 import { ExamResultsView } from "@/components/student/ExamResultsView";
 import { parseReviewSnapshot, RESULT_STATUS, type ResultStatus } from "@/lib/exam-results";
 import { presignStoredRecommendations } from "@/lib/exam-results-engine";
-import { presignQuestionFigure } from "@/lib/question-figures";
+import { presignQuestionFigure, presignOptionImage } from "@/lib/question-figures";
 
 export default async function ExamResultsPage({
   params,
@@ -31,9 +31,9 @@ export default async function ExamResultsPage({
 
   const snapshot = parseReviewSnapshot(examResult.reviewSnapshot);
 
-  // Attach transient presigned figure URLs (never persisted) so QuestionCard can
-  // render question figures. The snapshot stores only figureStorageKey, not a
-  // bucket, so we pass figureBucket: null → the default bucket is used.
+  // Attach transient presigned URLs (never persisted) so QuestionCard can render
+  // question figures and image answer-choices. The snapshot stores only storage
+  // keys, not buckets, so we pass bucket: null → the default bucket is used.
   await Promise.all(
     snapshot.questions.map(async (q) => {
       if (q.figureStorageKey) {
@@ -42,6 +42,13 @@ export default async function ExamResultsPage({
           figureBucket: null,
         });
       }
+      await Promise.all(
+        q.options.map(async (o) => {
+          if (o.imageStorageKey) {
+            o.imageUrl = await presignOptionImage({ imageStorageKey: o.imageStorageKey, imageBucket: null });
+          }
+        })
+      );
     })
   );
 
