@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { scoreQuiz, type ScorableQuestion } from "@/lib/quiz-scoring";
 import { buildReviewSnapshot } from "@/lib/exam-results";
-import { attachFigureUrls } from "@/lib/question-figures";
+import { attachFigureUrls, attachOptionImageUrls } from "@/lib/question-figures";
 import { enqueueExamResult } from "@/lib/queue";
 
 // POST: Start a quiz attempt
@@ -39,12 +39,15 @@ export async function POST(req: NextRequest) {
   // grading data — `omit` strips the NUMERIC answer/tolerance scalars, options
   // are selected without `isCorrect`, and the raw figure storage key/bucket are
   // replaced below with a short-lived presigned URL. Students see only:
-  // id, text, answerMode, answerUnit, points, figureAlt, options { id, text },
-  // plus the transient figureUrl.
+  // id, text, answerMode, answerUnit, points, figureAlt, options { id, text,
+  // imageAlt }, plus the transient figureUrl / option imageUrl. An image
+  // answer-choice exposes its imageAlt + presigned imageUrl but NOT isCorrect.
   const questionRows = await prisma.question.findMany({
     where: { quizId },
     omit: { answerNumeric: true, answerTolerance: true },
-    include: { options: { select: { id: true, text: true } } },
+    include: {
+      options: { select: { id: true, text: true, imageStorageKey: true, imageBucket: true, imageAlt: true } },
+    },
     orderBy: { createdAt: "asc" },
   });
 
@@ -52,8 +55,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No questions available for this quiz." }, { status: 404 });
   }
 
-  // Replace figureStorageKey/figureBucket with a transient presigned figureUrl.
-  const questions = await attachFigureUrls(questionRows);
+  // Replace figure + option-image storage keys with transient presigned URLs.
+  const questions = await attachOptionImageUrls(await attachFigureUrls(questionRows));
 
   // Create attempt
   const attempt = await prisma.quizAttempt.create({
@@ -218,9 +221,9 @@ export async function PATCH(req: NextRequest) {
   // too — exactly like the durable snapshot, so the inline ExamResultsView can
   // show the correct numeric value. (Pre-submission, the POST handler still
   // omits answerNumeric/answerTolerance — secrecy only matters before grading.)
-  // The raw figure key/bucket are still swapped for a transient presigned
-  // figureUrl by attachFigureUrls.
-  const safeQuestions = await attachFigureUrls(questionsWithAnswers);
+  // The raw figure / option-image keys are still swapped for transient
+  // presigned URLs (options keep isCorrect post-submit, but never raw keys).
+  const safeQuestions = await attachOptionImageUrls(await attachFigureUrls(questionsWithAnswers));
 
   return NextResponse.json({
     score,

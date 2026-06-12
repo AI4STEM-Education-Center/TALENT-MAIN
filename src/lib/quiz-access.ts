@@ -108,7 +108,14 @@ export async function deepCopyQuiz(sourceQuizId: string, targetTeacherId: string
           figureBucket: question.figureBucket,
           figureAlt: question.figureAlt,
           options: {
-            create: question.options.map((o) => ({ text: o.text, isCorrect: o.isCorrect })),
+            // Image answer-choices carry their (immutable, shared) crop key too.
+            create: question.options.map((o) => ({
+              text: o.text,
+              isCorrect: o.isCorrect,
+              imageStorageKey: o.imageStorageKey,
+              imageBucket: o.imageBucket,
+              imageAlt: o.imageAlt,
+            })),
           },
         },
       });

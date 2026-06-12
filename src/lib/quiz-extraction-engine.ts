@@ -1,10 +1,16 @@
 // Impure orchestration for the PDF quiz-upload feature: presigns the rasterized
-// page images, makes the single vision-LLM extraction call, and persists the
-// staged questions back onto the QuizPdfExtraction row. Runs in the background
-// worker (decoupled from the upload request, so extraction completes even after
-// the teacher navigates away). All DB / LLM / S3 access is concentrated here;
-// the pure transforms (schema, prompt, validation, normalization) live in
-// `quiz-extraction.ts` and are consumed by this engine.
+// page images, makes the vision-LLM extraction call(s), and persists the staged
+// questions back onto the QuizPdfExtraction row. Runs in the background worker
+// (decoupled from the upload request, so extraction completes even after the
+// teacher navigates away). All DB / LLM / S3 access is concentrated here; the
+// pure transforms (schemas, prompts, validation, normalization, localization)
+// live in `quiz-extraction.ts` and are consumed by this engine.
+//
+// Extraction is two-pass: pass 1 identifies every question (text, options,
+// answer key) over all pages and flags figures / image answer-choices; pass 2
+// runs ONLY when something needs a tight crop box, doing one focused
+// localization call per page and merging the boxes back. A text-only quiz makes
+// exactly one call, unchanged from before.
 
 import type OpenAI from "openai";
 import { prisma } from "./prisma";
@@ -13,9 +19,17 @@ import { presignGetUrl } from "./storage";
 import { retryWithExponentialBackoff } from "./retry";
 import {
   QUIZ_EXTRACTION_SCHEMA,
+  QUIZ_LOCALIZATION_SCHEMA,
   buildExtractionPrompt,
+  buildLocalizationPrompt,
   validateExtractedQuiz,
   normalizeExtractedQuiz,
+  needsLocalization,
+  collectLocalizationTargets,
+  groupTargetsByPage,
+  validateLocalizationResult,
+  mergeLocalizedBoxes,
+  type LocalizedBox,
 } from "./quiz-extraction";
 
 const PAGE_URL_EXPIRES_SEC = 3600;
@@ -48,6 +62,65 @@ function buildExtractionContent(prompt: string, imageUrls: string[]): OpenAI.Cha
       (url): OpenAI.Chat.Completions.ChatCompletionContentPart => ({ type: "image_url", image_url: { url } })
     ),
   ];
+}
+
+/** Build the localization message content: the prompt text + a single page image. */
+function buildLocalizationContent(prompt: string, pageImageUrl: string): OpenAI.Chat.Completions.ChatCompletionContentPart[] {
+  return [
+    { type: "text", text: prompt },
+    { type: "image_url", image_url: { url: pageImageUrl } },
+  ];
+}
+
+type ModelCallOptions = {
+  model: string;
+  messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[];
+  schema: unknown;
+  serviceTier: string | null;
+  tierActive: boolean;
+};
+
+/**
+ * One strict-json_schema chat call (wrapped in the shared retry), returning the
+ * parsed JSON. A provider that lacks json_schema support throws on the primary
+ * path, so we retry ONCE without response_format and pull the first JSON object
+ * out of the free-text body. Shared by both extraction passes. Throws on an
+ * empty response (callers decide whether that is fatal).
+ */
+async function callJsonModel(client: OpenAI, opts: ModelCallOptions): Promise<unknown> {
+  const { model, messages, schema, serviceTier, tierActive } = opts;
+  let rawText: string;
+  try {
+    const response = await retryWithExponentialBackoff(() =>
+      client.chat.completions.create({
+        model,
+        messages,
+        response_format: { type: "json_schema", json_schema: schema as never },
+        service_tier: tierActive ? (serviceTier as never) : undefined,
+      })
+    );
+    rawText = response.choices?.[0]?.message?.content ?? "";
+  } catch (schemaErr) {
+    console.warn(
+      `[QuizExtraction] Schema-constrained call failed; retrying once without response_format:`,
+      schemaErr instanceof Error ? schemaErr.message : schemaErr
+    );
+    const response = await client.chat.completions.create({
+      model,
+      messages,
+      service_tier: tierActive ? (serviceTier as never) : undefined,
+    });
+    rawText = response.choices?.[0]?.message?.content ?? "";
+  }
+
+  if (!rawText.trim()) throw new Error("Model returned an empty response");
+
+  try {
+    return JSON.parse(rawText);
+  } catch {
+    // Tolerate models that wrap the JSON in prose even on the primary path.
+    return parseFirstJsonObject(rawText);
+  }
 }
 
 /**
@@ -101,57 +174,69 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
     const tierActive =
       !isLocal && (serviceTier === "auto" || serviceTier === "default" || serviceTier === "flex");
 
-    // Presign a GET URL for every page image, in page order.
+    // Presign a GET URL for every page image, in page order (index i → page i+1).
     const imageUrls = await Promise.all(
       extraction.pages.map((page) => presignGetUrl(extraction.bucket, page.storageKey, PAGE_URL_EXPIRES_SEC))
     );
+    const pageNumbers = extraction.pages.map((p) => p.pageNumber);
 
-    const prompt = buildExtractionPrompt(extraction.totalPages);
-    const content = buildExtractionContent(prompt, imageUrls);
-    const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [{ role: "user", content }];
+    // ── Pass 1: identify questions / options / answer key over all pages. ──
+    const pass1Prompt = buildExtractionPrompt(extraction.totalPages);
+    const pass1Messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+      { role: "user", content: buildExtractionContent(pass1Prompt, imageUrls) },
+    ];
+    const pass1Parsed = await callJsonModel(client, {
+      model: provider.model,
+      messages: pass1Messages,
+      schema: QUIZ_EXTRACTION_SCHEMA,
+      serviceTier,
+      tierActive,
+    });
+    let quiz = normalizeExtractedQuiz(validateExtractedQuiz(pass1Parsed));
 
-    // Primary path: one strict-json_schema call, wrapped in the shared retry.
-    let rawText: string;
-    try {
-      const response = await retryWithExponentialBackoff(() =>
-        client.chat.completions.create({
-          model: provider.model,
-          messages,
-          response_format: {
-            type: "json_schema",
-            json_schema: QUIZ_EXTRACTION_SCHEMA as never,
-          },
-          service_tier: tierActive ? (serviceTier as never) : undefined,
-        })
-      );
-      rawText = response.choices?.[0]?.message?.content ?? "";
-    } catch (schemaErr) {
-      // Fallback: a provider that lacks json_schema support will have thrown
-      // above. Retry ONCE without response_format and pull the first JSON
-      // object out of the free-text body.
-      console.warn(
-        `[QuizExtraction] Schema-constrained call failed for ${extractionId}; retrying once without response_format:`,
-        schemaErr instanceof Error ? schemaErr.message : schemaErr
-      );
-      const response = await client.chat.completions.create({
-        model: provider.model,
-        messages,
-        service_tier: tierActive ? (serviceTier as never) : undefined,
-      });
-      rawText = response.choices?.[0]?.message?.content ?? "";
+    // ── Pass 2: tight bounding boxes — only when something needs cropping. ──
+    // Best-effort: any failure (whole block or a single page) leaves the
+    // pass-1/coarse boxes in place rather than failing the extraction.
+    if (needsLocalization(quiz)) {
+      try {
+        const byPage = groupTargetsByPage(collectLocalizationTargets(quiz));
+        const boxes: LocalizedBox[] = [];
+        for (const [pageNumber, targets] of byPage) {
+          const idx = pageNumbers.indexOf(pageNumber);
+          if (idx === -1) {
+            console.warn(
+              `[QuizExtraction] ${extractionId}: page ${pageNumber} has no image; skipping ${targets.length} target(s)`
+            );
+            continue;
+          }
+          try {
+            const locMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+              { role: "user", content: buildLocalizationContent(buildLocalizationPrompt(pageNumber, targets), imageUrls[idx]) },
+            ];
+            const locParsed = await callJsonModel(client, {
+              model: provider.model,
+              messages: locMessages,
+              schema: QUIZ_LOCALIZATION_SCHEMA,
+              serviceTier,
+              tierActive,
+            });
+            const known = new Set(targets.map((t) => t.targetId));
+            boxes.push(...validateLocalizationResult(locParsed, known));
+          } catch (pageErr) {
+            console.warn(
+              `[QuizExtraction] ${extractionId}: localization failed for page ${pageNumber}:`,
+              pageErr instanceof Error ? pageErr.message : pageErr
+            );
+          }
+        }
+        quiz = mergeLocalizedBoxes(quiz, boxes);
+      } catch (locErr) {
+        console.warn(
+          `[QuizExtraction] ${extractionId}: pass-2 localization aborted; using coarse boxes:`,
+          locErr instanceof Error ? locErr.message : locErr
+        );
+      }
     }
-
-    if (!rawText.trim()) throw new Error("Model returned an empty extraction response");
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(rawText);
-    } catch {
-      // Tolerate models that wrap the JSON in prose even on the primary path.
-      parsed = parseFirstJsonObject(rawText);
-    }
-
-    const quiz = normalizeExtractedQuiz(validateExtractedQuiz(parsed));
 
     await prisma.quizPdfExtraction.update({
       where: { id: extraction.id },

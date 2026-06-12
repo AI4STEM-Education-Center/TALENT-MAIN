@@ -79,6 +79,21 @@ export function buildQuizExtractionFigureKey(
   return `quiz-extractions/${quizExtractionScope(teacherId)}/${quizId}/${extractionId}/figures/figure-${questionIndex}.png`;
 }
 
+/**
+ * Key for a single image answer-choice crop. Deliberately under the SAME
+ * `figures/` segment as question figures so the commit-time prefix security
+ * check and `quizExtractionPrefix` cleanup sweep cover option images unchanged.
+ */
+export function buildQuizExtractionOptionImageKey(
+  teacherId: string | null,
+  quizId: string,
+  extractionId: string,
+  questionIndex: number,
+  optionIndex: number
+): string {
+  return `quiz-extractions/${quizExtractionScope(teacherId)}/${quizId}/${extractionId}/figures/option-${questionIndex}-${optionIndex}.png`;
+}
+
 /** Prefix covering every object of one extraction (PDF, pages, figures). */
 export function quizExtractionPrefix(pdfStorageKey: string): string {
   return pdfStorageKey.slice(0, pdfStorageKey.lastIndexOf("/") + 1);
