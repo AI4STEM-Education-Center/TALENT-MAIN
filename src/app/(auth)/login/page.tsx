@@ -8,10 +8,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
+// Accept only same-origin relative paths from the URL to prevent open redirects
+// (reject protocol-relative "//host" and absolute URLs).
+function safeRelativeCallbackUrl(value: string | null): string | undefined {
+  return value && value.startsWith("/") && !value.startsWith("//") ? value : undefined;
+}
+
 function LoginForm() {
   const { push, refresh } = useRouter();
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get("callbackUrl") || undefined;
+  const callbackUrl = safeRelativeCallbackUrl(searchParams.get("callbackUrl"));
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");

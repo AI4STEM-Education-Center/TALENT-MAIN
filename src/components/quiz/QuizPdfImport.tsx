@@ -295,11 +295,11 @@ export function QuizPdfImport({
   // returning questions with figureStorageKey / option.imageStorageKey set.
   async function uploadFigureCrops(): Promise<StagedQuestion[]> {
     const pageImages = detail?.pageImages ?? [];
-    const pageUrlFor = (pageNumber: number) => pageImages.find((p) => p.pageNumber === pageNumber)?.url;
+    const pageUrlByNumber = new Map(pageImages.map((p) => [p.pageNumber, p.url]));
 
-    const pendingFigures = questions
-      .map((q, index) => ({ q, index }))
-      .filter(({ q }) => q.hasFigure && !q.figureStorageKey && q.figureBbox);
+    const pendingFigures = questions.flatMap((q, index) =>
+      q.hasFigure && !q.figureStorageKey && q.figureBbox ? [{ q, index }] : []
+    );
 
     const pendingOptions: { questionIndex: number; optionIndex: number }[] = [];
     questions.forEach((q, questionIndex) => {
@@ -331,7 +331,7 @@ export function QuizPdfImport({
     for (const { q, index } of pendingFigures) {
       const fig = figByQ.get(index);
       if (!fig) throw new Error(`Missing figure upload URL for question ${index + 1}`);
-      const pageUrl = pageUrlFor(q.figurePage ?? q.sourcePage);
+      const pageUrl = pageUrlByNumber.get(q.figurePage ?? q.sourcePage);
       if (!pageUrl) throw new Error(`Missing source page image for question ${index + 1}`);
       const blob = await cropToPngBlob(pageUrl, q.figureBbox!);
       await putBlob(fig.presignedUrl, "image/png", blob);
@@ -345,7 +345,7 @@ export function QuizPdfImport({
       }
       const q = questions[questionIndex];
       const o = q.options[optionIndex];
-      const pageUrl = pageUrlFor(o.imagePage ?? q.figurePage ?? q.sourcePage);
+      const pageUrl = pageUrlByNumber.get(o.imagePage ?? q.figurePage ?? q.sourcePage);
       if (!pageUrl) {
         throw new Error(`Missing source page image for question ${questionIndex + 1} option ${optionIndex + 1}`);
       }

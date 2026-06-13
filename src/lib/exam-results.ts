@@ -306,14 +306,19 @@ export async function mapPresignedRecommendations(
 ): Promise<PresignedRecommendations> {
   const items = await Promise.all(
     stored.items.map(async (rec) => {
-      const pages: PresignedRecPage[] = [];
-      for (const pg of rec.pages) {
-        try {
-          pages.push({ pageNumber: pg.pageNumber, imageUrl: await presign(pg.storageKey) });
-        } catch {
-          // Skip a page we can't presign; keep the rest of the recommendation.
-        }
-      }
+      // Presigns are independent per page, so fan them out; the original order
+      // is preserved and a page we can't presign is dropped (kept null → filtered).
+      const settled = await Promise.all(
+        rec.pages.map(async (pg): Promise<PresignedRecPage | null> => {
+          try {
+            return { pageNumber: pg.pageNumber, imageUrl: await presign(pg.storageKey) };
+          } catch {
+            // Skip a page we can't presign; keep the rest of the recommendation.
+            return null;
+          }
+        })
+      );
+      const pages = settled.filter((p): p is PresignedRecPage => p !== null);
       const { pages: _omit, ...rest } = rec;
       return { ...rest, pages };
     })
