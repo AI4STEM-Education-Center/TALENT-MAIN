@@ -41,14 +41,14 @@ export type QuizScore = {
  * does not carry its own `answerTolerance`. Expressed as a fraction of the
  * correct answer's magnitude (0.005 = 0.5%).
  */
-export const NUMERIC_REL_TOLERANCE = 0.005;
+const NUMERIC_REL_TOLERANCE = 0.005;
 
 /**
  * Absolute floor for the default NUMERIC tolerance. Guarantees a sensible
  * window even for tiny (or zero) correct answers, where a purely relative
  * tolerance would collapse toward zero.
  */
-export const NUMERIC_ABS_TOLERANCE_FLOOR = 0.01;
+const NUMERIC_ABS_TOLERANCE_FLOOR = 0.01;
 
 /**
  * Coerce an untrusted submitted numeric answer into a clean finite number.

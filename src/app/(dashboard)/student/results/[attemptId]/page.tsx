@@ -16,12 +16,14 @@ export default async function ExamResultsPage({
 }) {
   const session = await auth();
   if (!session?.user || session.user.role !== "STUDENT") redirect("/login");
-  const { attemptId } = await params;
-
-  const student = await prisma.student.findUnique({
-    where: { userId: session.user.id },
-    select: { id: true },
-  });
+  // params and the student lookup are independent, so race them.
+  const [{ attemptId }, student] = await Promise.all([
+    params,
+    prisma.student.findUnique({
+      where: { userId: session.user.id },
+      select: { id: true },
+    }),
+  ]);
   if (!student) redirect("/login");
 
   // The ExamResult is the durable source of truth (independent of the quiz rows),
