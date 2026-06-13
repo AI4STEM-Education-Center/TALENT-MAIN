@@ -7,34 +7,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, Upload, FileText, X, Users } from "lucide-react";
+import { ArrowLeft, Upload, FileText, X, Users, AlertTriangle } from "lucide-react";
+import { parseRosterCsv, type ParsedRosterStudent } from "@/lib/csv-roster";
 
-interface ParsedStudent {
-  orgDefinedId: string;
-  firstName: string;
-  lastName: string;
-}
-
-function parseCSV(text: string): ParsedStudent[] {
-  const lines = text.split(/\r?\n/).filter((l) => l.trim());
-  if (lines.length < 2) return [];
-
-  // Skip header row
-  const students: ParsedStudent[] = [];
-  for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split(",").map((c) => c.trim());
-    // CSV format: OrgDefinedId, Last Name, First Name, End-of-Line Indicator
-    if (cols.length >= 3) {
-      const rawId = cols[0].replace(/^#/, "").trim();
-      const lastName = cols[1].trim();
-      const firstName = cols[2].trim();
-      if (rawId && firstName && lastName) {
-        students.push({ orgDefinedId: rawId, firstName, lastName });
-      }
-    }
-  }
-  return students;
-}
+type ParsedStudent = ParsedRosterStudent;
 
 export default function NewClassPage() {
   const { push } = useRouter();
@@ -45,6 +21,7 @@ export default function NewClassPage() {
   const [studentList, setStudentList] = useState<ParsedStudent[]>([]);
   const [showPreview, setShowPreview] = useState(false);
   const [error, setError] = useState("");
+  const [warning, setWarning] = useState("");
   const [loading, setLoading] = useState(false);
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -52,17 +29,33 @@ export default function NewClassPage() {
     if (!file) return;
     setFileName(file.name);
     setError("");
+    setWarning("");
 
     const reader = new FileReader();
     reader.onload = (ev) => {
       const text = ev.target?.result as string;
-      const parsed = parseCSV(text);
-      if (parsed.length === 0) {
-        setError("Could not parse any students from the CSV file. Please check the format.");
+      const { students, headerInferred, skipped } = parseRosterCsv(text);
+      if (students.length === 0) {
+        setError(
+          "Could not parse any students with a valid email from the CSV. " +
+            "Each row needs an ID, first name, last name, and email."
+        );
         setStudentList([]);
+        setShowPreview(false);
       } else {
-        setStudentList(parsed);
+        setStudentList(students);
         setShowPreview(true);
+        const notes: string[] = [];
+        if (headerInferred) {
+          notes.push(
+            "No recognizable header row was found, so columns were inferred as " +
+              "OrgDefinedId, Last Name, First Name, Email. Verify the preview is correct."
+          );
+        }
+        if (skipped > 0) {
+          notes.push(`${skipped} row(s) were skipped for missing or invalid email addresses.`);
+        }
+        setWarning(notes.join(" "));
       }
     };
     reader.onerror = () => setError("Failed to read the file.");
@@ -73,6 +66,7 @@ export default function NewClassPage() {
     setStudentList([]);
     setFileName("");
     setShowPreview(false);
+    setWarning("");
     if (fileRef.current) fileRef.current.value = "";
   }
 
@@ -132,8 +126,17 @@ export default function NewClassPage() {
             <div className="space-y-2">
               <Label>Class List (CSV) <span className="text-destructive">*</span></Label>
               <p className="text-xs text-muted-foreground">
-                Upload a CSV file with columns: OrgDefinedId, Last Name, First Name. The # prefix on 81 numbers will be removed automatically.
+                Upload a CSV file with columns: OrgDefinedId, Last Name, First Name, Email.
+                An email address is required for every student so you can send them notifications.
+                The # prefix on 81 numbers is removed automatically. If no header row is detected,
+                columns are inferred in that order.
               </p>
+              {warning && (
+                <div className="p-3 rounded-md bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs flex items-start gap-2">
+                  <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+                  <span>{warning}</span>
+                </div>
+              )}
               {!fileName ? (
                 <label
                   htmlFor="csv-upload"
@@ -190,6 +193,7 @@ export default function NewClassPage() {
                         <th className="text-left p-2 font-medium">81 Number</th>
                         <th className="text-left p-2 font-medium">Last Name</th>
                         <th className="text-left p-2 font-medium">First Name</th>
+                        <th className="text-left p-2 font-medium">Email</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
@@ -199,6 +203,7 @@ export default function NewClassPage() {
                           <td className="p-2 font-mono text-xs">{s.orgDefinedId}</td>
                           <td className="p-2">{s.lastName}</td>
                           <td className="p-2">{s.firstName}</td>
+                          <td className="p-2 text-xs">{s.email}</td>
                         </tr>
                       ))}
                     </tbody>

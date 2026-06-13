@@ -16,6 +16,7 @@ import {
   Settings,
   FolderOpen,
   History,
+  Mail,
   PanelLeftClose,
 } from "lucide-react";
 
@@ -54,6 +55,7 @@ const adminNav: NavItem[] = [
   { href: "/admin/materials", label: "Materials Processing", icon: <FolderOpen className="size-4" /> },
   { href: "/admin/users", label: "Users", icon: <Users className="size-4" /> },
   { href: "/admin/ai-config", label: "AI Config", icon: <Settings className="size-4" /> },
+  { href: "/admin/email", label: "Email / SMTP", icon: <Mail className="size-4" /> },
 ];
 
 function SidebarContent({
