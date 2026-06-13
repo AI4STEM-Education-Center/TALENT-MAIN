@@ -22,6 +22,8 @@ model User {
   teacher Teacher?
   student Student?
 
+  sentMessages Message[] @relation("MessageSender")
+
   @@index([role])
 }
 
@@ -133,6 +135,7 @@ model Class {
   studentList    ClassStudentList[]
   learningMaterials LearningMaterial[]
   materialLinks  MaterialClass[]
+  messages       Message[]
 }
 
 model ClassStudentList {
@@ -141,6 +144,7 @@ model ClassStudentList {
   orgDefinedId String   // stored WITHOUT "#" prefix, e.g. "811947904"
   firstName    String
   lastName     String
+  email        String   @default("") // student email — required for teacher→student notifications (default "" keeps db push safe on existing rows)
   isRegistered Boolean  @default(false)
   createdAt    DateTime @default(now())
 
@@ -536,4 +540,53 @@ model AiUseCaseAssignment {
 
   provider AiProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
   model    AiModel    @relation(fields: [modelId], references: [id], onDelete: Cascade)
+}
+
+// ─── Email / Notifications ─────────────────────────────────────────────────────
+// Singleton SMTP server configuration, managed by admins. The SMTP password is
+// encrypted at rest with AES-256-GCM (see src/lib/crypto.ts), mirroring the way
+// AI provider API keys are stored.
+model SmtpConfig {
+  id          String  @id @default("singleton") // enforce a single row
+  host        String
+  port        Int     @default(587)
+  secure      Boolean @default(false)           // true = implicit TLS (port 465)
+
+  username    String?                            // SMTP auth username (often the from address)
+  passwordEnc String?                            // AES-256-GCM encrypted SMTP password
+  passwordIv  String?
+  passwordTag String?
+
+  fromEmail   String                             // envelope/from address
+  fromName    String?                            // optional display name
+
+  isActive    Boolean  @default(false)           // email sending only enabled when true
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// A message either broadcast from a teacher to the students on a class roster,
+// or sent from a single student to their teacher. Persisted for an audit trail
+// regardless of email delivery outcome.
+// direction: "TEACHER_TO_STUDENTS" | "STUDENT_TO_TEACHER"
+// status:    "SENT" | "PARTIAL" | "FAILED"
+model Message {
+  id             String   @id @default(cuid())
+  classId        String?
+  direction      String
+  senderUserId   String
+  subject        String
+  body           String
+  recipientCount Int      @default(0)
+  sentCount      Int      @default(0)
+  status         String   @default("SENT")
+  error          String?
+  createdAt      DateTime @default(now())
+
+  class  Class? @relation(fields: [classId], references: [id], onDelete: SetNull)
+  sender User   @relation("MessageSender", fields: [senderUserId], references: [id], onDelete: Cascade)
+
+  @@index([classId])
+  @@index([senderUserId])
+  @@index([direction])
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { isValidEmail } from "@/lib/csv-roster";
 
 export async function GET() {
   const session = await auth();
@@ -48,8 +49,21 @@ export async function POST(req: NextRequest) {
   const { name, description, studentList } = await req.json();
   if (!name?.trim()) return NextResponse.json({ error: "Class name is required." }, { status: 400 });
 
-  // studentList is optional but expected: [{ orgDefinedId, firstName, lastName }]
-  const students: { orgDefinedId: string; firstName: string; lastName: string }[] = Array.isArray(studentList) ? studentList : [];
+  // studentList is expected: [{ orgDefinedId, firstName, lastName, email }]
+  // Email is required so teachers can send notifications to students.
+  const students: { orgDefinedId: string; firstName: string; lastName: string; email: string }[] =
+    Array.isArray(studentList) ? studentList : [];
+
+  // Validate every roster entry has a usable email before creating anything.
+  const invalid = students.find(
+    (s) => !s?.email || typeof s.email !== "string" || !isValidEmail(s.email)
+  );
+  if (invalid) {
+    return NextResponse.json(
+      { error: "Every student on the roster must have a valid email address." },
+      { status: 400 }
+    );
+  }
 
   const result = await prisma.$transaction(async (tx) => {
     const cls = await tx.class.create({
@@ -63,6 +77,7 @@ export async function POST(req: NextRequest) {
           orgDefinedId: s.orgDefinedId.replace(/^#/, "").trim(),
           firstName: s.firstName.trim(),
           lastName: s.lastName.trim(),
+          email: s.email.trim().toLowerCase(),
         })),
       });
     }
