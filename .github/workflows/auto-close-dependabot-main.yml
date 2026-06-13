@@ -1,0 +1,50 @@
+name: Auto-close Dependabot PRs targeting main
+
+# Dependabot version updates are configured to target `dev` (see
+# .github/dependabot.yml), and every change reaches `main` via the normal
+# dev -> main squash promotion. Dependabot *security* updates, however, can
+# only target the repository's default branch (main) — that's a GitHub
+# limitation, not a config choice — so they show up against main redundantly.
+#
+# This workflow auto-closes any Dependabot PR opened against `main`, pointing
+# it back at the dev flow. We use `pull_request_target` so the job runs from
+# main's copy of this file with write permissions even for the Dependabot
+# actor; it checks out no PR code, so it is safe.
+
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  close-dependabot-main:
+    if: >-
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comment and close
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const pr = context.payload.pull_request.number;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr,
+              body: [
+                "Closing automatically: Dependabot PRs should not target `main`.",
+                "",
+                "Version updates target `dev` (see `.github/dependabot.yml`) and reach `main` through the normal `dev → main` squash promotion. Security updates can only target the default branch (`main`) — a GitHub limitation — so they appear here redundantly.",
+                "",
+                "If this fix isn't already covered by the `dev` version-update flow, apply it on `dev` instead.",
+              ].join("\n"),
+            });
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr,
+              state: "closed",
+            });
