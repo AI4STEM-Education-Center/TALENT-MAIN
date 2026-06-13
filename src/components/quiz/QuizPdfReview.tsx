@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Image as ImageIcon, Maximize2, Plus, Trash2, Type, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -122,6 +122,7 @@ function QuestionCard({
 }) {
   const complete = isQuestionComplete(q);
   const isChoice = q.type !== "NUMERIC";
+  const fieldId = useId();
 
   const pageGroups = cropBoxesByPage(q);
   const allBoxIds = pageGroups.flatMap((g) => g.boxes.map((b) => b.id));
@@ -245,8 +246,8 @@ function QuestionCard({
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="min-w-0 space-y-3">
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Question text (LaTeX in $…$)</label>
-            <Textarea value={q.text} onChange={(e) => onChange({ ...q, text: e.target.value })} rows={3} />
+            <label htmlFor={`${fieldId}-text`} className="text-xs font-medium text-muted-foreground">Question text (LaTeX in $…$)</label>
+            <Textarea id={`${fieldId}-text`} value={q.text} onChange={(e) => onChange({ ...q, text: e.target.value })} rows={3} />
             <MathPreview text={q.text} />
           </div>
 
@@ -325,8 +326,9 @@ function QuestionCard({
           ) : (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1">
-                <label className="text-xs font-medium text-muted-foreground">Correct answer</label>
+                <label htmlFor={`${fieldId}-answer`} className="text-xs font-medium text-muted-foreground">Correct answer</label>
                 <Input
+                  id={`${fieldId}-answer`}
                   inputMode="decimal"
                   value={q.numericAnswer ?? ""}
                   onChange={(e) => onChange({ ...q, numericAnswer: normalizeNumericValue(e.target.value) })}
@@ -337,8 +339,9 @@ function QuestionCard({
                 )}
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-medium text-muted-foreground">Unit (display only)</label>
+                <label htmlFor={`${fieldId}-unit`} className="text-xs font-medium text-muted-foreground">Unit (display only)</label>
                 <Input
+                  id={`${fieldId}-unit`}
                   value={q.numericUnit ?? ""}
                   onChange={(e) => onChange({ ...q, numericUnit: e.target.value || null })}
                   placeholder="supports $LaTeX$"
