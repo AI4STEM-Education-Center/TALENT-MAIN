@@ -54,21 +54,37 @@ export async function POST(
     );
   }
 
-  // SECURITY: a figure key must live under THIS extraction's figures/ prefix —
-  // otherwise a caller could attach an arbitrary S3 object (e.g. another
-  // teacher's upload) to a question. Then confirm the crop actually exists.
+  // SECURITY: every figure / image-choice key must live under THIS extraction's
+  // figures/ prefix — otherwise a caller could attach an arbitrary S3 object
+  // (e.g. another teacher's upload) to a question or option. Then confirm each
+  // crop actually exists. Option images share the figures/ prefix on purpose, so
+  // this one check covers both.
   const figurePrefix = `${quizExtractionPrefix(extraction.storageKey)}figures/`;
   const figureKeys: string[] = [];
-  for (const q of questions) {
-    if (!q.hasFigure) continue;
-    const key = q.figureStorageKey ?? "";
-    if (!key.startsWith(figurePrefix)) {
-      return NextResponse.json(
-        { error: "figure storage key does not belong to this extraction" },
-        { status: 400 }
-      );
+  for (let qi = 0; qi < questions.length; qi += 1) {
+    const q = questions[qi];
+    if (q.hasFigure) {
+      const key = q.figureStorageKey ?? "";
+      if (!key.startsWith(figurePrefix)) {
+        return NextResponse.json(
+          { error: "figure storage key does not belong to this extraction" },
+          { status: 400 }
+        );
+      }
+      figureKeys.push(key);
     }
-    figureKeys.push(key);
+    for (let oi = 0; oi < q.options.length; oi += 1) {
+      const o = q.options[oi];
+      if (o.isImage !== true) continue;
+      const key = o.imageStorageKey ?? "";
+      if (!key.startsWith(figurePrefix)) {
+        return NextResponse.json(
+          { error: `question ${qi + 1} option ${oi + 1} image key does not belong to this extraction` },
+          { status: 400 }
+        );
+      }
+      figureKeys.push(key);
+    }
   }
 
   try {

@@ -349,6 +349,13 @@ model Option {
   isCorrect  Boolean @default(false)
   questionId String
 
+  // Optional image choice (cropped from a quiz PDF page, like a question figure).
+  // An image option stores text = "" (never null) so every option.text reader is
+  // safe; imageAlt holds a short label/caption used as alt text.
+  imageStorageKey String?
+  imageBucket     String?
+  imageAlt        String?
+
   question    Question     @relation(fields: [questionId], references: [id], onDelete: Cascade)
   quizAnswers QuizAnswer[]
 

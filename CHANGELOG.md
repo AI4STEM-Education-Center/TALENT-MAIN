@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.0.13 - 2026-06-12
+
+- Quiz answer choices can now be images, not just text — pulled in automatically when extracting quizzes from PDFs.
+
+## v0.0.12 - 2026-06-11
+
+- Generate quizzes automatically from uploaded PDFs, with a review screen to check and refine the extracted questions before they go live.
+- Quiz pools: organize quizzes by topic with topic labels, group them by user, and edit pool entries inline.
+- Personalized learning-material recommendations after a quiz, generated in two steps for closer matches.
+- Redesigned quiz review and exam-results screens with a unified score summary and clearer recommendations.
+- Discover available AI models and edit their settings from the admin AI configuration page.
+
+## v0.0.11 - 2026-06-04
+
+- Share a single learning material across multiple classes.
+- Use Cloudflare AI Gateway as an AI provider.
+- Themed in-app confirmation and alert dialogs in place of the browser's native popups.
+
 ## v0.0.10 - 2026-05-28
 
 - Learning materials reorganized around classes: each class now has its own materials section, and individual materials open in a dedicated viewer.

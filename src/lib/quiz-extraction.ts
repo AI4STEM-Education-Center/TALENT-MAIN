@@ -22,10 +22,41 @@ export const LATEX_DISPLAY_DELIMITER = "$$...$$";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export type StagedOption = { text: string; isCorrect: boolean | null };
+/**
+ * A staged answer choice. A choice may be plain text OR an image (a diagram /
+ * graph / vector cropped from the source page, just like a question figure).
+ * The image-* fields are optional so the many `{ text, isCorrect }` literals
+ * across fixtures, the review UI, and partial constructions stay valid; readers
+ * must treat them as `isImage === true` / `?? null`. For an image option `text`
+ * may be empty.
+ */
+export type StagedOption = {
+  text: string;
+  isCorrect: boolean | null;
+  isImage?: boolean;
+  imageBbox?: FigureBbox | null; // coarse from pass 1, tightened by pass 2; teacher-adjustable
+  imagePage?: number | null; // 1-based page the choice image is on
+  imageStorageKey?: string | null; // null from extraction; set by the client at commit after cropping/uploading
+  imageAlt?: string | null; // short label / caption, used as alt text
+};
 
 /** Normalized 0..1 crop region relative to the page image. */
 export type FigureBbox = { x: number; y: number; w: number; h: number };
+
+/** One thing pass 2 must localize: a question figure or an image option. */
+export type LocalizationTargetKind = "figure" | "option";
+export type LocalizationTarget = {
+  targetId: string; // deterministic, engine-assigned: "q3.figure" | "q3.opt2"
+  kind: LocalizationTargetKind;
+  page: number; // 1-based page the target is expected on
+  questionIndex: number; // 0-based index into ExtractedQuiz.questions
+  optionIndex: number | null; // 0-based; null for kind === "figure"
+  coarseBbox: FigureBbox | null; // pass-1 coarse box if any
+  hint: string | null; // caption / option text / label to help the model
+};
+
+/** A validated pass-2 result: a tight box for one target. */
+export type LocalizedBox = { targetId: string; bbox: FigureBbox };
 
 export type StagedQuestionType = "MULTIPLE_CHOICE" | "MULTI_SELECT" | "TRUE_FALSE" | "NUMERIC";
 
@@ -70,7 +101,15 @@ export type QuestionCreateData = {
   answerNumeric: number | null;
   answerTolerance: number | null;
   answerUnit: string | null;
-  options: { create: { text: string; isCorrect: boolean }[] };
+  options: {
+    create: {
+      text: string;
+      isCorrect: boolean;
+      imageStorageKey?: string | null;
+      imageBucket?: string | null;
+      imageAlt?: string | null;
+    }[];
+  };
   figureStorageKey?: string | null;
   figureBucket?: string | null;
   figureAlt?: string | null;
@@ -108,11 +147,26 @@ export const QUIZ_EXTRACTION_SCHEMA = {
                 properties: {
                   text: { type: "string" },
                   is_correct: { type: ["boolean", "null"] },
+                  is_image: { type: "boolean" },
+                  image_bbox: {
+                    type: ["object", "null"],
+                    properties: {
+                      x: { type: "number" },
+                      y: { type: "number" },
+                      w: { type: "number" },
+                      h: { type: "number" },
+                    },
+                    required: ["x", "y", "w", "h"],
+                    additionalProperties: false,
+                  },
+                  image_page: { type: ["integer", "null"] },
+                  image_alt: { type: ["string", "null"] },
                 },
-                required: ["text", "is_correct"],
+                required: ["text", "is_correct", "is_image", "image_bbox", "image_page", "image_alt"],
                 additionalProperties: false,
               },
             },
+            has_image_options: { type: "boolean" },
             numeric_answer: { type: ["number", "null"] },
             numeric_answer_text: { type: ["string", "null"] },
             numeric_unit: { type: ["string", "null"] },
@@ -141,6 +195,7 @@ export const QUIZ_EXTRACTION_SCHEMA = {
             "text",
             "points",
             "options",
+            "has_image_options",
             "numeric_answer",
             "numeric_answer_text",
             "numeric_unit",
@@ -157,6 +212,48 @@ export const QUIZ_EXTRACTION_SCHEMA = {
       },
     },
     required: ["has_answer_key", "quiz_title", "questions"],
+    additionalProperties: false,
+  },
+} as const;
+
+/**
+ * OpenAI `response_format.json_schema` payload for the pass-2 localization call.
+ * One call per page returns tight boxes for that page's targets, each keyed by a
+ * deterministic `target_id` we assign (never trust the model to invent ids).
+ * `found:false` lets the model admit it could not locate a target on this page
+ * without poisoning the rest.
+ */
+export const QUIZ_LOCALIZATION_SCHEMA = {
+  name: "quiz_localization",
+  strict: true,
+  schema: {
+    type: "object",
+    properties: {
+      boxes: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            target_id: { type: "string" },
+            found: { type: "boolean" },
+            bbox: {
+              type: "object",
+              properties: {
+                x: { type: "number" },
+                y: { type: "number" },
+                w: { type: "number" },
+                h: { type: "number" },
+              },
+              required: ["x", "y", "w", "h"],
+              additionalProperties: false,
+            },
+          },
+          required: ["target_id", "found", "bbox"],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ["boxes"],
     additionalProperties: false,
   },
 } as const;
@@ -192,6 +289,8 @@ MATH TRANSCRIPTION:
 
 OPTIONS:
 - Options are unlabeled (no A./B./1)). List them in the visual order they appear, top to bottom. Options may themselves be math expressions.
+- An option can itself be an IMAGE (a graph, diagram, vector picture, plot, or figure) instead of text — this is common in physics/math quizzes where every choice is a different diagram. For such an option set is_image=true, leave text="" (or a tiny caption if printed), give image_page (1-based) and a coarse image_bbox {x, y, w, h} in 0..1 page coordinates around just that one choice image, and a short image_alt describing it (e.g. "graph rising then flat"). A text option keeps is_image=false with image_bbox / image_page / image_alt null. An image option is still marked is_correct exactly like a text option.
+- Set has_image_options=true when ANY option of the question is an image, otherwise false. Boxes here can be rough; they will be refined in a second pass.
 
 NUMERIC:
 - numeric_answer_text: the answer exactly as printed on the page (verbatim, e.g. "3.21").
@@ -210,6 +309,30 @@ REVIEW:
 - Set needs_review=true with a short review_note whenever you are uncertain: illegible math, an ambiguous or unclear marking, truncated/cut-off text, or whenever a figure is present.
 
 Return every question in reading order. Use the exact JSON schema provided.`;
+}
+
+/**
+ * Build the pass-2 localization prompt for ONE page. Pure + deterministic (the
+ * text and target ordering are asserted in tests). Lists every target on this
+ * page by its engine-assigned target_id so the result maps back unambiguously.
+ */
+export function buildLocalizationPrompt(pageNumber: number, targets: LocalizationTarget[]): string {
+  const lines = targets.map((t) => {
+    const what = t.kind === "figure" ? "the question's figure/diagram" : "a single answer-choice image";
+    const hint = t.hint ? ` — ${t.hint}` : "";
+    return `- ${t.targetId}: ${what}${hint}`;
+  });
+  return `You are given a SINGLE quiz page image (page ${pageNumber}). Locate each target below and return a TIGHT bounding box for it.
+
+TARGETS (use these exact target_id values, do not invent new ones):
+${lines.join("\n")}
+
+RULES:
+- Each bbox is {x, y, w, h} in normalized 0..1 page coordinates (x,y = top-left corner; w,h = size), measured against THIS page image only.
+- Make each box TIGHT: hug the figure/choice image with only a small margin; do not include the question text, the option's text label, neighbouring choices, or page chrome.
+- Answer-choice image boxes must NOT overlap each other — each box surrounds exactly one choice.
+- If a target is not actually visible on this page, set found=false for it (its bbox is then ignored).
+- Return one entry per target. Use the exact JSON schema provided.`;
 }
 
 // ─── Shared validation primitives (qti.ts style) ──────────────────────────────
@@ -282,7 +405,15 @@ function validateRawOption(raw: unknown, qIndex: number, oIndex: number): Staged
   if (isCorrect !== true && isCorrect !== false && isCorrect !== null) {
     throw new Error(`questions[${qIndex}].options[${oIndex}].is_correct: must be a boolean or null`);
   }
-  return { text: raw.text, isCorrect };
+  // Image-option fields are read tolerantly (qti.ts style): a bad shape degrades
+  // to text/null rather than failing the whole quiz, and absent keys (old
+  // payloads / fixtures) default to a plain text option.
+  const isImage = raw.is_image === true;
+  const imageBbox = validateBbox(raw.image_bbox); // invalid → null, never throws
+  const imagePage =
+    typeof raw.image_page === "number" && Number.isFinite(raw.image_page) ? Math.round(raw.image_page) : null;
+  const imageAlt = typeof raw.image_alt === "string" ? raw.image_alt : null;
+  return { text: raw.text, isCorrect, isImage, imageBbox, imagePage, imageStorageKey: null, imageAlt };
 }
 
 function validateRawQuestion(raw: unknown, qIndex: number): StagedQuestion {
@@ -407,36 +538,43 @@ function normalizeChoiceOptions(
   qNumber: number,
   warnings: string[]
 ): StagedOption[] {
-  // Strip artifact glyph / empty options.
+  // Strip artifact-glyph / empty TEXT options. An image option is kept even with
+  // empty text — its content is the picture, not a label — and carries all of
+  // its image fields through.
   const kept: StagedOption[] = [];
   let stripped = 0;
   for (const opt of options) {
-    if (isJunkOptionText(opt.text)) {
+    if (opt.isImage !== true && isJunkOptionText(opt.text)) {
       stripped += 1;
       continue;
     }
-    kept.push({ text: opt.text.trim(), isCorrect: opt.isCorrect });
+    kept.push({ ...opt, text: opt.text.trim() });
   }
   if (stripped > 0) {
     warnings.push(`question ${qNumber}: stripped ${stripped} artifact option${stripped === 1 ? "" : "s"}`);
   }
 
-  // Dedupe by trimmed text; keep first, but prefer a copy marked correct.
-  const byText = new Map<string, StagedOption>();
+  // Dedupe; keep first, but prefer a copy marked correct. Text options are keyed
+  // by their text. Image options are never collapsed (we can't compare picture
+  // content, and sibling image choices often share empty text), so each gets a
+  // distinct key.
+  const byKey = new Map<string, StagedOption>();
   const order: string[] = [];
+  let imageSeq = 0;
   for (const opt of kept) {
-    const existing = byText.get(opt.text);
+    const key = opt.isImage === true ? `img:${imageSeq++}` : `txt:${opt.text}`;
+    const existing = byKey.get(key);
     if (!existing) {
-      byText.set(opt.text, opt);
-      order.push(opt.text);
+      byKey.set(key, opt);
+      order.push(key);
     } else if (existing.isCorrect !== true && opt.isCorrect === true) {
-      byText.set(opt.text, { ...existing, isCorrect: true });
+      byKey.set(key, { ...existing, isCorrect: true });
     }
   }
-  if (byText.size < kept.length) {
-    warnings.push(`question ${qNumber}: removed duplicate option${kept.length - byText.size === 1 ? "" : "s"}`);
+  if (byKey.size < kept.length) {
+    warnings.push(`question ${qNumber}: removed duplicate option${kept.length - byKey.size === 1 ? "" : "s"}`);
   }
-  return order.map((text) => byText.get(text)!);
+  return order.map((key) => byKey.get(key)!);
 }
 
 function normalizeChoiceQuestion(
@@ -578,6 +716,15 @@ export function normalizeExtractedQuiz(quiz: ExtractedQuiz): ExtractedQuiz {
       };
     }
 
+    // Image answer-choices likewise need their crops confirmed before commit.
+    if (q.options.some((o) => o.isImage === true)) {
+      q = {
+        ...q,
+        needsReview: true,
+        reviewNote: appendNote(q.reviewNote, "confirm the image-choice crops."),
+      };
+    }
+
     questions.push(q);
   });
 
@@ -598,19 +745,157 @@ export function normalizeExtractedQuiz(quiz: ExtractedQuiz): ExtractedQuiz {
   return { hasAnswerKey: quiz.hasAnswerKey, quizTitle: quiz.quizTitle, questions, warnings };
 }
 
+// ─── Pass-2 localization: targets, validation, merge ───────────────────────────
+
+/** Deterministic target id; the model is told to echo these verbatim in pass 2. */
+export function buildTargetId(
+  questionIndex: number,
+  kind: LocalizationTargetKind,
+  optionIndex: number | null
+): string {
+  return kind === "figure" ? `q${questionIndex}.figure` : `q${questionIndex}.opt${optionIndex}`;
+}
+
+/**
+ * Walk a (normalized) quiz and collect every figure / image-option that pass 2
+ * should localize. Stable order: question order, figure before its options,
+ * options in order. The page always resolves to a real page (figure/option page
+ * falls back to the question's source page). Pure.
+ */
+export function collectLocalizationTargets(quiz: ExtractedQuiz): LocalizationTarget[] {
+  const targets: LocalizationTarget[] = [];
+  quiz.questions.forEach((q, questionIndex) => {
+    if (q.hasFigure) {
+      targets.push({
+        targetId: buildTargetId(questionIndex, "figure", null),
+        kind: "figure",
+        page: q.figurePage ?? q.sourcePage,
+        questionIndex,
+        optionIndex: null,
+        coarseBbox: q.figureBbox,
+        hint: q.figureCaption,
+      });
+    }
+    q.options.forEach((o, optionIndex) => {
+      if (o.isImage !== true) return;
+      targets.push({
+        targetId: buildTargetId(questionIndex, "option", optionIndex),
+        kind: "option",
+        page: o.imagePage ?? q.figurePage ?? q.sourcePage,
+        questionIndex,
+        optionIndex,
+        coarseBbox: o.imageBbox ?? null,
+        hint: o.imageAlt ?? (o.text || null),
+      });
+    });
+  });
+  return targets;
+}
+
+/** Does this quiz have anything for pass 2 to localize? */
+export function needsLocalization(quiz: ExtractedQuiz): boolean {
+  return quiz.questions.some((q) => q.hasFigure || q.options.some((o) => o.isImage === true));
+}
+
+/** Group targets by their 1-based page for the per-page pass-2 calls. */
+export function groupTargetsByPage(targets: LocalizationTarget[]): Map<number, LocalizationTarget[]> {
+  const byPage = new Map<number, LocalizationTarget[]>();
+  for (const t of targets) {
+    const list = byPage.get(t.page);
+    if (list) list.push(t);
+    else byPage.set(t.page, [t]);
+  }
+  return byPage;
+}
+
+/**
+ * Validate raw pass-2 JSON (snake_case) into typed boxes. Tolerant (qti.ts
+ * style): never throws — drops entries with an unknown target_id, found:false,
+ * or a malformed bbox, and dedupes by target_id (first wins). `knownTargetIds`
+ * is the anti-hallucination guard.
+ */
+export function validateLocalizationResult(input: unknown, knownTargetIds: ReadonlySet<string>): LocalizedBox[] {
+  if (!isRecord(input) || !Array.isArray(input.boxes)) return [];
+  const seen = new Set<string>();
+  const out: LocalizedBox[] = [];
+  for (const raw of input.boxes) {
+    if (!isRecord(raw)) continue;
+    const targetId = raw.target_id;
+    if (typeof targetId !== "string" || !knownTargetIds.has(targetId) || seen.has(targetId)) continue;
+    if (raw.found !== true) continue;
+    const bbox = validateBbox(raw.bbox);
+    if (!bbox) continue;
+    seen.add(targetId);
+    out.push({ targetId, bbox });
+  }
+  return out;
+}
+
+/**
+ * Merge pass-2 boxes back onto the quiz. Pure (returns a NEW quiz, never mutates
+ * input). A tight box overrides the coarse one; a target left with neither a
+ * tight nor a coarse box is forced needsReview so the teacher draws it by hand.
+ */
+export function mergeLocalizedBoxes(quiz: ExtractedQuiz, boxes: LocalizedBox[]): ExtractedQuiz {
+  const byId = new Map(boxes.map((b) => [b.targetId, b.bbox]));
+
+  const questions = quiz.questions.map((q, questionIndex) => {
+    let needsReview = q.needsReview;
+    let reviewNote = q.reviewNote;
+
+    let figureBbox = q.figureBbox;
+    if (q.hasFigure) {
+      const tight = byId.get(buildTargetId(questionIndex, "figure", null));
+      if (tight) figureBbox = tight;
+      else if (!figureBbox) {
+        needsReview = true;
+        reviewNote = appendNote(reviewNote, "could not locate the figure — draw the crop.");
+      }
+    }
+
+    const options = q.options.map((o, optionIndex) => {
+      if (o.isImage !== true) return { ...o };
+      const tight = byId.get(buildTargetId(questionIndex, "option", optionIndex));
+      if (tight) return { ...o, imageBbox: tight };
+      if (!(o.imageBbox ?? null)) {
+        needsReview = true;
+        reviewNote = appendNote(reviewNote, "could not locate an image choice — draw the crop.");
+      }
+      return { ...o };
+    });
+
+    return { ...q, figureBbox, options, needsReview, reviewNote };
+  });
+
+  return { ...quiz, questions };
+}
+
 // ─── validateCommitQuestions: strict validation of teacher-edited array ────────
 
 function validateCommitOptions(raw: unknown, qIndex: number): StagedOption[] {
   if (!Array.isArray(raw)) throw new Error(`question ${qIndex + 1}: options must be an array`);
   return raw.map((opt, oIndex) => {
-    if (!isRecord(opt)) throw new Error(`question ${qIndex + 1}, option ${oIndex + 1}: must be an object`);
+    const where = `question ${qIndex + 1}, option ${oIndex + 1}`;
+    if (!isRecord(opt)) throw new Error(`${where}: must be an object`);
     const text = typeof opt.text === "string" ? opt.text.trim() : "";
-    if (!text) throw new Error(`question ${qIndex + 1}, option ${oIndex + 1}: text is required`);
+    const isImage = opt.isImage === true;
+    const imageStorageKey =
+      typeof opt.imageStorageKey === "string" && opt.imageStorageKey.trim() ? opt.imageStorageKey.trim() : null;
+    // A text option needs text; an image option may have empty text but must
+    // carry an uploaded crop key (the client crops + uploads before commit).
+    if (!isImage && !text) throw new Error(`${where}: text is required`);
+    if (isImage && !imageStorageKey) {
+      throw new Error(`${where}: image option requires an uploaded image (crop it first)`);
+    }
     const isCorrect = opt.isCorrect;
     if (isCorrect !== true && isCorrect !== false && isCorrect !== null) {
-      throw new Error(`question ${qIndex + 1}, option ${oIndex + 1}: isCorrect must be a boolean or null`);
+      throw new Error(`${where}: isCorrect must be a boolean or null`);
     }
-    return { text, isCorrect };
+    if (!isImage) return { text, isCorrect };
+    const imageAlt = typeof opt.imageAlt === "string" ? opt.imageAlt : null;
+    const imagePage =
+      typeof opt.imagePage === "number" && Number.isFinite(opt.imagePage) ? Math.round(opt.imagePage) : null;
+    return { text, isCorrect, isImage: true, imageBbox: coerceBbox(opt.imageBbox), imagePage, imageStorageKey, imageAlt };
   });
 }
 
@@ -684,6 +969,16 @@ export function validateCommitQuestions(input: unknown): StagedQuestion[] {
         if (options.length < 2) throw new Error(`${where}: MULTI_SELECT question must have at least 2 options`);
         if (correctCount < 1) throw new Error(`${where}: MULTI_SELECT question must have at least one correct option`);
       }
+
+      // True/false options are the literal words "True"/"False" — never images.
+      if (type === "TRUE_FALSE" && options.some((o) => o.isImage === true)) {
+        throw new Error(`${where}: TRUE_FALSE options cannot be images`);
+      }
+      // Every option must be distinct, keyed by its text or its image.
+      const identities = options.map((o) => (o.isImage === true ? `img:${o.imageStorageKey}` : `txt:${o.text}`));
+      if (new Set(identities).size !== identities.length) {
+        throw new Error(`${where}: options must be distinct`);
+      }
     }
 
     const numericAnswerText = typeof raw.numericAnswerText === "string" ? raw.numericAnswerText : null;
@@ -734,8 +1029,10 @@ function answerModeFor(type: StagedQuestionType): AnswerMode {
 /**
  * Map a (committed, validated) staged question to the `question.create` data
  * object. Choice options carry through with isCorrect coerced via `=== true`;
- * NUMERIC questions get answerNumeric / answerUnit and an empty options.create.
- * Figure fields are only included when `hasFigure`.
+ * an image option additionally carries its imageStorageKey / bucket / alt, while
+ * a plain text option emits exactly `{ text, isCorrect }`. NUMERIC questions get
+ * answerNumeric / answerUnit and an empty options.create. Figure fields are only
+ * included when `hasFigure`.
  */
 export function mapStagedToQuestionData(
   q: StagedQuestion,
@@ -755,7 +1052,19 @@ export function mapStagedToQuestionData(
     answerTolerance: null,
     answerUnit: isNumeric ? q.numericUnit : null,
     options: {
-      create: isNumeric ? [] : q.options.map((o) => ({ text: o.text, isCorrect: o.isCorrect === true })),
+      create: isNumeric
+        ? []
+        : q.options.map((o) =>
+            o.isImage === true
+              ? {
+                  text: o.text,
+                  isCorrect: o.isCorrect === true,
+                  imageStorageKey: o.imageStorageKey ?? null,
+                  imageBucket: ctx.figureBucket,
+                  imageAlt: o.imageAlt ?? null,
+                }
+              : { text: o.text, isCorrect: o.isCorrect === true }
+          ),
     },
   };
 

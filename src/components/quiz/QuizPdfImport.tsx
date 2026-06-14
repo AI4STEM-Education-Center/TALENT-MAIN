@@ -36,7 +36,10 @@ type InitResponse = {
   pages: { pageNumber: number; presignedUrl: string; storageKey: string }[];
 };
 
-type FiguresResponse = { figures: { questionIndex: number; presignedUrl: string; storageKey: string }[] };
+type FiguresResponse = {
+  questionFigures: { questionIndex: number; presignedUrl: string; storageKey: string }[];
+  optionImages: { questionIndex: number; optionIndex: number; presignedUrl: string; storageKey: string }[];
+};
 
 type ImportSummary = {
   importedCount: number;
@@ -288,33 +291,72 @@ export function QuizPdfImport({
     resetFlow();
   }
 
-  // Upload every remaining figure crop, returning questions with figureStorageKey set.
+  // Upload every remaining crop (question figures + image answer-choices),
+  // returning questions with figureStorageKey / option.imageStorageKey set.
   async function uploadFigureCrops(): Promise<StagedQuestion[]> {
     const pageImages = detail?.pageImages ?? [];
-    const pending = questions
+    const pageUrlFor = (pageNumber: number) => pageImages.find((p) => p.pageNumber === pageNumber)?.url;
+
+    const pendingFigures = questions
       .map((q, index) => ({ q, index }))
       .filter(({ q }) => q.hasFigure && !q.figureStorageKey && q.figureBbox);
-    if (pending.length === 0) return questions;
+
+    const pendingOptions: { questionIndex: number; optionIndex: number }[] = [];
+    questions.forEach((q, questionIndex) => {
+      q.options.forEach((o, optionIndex) => {
+        if (o.isImage === true && !o.imageStorageKey && o.imageBbox) {
+          pendingOptions.push({ questionIndex, optionIndex });
+        }
+      });
+    });
+
+    if (pendingFigures.length === 0 && pendingOptions.length === 0) return questions;
 
     const figRes = await fetch(`${base}/${extractionId}/figures`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ questionIndexes: pending.map((p) => p.index) }),
+      body: JSON.stringify({
+        questionFigures: pendingFigures.map((p) => p.index),
+        optionImages: pendingOptions,
+      }),
     });
     if (!figRes.ok) throw new Error((await figRes.json()).error || "Failed to get figure upload URLs");
-    const { figures }: FiguresResponse = await figRes.json();
-    const byIndex = new Map(figures.map((f) => [f.questionIndex, f]));
+    const { questionFigures, optionImages }: FiguresResponse = await figRes.json();
+    const figByQ = new Map(questionFigures.map((f) => [f.questionIndex, f]));
+    const optByKey = new Map(optionImages.map((f) => [`${f.questionIndex}:${f.optionIndex}`, f]));
 
-    const next = [...questions];
-    for (const { q, index } of pending) {
-      const fig = byIndex.get(index);
+    // Copy so each option can be patched without mutating React state.
+    const next = questions.map((q) => ({ ...q, options: q.options.map((o) => ({ ...o })) }));
+
+    for (const { q, index } of pendingFigures) {
+      const fig = figByQ.get(index);
       if (!fig) throw new Error(`Missing figure upload URL for question ${index + 1}`);
-      const pageUrl = pageImages.find((p) => p.pageNumber === (q.figurePage ?? q.sourcePage))?.url;
+      const pageUrl = pageUrlFor(q.figurePage ?? q.sourcePage);
       if (!pageUrl) throw new Error(`Missing source page image for question ${index + 1}`);
       const blob = await cropToPngBlob(pageUrl, q.figureBbox!);
       await putBlob(fig.presignedUrl, "image/png", blob);
-      next[index] = { ...q, figureStorageKey: fig.storageKey };
+      next[index] = { ...next[index], figureStorageKey: fig.storageKey };
     }
+
+    for (const { questionIndex, optionIndex } of pendingOptions) {
+      const fig = optByKey.get(`${questionIndex}:${optionIndex}`);
+      if (!fig) {
+        throw new Error(`Missing image upload URL for question ${questionIndex + 1} option ${optionIndex + 1}`);
+      }
+      const q = questions[questionIndex];
+      const o = q.options[optionIndex];
+      const pageUrl = pageUrlFor(o.imagePage ?? q.figurePage ?? q.sourcePage);
+      if (!pageUrl) {
+        throw new Error(`Missing source page image for question ${questionIndex + 1} option ${optionIndex + 1}`);
+      }
+      const blob = await cropToPngBlob(pageUrl, o.imageBbox!);
+      await putBlob(fig.presignedUrl, "image/png", blob);
+      next[questionIndex].options[optionIndex] = {
+        ...next[questionIndex].options[optionIndex],
+        imageStorageKey: fig.storageKey,
+      };
+    }
+
     return next;
   }
 
