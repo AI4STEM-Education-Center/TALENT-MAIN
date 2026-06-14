@@ -1,7 +1,7 @@
 import { OpenAI } from "openai";
 import { prisma } from "@/lib/prisma";
-import { getS3Config, presignGetUrl } from "@/lib/storage";
-import { resolveProvider, buildProviderHeaders } from "@/lib/ai-provider";
+import { getS3Config, resolveModelImageUrl } from "@/lib/storage";
+import { resolveProvider, createOpenAIClient } from "@/lib/ai-provider";
 import { retryWithExponentialBackoff } from "./retry";
 
 // In-memory set of material IDs whose processing should be aborted.
@@ -46,12 +46,16 @@ const TIER2_SCHEMA = {
 
 /**
  * Build an OpenAI client from the resolved PDF description provider config.
- * Throws if no provider is configured.
+ * Throws if no provider is configured. Local providers need no API key (they
+ * authenticate via base URL); hosted providers (OpenAI/Cloudflare) still do.
+ * `isLocal` is surfaced so the page-image transport can switch to inline base64
+ * for local models — see `resolveModelImageUrl`.
  */
 async function getConfiguredOpenAI(): Promise<{
   client: OpenAI;
   model: string;
   serviceTier: string | null;
+  isLocal: boolean;
 }> {
   const provider = await resolveProvider("pdf_description");
 
@@ -62,20 +66,18 @@ async function getConfiguredOpenAI(): Promise<{
     );
   }
 
-  if (!provider.apiKey) {
+  const isLocal = provider.providerType === "local";
+  if (!isLocal && !provider.apiKey) {
     throw new Error("PDF description provider has no API key configured.");
   }
 
-  const client = new OpenAI({
-    apiKey: provider.apiKey,
-    baseURL: provider.baseUrl || undefined,
-    defaultHeaders: buildProviderHeaders(provider),
-  });
+  const client = await createOpenAIClient(provider);
 
   return {
     client,
     model: provider.model,
     serviceTier: provider.serviceTier,
+    isLocal,
   };
 }
 
@@ -86,10 +88,12 @@ async function processPage(
   bucket: string,
   openai: OpenAI,
   model: string,
-  serviceTier: string | null
+  serviceTier: string | null,
+  isLocal: boolean
 ) {
-  // Generate a JIT URL for this specific page
-  const presignedUrl = await presignGetUrl(bucket, storageKey, 3600); // 1 hour expiry
+  // Resolve a model-ready URL for this page: a JIT presigned link for hosted
+  // providers, or an inline base64 data URL for local ones that can't reach S3.
+  const imageUrl = await resolveModelImageUrl(bucket, storageKey, { inlineBase64: isLocal, expiresIn: 3600 });
 
   const prompt = "You are analyzing a single page from an educational document. Extract the key concept and a brief description. Determine if this page is needed for understanding the core material (e.g., skip table of contents or blank pages).";
 
@@ -101,7 +105,7 @@ async function processPage(
           role: "user",
           content: [
             { type: "text", text: prompt },
-            { type: "image_url", image_url: { url: presignedUrl } },
+            { type: "image_url", image_url: { url: imageUrl } },
           ],
         },
       ],
@@ -150,7 +154,7 @@ export async function processMaterial(materialId: string) {
   }
 
   // Resolve provider from DB config
-  const { client: openai, model, serviceTier } = await getConfiguredOpenAI();
+  const { client: openai, model, serviceTier, isLocal } = await getConfiguredOpenAI();
 
   // Tier 1: Process pages in batches of 5
   const CONCURRENCY = 5;
@@ -165,7 +169,7 @@ export async function processMaterial(materialId: string) {
     const batch = pagesToProcess.slice(i, i + CONCURRENCY);
     await Promise.all(
       batch.map((page) =>
-        processPage(materialId, page.pageNumber, page.storageKey, bucket, openai, model, serviceTier).catch((err) => {
+        processPage(materialId, page.pageNumber, page.storageKey, bucket, openai, model, serviceTier, isLocal).catch((err) => {
           console.error(`[VLM Engine] Failed to process page ${page.pageNumber}:`, err);
           // Don't fail the whole batch, allow retry mechanism later
         })
@@ -206,7 +210,7 @@ export async function processMaterial(materialId: string) {
       const batch = failedPages.slice(i, i + CONCURRENCY);
       await Promise.all(
         batch.map((page) =>
-          processPage(materialId, page.pageNumber, page.storageKey, bucket, openai, model, serviceTier).catch((err) => {
+          processPage(materialId, page.pageNumber, page.storageKey, bucket, openai, model, serviceTier, isLocal).catch((err) => {
             console.error(`[VLM Engine] Retry ${retryAttempt} failed for page ${page.pageNumber}:`, err);
           })
         )
@@ -260,9 +264,10 @@ export async function processMaterial(materialId: string) {
     return;
   }
 
-  // Generate JIT URLs for Tier 2
-  const presignedUrls = await Promise.all(
-    neededPages.map((p) => presignGetUrl(bucket, p.storageKey, 3600))
+  // Resolve model-ready URLs for Tier 2: presigned links for hosted providers,
+  // inline base64 data URLs for local ones that can't reach S3.
+  const imageUrls = await Promise.all(
+    neededPages.map((p) => resolveModelImageUrl(bucket, p.storageKey, { inlineBase64: isLocal, expiresIn: 3600 }))
   );
 
   const contentArray: any[] = [
@@ -272,7 +277,7 @@ export async function processMaterial(materialId: string) {
     },
   ];
 
-  for (const url of presignedUrls) {
+  for (const url of imageUrls) {
     contentArray.push({ type: "image_url", image_url: { url } });
   }
 

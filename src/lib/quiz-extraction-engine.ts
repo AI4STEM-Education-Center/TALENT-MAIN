@@ -15,7 +15,7 @@
 import type OpenAI from "openai";
 import { prisma } from "./prisma";
 import { resolveProvider, createOpenAIClient, type ResolvedProvider } from "./ai-provider";
-import { presignGetUrl } from "./storage";
+import { resolveModelImageUrl } from "./storage";
 import { retryWithExponentialBackoff } from "./retry";
 import {
   QUIZ_EXTRACTION_SCHEMA,
@@ -174,9 +174,18 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
     const tierActive =
       !isLocal && (serviceTier === "auto" || serviceTier === "default" || serviceTier === "flex");
 
-    // Presign a GET URL for every page image, in page order (index i → page i+1).
+    // Resolve a model-ready URL for every page image, in page order (index i →
+    // page i+1). Local providers can't fetch our presigned S3 URLs, so their
+    // bytes are inlined as base64 data URLs; hosted providers get short-lived
+    // presigned links. buildExtractionContent / buildLocalizationContent embed
+    // whichever string they receive, so both passes are covered by this choice.
     const imageUrls = await Promise.all(
-      extraction.pages.map((page) => presignGetUrl(extraction.bucket, page.storageKey, PAGE_URL_EXPIRES_SEC))
+      extraction.pages.map((page) =>
+        resolveModelImageUrl(extraction.bucket, page.storageKey, {
+          inlineBase64: isLocal,
+          expiresIn: PAGE_URL_EXPIRES_SEC,
+        })
+      )
     );
     const pageNumbers = extraction.pages.map((p) => p.pageNumber);
 
