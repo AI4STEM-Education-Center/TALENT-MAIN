@@ -5,7 +5,8 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { GraduationCap, BookOpen, ChevronRight } from "lucide-react";
+import { GraduationCap, BookOpen, ChevronRight, Inbox } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export default async function StudentDashboard() {
   const session = await auth();
@@ -14,7 +15,7 @@ export default async function StudentDashboard() {
   const student = await prisma.student.findUnique({ where: { userId: session.user.id } });
   if (!student) redirect("/login");
 
-  const [enrollments, completedCount] = await Promise.all([
+  const [enrollments, completedCount, notifications] = await Promise.all([
     prisma.classEnrollment.findMany({
       where: { studentId: student.id },
       include: {
@@ -29,6 +30,21 @@ export default async function StudentDashboard() {
     // Get overall progress counts
     prisma.quizProgress.count({
       where: { studentId: student.id, status: "COMPLETED" },
+    }),
+    // Most recent notifications for the dashboard mailbox preview
+    prisma.notification.findMany({
+      where: { userId: session.user.id },
+      orderBy: { createdAt: "desc" },
+      take: 4,
+      include: {
+        message: {
+          select: {
+            subject: true,
+            sender: { select: { firstName: true, lastName: true } },
+            class: { select: { name: true } },
+          },
+        },
+      },
     }),
   ]);
 
@@ -52,6 +68,48 @@ export default async function StudentDashboard() {
             <CardTitle className="text-sm text-muted-foreground">Quizzes Completed</CardTitle>
           </CardHeader>
           <CardContent><p className="text-3xl font-bold">{completedCount}</p></CardContent>
+        </Card>
+      </div>
+
+      {/* Notifications */}
+      <div>
+        <div className="flex items-center justify-between gap-2 flex-wrap mb-4">
+          <h2 className="text-xl font-semibold flex items-center gap-2">
+            <Inbox className="size-5" /> Notifications
+          </h2>
+          <Button variant="outline" size="sm" asChild className="shrink-0">
+            <Link href="/student/notifications">View all</Link>
+          </Button>
+        </div>
+        <Card>
+          <CardContent className="p-0 divide-y">
+            {notifications.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">No notifications yet.</p>
+            ) : (
+              notifications.map((n) => (
+                <Link
+                  key={n.id}
+                  href="/student/notifications"
+                  className={cn(
+                    "block px-4 py-3 hover:bg-muted/40 transition-colors",
+                    !n.readAt && "bg-primary/5"
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className={cn("text-sm", !n.readAt ? "font-semibold" : "font-medium")}>
+                      {n.message.subject}
+                    </span>
+                    {!n.readAt && <span className="size-2 rounded-full bg-primary shrink-0" />}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {n.message.sender.firstName} {n.message.sender.lastName}
+                    {n.message.class ? ` · ${n.message.class.name}` : ""} ·{" "}
+                    {new Date(n.createdAt).toLocaleDateString()}
+                  </p>
+                </Link>
+              ))
+            )}
+          </CardContent>
         </Card>
       </div>
 

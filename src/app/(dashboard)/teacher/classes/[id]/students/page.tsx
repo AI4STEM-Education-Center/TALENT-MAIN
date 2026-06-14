@@ -14,7 +14,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
 import {
   ArrowLeft,
   Users,
@@ -27,7 +26,7 @@ import {
   UserCheck,
   UserX,
   Mail,
-  Send,
+  MessageSquare,
   AlertTriangle,
 } from "lucide-react";
 
@@ -60,13 +59,6 @@ export default function StudentsPage() {
   // Delete confirmation
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
-
-  // Email-students dialog state
-  const [emailOpen, setEmailOpen] = useState(false);
-  const [emailForm, setEmailForm] = useState({ subject: "", body: "" });
-  const [emailError, setEmailError] = useState("");
-  const [emailResult, setEmailResult] = useState("");
-  const [emailLoading, setEmailLoading] = useState(false);
 
   useEffect(() => {
     fetchStudents();
@@ -128,35 +120,6 @@ export default function StudentsPage() {
     }
   }
 
-  async function handleSendEmail(e: React.FormEvent) {
-    e.preventDefault();
-    setEmailError("");
-    setEmailResult("");
-    setEmailLoading(true);
-    try {
-      const res = await fetch(`/api/classes/${id}/messages`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(emailForm),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setEmailError(data.error || "Failed to send email.");
-      } else {
-        setEmailResult(
-          data.failed > 0
-            ? `Sent to ${data.sent} student(s); ${data.failed} failed.`
-            : `Email sent to ${data.sent} student(s).`
-        );
-        setEmailForm({ subject: "", body: "" });
-      }
-    } catch {
-      setEmailError("An unexpected error occurred.");
-    } finally {
-      setEmailLoading(false);
-    }
-  }
-
   async function handleDelete(studentListId: string) {
     setDeleteLoading(true);
     try {
@@ -196,7 +159,6 @@ export default function StudentsPage() {
   const rosterCount = students.length;
   const registeredCount = students.filter((s) => s.isRegistered).length;
   const enrolledCount = students.filter((s) => s.isEnrolled).length;
-  const emailableCount = students.filter((s) => !!s.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.email)).length;
 
   if (loading) {
     return (
@@ -225,75 +187,11 @@ export default function StudentsPage() {
         </div>
 
         <div className="flex items-center gap-2">
-        <Dialog
-          open={emailOpen}
-          onOpenChange={(o) => {
-            setEmailOpen(o);
-            if (!o) {
-              setEmailError("");
-              setEmailResult("");
-            }
-          }}
-        >
-          <DialogTrigger asChild>
-            <Button size="sm" variant="outline" disabled={emailableCount === 0}>
-              <Mail className="size-4 mr-1" /> Email Students
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Email students</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleSendEmail} className="space-y-4">
-              {emailError && (
-                <div className="p-3 rounded-md bg-destructive/10 text-destructive text-sm flex items-start gap-2">
-                  <AlertTriangle className="size-4 shrink-0 mt-0.5" />
-                  {emailError}
-                </div>
-              )}
-              {emailResult && (
-                <div className="p-3 rounded-md bg-green-500/10 text-green-700 dark:text-green-400 text-sm flex items-start gap-2">
-                  <CheckCircle className="size-4 shrink-0 mt-0.5" />
-                  {emailResult}
-                </div>
-              )}
-              <p className="text-xs text-muted-foreground">
-                This message will be emailed to {emailableCount} student
-                {emailableCount === 1 ? "" : "s"} on the roster with a valid email address.
-                Replies go to your account email.
-              </p>
-              <div className="space-y-2">
-                <Label htmlFor="email-subject">Subject</Label>
-                <Input
-                  id="email-subject"
-                  value={emailForm.subject}
-                  onChange={(e) => setEmailForm((p) => ({ ...p, subject: e.target.value }))}
-                  required
-                  placeholder="e.g. Reminder: Quiz 3 due Friday"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="email-body">Message</Label>
-                <Textarea
-                  id="email-body"
-                  value={emailForm.body}
-                  onChange={(e) => setEmailForm((p) => ({ ...p, body: e.target.value }))}
-                  required
-                  rows={6}
-                  placeholder="Write your message to the class..."
-                />
-              </div>
-              <Button type="submit" className="w-full" disabled={emailLoading || emailableCount === 0}>
-                {emailLoading ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Send className="size-4" />
-                )}
-                {emailLoading ? "Sending..." : "Send email"}
-              </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
+        <Button size="sm" variant="outline" asChild>
+          <Link href={`/teacher/classes/${id}/messages`}>
+            <MessageSquare className="size-4 mr-1" /> Message Students
+          </Link>
+        </Button>
 
         <Dialog open={addOpen} onOpenChange={setAddOpen}>
           <DialogTrigger asChild>

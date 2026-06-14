@@ -3,6 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { VersionModal } from "@/components/version-modal";
+import { NotificationsBadge } from "@/components/dashboard/notifications-badge";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import {
   BookOpen,
@@ -17,6 +18,9 @@ import {
   FolderOpen,
   History,
   Mail,
+  MessageSquare,
+  Inbox,
+  Gauge,
   PanelLeftClose,
 } from "lucide-react";
 
@@ -41,11 +45,13 @@ const teacherNav: NavItem[] = [
   { href: "/teacher", label: "Dashboard", icon: <LayoutDashboard className="size-4" /> },
   { href: "/teacher/classes", label: "My Classes", icon: <Users className="size-4" /> },
   { href: "/teacher/quizzes", label: "Quizzes", icon: <FileQuestion className="size-4" /> },
+  { href: "/teacher/messages", label: "Messages", icon: <MessageSquare className="size-4" /> },
 ];
 
 const studentNav: NavItem[] = [
   { href: "/student", label: "Dashboard", icon: <LayoutDashboard className="size-4" /> },
   { href: "/student/classes", label: "My Classes", icon: <GraduationCap className="size-4" /> },
+  { href: "/student/notifications", label: "Notifications", icon: <Inbox className="size-4" /> },
   { href: "/student/history", label: "Exam History", icon: <History className="size-4" /> },
 ];
 
@@ -56,6 +62,7 @@ const adminNav: NavItem[] = [
   { href: "/admin/users", label: "Users", icon: <Users className="size-4" /> },
   { href: "/admin/ai-config", label: "AI Config", icon: <Settings className="size-4" /> },
   { href: "/admin/email", label: "Email / SMTP", icon: <Mail className="size-4" /> },
+  { href: "/admin/email-limits", label: "Email Limits", icon: <Gauge className="size-4" /> },
 ];
 
 function SidebarContent({
@@ -121,7 +128,10 @@ function SidebarContent({
             >
               {item.icon}
               {item.label}
-              {isActive && <ChevronRight className="size-3 ml-auto" />}
+              <span className="ml-auto flex items-center gap-1.5">
+                {item.href === "/student/notifications" && <NotificationsBadge />}
+                {isActive && <ChevronRight className="size-3" />}
+              </span>
             </Link>
           );
         })}
