@@ -22,7 +22,8 @@ model User {
   teacher Teacher?
   student Student?
 
-  sentMessages Message[] @relation("MessageSender")
+  sentMessages  Message[]      @relation("MessageSender")
+  notifications Notification[] @relation("UserNotifications")
 
   @@index([role])
 }
@@ -31,6 +32,12 @@ model Teacher {
   id     String @id @default(cuid())
   userId String @unique
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Per-teacher email sending caps (recipient-emails). null = use the global
+  // default (see DEFAULT_EMAIL_DAILY_LIMIT / DEFAULT_EMAIL_MONTHLY_LIMIT in
+  // src/lib/email-limits.ts). Admins override these per teacher.
+  emailDailyLimit   Int?
+  emailMonthlyLimit Int?
 
   classes           Class[]
   topics            Topic[]             @relation("TeacherTopics")
@@ -549,8 +556,8 @@ model AiUseCaseAssignment {
 model SmtpConfig {
   id          String  @id @default("singleton") // enforce a single row
   host        String
-  port        Int     @default(587)
-  secure      Boolean @default(false)           // true = implicit TLS (port 465)
+  port        Int     @default(465)
+  secure      Boolean @default(true)            // true = implicit TLS (port 465); derived from port in the admin UI
 
   username    String?                            // SMTP auth username (often the from address)
   passwordEnc String?                            // AES-256-GCM encrypted SMTP password
@@ -567,26 +574,54 @@ model SmtpConfig {
 
 // A message either broadcast from a teacher to the students on a class roster,
 // or sent from a single student to their teacher. Persisted for an audit trail
-// regardless of email delivery outcome.
+// regardless of delivery outcome — and, for the in-app channel, the source row
+// the per-recipient Notification rows point back to for subject/body.
 // direction: "TEACHER_TO_STUDENTS" | "STUDENT_TO_TEACHER"
-// status:    "SENT" | "PARTIAL" | "FAILED"
+// channels:  comma-joined of "IN_APP" | "EMAIL" (e.g. "IN_APP,EMAIL"). The
+//            recipientCount/sentCount/status/error fields below describe the
+//            EMAIL send only; inAppCount is the number of in-app recipients.
+// status:    "SENT" | "PARTIAL" | "FAILED" (email outcome; "SENT" when no email)
 model Message {
   id             String   @id @default(cuid())
   classId        String?
   direction      String
+  channels       String   @default("EMAIL") // existing rows predate in-app, so default to email
   senderUserId   String
   subject        String
   body           String
-  recipientCount Int      @default(0)
-  sentCount      Int      @default(0)
+  recipientCount Int      @default(0) // email recipients attempted
+  sentCount      Int      @default(0) // email recipients delivered
+  inAppCount     Int      @default(0) // in-app notification recipients
   status         String   @default("SENT")
   error          String?
   createdAt      DateTime @default(now())
 
-  class  Class? @relation(fields: [classId], references: [id], onDelete: SetNull)
-  sender User   @relation("MessageSender", fields: [senderUserId], references: [id], onDelete: Cascade)
+  class         Class?         @relation(fields: [classId], references: [id], onDelete: SetNull)
+  sender        User           @relation("MessageSender", fields: [senderUserId], references: [id], onDelete: Cascade)
+  notifications Notification[]
 
   @@index([classId])
   @@index([senderUserId])
   @@index([direction])
+  // Email quota: WHERE senderUserId AND channels LIKE '%EMAIL%' AND createdAt >= window
+  @@index([senderUserId, createdAt])
+}
+
+// One in-app notification delivered to a single student (their User). The
+// subject/body live on the parent Message; this row carries per-recipient read
+// state and powers the student mailbox.
+model Notification {
+  id        String    @id @default(cuid())
+  messageId String
+  userId    String // recipient student's user id
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+
+  // Mailbox list + unread badge: WHERE userId ORDER BY createdAt DESC; unread count
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
+  @@index([messageId])
 }

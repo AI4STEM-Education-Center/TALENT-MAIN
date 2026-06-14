@@ -1,10 +1,11 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { AlertTriangle, Check, Loader2, Mail, Save, Send, Server } from "lucide-react";
+import { AlertTriangle, Check, Gauge, Loader2, Mail, Save, Send, Server } from "lucide-react";
 
 interface SmtpConfig {
   host: string;
@@ -21,8 +22,8 @@ interface SmtpConfig {
 
 const EMPTY_FORM = {
   host: "",
-  port: 587,
-  secure: false,
+  port: 465,
+  secure: true,
   username: "",
   password: "",
   fromEmail: "",
@@ -80,6 +81,9 @@ export default function AdminEmailPage() {
         body: JSON.stringify({
           ...form,
           port: Number(form.port),
+          // Security is derived from the port: 465 = implicit TLS (SSL),
+          // anything else (e.g. 587) negotiates STARTTLS. No separate toggle.
+          secure: Number(form.port) === 465,
         }),
       });
       const data = await res.json();
@@ -128,14 +132,21 @@ export default function AdminEmailPage() {
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-2xl">
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Mail className="size-6" /> Email / SMTP Server
-        </h1>
-        <p className="text-muted-foreground text-sm mt-1">
-          Configure the outgoing SMTP server used to deliver teacher → student
-          notifications and student → teacher messages.
-        </p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <Mail className="size-6" /> Email / SMTP Server
+          </h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            Configure the outgoing SMTP server used to deliver teacher and student emails.
+            In-app notifications are delivered without email and don&apos;t require SMTP.
+          </p>
+        </div>
+        <Button variant="outline" size="sm" asChild className="shrink-0">
+          <Link href="/admin/email-limits">
+            <Gauge className="size-4" /> Per-teacher limits
+          </Link>
+        </Button>
       </div>
 
       {banner && (
@@ -181,21 +192,16 @@ export default function AdminEmailPage() {
                   type="number"
                   value={form.port}
                   onChange={(e) => setForm((p) => ({ ...p, port: Number(e.target.value) }))}
-                  placeholder="587"
+                  placeholder="465"
                   required
                 />
               </div>
             </div>
 
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={form.secure}
-                onChange={(e) => setForm((p) => ({ ...p, secure: e.target.checked }))}
-                className="size-4"
-              />
-              Use implicit TLS (SSL) — typically port 465. Leave unchecked for STARTTLS (587).
-            </label>
+            <p className="text-xs text-muted-foreground">
+              Enter the full SMTP host (e.g. <span className="font-mono">smtp.gmail.com</span>). Security is derived
+              from the port: <strong>465</strong> uses implicit TLS (SSL); other ports such as 587 use STARTTLS.
+            </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-2">
