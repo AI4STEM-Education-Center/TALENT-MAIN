@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM node:26-slim AS base
 RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
@@ -12,8 +13,11 @@ FROM base AS deps
 # reach the runner image.
 RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
 
+# A persistent BuildKit cache for npm's download cache means repeat builds (and
+# cache-miss CI runs) skip re-fetching every tarball. `npm ci` installs straight
+# from the lockfile — deterministic and faster than `npm install`.
 COPY package.json package-lock.json ./
-RUN npm install
+RUN --mount=type=cache,target=/root/.npm npm ci
 
 # ── Stage 2: Build the application ────────────────────────────────────────────
 FROM base AS builder
@@ -21,7 +25,10 @@ FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-RUN mkdir -p public && npx prisma generate && npx next build
+# Mount Next.js's incremental build cache so warm builds reuse compiled output
+# instead of recompiling every page from cold.
+RUN --mount=type=cache,target=/app/.next/cache \
+    mkdir -p public && npx prisma generate && npx next build
 
 # Bundle the background worker for production (native modules stay external)
 RUN npx esbuild src/worker.ts --bundle --platform=node --target=node20 \
@@ -43,15 +50,16 @@ RUN npx esbuild src/worker.ts --bundle --platform=node --target=node20 \
 FROM base AS migrator
 WORKDIR /migrator
 COPY package-lock.json ./
-RUN PRISMA_VERSION="$(node -p "require('./package-lock.json').packages['node_modules/prisma'].version")" && \
+RUN --mount=type=cache,target=/root/.npm \
+    PRISMA_VERSION="$(node -p "require('./package-lock.json').packages['node_modules/prisma'].version")" && \
     rm package-lock.json && \
     npm init -y >/dev/null 2>&1 && \
     npm install --no-audit --no-fund --omit=optional "prisma@${PRISMA_VERSION}"
 
 # ── Stage 3: Production runner ────────────────────────────────────────────────
-FROM node:26-slim AS runner
-RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
-WORKDIR /app
+# Derive from `base` so the openssl install and WORKDIR are reused from an already
+# cached layer instead of running a second apt-get update for the same package.
+FROM base AS runner
 
 ARG APP_VERSION=0.0.0
 ARG APP_RELEASE_DATE=1970-01-01

@@ -6,6 +6,11 @@ import {
   buildPageStorageKey,
   materialPrefixFromStorageKey,
   getS3Config,
+  quizExtractionScope,
+  buildQuizExtractionPdfKey,
+  buildQuizExtractionPageKey,
+  buildQuizExtractionFigureKey,
+  quizExtractionPrefix,
 } from "./storage";
 
 const DEFAULT_MAX_BYTES = 50 * 1024 * 1024;
@@ -94,6 +99,50 @@ describe("getMaxUploadBytes", () => {
     expect(getMaxUploadBytes()).toBe(DEFAULT_MAX_BYTES);
     process.env.LEARNING_MATERIAL_MAX_BYTES = "not-a-number";
     expect(getMaxUploadBytes()).toBe(DEFAULT_MAX_BYTES);
+  });
+});
+
+describe("quizExtractionScope", () => {
+  it("uses the teacherId when present", () => {
+    expect(quizExtractionScope("t1")).toBe("t1");
+  });
+
+  it("falls back to 'pool' for null (admin-owned) quizzes", () => {
+    expect(quizExtractionScope(null)).toBe("pool");
+  });
+});
+
+describe("buildQuizExtraction* keys", () => {
+  it("builds a teacher-scoped PDF key with a sanitized filename", () => {
+    expect(buildQuizExtractionPdfKey("t1", "qz1", "ex1", "Mid Term!.pdf")).toBe(
+      "quiz-extractions/t1/qz1/ex1/Mid_Term_.pdf"
+    );
+  });
+
+  it("scopes pool PDFs under 'pool'", () => {
+    expect(buildQuizExtractionPdfKey(null, "qz1", "ex1", "exam.pdf")).toBe(
+      "quiz-extractions/pool/qz1/ex1/exam.pdf"
+    );
+  });
+
+  it("builds deterministic page and figure keys", () => {
+    expect(buildQuizExtractionPageKey("t1", "qz1", "ex1", 4)).toBe(
+      "quiz-extractions/t1/qz1/ex1/pages/page-4.png"
+    );
+    expect(buildQuizExtractionFigureKey("t1", "qz1", "ex1", 2)).toBe(
+      "quiz-extractions/t1/qz1/ex1/figures/figure-2.png"
+    );
+  });
+});
+
+describe("quizExtractionPrefix", () => {
+  it("returns the extraction directory covering the PDF, pages and figures", () => {
+    const pdfKey = buildQuizExtractionPdfKey("t1", "qz1", "ex1", "exam.pdf");
+    const prefix = quizExtractionPrefix(pdfKey);
+    expect(prefix).toBe("quiz-extractions/t1/qz1/ex1/");
+    // Pages and figures of the same extraction sit under that prefix.
+    expect(buildQuizExtractionPageKey("t1", "qz1", "ex1", 1).startsWith(prefix)).toBe(true);
+    expect(buildQuizExtractionFigureKey("t1", "qz1", "ex1", 1).startsWith(prefix)).toBe(true);
   });
 });
 
