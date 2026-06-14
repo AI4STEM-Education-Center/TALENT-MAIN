@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { isValidEmail } from "@/lib/csv-roster";
 
 // GET: Return all ClassStudentList entries for this class with enrollment status (teacher only)
 export async function GET(
@@ -74,10 +75,14 @@ export async function POST(
   });
   if (!cls) return NextResponse.json({ error: "Class not found" }, { status: 404 });
 
-  const { orgDefinedId, firstName, lastName } = await req.json();
+  const { orgDefinedId, firstName, lastName, email } = await req.json();
 
   if (!orgDefinedId?.trim() || !firstName?.trim() || !lastName?.trim()) {
     return NextResponse.json({ error: "81 number, first name, and last name are required." }, { status: 400 });
+  }
+
+  if (!email?.trim() || !isValidEmail(email)) {
+    return NextResponse.json({ error: "A valid email address is required." }, { status: 400 });
   }
 
   const cleanId = orgDefinedId.replace(/^#/, "").trim();
@@ -96,6 +101,7 @@ export async function POST(
       orgDefinedId: cleanId,
       firstName: firstName.trim(),
       lastName: lastName.trim(),
+      email: email.trim().toLowerCase(),
     },
   });
 

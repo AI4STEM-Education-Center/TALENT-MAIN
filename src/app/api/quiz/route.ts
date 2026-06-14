@@ -55,20 +55,25 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No questions available for this quiz." }, { status: 404 });
   }
 
-  // Replace figure + option-image storage keys with transient presigned URLs.
-  const questions = await attachOptionImageUrls(await attachFigureUrls(questionRows));
-
-  // Create attempt
-  const attempt = await prisma.quizAttempt.create({
-    data: { studentId: student.id, classId, quizId },
-  });
-
-  // Update QuizProgress to IN_PROGRESS
-  await prisma.quizProgress.upsert({
-    where: { studentId_classId_quizId: { studentId: student.id, classId, quizId } },
-    update: { status: "IN_PROGRESS" },
-    create: { studentId: student.id, classId, quizId, status: "IN_PROGRESS" },
-  });
+  // These are independent: presigning the figure + option-image URLs (S3),
+  // creating the attempt, and flipping progress to IN_PROGRESS don't read each
+  // other's results, so race them instead of waterfalling. Only `questions` and
+  // `attempt.id` feed the response. (Option-image presigning still chains after
+  // figure presigning, since it consumes the figure-augmented rows.)
+  const [questions, attempt] = await Promise.all([
+    // Replace figure + option-image storage keys with transient presigned URLs.
+    attachFigureUrls(questionRows).then((rows) => attachOptionImageUrls(rows)),
+    // Create attempt
+    prisma.quizAttempt.create({
+      data: { studentId: student.id, classId, quizId },
+    }),
+    // Update QuizProgress to IN_PROGRESS
+    prisma.quizProgress.upsert({
+      where: { studentId_classId_quizId: { studentId: student.id, classId, quizId } },
+      update: { status: "IN_PROGRESS" },
+      create: { studentId: student.id, classId, quizId, status: "IN_PROGRESS" },
+    }),
+  ]);
 
   return NextResponse.json({ attemptId: attempt.id, questions });
 }

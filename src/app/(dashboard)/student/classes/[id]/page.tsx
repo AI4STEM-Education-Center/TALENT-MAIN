@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, CheckCircle, Circle, PlayCircle, BookOpen, History } from "lucide-react";
+import { ContactTeacherDialog } from "./contact-teacher-dialog";
 
 export default async function StudentClassPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -67,9 +68,15 @@ export default async function StudentClassPage({ params }: { params: Promise<{ i
           <h1 className="text-3xl font-bold">{cls.name}</h1>
           <p className="text-muted-foreground text-sm mt-1">Teacher: {cls.teacher.user.firstName} {cls.teacher.user.lastName}</p>
         </div>
-        <Button variant="outline" size="sm" asChild className="shrink-0">
-          <Link href={`/student/classes/${id}/history`}><History className="size-4" /> Exam history</Link>
-        </Button>
+        <div className="flex items-center gap-2 shrink-0">
+          <ContactTeacherDialog
+            classId={id}
+            teacherName={`${cls.teacher.user.firstName} ${cls.teacher.user.lastName}`.trim()}
+          />
+          <Button variant="outline" size="sm" asChild>
+            <Link href={`/student/classes/${id}/history`}><History className="size-4" /> Exam history</Link>
+          </Button>
+        </div>
       </div>
 
       {quizzes.length === 0 ? (

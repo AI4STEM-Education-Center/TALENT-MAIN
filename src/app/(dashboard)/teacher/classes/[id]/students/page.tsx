@@ -25,6 +25,9 @@ import {
   Clock,
   UserCheck,
   UserX,
+  Mail,
+  MessageSquare,
+  AlertTriangle,
 } from "lucide-react";
 
 interface StudentEntry {
@@ -32,6 +35,7 @@ interface StudentEntry {
   orgDefinedId: string;
   firstName: string;
   lastName: string;
+  email: string;
   isRegistered: boolean;
   isEnrolled: boolean;
   enrolledAt: string | null;
@@ -48,7 +52,7 @@ export default function StudentsPage() {
 
   // Add dialog state
   const [addOpen, setAddOpen] = useState(false);
-  const [addForm, setAddForm] = useState({ orgDefinedId: "", firstName: "", lastName: "" });
+  const [addForm, setAddForm] = useState({ orgDefinedId: "", firstName: "", lastName: "", email: "" });
   const [addError, setAddError] = useState("");
   const [addLoading, setAddLoading] = useState(false);
 
@@ -106,7 +110,7 @@ export default function StudentsPage() {
         setStudents((prev) => [...prev, { ...data, isEnrolled: false, enrolledAt: null }].sort((a, b) =>
           a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName)
         ));
-        setAddForm({ orgDefinedId: "", firstName: "", lastName: "" });
+        setAddForm({ orgDefinedId: "", firstName: "", lastName: "", email: "" });
         setAddOpen(false);
       }
     } catch {
@@ -182,6 +186,13 @@ export default function StudentsPage() {
           </p>
         </div>
 
+        <div className="flex items-center gap-2">
+        <Button size="sm" variant="outline" asChild>
+          <Link href={`/teacher/classes/${id}/messages`}>
+            <MessageSquare className="size-4 mr-1" /> Message Students
+          </Link>
+        </Button>
+
         <Dialog open={addOpen} onOpenChange={setAddOpen}>
           <DialogTrigger asChild>
             <Button size="sm">
@@ -234,12 +245,26 @@ export default function StudentsPage() {
                   />
                 </div>
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="add-email">Email</Label>
+                <Input
+                  id="add-email"
+                  type="email"
+                  value={addForm.email}
+                  onChange={(e) =>
+                    setAddForm((p) => ({ ...p, email: e.target.value }))
+                  }
+                  required
+                  placeholder="student@example.com"
+                />
+              </div>
               <Button type="submit" className="w-full" disabled={addLoading}>
                 {addLoading ? "Adding..." : "Add Student"}
               </Button>
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       {/* Stats cards */}
@@ -332,6 +357,15 @@ export default function StudentsPage() {
                     <p className="text-xs text-muted-foreground font-mono">
                       {s.orgDefinedId}
                     </p>
+                    {s.email ? (
+                      <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
+                        <Mail className="size-3 shrink-0" /> {s.email}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-amber-600 flex items-center gap-1">
+                        <AlertTriangle className="size-3 shrink-0" /> No email on file
+                      </p>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 shrink-0 flex-wrap">
                     {/* Registration status */}

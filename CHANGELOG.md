@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.0.14 - 2026-06-14
+
+- Teachers and students can now message each other directly, with email notifications when a new message arrives.
+- Students see an in-app notifications badge highlighting new messages and activity.
+- Teacher email sending now respects a daily quota to avoid accidental over-sending.
+- Faster, more reliable dashboards from a move to server-rendered pages and streamlined Docker/CI builds.
+- Security, accessibility, and stability fixes across the app.
+
 ## v0.0.13 - 2026-06-12
 
 - Quiz answer choices can now be images, not just text — pulled in automatically when extracting quizzes from PDFs.

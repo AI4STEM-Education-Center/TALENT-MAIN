@@ -112,8 +112,8 @@ describe("POST /api/classes", () => {
       jsonReq({
         name: "Roster Class",
         studentList: [
-          { orgDefinedId: "#811947904", firstName: " Ada ", lastName: " Lovelace " },
-          { orgDefinedId: "222", firstName: "Alan", lastName: "Turing" },
+          { orgDefinedId: "#811947904", firstName: " Ada ", lastName: " Lovelace ", email: "Ada@Example.com" },
+          { orgDefinedId: "222", firstName: "Alan", lastName: "Turing", email: "alan@example.com" },
         ],
       })
     );
@@ -123,7 +123,12 @@ describe("POST /api/classes", () => {
       orderBy: { lastName: "asc" },
     });
     expect(roster).toHaveLength(2);
-    expect(roster[0]).toMatchObject({ orgDefinedId: "811947904", firstName: "Ada", lastName: "Lovelace" });
+    expect(roster[0]).toMatchObject({
+      orgDefinedId: "811947904",
+      firstName: "Ada",
+      lastName: "Lovelace",
+      email: "ada@example.com",
+    });
     expect(roster[1].orgDefinedId).toBe("222");
   });
 });
