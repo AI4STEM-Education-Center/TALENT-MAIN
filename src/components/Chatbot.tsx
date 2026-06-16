@@ -249,6 +249,8 @@ export default function Chatbot() {
 
       setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
 
+      const aiModel = response.headers.get("X-AI-Model") ?? "";
+
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       let assistantMessage = "";
@@ -257,6 +259,9 @@ export default function Chatbot() {
       const startTime = Date.now();
       let firstTokenTime: number | null = null;
       let completionTokens = 0;
+      // Fallback when the provider sends no usage (common for local servers):
+      // count streamed content deltas as an approximate generated-token count.
+      let deltaTokens = 0;
 
       if (reader) {
         let buffer = "";
@@ -309,6 +314,7 @@ export default function Chatbot() {
                   if (!firstTokenTime) {
                     firstTokenTime = Date.now();
                   }
+                  deltaTokens += 1;
 
                   assistantMessage += delta.content;
                   setMessages((prev) => {
@@ -352,12 +358,15 @@ export default function Chatbot() {
       const endTime = Date.now();
       const ttft = firstTokenTime ? firstTokenTime - startTime : 0;
       const streamingDuration = firstTokenTime ? (endTime - firstTokenTime) / 1000 : 0;
+      // Prefer the provider's reported usage; fall back to the streamed-delta count.
+      const tokenCount = completionTokens || deltaTokens;
       const tps =
-        completionTokens && streamingDuration > 0
-          ? (completionTokens / streamingDuration).toFixed(1)
+        tokenCount && streamingDuration > 0
+          ? (tokenCount / streamingDuration).toFixed(1)
           : 0;
 
-      if (ttft > 0 && completionTokens > 0) {
+      if (ttft > 0 && tokenCount > 0) {
+        const modelLabel = aiModel ? `${aiModel} · ` : "";
         setMessages((prev) => {
           if (activeRequestIdRef.current !== requestId || prev.length === 0) {
             return prev;
@@ -366,7 +375,7 @@ export default function Chatbot() {
           const nextMessages = [...prev];
           nextMessages[nextMessages.length - 1] = {
             role: "assistant",
-            content: `${assistantMessage}\n\n*(TTFT: ${ttft}ms | ${tps} tok/s)*`,
+            content: `${assistantMessage}\n\n*(${modelLabel}TTFT: ${ttft}ms · ${tokenCount} tokens · ${tps} tok/s)*`,
           };
           return nextMessages;
         });

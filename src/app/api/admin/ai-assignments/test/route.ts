@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { resolveProvider, buildProviderHeaders, type UseCase } from "@/lib/ai-provider";
+import { streamChatCompletion } from "@/lib/ai-streaming";
 
 const VALID_USE_CASES: UseCase[] = [
   "teacher_chat",
@@ -62,32 +63,36 @@ export async function POST(req: Request) {
       defaultHeaders: buildProviderHeaders(provider),
     });
 
-    const startTime = Date.now();
-
-    const response = await openai.chat.completions.create({
-      model: provider.model,
-      messages: [
-        {
-          role: "user",
-          content: "Please write a short paragraph testing the connection. Reply with at least 20 words.",
-        },
-      ],
-      max_completion_tokens: 2000,
-      service_tier:
-        !isLocal &&
-          provider.serviceTier &&
-          ["auto", "default", "flex"].includes(provider.serviceTier)
-          ? (provider.serviceTier as any)
-          : undefined,
-    });
-
-    const latencyMs = Date.now() - startTime;
-    const reply = response.choices?.[0]?.message?.content?.trim() ?? "";
+    const { text, metrics } = await streamChatCompletion(
+      openai,
+      {
+        model: provider.model,
+        messages: [
+          {
+            role: "user",
+            content: "Please write a short paragraph testing the connection. Reply with at least 20 words.",
+          },
+        ],
+        max_completion_tokens: !isLocal ? 2000 : undefined,
+        max_tokens: isLocal ? 2000 : undefined,
+        service_tier:
+          !isLocal &&
+            provider.serviceTier &&
+            ["auto", "default", "flex"].includes(provider.serviceTier)
+            ? (provider.serviceTier as any)
+            : undefined,
+      },
+      { includeUsage: !isLocal }
+    );
 
     return NextResponse.json({
       success: true,
-      latencyMs,
-      reply,
+      latencyMs: metrics.totalMs,
+      ttftMs: metrics.ttftMs,
+      tokens: metrics.completionTokens,
+      tokensEstimated: metrics.tokensEstimated,
+      tokensPerSec: metrics.tokensPerSec,
+      reply: text.trim(),
       model: provider.model,
       providerType: provider.providerType,
     });

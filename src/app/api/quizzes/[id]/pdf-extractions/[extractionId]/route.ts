@@ -49,6 +49,9 @@ export async function GET(
     hasAnswerKey: extraction.hasAnswerKey,
     warnings: parseWarnings(extraction.warnings),
     createdAt: extraction.createdAt,
+    aiModel: extraction.aiModel,
+    aiTtftMs: extraction.aiTtftMs,
+    aiTokens: extraction.aiTokens,
   };
 
   if (extraction.status !== "AWAITING_REVIEW") {

@@ -147,9 +147,10 @@ async function sendChatCompletion(
         service_tier: !isLocal && (serviceTier === "auto" || serviceTier === "default" || serviceTier === "flex")
           ? (serviceTier as any)
           : undefined,
-        stream_options: !isLocal && (serviceTier === "auto" || serviceTier === "default" || serviceTier === "flex")
-          ? { include_usage: true }
-          : undefined,
+        // Ask hosted providers to report token usage on the final chunk so the
+        // client can show a generated-token count. Local servers often reject
+        // this field, so the client falls back to counting streamed deltas.
+        stream_options: !isLocal ? { include_usage: true } : undefined,
       },
       {
         maxRetries: isLocal ? 0 : 3,
@@ -176,6 +177,9 @@ async function sendChatCompletion(
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
         Connection: "keep-alive",
+        // Surface the model that produced the reply so the client can show it
+        // alongside the TTFT / token-count metrics.
+        "X-AI-Model": provider.model,
       },
     });
   } catch (error: any) {
