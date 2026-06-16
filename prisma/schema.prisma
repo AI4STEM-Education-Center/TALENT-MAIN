@@ -68,6 +68,12 @@ model LearningMaterial {
   batchDescription  String?
   batchKeyConcepts  String  @default("[]")
 
+  // AI generation metrics from the most recent VLM processing run. Shown to
+  // teachers/admins; null until the material is processed.
+  aiModel  String?
+  aiTtftMs Int? // time to first token (ms)
+  aiTokens Int? // generated tokens summed across all page + batch calls
+
   teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   class   Class?  @relation(fields: [classId], references: [id], onDelete: SetNull)
   pages   MaterialPage[]
@@ -330,6 +336,13 @@ model QuizPdfExtraction {
   extractedQuestions String? // JSON: StagedQuestion[]
   warnings           String   @default("[]") // JSON string[]
   questionImportId   String?  @unique // set on commit
+
+  // AI generation metrics from the extraction run (all passes aggregated).
+  // Shown to teachers/admins on the review screen; null until extracted.
+  aiModel  String?
+  aiTtftMs Int?
+  aiTokens Int?
+
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -489,6 +502,14 @@ model ExamResult {
   summaryStatus         String  @default("PENDING")
   recommendations       String? // JSON: { items: StoredRecommendation[], truncated: boolean }
   recommendationsStatus String  @default("PENDING")
+
+  // AI generation metrics (TTFT + generated tokens) for each section. Persisted
+  // for observability; the student results page does not display them.
+  aiModel       String?
+  summaryTtftMs Int?
+  summaryTokens Int?
+  recsTtftMs    Int?
+  recsTokens    Int?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

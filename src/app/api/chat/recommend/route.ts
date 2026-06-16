@@ -3,6 +3,7 @@ import type OpenAI from "openai";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { resolveProvider, createOpenAIClient } from "@/lib/ai-provider";
+import { streamJsonCompletion } from "@/lib/ai-streaming";
 import { presignGetUrl, getS3Config } from "@/lib/storage";
 import {
   FILE_SELECTION_SCHEMA,
@@ -62,42 +63,27 @@ function parseKeyConcepts(raw: string): string[] {
   }
 }
 
-/** Extract the first balanced-looking JSON object from a free-text response. */
-function parseFirstJsonObject<T>(content: string): T {
-  const match = content.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error("No JSON object found in model response");
-  return JSON.parse(match[0]) as T;
-}
-
 /**
- * Run one structured step against the LLM. Prefers OpenAI strict json_schema
- * output; if the provider rejects response_format (e.g. some local models),
- * retries once as a plain completion and parses JSON out of the text.
+ * Run one streamed structured step against the LLM. `streamJsonCompletion`
+ * prefers strict json_schema output and falls back to a plain streamed
+ * completion (parsing the JSON out of the text) for providers that reject
+ * response_format, e.g. some local models.
  */
 async function runStructuredStep<T>(
   client: OpenAI,
   model: string,
   prompt: string,
   schemaName: string,
-  schema: object
+  schema: object,
+  isLocal: boolean
 ): Promise<T> {
-  const messages = [{ role: "user" as const, content: prompt }];
-  try {
-    const res = await client.chat.completions.create({
-      model,
-      messages,
-      response_format: {
-        type: "json_schema",
-        json_schema: { name: schemaName, schema: schema as Record<string, unknown>, strict: true },
-      },
-    });
-    const content = res.choices?.[0]?.message?.content ?? "";
-    return JSON.parse(content) as T;
-  } catch {
-    const res = await client.chat.completions.create({ model, messages });
-    const content = res.choices?.[0]?.message?.content ?? "";
-    return parseFirstJsonObject<T>(content);
-  }
+  const { value } = await streamJsonCompletion<T>(
+    client,
+    { model, messages: [{ role: "user", content: prompt }] },
+    { name: schemaName, schema: schema as Record<string, unknown>, strict: true },
+    { includeUsage: !isLocal, requestOptions: { maxRetries: isLocal ? 0 : 3 } }
+  );
+  return value;
 }
 
 function correctAnswerText(options: Array<{ text: string; isCorrect: boolean }>): string | null {
@@ -153,7 +139,8 @@ async function recommendForAnswer(
   bucket: string,
   input: MisconceptionInput,
   catalog: CatalogMaterial[],
-  materials: MaterialRow[]
+  materials: MaterialRow[],
+  isLocal: boolean
 ): Promise<Recommendation | null> {
   // Step 1: choose the most relevant material.
   const fileSelection = await runStructuredStep<FileSelection>(
@@ -161,7 +148,8 @@ async function recommendForAnswer(
     model,
     buildFileSelectionPrompt(input, catalog),
     "file_selection",
-    FILE_SELECTION_SCHEMA
+    FILE_SELECTION_SCHEMA,
+    isLocal
   );
 
   const chosen = resolveSelectedMaterial(fileSelection.material_index, catalog);
@@ -187,7 +175,8 @@ async function recommendForAnswer(
     model,
     buildPageSelectionPrompt(input, chosen.title, catalogPages),
     "page_selection",
-    PAGE_SELECTION_SCHEMA
+    PAGE_SELECTION_SCHEMA,
+    isLocal
   );
 
   const range = clampPageRange(
@@ -316,6 +305,7 @@ export async function POST() {
     }
 
     const client = await createOpenAIClient(provider);
+    const isLocal = provider.providerType === "local";
 
     const catalog: CatalogMaterial[] = materials.map((m, i) => ({
       index: i + 1,
@@ -331,7 +321,7 @@ export async function POST() {
       toProcess.map(async (answer) => {
         const input = misconceptionFor(answer);
         try {
-          return await recommendForAnswer(client, provider.model, bucket, input, catalog, materials);
+          return await recommendForAnswer(client, provider.model, bucket, input, catalog, materials, isLocal);
         } catch (err) {
           console.error("[Recommend] Failed to build recommendation for a question:", err);
           return null;

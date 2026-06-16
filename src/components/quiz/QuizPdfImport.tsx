@@ -8,6 +8,7 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { rasterizePdfToPngBlobs } from "@/lib/pdf-rasterize-client";
 import type { FigureBbox, StagedQuestion } from "@/lib/quiz-extraction";
 import { isQuestionComplete, QuizPdfReview, type PageImage } from "./QuizPdfReview";
+import { formatAiMetrics } from "@/lib/ai-metrics";
 
 const MAX_PAGES = 20;
 const POLL_MS = 2500;
@@ -28,6 +29,10 @@ type ExtractionDetail = ListItem & {
   warnings: string[];
   questions?: StagedQuestion[];
   pageImages?: PageImage[];
+  // AI generation metrics for the extraction run (teacher-facing).
+  aiModel?: string | null;
+  aiTtftMs?: number | null;
+  aiTokens?: number | null;
 };
 
 type InitResponse = {
@@ -457,6 +462,11 @@ export function QuizPdfImport({
 
         {(phase === "review" || phase === "committing") && detail && (
           <div className="space-y-4">
+            {formatAiMetrics({ model: detail.aiModel, ttftMs: detail.aiTtftMs, tokens: detail.aiTokens }) && (
+              <p className="text-xs text-muted-foreground">
+                Extracted by {formatAiMetrics({ model: detail.aiModel, ttftMs: detail.aiTtftMs, tokens: detail.aiTokens })}
+              </p>
+            )}
             <QuizPdfReview
               questions={questions}
               hasAnswerKey={detail.hasAnswerKey}

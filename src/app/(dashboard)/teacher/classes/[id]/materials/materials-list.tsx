@@ -6,6 +6,7 @@ import { FileText, Clock, AlertTriangle, CheckCircle } from "lucide-react";
 import MaterialDeleteButton from "./material-delete-button";
 import MaterialRetryButton from "./material-retry-button";
 import MaterialTitleEdit from "./material-title-edit";
+import { formatAiMetrics } from "@/lib/ai-metrics";
 
 export interface MaterialItem {
   id: string;
@@ -19,6 +20,10 @@ export interface MaterialItem {
   errorMessage: string | null;
   createdAt: string | Date;
   isImported?: boolean;
+  // AI generation metrics from the VLM processing run (teacher/admin only).
+  aiModel?: string | null;
+  aiTtftMs?: number | null;
+  aiTokens?: number | null;
 }
 
 interface MaterialsListProps {
@@ -127,8 +132,15 @@ export default function MaterialsList({ classId, initialMaterials }: MaterialsLi
 
             <div className="flex flex-col items-end w-64">
               {mat.processingStatus === "SUCCESS" && (
-                <div className="flex items-center text-green-600 font-medium text-sm">
-                  <CheckCircle className="size-4 mr-1" /> Ready
+                <div className="flex flex-col items-end">
+                  <div className="flex items-center text-green-600 font-medium text-sm">
+                    <CheckCircle className="size-4 mr-1" /> Ready
+                  </div>
+                  {formatAiMetrics({ model: mat.aiModel, ttftMs: mat.aiTtftMs, tokens: mat.aiTokens }) && (
+                    <span className="mt-0.5 text-xs text-gray-400 text-right">
+                      {formatAiMetrics({ model: mat.aiModel, ttftMs: mat.aiTtftMs, tokens: mat.aiTokens })}
+                    </span>
+                  )}
                 </div>
               )}
               {mat.processingStatus === "FAILED" && (

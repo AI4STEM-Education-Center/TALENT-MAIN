@@ -508,12 +508,22 @@ export default function AiConfigPage() {
 
       const data = await res.json();
 
+      const metricsLine = [
+        data.model,
+        data.ttftMs != null ? `TTFT ${data.ttftMs}ms` : null,
+        data.tokens != null ? `${data.tokens}${data.tokensEstimated ? "~" : ""} tokens` : null,
+        typeof data.tokensPerSec === "number" ? `${data.tokensPerSec.toFixed(1)} tok/s` : null,
+        `${data.latencyMs}ms total`,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+
       setTestResults((prev) => ({
         ...prev,
         [useCase]: {
           success: data.success,
           message: data.success
-            ? `${data.model} responded in ${data.latencyMs}ms: "${data.reply}"`
+            ? `${metricsLine}: "${data.reply}"`
             : data.error || "Test failed",
           loading: false,
         },
