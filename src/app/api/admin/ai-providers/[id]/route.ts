@@ -6,6 +6,10 @@ import { invalidateProviderCache } from "@/lib/ai-provider";
 
 const VALID_TYPES = new Set(["openai", "local", "cloudflare"]);
 
+// Per-request timeout override bounds (ms). Mirrors the create route.
+const MIN_TIMEOUT_MS = 1_000;        // 1s
+const MAX_TIMEOUT_MS = 3_600_000;    // 60min
+
 /**
  * PATCH /api/admin/ai-providers/[id]
  * Update an existing AI provider.
@@ -51,6 +55,25 @@ export async function PATCH(
       data.isActive = body.isActive;
     }
 
+    // Per-request timeout override (ms). null/empty clears it (use the default).
+    if (body.timeoutMs !== undefined) {
+      const raw = body.timeoutMs;
+      if (raw === null || raw === "") {
+        data.timeoutMs = null;
+      } else {
+        const n = typeof raw === "number" ? raw : Number(raw);
+        if (!Number.isInteger(n) || n < MIN_TIMEOUT_MS || n > MAX_TIMEOUT_MS) {
+          return NextResponse.json(
+            {
+              error: `timeoutMs must be an integer between ${MIN_TIMEOUT_MS} and ${MAX_TIMEOUT_MS} ms, or null to use the default`,
+            },
+            { status: 400 }
+          );
+        }
+        data.timeoutMs = n;
+      }
+    }
+
     // Handle API key / CF_AIG_TOKEN update
     if (typeof body.apiKey === "string") {
       const rawKey = body.apiKey.trim();
@@ -94,6 +117,7 @@ export async function PATCH(
             ? "••••(unchanged)"
             : null,
         cfAigByokAlias: updated.cfAigByokAlias,
+        timeoutMs: updated.timeoutMs,
         isActive: updated.isActive,
       },
     });

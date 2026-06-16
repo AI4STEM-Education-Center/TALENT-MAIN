@@ -15,7 +15,15 @@ export interface ResolvedProvider {
   model: string;
   serviceTier: string | null;
   cfAigByokAlias: string | null;  // null unless providerType === "cloudflare"
+  timeoutMs: number;              // per-request timeout, always resolved (provider override or default)
 }
+
+/**
+ * Default per-request timeout (ms) applied to every AI call. Used when a
+ * provider has no explicit `timeoutMs` override. 10 minutes — generous enough
+ * for slow local models and long structured-extraction jobs.
+ */
+export const DEFAULT_AI_TIMEOUT_MS = 600_000;
 
 // In-memory cache to avoid per-request DB hits
 let _cache: Map<UseCase, { data: ResolvedProvider; expiresAt: number }> =
@@ -113,6 +121,7 @@ export async function resolveProvider(
     model: assignment.model.modelId,
     serviceTier: assignment.model.serviceTier,
     cfAigByokAlias: assignment.provider.cfAigByokAlias,
+    timeoutMs: assignment.provider.timeoutMs ?? DEFAULT_AI_TIMEOUT_MS,
   };
 
   // Cache the result
@@ -157,5 +166,6 @@ export async function createOpenAIClient(provider: ResolvedProvider) {
     apiKey: provider.apiKey || "dummy-key-for-local",
     baseURL,
     defaultHeaders: buildProviderHeaders(provider),
+    timeout: provider.timeoutMs,
   });
 }

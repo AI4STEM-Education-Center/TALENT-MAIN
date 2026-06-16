@@ -5,6 +5,26 @@ import { encryptApiKey, maskApiKey, decryptApiKey } from "@/lib/crypto";
 
 const VALID_TYPES = new Set(["openai", "local", "cloudflare"]);
 
+// Bounds for a provider's per-request timeout override (ms). null clears the
+// override so the resolver falls back to DEFAULT_AI_TIMEOUT_MS.
+const MIN_TIMEOUT_MS = 1_000;        // 1s
+const MAX_TIMEOUT_MS = 3_600_000;    // 60min
+
+/**
+ * Validate an incoming `timeoutMs` value. Returns either `{ value }` (an int or
+ * null when unset/empty) or `{ error }` with a message for a 400 response.
+ */
+function parseTimeoutMs(raw: unknown): { value: number | null } | { error: string } {
+  if (raw === undefined || raw === null || raw === "") return { value: null };
+  const n = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isInteger(n) || n < MIN_TIMEOUT_MS || n > MAX_TIMEOUT_MS) {
+    return {
+      error: `timeoutMs must be an integer between ${MIN_TIMEOUT_MS} and ${MAX_TIMEOUT_MS} ms, or null to use the default`,
+    };
+  }
+  return { value: n };
+}
+
 /**
  * GET /api/admin/ai-providers
  * List all AI providers. API keys are returned masked.
@@ -47,6 +67,7 @@ export async function GET() {
         hasApiKey: !!p.apiKeyEnc,
         maskedApiKey: maskedKey,
         cfAigByokAlias: p.cfAigByokAlias,
+        timeoutMs: p.timeoutMs,
         isActive: p.isActive,
         createdAt: p.createdAt,
         updatedAt: p.updatedAt,
@@ -89,6 +110,11 @@ export async function POST(req: Request) {
     const cfAigByokAlias = typeof body.cfAigByokAlias === "string"
       ? body.cfAigByokAlias.trim() || null
       : null;
+
+    const timeout = parseTimeoutMs(body.timeoutMs);
+    if ("error" in timeout) {
+      return NextResponse.json({ error: timeout.error }, { status: 400 });
+    }
 
     if (!name) {
       return NextResponse.json({ error: "Provider name is required" }, { status: 400 });
@@ -134,6 +160,7 @@ export async function POST(req: Request) {
         apiKeyIv: encryptedKey?.iv ?? null,
         apiKeyTag: encryptedKey?.tag ?? null,
         cfAigByokAlias: providerType === "cloudflare" ? cfAigByokAlias : null,
+        timeoutMs: timeout.value,
       },
     });
 
@@ -146,6 +173,7 @@ export async function POST(req: Request) {
         hasApiKey: !!encryptedKey,
         maskedApiKey: apiKey ? maskApiKey(apiKey) : null,
         cfAigByokAlias: provider.cfAigByokAlias,
+        timeoutMs: provider.timeoutMs,
         isActive: provider.isActive,
       },
     }, { status: 201 });
