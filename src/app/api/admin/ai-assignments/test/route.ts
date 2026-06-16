@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { resolveProvider, buildProviderHeaders, type UseCase } from "@/lib/ai-provider";
+import { resolveProvider, createOpenAIClient, type UseCase } from "@/lib/ai-provider";
 import { streamChatCompletion } from "@/lib/ai-streaming";
 
 const VALID_USE_CASES: UseCase[] = [
@@ -45,23 +45,11 @@ export async function POST(req: Request) {
     }
 
     const isLocal = provider.providerType === "local";
-    const isCloudflare = provider.providerType === "cloudflare";
 
-    const { OpenAI } = await import("openai");
-
-    let baseURL: string | undefined;
-    if ((isLocal || isCloudflare) && provider.baseUrl) {
-      const normalized = provider.baseUrl.replace(/\/+$/, "");
-      baseURL = normalized.endsWith("/chat/completions")
-        ? normalized.slice(0, -"/chat/completions".length)
-        : normalized;
-    }
-
-    const openai = new OpenAI({
-      apiKey: provider.apiKey || "dummy-key-for-local",
-      baseURL,
-      defaultHeaders: buildProviderHeaders(provider),
-    });
+    // createOpenAIClient handles base-URL normalization, BYOK headers, and the
+    // provider's resolved timeout, so the connection test uses the exact same
+    // client config as real calls.
+    const openai = await createOpenAIClient(provider);
 
     const { text, metrics } = await streamChatCompletion(
       openai,

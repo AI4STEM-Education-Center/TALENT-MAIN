@@ -57,6 +57,7 @@ interface AiProvider {
   hasApiKey: boolean;
   maskedApiKey: string | null;
   cfAigByokAlias: string | null;
+  timeoutMs: number | null;
   isActive: boolean;
   models: AiModel[];
   assignmentCount: number;
@@ -82,6 +83,8 @@ interface ProviderForm {
   baseUrl: string;
   apiKey: string;
   cfAigByokAlias: string;
+  /** Per-request timeout in seconds. Empty string → use the server default. */
+  timeoutSec: string;
 }
 
 interface ModelForm {
@@ -106,7 +109,12 @@ const EMPTY_PROVIDER_FORM: ProviderForm = {
   baseUrl: "",
   apiKey: "",
   cfAigByokAlias: "",
+  timeoutSec: "",
 };
+
+// Default per-request timeout (seconds) — mirrors DEFAULT_AI_TIMEOUT_MS in
+// src/lib/ai-provider.ts; shown as the placeholder when no override is set.
+const DEFAULT_TIMEOUT_SEC = 600;
 
 const EMPTY_MODEL_FORM: ModelForm = {
   modelId: "",
@@ -211,10 +219,15 @@ export default function AiConfigPage() {
         : "/api/admin/ai-providers";
       const method = editingProviderId ? "PATCH" : "POST";
 
+      // The form holds the timeout in seconds; the API expects milliseconds (or
+      // null to fall back to the server default).
+      const trimmedTimeout = providerForm.timeoutSec.trim();
+      const timeoutMs = trimmedTimeout === "" ? null : Math.round(Number(trimmedTimeout) * 1000);
+
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(providerForm),
+        body: JSON.stringify({ ...providerForm, timeoutMs }),
       });
 
       if (!res.ok) {
@@ -240,6 +253,7 @@ export default function AiConfigPage() {
       baseUrl: p.baseUrl || "",
       apiKey: p.maskedApiKey || "",
       cfAigByokAlias: p.cfAigByokAlias || "",
+      timeoutSec: p.timeoutMs != null ? String(p.timeoutMs / 1000) : "",
     });
     setEditingProviderId(p.id);
     setShowProviderForm(true);
@@ -740,6 +754,26 @@ export default function AiConfigPage() {
                     />
                   </div>
                 )}
+                <div>
+                  <label htmlFor="provider-timeout" className="block text-sm font-medium mb-1">
+                    Request timeout (seconds){" "}
+                    <span className="text-muted-foreground font-normal">
+                      (leave empty for the default — {DEFAULT_TIMEOUT_SEC}s)
+                    </span>
+                  </label>
+                  <input
+                    id="provider-timeout"
+                    type="number"
+                    min={1}
+                    max={3600}
+                    value={providerForm.timeoutSec}
+                    onChange={(e) =>
+                      setProviderForm((f) => ({ ...f, timeoutSec: e.target.value }))
+                    }
+                    placeholder={String(DEFAULT_TIMEOUT_SEC)}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-hidden focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
+                  />
+                </div>
               </div>
               <div className="flex items-center gap-2 mt-4">
                 <button type="button"
@@ -828,6 +862,14 @@ export default function AiConfigPage() {
                           title="BYOK alias"
                         >
                           alias: {p.cfAigByokAlias}
+                        </span>
+                      )}
+                      {p.timeoutMs != null && (
+                        <span
+                          className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-1.5 py-0.5 text-xs text-muted-foreground dark:bg-gray-800"
+                          title="Per-request timeout override"
+                        >
+                          timeout: {p.timeoutMs / 1000}s
                         </span>
                       )}
                     </div>

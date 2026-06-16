@@ -27,6 +27,7 @@ function provider(overrides: Partial<ResolvedProvider>): ResolvedProvider {
     model: "gpt-5.1",
     serviceTier: null,
     cfAigByokAlias: null,
+    timeoutMs: 600_000,
     ...overrides,
   };
 }

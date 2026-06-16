@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from "vitest";
-import { resolveProvider, invalidateProviderCache } from "@/lib/ai-provider";
+import { resolveProvider, invalidateProviderCache, DEFAULT_AI_TIMEOUT_MS } from "@/lib/ai-provider";
 import { encryptApiKey } from "@/lib/crypto";
 import { prisma } from "@/lib/prisma";
 import { resetDb } from "./db";
@@ -13,6 +13,7 @@ async function seedAssignment(
     providerType?: string;
     baseUrl?: string | null;
     cfAigByokAlias?: string | null;
+    timeoutMs?: number | null;
   } = {}
 ) {
   const enc = opts.apiKey ? encryptApiKey(opts.apiKey) : null;
@@ -23,6 +24,7 @@ async function seedAssignment(
       baseUrl: opts.baseUrl ?? null,
       isActive: opts.isActive ?? true,
       cfAigByokAlias: opts.cfAigByokAlias ?? null,
+      timeoutMs: opts.timeoutMs ?? null,
       apiKeyEnc: enc?.encrypted ?? null,
       apiKeyIv: enc?.iv ?? null,
       apiKeyTag: enc?.tag ?? null,
@@ -64,6 +66,18 @@ describe("resolveProvider", () => {
       serviceTier: "flex",
       apiKey: "sk-secret-123",
     });
+  });
+
+  it("falls back to DEFAULT_AI_TIMEOUT_MS when the provider has no override", async () => {
+    await seedAssignment({ apiKey: "sk-x" });
+    const resolved = await resolveProvider("pdf_description");
+    expect(resolved?.timeoutMs).toBe(DEFAULT_AI_TIMEOUT_MS);
+  });
+
+  it("uses the provider's timeoutMs override when set", async () => {
+    await seedAssignment({ apiKey: "sk-x", timeoutMs: 30_000 });
+    const resolved = await resolveProvider("pdf_description");
+    expect(resolved?.timeoutMs).toBe(30_000);
   });
 
   it("returns null when the provider is inactive", async () => {
