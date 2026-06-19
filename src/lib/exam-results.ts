@@ -5,7 +5,7 @@
 // `chat-prompt.ts` and `recommendation.ts`. The impure orchestration that calls
 // the LLM / Prisma / S3 lives in `exam-results-engine.ts`.
 
-import type { MisconceptionInput } from "./recommendation";
+import type { HolisticAttempt } from "./recommendation";
 import type { QuizReviewAttempt } from "./chat-prompt";
 
 /** Generation status for the two async AI sections of an ExamResult. */
@@ -17,8 +17,8 @@ export const RESULT_STATUS = {
 } as const;
 export type ResultStatus = (typeof RESULT_STATUS)[keyof typeof RESULT_STATUS];
 
-/** At most one recommendation per wrong question, capped. Mirrors the chatbot. */
-export const MAX_RECOMMENDATIONS = 6;
+/** At most this many holistic study-material recommendations per attempt. */
+export const MAX_RECOMMENDATIONS = 3;
 
 // ─── Review snapshot ──────────────────────────────────────────────────────────
 
@@ -161,51 +161,27 @@ const optionDisplayText = (o: SnapshotOption): string =>
 const joinTexts = (opts: SnapshotOption[], pick: (o: SnapshotOption) => boolean): string[] =>
   opts.flatMap((o) => (pick(o) ? [optionDisplayText(o)] : []));
 
-/** Append a unit suffix (e.g. "9.8 m/s^2"). LaTeX in the unit passes through raw. */
-const withUnit = (value: string, unit: string | null | undefined): string =>
-  unit ? `${value} ${unit}` : value;
-
 /** True for snapshot questions persisted from a NUMERIC question (no options). */
 const isNumeric = (q: SnapshotQuestion): boolean => q.answerMode === "NUMERIC";
 
-/** Student-facing text of a NUMERIC submission, or "No answer" when absent. */
-const numericWrongAnswer = (q: SnapshotQuestion): string =>
-  q.submittedNumeric != null ? withUnit(String(q.submittedNumeric), q.unit) : "No answer";
-
-/** Text of a NUMERIC question's correct value (always present for a graded q). */
-const numericCorrectAnswer = (q: SnapshotQuestion): string =>
-  withUnit(String(q.correctNumeric), q.unit);
-
 /**
- * Derive the misconception inputs for the recommendation engine from the
- * snapshot's incorrect questions. Capped at `maxCount`; reports whether more
- * wrong answers existed than were kept.
+ * Derive the HOLISTIC recommendation input from the whole snapshot: every
+ * question's text + correctness, plus aggregate right/wrong counts. The
+ * recommendation engine uses this to pick materials across the whole attempt,
+ * and the prompts (see recommendation.ts) deliberately never reveal which
+ * specific questions were wrong.
  */
-export function snapshotToMisconceptions(
-  snapshot: ReviewSnapshot,
-  maxCount: number = MAX_RECOMMENDATIONS
-): { inputs: MisconceptionInput[]; truncated: boolean } {
-  const wrong = snapshot.questions.filter((q) => !q.isCorrect);
-  const truncated = wrong.length > maxCount;
-  const inputs = wrong.slice(0, maxCount).map((q) => {
-    // NUMERIC questions carry no options; surface the submitted/correct numbers
-    // (+unit) instead of option text. Choice questions are byte-identical.
-    if (isNumeric(q)) {
-      return {
-        questionText: q.text,
-        wrongAnswer: numericWrongAnswer(q),
-        correctAnswer: numericCorrectAnswer(q),
-      };
-    }
-    const selected = joinTexts(q.options, (o) => o.selected);
-    const correct = joinTexts(q.options, (o) => o.isCorrect);
-    return {
-      questionText: q.text,
-      wrongAnswer: selected.length > 0 ? selected.join(" | ") : "No answer selected",
-      correctAnswer: correct.length > 0 ? correct.join(" | ") : null,
-    };
-  });
-  return { inputs, truncated };
+export function snapshotToHolisticInput(snapshot: ReviewSnapshot): HolisticAttempt {
+  const questions = snapshot.questions.map((q) => ({
+    questionText: q.text,
+    isCorrect: q.isCorrect,
+  }));
+  const incorrectCount = questions.filter((q) => !q.isCorrect).length;
+  return {
+    questions,
+    correctCount: questions.length - incorrectCount,
+    incorrectCount,
+  };
 }
 
 /**
@@ -264,11 +240,10 @@ export function snapshotToSummaryAttempt(
 /** A page kept in the DB: storageKey (NOT a presigned URL — those expire). */
 export type StoredRecPage = { pageNumber: number; storageKey: string };
 export type StoredRecommendation = {
-  questionText: string;
   materialTitle: string;
   pageRange: { start: number; end: number };
-  fileReason: string;
-  pageReason: string;
+  // Single holistic reason — never references a specific question or answer.
+  reason: string;
   pages: StoredRecPage[];
 };
 export type StoredRecommendations = { items: StoredRecommendation[]; truncated: boolean };
