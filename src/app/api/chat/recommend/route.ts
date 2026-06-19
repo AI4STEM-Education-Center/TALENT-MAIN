@@ -6,24 +6,24 @@ import { resolveProvider, createOpenAIClient } from "@/lib/ai-provider";
 import { streamJsonCompletion } from "@/lib/ai-streaming";
 import { presignGetUrl, getS3Config } from "@/lib/storage";
 import {
-  FILE_SELECTION_SCHEMA,
+  MATERIAL_SELECTION_SCHEMA,
   PAGE_SELECTION_SCHEMA,
-  buildFileSelectionPrompt,
+  buildMaterialSelectionPrompt,
   buildPageSelectionPrompt,
   resolveSelectedMaterial,
+  dedupeSelectedMaterials,
   clampPageRange,
-  type MisconceptionInput,
+  type HolisticAttempt,
   type CatalogMaterial,
   type CatalogPage,
-  type FileSelection,
+  type MaterialSelection,
+  type SelectedMaterial,
   type PageSelection,
 } from "@/lib/recommendation";
 
 export const runtime = "nodejs";
 
-// Bound LLM fan-out and rendered images: at most one recommendation per wrong
-// question, capped, and at most this many pages shown per recommendation.
-const MAX_RECOMMENDATIONS = 6;
+// At most this many pages shown per recommendation.
 const MAX_PAGES_PER_REC = 5;
 const PROCESSED_STATUS = "SUCCESS";
 
@@ -45,12 +45,12 @@ type MaterialRow = {
   pages: MaterialPageRow[];
 };
 
+// Holistic recommendation: one card per chosen material (no per-question
+// framing), so it never reveals which questions the student got wrong.
 type Recommendation = {
-  questionText: string;
   materialTitle: string;
   pageRange: { start: number; end: number };
-  fileReason: string;
-  pageReason: string;
+  reason: string;
   pages: { pageNumber: number; imageUrl: string }[];
 };
 
@@ -86,77 +86,17 @@ async function runStructuredStep<T>(
   return value;
 }
 
-function correctAnswerText(options: Array<{ text: string; isCorrect: boolean }>): string | null {
-  const correct = options.flatMap((o) => (o.isCorrect ? [o.text] : []));
-  return correct.length > 0 ? correct.join(" | ") : null;
-}
-
-/** Append a unit suffix; LaTeX in the unit passes through raw (display-only). */
-function withUnit(value: string, unit: string | null | undefined): string {
-  return unit ? `${value} ${unit}` : value;
-}
-
-/**
- * Build the misconception input for one wrong answer. NUMERIC questions carry no
- * options, so surface the student's submitted number (or "No answer") and the
- * correct number (+unit); choice questions keep their option-text behavior.
- */
-function misconceptionFor(answer: {
-  numericValue: number | null;
-  selectedOption: { text: string } | null;
-  question: {
-    text: string;
-    options: Array<{ text: string; isCorrect: boolean }>;
-    answerMode?: string;
-    answerNumeric?: number | null;
-    answerUnit?: string | null;
-  };
-}): MisconceptionInput {
-  const { question } = answer;
-  if (question.answerMode === "NUMERIC") {
-    return {
-      questionText: question.text,
-      wrongAnswer:
-        answer.numericValue != null
-          ? withUnit(String(answer.numericValue), question.answerUnit)
-          : "No answer",
-      correctAnswer:
-        question.answerNumeric != null
-          ? withUnit(String(question.answerNumeric), question.answerUnit)
-          : null,
-    };
-  }
-  return {
-    questionText: question.text,
-    wrongAnswer: answer.selectedOption?.text ?? "No answer selected",
-    correctAnswer: correctAnswerText(question.options),
-  };
-}
-
-async function recommendForAnswer(
+/** Step 2 for one chosen material: pick a focused 0-5 page range within it. */
+async function recommendForMaterial(
   client: OpenAI,
   model: string,
   bucket: string,
-  input: MisconceptionInput,
-  catalog: CatalogMaterial[],
-  materials: MaterialRow[],
+  attempt: HolisticAttempt,
+  chosen: CatalogMaterial,
+  material: MaterialRow,
+  materialReason: string,
   isLocal: boolean
 ): Promise<Recommendation | null> {
-  // Step 1: choose the most relevant material.
-  const fileSelection = await runStructuredStep<FileSelection>(
-    client,
-    model,
-    buildFileSelectionPrompt(input, catalog),
-    "file_selection",
-    FILE_SELECTION_SCHEMA,
-    isLocal
-  );
-
-  const chosen = resolveSelectedMaterial(fileSelection.material_index, catalog);
-  if (!chosen) return null;
-  const material = materials[chosen.index - 1];
-  if (!material) return null;
-
   // Pages worth recommending: drop pages the VLM marked as non-teaching
   // (needed === false). If that leaves nothing, fall back to all pages.
   const teachingPages = material.pages.filter((p) => p.needed !== false);
@@ -169,15 +109,16 @@ async function recommendForAnswer(
     description: p.description ?? "",
   }));
 
-  // Step 2: choose a focused page range within the selected material.
   const pageSelection = await runStructuredStep<PageSelection>(
     client,
     model,
-    buildPageSelectionPrompt(input, chosen.title, catalogPages),
+    buildPageSelectionPrompt(attempt, chosen.title, catalogPages),
     "page_selection",
     PAGE_SELECTION_SCHEMA,
     isLocal
   );
+
+  if (!pageSelection.has_relevant_pages) return null;
 
   const range = clampPageRange(
     pageSelection.start_page,
@@ -199,11 +140,9 @@ async function recommendForAnswer(
   );
 
   return {
-    questionText: input.questionText,
     materialTitle: chosen.title,
     pageRange: range,
-    fileReason: fileSelection.reasoning,
-    pageReason: pageSelection.reasoning,
+    reason: pageSelection.reasoning?.trim() || materialReason,
     pages,
   };
 }
@@ -230,28 +169,26 @@ export async function POST() {
         answers: {
           select: {
             isCorrect: true,
-            numericValue: true, // NUMERIC questions: the student's submitted number
-            selectedOption: { select: { text: true } },
-            question: {
-              select: {
-                text: true,
-                options: { select: { text: true, isCorrect: true } },
-                // NUMERIC grading data so the misconception input reflects the
-                // numeric answer rather than (absent) option text.
-                answerMode: true,
-                answerNumeric: true,
-                answerUnit: true,
-              },
-            },
+            question: { select: { text: true } },
           },
         },
       },
     });
 
     if (!attempt) return EMPTY;
+    if (attempt.answers.length === 0) return EMPTY;
 
-    const incorrect = attempt.answers.filter((a) => !a.isCorrect);
-    if (incorrect.length === 0) return EMPTY;
+    // Holistic attempt picture (every question + correctness, aggregate counts).
+    // The prompts never reveal which questions were wrong.
+    const holistic: HolisticAttempt = {
+      questions: attempt.answers.map((a) => ({
+        questionText: a.question.text,
+        isCorrect: a.isCorrect,
+      })),
+      correctCount: attempt.answers.filter((a) => a.isCorrect).length,
+      incorrectCount: attempt.answers.filter((a) => !a.isCorrect).length,
+    };
+    if (holistic.incorrectCount === 0) return EMPTY;
 
     // Catalog: materials shown in this class (MaterialClass is the source of
     // truth), restricted to fully processed files that have analysis metadata
@@ -314,16 +251,36 @@ export async function POST() {
       keyConcepts: parseKeyConcepts(m.batchKeyConcepts),
     }));
 
-    const truncated = incorrect.length > MAX_RECOMMENDATIONS;
-    const toProcess = incorrect.slice(0, MAX_RECOMMENDATIONS);
+    // Step 1: choose at most 3 materials across the whole attempt.
+    const materialSelection = await runStructuredStep<MaterialSelection>(
+      client,
+      provider.model,
+      buildMaterialSelectionPrompt(holistic, catalog),
+      "material_selection",
+      MATERIAL_SELECTION_SCHEMA,
+      isLocal
+    );
+    const { kept, truncated } = dedupeSelectedMaterials(materialSelection.materials ?? [], catalog);
 
+    // Step 2: one page-selection call per chosen material (skipped when none).
     const results = await Promise.all(
-      toProcess.map(async (answer) => {
-        const input = misconceptionFor(answer);
+      kept.map(async (sel: SelectedMaterial) => {
+        const chosen = resolveSelectedMaterial(sel.material_index, catalog);
+        const material = chosen ? materials[chosen.index - 1] : undefined;
+        if (!chosen || !material) return null;
         try {
-          return await recommendForAnswer(client, provider.model, bucket, input, catalog, materials, isLocal);
+          return await recommendForMaterial(
+            client,
+            provider.model,
+            bucket,
+            holistic,
+            chosen,
+            material,
+            sel.reasoning,
+            isLocal
+          );
         } catch (err) {
-          console.error("[Recommend] Failed to build recommendation for a question:", err);
+          console.error("[Recommend] Failed to build a recommendation:", err);
           return null;
         }
       })

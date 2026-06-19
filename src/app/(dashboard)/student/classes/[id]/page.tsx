@@ -37,10 +37,26 @@ export default async function StudentClassPage({ params }: { params: Promise<{ i
   if (!cls) notFound();
 
   const quizzes = cls.classQuizzes.map((cq) => cq.quiz);
-  const progressRecords = await prisma.quizProgress.findMany({
-    where: { studentId: student.id, classId: id, quizId: { in: quizzes.map((q) => q.id) } },
-  });
+  // Per-class quiz settings (availability window + attempt cap) keyed by quizId.
+  const settingsByQuiz = new Map(cls.classQuizzes.map((cq) => [cq.quizId, cq]));
+  const quizIds = quizzes.map((q) => q.id);
+
+  // Progress + completed-attempt counts (for the attempt cap) in parallel.
+  const [progressRecords, attemptGroups] = await Promise.all([
+    prisma.quizProgress.findMany({
+      where: { studentId: student.id, classId: id, quizId: { in: quizIds } },
+    }),
+    prisma.quizAttempt.groupBy({
+      by: ["quizId"],
+      where: { studentId: student.id, classId: id, quizId: { in: quizIds }, completedAt: { not: null } },
+      _count: { _all: true },
+    }),
+  ]);
   const progressMap = new Map(progressRecords.map((p) => [p.quizId, p]));
+  const attemptsByQuiz = new Map(
+    attemptGroups.flatMap((g) => (g.quizId ? [[g.quizId, g._count._all]] : []))
+  );
+  const now = new Date();
 
   // Topic is an optional grouping label: quizzes with one are grouped under it,
   // the rest land in a single ungrouped section at the end.
@@ -110,6 +126,20 @@ export default async function StudentClassPage({ params }: { params: Promise<{ i
                       const status = progress?.status || "NOT_STARTED";
                       const score = progress?.bestScore;
 
+                      // Per-class availability + attempt gating. Server-side
+                      // enforcement in POST /api/quiz remains the source of truth.
+                      const settings = settingsByQuiz.get(quiz.id);
+                      const opensAt = settings?.availableFrom ? new Date(settings.availableFrom) : null;
+                      const closesAt = settings?.availableUntil ? new Date(settings.availableUntil) : null;
+                      const maxAttempts = settings?.maxAttempts ?? null;
+                      const attemptsUsed = attemptsByQuiz.get(quiz.id) ?? 0;
+                      const notOpenYet = opensAt != null && now < opensAt;
+                      const closed = closesAt != null && now > closesAt;
+                      const attemptsExhausted = maxAttempts != null && maxAttempts > 0 && attemptsUsed >= maxAttempts;
+                      const locked = notOpenYet || closed || attemptsExhausted;
+
+                      const dateFmt: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
+
                       return (
                         <div key={quiz.id} className="flex items-center justify-between gap-2 p-3 rounded-lg border hover:bg-muted/30 transition-colors">
                           <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -125,13 +155,26 @@ export default async function StudentClassPage({ params }: { params: Promise<{ i
                               {score !== null && score !== undefined && (
                                 <p className="text-xs text-muted-foreground">Best score: {Math.round(score)}%</p>
                               )}
+                              <div className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+                                {notOpenYet && <span>Opens {opensAt!.toLocaleDateString(undefined, dateFmt)}</span>}
+                                {closed && <span>Closed {closesAt!.toLocaleDateString(undefined, dateFmt)}</span>}
+                                {maxAttempts != null && maxAttempts > 0 && (
+                                  <span>Attempts {attemptsUsed}/{maxAttempts}</span>
+                                )}
+                              </div>
                             </div>
                           </div>
-                          <Button size="sm" variant={status === "COMPLETED" ? "secondary" : "default"} asChild className="shrink-0">
-                            <Link href={`/student/classes/${id}/quiz/${quiz.id}`}>
-                              {status === "COMPLETED" ? "Retry" : status === "IN_PROGRESS" ? "Continue" : "Start"}
-                            </Link>
-                          </Button>
+                          {locked ? (
+                            <Button size="sm" variant="secondary" disabled className="shrink-0">
+                              {notOpenYet ? "Not open" : closed ? "Closed" : "No attempts left"}
+                            </Button>
+                          ) : (
+                            <Button size="sm" variant={status === "COMPLETED" ? "secondary" : "default"} asChild className="shrink-0">
+                              <Link href={`/student/classes/${id}/quiz/${quiz.id}`}>
+                                {status === "COMPLETED" ? "Retry" : status === "IN_PROGRESS" ? "Continue" : "Start"}
+                              </Link>
+                            </Button>
+                          )}
                         </div>
                       );
                     })}

@@ -5,9 +5,8 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { RotateCcw } from "lucide-react";
 import { ExamResultsView } from "@/components/student/ExamResultsView";
-import { parseReviewSnapshot, RESULT_STATUS, type ResultStatus } from "@/lib/exam-results";
+import { RESULT_STATUS, type ResultStatus } from "@/lib/exam-results";
 import { presignStoredRecommendations } from "@/lib/exam-results-engine";
-import { presignQuestionFigure, presignOptionImage } from "@/lib/question-figures";
 
 export default async function ExamResultsPage({
   params,
@@ -31,29 +30,9 @@ export default async function ExamResultsPage({
   const examResult = await prisma.examResult.findUnique({ where: { quizAttemptId: attemptId } });
   if (!examResult || examResult.studentId !== student.id) notFound();
 
-  const snapshot = parseReviewSnapshot(examResult.reviewSnapshot);
-
-  // Attach transient presigned URLs (never persisted) so QuestionCard can render
-  // question figures and image answer-choices. The snapshot stores only storage
-  // keys, not buckets, so we pass bucket: null → the default bucket is used.
-  await Promise.all(
-    snapshot.questions.map(async (q) => {
-      if (q.figureStorageKey) {
-        q.figureUrl = await presignQuestionFigure({
-          figureStorageKey: q.figureStorageKey,
-          figureBucket: null,
-        });
-      }
-      await Promise.all(
-        q.options.map(async (o) => {
-          if (o.imageStorageKey) {
-            o.imageUrl = await presignOptionImage({ imageStorageKey: o.imageStorageKey, imageBucket: null });
-          }
-        })
-      );
-    })
-  );
-
+  // Blind results: the student sees only their score %, the AI summary, and the
+  // holistic study recommendations — never the per-question review or the
+  // correct answers. So we don't parse or presign the question snapshot here.
   const recsReady = examResult.recommendationsStatus === RESULT_STATUS.READY;
   const presigned = recsReady
     ? await presignStoredRecommendations(examResult.recommendations)
@@ -63,9 +42,6 @@ export default async function ExamResultsPage({
     <ExamResultsView
       attemptId={attemptId}
       score={examResult.score}
-      correct={examResult.correctCount}
-      total={examResult.totalCount}
-      questions={snapshot.questions}
       initial={{
         summary: examResult.summary,
         summaryStatus: examResult.summaryStatus as ResultStatus,

@@ -9,7 +9,7 @@ import { ArrowLeft, XCircle, RotateCcw, Maximize2 } from "lucide-react";
 import { ExamResultsView } from "@/components/student/ExamResultsView";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { MathText } from "@/components/ui/math-text";
-import { buildReviewSnapshot, RESULT_STATUS } from "@/lib/exam-results";
+import { RESULT_STATUS } from "@/lib/exam-results";
 import { normalizeNumericValue } from "@/lib/quiz-scoring";
 
 interface Option { id: string; text: string; isCorrect?: boolean; imageUrl?: string | null; imageAlt?: string | null }
@@ -25,12 +25,10 @@ interface Question {
   answerTolerance?: number | null;
   options: Option[];
 }
+// Blind results: the submit API returns only the score. Per-question
+// correctness and correct answers are never sent to the student.
 interface QuizResult {
   score: number;
-  correct: number;
-  total: number;
-  questions: Question[];
-  answers: { questionId: string; selectedOptionId: string | null; selectedOptionIds?: string[]; numericValue?: number | null; isCorrect: boolean }[];
 }
 
 type Phase = "loading" | "quiz" | "results" | "error";
@@ -178,50 +176,15 @@ export default function QuizPage() {
   }
 
   if (phase === "results" && result) {
-    // Build the durable snapshot shape from the submit response so the inline
-    // view uses the exact same component (and layout) as the history results
-    // page. AI sections start PENDING and the view polls until the worker fills
-    // them in — generation continues server-side even if the student leaves.
-    // The post-submission PATCH payload now reveals the NUMERIC grading scalars
-    // (answerNumeric/answerTolerance/answerUnit) and the presigned figureUrl, so
-    // the inline snapshot can populate correctNumeric/tolerance/unit just like
-    // the durable server-built one. figureStorageKey is passed as null here (the
-    // client never sees raw keys); the transient figureUrl is re-attached below.
-    const snapshot = buildReviewSnapshot(
-      result.questions.map((q) => ({
-        id: q.id,
-        text: q.text,
-        options: q.options.map((o) => ({ id: o.id, text: o.text, isCorrect: o.isCorrect ?? false })),
-        answerMode: q.answerMode,
-        answerNumeric: q.answerNumeric ?? null,
-        answerTolerance: q.answerTolerance ?? null,
-        answerUnit: q.answerUnit ?? null,
-        figureStorageKey: null,
-        figureAlt: q.figureAlt ?? null,
-      })),
-      result.answers.map((a) => ({
-        questionId: a.questionId,
-        selectedOptionIds: a.selectedOptionIds ?? (a.selectedOptionId ? [a.selectedOptionId] : []),
-        isCorrect: a.isCorrect,
-        numericValue: a.numericValue ?? null,
-      }))
-    );
-
-    // Re-attach the transient presigned figureUrl onto the built snapshot
-    // questions (buildReviewSnapshot never sets it). The snapshot preserves the
-    // input question order, so map positionally to the PATCH question rows.
-    const snapshotQuestions = snapshot.questions.map((q, i) => ({
-      ...q,
-      figureUrl: result.questions[i]?.figureUrl ?? null,
-    }));
-
+    // Blind results: the inline view shows only the score %, the AI summary,
+    // and holistic study recommendations — never the per-question review or the
+    // correct answers. AI sections start PENDING and the view polls until the
+    // worker fills them in (generation continues server-side even if the
+    // student leaves). So we no longer build/pass the question snapshot.
     return (
       <ExamResultsView
         attemptId={attemptId}
         score={result.score}
-        correct={result.correct}
-        total={result.total}
-        questions={snapshotQuestions}
         initial={{
           summary: null,
           summaryStatus: RESULT_STATUS.PENDING,

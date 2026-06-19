@@ -7,11 +7,11 @@ import remarkGfm from "remark-gfm";
 import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ScoreBanner, QuizReviewList } from "@/components/student/QuizReviewResult";
+import { ScoreBanner } from "@/components/student/QuizReviewResult";
+import { HolisticRecommendations } from "@/components/student/HolisticRecommendations";
 import {
   RESULT_STATUS,
   type ResultStatus,
-  type SnapshotQuestion,
   type PresignedRecommendation,
 } from "@/lib/exam-results";
 
@@ -57,9 +57,6 @@ function SummaryBody({ ai }: { ai: AiState }) {
 export function ExamResultsView({
   attemptId,
   score,
-  correct,
-  total,
-  questions,
   initial,
   backHref,
   backLabel = "Back",
@@ -67,9 +64,6 @@ export function ExamResultsView({
 }: {
   attemptId: string;
   score: number;
-  correct: number;
-  total: number;
-  questions: SnapshotQuestion[];
   initial: AiState;
   backHref?: string;
   backLabel?: string;
@@ -128,23 +122,21 @@ export function ExamResultsView({
         </Button>
       )}
 
-      {/* Unified header: the score banner and the AI summary live in one
-          full-width card (one column). */}
+      {/* Unified header: the score banner (percentage only — no per-question
+          count) and the AI summary live in one full-width card. */}
       <Card>
         <CardContent className="space-y-4 py-5">
-          <ScoreBanner score={score} correct={correct} total={total} />
+          <ScoreBanner score={score} />
           <div className="border-t" />
           <SummaryBody ai={ai} />
         </CardContent>
       </Card>
 
-      {/* Review: each incorrect question is paired with its recommended
-          materials card; the page images inside scroll. */}
-      <QuizReviewList
-        questions={questions}
+      {/* Holistic study recommendations — up to 3 cards chosen across the whole
+          attempt, with NO per-question correctness or correct answers shown. */}
+      <HolisticRecommendations
         recommendations={ai.recommendations}
-        recommendationsStatus={ai.recommendationsStatus}
-        truncated={ai.truncated}
+        status={ai.recommendationsStatus}
       />
 
       {actions && <div className="flex flex-wrap gap-3">{actions}</div>}

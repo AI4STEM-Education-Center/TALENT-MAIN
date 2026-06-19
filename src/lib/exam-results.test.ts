@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildReviewSnapshot,
   parseReviewSnapshot,
-  snapshotToMisconceptions,
+  snapshotToHolisticInput,
   snapshotToSummaryAttempt,
   parseStoredRecommendations,
   mapPresignedRecommendations,
@@ -179,9 +179,9 @@ describe("parseReviewSnapshot", () => {
   });
 });
 
-// ─── snapshotToMisconceptions ────────────────────────────────────────────────────
+// ─── snapshotToHolisticInput ─────────────────────────────────────────────────────
 
-describe("snapshotToMisconceptions", () => {
+describe("snapshotToHolisticInput", () => {
   const snapshot: ReviewSnapshot = {
     questions: [
       {
@@ -205,46 +205,35 @@ describe("snapshotToMisconceptions", () => {
     ],
   };
 
-  it("returns inputs only for incorrect questions, with wrong/correct answers", () => {
-    const { inputs, truncated } = snapshotToMisconceptions(snapshot);
-    expect(truncated).toBe(false);
-    expect(inputs).toHaveLength(2);
-    expect(inputs[0]).toEqual({
-      questionText: "Wrong one",
-      wrongAnswer: "bad",
-      correctAnswer: "good",
-    });
+  it("returns every question with its correctness plus aggregate counts", () => {
+    const holistic = snapshotToHolisticInput(snapshot);
+    expect(holistic.questions).toEqual([
+      { questionText: "Right one", isCorrect: true },
+      { questionText: "Wrong one", isCorrect: false },
+      { questionText: "Skipped one", isCorrect: false },
+    ]);
+    expect(holistic.correctCount).toBe(1);
+    expect(holistic.incorrectCount).toBe(2);
   });
 
-  it("uses 'No answer selected' when nothing was chosen", () => {
-    const { inputs } = snapshotToMisconceptions(snapshot);
-    expect(inputs[1].wrongAnswer).toBe("No answer selected");
-  });
-
-  it("caps at maxCount and reports truncation", () => {
-    const many: ReviewSnapshot = {
-      questions: Array.from({ length: MAX_RECOMMENDATIONS + 2 }, (_, i) => ({
-        text: `q${i}`,
-        isCorrect: false,
-        options: [
-          { text: "c", isCorrect: true, selected: false },
-          { text: "w", isCorrect: false, selected: true },
-        ],
-      })),
-    };
-    const { inputs, truncated } = snapshotToMisconceptions(many);
-    expect(inputs).toHaveLength(MAX_RECOMMENDATIONS);
-    expect(truncated).toBe(true);
-  });
-
-  it("returns no inputs for a perfect score", () => {
+  it("reports zero incorrect for a perfect score", () => {
     const perfect: ReviewSnapshot = {
       questions: [{ text: "q", isCorrect: true, options: [{ text: "a", isCorrect: true, selected: true }] }],
     };
-    expect(snapshotToMisconceptions(perfect)).toEqual({ inputs: [], truncated: false });
+    const holistic = snapshotToHolisticInput(perfect);
+    expect(holistic.incorrectCount).toBe(0);
+    expect(holistic.correctCount).toBe(1);
   });
 
-  it("formats NUMERIC wrong/correct answers with the unit", () => {
+  it("handles an empty snapshot", () => {
+    expect(snapshotToHolisticInput({ questions: [] })).toEqual({
+      questions: [],
+      correctCount: 0,
+      incorrectCount: 0,
+    });
+  });
+
+  it("includes NUMERIC questions by text + correctness", () => {
     const numeric: ReviewSnapshot = {
       questions: [
         {
@@ -259,36 +248,14 @@ describe("snapshotToMisconceptions", () => {
         },
       ],
     };
-    const { inputs } = snapshotToMisconceptions(numeric);
-    expect(inputs[0]).toEqual({
-      questionText: "Acceleration of gravity?",
-      wrongAnswer: "8 m/s^2",
-      correctAnswer: "9.8 m/s^2",
-    });
+    const holistic = snapshotToHolisticInput(numeric);
+    expect(holistic.questions).toEqual([{ questionText: "Acceleration of gravity?", isCorrect: false }]);
+    expect(holistic.incorrectCount).toBe(1);
   });
+});
 
-  it("uses 'No answer' for a blank NUMERIC submission (no unit appended)", () => {
-    const numeric: ReviewSnapshot = {
-      questions: [
-        {
-          text: "Mass?",
-          isCorrect: false,
-          options: [],
-          answerMode: "NUMERIC",
-          correctNumeric: 5,
-          tolerance: null,
-          unit: null,
-          submittedNumeric: null,
-        },
-      ],
-    };
-    const { inputs } = snapshotToMisconceptions(numeric);
-    expect(inputs[0]).toEqual({
-      questionText: "Mass?",
-      wrongAnswer: "No answer",
-      correctAnswer: "5",
-    });
-  });
+it("caps MAX_RECOMMENDATIONS at 3", () => {
+  expect(MAX_RECOMMENDATIONS).toBe(3);
 });
 
 // ─── snapshotToSummaryAttempt (+ buildQuizReviewPrompt integration) ───────────────
@@ -373,11 +340,9 @@ describe("parseStoredRecommendations", () => {
     const stored: StoredRecommendations = {
       items: [
         {
-          questionText: "q",
           materialTitle: "M",
           pageRange: { start: 1, end: 2 },
-          fileReason: "f",
-          pageReason: "p",
+          reason: "p",
           pages: [{ pageNumber: 1, storageKey: "k1" }],
         },
       ],
@@ -399,11 +364,9 @@ describe("mapPresignedRecommendations", () => {
   const stored: StoredRecommendations = {
     items: [
       {
-        questionText: "q",
         materialTitle: "M",
         pageRange: { start: 1, end: 2 },
-        fileReason: "f",
-        pageReason: "p",
+        reason: "p",
         pages: [
           { pageNumber: 1, storageKey: "good-1" },
           { pageNumber: 2, storageKey: "bad-2" },

@@ -1,46 +1,57 @@
 import { describe, it, expect } from "vitest";
 import {
-  buildFileSelectionPrompt,
+  buildMaterialSelectionPrompt,
   buildPageSelectionPrompt,
   resolveSelectedMaterial,
+  dedupeSelectedMaterials,
   clampPageRange,
   MAX_PAGE_SPAN,
+  MAX_MATERIALS,
   type CatalogMaterial,
   type CatalogPage,
-  type MisconceptionInput,
+  type HolisticAttempt,
+  type SelectedMaterial,
 } from "./recommendation";
 
-const input: MisconceptionInput = {
-  questionText: "What is Newton's third law?",
-  wrongAnswer: "Forces are zero while accelerating",
-  correctAnswer: "Forces are equal and opposite",
+const attempt: HolisticAttempt = {
+  questions: [
+    { questionText: "What is Newton's third law?", isCorrect: false },
+    { questionText: "Define velocity", isCorrect: true },
+  ],
+  correctCount: 1,
+  incorrectCount: 1,
 };
 
 const materials: CatalogMaterial[] = [
   { index: 1, title: "Forces.pdf", description: "Intro to forces", keyConcepts: ["force", "friction"] },
   { index: 2, title: "Newtons Laws.pdf", description: "All three laws", keyConcepts: ["inertia", "action-reaction"] },
+  { index: 3, title: "Kinematics.pdf", description: "Motion", keyConcepts: ["velocity"] },
+  { index: 4, title: "Energy.pdf", description: "Work & energy", keyConcepts: ["work"] },
 ];
 
-describe("buildFileSelectionPrompt", () => {
-  it("includes the question, both answers, and every catalog entry", () => {
-    const prompt = buildFileSelectionPrompt(input, materials);
+describe("buildMaterialSelectionPrompt", () => {
+  it("includes the covered topics, overall counts, and every catalog entry", () => {
+    const prompt = buildMaterialSelectionPrompt(attempt, materials);
     expect(prompt).toContain("What is Newton's third law?");
-    expect(prompt).toContain("Forces are zero while accelerating");
-    expect(prompt).toContain("Correct Answer: Forces are equal and opposite");
+    expect(prompt).toContain("Define velocity");
+    expect(prompt).toContain("1 correctly and 1 incorrectly");
     expect(prompt).toContain("[1] Forces.pdf");
     expect(prompt).toContain("[2] Newtons Laws.pdf");
     expect(prompt).toContain("action-reaction");
-    // asks for the index-based structured output
-    expect(prompt.toLowerCase()).toContain("material_index");
+    expect(prompt.toLowerCase()).toContain("at most 3");
   });
 
-  it("omits the correct-answer line when none is provided", () => {
-    const prompt = buildFileSelectionPrompt({ ...input, correctAnswer: null }, materials);
-    expect(prompt).not.toContain("Correct Answer:");
+  it("never instructs the model to reveal what the student got wrong", () => {
+    const prompt = buildMaterialSelectionPrompt(attempt, materials);
+    // It must explicitly forbid revealing specifics.
+    expect(prompt.toLowerCase()).toContain("never reveal");
+    // It does NOT label individual questions as wrong/correct.
+    expect(prompt).not.toContain("Wrong Answer");
+    expect(prompt).not.toContain("Correct Answer");
   });
 
   it("falls back to N/A when a material has no key concepts or description", () => {
-    const prompt = buildFileSelectionPrompt(input, [
+    const prompt = buildMaterialSelectionPrompt(attempt, [
       { index: 1, title: "Empty.pdf", description: "", keyConcepts: [] },
     ]);
     expect(prompt).toContain("Key Concepts: N/A");
@@ -54,12 +65,14 @@ describe("buildPageSelectionPrompt", () => {
     { pageNumber: 22, keyConcept: "free body diagram", description: "drawing forces" },
   ];
 
-  it("includes the selected material title and each page", () => {
-    const prompt = buildPageSelectionPrompt(input, "Newtons Laws.pdf", pages);
+  it("includes the selected material title, each page, and the holistic context", () => {
+    const prompt = buildPageSelectionPrompt(attempt, "Newtons Laws.pdf", pages);
     expect(prompt).toContain("Selected Material: Newtons Laws.pdf");
     expect(prompt).toContain("Page 21:");
     expect(prompt).toContain("Page 22:");
     expect(prompt).toContain("equal and opposite forces");
+    expect(prompt.toLowerCase()).toContain("has_relevant_pages");
+    expect(prompt.toLowerCase()).toContain("never reveal");
   });
 });
 
@@ -71,6 +84,32 @@ describe("resolveSelectedMaterial", () => {
   it("returns null for an out-of-range index", () => {
     expect(resolveSelectedMaterial(0, materials)).toBeNull();
     expect(resolveSelectedMaterial(99, materials)).toBeNull();
+  });
+});
+
+describe("dedupeSelectedMaterials", () => {
+  const sel = (i: number): SelectedMaterial => ({ material_index: i, reasoning: `r${i}` });
+
+  it("caps at MAX_MATERIALS (3), preserving order, and reports truncation", () => {
+    const { kept, truncated } = dedupeSelectedMaterials([sel(1), sel(2), sel(3), sel(4)], materials);
+    expect(kept.map((k) => k.material_index)).toEqual([1, 2, 3]);
+    expect(kept).toHaveLength(MAX_MATERIALS);
+    expect(truncated).toBe(true);
+  });
+
+  it("drops duplicate indices, keeping the first occurrence", () => {
+    const { kept, truncated } = dedupeSelectedMaterials([sel(2), sel(2), sel(1)], materials);
+    expect(kept.map((k) => k.material_index)).toEqual([2, 1]);
+    expect(truncated).toBe(false);
+  });
+
+  it("drops indices that don't resolve to a catalog entry", () => {
+    const { kept } = dedupeSelectedMaterials([sel(99), sel(1)], materials);
+    expect(kept.map((k) => k.material_index)).toEqual([1]);
+  });
+
+  it("returns an empty list for no selections", () => {
+    expect(dedupeSelectedMaterials([], materials)).toEqual({ kept: [], truncated: false });
   });
 });
 

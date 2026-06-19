@@ -11,23 +11,25 @@ import { streamChatCompletion, streamJsonCompletion, aggregateMetrics, type AiCa
 import { presignGetUrl, getS3Config } from "./storage";
 import { buildQuizReviewPrompt, type ChatMessage } from "./chat-prompt";
 import {
-  FILE_SELECTION_SCHEMA,
+  MATERIAL_SELECTION_SCHEMA,
   PAGE_SELECTION_SCHEMA,
-  buildFileSelectionPrompt,
+  buildMaterialSelectionPrompt,
   buildPageSelectionPrompt,
   resolveSelectedMaterial,
+  dedupeSelectedMaterials,
   clampPageRange,
-  type MisconceptionInput,
+  type HolisticAttempt,
   type CatalogMaterial,
   type CatalogPage,
-  type FileSelection,
+  type SelectedMaterial,
+  type MaterialSelection,
   type PageSelection,
 } from "./recommendation";
 import {
   RESULT_STATUS,
   parseReviewSnapshot,
   parseStoredRecommendations,
-  snapshotToMisconceptions,
+  snapshotToHolisticInput,
   snapshotToSummaryAttempt,
   mapPresignedRecommendations,
   type StoredRecommendation,
@@ -136,34 +138,22 @@ async function runStructuredStep<T>(
 }
 
 /**
- * Two-step recommendation for one misconception, returning storageKeys (not
- * URLs) plus the TTFT/token metrics of every LLM call it made (so an early
- * return still reports the work already done).
+ * Step 2 for one chosen material: pick a focused 0-5 page range within it,
+ * returning storageKeys (not URLs) plus the TTFT/token metrics. Returns a null
+ * recommendation when the model finds no relevant pages (has_relevant_pages
+ * false) or the material has no usable pages. `materialReason` is the step-1
+ * reasoning, used as a fallback when the page step returns no reasoning text.
  */
-async function recommendForMisconception(
+async function selectPagesForMaterial(
   client: OpenAI,
   model: string,
-  input: MisconceptionInput,
-  catalog: CatalogMaterial[],
-  materials: MaterialRow[],
+  attempt: HolisticAttempt,
+  chosen: CatalogMaterial,
+  material: MaterialRow,
+  materialReason: string,
   isLocal: boolean
 ): Promise<{ recommendation: StoredRecommendation | null; metrics: AiCallMetrics[] }> {
   const metrics: AiCallMetrics[] = [];
-
-  const { value: fileSelection, metrics: m1 } = await runStructuredStep<FileSelection>(
-    client,
-    model,
-    buildFileSelectionPrompt(input, catalog),
-    "file_selection",
-    FILE_SELECTION_SCHEMA,
-    isLocal
-  );
-  metrics.push(m1);
-
-  const chosen = resolveSelectedMaterial(fileSelection.material_index, catalog);
-  if (!chosen) return { recommendation: null, metrics };
-  const material = materials[chosen.index - 1];
-  if (!material) return { recommendation: null, metrics };
 
   const teachingPages = material.pages.filter((p) => p.needed !== false);
   const usablePages = teachingPages.length > 0 ? teachingPages : material.pages;
@@ -175,15 +165,19 @@ async function recommendForMisconception(
     description: p.description ?? "",
   }));
 
-  const { value: pageSelection, metrics: m2 } = await runStructuredStep<PageSelection>(
+  const { value: pageSelection, metrics: m } = await runStructuredStep<PageSelection>(
     client,
     model,
-    buildPageSelectionPrompt(input, chosen.title, catalogPages),
+    buildPageSelectionPrompt(attempt, chosen.title, catalogPages),
     "page_selection",
     PAGE_SELECTION_SCHEMA,
     isLocal
   );
-  metrics.push(m2);
+  metrics.push(m);
+
+  // The model decided no pages of this material are worth recommending (a soft
+  // 0-page outcome): skip it entirely.
+  if (!pageSelection.has_relevant_pages) return { recommendation: null, metrics };
 
   const range = clampPageRange(
     pageSelection.start_page,
@@ -199,11 +193,9 @@ async function recommendForMisconception(
 
   return {
     recommendation: {
-      questionText: input.questionText,
       materialTitle: chosen.title,
       pageRange: range,
-      fileReason: fileSelection.reasoning,
-      pageReason: pageSelection.reasoning,
+      reason: pageSelection.reasoning?.trim() || materialReason,
       pages: selectedPages.map((p) => ({ pageNumber: p.pageNumber, storageKey: p.storageKey })),
     },
     metrics,
@@ -239,24 +231,31 @@ async function generateSummary(
 }
 
 /**
- * Generate recommendations from the snapshot's incorrect answers + the class's
- * processed materials. Environment gaps (no provider / no materials / no S3) and
- * a perfect score yield an empty-but-terminal result rather than an error.
+ * Generate HOLISTIC recommendations from the whole attempt + the class's
+ * processed materials. Step 1 picks at most 3 materials across the entire
+ * attempt; step 2 picks a focused 0-5 page range within each (skipping a
+ * material the model deems irrelevant). Environment gaps (no provider / no
+ * materials / no S3) and a perfect score yield an empty-but-terminal result
+ * rather than an error. None of the generated reasons reveal which questions
+ * were wrong (enforced by the prompts in recommendation.ts).
  */
 async function generateRecommendations(
   examResult: ExamResultRow
 ): Promise<{ stored: StoredRecommendations; metrics: AiCallMetrics | null }> {
   const snapshot = parseReviewSnapshot(examResult.reviewSnapshot);
-  const { inputs, truncated } = snapshotToMisconceptions(snapshot);
-  if (inputs.length === 0) return { stored: { items: [], truncated: false }, metrics: null };
+  const holistic = snapshotToHolisticInput(snapshot);
+  // Nothing wrong (or an empty attempt) → no study recommendations needed.
+  if (holistic.incorrectCount === 0) {
+    return { stored: { items: [], truncated: false }, metrics: null };
+  }
 
   const provider = await resolveProvider("student_chat");
-  if (!providerUsable(provider)) return { stored: { items: [], truncated }, metrics: null };
+  if (!providerUsable(provider)) return { stored: { items: [], truncated: false }, metrics: null };
 
   try {
     getS3Config();
   } catch {
-    return { stored: { items: [], truncated }, metrics: null };
+    return { stored: { items: [], truncated: false }, metrics: null };
   }
 
   const links = await prisma.materialClass.findMany({
@@ -287,7 +286,7 @@ async function generateRecommendations(
       ? [m]
       : [];
   });
-  if (materials.length === 0) return { stored: { items: [], truncated }, metrics: null };
+  if (materials.length === 0) return { stored: { items: [], truncated: false }, metrics: null };
 
   const isLocal = provider.providerType === "local";
   const client = await createOpenAIClient(provider);
@@ -298,10 +297,38 @@ async function generateRecommendations(
     keyConcepts: parseKeyConcepts(m.batchKeyConcepts),
   }));
 
+  const allMetrics: AiCallMetrics[] = [];
+
+  // Step 1 — one call selecting at most 3 materials across the whole attempt.
+  const { value: materialSelection, metrics: mSel } = await runStructuredStep<MaterialSelection>(
+    client,
+    provider.model,
+    buildMaterialSelectionPrompt(holistic, catalog),
+    "material_selection",
+    MATERIAL_SELECTION_SCHEMA,
+    isLocal
+  );
+  allMetrics.push(mSel);
+
+  const { kept, truncated } = dedupeSelectedMaterials(materialSelection.materials ?? [], catalog);
+
+  // Step 2 — one page-selection call per chosen material (skipped when the
+  // model finds no relevant pages). Run concurrently; failures drop that one.
   const results = await Promise.all(
-    inputs.map(async (input) => {
+    kept.map(async (sel: SelectedMaterial) => {
+      const chosen = resolveSelectedMaterial(sel.material_index, catalog);
+      const material = chosen ? materials[chosen.index - 1] : undefined;
+      if (!chosen || !material) return { recommendation: null, metrics: [] as AiCallMetrics[] };
       try {
-        return await recommendForMisconception(client, provider.model, input, catalog, materials, isLocal);
+        return await selectPagesForMaterial(
+          client,
+          provider.model,
+          holistic,
+          chosen,
+          material,
+          sel.reasoning,
+          isLocal
+        );
       } catch (err) {
         console.error("[ExamResults] Failed to build a recommendation:", err);
         return { recommendation: null, metrics: [] as AiCallMetrics[] };
@@ -312,7 +339,8 @@ async function generateRecommendations(
   const items = results
     .map((r) => r.recommendation)
     .filter((r): r is StoredRecommendation => r !== null);
-  const metrics = aggregateMetrics(results.flatMap((r) => r.metrics));
+  allMetrics.push(...results.flatMap((r) => r.metrics));
+  const metrics = aggregateMetrics(allMetrics);
 
   return { stored: { items, truncated }, metrics };
 }
