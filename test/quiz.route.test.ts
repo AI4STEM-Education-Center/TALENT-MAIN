@@ -91,6 +91,76 @@ describe("POST /api/quiz (start attempt)", () => {
   });
 });
 
+describe("POST /api/quiz (per-class settings enforcement)", () => {
+  const HOUR = 60 * 60 * 1000;
+
+  it("rejects with 403 before the availability window opens", async () => {
+    const { studentUser, cls, quiz } = await setup();
+    await prisma.classQuiz.updateMany({
+      where: { classId: cls.id, quizId: quiz.id },
+      data: { availableFrom: new Date(Date.now() + HOUR) },
+    });
+    asStudent(studentUser.id);
+    const res = await POST(jsonReq({ classId: cls.id, quizId: quiz.id }));
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toMatch(/isn't open/i);
+  });
+
+  it("rejects with 403 after the availability window closes", async () => {
+    const { studentUser, cls, quiz } = await setup();
+    await prisma.classQuiz.updateMany({
+      where: { classId: cls.id, quizId: quiz.id },
+      data: { availableUntil: new Date(Date.now() - HOUR) },
+    });
+    asStudent(studentUser.id);
+    const res = await POST(jsonReq({ classId: cls.id, quizId: quiz.id }));
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toMatch(/closed/i);
+  });
+
+  it("allows starting inside an open window", async () => {
+    const { studentUser, cls, quiz } = await setup();
+    await prisma.classQuiz.updateMany({
+      where: { classId: cls.id, quizId: quiz.id },
+      data: { availableFrom: new Date(Date.now() - HOUR), availableUntil: new Date(Date.now() + HOUR) },
+    });
+    asStudent(studentUser.id);
+    const res = await POST(jsonReq({ classId: cls.id, quizId: quiz.id }));
+    expect(res.status).toBe(200);
+  });
+
+  it("rejects with 403 once maxAttempts completed attempts have been used", async () => {
+    const { studentUser, student, cls, quiz } = await setup();
+    await prisma.classQuiz.updateMany({
+      where: { classId: cls.id, quizId: quiz.id },
+      data: { maxAttempts: 1 },
+    });
+    // One completed attempt already exists.
+    await prisma.quizAttempt.create({
+      data: { studentId: student.id, classId: cls.id, quizId: quiz.id, completedAt: new Date(), score: 50 },
+    });
+    asStudent(studentUser.id);
+    const res = await POST(jsonReq({ classId: cls.id, quizId: quiz.id }));
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toMatch(/all 1 attempts/i);
+  });
+
+  it("does not count incomplete attempts toward the cap", async () => {
+    const { studentUser, student, cls, quiz } = await setup();
+    await prisma.classQuiz.updateMany({
+      where: { classId: cls.id, quizId: quiz.id },
+      data: { maxAttempts: 1 },
+    });
+    // An in-progress (not completed) attempt must not block a new one.
+    await prisma.quizAttempt.create({
+      data: { studentId: student.id, classId: cls.id, quizId: quiz.id },
+    });
+    asStudent(studentUser.id);
+    const res = await POST(jsonReq({ classId: cls.id, quizId: quiz.id }));
+    expect(res.status).toBe(200);
+  });
+});
+
 describe("PATCH /api/quiz (submit answers)", () => {
   async function startAttempt(studentId: string, classId: string, quizId: string) {
     return prisma.quizAttempt.create({ data: { studentId, classId, quizId } });
@@ -107,8 +177,11 @@ describe("PATCH /api/quiz (submit answers)", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.score).toBe(100);
-    expect(body.correct).toBe(1);
-    expect(body.total).toBe(1);
+    // Blind results: the submit response must never leak grading data.
+    expect(body.correct).toBeUndefined();
+    expect(body.total).toBeUndefined();
+    expect(body).not.toHaveProperty("questions");
+    expect(body).not.toHaveProperty("answers");
 
     // Regression guard: selectedOptionIds is stored as a JSON string, not a raw array.
     const saved = await prisma.quizAnswer.findFirst({ where: { quizAttemptId: attempt.id } });

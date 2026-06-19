@@ -396,6 +396,12 @@ model ClassQuiz {
   quizId    String
   published Boolean @default(false)
 
+  // Per-class quiz availability + attempt controls. All nullable: existing rows
+  // default to null = always open / unlimited attempts (no backfill needed).
+  availableFrom  DateTime? // quiz opens (null = always open)
+  availableUntil DateTime? // quiz closes (null = never closes)
+  maxAttempts    Int? // total completed attempts allowed (null/0 = unlimited)
+
   class Class @relation(fields: [classId], references: [id], onDelete: Cascade)
   quiz  Quiz  @relation(fields: [quizId], references: [id], onDelete: Cascade)
 

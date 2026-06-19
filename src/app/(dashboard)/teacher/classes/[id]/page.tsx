@@ -6,7 +6,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Users, BookOpen, Link2, ArrowLeft, UserCheck, ClipboardList, FileText, FileUp, MessageSquare } from "lucide-react";
+import { Users, BookOpen, Link2, ArrowLeft, UserCheck, ClipboardList, FileText, FileUp, MessageSquare, BarChart3 } from "lucide-react";
 import MaterialTitleEdit from "./materials/material-title-edit";
 
 export default async function ClassDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -59,6 +59,9 @@ export default async function ClassDetailPage({ params }: { params: Promise<{ id
           {cls.description && <p className="text-muted-foreground mt-1">{cls.description}</p>}
         </div>
         <div className="flex gap-2 shrink-0">
+          <Button variant="outline" asChild>
+            <Link href={`/teacher/classes/${cls.id}/stats`}><BarChart3 className="size-4" /> Statistics</Link>
+          </Button>
           <Button variant="outline" asChild>
             <Link href={`/teacher/classes/${cls.id}/messages`}><MessageSquare className="size-4" /> Messages</Link>
           </Button>
