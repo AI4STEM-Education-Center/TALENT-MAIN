@@ -28,7 +28,7 @@ interface Defaults {
 
 type Draft = { daily: string; monthly: string };
 
-export default function AdminEmailLimitsPage() {
+export function EmailLimits() {
   const [teachers, setTeachers] = useState<TeacherRow[]>([]);
   const [defaults, setDefaults] = useState<Defaults>({ emailDailyLimit: 0, emailMonthlyLimit: 0 });
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
@@ -99,19 +99,19 @@ export default function AdminEmailLimitsPage() {
 
   if (loading) {
     return (
-      <div className="p-8 flex items-center justify-center min-h-[300px]">
+      <div className="flex items-center justify-center min-h-[200px]">
         <Loader2 className="size-6 animate-spin text-primary" />
       </div>
     );
   }
 
   return (
-    <div className="p-4 md:p-8 space-y-6">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-          <Gauge className="size-7" /> Email Limits
-        </h1>
-        <p className="text-muted-foreground mt-1">
+        <h2 className="text-xl font-bold tracking-tight flex items-center gap-2">
+          <Gauge className="size-6" /> Email Limits
+        </h2>
+        <p className="text-muted-foreground text-sm mt-1">
           Per-teacher email sending caps, counted per recipient. Leave a field blank to use the default
           ({defaults.emailDailyLimit}/day, {defaults.emailMonthlyLimit}/month). In-app notifications are unlimited.
         </p>

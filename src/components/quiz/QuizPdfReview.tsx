@@ -262,57 +262,61 @@ function QuestionCard({
               {q.options.map((opt, oi) => {
                 const isImageOpt = opt.isImage === true;
                 return (
-                  <div key={oi} className="flex items-end gap-2">
-                    <div className="flex h-10 shrink-0 items-center gap-1">
-                      <button
-                        type="button"
-                        aria-label={opt.isCorrect ? "Marked correct" : "Mark correct"}
-                        aria-pressed={opt.isCorrect === true}
-                        onClick={() => toggleCorrect(oi)}
-                        className={`size-4 border-2 ${q.type === "MULTI_SELECT" ? "rounded" : "rounded-full"} ${
-                          opt.isCorrect === true
-                            ? "border-green-500 bg-green-500"
-                            : opt.isCorrect === null
-                              ? "border-amber-400"
-                              : "border-muted-foreground"
-                        }`}
-                      />
-                      <span className="font-mono text-xs text-muted-foreground">{optionLetter(oi)}</span>
+                  <div key={oi} className="space-y-1">
+                    <div className="flex items-end gap-2">
+                      <div className="flex h-10 shrink-0 items-center gap-1">
+                        <button
+                          type="button"
+                          aria-label={opt.isCorrect ? "Marked correct" : "Mark correct"}
+                          aria-pressed={opt.isCorrect === true}
+                          onClick={() => toggleCorrect(oi)}
+                          className={`size-4 border-2 ${q.type === "MULTI_SELECT" ? "rounded" : "rounded-full"} ${
+                            opt.isCorrect === true
+                              ? "border-green-500 bg-green-500"
+                              : opt.isCorrect === null
+                                ? "border-amber-400"
+                                : "border-muted-foreground"
+                          }`}
+                        />
+                        <span className="font-mono text-xs text-muted-foreground">{optionLetter(oi)}</span>
+                      </div>
+
+                      {isImageOpt ? (
+                        <div className="flex grow items-center gap-2 rounded-md border bg-muted/20 px-2 py-1.5">
+                          <ImageIcon className="size-4 shrink-0 text-muted-foreground" />
+                          <Input
+                            value={opt.imageAlt ?? ""}
+                            onChange={(e) => setOption(oi, { imageAlt: e.target.value || null })}
+                            placeholder="Image label / caption (optional)"
+                            className="h-8 border-0 bg-transparent px-1 shadow-none focus-visible:ring-0"
+                          />
+                        </div>
+                      ) : (
+                        <Input value={opt.text} onChange={(e) => setOptionText(oi, e.target.value)} placeholder={`Option ${oi + 1}`} />
+                      )}
+
+                      {q.type !== "TRUE_FALSE" && (
+                        <div className="flex h-10 shrink-0 items-center">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => toggleOptionIsImage(oi)}
+                            aria-label={isImageOpt ? `Make option ${oi + 1} text` : `Make option ${oi + 1} an image`}
+                            title={isImageOpt ? "Switch to text" : "Switch to image"}
+                          >
+                            {isImageOpt ? <Type className="size-3" /> : <ImageIcon className="size-3" />}
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => removeOption(oi)} aria-label={`Remove option ${oi + 1}`}>
+                            <X className="size-3" />
+                          </Button>
+                        </div>
+                      )}
                     </div>
 
-                    {isImageOpt ? (
-                      <div className="flex grow items-center gap-2 rounded-md border bg-muted/20 px-2 py-1.5">
-                        <ImageIcon className="size-4 shrink-0 text-muted-foreground" />
-                        <Input
-                          value={opt.imageAlt ?? ""}
-                          onChange={(e) => setOption(oi, { imageAlt: e.target.value || null })}
-                          placeholder="Image label / caption (optional)"
-                          className="h-8 border-0 bg-transparent px-1 shadow-none focus-visible:ring-0"
-                        />
-                      </div>
-                    ) : (
-                      <Input value={opt.text} onChange={(e) => setOptionText(oi, e.target.value)} placeholder={`Option ${oi + 1}`} />
-                    )}
-
+                    {/* Render preview on its own row below the input so long options
+                        wrap to multiple lines instead of overflowing the column. */}
                     {!isImageOpt && opt.text.includes("$") && (
-                      <MathPreview text={opt.text} inline className="hidden shrink-0 sm:block" />
-                    )}
-
-                    {q.type !== "TRUE_FALSE" && (
-                      <div className="flex h-10 shrink-0 items-center">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => toggleOptionIsImage(oi)}
-                          aria-label={isImageOpt ? `Make option ${oi + 1} text` : `Make option ${oi + 1} an image`}
-                          title={isImageOpt ? "Switch to text" : "Switch to image"}
-                        >
-                          {isImageOpt ? <Type className="size-3" /> : <ImageIcon className="size-3" />}
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => removeOption(oi)} aria-label={`Remove option ${oi + 1}`}>
-                          <X className="size-3" />
-                        </Button>
-                      </div>
+                      <MathPreview text={opt.text} className="pl-7" />
                     )}
                   </div>
                 );
@@ -374,14 +378,22 @@ function QuestionCard({
             </>
           ) : sourceUrl ? (
             <>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-medium text-muted-foreground">Source page {q.sourcePage}</span>
-                <Button size="sm" variant="ghost" onClick={() => setEnlarged(true)} aria-label="Enlarge page">
+              <span className="text-xs font-medium text-muted-foreground">Source page {q.sourcePage}</span>
+              {/* Image fills the column; the enlarge control floats over it so it
+                  doesn't steal a row or shrink the page preview. */}
+              <div className="relative">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={sourceUrl} alt={`Source page ${q.sourcePage}`} className="block w-full rounded border" />
+                <Button
+                  size="icon"
+                  variant="secondary"
+                  onClick={() => setEnlarged(true)}
+                  aria-label="Enlarge page"
+                  className="absolute right-2 top-2 size-8 bg-background/80 shadow-sm backdrop-blur hover:bg-background"
+                >
                   <Maximize2 className="size-4" />
                 </Button>
               </div>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={sourceUrl} alt={`Source page ${q.sourcePage}`} className="max-h-[36rem] w-auto max-w-full rounded border" />
             </>
           ) : (
             <p className="text-xs text-muted-foreground">No source page image available.</p>
