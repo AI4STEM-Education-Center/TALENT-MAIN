@@ -7,9 +7,12 @@ import { runQuizExtraction } from "./lib/quiz-extraction-engine";
 import {
   EXAM_RESULTS_QUEUE,
   QUIZ_EXTRACTIONS_QUEUE,
+  BACKUPS_QUEUE,
+  enqueueBackup,
   type ExamResultsJobPayload,
   type QuizExtractionJobPayload,
 } from "./lib/queue";
+import { runBackupJob, claimDueBackup } from "./lib/backup";
 
 // Parse DATABASE_URL from process.env
 const dbUrl = process.env.DATABASE_URL || "file:./dev.db";
@@ -31,6 +34,7 @@ const db = honker.open(dbPath);
 const materialsQueue = db.queue("materials");
 const examResultsQueue = db.queue(EXAM_RESULTS_QUEUE);
 const quizExtractionsQueue = db.queue(QUIZ_EXTRACTIONS_QUEUE);
+const backupsQueue = db.queue(BACKUPS_QUEUE);
 
 async function consumeMaterials() {
   console.log("[Worker] Starting Honker queue consumer for 'materials'...");
@@ -100,10 +104,56 @@ async function consumeQuizExtractions() {
   }
 }
 
+async function consumeBackups() {
+  console.log(`[Worker] Starting Honker queue consumer for '${BACKUPS_QUEUE}'...`);
+  for await (const job of backupsQueue.claim("backups-worker")) {
+    console.log(`[Worker] Picked up backup job ${job.id}`);
+    try {
+      const result = await runBackupJob();
+      console.log(
+        `[Worker] Backup complete: ${result.key} (pruned ${result.pruned.length})`,
+      );
+    } catch (err: any) {
+      console.error(`[Worker] Backup job ${job.id} failed:`, err?.message ?? err);
+    } finally {
+      // Ack regardless — runBackupJob records FAILED status itself; a stuck job
+      // must not block the queue.
+      job.ack();
+    }
+  }
+}
+
+/**
+ * Config-driven scheduler: every minute, ask backup.ts whether a scheduled
+ * backup is due (advancing nextRunAt so we never double-enqueue) and, if so,
+ * enqueue one. Reads the live BackupConfig each tick, so admin changes to the
+ * interval/anchor take effect immediately.
+ */
+async function runBackupScheduler() {
+  console.log("[Worker] Backup scheduler tick started (60s interval)...");
+  for (;;) {
+    try {
+      if (await claimDueBackup()) {
+        console.log("[Worker] Scheduled backup due — enqueueing");
+        enqueueBackup();
+      }
+    } catch (err: any) {
+      console.error("[Worker] Backup scheduler tick error:", err?.message ?? err);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 60_000));
+  }
+}
+
 async function startWorker() {
   try {
-    // Run all consumers concurrently; each blocks on its own queue.
-    await Promise.all([consumeMaterials(), consumeExamResults(), consumeQuizExtractions()]);
+    // Run all consumers + the scheduler concurrently; each blocks on its own loop.
+    await Promise.all([
+      consumeMaterials(),
+      consumeExamResults(),
+      consumeQuizExtractions(),
+      consumeBackups(),
+      runBackupScheduler(),
+    ]);
   } catch (err) {
     console.error("[Worker] Fatal error in worker loop:", err);
     process.exit(1);
