@@ -8,9 +8,11 @@ import path from "path";
 
 export const EXAM_RESULTS_QUEUE = "exam-results";
 export const QUIZ_EXTRACTIONS_QUEUE = "quiz-extractions";
+export const BACKUPS_QUEUE = "backups";
 
 export type ExamResultsJobPayload = { examResultId: string };
 export type QuizExtractionJobPayload = { extractionId: string };
+export type BackupJobPayload = { action: "backup" };
 
 /**
  * Resolve the absolute SQLite path Honker should open from DATABASE_URL,
@@ -49,4 +51,15 @@ export function enqueueQuizExtraction(extractionId: string): void {
   const db = honker.open(resolveQueueDbPath());
   const payload: QuizExtractionJobPayload = { extractionId };
   db.queue(QUIZ_EXTRACTIONS_QUEUE).enqueue(payload);
+}
+
+/**
+ * Enqueue a database-backup job. Used by the admin "Backup now" button and by
+ * the worker's scheduler tick. The worker performs the snapshot + WebDAV upload
+ * off the request path so the live site is never blocked.
+ */
+export function enqueueBackup(): void {
+  const db = honker.open(resolveQueueDbPath());
+  const payload: BackupJobPayload = { action: "backup" };
+  db.queue(BACKUPS_QUEUE).enqueue(payload);
 }
