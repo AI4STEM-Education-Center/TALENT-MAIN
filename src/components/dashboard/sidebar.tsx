@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { VersionModal } from "@/components/version-modal";
 import { NotificationsBadge } from "@/components/dashboard/notifications-badge";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import {
   BookOpen,
@@ -89,8 +90,8 @@ function SidebarContent({
       {/* Logo */}
       <div className="p-6 border-b border-sidebar-border">
         <div className="flex items-center gap-2">
-          <div className="size-8 rounded-lg bg-blue-500/20 flex items-center justify-center">
-            <BookOpen className="size-4 text-blue-400" />
+          <div className="size-8 rounded-lg bg-sidebar-primary/15 flex items-center justify-center">
+            <BookOpen className="size-4 text-sidebar-primary" />
           </div>
           <span className="font-bold text-sidebar-foreground">AI4Talent</span>
           {onCollapse && (
@@ -122,7 +123,7 @@ function SidebarContent({
               className={cn(
                 "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
                 isActive
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground ring-1 ring-inset ring-sidebar-primary/40"
                   : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
               )}
             >
@@ -140,7 +141,7 @@ function SidebarContent({
       {/* User */}
       <div className="p-4 border-t border-sidebar-border">
         <div className="flex items-center gap-3 px-3 py-2 mb-2">
-          <div className="size-8 rounded-full bg-blue-500/20 flex items-center justify-center text-xs font-bold text-blue-400 shrink-0">
+          <div className="size-8 rounded-full bg-sidebar-primary/15 flex items-center justify-center text-xs font-bold text-sidebar-primary shrink-0">
             {firstName[0]}{lastName[0]}
           </div>
           <div className="flex-1 min-w-0">
@@ -152,6 +153,10 @@ function SidebarContent({
             </p>
           </div>
         </div>
+        <ThemeToggle
+          showLabel
+          className="w-full px-3 py-2.5 rounded-lg text-sm text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+        />
         <button type="button"
           onClick={onSignOut}
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground transition-colors"
