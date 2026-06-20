@@ -6,6 +6,7 @@ import { Sidebar } from "@/components/dashboard/sidebar";
 import { SessionProvider } from "next-auth/react";
 import { Menu, BookOpen, PanelLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 function DashboardContent({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
@@ -65,11 +66,12 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
             <PanelLeft className="size-5" />
           </button>
           <div className="flex items-center gap-2">
-            <div className="size-7 rounded-lg bg-blue-500/20 flex items-center justify-center">
-              <BookOpen className="size-3.5 text-blue-400" />
+            <div className="size-7 rounded-lg bg-primary/10 flex items-center justify-center">
+              <BookOpen className="size-3.5 text-primary" />
             </div>
             <span className="font-bold text-sm text-foreground">AI4Talent</span>
           </div>
+          <ThemeToggle className="ml-auto p-2 rounded-md text-foreground/70 hover:text-foreground hover:bg-accent" />
         </header>
 
         <main className="flex-1 overflow-auto">

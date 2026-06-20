@@ -35,6 +35,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "This quiz is not yet available." }, { status: 403 });
   }
 
+  // Enforce the per-class availability window + attempt cap (the source of
+  // truth — the student UI mirrors these but server-side wins). The classQuiz
+  // row is already loaded, so the new scalars cost no extra query.
+  const now = new Date();
+  if (classQuiz.availableFrom && now < classQuiz.availableFrom) {
+    return NextResponse.json({ error: "This quiz isn't open yet." }, { status: 403 });
+  }
+  if (classQuiz.availableUntil && now > classQuiz.availableUntil) {
+    return NextResponse.json({ error: "This quiz has closed." }, { status: 403 });
+  }
+  if (classQuiz.maxAttempts && classQuiz.maxAttempts > 0) {
+    const usedAttempts = await prisma.quizAttempt.count({
+      where: { studentId: student.id, classId, quizId, completedAt: { not: null } },
+    });
+    if (usedAttempts >= classQuiz.maxAttempts) {
+      return NextResponse.json(
+        { error: `You've used all ${classQuiz.maxAttempts} attempts.` },
+        { status: 403 }
+      );
+    }
+  }
+
   // Get questions for this quiz. SECURITY: students must never receive the
   // grading data — `omit` strips the NUMERIC answer/tolerance scalars, options
   // are selected without `isCorrect`, and the raw figure storage key/bucket are
@@ -220,21 +242,10 @@ export async function PATCH(req: NextRequest) {
     console.error("[Quiz] Failed to create ExamResult snapshot:", err);
   }
 
-  // Student-safe question payload for the inline results view. Post-submit, the
-  // review intentionally reveals the grading data — options keep isCorrect, and
-  // the NUMERIC scalars (answerNumeric/answerTolerance/answerUnit) are revealed
-  // too — exactly like the durable snapshot, so the inline ExamResultsView can
-  // show the correct numeric value. (Pre-submission, the POST handler still
-  // omits answerNumeric/answerTolerance — secrecy only matters before grading.)
-  // The raw figure / option-image keys are still swapped for transient
-  // presigned URLs (options keep isCorrect post-submit, but never raw keys).
-  const safeQuestions = await attachOptionImageUrls(await attachFigureUrls(questionsWithAnswers));
-
-  return NextResponse.json({
-    score,
-    correct,
-    total: answers.length,
-    questions: safeQuestions,
-    answers: answerRecords,
-  });
+  // Blind results: the student must never receive the grading data. The inline
+  // results view shows only the score %, the AI summary, and holistic study
+  // recommendations — never the per-question correctness nor the correct
+  // answers — so the response deliberately returns ONLY the score. The durable
+  // per-question snapshot lives in the (teacher-only) ExamResult, never here.
+  return NextResponse.json({ score });
 }

@@ -21,8 +21,8 @@ export function RecommendationCard({ rec }: { rec: PresignedRecommendation }) {
             : `pages ${rec.pageRange.start}–${rec.pageRange.end}`}
         </span>
       </p>
-      {(rec.pageReason || rec.fileReason) && (
-        <p className="mt-1 text-xs text-muted-foreground">{rec.pageReason || rec.fileReason}</p>
+      {rec.reason && (
+        <p className="mt-1 text-xs text-muted-foreground">{rec.reason}</p>
       )}
       {rec.pages.length > 0 && (
         // Document viewer: the box is exactly one page tall; additional pages are

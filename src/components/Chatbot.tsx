@@ -7,11 +7,9 @@ import { Rnd } from "react-rnd";
 import remarkGfm from "remark-gfm";
 
 type Recommendation = {
-  questionText: string;
   materialTitle: string;
   pageRange: { start: number; end: number };
-  fileReason: string;
-  pageReason: string;
+  reason: string;
   pages: { pageNumber: number; imageUrl: string }[];
 };
 
@@ -527,14 +525,11 @@ export default function Chatbot() {
                         <p className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300">
                           <BookOpen size={14} /> Recommended materials
                         </p>
-                        {message.recommendations.map((rec) => (
+                        {message.recommendations.map((rec, recIndex) => (
                           <div
-                            key={`${rec.questionText}-${rec.materialTitle}-${rec.pageRange.start}`}
+                            key={`${rec.materialTitle}-${rec.pageRange.start}-${recIndex}`}
                             className="rounded-2xl rounded-tl-sm border border-gray-100 bg-white p-3 text-sm shadow-xs dark:border-gray-700 dark:bg-gray-800"
                           >
-                            <p className="mb-1 text-xs text-gray-500 dark:text-gray-400">
-                              For: <span className="italic">{rec.questionText}</span>
-                            </p>
                             <p className="font-medium text-gray-800 dark:text-gray-100">
                               {rec.materialTitle}
                               <span className="ml-1 font-normal text-gray-500 dark:text-gray-400">
@@ -544,9 +539,9 @@ export default function Chatbot() {
                                   : `pages ${rec.pageRange.start}–${rec.pageRange.end}`}
                               </span>
                             </p>
-                            {(rec.pageReason || rec.fileReason) && (
+                            {rec.reason && (
                               <p className="mt-1 text-xs text-gray-600 dark:text-gray-300">
-                                {rec.pageReason || rec.fileReason}
+                                {rec.reason}
                               </p>
                             )}
                             <div className="mt-2 max-h-72 space-y-2 overflow-y-auto">
@@ -565,7 +560,7 @@ export default function Chatbot() {
                         ))}
                         {message.truncated && (
                           <p className="text-xs text-gray-400">
-                            You missed more questions than shown here. Start with these.
+                            More materials could help — start with these.
                           </p>
                         )}
                       </div>

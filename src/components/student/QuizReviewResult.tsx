@@ -1,20 +1,16 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle, XCircle, Trophy, Loader2 } from "lucide-react";
-import { RecommendationCard } from "@/components/student/RecommendationCard";
+import { CheckCircle, XCircle, Trophy } from "lucide-react";
 import { MathText } from "@/components/ui/math-text";
-import {
-  RESULT_STATUS,
-  type ResultStatus,
-  type SnapshotQuestion,
-  type PresignedRecommendation,
-} from "@/lib/exam-results";
+import { type SnapshotQuestion } from "@/lib/exam-results";
 
 const PASS_THRESHOLD = 60;
 
 /**
  * Compact horizontal score banner. Has no border of its own — it sits at the
- * top of the unified results card, above the AI summary.
+ * top of the unified results card, above the AI summary. The "X / N correct"
+ * count is shown only when `correct`/`total` are provided (the teacher attempt
+ * detail view); the blind student view passes the percentage alone.
  */
 export function ScoreBanner({
   score,
@@ -22,20 +18,23 @@ export function ScoreBanner({
   total,
 }: {
   score: number;
-  correct: number;
-  total: number;
+  correct?: number;
+  total?: number;
 }) {
   const pct = Math.round(score);
   const passed = pct >= PASS_THRESHOLD;
+  const showCount = correct != null && total != null;
 
   return (
     <div className="flex items-center gap-4">
       <Trophy className={`size-10 shrink-0 ${passed ? "text-yellow-500" : "text-muted-foreground"}`} />
       <div className="flex flex-1 flex-wrap items-baseline gap-x-3 gap-y-1">
         <span className="text-3xl font-bold leading-none">{pct}%</span>
-        <span className="text-sm text-muted-foreground">
-          {correct} / {total} correct
-        </span>
+        {showCount && (
+          <span className="text-sm text-muted-foreground">
+            {correct} / {total} correct
+          </span>
+        )}
       </div>
       <Badge variant={passed ? "success" : "destructive"} className="shrink-0 px-3 py-1 text-sm">
         {passed ? "Passed!" : "Keep practicing"}
@@ -162,67 +161,21 @@ function QuestionCard({ question, index }: { question: SnapshotQuestion; index: 
   );
 }
 
-/** The cell beside an incorrect question: its recommendation, a loader, or a note. */
-function RecommendationCell({
-  rec,
-  status,
-}: {
-  rec?: PresignedRecommendation;
-  status: ResultStatus;
-}) {
-  if (rec) return <RecommendationCard rec={rec} />;
-
-  if (status === RESULT_STATUS.PENDING || status === RESULT_STATUS.GENERATING) {
-    return (
-      <div className="flex h-full items-center gap-2 rounded-xl border p-4 text-xs text-muted-foreground">
-        <Loader2 className="size-4 animate-spin text-primary" />
-        Finding study material…
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex h-full items-center rounded-xl border border-dashed p-4 text-xs text-muted-foreground">
-      No specific material recommendation for this question.
-    </div>
-  );
-}
-
 /**
- * Per-question review. Each row is self-contained, so a tall recommendation
- * never leaves a gap before the next question. An incorrect question and its
- * recommendation share the same row height (the grid stretches both cells);
- * correct questions keep the left (question) column with the right side empty.
+ * Full per-question review with correct answers revealed. This surface is
+ * TEACHER-ONLY (the teacher attempt-detail page); students never see it — their
+ * blind results show only the score, the AI summary, and holistic study
+ * recommendations.
  */
-export function QuizReviewList({
-  questions,
-  recommendations,
-  recommendationsStatus,
-  truncated,
-}: {
-  questions: SnapshotQuestion[];
-  recommendations: PresignedRecommendation[];
-  recommendationsStatus: ResultStatus;
-  truncated: boolean;
-}) {
-  const recByQuestion = new Map(recommendations.map((r) => [r.questionText, r]));
-
+export function QuizReviewList({ questions }: { questions: SnapshotQuestion[] }) {
   return (
     <div className="space-y-3">
       <h2 className="text-lg font-semibold">Review</h2>
-      {questions.map((q, i) => (
-        <div key={q.text} className="grid gap-3 xl:grid-cols-2">
-          <QuestionCard question={q} index={i} />
-          {!q.isCorrect && (
-            <RecommendationCell rec={recByQuestion.get(q.text)} status={recommendationsStatus} />
-          )}
-        </div>
-      ))}
-      {truncated && (
-        <p className="text-xs text-muted-foreground">
-          You missed more questions than we could build recommendations for — start with the ones shown.
-        </p>
-      )}
+      <div className="grid gap-3 xl:grid-cols-2">
+        {questions.map((q, i) => (
+          <QuestionCard key={`${q.text}-${i}`} question={q} index={i} />
+        ))}
+      </div>
     </div>
   );
 }
