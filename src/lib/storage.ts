@@ -149,6 +149,42 @@ export async function presignGetUrl(bucket: string, key: string, expiresIn = PRE
   return getSignedUrl(client, cmd, { expiresIn });
 }
 
+/**
+ * Download an S3 object and return it as a base64 `data:` URL, the form an
+ * OpenAI-compatible `image_url` part accepts inline. Used for local model
+ * providers (Ollama / vLLM / LM Studio / …) which typically can't reach our
+ * presigned S3 URLs over the network, so the image bytes are embedded directly
+ * in the chat-completions request instead of linked. The MIME type comes from
+ * the object's stored Content-Type, defaulting to image/png (every image we
+ * store for vision — rasterized pages, figure and option crops — is a PNG).
+ */
+export async function getS3ObjectAsDataUrl(bucket: string, key: string): Promise<string> {
+  const client = getS3Client();
+  const out = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+  if (!out.Body) throw new Error(`S3 object ${key} has no body`);
+  const bytes = await out.Body.transformToByteArray();
+  const base64 = Buffer.from(bytes).toString("base64");
+  const contentType = out.ContentType || "image/png";
+  return `data:${contentType};base64,${base64}`;
+}
+
+/**
+ * Resolve a stored image into the string an `image_url` model message part
+ * expects, picking the transport by provider capability. Hosted providers fetch
+ * over HTTP, so they get a short-lived presigned GET URL; local providers can't
+ * reach S3, so `inlineBase64` embeds the bytes as a base64 data URL instead.
+ * `expiresIn` is ignored on the base64 path (inlined bytes never expire).
+ */
+export async function resolveModelImageUrl(
+  bucket: string,
+  key: string,
+  opts: { inlineBase64: boolean; expiresIn?: number }
+): Promise<string> {
+  return opts.inlineBase64
+    ? getS3ObjectAsDataUrl(bucket, key)
+    : presignGetUrl(bucket, key, opts.expiresIn);
+}
+
 export async function headS3Object(bucket: string, key: string): Promise<{ contentLength: number }> {
   const client = getS3Client();
   const out = await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));

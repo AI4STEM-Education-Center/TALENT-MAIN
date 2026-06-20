@@ -1,8 +1,9 @@
 import { OpenAI } from "openai";
 import { prisma } from "@/lib/prisma";
-import { getS3Config, presignGetUrl } from "@/lib/storage";
-import { resolveProvider, buildProviderHeaders } from "@/lib/ai-provider";
+import { getS3Config, resolveModelImageUrl } from "@/lib/storage";
+import { resolveProvider, createOpenAIClient } from "@/lib/ai-provider";
 import { retryWithExponentialBackoff } from "./retry";
+import { streamJsonCompletion, aggregateMetrics, type AiCallMetrics } from "./ai-streaming";
 
 // In-memory set of material IDs whose processing should be aborted.
 const cancelledMaterials = new Set<string>();
@@ -46,12 +47,16 @@ const TIER2_SCHEMA = {
 
 /**
  * Build an OpenAI client from the resolved PDF description provider config.
- * Throws if no provider is configured.
+ * Throws if no provider is configured. Local providers need no API key (they
+ * authenticate via base URL); hosted providers (OpenAI/Cloudflare) still do.
+ * `isLocal` is surfaced so the page-image transport can switch to inline base64
+ * for local models — see `resolveModelImageUrl`.
  */
 async function getConfiguredOpenAI(): Promise<{
   client: OpenAI;
   model: string;
   serviceTier: string | null;
+  isLocal: boolean;
 }> {
   const provider = await resolveProvider("pdf_description");
 
@@ -62,20 +67,18 @@ async function getConfiguredOpenAI(): Promise<{
     );
   }
 
-  if (!provider.apiKey) {
+  const isLocal = provider.providerType === "local";
+  if (!isLocal && !provider.apiKey) {
     throw new Error("PDF description provider has no API key configured.");
   }
 
-  const client = new OpenAI({
-    apiKey: provider.apiKey,
-    baseURL: provider.baseUrl || undefined,
-    defaultHeaders: buildProviderHeaders(provider),
-  });
+  const client = await createOpenAIClient(provider);
 
   return {
     client,
     model: provider.model,
     serviceTier: provider.serviceTier,
+    isLocal,
   };
 }
 
@@ -86,41 +89,42 @@ async function processPage(
   bucket: string,
   openai: OpenAI,
   model: string,
-  serviceTier: string | null
-) {
-  // Generate a JIT URL for this specific page
-  const presignedUrl = await presignGetUrl(bucket, storageKey, 3600); // 1 hour expiry
+  serviceTier: string | null,
+  isLocal: boolean
+): Promise<AiCallMetrics> {
+  // Resolve a model-ready URL for this page: a JIT presigned link for hosted
+  // providers, or an inline base64 data URL for local ones that can't reach S3.
+  const imageUrl = await resolveModelImageUrl(bucket, storageKey, { inlineBase64: isLocal, expiresIn: 3600 });
 
   const prompt = "You are analyzing a single page from an educational document. Extract the key concept and a brief description. Determine if this page is needed for understanding the core material (e.g., skip table of contents or blank pages).";
 
-  const response = await retryWithExponentialBackoff(() =>
-    openai.chat.completions.create({
-      model,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            { type: "image_url", image_url: { url: presignedUrl } },
-          ],
-        },
-      ],
-      response_format: { type: "json_schema", json_schema: TIER1_SCHEMA as any },
-      service_tier: serviceTier === "flex" ? "flex" : undefined,
-    })
+  const { value, metrics } = await retryWithExponentialBackoff(() =>
+    streamJsonCompletion<{ needed: boolean; key_concept: string; description: string }>(
+      openai,
+      {
+        model,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
+              { type: "image_url", image_url: { url: imageUrl } },
+            ],
+          },
+        ],
+        service_tier: serviceTier === "flex" ? "flex" : undefined,
+      },
+      TIER1_SCHEMA,
+      { includeUsage: !isLocal, requestOptions: { maxRetries: isLocal ? 0 : 3 } }
+    )
   );
-
-  const content = response.choices[0]?.message?.content;
-  if (!content) throw new Error("No content returned from OpenAI");
-
-  const parsed = JSON.parse(content);
 
   await prisma.materialPage.update({
     where: { materialId_pageNumber: { materialId, pageNumber } },
     data: {
-      needed: parsed.needed,
-      keyConcept: parsed.key_concept,
-      description: parsed.description,
+      needed: value.needed,
+      keyConcept: value.key_concept,
+      description: value.description,
     },
   });
 
@@ -128,6 +132,8 @@ async function processPage(
     where: { id: materialId },
     data: { processedPages: { increment: 1 } },
   });
+
+  return metrics;
 }
 
 export async function processMaterial(materialId: string) {
@@ -150,7 +156,11 @@ export async function processMaterial(materialId: string) {
   }
 
   // Resolve provider from DB config
-  const { client: openai, model, serviceTier } = await getConfiguredOpenAI();
+  const { client: openai, model, serviceTier, isLocal } = await getConfiguredOpenAI();
+
+  // Per-call AI metrics (TTFT + generated tokens) collected across every page
+  // and the batch-summary call, aggregated onto the material when it succeeds.
+  const callMetrics: AiCallMetrics[] = [];
 
   // Tier 1: Process pages in batches of 5
   const CONCURRENCY = 5;
@@ -165,10 +175,12 @@ export async function processMaterial(materialId: string) {
     const batch = pagesToProcess.slice(i, i + CONCURRENCY);
     await Promise.all(
       batch.map((page) =>
-        processPage(materialId, page.pageNumber, page.storageKey, bucket, openai, model, serviceTier).catch((err) => {
-          console.error(`[VLM Engine] Failed to process page ${page.pageNumber}:`, err);
-          // Don't fail the whole batch, allow retry mechanism later
-        })
+        processPage(materialId, page.pageNumber, page.storageKey, bucket, openai, model, serviceTier, isLocal)
+          .then((m) => { callMetrics.push(m); })
+          .catch((err) => {
+            console.error(`[VLM Engine] Failed to process page ${page.pageNumber}:`, err);
+            // Don't fail the whole batch, allow retry mechanism later
+          })
       )
     );
   }
@@ -206,9 +218,11 @@ export async function processMaterial(materialId: string) {
       const batch = failedPages.slice(i, i + CONCURRENCY);
       await Promise.all(
         batch.map((page) =>
-          processPage(materialId, page.pageNumber, page.storageKey, bucket, openai, model, serviceTier).catch((err) => {
-            console.error(`[VLM Engine] Retry ${retryAttempt} failed for page ${page.pageNumber}:`, err);
-          })
+          processPage(materialId, page.pageNumber, page.storageKey, bucket, openai, model, serviceTier, isLocal)
+            .then((m) => { callMetrics.push(m); })
+            .catch((err) => {
+              console.error(`[VLM Engine] Retry ${retryAttempt} failed for page ${page.pageNumber}:`, err);
+            })
         )
       );
     }
@@ -248,21 +262,27 @@ export async function processMaterial(materialId: string) {
   const neededPages = updatedMaterial.pages.filter((p) => p.needed === true && p.description !== null);
   
   if (neededPages.length === 0) {
-    // Edge case: no pages needed or all failed
+    // Edge case: no pages needed or all failed. Persist whatever Tier 1 metrics
+    // we collected so the teacher still sees the model + token usage.
+    const agg = aggregateMetrics(callMetrics);
     await prisma.learningMaterial.update({
       where: { id: materialId },
       data: {
         processingStatus: "SUCCESS",
         batchDescription: "No pages were identified as core learning material.",
         batchKeyConcepts: "[]",
+        aiModel: agg?.model ?? null,
+        aiTtftMs: agg?.ttftMs ?? null,
+        aiTokens: agg?.completionTokens ?? null,
       },
     });
     return;
   }
 
-  // Generate JIT URLs for Tier 2
-  const presignedUrls = await Promise.all(
-    neededPages.map((p) => presignGetUrl(bucket, p.storageKey, 3600))
+  // Resolve model-ready URLs for Tier 2: presigned links for hosted providers,
+  // inline base64 data URLs for local ones that can't reach S3.
+  const imageUrls = await Promise.all(
+    neededPages.map((p) => resolveModelImageUrl(bucket, p.storageKey, { inlineBase64: isLocal, expiresIn: 3600 }))
   );
 
   const contentArray: any[] = [
@@ -272,32 +292,37 @@ export async function processMaterial(materialId: string) {
     },
   ];
 
-  for (const url of presignedUrls) {
+  for (const url of imageUrls) {
     contentArray.push({ type: "image_url", image_url: { url } });
   }
 
   try {
-    const response = await retryWithExponentialBackoff(() =>
-      openai.chat.completions.create({
-        model,
-        messages: [{ role: "user", content: contentArray }],
-        response_format: { type: "json_schema", json_schema: TIER2_SCHEMA as any },
-        service_tier: serviceTier === "flex" ? "flex" : undefined,
-      })
-    );
-
-    const content = response.choices[0]?.message?.content;
-    if (content) {
-      const parsed = JSON.parse(content);
-      await prisma.learningMaterial.update({
-        where: { id: materialId },
-        data: {
-          processingStatus: "SUCCESS",
-          batchDescription: parsed.description,
-          batchKeyConcepts: JSON.stringify(parsed.key_concept),
+    const { value, metrics } = await retryWithExponentialBackoff(() =>
+      streamJsonCompletion<{ description: string; key_concept: string[] }>(
+        openai,
+        {
+          model,
+          messages: [{ role: "user", content: contentArray }],
+          service_tier: serviceTier === "flex" ? "flex" : undefined,
         },
-      });
-    }
+        TIER2_SCHEMA,
+        { includeUsage: !isLocal, requestOptions: { maxRetries: isLocal ? 0 : 3 } }
+      )
+    );
+    callMetrics.push(metrics);
+
+    const agg = aggregateMetrics(callMetrics);
+    await prisma.learningMaterial.update({
+      where: { id: materialId },
+      data: {
+        processingStatus: "SUCCESS",
+        batchDescription: value.description,
+        batchKeyConcepts: JSON.stringify(value.key_concept),
+        aiModel: agg?.model ?? null,
+        aiTtftMs: agg?.ttftMs ?? null,
+        aiTokens: agg?.completionTokens ?? null,
+      },
+    });
   } catch (err: any) {
     console.error(`[VLM Engine] Tier 2 processing failed:`, err);
     await prisma.learningMaterial.update({

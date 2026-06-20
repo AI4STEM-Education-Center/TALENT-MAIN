@@ -15,8 +15,9 @@
 import type OpenAI from "openai";
 import { prisma } from "./prisma";
 import { resolveProvider, createOpenAIClient, type ResolvedProvider } from "./ai-provider";
-import { presignGetUrl } from "./storage";
+import { resolveModelImageUrl } from "./storage";
 import { retryWithExponentialBackoff } from "./retry";
+import { streamJsonCompletion, aggregateMetrics, type AiCallMetrics } from "./ai-streaming";
 import {
   QUIZ_EXTRACTION_SCHEMA,
   QUIZ_LOCALIZATION_SCHEMA,
@@ -43,17 +44,6 @@ function providerUsable(provider: ResolvedProvider | null): provider is Resolved
   return true;
 }
 
-/**
- * Extract the first balanced-looking JSON object from a free-text response.
- * Replicated from `exam-results-engine.ts` (where it is a private helper) so the
- * fallback path here does not have to import from a sibling impure engine.
- */
-function parseFirstJsonObject(content: string): unknown {
-  const match = content.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error("No JSON object found in model response");
-  return JSON.parse(match[0]);
-}
-
 /** Build the multimodal user-message content: the prompt text + one image per page (in order). */
 function buildExtractionContent(prompt: string, imageUrls: string[]): OpenAI.Chat.Completions.ChatCompletionContentPart[] {
   return [
@@ -78,49 +68,29 @@ type ModelCallOptions = {
   schema: unknown;
   serviceTier: string | null;
   tierActive: boolean;
+  isLocal: boolean;
 };
 
 /**
- * One strict-json_schema chat call (wrapped in the shared retry), returning the
- * parsed JSON. A provider that lacks json_schema support throws on the primary
- * path, so we retry ONCE without response_format and pull the first JSON object
- * out of the free-text body. Shared by both extraction passes. Throws on an
- * empty response (callers decide whether that is fatal).
+ * One streamed strict-json_schema chat call (wrapped in the shared retry),
+ * returning the parsed JSON plus its TTFT/token metrics. `streamJsonCompletion`
+ * handles the json_schema → plain-text fallback for providers that reject
+ * `response_format`. Shared by both extraction passes. Throws on an empty
+ * response (callers decide whether that is fatal).
  */
-async function callJsonModel(client: OpenAI, opts: ModelCallOptions): Promise<unknown> {
-  const { model, messages, schema, serviceTier, tierActive } = opts;
-  let rawText: string;
-  try {
-    const response = await retryWithExponentialBackoff(() =>
-      client.chat.completions.create({
-        model,
-        messages,
-        response_format: { type: "json_schema", json_schema: schema as never },
-        service_tier: tierActive ? (serviceTier as never) : undefined,
-      })
-    );
-    rawText = response.choices?.[0]?.message?.content ?? "";
-  } catch (schemaErr) {
-    console.warn(
-      `[QuizExtraction] Schema-constrained call failed; retrying once without response_format:`,
-      schemaErr instanceof Error ? schemaErr.message : schemaErr
-    );
-    const response = await client.chat.completions.create({
-      model,
-      messages,
-      service_tier: tierActive ? (serviceTier as never) : undefined,
-    });
-    rawText = response.choices?.[0]?.message?.content ?? "";
-  }
-
-  if (!rawText.trim()) throw new Error("Model returned an empty response");
-
-  try {
-    return JSON.parse(rawText);
-  } catch {
-    // Tolerate models that wrap the JSON in prose even on the primary path.
-    return parseFirstJsonObject(rawText);
-  }
+async function callJsonModel(
+  client: OpenAI,
+  opts: ModelCallOptions
+): Promise<{ value: unknown; metrics: AiCallMetrics }> {
+  const { model, messages, schema, serviceTier, tierActive, isLocal } = opts;
+  return retryWithExponentialBackoff(() =>
+    streamJsonCompletion(
+      client,
+      { model, messages, service_tier: tierActive ? (serviceTier as never) : undefined },
+      schema,
+      { includeUsage: !isLocal, requestOptions: { maxRetries: isLocal ? 0 : 3 } }
+    )
+  );
 }
 
 /**
@@ -174,24 +144,39 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
     const tierActive =
       !isLocal && (serviceTier === "auto" || serviceTier === "default" || serviceTier === "flex");
 
-    // Presign a GET URL for every page image, in page order (index i → page i+1).
+    // Resolve a model-ready URL for every page image, in page order (index i →
+    // page i+1). Local providers can't fetch our presigned S3 URLs, so their
+    // bytes are inlined as base64 data URLs; hosted providers get short-lived
+    // presigned links. buildExtractionContent / buildLocalizationContent embed
+    // whichever string they receive, so both passes are covered by this choice.
     const imageUrls = await Promise.all(
-      extraction.pages.map((page) => presignGetUrl(extraction.bucket, page.storageKey, PAGE_URL_EXPIRES_SEC))
+      extraction.pages.map((page) =>
+        resolveModelImageUrl(extraction.bucket, page.storageKey, {
+          inlineBase64: isLocal,
+          expiresIn: PAGE_URL_EXPIRES_SEC,
+        })
+      )
     );
     const pageNumbers = extraction.pages.map((p) => p.pageNumber);
+
+    // TTFT + generated-token metrics, collected across pass 1 and every
+    // localization call, aggregated onto the row on completion.
+    const callMetrics: AiCallMetrics[] = [];
 
     // ── Pass 1: identify questions / options / answer key over all pages. ──
     const pass1Prompt = buildExtractionPrompt(extraction.totalPages);
     const pass1Messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
       { role: "user", content: buildExtractionContent(pass1Prompt, imageUrls) },
     ];
-    const pass1Parsed = await callJsonModel(client, {
+    const { value: pass1Parsed, metrics: pass1Metrics } = await callJsonModel(client, {
       model: provider.model,
       messages: pass1Messages,
       schema: QUIZ_EXTRACTION_SCHEMA,
       serviceTier,
       tierActive,
+      isLocal,
     });
+    callMetrics.push(pass1Metrics);
     let quiz = normalizeExtractedQuiz(validateExtractedQuiz(pass1Parsed));
 
     // ── Pass 2: tight bounding boxes — only when something needs cropping. ──
@@ -213,13 +198,15 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
             const locMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
               { role: "user", content: buildLocalizationContent(buildLocalizationPrompt(pageNumber, targets), imageUrls[idx]) },
             ];
-            const locParsed = await callJsonModel(client, {
+            const { value: locParsed, metrics: locMetrics } = await callJsonModel(client, {
               model: provider.model,
               messages: locMessages,
               schema: QUIZ_LOCALIZATION_SCHEMA,
               serviceTier,
               tierActive,
+              isLocal,
             });
+            callMetrics.push(locMetrics);
             const known = new Set(targets.map((t) => t.targetId));
             boxes.push(...validateLocalizationResult(locParsed, known));
           } catch (pageErr) {
@@ -238,6 +225,7 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
       }
     }
 
+    const agg = aggregateMetrics(callMetrics);
     await prisma.quizPdfExtraction.update({
       where: { id: extraction.id },
       data: {
@@ -246,6 +234,9 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
         warnings: JSON.stringify(quiz.warnings),
         status: "AWAITING_REVIEW",
         errorMessage: null,
+        aiModel: agg?.model ?? null,
+        aiTtftMs: agg?.ttftMs ?? null,
+        aiTokens: agg?.completionTokens ?? null,
       },
     });
     console.log(
