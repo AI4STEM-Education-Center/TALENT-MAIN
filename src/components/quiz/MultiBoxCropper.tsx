@@ -27,6 +27,7 @@ export function MultiBoxCropper({
   onSelect,
   onChange,
   imgClassName,
+  containerClassName,
 }: {
   pageUrl: string;
   boxes: CropBox[];
@@ -34,6 +35,7 @@ export function MultiBoxCropper({
   onSelect: (id: string) => void;
   onChange: (id: string, next: FigureBbox) => void;
   imgClassName?: string;
+  containerClassName?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const modeRef = useRef<DragMode | null>(null);
@@ -95,7 +97,7 @@ export function MultiBoxCropper({
   return (
     <div
       ref={containerRef}
-      className="relative inline-block max-w-full touch-none select-none overflow-hidden rounded border"
+      className={containerClassName ?? "relative inline-block max-w-full touch-none select-none overflow-hidden rounded border"}
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
       onPointerCancel={endDrag}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import { Image as ImageIcon, Maximize2, Plus, Trash2, Type, X } from "lucide-react";
+import { Image as ImageIcon, ImageOff, ImagePlus, Maximize2, Plus, Trash2, Type, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -174,6 +174,13 @@ function QuestionCard({
     onChange({ ...q, hasFigure: false, figureBbox: null, figureStorageKey: null });
   }
 
+  // Flag a figure for a question the extractor missed: drops in a default,
+  // draggable crop box (on the source page) for the teacher to position. The
+  // inverse of removeFigure; the box is cropped + uploaded during commit.
+  function addFigure() {
+    onChange({ ...q, hasFigure: true, figureBbox: q.figureBbox ?? DEFAULT_FIGURE_BBOX, figureStorageKey: null });
+  }
+
   // A crop box moved: route it to the figure or the matching option. Editing a
   // crop invalidates any previously uploaded key for that target.
   function setBoxBbox(id: string, bbox: FigureBbox) {
@@ -214,7 +221,15 @@ function QuestionCard({
                 activeId={resolvedActiveId}
                 onSelect={setActiveBoxId}
                 onChange={setBoxBbox}
-                imgClassName={large ? "block max-h-[78vh] w-auto max-w-full" : undefined}
+                // Inline: fill the column (matching the plain source-page image).
+                // Enlarged: shrink-to-fit so the page fits the dialog height and
+                // the crop boxes stay aligned to the image.
+                imgClassName={large ? "block max-h-[78vh] w-auto max-w-full" : "block w-full"}
+                containerClassName={
+                  large
+                    ? undefined
+                    : "relative block w-full touch-none select-none overflow-hidden rounded border"
+                }
               />
             </div>
           );
@@ -222,6 +237,27 @@ function QuestionCard({
       </div>
     );
   }
+
+  // Controls that float over the top-right of the source-page preview (the same
+  // overlay treatment the plain source-page image uses): enlarge, plus an
+  // add/remove-figure toggle so every question can gain or drop a figure crop.
+  const overlayButton = "size-8 bg-background/80 shadow-sm backdrop-blur hover:bg-background";
+  const figureControls = (
+    <div className="absolute right-2 top-2 flex items-center gap-1">
+      <Button size="icon" variant="secondary" onClick={() => setEnlarged(true)} aria-label="Enlarge page" className={overlayButton}>
+        <Maximize2 className="size-4" />
+      </Button>
+      {q.hasFigure ? (
+        <Button size="icon" variant="secondary" onClick={removeFigure} aria-label="Remove figure" title="Remove figure" className={overlayButton}>
+          <ImageOff className="size-4" />
+        </Button>
+      ) : (
+        <Button size="icon" variant="secondary" onClick={addFigure} aria-label="Add figure" title="Add figure" className={overlayButton}>
+          <ImagePlus className="size-4" />
+        </Button>
+      )}
+    </div>
+  );
 
   return (
     <div className={`rounded-lg border p-4 space-y-3 ${complete ? "" : "border-amber-300 bg-amber-50/40"}`}>
@@ -359,40 +395,27 @@ function QuestionCard({
         <div className="space-y-2 self-start lg:sticky lg:top-4">
           {hasCrops ? (
             <>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-medium text-muted-foreground">
-                  {q.options.some((o) => o.isImage === true)
-                    ? "Drag each labeled box onto its choice image"
-                    : `Figure crop${q.figureCaption ? ` — ${q.figureCaption}` : ""}`}
-                </span>
-                <div className="flex items-center gap-1">
-                  <Button size="sm" variant="ghost" onClick={() => setEnlarged(true)} aria-label="Enlarge page">
-                    <Maximize2 className="size-4" />
-                  </Button>
-                  {q.hasFigure && (
-                    <Button size="sm" variant="ghost" onClick={removeFigure}>Remove figure</Button>
-                  )}
-                </div>
+              <span className="text-xs font-medium text-muted-foreground">
+                {q.options.some((o) => o.isImage === true)
+                  ? "Drag each labeled box onto its choice image"
+                  : `Figure crop${q.figureCaption ? ` — ${q.figureCaption}` : ""}`}
+              </span>
+              {/* Image fills the column; enlarge + figure controls float over it
+                  (matching the plain source-page image below). */}
+              <div className="relative">
+                {renderCroppers(false)}
+                {figureControls}
               </div>
-              {renderCroppers(false)}
             </>
           ) : sourceUrl ? (
             <>
               <span className="text-xs font-medium text-muted-foreground">Source page {q.sourcePage}</span>
-              {/* Image fills the column; the enlarge control floats over it so it
-                  doesn't steal a row or shrink the page preview. */}
+              {/* Image fills the column; the controls float over it so they
+                  don't steal a row or shrink the page preview. */}
               <div className="relative">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={sourceUrl} alt={`Source page ${q.sourcePage}`} className="block w-full rounded border" />
-                <Button
-                  size="icon"
-                  variant="secondary"
-                  onClick={() => setEnlarged(true)}
-                  aria-label="Enlarge page"
-                  className="absolute right-2 top-2 size-8 bg-background/80 shadow-sm backdrop-blur hover:bg-background"
-                >
-                  <Maximize2 className="size-4" />
-                </Button>
+                {figureControls}
               </div>
             </>
           ) : (
