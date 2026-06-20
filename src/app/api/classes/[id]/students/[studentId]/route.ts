@@ -2,17 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-// DELETE: Remove a student from the class roster (teacher only)
+// DELETE: Remove a student from the class roster (teacher only).
+// Note: the [studentId] slug here carries a ClassStudentList roster-entry id,
+// not a Student id. The segment must share the slug name of the sibling
+// `students/[studentId]/stats` route — Next.js disallows differing slug names
+// at the same path level — so we alias it to `studentListId` internally.
 export async function DELETE(
   _req: NextRequest,
-  { params }: { params: Promise<{ id: string; studentListId: string }> }
+  { params }: { params: Promise<{ id: string; studentId: string }> }
 ) {
   const session = await auth();
   if (!session?.user || session.user.role !== "TEACHER") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { id, studentListId } = await params;
+  const { id, studentId: studentListId } = await params;
   const teacher = await prisma.teacher.findUnique({ where: { userId: session.user.id } });
   if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
 
