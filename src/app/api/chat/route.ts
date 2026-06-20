@@ -132,6 +132,7 @@ async function sendChatCompletion(
     apiKey: provider.apiKey || "dummy-key-for-local",
     baseURL,
     defaultHeaders: buildProviderHeaders(provider),
+    timeout: provider.timeoutMs,
   });
 
   const serviceTier = provider.serviceTier;

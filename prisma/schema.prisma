@@ -533,6 +533,10 @@ model AiProvider {
   // Cloudflare AI Gateway — only used when providerType = "cloudflare"
   cfAigByokAlias String?             // optional BYOK alias (sent as cf-aig-byok-alias header)
 
+  // Per-request timeout (ms) applied to every AI call made with this provider.
+  // null → fall back to DEFAULT_AI_TIMEOUT_MS (see src/lib/ai-provider.ts).
+  timeoutMs    Int?
+
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -591,6 +595,43 @@ model SmtpConfig {
   isActive    Boolean  @default(false)           // email sending only enabled when true
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+// ─── Database backups ──────────────────────────────────────────────────────────
+// Singleton WebDAV backup configuration, managed by admins. The WebDAV password
+// is encrypted at rest with AES-256-GCM (see src/lib/crypto.ts), mirroring
+// SmtpConfig. Snapshots are pushed to `<baseDir>/<env>/` (prod|dev) by the
+// worker, and the admin "Restore" flow stages any of them for the next boot.
+model BackupConfig {
+  id String @id @default("singleton")
+
+  webdavUrl      String?
+  webdavUsername String?
+  passwordEnc    String? // AES-256-GCM encrypted WebDAV password
+  passwordIv     String?
+  passwordTag    String?
+  baseDir        String  @default("/backups")
+
+  enabled       Boolean @default(false)
+  intervalHours Int     @default(24)
+  anchorTime    String  @default("02:00") // HH:mm interpreted in `timezone`
+  timezone      String  @default("America/New_York")
+
+  // Grandfather-father-son retention — how many to keep in each tier.
+  keepRecent  Int @default(7)
+  keepWeekly  Int @default(4)
+  keepMonthly Int @default(12)
+  keepYearly  Int @default(3)
+
+  // Status of the most recent run (surfaced in the admin UI).
+  lastRunAt     DateTime?
+  nextRunAt     DateTime?
+  lastStatus    String? // "SUCCESS" | "FAILED" | "RUNNING"
+  lastError     String?
+  lastBackupKey String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // A message either broadcast from a teacher to the students on a class roster,

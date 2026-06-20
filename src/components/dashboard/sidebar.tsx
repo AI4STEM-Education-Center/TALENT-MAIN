@@ -20,7 +20,7 @@ import {
   Mail,
   MessageSquare,
   Inbox,
-  Gauge,
+  HardDrive,
   PanelLeftClose,
 } from "lucide-react";
 
@@ -62,7 +62,7 @@ const adminNav: NavItem[] = [
   { href: "/admin/users", label: "Users", icon: <Users className="size-4" /> },
   { href: "/admin/ai-config", label: "AI Config", icon: <Settings className="size-4" /> },
   { href: "/admin/email", label: "Email / SMTP", icon: <Mail className="size-4" /> },
-  { href: "/admin/email-limits", label: "Email Limits", icon: <Gauge className="size-4" /> },
+  { href: "/admin/backup", label: "Database Backup", icon: <HardDrive className="size-4" /> },
 ];
 
 function SidebarContent({
