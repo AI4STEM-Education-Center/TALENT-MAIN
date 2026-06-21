@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -28,7 +28,10 @@ import {
   Mail,
   MessageSquare,
   AlertTriangle,
+  Upload,
+  Pencil,
 } from "lucide-react";
+import { parseRosterCsv } from "@/lib/csv-roster";
 
 interface StudentEntry {
   id: string;
@@ -59,6 +62,18 @@ export default function StudentsPage() {
   // Delete confirmation
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // CSV upload state
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadMsg, setUploadMsg] = useState("");
+  const [uploadError, setUploadError] = useState("");
+
+  // Edit dialog state
+  const [editTarget, setEditTarget] = useState<StudentEntry | null>(null);
+  const [editForm, setEditForm] = useState({ orgDefinedId: "", firstName: "", lastName: "", email: "" });
+  const [editError, setEditError] = useState("");
+  const [editLoading, setEditLoading] = useState(false);
 
   useEffect(() => {
     fetchStudents();
@@ -137,12 +152,102 @@ export default function StudentsPage() {
     }
   }
 
+  function handleCsvChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadMsg("");
+    setUploadError("");
+
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const text = ev.target?.result as string;
+      const { students: parsed, skipped } = parseRosterCsv(text);
+      if (parsed.length === 0) {
+        setUploadError(
+          "Could not parse any students with a valid email. Each row needs an 81 number, first name, last name, and email."
+        );
+        if (fileRef.current) fileRef.current.value = "";
+        return;
+      }
+
+      setUploading(true);
+      try {
+        const res = await fetch(`/api/classes/${id}/students/bulk`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ students: parsed }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setUploadError(data.error || "Failed to upload roster.");
+        } else {
+          await fetchStudents();
+          const parts = [`Added ${data.added} student${data.added === 1 ? "" : "s"}.`];
+          if (data.skipped > 0) parts.push(`${data.skipped} already on the roster (skipped).`);
+          if (skipped > 0) parts.push(`${skipped} row(s) skipped for missing/invalid email.`);
+          setUploadMsg(parts.join(" "));
+        }
+      } catch {
+        setUploadError("An unexpected error occurred during upload.");
+      } finally {
+        setUploading(false);
+        if (fileRef.current) fileRef.current.value = "";
+      }
+    };
+    reader.onerror = () => {
+      setUploadError("Failed to read the file.");
+      if (fileRef.current) fileRef.current.value = "";
+    };
+    reader.readAsText(file);
+  }
+
+  function openEdit(s: StudentEntry) {
+    setEditError("");
+    setEditTarget(s);
+    setEditForm({
+      orgDefinedId: s.orgDefinedId,
+      firstName: s.firstName,
+      lastName: s.lastName,
+      email: s.email,
+    });
+  }
+
+  async function handleEdit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editTarget) return;
+    setEditError("");
+    setEditLoading(true);
+    try {
+      const res = await fetch(`/api/classes/${id}/students/${editTarget.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editForm),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setEditError(data.error || "Failed to update student.");
+      } else {
+        setStudents((prev) =>
+          prev
+            .map((s) => (s.id === editTarget.id ? { ...s, ...data } : s))
+            .sort((a, b) => a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName))
+        );
+        setEditTarget(null);
+      }
+    } catch {
+      setEditError("An unexpected error occurred.");
+    } finally {
+      setEditLoading(false);
+    }
+  }
+
   const searchLower = search.toLowerCase();
   let filtered = search
     ? students.filter(
         (s) =>
           s.firstName.toLowerCase().includes(searchLower) ||
           s.lastName.toLowerCase().includes(searchLower) ||
+          s.email.toLowerCase().includes(searchLower) ||
           s.orgDefinedId.includes(search.replace(/^#/, ""))
       )
     : students;
@@ -191,6 +296,28 @@ export default function StudentsPage() {
           <Link href={`/teacher/classes/${id}/messages`}>
             <MessageSquare className="size-4 mr-1" /> Message Students
           </Link>
+        </Button>
+
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".csv"
+          aria-label="Upload roster CSV"
+          onChange={handleCsvChange}
+          className="hidden"
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => fileRef.current?.click()}
+          disabled={uploading}
+        >
+          {uploading ? (
+            <Loader2 className="size-4 mr-1 animate-spin" />
+          ) : (
+            <Upload className="size-4 mr-1" />
+          )}
+          {uploading ? "Uploading..." : "Upload CSV"}
         </Button>
 
         <Dialog open={addOpen} onOpenChange={setAddOpen}>
@@ -267,6 +394,19 @@ export default function StudentsPage() {
         </div>
       </div>
 
+      {uploadError && (
+        <div className="p-3 rounded-md bg-destructive/10 text-destructive text-sm flex items-start gap-2">
+          <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+          <span>{uploadError}</span>
+        </div>
+      )}
+      {uploadMsg && (
+        <div className="p-3 rounded-md bg-green-500/10 text-green-700 dark:text-green-400 text-sm flex items-start gap-2">
+          <CheckCircle className="size-4 shrink-0 mt-0.5" />
+          <span>{uploadMsg}</span>
+        </div>
+      )}
+
       {/* Stats cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setFilter("all")}>
@@ -310,7 +450,7 @@ export default function StudentsPage() {
             <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
               <Input
-                placeholder="Search by name or 81 number..."
+                placeholder="Search by name, email, or 81 number..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-9"
@@ -390,6 +530,16 @@ export default function StudentsPage() {
                       </Badge>
                     ) : null}
 
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => openEdit(s)}
+                      aria-label={`Edit ${s.firstName} ${s.lastName}`}
+                      className="text-muted-foreground hover:text-foreground size-7 p-0"
+                    >
+                      <Pencil className="size-4" />
+                    </Button>
+
                     {deleteId === s.id ? (
                       <div className="flex items-center gap-1">
                         <Button
@@ -427,6 +577,66 @@ export default function StudentsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Edit dialog */}
+      <Dialog open={!!editTarget} onOpenChange={(open) => !open && setEditTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Student</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleEdit} className="space-y-4">
+            {editError && (
+              <div className="p-3 rounded-md bg-destructive/10 text-destructive text-sm">
+                {editError}
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="edit-orgId">81 Number</Label>
+              <Input
+                id="edit-orgId"
+                value={editForm.orgDefinedId}
+                onChange={(e) => setEditForm((p) => ({ ...p, orgDefinedId: e.target.value }))}
+                required
+                placeholder="e.g. 811947904"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="edit-first">First Name</Label>
+                <Input
+                  id="edit-first"
+                  value={editForm.firstName}
+                  onChange={(e) => setEditForm((p) => ({ ...p, firstName: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-last">Last Name</Label>
+                <Input
+                  id="edit-last"
+                  value={editForm.lastName}
+                  onChange={(e) => setEditForm((p) => ({ ...p, lastName: e.target.value }))}
+                  required
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-email">Email</Label>
+              <Input
+                id="edit-email"
+                type="email"
+                value={editForm.email}
+                onChange={(e) => setEditForm((p) => ({ ...p, email: e.target.value }))}
+                required
+                placeholder="student@example.com"
+              />
+            </div>
+            <Button type="submit" className="w-full" disabled={editLoading}>
+              {editLoading ? "Saving..." : "Save Changes"}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

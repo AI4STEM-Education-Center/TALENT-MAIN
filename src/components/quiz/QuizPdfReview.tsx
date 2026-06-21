@@ -260,7 +260,7 @@ function QuestionCard({
   );
 
   return (
-    <div className={`rounded-lg border p-4 space-y-3 ${complete ? "" : "border-amber-300 bg-amber-50/40"}`}>
+    <div className={`rounded-lg border p-4 space-y-3 ${complete ? "" : "border-amber-300 bg-amber-50/40 dark:border-amber-700/60 dark:bg-amber-950/20"}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-sm text-muted-foreground">Q{index + 1}</span>
@@ -274,7 +274,7 @@ function QuestionCard({
         </Button>
       </div>
 
-      {q.needsReview && q.reviewNote && <p className="text-xs text-amber-700">{q.reviewNote}</p>}
+      {q.needsReview && q.reviewNote && <p className="text-xs text-amber-700 dark:text-amber-300">{q.reviewNote}</p>}
 
       {/* Editing fields on the left; the source page is shown on the right (a
           draggable multi-box cropper when the question has a figure and/or image
@@ -466,7 +466,7 @@ export function QuizPdfReview({
   return (
     <div className="space-y-4">
       {!hasAnswerKey && (
-        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-200">
           No answer key detected — set the correct answer for every question.
         </div>
       )}
