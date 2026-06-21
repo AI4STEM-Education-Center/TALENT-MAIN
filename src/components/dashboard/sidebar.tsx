@@ -11,6 +11,7 @@ import {
   Users,
   LayoutDashboard,
   GraduationCap,
+  BarChart3,
   FileQuestion,
   FileUp,
   LogOut,
@@ -45,6 +46,7 @@ interface SidebarProps {
 const teacherNav: NavItem[] = [
   { href: "/teacher", label: "Dashboard", icon: <LayoutDashboard className="size-4" /> },
   { href: "/teacher/classes", label: "My Classes", icon: <Users className="size-4" /> },
+  { href: "/teacher/stats", label: "Stats", icon: <BarChart3 className="size-4" /> },
   { href: "/teacher/quizzes", label: "Quizzes", icon: <FileQuestion className="size-4" /> },
   { href: "/teacher/messages", label: "Messages", icon: <MessageSquare className="size-4" /> },
 ];
