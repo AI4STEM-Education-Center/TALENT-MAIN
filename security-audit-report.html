@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TALENT-MAIN — Security Audit Report (dev)</title>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#161b22; --panel-2:#1c232c; --border:#2a323d;
+    --ink:#e6edf3; --muted:#9aa7b4; --faint:#6b7682;
+    --accent:#3fb6a8; --accent-ink:#7fe9dc;
+    --crit:#e5484d; --high:#f2711c; --med:#e3b341; --low:#3b82f6; --info:#8b97a3; --ok:#2ea043;
+    --mono:"SF Mono",ui-monospace,"Cascadia Code",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.6;font-size:16px;-webkit-font-smoothing:antialiased}
+  a{color:var(--accent-ink);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+
+  /* Header */
+  header.hero{
+    background:linear-gradient(160deg,#10171f 0%,#0e1116 60%);
+    border-bottom:1px solid var(--border);padding:56px 0 40px;
+  }
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);margin:0 0 14px}
+  h1{font-size:38px;line-height:1.15;margin:0 0 14px;font-weight:700;letter-spacing:-.02em}
+  .sub{color:var(--muted);max-width:62ch;margin:0}
+  .meta{display:flex;flex-wrap:wrap;gap:10px 14px;margin-top:26px}
+  .chip{display:inline-flex;gap:8px;align-items:center;background:var(--panel);border:1px solid var(--border);border-radius:999px;padding:7px 14px;font-size:13px;color:var(--muted)}
+  .chip b{color:var(--ink);font-weight:600}
+  .chip code{font-family:var(--mono);color:var(--accent-ink);font-size:12px}
+
+  /* Layout */
+  main{padding:44px 0 80px}
+  section{margin:0 0 52px}
+  h2{font-size:24px;margin:0 0 6px;letter-spacing:-.01em;scroll-margin-top:20px}
+  h2 .num{font-family:var(--mono);color:var(--faint);font-size:16px;margin-right:10px}
+  .lead{color:var(--muted);margin:0 0 22px;max-width:74ch}
+  h3{font-size:17px;margin:26px 0 8px}
+
+  /* Severity tokens */
+  .badge{display:inline-block;font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 9px;border-radius:5px;border:1px solid;white-space:nowrap}
+  .b-crit{color:#ff9a9d;border-color:var(--crit);background:rgba(229,72,77,.13)}
+  .b-high{color:#ffb778;border-color:var(--high);background:rgba(242,113,28,.13)}
+  .b-med{color:#f0d27a;border-color:var(--med);background:rgba(227,179,65,.12)}
+  .b-low{color:#9cc3ff;border-color:var(--low);background:rgba(59,130,246,.13)}
+  .b-info{color:#c2cbd4;border-color:var(--info);background:rgba(139,151,163,.13)}
+  .b-ok{color:#7ee399;border-color:var(--ok);background:rgba(46,160,67,.13)}
+
+  /* Summary cards */
+  .cards{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:26px 0}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px 16px;text-align:center}
+  .card .n{font-size:34px;font-weight:700;line-height:1;font-family:var(--mono)}
+  .card .l{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-top:8px}
+  .card.crit .n{color:var(--crit)} .card.high .n{color:var(--high)} .card.med .n{color:var(--med)} .card.low .n{color:var(--low)} .card.info .n{color:var(--info)}
+
+  .scoreband{display:flex;align-items:center;gap:18px;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px 22px;margin-top:8px}
+  .scoreband .grade{font-size:42px;font-weight:800;font-family:var(--mono);color:var(--med);line-height:1}
+  .scoreband p{margin:0;color:var(--muted);font-size:14px}
+
+  /* Tables */
+  table{width:100%;border-collapse:collapse;font-size:14px;margin:10px 0}
+  th,td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--border);vertical-align:top}
+  th{font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:600}
+  tbody tr:hover{background:var(--panel)}
+  td code,.loc{font-family:var(--mono);font-size:12.5px;color:var(--accent-ink);word-break:break-all}
+
+  /* Finding blocks */
+  .finding{background:var(--panel);border:1px solid var(--border);border-left-width:4px;border-radius:10px;padding:20px 22px;margin:16px 0}
+  .finding.s-high{border-left-color:var(--high)} .finding.s-med{border-left-color:var(--med)}
+  .finding.s-low{border-left-color:var(--low)} .finding.s-info{border-left-color:var(--info)} .finding.s-crit{border-left-color:var(--crit)}
+  .finding h3{margin:0;font-size:18px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .finding .fid{font-family:var(--mono);color:var(--faint);font-size:13px}
+  .finding .loc{display:inline-block;margin:10px 0 4px;background:var(--panel-2);border:1px solid var(--border);border-radius:6px;padding:4px 9px}
+  .finding p{margin:10px 0 0}
+  .finding .label{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--faint);font-weight:700;margin-top:14px}
+  pre{background:#0a0d12;border:1px solid var(--border);border-radius:8px;padding:14px 16px;overflow-x:auto;font-family:var(--mono);font-size:12.5px;color:#c9d4df;margin:8px 0 0;line-height:1.55}
+  pre .c{color:#6b7682} pre .k{color:#ff9a9d} pre .s{color:#9cc3ff}
+  .rec{border-left:3px solid var(--accent);padding:2px 0 2px 14px;margin-top:8px;color:var(--ink)}
+
+  ul.tick{list-style:none;padding:0;margin:10px 0}
+  ul.tick li{padding:8px 0 8px 30px;position:relative;border-bottom:1px solid var(--border);color:var(--muted)}
+  ul.tick li:before{content:"✓";position:absolute;left:4px;top:8px;color:var(--ok);font-weight:700}
+  ul.tick li b{color:var(--ink);font-weight:600}
+
+  .toc{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px 22px;columns:2;column-gap:36px}
+  .toc a{display:block;padding:5px 0;color:var(--muted);font-size:14px;break-inside:avoid}
+  .toc a:hover{color:var(--accent-ink)}
+  @media(max-width:720px){.cards{grid-template-columns:repeat(2,1fr)}.toc{columns:1}h1{font-size:30px}}
+
+  .note{background:rgba(63,182,168,.07);border:1px solid rgba(63,182,168,.3);border-radius:10px;padding:16px 20px;color:var(--muted);font-size:14px}
+  .note b{color:var(--accent-ink)}
+  footer{border-top:1px solid var(--border);padding:28px 0 60px;color:var(--faint);font-size:13px}
+  .roadmap{counter-reset:step;padding-left:0;list-style:none;margin:14px 0}
+  .roadmap li{position:relative;padding:14px 0 14px 52px;border-bottom:1px solid var(--border)}
+  .roadmap li:before{counter-increment:step;content:counter(step);position:absolute;left:0;top:12px;width:32px;height:32px;border-radius:8px;background:var(--panel-2);border:1px solid var(--border);color:var(--accent-ink);font-family:var(--mono);font-weight:700;display:flex;align-items:center;justify-content:center}
+  .roadmap li b{color:var(--ink)}
+  .roadmap .when{font-size:12px;font-family:var(--mono);color:var(--faint);float:right}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="eyebrow">Application Security Audit</p>
+    <h1>TALENT-MAIN — Security Audit Report</h1>
+    <p class="sub">Static security review of the TALENT education platform — a Next.js 16 (App Router) + Prisma 7 / SQLite application with AI-driven quiz extraction, S3 file uploads, transactional email, and role-based teacher / student / admin access.</p>
+    <div class="meta">
+      <span class="chip">Branch <b>dev</b></span>
+      <span class="chip">Commit <code>2453a51</code></span>
+      <span class="chip">Date <b>2026-06-21</b></span>
+      <span class="chip">Routes reviewed <b>70 API endpoints</b></span>
+      <span class="chip">Method <b>Manual code review + dependency scan</b></span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section id="summary">
+    <h2><span class="num">01</span>Executive summary</h2>
+    <p class="lead">The codebase demonstrates a <b>solid baseline security posture</b>: passwords are bcrypt-hashed (cost 12), secrets at rest are encrypted with AES-256-GCM, database access is fully parameterized through Prisma (no SQL injection surface), and the great majority of API routes enforce role and resource-ownership checks. The most material risks are two <b>broken-object-level-authorization (IDOR)</b> endpoints, a <b>real password committed to version control</b> in a demo seed, and the absence of <b>rate limiting</b>, <b>HTTP security headers</b>, and dependency patching.</p>
+
+    <div class="cards">
+      <div class="card crit"><div class="n">0</div><div class="l">Critical</div></div>
+      <div class="card high"><div class="n">2</div><div class="l">High</div></div>
+      <div class="card med"><div class="n">4</div><div class="l">Medium</div></div>
+      <div class="card low"><div class="n">3</div><div class="l">Low</div></div>
+      <div class="card info"><div class="n">2</div><div class="l">Informational</div></div>
+    </div>
+
+    <div class="scoreband">
+      <div class="grade">B</div>
+      <p>Overall posture is <b>good</b>. No critical or unauthenticated-RCE-class issues were found. Closing the two High findings (IDOR on class data, committed credential) and adding rate limiting + security headers would move this to an <b>A</b> posture. This is a static review and is not a substitute for a penetration test.</p>
+    </div>
+  </section>
+
+  <section id="toc">
+    <h2><span class="num">02</span>Contents</h2>
+    <nav class="toc">
+      <a href="#scope">Scope &amp; methodology</a>
+      <a href="#overview">Findings overview</a>
+      <a href="#detail">Detailed findings (F-01 – F-11)</a>
+      <a href="#deps">Dependency vulnerabilities (npm audit)</a>
+      <a href="#strengths">Security strengths</a>
+      <a href="#roadmap">Remediation roadmap</a>
+      <a href="#appendix">Appendix — authz matrix &amp; files reviewed</a>
+    </nav>
+  </section>
+
+  <section id="scope">
+    <h2><span class="num">03</span>Scope &amp; methodology</h2>
+    <p class="lead">This review covered the full repository on the <b>dev</b> branch (commit <code>2453a51</code>), which is the integration branch ahead of <code>main</code>. Areas examined:</p>
+    <ul class="tick">
+      <li><b>Authentication &amp; session</b> — NextAuth v5 (Credentials provider), JWT sessions, bcrypt hashing, signup-token gating.</li>
+      <li><b>Authorization</b> — all 70 <code>src/app/api/**/route.ts</code> handlers, the <code>src/proxy.ts</code> middleware, and ownership helpers (<code>quiz-access.ts</code>).</li>
+      <li><b>Data handling</b> — Prisma queries (SQL-injection surface), input validation, file uploads to S3, AI prompt construction.</li>
+      <li><b>Secrets</b> — env handling, encryption at rest (<code>crypto.ts</code>), committed-secret scan across tracked files.</li>
+      <li><b>Infrastructure</b> — Dockerfile, entrypoint, GitHub Actions workflows, dependency manifest.</li>
+    </ul>
+    <p class="note"><b>Methodology:</b> manual source-code review of the checked-out <code>dev</code> tree, augmented by <code>npm audit</code> for dependency CVEs and a regex scan for committed credentials. Dynamic testing, fuzzing, and live exploitation were out of scope.</p>
+  </section>
+
+  <section id="overview">
+    <h2><span class="num">04</span>Findings overview</h2>
+    <table>
+      <thead><tr><th style="width:52px">ID</th><th>Finding</th><th style="width:96px">Severity</th><th style="width:120px">Category</th></tr></thead>
+      <tbody>
+        <tr><td><code>F-01</code></td><td>Real password committed to version control (demo seed)</td><td><span class="badge b-high">High</span></td><td>Secrets</td></tr>
+        <tr><td><code>F-02</code></td><td>IDOR — any authenticated user can read any class (incl. student PII)</td><td><span class="badge b-high">High</span></td><td>Access control</td></tr>
+        <tr><td><code>F-03</code></td><td>IDOR — any authenticated user can list any class's quiz assignments</td><td><span class="badge b-med">Medium</span></td><td>Access control</td></tr>
+        <tr><td><code>F-04</code></td><td>No rate limiting on auth &amp; invitation endpoints</td><td><span class="badge b-med">Medium</span></td><td>Brute force</td></tr>
+        <tr><td><code>F-05</code></td><td>No HTTP security headers (CSP, HSTS, X-Frame-Options…)</td><td><span class="badge b-med">Medium</span></td><td>Hardening</td></tr>
+        <tr><td><code>F-06</code></td><td>Vulnerable transitive dependencies (2 high / 9 moderate)</td><td><span class="badge b-med">Medium</span></td><td>Dependencies</td></tr>
+        <tr><td><code>F-07</code></td><td>No CSRF tokens on state-changing routes (SameSite-mitigated)</td><td><span class="badge b-low">Low</span></td><td>CSRF</td></tr>
+        <tr><td><code>F-08</code></td><td>Production auth on a pre-release (beta) NextAuth version</td><td><span class="badge b-low">Low</span></td><td>Dependencies</td></tr>
+        <tr><td><code>F-09</code></td><td>No centralized schema validation (manual per-route parsing)</td><td><span class="badge b-low">Low</span></td><td>Input validation</td></tr>
+        <tr><td><code>F-10</code></td><td><code>prisma db push --accept-data-loss</code> on container boot</td><td><span class="badge b-info">Info</span></td><td>Operational</td></tr>
+        <tr><td><code>F-11</code></td><td>Single static key for all encryption-at-rest (no rotation)</td><td><span class="badge b-info">Info</span></td><td>Key mgmt</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="detail">
+    <h2><span class="num">05</span>Detailed findings</h2>
+
+    <div class="finding s-high">
+      <h3><span class="badge b-high">High</span> <span class="fid">F-01</span> Real password committed to version control</h3>
+      <span class="loc">prisma/seed-demo.ts:10–16</span>
+      <p>The demo seed script hard-codes a genuine-looking password and a real <code>@uga.edu</code> email address, then creates a <code>TEACHER</code> account from them. The password is now permanently in git history.</p>
+      <pre><span class="k">const</span> hashedPassword = <span class="k">await</span> bcrypt.hash(<span class="s">"nY*H1#6i#t8kqeP"</span>, 12);
+<span class="k">const</span> user = <span class="k">await</span> prisma.user.upsert({
+  where: { email: <span class="s">"edwardcheng@uga.edu"</span> },
+  create: { email: <span class="s">"edwardcheng@uga.edu"</span>, role: <span class="s">"TEACHER"</span>, hashedPassword, ... },
+});</pre>
+      <p class="label">Impact</p>
+      <p>If this individual reuses the password elsewhere, it is exposed. If <code>seed:demo</code> is ever run against a production database, it provisions a known-credential teacher account. Secrets in git history persist even after deletion.</p>
+      <p class="label">Recommendation</p>
+      <p class="rec">Remove the literal password — read it from an env var (e.g. <code>DEMO_TEACHER_PASSWORD</code>) or generate a random one and print it once. Rotate the password if it is used anywhere real. Guard the demo seed so it refuses to run when <code>NODE_ENV=production</code>. Consider scrubbing it from history (BFG / filter-repo) for the affected account.</p>
+    </div>
+
+    <div class="finding s-high">
+      <h3><span class="badge b-high">High</span> <span class="fid">F-02</span> IDOR — any authenticated user can read any class</h3>
+      <span class="loc">src/app/api/classes/[id]/route.ts — GET</span>
+      <p>The handler authenticates the caller but performs <b>no ownership or enrollment check</b> before returning the full class record — including every enrollment, the joined <code>student.user</code> objects (names and email addresses), and active invitations. Any logged-in user (any teacher, or any student) can read any other class by iterating the <code>id</code>.</p>
+      <pre><span class="k">export async function</span> GET(_req, { params }) {
+  <span class="k">const</span> session = <span class="k">await</span> auth();
+  <span class="k">if</span> (!session?.user) <span class="k">return</span> ...401;        <span class="c">// authenticated…</span>
+  <span class="k">const</span> { id } = <span class="k">await</span> params;
+  <span class="k">const</span> cls = <span class="k">await</span> prisma.class.findUnique({  <span class="c">// …but NO ownership check</span>
+    where: { id },
+    include: { enrollments: { include: { student: { include: { user: <span class="k">true</span> } } } },
+               invitations: { ... } },
+  });
+  <span class="k">return</span> NextResponse.json(cls);
+}</pre>
+      <p class="label">Impact</p>
+      <p>Broken object-level authorization leading to disclosure of student PII (names, emails) and roster/invitation data across tenant boundaries. Note the sibling <code>PATCH</code>/<code>DELETE</code> on the same route <em>do</em> verify ownership via <code>getTeacherClass()</code> — only <code>GET</code> is missing the check.</p>
+      <p class="label">Recommendation</p>
+      <p class="rec">Apply the same ownership/enrollment gate the mutating verbs use: for a TEACHER, confirm <code>class.teacherId === teacher.id</code>; for a STUDENT, confirm an enrollment exists; otherwise return 404. Reuse the existing <code>getTeacherClass()</code> helper.</p>
+    </div>
+
+    <div class="finding s-med">
+      <h3><span class="badge b-med">Medium</span> <span class="fid">F-03</span> IDOR — class quiz assignments readable for any class</h3>
+      <span class="loc">src/app/api/classes/[id]/quizzes/route.ts — GET</span>
+      <p>Same pattern as F-02 at lower sensitivity: the <code>GET</code> handler checks only that the caller is authenticated, then returns every <code>classQuiz</code> (with quiz titles, topics, question counts) for the supplied class id. The <code>POST</code> on this route correctly gates on teacher ownership; the <code>GET</code> does not.</p>
+      <pre><span class="k">const</span> session = <span class="k">await</span> auth();
+<span class="k">if</span> (!session?.user) <span class="k">return</span> ...401;
+<span class="k">const</span> classQuizzes = <span class="k">await</span> prisma.classQuiz.findMany({ where: { classId: id }, ... });
+<span class="k">return</span> NextResponse.json(classQuizzes);  <span class="c">// no ownership/enrollment check</span></pre>
+      <p class="label">Impact</p>
+      <p>Authenticated cross-class disclosure of quiz/curriculum metadata. Lower severity than F-02 (no direct PII), but the same authorization gap.</p>
+      <p class="label">Recommendation</p>
+      <p class="rec">Gate on teacher ownership or student enrollment before querying, consistent with the rest of the class API surface.</p>
+    </div>
+
+    <div class="finding s-med">
+      <h3><span class="badge b-med">Medium</span> <span class="fid">F-04</span> No rate limiting on authentication &amp; invitation endpoints</h3>
+      <span class="loc">api/auth/register · api/auth/admin/register · api/invitations/[token] · api/invitations/[token]/lookup</span>
+      <p>No request throttling exists anywhere in the application. Sensitive endpoints can be hit at unlimited speed.</p>
+      <p class="label">Impact</p>
+      <ul class="tick" style="margin-top:4px">
+        <li><b>Login / signup</b> — password brute force and signup-token guessing (the token is the only gate on teacher/admin registration).</li>
+        <li><b>Invitation lookup</b> — enumeration of valid invitation tokens and student "81 numbers" (org-defined IDs) used for roster matching.</li>
+      </ul>
+      <p class="label">Recommendation</p>
+      <p class="rec">Add IP- and account-scoped rate limiting (e.g. a fixed/sliding-window limiter, or middleware-level throttling) to the auth, registration, and invitation routes. Add a short lockout / exponential backoff after repeated failures.</p>
+    </div>
+
+    <div class="finding s-med">
+      <h3><span class="badge b-med">Medium</span> <span class="fid">F-05</span> Missing HTTP security headers</h3>
+      <span class="loc">next.config.mjs · src/proxy.ts</span>
+      <p>Neither <code>next.config.mjs</code> (no <code>headers()</code> function) nor the <code>proxy.ts</code> middleware sets any response security headers. Absent: <code>Content-Security-Policy</code>, <code>Strict-Transport-Security</code>, <code>X-Frame-Options</code>, <code>X-Content-Type-Options</code>, <code>Referrer-Policy</code>, and <code>Permissions-Policy</code>.</p>
+      <p class="label">Impact</p>
+      <p>Reduced defense-in-depth: increased exposure to clickjacking, MIME sniffing, mixed-content/downgrade, and a weaker last line of defense against XSS.</p>
+      <p class="label">Recommendation</p>
+      <p class="rec">Add a <code>headers()</code> block in <code>next.config.mjs</code> (or set headers in <code>proxy.ts</code>) applying a strict CSP, <code>HSTS</code> (<code>max-age</code> ≥ 1 year + <code>includeSubDomains</code>), <code>X-Frame-Options: DENY</code>, <code>X-Content-Type-Options: nosniff</code>, and a sane <code>Referrer-Policy</code>.</p>
+    </div>
+
+    <div class="finding s-med">
+      <h3><span class="badge b-med">Medium</span> <span class="fid">F-06</span> Vulnerable transitive dependencies</h3>
+      <span class="loc">package-lock.json — see §06</span>
+      <p><code>npm audit</code> reports <b>13 vulnerabilities (2 high, 9 moderate, 2 low)</b>, predominantly in transitive build/runtime dependencies. The two high-severity items — <code>undici</code> (TLS certificate-validation bypass via SOCKS5 ProxyAgent; cross-user cache disclosure) and <code>picomatch</code> (ReDoS / method injection) — are most relevant.</p>
+      <p class="label">Recommendation</p>
+      <p class="rec">Run <code>npm audit fix</code>, and where fixes are gated behind a major bump, pin patched versions via <code>overrides</code> in <code>package.json</code>. Prioritize <code>undici</code> and <code>picomatch</code>. The repo already routes Dependabot PRs to <code>dev</code> — keep that cadence and merge security bumps promptly.</p>
+    </div>
+
+    <div class="finding s-low">
+      <h3><span class="badge b-low">Low</span> <span class="fid">F-07</span> No CSRF tokens on state-changing routes</h3>
+      <span class="loc">all mutating src/app/api/** handlers</span>
+      <p>State-changing endpoints rely solely on the session cookie with no anti-CSRF token. NextAuth protects its own <code>/api/auth/*</code> routes, and its default <code>SameSite=Lax</code> session cookie blocks most cross-site form posts, which substantially mitigates this.</p>
+      <p class="label">Recommendation</p>
+      <p class="rec">Confirm the session cookie is <code>SameSite=Lax</code> (or <code>Strict</code>) and that no sensitive state change uses a top-level GET. For defense-in-depth, add an origin/double-submit-token check on mutating routes, or validate the <code>Origin</code>/<code>Sec-Fetch-Site</code> headers in middleware.</p>
+    </div>
+
+    <div class="finding s-low">
+      <h3><span class="badge b-low">Low</span> <span class="fid">F-08</span> Production authentication on a beta dependency</h3>
+      <span class="loc">package.json — next-auth ^5.0.0-beta.31</span>
+      <p>The application's authentication layer depends on a pre-release (<code>beta</code>) of NextAuth v5. Beta releases may carry undisclosed bugs and breaking changes, and Dependabot is configured to ignore major bumps for it.</p>
+      <p class="label">Recommendation</p>
+      <p class="rec">Track the NextAuth v5 stable release and plan an upgrade. Until then, watch the project's security advisories and pin to the latest beta patch.</p>
+    </div>
+
+    <div class="finding s-low">
+      <h3><span class="badge b-low">Low</span> <span class="fid">F-09</span> No centralized request-schema validation</h3>
+      <span class="loc">src/app/api/** (e.g. questions, materials, pdf-extractions)</span>
+      <p>Request bodies are validated with hand-rolled per-route checks rather than a schema library (zod/valibot). The existing checks are reasonable, but ad-hoc validation is easy to under-apply on new routes and harder to keep consistent.</p>
+      <p class="label">Recommendation</p>
+      <p class="rec">Introduce a schema validation layer and parse every <code>req.json()</code>/<code>formData()</code> payload through it, rejecting unknown/oversized inputs uniformly. This also reduces the surface for type-confusion and oversized-payload issues.</p>
+    </div>
+
+    <div class="finding s-info">
+      <h3><span class="badge b-info">Info</span> <span class="fid">F-10</span> Destructive Prisma push at container boot</h3>
+      <span class="loc">docker/docker-entrypoint.sh:36</span>
+      <p>The entrypoint runs <code>prisma db push --accept-data-loss</code> on every start. This can drop columns/tables to match the schema without a migration trail.</p>
+      <p class="label">Recommendation</p>
+      <p class="rec">For production, prefer versioned <code>prisma migrate deploy</code> over <code>db push --accept-data-loss</code> so schema changes are reviewable and non-destructive. The boot-time DB restore staging is otherwise well-handled.</p>
+    </div>
+
+    <div class="finding s-info">
+      <h3><span class="badge b-info">Info</span> <span class="fid">F-11</span> Single static key for all encryption-at-rest</h3>
+      <span class="loc">src/lib/crypto.ts</span>
+      <p>API-provider keys, SMTP passwords, and WebDAV passwords are all encrypted with AES-256-GCM under one <code>API_KEY_ENCRYPTION_SECRET</code>. The implementation is correct (per-record IV + auth tag, strict 32-byte key), but it is a single point of failure with no rotation path.</p>
+      <p class="label">Recommendation</p>
+      <p class="rec">Document and support key rotation (versioned key id stored alongside ciphertext), and store the master key in a managed secrets service (AWS Secrets Manager / KMS) rather than a plain env var where feasible.</p>
+    </div>
+  </section>
+
+  <section id="deps">
+    <h2><span class="num">06</span>Dependency vulnerabilities</h2>
+    <p class="lead"><code>npm audit</code> on commit <code>2453a51</code> — <b>13 total</b>: <span class="badge b-high">2 high</span> <span class="badge b-med">9 moderate</span> <span class="badge b-low">2 low</span>. Selected advisories:</p>
+    <table>
+      <thead><tr><th>Package</th><th style="width:88px">Severity</th><th>Advisory</th></tr></thead>
+      <tbody>
+        <tr><td><code>undici</code></td><td><span class="badge b-high">High</span></td><td>TLS certificate-validation bypass via dropped <code>requestTls</code> in SOCKS5 ProxyAgent; cross-user info disclosure via shared-cache whitespace bypass</td></tr>
+        <tr><td><code>picomatch</code></td><td><span class="badge b-high">High</span></td><td>Method injection in POSIX character classes (incorrect glob matching); ReDoS via extglob quantifiers</td></tr>
+        <tr><td><code>next</code></td><td><span class="badge b-med">Moderate</span></td><td>Pulled in via <code>postcss</code> advisory chain</td></tr>
+        <tr><td><code>next-auth</code></td><td><span class="badge b-med">Moderate</span></td><td>Via <code>next</code></td></tr>
+        <tr><td><code>postcss</code></td><td><span class="badge b-med">Moderate</span></td><td>XSS via unescaped <code>&lt;/style&gt;</code> in CSS stringify output</td></tr>
+        <tr><td><code>@hono/node-server</code></td><td><span class="badge b-med">Moderate</span></td><td>Middleware bypass via repeated slashes in <code>serveStatic</code> (via <code>@prisma/dev</code>)</td></tr>
+        <tr><td><code>@opentelemetry/core</code> + resources + sdk-trace-base</td><td><span class="badge b-med">Moderate</span></td><td>Unbounded memory allocation in W3C Baggage propagation</td></tr>
+        <tr><td><code>prisma</code> / <code>@prisma/dev</code></td><td><span class="badge b-med">Moderate</span></td><td>Via <code>@hono/node-server</code></td></tr>
+        <tr><td><code>@babel/core</code></td><td><span class="badge b-low">Low</span></td><td>Arbitrary file read via <code>sourceMappingURL</code> comment</td></tr>
+        <tr><td><code>esbuild</code></td><td><span class="badge b-low">Low</span></td><td>Arbitrary file read via dev server (Windows)</td></tr>
+      </tbody>
+    </table>
+    <p class="note">Most moderate/low items are dev- or build-time only (Prisma dev server, esbuild, babel). The two highs (<code>undici</code>, <code>picomatch</code>) reach runtime and should be patched first.</p>
+  </section>
+
+  <section id="strengths">
+    <h2><span class="num">07</span>Security strengths</h2>
+    <p class="lead">The following controls were verified and are working well — they should be preserved through future changes.</p>
+    <ul class="tick">
+      <li><b>Password storage</b> — bcryptjs at cost 12; constant-time <code>bcrypt.compare</code>; no plaintext storage.</li>
+      <li><b>Secrets at rest</b> — AI/SMTP/WebDAV credentials encrypted with AES-256-GCM (per-record IV + auth tag) in <code>crypto.ts</code>, and masked on read (only last 4 chars returned).</li>
+      <li><b>No SQL injection</b> — all queries go through Prisma's parameterized API; the only raw SQL is hardcoded PRAGMA tuning, and the backup path is single-quote-escaped.</li>
+      <li><b>File uploads</b> — S3 presigned PUT URLs (1-hour expiry), deterministic sanitized keys (no path traversal), <code>.pdf</code>-only enforcement, and configurable size limits.</li>
+      <li><b>Authorization</b> — admin routes uniformly check <code>role === "ADMIN"</code>; teacher/student routes verify resource ownership/enrollment (including the dev-only student-roster routes, which correctly gate on teacher + class ownership). F-02/F-03 are the isolated exceptions.</li>
+      <li><b>AI prompt safety</b> — prompts are assembled from database values, not raw user text; no <code>eval</code>, <code>Function</code>, or <code>child_process</code> anywhere in the source.</li>
+      <li><b>Invitation flow</b> — tokens are validated for active/expiry/max-use and require a roster (81-number) match; only STUDENT role may enroll.</li>
+      <li><b>No committed secrets</b> — scan for AWS keys, OpenAI keys, and private keys across tracked files came back clean (only a test fixture string); <code>.env</code>/<code>.env.*</code> are git-ignored.</li>
+      <li><b>Container hardening</b> — multi-stage Docker build runs as a non-root <code>nextjs</code> user; build tools stay out of the final image.</li>
+      <li><b>CI hygiene</b> — correct <code>pull_request_target</code> usage (no untrusted code execution); least-privilege workflow permissions; Dependabot routed to <code>dev</code> for review; admin self-deletion is blocked.</li>
+      <li><b>The one <code>dangerouslySetInnerHTML</code></b> (<code>math-text.tsx:125</code>) renders KaTeX output from DB-sourced math, not arbitrary user HTML — low risk; keep KaTeX patched.</li>
+    </ul>
+  </section>
+
+  <section id="roadmap">
+    <h2><span class="num">08</span>Remediation roadmap</h2>
+    <ol class="roadmap">
+      <li><span class="when">now</span><b>Add the ownership/enrollment check to <code>GET /api/classes/[id]</code> (F-02).</b> Highest-impact fix — closes cross-tenant student-PII disclosure. Reuse <code>getTeacherClass()</code>.</li>
+      <li><span class="when">now</span><b>Remove the hard-coded password from <code>seed-demo.ts</code> (F-01)</b>, gate the seed to non-production, and rotate the credential if used anywhere real.</li>
+      <li><span class="when">now</span><b>Gate <code>GET /api/classes/[id]/quizzes</code> (F-03)</b> on ownership/enrollment.</li>
+      <li><span class="when">this sprint</span><b>Patch the high-severity dependencies (F-06)</b> — <code>undici</code> and <code>picomatch</code> first, via <code>npm audit fix</code> / <code>overrides</code>.</li>
+      <li><span class="when">this sprint</span><b>Add HTTP security headers (F-05)</b> via <code>next.config.mjs headers()</code> — CSP, HSTS, X-Frame-Options, nosniff, Referrer-Policy.</li>
+      <li><span class="when">this sprint</span><b>Add rate limiting (F-04)</b> to login, registration, and invitation endpoints with lockout/backoff.</li>
+      <li><span class="when">backlog</span><b>Adopt schema validation (F-09), plan the NextAuth stable upgrade (F-08), add CSRF/Origin checks (F-07), switch to <code>migrate deploy</code> (F-10), and design key rotation (F-11).</b></li>
+    </ol>
+  </section>
+
+  <section id="appendix">
+    <h2><span class="num">09</span>Appendix</h2>
+
+    <h3>A. API authorization matrix (representative)</h3>
+    <table>
+      <thead><tr><th>Route group</th><th>Gate</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td><code>/api/admin/**</code> (24 routes)</td><td><code>role === "ADMIN"</code> on every handler</td><td><span class="badge b-ok">OK</span></td></tr>
+        <tr><td><code>/api/classes/[id]/students/**</code> (dev-only)</td><td>teacher role + class ownership + roster-entry scope</td><td><span class="badge b-ok">OK</span></td></tr>
+        <tr><td><code>/api/quizzes/**</code>, <code>/api/topics/**</code>, <code>/api/questions/**</code></td><td><code>canManage()</code>/<code>canRead()</code> ownership (teacher vs global pool)</td><td><span class="badge b-ok">OK</span></td></tr>
+        <tr><td><code>/api/quiz</code>, <code>/api/student/attempts/**</code></td><td>student role + attempt/enrollment ownership</td><td><span class="badge b-ok">OK</span></td></tr>
+        <tr><td><code>/api/invitations/[token]/**</code></td><td>public; token validity + roster match</td><td><span class="badge b-ok">OK</span></td></tr>
+        <tr><td><code>GET /api/classes/[id]</code></td><td>authenticated only — <b>no</b> ownership check</td><td><span class="badge b-high">F-02</span></td></tr>
+        <tr><td><code>GET /api/classes/[id]/quizzes</code></td><td>authenticated only — <b>no</b> ownership check</td><td><span class="badge b-med">F-03</span></td></tr>
+      </tbody>
+    </table>
+
+    <h3>B. Key files reviewed</h3>
+    <table>
+      <thead><tr><th>Area</th><th>Files</th></tr></thead>
+      <tbody>
+        <tr><td>Auth &amp; access</td><td><code>src/lib/auth.ts</code>, <code>src/proxy.ts</code>, <code>src/lib/quiz-access.ts</code>, <code>src/app/api/auth/**</code></td></tr>
+        <tr><td>Data &amp; crypto</td><td><code>src/lib/prisma.ts</code>, <code>src/lib/crypto.ts</code>, <code>src/lib/storage.ts</code>, <code>prisma/schema.prisma</code>, <code>prisma/seed*.ts</code></td></tr>
+        <tr><td>AI &amp; uploads</td><td><code>src/lib/ai-provider.ts</code>, <code>src/lib/quiz-extraction*.ts</code>, <code>src/lib/chat-prompt.ts</code>, <code>src/components/quiz/QuizPdfReview.tsx</code></td></tr>
+        <tr><td>Infra &amp; CI</td><td><code>docker/Dockerfile</code>, <code>docker/docker-entrypoint.sh</code>, <code>.github/workflows/**</code>, <code>next.config.mjs</code>, <code>package.json</code></td></tr>
+      </tbody>
+    </table>
+
+    <p class="note" style="margin-top:24px"><b>Disclaimer.</b> This report reflects a point-in-time static review of branch <code>dev</code> at commit <code>2453a51</code> on 2026-06-21. It is not a penetration test and does not guarantee the absence of other vulnerabilities. Findings should be validated and re-tested after remediation.</p>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    TALENT-MAIN Security Audit · branch <code style="font-family:var(--mono);color:var(--accent-ink)">dev</code> @ <code style="font-family:var(--mono);color:var(--accent-ink)">2453a51</code> · generated 2026-06-21 · static code review + npm audit
+  </div>
+</footer>
+
+</body>
+</html>
