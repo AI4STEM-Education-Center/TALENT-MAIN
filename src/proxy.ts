@@ -26,6 +26,31 @@ export default auth((req) => {
   }
 
   const { pathname } = req.nextUrl;
+
+  // --- CSRF defense-in-depth: reject cross-site state-changing API requests ---
+  // The session cookie is SameSite=Lax (NextAuth default), which already blocks
+  // most cross-site writes; this adds an explicit Origin check on mutating API
+  // calls (incl. the public auth/invitation routes). Same-origin browser
+  // requests send an Origin matching the host; a mismatch is cross-site.
+  // Requests with no Origin (server-to-server, same-origin navigations) are
+  // left to the cookie's SameSite protection.
+  const method = req.method;
+  const isMutation = !!method && !["GET", "HEAD", "OPTIONS"].includes(method);
+  if (isMutation && pathname.startsWith("/api/")) {
+    const origin = req.headers.get("origin");
+    if (origin) {
+      let originHost = "";
+      try {
+        originHost = new URL(origin).host.toLowerCase();
+      } catch {
+        originHost = "\0invalid";
+      }
+      if (originHost !== host) {
+        return new NextResponse("Forbidden", { status: 403 });
+      }
+    }
+  }
+
   const session = req.auth;
 
   // Public routes

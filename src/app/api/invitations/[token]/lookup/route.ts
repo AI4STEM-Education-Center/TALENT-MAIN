@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { rateLimit } from "@/lib/rate-limit";
 
 // GET: Look up a student's name by orgDefinedId, scoped to the class tied to this invitation token.
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ token: string }> }
 ) {
+  // Throttle 81-number enumeration (this endpoint reveals roster names).
+  const limited = rateLimit(req, "invite-lookup", 20, 60_000);
+  if (limited) return limited;
+
   const { token } = await params;
   const { searchParams } = new URL(req.url);
   const rawId = searchParams.get("orgDefinedId") || "";
