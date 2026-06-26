@@ -29,6 +29,29 @@ function getEncryptionKey(): Buffer {
 }
 
 /**
+ * Keys to TRY when decrypting, newest first: the active key, then any retired
+ * keys listed in API_KEY_ENCRYPTION_SECRET_OLD (comma-separated 64-hex values).
+ *
+ * This is the key-rotation path: to rotate, move the current secret into
+ * API_KEY_ENCRYPTION_SECRET_OLD, set a fresh API_KEY_ENCRYPTION_SECRET, then
+ * re-encrypt stored secrets (load + save each provider/SMTP/WebDAV record so it
+ * is re-written under the new key). Once nothing decrypts under the old key,
+ * drop it from API_KEY_ENCRYPTION_SECRET_OLD. New writes always use the active
+ * key; old ciphertext keeps decrypting until re-encrypted.
+ */
+function getDecryptionKeys(): Buffer[] {
+  const keys = [getEncryptionKey()];
+  const retired = process.env.API_KEY_ENCRYPTION_SECRET_OLD;
+  if (retired) {
+    for (const hex of retired.split(",").map((s) => s.trim()).filter(Boolean)) {
+      const buf = Buffer.from(hex, "hex");
+      if (buf.length === 32) keys.push(buf);
+    }
+  }
+  return keys;
+}
+
+/**
  * Encrypt a plaintext API key using AES-256-GCM.
  * Returns the encrypted value, IV, and auth tag as hex strings.
  */
@@ -62,18 +85,25 @@ export function decryptApiKey(
   iv: string,
   tag: string
 ): string {
-  const key = getEncryptionKey();
-  const decipher = crypto.createDecipheriv(
-    ALGORITHM,
-    key,
-    Buffer.from(iv, "hex")
-  );
-  decipher.setAuthTag(Buffer.from(tag, "hex"));
+  // Try the active key first, then any retired keys, so ciphertext written
+  // under a previous key still decrypts during/after a key rotation.
+  const ivBuf = Buffer.from(iv, "hex");
+  const tagBuf = Buffer.from(tag, "hex");
+  let lastError: unknown;
 
-  let decrypted = decipher.update(encrypted, "hex", "utf8");
-  decrypted += decipher.final("utf8");
+  for (const key of getDecryptionKeys()) {
+    try {
+      const decipher = crypto.createDecipheriv(ALGORITHM, key, ivBuf);
+      decipher.setAuthTag(tagBuf);
+      let decrypted = decipher.update(encrypted, "hex", "utf8");
+      decrypted += decipher.final("utf8");
+      return decrypted;
+    } catch (err) {
+      lastError = err;
+    }
+  }
 
-  return decrypted;
+  throw lastError ?? new Error("Failed to decrypt: no usable key.");
 }
 
 /**

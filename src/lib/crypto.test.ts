@@ -3,10 +3,13 @@ import { encryptApiKey, decryptApiKey, maskApiKey } from "./crypto";
 
 const VALID_SECRET =
   "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+const OTHER_SECRET =
+  "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
 
 afterEach(() => {
   // vitest.setup.ts seeds a valid secret; restore it after env-mutating tests.
   process.env.API_KEY_ENCRYPTION_SECRET = VALID_SECRET;
+  delete process.env.API_KEY_ENCRYPTION_SECRET_OLD;
 });
 
 describe("encryptApiKey / decryptApiKey", () => {
@@ -37,6 +40,36 @@ describe("encryptApiKey / decryptApiKey", () => {
   it("throws when the secret is not 32 bytes", () => {
     process.env.API_KEY_ENCRYPTION_SECRET = "abcd"; // 2 bytes
     expect(() => encryptApiKey("x")).toThrow(/64 hex characters/);
+  });
+});
+
+describe("key rotation (API_KEY_ENCRYPTION_SECRET_OLD)", () => {
+  it("decrypts ciphertext written under a now-retired key", () => {
+    process.env.API_KEY_ENCRYPTION_SECRET = VALID_SECRET;
+    const enc = encryptApiKey("rotate-me");
+
+    // Rotate: the old key becomes retired, a fresh key becomes active.
+    process.env.API_KEY_ENCRYPTION_SECRET = OTHER_SECRET;
+    process.env.API_KEY_ENCRYPTION_SECRET_OLD = VALID_SECRET;
+
+    expect(decryptApiKey(enc.encrypted, enc.iv, enc.tag)).toBe("rotate-me");
+  });
+
+  it("still encrypts new values under the active key", () => {
+    process.env.API_KEY_ENCRYPTION_SECRET = OTHER_SECRET;
+    process.env.API_KEY_ENCRYPTION_SECRET_OLD = VALID_SECRET;
+    const enc = encryptApiKey("fresh");
+    // Decrypts under the active key alone (drop the retired key).
+    delete process.env.API_KEY_ENCRYPTION_SECRET_OLD;
+    expect(decryptApiKey(enc.encrypted, enc.iv, enc.tag)).toBe("fresh");
+  });
+
+  it("throws when neither the active nor any retired key matches", () => {
+    process.env.API_KEY_ENCRYPTION_SECRET = VALID_SECRET;
+    const enc = encryptApiKey("secret");
+    process.env.API_KEY_ENCRYPTION_SECRET = OTHER_SECRET;
+    delete process.env.API_KEY_ENCRYPTION_SECRET_OLD;
+    expect(() => decryptApiKey(enc.encrypted, enc.iv, enc.tag)).toThrow();
   });
 });
 

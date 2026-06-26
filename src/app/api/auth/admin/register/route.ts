@@ -3,11 +3,16 @@ import bcrypt from "bcryptjs";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { normalizeEmail, normalizeUsername, validatePassword } from "@/lib/account-validation";
+import { rateLimit } from "@/lib/rate-limit";
+import { parseBody, registerSchema } from "@/lib/validation";
 
 export async function POST(req: NextRequest) {
+  // Throttle admin signup-token guessing per IP.
+  const limited = rateLimit(req, "auth-admin-register", 10, 60_000);
+  if (limited) return limited;
+
   try {
     const body = await req.json();
-    const { firstName, lastName, username, email, password, adminToken } = body;
 
     const expectedToken = process.env.ADMIN_SIGNUP_TOKEN;
     if (!expectedToken) {
@@ -16,16 +21,16 @@ export async function POST(req: NextRequest) {
         { status: 503 }
       );
     }
-    if (!adminToken || adminToken !== expectedToken) {
+    if (!body?.adminToken || body.adminToken !== expectedToken) {
       return NextResponse.json(
         { error: "Invalid admin registration code." },
         { status: 403 }
       );
     }
 
-    if (!firstName?.trim() || !lastName?.trim() || !username?.trim() || !email?.trim() || !password) {
-      return NextResponse.json({ error: "All fields are required." }, { status: 400 });
-    }
+    const parsed = parseBody(registerSchema, body);
+    if (!parsed.ok) return parsed.response;
+    const { firstName, lastName, username, email, password } = parsed.data;
 
     const passwordError = validatePassword(password);
     if (passwordError) {

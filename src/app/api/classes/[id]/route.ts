@@ -2,17 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { deleteS3Objects, listS3Objects, getS3Config, materialPrefixFromStorageKey } from "@/lib/storage";
-
-async function getTeacherClass(userId: string, classId: string) {
-  const teacher = await prisma.teacher.findUnique({ where: { userId } });
-  if (!teacher) return null;
-  return prisma.class.findFirst({ where: { id: classId, teacherId: teacher.id } });
-}
+import { getTeacherClass } from "@/lib/class-access";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
+
+  // Owner-only: this payload exposes the full roster (student names/emails) and
+  // active invitation tokens, so gate it exactly like the PATCH/DELETE verbs.
+  // A non-owning teacher (or any student) gets a 404, not a 403, to avoid
+  // disclosing that the class exists.
+  const owned = await getTeacherClass(session.user.id, id);
+  if (!owned) return NextResponse.json({ error: "Class not found" }, { status: 404 });
 
   const cls = await prisma.class.findUnique({
     where: { id },
