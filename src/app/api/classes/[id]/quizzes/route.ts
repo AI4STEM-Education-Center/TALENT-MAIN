@@ -1,18 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-
-async function getTeacherClass(userId: string, classId: string) {
-  const teacher = await prisma.teacher.findUnique({ where: { userId } });
-  if (!teacher) return null;
-  return prisma.class.findFirst({ where: { id: classId, teacherId: teacher.id } });
-}
+import { getTeacherClass, canReadClass } from "@/lib/class-access";
 
 // GET: list quizzes assigned to this class (with published status)
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
+
+  // Owning teacher or an enrolled student may read the assigned-quiz list.
+  // 404 (not 403) for everyone else so the class's existence isn't disclosed.
+  if (!(await canReadClass(session.user, id))) {
+    return NextResponse.json({ error: "Class not found" }, { status: 404 });
+  }
 
   const classQuizzes = await prisma.classQuiz.findMany({
     where: { classId: id },

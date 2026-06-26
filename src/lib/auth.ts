@@ -2,6 +2,7 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+import { checkRateLimit, clientIp } from "@/lib/rate-limit";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
@@ -11,11 +12,18 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         identifier: { label: "Email or Username", type: "text" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, request) {
         const identifier = credentials?.identifier as string | undefined;
         const password = credentials?.password as string | undefined;
 
         if (!identifier || !password) return null;
+
+        // Throttle password brute force per IP. Over the limit we behave like a
+        // failed login (return null) rather than surfacing a distinct error.
+        if (process.env.NODE_ENV !== "test" && request instanceof Request) {
+          const { allowed } = checkRateLimit(`login:${clientIp(request)}`, 10, 60_000);
+          if (!allowed) return null;
+        }
 
         // Find by email OR username
         const user = await prisma.user.findFirst({
