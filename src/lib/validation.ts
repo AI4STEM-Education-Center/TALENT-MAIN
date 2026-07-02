@@ -25,6 +25,78 @@ export const registerSchema = z.object({
   password: z.string().min(1),
 });
 
+// ─── Concept / Misconception catalog import ────────────────────────────────
+// Bodies are the already-parsed rows produced client-side by
+// src/lib/concept-csv.ts (the browser parses the CSV; routes only validate the
+// resulting JSON shape). Row counts are capped so a malformed/huge upload
+// can't wedge the import transaction.
+const MAX_IMPORT_ROWS = 5000;
+
+const optionalTrimmed = z
+  .string()
+  .transform((s) => s.trim())
+  .nullable()
+  .optional()
+  .transform((s) => (s ? s : null));
+
+export const conceptImportRowSchema = z.object({
+  conceptId: trimmedNonEmpty,
+  kind: z.string().transform((s) => s.trim()),
+  parentApLo: optionalTrimmed,
+  unit: optionalTrimmed,
+  topic: optionalTrimmed,
+  displayName: trimmedNonEmpty,
+  description: optionalTrimmed,
+  sourceLoCode: optionalTrimmed,
+  comments: optionalTrimmed,
+  notes: optionalTrimmed,
+  url: optionalTrimmed,
+  deprecated: z.boolean().default(false),
+  deprecationNote: optionalTrimmed,
+});
+
+export const conceptsImportSchema = z.object({
+  concepts: z.array(conceptImportRowSchema).min(1).max(MAX_IMPORT_ROWS),
+});
+
+export const misconceptionImportRowSchema = z.object({
+  misconceptionId: trimmedNonEmpty,
+  statement: z.string().transform((s) => s.trim()),
+  sourceCitation: optionalTrimmed,
+  link: optionalTrimmed,
+  sourceType: optionalTrimmed,
+  notes: optionalTrimmed,
+  deprecated: z.boolean().default(false),
+  deprecationNote: optionalTrimmed,
+});
+
+export const misconceptionsImportSchema = z.object({
+  misconceptions: z.array(misconceptionImportRowSchema).min(1).max(MAX_IMPORT_ROWS),
+});
+
+export const mappingImportRowSchema = z.object({
+  misconceptionId: trimmedNonEmpty,
+  conceptId: trimmedNonEmpty,
+  confidence: optionalTrimmed,
+  notes: optionalTrimmed,
+});
+
+export const externalRefImportRowSchema = z.object({
+  conceptId: trimmedNonEmpty,
+  refCode: trimmedNonEmpty,
+  refType: trimmedNonEmpty,
+  sourceUrl: optionalTrimmed,
+});
+
+export const conceptMappingsImportSchema = z
+  .object({
+    mappings: z.array(mappingImportRowSchema).max(MAX_IMPORT_ROWS),
+    externalRefs: z.array(externalRefImportRowSchema).max(MAX_IMPORT_ROWS),
+  })
+  .refine((value) => value.mappings.length + value.externalRefs.length > 0, {
+    message: "At least one mapping or external reference is required.",
+  });
+
 export type ParseResult<T> =
   | { ok: true; data: T }
   | { ok: false; response: NextResponse };
