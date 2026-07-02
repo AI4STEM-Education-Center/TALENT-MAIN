@@ -246,23 +246,48 @@ export type StoredRecommendation = {
   reason: string;
   pages: StoredRecPage[];
 };
-export type StoredRecommendations = { items: StoredRecommendation[]; truncated: boolean };
+// A catalog misconception attached to an attempt's recommendations. Statement
+// only — deliberately carries no per-question linkage (blind-results contract).
+export type StoredMisconception = { misconceptionId: string; statement: string };
+
+export type StoredRecommendations = {
+  items: StoredRecommendation[];
+  truncated: boolean;
+  // Present only when the labeling step (exam-results-engine.ts) found at
+  // least one catalog misconception likely explaining the attempt's errors.
+  misconceptions?: StoredMisconception[];
+};
 
 /** A page ready for the client: presigned, short-lived image URL. */
 export type PresignedRecPage = { pageNumber: number; imageUrl: string };
 export type PresignedRecommendation = Omit<StoredRecommendation, "pages"> & {
   pages: PresignedRecPage[];
 };
-export type PresignedRecommendations = { items: PresignedRecommendation[]; truncated: boolean };
+export type PresignedRecommendations = {
+  items: PresignedRecommendation[];
+  truncated: boolean;
+  misconceptions?: StoredMisconception[];
+};
+
+/** True for a value shaped like a valid StoredMisconception entry. */
+function isStoredMisconception(value: unknown): value is StoredMisconception {
+  if (!value || typeof value !== "object") return false;
+  const entry = value as { misconceptionId?: unknown; statement?: unknown };
+  return typeof entry.misconceptionId === "string" && typeof entry.statement === "string";
+}
 
 /** Safely parse the stored recommendations JSON blob. */
 export function parseStoredRecommendations(raw: string | null): StoredRecommendations {
   if (!raw) return { items: [], truncated: false };
   try {
     const parsed = JSON.parse(raw);
+    const misconceptions = Array.isArray(parsed?.misconceptions)
+      ? parsed.misconceptions.filter(isStoredMisconception)
+      : [];
     return {
       items: Array.isArray(parsed?.items) ? parsed.items : [],
       truncated: parsed?.truncated === true,
+      ...(misconceptions.length > 0 ? { misconceptions } : {}),
     };
   } catch {
     return { items: [], truncated: false };

@@ -9,10 +9,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScoreBanner } from "@/components/student/QuizReviewResult";
 import { HolisticRecommendations } from "@/components/student/HolisticRecommendations";
+import { MisconceptionsToReview } from "@/components/student/MisconceptionsToReview";
 import {
   RESULT_STATUS,
   type ResultStatus,
   type PresignedRecommendation,
+  type StoredMisconception,
 } from "@/lib/exam-results";
 
 const POLL_MS = 2500;
@@ -25,6 +27,7 @@ type AiState = {
   recommendations: PresignedRecommendation[];
   recommendationsStatus: ResultStatus;
   truncated: boolean;
+  misconceptions: StoredMisconception[];
 };
 
 const isPending = (status: ResultStatus) =>
@@ -92,6 +95,7 @@ export function ExamResultsView({
             recommendations: Array.isArray(data.recommendations) ? data.recommendations : [],
             recommendationsStatus: data.recommendationsStatus,
             truncated: data.truncated === true,
+            misconceptions: Array.isArray(data.misconceptions) ? data.misconceptions : [],
           });
           if (!isPending(data.summaryStatus) && !isPending(data.recommendationsStatus)) {
             return; // both terminal — stop polling
@@ -138,6 +142,10 @@ export function ExamResultsView({
         recommendations={ai.recommendations}
         status={ai.recommendationsStatus}
       />
+
+      {/* Statements only — no per-question linkage, so it never breaks the
+          blind-results contract. Renders nothing when there are no labels. */}
+      <MisconceptionsToReview misconceptions={ai.misconceptions} />
 
       {actions && <div className="flex flex-wrap gap-3">{actions}</div>}
     </div>

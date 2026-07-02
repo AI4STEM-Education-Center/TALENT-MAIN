@@ -8,6 +8,7 @@ import type OpenAI from "openai";
 import { prisma } from "./prisma";
 import { resolveProvider, createOpenAIClient, type ResolvedProvider } from "./ai-provider";
 import { streamChatCompletion, streamJsonCompletion, aggregateMetrics, type AiCallMetrics } from "./ai-streaming";
+import { retryWithExponentialBackoff } from "./retry";
 import { presignGetUrl, getS3Config } from "./storage";
 import { buildQuizReviewPrompt, type ChatMessage } from "./chat-prompt";
 import {
@@ -26,14 +27,24 @@ import {
   type PageSelection,
 } from "./recommendation";
 import {
+  getActiveMisconceptions,
+  extractIncorrectAnswerEvidence,
+  buildMisconceptionLabelingPrompt,
+  buildMisconceptionSchema,
+  resolveLabeledMisconceptions,
+  type MisconceptionLabeling,
+} from "./misconception-labeling";
+import {
   RESULT_STATUS,
   parseReviewSnapshot,
   parseStoredRecommendations,
   snapshotToHolisticInput,
   snapshotToSummaryAttempt,
   mapPresignedRecommendations,
+  type ReviewSnapshot,
   type StoredRecommendation,
   type StoredRecommendations,
+  type StoredMisconception,
   type PresignedRecommendations,
 } from "./exam-results";
 
@@ -202,6 +213,45 @@ async function selectPagesForMaterial(
   };
 }
 
+/**
+ * Label the attempt's incorrect answers with catalog misconceptions (at most
+ * MAX_MISCONCEPTIONS). Independent of study-material availability — it only
+ * needs a usable provider, a non-empty active catalog, and at least one
+ * incorrect answer. Any failure (empty catalog, no incorrect answers, LLM
+ * error) resolves to no misconceptions rather than throwing, so it never fails
+ * recommendation generation as a whole.
+ */
+async function labelMisconceptions(
+  client: OpenAI,
+  model: string,
+  isLocal: boolean,
+  snapshot: ReviewSnapshot
+): Promise<{ misconceptions: StoredMisconception[]; metrics: AiCallMetrics | null }> {
+  try {
+    const catalog = await getActiveMisconceptions();
+    if (catalog.length === 0) return { misconceptions: [], metrics: null };
+
+    const incorrect = extractIncorrectAnswerEvidence(snapshot);
+    if (incorrect.length === 0) return { misconceptions: [], metrics: null };
+
+    const ids = catalog.map((m) => m.misconceptionId);
+    const { value, metrics } = await retryWithExponentialBackoff(() =>
+      streamJsonCompletion<MisconceptionLabeling>(
+        client,
+        { model, messages: [{ role: "user", content: buildMisconceptionLabelingPrompt(incorrect, catalog) }] },
+        { name: "misconception_labeling", schema: buildMisconceptionSchema(ids), strict: true },
+        { includeUsage: !isLocal, requestOptions: { maxRetries: isLocal ? 0 : 3 } }
+      )
+    );
+
+    const misconceptions = resolveLabeledMisconceptions(value.misconception_ids ?? [], catalog);
+    return { misconceptions, metrics };
+  } catch (err) {
+    console.error("[ExamResults] Misconception labeling failed:", err);
+    return { misconceptions: [], metrics: null };
+  }
+}
+
 /** Generate the markdown summary from the durable review snapshot. */
 async function generateSummary(
   examResult: ExamResultRow
@@ -252,97 +302,119 @@ async function generateRecommendations(
   const provider = await resolveProvider("student_chat");
   if (!providerUsable(provider)) return { stored: { items: [], truncated: false }, metrics: null };
 
+  const isLocal = provider.providerType === "local";
+  const client = await createOpenAIClient(provider);
+  const allMetrics: AiCallMetrics[] = [];
+
+  // Misconception labels are independent of study-material availability: run
+  // them whenever there's a usable provider and incorrect answers, even when
+  // no materials end up being recommended below (or S3 isn't configured at
+  // all). A labeling failure never blocks the material recommendations.
+  const { misconceptions, metrics: labelMetrics } = await labelMisconceptions(
+    client,
+    provider.model,
+    isLocal,
+    snapshot
+  );
+  if (labelMetrics) allMetrics.push(labelMetrics);
+
+  let items: StoredRecommendation[] = [];
+  let truncated = false;
+
+  let s3Available = true;
   try {
     getS3Config();
   } catch {
-    return { stored: { items: [], truncated: false }, metrics: null };
+    s3Available = false;
   }
 
-  const links = await prisma.materialClass.findMany({
-    where: { classId: examResult.classId },
-    select: {
-      material: {
-        select: {
-          id: true,
-          title: true,
-          originalName: true,
-          processingStatus: true,
-          batchDescription: true,
-          batchKeyConcepts: true,
-          pages: {
-            select: { pageNumber: true, storageKey: true, needed: true, keyConcept: true, description: true },
-            orderBy: { pageNumber: "asc" },
+  if (s3Available) {
+    const links = await prisma.materialClass.findMany({
+      where: { classId: examResult.classId },
+      select: {
+        material: {
+          select: {
+            id: true,
+            title: true,
+            originalName: true,
+            processingStatus: true,
+            batchDescription: true,
+            batchKeyConcepts: true,
+            pages: {
+              select: { pageNumber: true, storageKey: true, needed: true, keyConcept: true, description: true },
+              orderBy: { pageNumber: "asc" },
+            },
           },
         },
       },
-    },
-  });
+    });
 
-  const materials: MaterialRow[] = links.flatMap((l) => {
-    const m = l.material;
-    return m.processingStatus === PROCESSED_STATUS &&
-      !!m.batchDescription?.trim() &&
-      m.pages.length > 0
-      ? [m]
-      : [];
-  });
-  if (materials.length === 0) return { stored: { items: [], truncated: false }, metrics: null };
+    const materials: MaterialRow[] = links.flatMap((l) => {
+      const m = l.material;
+      return m.processingStatus === PROCESSED_STATUS &&
+        !!m.batchDescription?.trim() &&
+        m.pages.length > 0
+        ? [m]
+        : [];
+    });
 
-  const isLocal = provider.providerType === "local";
-  const client = await createOpenAIClient(provider);
-  const catalog: CatalogMaterial[] = materials.map((m, i) => ({
-    index: i + 1,
-    title: m.title?.trim() || m.originalName,
-    description: m.batchDescription ?? "",
-    keyConcepts: parseKeyConcepts(m.batchKeyConcepts),
-  }));
+    if (materials.length > 0) {
+      const catalog: CatalogMaterial[] = materials.map((m, i) => ({
+        index: i + 1,
+        title: m.title?.trim() || m.originalName,
+        description: m.batchDescription ?? "",
+        keyConcepts: parseKeyConcepts(m.batchKeyConcepts),
+      }));
 
-  const allMetrics: AiCallMetrics[] = [];
+      // Step 1 — one call selecting at most 3 materials across the whole attempt.
+      const { value: materialSelection, metrics: mSel } = await runStructuredStep<MaterialSelection>(
+        client,
+        provider.model,
+        buildMaterialSelectionPrompt(holistic, catalog),
+        "material_selection",
+        MATERIAL_SELECTION_SCHEMA,
+        isLocal
+      );
+      allMetrics.push(mSel);
 
-  // Step 1 — one call selecting at most 3 materials across the whole attempt.
-  const { value: materialSelection, metrics: mSel } = await runStructuredStep<MaterialSelection>(
-    client,
-    provider.model,
-    buildMaterialSelectionPrompt(holistic, catalog),
-    "material_selection",
-    MATERIAL_SELECTION_SCHEMA,
-    isLocal
-  );
-  allMetrics.push(mSel);
+      const { kept, truncated: t } = dedupeSelectedMaterials(materialSelection.materials ?? [], catalog);
+      truncated = t;
 
-  const { kept, truncated } = dedupeSelectedMaterials(materialSelection.materials ?? [], catalog);
+      // Step 2 — one page-selection call per chosen material (skipped when the
+      // model finds no relevant pages). Run concurrently; failures drop that one.
+      const results = await Promise.all(
+        kept.map(async (sel: SelectedMaterial) => {
+          const chosen = resolveSelectedMaterial(sel.material_index, catalog);
+          const material = chosen ? materials[chosen.index - 1] : undefined;
+          if (!chosen || !material) return { recommendation: null, metrics: [] as AiCallMetrics[] };
+          try {
+            return await selectPagesForMaterial(
+              client,
+              provider.model,
+              holistic,
+              chosen,
+              material,
+              sel.reasoning,
+              isLocal
+            );
+          } catch (err) {
+            console.error("[ExamResults] Failed to build a recommendation:", err);
+            return { recommendation: null, metrics: [] as AiCallMetrics[] };
+          }
+        })
+      );
 
-  // Step 2 — one page-selection call per chosen material (skipped when the
-  // model finds no relevant pages). Run concurrently; failures drop that one.
-  const results = await Promise.all(
-    kept.map(async (sel: SelectedMaterial) => {
-      const chosen = resolveSelectedMaterial(sel.material_index, catalog);
-      const material = chosen ? materials[chosen.index - 1] : undefined;
-      if (!chosen || !material) return { recommendation: null, metrics: [] as AiCallMetrics[] };
-      try {
-        return await selectPagesForMaterial(
-          client,
-          provider.model,
-          holistic,
-          chosen,
-          material,
-          sel.reasoning,
-          isLocal
-        );
-      } catch (err) {
-        console.error("[ExamResults] Failed to build a recommendation:", err);
-        return { recommendation: null, metrics: [] as AiCallMetrics[] };
-      }
-    })
-  );
+      items = results.map((r) => r.recommendation).filter((r): r is StoredRecommendation => r !== null);
+      allMetrics.push(...results.flatMap((r) => r.metrics));
+    }
+  }
 
-  const items = results
-    .map((r) => r.recommendation)
-    .filter((r): r is StoredRecommendation => r !== null);
-  allMetrics.push(...results.flatMap((r) => r.metrics));
   const metrics = aggregateMetrics(allMetrics);
 
-  return { stored: { items, truncated }, metrics };
+  return {
+    stored: { items, truncated, ...(misconceptions.length > 0 ? { misconceptions } : {}) },
+    metrics,
+  };
 }
 
 /**
@@ -420,13 +492,19 @@ export async function presignStoredRecommendations(
   raw: string | null
 ): Promise<PresignedRecommendations> {
   const stored = parseStoredRecommendations(raw);
-  if (stored.items.length === 0) return { items: [], truncated: stored.truncated };
+  // Misconceptions carry no images to presign, so pass them through unchanged
+  // even when there are no material recommendations to presign (e.g. a
+  // catalog match with zero available class materials).
+  const misconceptions = stored.misconceptions;
+  if (stored.items.length === 0) {
+    return { items: [], truncated: stored.truncated, ...(misconceptions ? { misconceptions } : {}) };
+  }
 
   let bucket: string;
   try {
     bucket = getS3Config().bucket;
   } catch {
-    return { items: [], truncated: stored.truncated };
+    return { items: [], truncated: stored.truncated, ...(misconceptions ? { misconceptions } : {}) };
   }
 
   return mapPresignedRecommendations(stored, (key) => presignGetUrl(bucket, key));

@@ -356,6 +356,26 @@ describe("parseStoredRecommendations", () => {
     expect(parseStoredRecommendations("nope")).toEqual({ items: [], truncated: false });
     expect(parseStoredRecommendations('{"items":"x"}')).toEqual({ items: [], truncated: false });
   });
+
+  it("parses misconceptions alongside an empty items array (labels independent of materials)", () => {
+    const stored: StoredRecommendations = {
+      items: [],
+      truncated: false,
+      misconceptions: [{ misconceptionId: "MIS-001", statement: "Confuses mass and weight." }],
+    };
+    expect(parseStoredRecommendations(JSON.stringify(stored))).toEqual(stored);
+  });
+
+  it("drops misconceptions and malformed entries, and omits the key when empty", () => {
+    expect(
+      parseStoredRecommendations(JSON.stringify({ items: [], truncated: false, misconceptions: "nope" }))
+    ).toEqual({ items: [], truncated: false });
+    expect(
+      parseStoredRecommendations(
+        JSON.stringify({ items: [], truncated: false, misconceptions: [{ misconceptionId: "MIS-001" }] })
+      )
+    ).toEqual({ items: [], truncated: false });
+  });
 });
 
 // ─── mapPresignedRecommendations ─────────────────────────────────────────────────

@@ -4,6 +4,7 @@ import { getS3Config, resolveModelImageUrl } from "@/lib/storage";
 import { resolveProvider, createOpenAIClient } from "@/lib/ai-provider";
 import { retryWithExponentialBackoff } from "./retry";
 import { streamJsonCompletion, aggregateMetrics, type AiCallMetrics } from "./ai-streaming";
+import { getActiveConceptLabels } from "./concept-catalog";
 
 // In-memory set of material IDs whose processing should be aborted.
 const cancelledMaterials = new Set<string>();
@@ -44,6 +45,105 @@ const TIER2_SCHEMA = {
     additionalProperties: false,
   },
 };
+
+/**
+ * "None" is the escape hatch offered to tier-1 (per-page) key-concept
+ * selection when a curated concept catalog is active — a single page may
+ * genuinely not match any listed concept, whereas the tier-2 batch summary
+ * can just omit concepts it doesn't find (empty array), so it gets no such
+ * sentinel.
+ */
+const NONE_CONCEPT = "None";
+
+/**
+ * Build the tier-1 (per-page) response schema. With an empty allow-list this
+ * returns the exact TIER1_SCHEMA object used today (free-form key_concept
+ * string) — callers must pass [] when no concept catalog is configured.
+ */
+export function buildTier1Schema(allowedConcepts: string[]) {
+  if (allowedConcepts.length === 0) return TIER1_SCHEMA;
+  return {
+    ...TIER1_SCHEMA,
+    schema: {
+      ...TIER1_SCHEMA.schema,
+      properties: {
+        ...TIER1_SCHEMA.schema.properties,
+        key_concept: { type: "string", enum: [...allowedConcepts, NONE_CONCEPT] },
+      },
+    },
+  };
+}
+
+/**
+ * Build the tier-2 (batch summary) response schema. With an empty allow-list
+ * this returns the exact TIER2_SCHEMA object used today (free-form
+ * key_concept string array).
+ */
+export function buildTier2Schema(allowedConcepts: string[]) {
+  if (allowedConcepts.length === 0) return TIER2_SCHEMA;
+  return {
+    ...TIER2_SCHEMA,
+    schema: {
+      ...TIER2_SCHEMA.schema,
+      properties: {
+        ...TIER2_SCHEMA.schema.properties,
+        key_concept: { type: "array", items: { type: "string", enum: allowedConcepts } },
+      },
+    },
+  };
+}
+
+/** Render the allowed-concept list as a Markdown bullet list, one per line. */
+export function formatConceptBulletList(allowedConcepts: string[]): string {
+  return allowedConcepts.map((label) => `- ${label}`).join("\n");
+}
+
+const TIER1_BASE_PROMPT =
+  "You are analyzing a single page from an educational document. Extract the key concept and a brief description. Determine if this page is needed for understanding the core material (e.g., skip table of contents or blank pages).";
+
+const TIER2_BASE_PROMPT =
+  "Based on these pages from a learning material, provide a cohesive batch summary and a list of overarching key concepts across the document.";
+
+/**
+ * Build the tier-1 (per-page) prompt. With an empty allow-list this returns
+ * exactly TIER1_BASE_PROMPT unchanged.
+ */
+export function buildTier1Prompt(allowedConcepts: string[]): string {
+  if (allowedConcepts.length === 0) return TIER1_BASE_PROMPT;
+  return `${TIER1_BASE_PROMPT} Choose key_concept ONLY from this list (use the exact label). If no listed concept fits, use "None".\n${formatConceptBulletList(allowedConcepts)}`;
+}
+
+/**
+ * Build the tier-2 (batch summary) prompt. With an empty allow-list this
+ * returns exactly TIER2_BASE_PROMPT unchanged.
+ */
+export function buildTier2Prompt(allowedConcepts: string[]): string {
+  if (allowedConcepts.length === 0) return TIER2_BASE_PROMPT;
+  return `${TIER2_BASE_PROMPT} Choose key concepts ONLY from this list (use the exact labels). Return an empty list if none apply.\n${formatConceptBulletList(allowedConcepts)}`;
+}
+
+/**
+ * Post-validation for tier-1 key_concept (defense in depth: ai-streaming falls
+ * back to plain, unconstrained streaming when a provider rejects
+ * response_format, so the schema enum alone isn't a guarantee). With an empty
+ * allow-list, the raw value passes through untouched (today's free-form
+ * behavior). Otherwise "None" or any value outside the catalog is nulled out.
+ */
+export function resolveTier1KeyConcept(value: string, allowedConcepts: string[]): string | null {
+  if (allowedConcepts.length === 0) return value;
+  if (value === NONE_CONCEPT) return null;
+  return allowedConcepts.includes(value) ? value : null;
+}
+
+/**
+ * Post-validation for tier-2 key_concept array (same defense-in-depth
+ * rationale as resolveTier1KeyConcept). With an empty allow-list, the raw
+ * array passes through untouched.
+ */
+export function filterTier2KeyConcepts(values: string[], allowedConcepts: string[]): string[] {
+  if (allowedConcepts.length === 0) return values;
+  return values.filter((v) => allowedConcepts.includes(v));
+}
 
 /**
  * Build an OpenAI client from the resolved PDF description provider config.
@@ -90,13 +190,14 @@ async function processPage(
   openai: OpenAI,
   model: string,
   serviceTier: string | null,
-  isLocal: boolean
+  isLocal: boolean,
+  allowedConcepts: string[]
 ): Promise<AiCallMetrics> {
   // Resolve a model-ready URL for this page: a JIT presigned link for hosted
   // providers, or an inline base64 data URL for local ones that can't reach S3.
   const imageUrl = await resolveModelImageUrl(bucket, storageKey, { inlineBase64: isLocal, expiresIn: 3600 });
 
-  const prompt = "You are analyzing a single page from an educational document. Extract the key concept and a brief description. Determine if this page is needed for understanding the core material (e.g., skip table of contents or blank pages).";
+  const prompt = buildTier1Prompt(allowedConcepts);
 
   const { value, metrics } = await retryWithExponentialBackoff(() =>
     streamJsonCompletion<{ needed: boolean; key_concept: string; description: string }>(
@@ -114,7 +215,7 @@ async function processPage(
         ],
         service_tier: serviceTier === "flex" ? "flex" : undefined,
       },
-      TIER1_SCHEMA,
+      buildTier1Schema(allowedConcepts),
       { includeUsage: !isLocal, requestOptions: { maxRetries: isLocal ? 0 : 3 } }
     )
   );
@@ -123,7 +224,7 @@ async function processPage(
     where: { materialId_pageNumber: { materialId, pageNumber } },
     data: {
       needed: value.needed,
-      keyConcept: value.key_concept,
+      keyConcept: resolveTier1KeyConcept(value.key_concept, allowedConcepts),
       description: value.description,
     },
   });
@@ -158,6 +259,11 @@ export async function processMaterial(materialId: string) {
   // Resolve provider from DB config
   const { client: openai, model, serviceTier, isLocal } = await getConfiguredOpenAI();
 
+  // Active concept catalog, loaded once for the whole run. Empty means no
+  // curated catalog is configured — every prompt/schema/post-validation
+  // helper below treats [] as "free-form, exactly like today".
+  const allowedConcepts = await getActiveConceptLabels();
+
   // Per-call AI metrics (TTFT + generated tokens) collected across every page
   // and the batch-summary call, aggregated onto the material when it succeeds.
   const callMetrics: AiCallMetrics[] = [];
@@ -175,7 +281,7 @@ export async function processMaterial(materialId: string) {
     const batch = pagesToProcess.slice(i, i + CONCURRENCY);
     await Promise.all(
       batch.map((page) =>
-        processPage(materialId, page.pageNumber, page.storageKey, bucket, openai, model, serviceTier, isLocal)
+        processPage(materialId, page.pageNumber, page.storageKey, bucket, openai, model, serviceTier, isLocal, allowedConcepts)
           .then((m) => { callMetrics.push(m); })
           .catch((err) => {
             console.error(`[VLM Engine] Failed to process page ${page.pageNumber}:`, err);
@@ -218,7 +324,7 @@ export async function processMaterial(materialId: string) {
       const batch = failedPages.slice(i, i + CONCURRENCY);
       await Promise.all(
         batch.map((page) =>
-          processPage(materialId, page.pageNumber, page.storageKey, bucket, openai, model, serviceTier, isLocal)
+          processPage(materialId, page.pageNumber, page.storageKey, bucket, openai, model, serviceTier, isLocal, allowedConcepts)
             .then((m) => { callMetrics.push(m); })
             .catch((err) => {
               console.error(`[VLM Engine] Retry ${retryAttempt} failed for page ${page.pageNumber}:`, err);
@@ -288,7 +394,7 @@ export async function processMaterial(materialId: string) {
   const contentArray: any[] = [
     {
       type: "text",
-      text: "Based on these pages from a learning material, provide a cohesive batch summary and a list of overarching key concepts across the document.",
+      text: buildTier2Prompt(allowedConcepts),
     },
   ];
 
@@ -305,7 +411,7 @@ export async function processMaterial(materialId: string) {
           messages: [{ role: "user", content: contentArray }],
           service_tier: serviceTier === "flex" ? "flex" : undefined,
         },
-        TIER2_SCHEMA,
+        buildTier2Schema(allowedConcepts),
         { includeUsage: !isLocal, requestOptions: { maxRetries: isLocal ? 0 : 3 } }
       )
     );
@@ -317,7 +423,7 @@ export async function processMaterial(materialId: string) {
       data: {
         processingStatus: "SUCCESS",
         batchDescription: value.description,
-        batchKeyConcepts: JSON.stringify(value.key_concept),
+        batchKeyConcepts: JSON.stringify(filterTier2KeyConcepts(value.key_concept, allowedConcepts)),
         aiModel: agg?.model ?? null,
         aiTtftMs: agg?.ttftMs ?? null,
         aiTokens: agg?.completionTokens ?? null,

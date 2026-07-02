@@ -48,6 +48,7 @@ export default async function ExamResultsPage({
         recommendations: presigned.items,
         recommendationsStatus: examResult.recommendationsStatus as ResultStatus,
         truncated: presigned.truncated,
+        misconceptions: presigned.misconceptions ?? [],
       }}
       backHref="/student/history"
       backLabel="Exam history"
