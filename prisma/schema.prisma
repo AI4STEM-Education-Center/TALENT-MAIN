@@ -693,3 +693,75 @@ model Notification {
   @@index([userId, readAt])
   @@index([messageId])
 }
+
+// ─── Concept & Misconception catalog ──────────────────────────────────────────
+// Admin-managed reference catalog imported from spreadsheet exports (see
+// src/lib/concept-csv.ts). Deliberately no FK/relation onto Question or
+// LearningMaterial yet — concept↔question / concept↔material tagging is out of
+// scope for this slice.
+
+model Concept {
+  id              String   @id @default(cuid())
+  conceptId       String   @unique          // "F-FV-1", "AP-2.2.A"
+  kind            String                    // detailed_lo | ap_lo | ap_lo_child
+  parentApLo      String?                   // parent conceptId as plain string (no FK; parents may be deprecated)
+  unit            String?
+  topic           String?
+  displayName     String
+  description     String?
+  sourceLoCode    String?
+  comments        String?
+  notes           String?
+  url             String?
+  deprecated      Boolean  @default(false)
+  deprecationNote String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  misconceptionLinks ConceptMisconception[]
+
+  @@index([deprecated])
+}
+
+model Misconception {
+  id              String   @id @default(cuid())
+  misconceptionId String   @unique          // "MIS-001"
+  statement       String
+  sourceCitation  String?
+  link            String?
+  sourceType      String?
+  notes           String?
+  deprecated      Boolean  @default(false)
+  deprecationNote String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  conceptLinks ConceptMisconception[]
+
+  @@index([deprecated])
+}
+
+model ConceptMisconception {
+  id              String   @id @default(cuid())
+  misconceptionId String
+  conceptId       String
+  confidence      String?  // High | Medium | Low
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  misconception Misconception @relation(fields: [misconceptionId], references: [misconceptionId], onDelete: Cascade)
+  concept       Concept       @relation(fields: [conceptId], references: [conceptId], onDelete: Cascade)
+
+  @@unique([misconceptionId, conceptId])
+}
+
+model ConceptExternalRef {
+  id        String   @id @default(cuid())
+  conceptId String                          // plain string, soft reference
+  refCode   String                          // "F-FF-1.M1", "MC-LIU-20"
+  refType   String                          // heuristic | primary
+  sourceUrl String?
+  createdAt DateTime @default(now())
+
+  @@unique([conceptId, refCode, refType])
+}

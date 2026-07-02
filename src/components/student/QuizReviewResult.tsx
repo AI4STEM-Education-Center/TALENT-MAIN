@@ -2,9 +2,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle, XCircle, Trophy } from "lucide-react";
 import { MathText } from "@/components/ui/math-text";
-import { type SnapshotQuestion } from "@/lib/exam-results";
+import {
+  type SnapshotQuestion,
+  type StoredQuestionMisconceptions,
+} from "@/lib/exam-results";
 
 const PASS_THRESHOLD = 60;
+const EMPTY_QUESTION_MISCONCEPTIONS: StoredQuestionMisconceptions[] = [];
 
 /**
  * Compact horizontal score banner. Has no border of its own — it sits at the
@@ -91,7 +95,15 @@ function NumericRows({ question }: { question: SnapshotQuestion }) {
   );
 }
 
-function QuestionCard({ question, index }: { question: SnapshotQuestion; index: number }) {
+function QuestionCard({
+  question,
+  index,
+  misconceptionTags,
+}: {
+  question: SnapshotQuestion;
+  index: number;
+  misconceptionTags?: StoredQuestionMisconceptions;
+}) {
   const isNumeric = question.answerMode === "NUMERIC";
 
   return (
@@ -156,6 +168,21 @@ function QuestionCard({ question, index }: { question: SnapshotQuestion; index: 
             ))
           )}
         </div>
+        {!question.isCorrect && misconceptionTags && (
+          <div className="ml-6 border-t pt-3 space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Teacher-only misconception tags
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {misconceptionTags.misconceptions.map((misconception) => (
+                <Badge key={misconception.misconceptionId} variant="outline" className="h-auto whitespace-normal py-1">
+                  <span className="font-mono mr-1">{misconception.misconceptionId}</span>
+                  {misconception.statement}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -167,13 +194,27 @@ function QuestionCard({ question, index }: { question: SnapshotQuestion; index: 
  * blind results show only the score, the AI summary, and holistic study
  * recommendations.
  */
-export function QuizReviewList({ questions }: { questions: SnapshotQuestion[] }) {
+export function QuizReviewList({
+  questions,
+  errorMisconceptions = EMPTY_QUESTION_MISCONCEPTIONS,
+}: {
+  questions: SnapshotQuestion[];
+  errorMisconceptions?: StoredQuestionMisconceptions[];
+}) {
+  const misconceptionByQuestionIndex = new Map(
+    errorMisconceptions.map((entry) => [entry.questionIndex, entry])
+  );
   return (
     <div className="space-y-3">
       <h2 className="text-lg font-semibold">Review</h2>
       <div className="grid gap-3 xl:grid-cols-2">
         {questions.map((q, i) => (
-          <QuestionCard key={`${q.text}-${i}`} question={q} index={i} />
+          <QuestionCard
+            key={q.questionId ?? `${q.text}-${i}`}
+            question={q}
+            index={i}
+            misconceptionTags={misconceptionByQuestionIndex.get(i)}
+          />
         ))}
       </div>
     </div>
