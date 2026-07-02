@@ -41,6 +41,7 @@ describe("buildReviewSnapshot", () => {
     ]);
 
     expect(snapshot.questions[0]).toEqual({
+      questionId: "q1",
       text: "2 + 2?",
       isCorrect: true,
       options: [
@@ -93,6 +94,7 @@ describe("buildReviewSnapshot", () => {
       [{ questionId: "n1", selectedOptionIds: [], isCorrect: false, numericValue: 9.5 }]
     );
     expect(snapshot.questions[0]).toEqual({
+      questionId: "n1",
       text: "Coefficient of friction $\\mu_s$?",
       isCorrect: false,
       options: [],
@@ -115,12 +117,12 @@ describe("buildReviewSnapshot", () => {
     expect(snapshot.questions[0].unit).toBeNull();
   });
 
-  it("omits all numeric keys for choice questions (byte-identical legacy shape)", () => {
+  it("stores the question id while omitting numeric keys for choice questions", () => {
     const snapshot = buildReviewSnapshot(questions, [
       { questionId: "q1", selectedOptionIds: ["o2"], isCorrect: true },
     ]);
     const keys = Object.keys(snapshot.questions[0]);
-    expect(keys).toEqual(["text", "isCorrect", "options"]);
+    expect(keys).toEqual(["questionId", "text", "isCorrect", "options"]);
     expect("answerMode" in snapshot.questions[0]).toBe(false);
     expect("figureStorageKey" in snapshot.questions[0]).toBe(false);
   });
@@ -357,22 +359,26 @@ describe("parseStoredRecommendations", () => {
     expect(parseStoredRecommendations('{"items":"x"}')).toEqual({ items: [], truncated: false });
   });
 
-  it("parses misconceptions alongside an empty items array (labels independent of materials)", () => {
+  it("parses teacher-only misconception labels for an individual error", () => {
     const stored: StoredRecommendations = {
       items: [],
       truncated: false,
-      misconceptions: [{ misconceptionId: "MIS-001", statement: "Confuses mass and weight." }],
+      errorMisconceptions: [{
+        questionId: "q1",
+        questionIndex: 0,
+        misconceptions: [{ misconceptionId: "MIS-001", statement: "Confuses mass and weight." }],
+      }],
     };
     expect(parseStoredRecommendations(JSON.stringify(stored))).toEqual(stored);
   });
 
-  it("drops misconceptions and malformed entries, and omits the key when empty", () => {
+  it("drops malformed or attempt-level misconception entries", () => {
     expect(
-      parseStoredRecommendations(JSON.stringify({ items: [], truncated: false, misconceptions: "nope" }))
+      parseStoredRecommendations(JSON.stringify({ items: [], truncated: false, errorMisconceptions: "nope" }))
     ).toEqual({ items: [], truncated: false });
     expect(
       parseStoredRecommendations(
-        JSON.stringify({ items: [], truncated: false, misconceptions: [{ misconceptionId: "MIS-001" }] })
+        JSON.stringify({ items: [], truncated: false, misconceptions: [{ misconceptionId: "MIS-001", statement: "legacy" }] })
       )
     ).toEqual({ items: [], truncated: false });
   });

@@ -113,13 +113,16 @@ export function parseCsvRecords(text: string): string[][] {
     rowHasContent = false;
   };
 
-  const len = text.length;
+  // Spreadsheet applications commonly prefix UTF-8 CSV files with a BOM.
+  // Strip it so the first header is matched like every other cell.
+  const normalizedText = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+  const len = normalizedText.length;
   for (let i = 0; i < len; i++) {
-    const ch = text[i];
+    const ch = normalizedText[i];
 
     if (inQuotes) {
       if (ch === '"') {
-        if (text[i + 1] === '"') {
+        if (normalizedText[i + 1] === '"') {
           cur += '"';
           i++;
         } else {
@@ -139,7 +142,7 @@ export function parseCsvRecords(text: string): string[][] {
       rowHasContent = true;
     } else if (ch === "\r") {
       // Swallow bare \r; the following \n (if any) ends the row.
-      if (text[i + 1] === "\n") continue;
+      if (normalizedText[i + 1] === "\n") continue;
       pushRow();
     } else if (ch === "\n") {
       pushRow();

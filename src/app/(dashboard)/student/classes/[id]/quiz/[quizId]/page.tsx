@@ -191,7 +191,6 @@ export default function QuizPage() {
           recommendations: [],
           recommendationsStatus: RESULT_STATUS.PENDING,
           truncated: false,
-          misconceptions: [],
         }}
         backHref={`/student/classes/${classId}`}
         backLabel="Back to class"

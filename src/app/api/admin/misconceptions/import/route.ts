@@ -8,7 +8,7 @@ import { parseBody, misconceptionsImportSchema } from "@/lib/validation";
 // Admin-only. Body: { misconceptions: ParsedMisconception[] } (already parsed
 // client-side by src/lib/concept-csv.ts). Full-sync semantics, mirroring
 // /api/admin/concepts/import: upsert every row by its natural key
-// (misconceptionId), then delete any misconception not present in the payload.
+// (misconceptionId), then soft-deprecate entries absent from the payload.
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user || session.user.role !== "ADMIN") {
@@ -66,16 +66,12 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // Full sync: remove misconceptions no longer present in the upload. This
-      // cascade-deletes their ConceptMisconception mapping rows (Misconception
-      // -> ConceptMisconception is onDelete: Cascade) — acceptable per spec,
-      // since re-uploading the mapping CSV re-creates whatever mappings are
-      // still valid against the current concept/misconception catalog.
-      const { count: deleted } = await tx.misconception.deleteMany({
-        where: { misconceptionId: { notIn: payloadIds } },
+      const { count: deprecated } = await tx.misconception.updateMany({
+        where: { misconceptionId: { notIn: payloadIds }, deprecated: false },
+        data: { deprecated: true },
       });
 
-      return { created, updated, deleted };
+      return { created, updated, deprecated };
     });
 
     return NextResponse.json(result);

@@ -37,7 +37,7 @@ describe("extractIncorrectAnswerEvidence", () => {
 
     const evidence = extractIncorrectAnswerEvidence(snapshot);
     expect(evidence).toEqual<IncorrectAnswerEvidence[]>([
-      { questionText: "Capital of France?", studentAnswer: "Rome", correctAnswer: "Paris" },
+      { questionId: null, questionIndex: 1, questionText: "Capital of France?", studentAnswer: "Rome", correctAnswer: "Paris" },
     ]);
   });
 
@@ -57,7 +57,7 @@ describe("extractIncorrectAnswerEvidence", () => {
 
     const evidence = extractIncorrectAnswerEvidence(snapshot);
     expect(evidence).toEqual([
-      { questionText: "Pick one", studentAnswer: "No answer selected", correctAnswer: "Unknown" },
+      { questionId: null, questionIndex: 0, questionText: "Pick one", studentAnswer: "No answer selected", correctAnswer: "Unknown" },
     ]);
   });
 
@@ -125,8 +125,8 @@ describe("extractIncorrectAnswerEvidence", () => {
 
     const evidence = extractIncorrectAnswerEvidence(snapshot);
     expect(evidence).toEqual([
-      { questionText: "Mass of an electron?", studentAnswer: "1.6 ×10⁻³¹ kg", correctAnswer: "9.1 ×10⁻³¹ kg" },
-      { questionText: "Unanswered numeric", studentAnswer: "No answer", correctAnswer: "Unknown" },
+      { questionId: null, questionIndex: 0, questionText: "Mass of an electron?", studentAnswer: "1.6 ×10⁻³¹ kg", correctAnswer: "9.1 ×10⁻³¹ kg" },
+      { questionId: null, questionIndex: 1, questionText: "Unanswered numeric", studentAnswer: "No answer", correctAnswer: "Unknown" },
     ]);
   });
 });
@@ -139,7 +139,7 @@ const catalog: MisconceptionCatalogEntry[] = [
 ];
 
 const evidence: IncorrectAnswerEvidence[] = [
-  { questionText: "Why does a ball keep rolling?", studentAnswer: "A force keeps pushing it", correctAnswer: "Inertia" },
+  { questionId: "q-force", questionIndex: 0, questionText: "Why does a ball keep rolling?", studentAnswer: "A force keeps pushing it", correctAnswer: "Inertia" },
 ];
 
 describe("buildMisconceptionLabelingPrompt", () => {
@@ -152,22 +152,23 @@ describe("buildMisconceptionLabelingPrompt", () => {
     expect(prompt).toContain("Inertia");
   });
 
-  it("instructs the model to choose only from the catalog and cap at 3", () => {
+  it("instructs the model to choose 1-3 labels only from the catalog", () => {
     const prompt = buildMisconceptionLabelingPrompt(evidence, catalog);
-    expect(prompt.toLowerCase()).toContain("at most 3");
+    expect(prompt.toLowerCase()).toContain("1 to 3");
     expect(prompt.toLowerCase()).toContain("only choose");
-    expect(prompt.toLowerCase()).toContain("empty list");
+    expect(prompt.toLowerCase()).not.toContain("empty list");
   });
 });
 
 // ─── buildMisconceptionSchema ────────────────────────────────────────────────────
 
 describe("buildMisconceptionSchema", () => {
-  it("constrains misconception_ids to the given ids with maxItems 3", () => {
+  it("constrains misconception_ids to 1-3 of the given ids", () => {
     const schema = buildMisconceptionSchema(["MIS-001", "MIS-002"]) as {
-      properties: { misconception_ids: { maxItems: number; items: { enum: string[] } } };
+      properties: { misconception_ids: { minItems: number; maxItems: number; items: { enum: string[] } } };
       required: string[];
     };
+    expect(schema.properties.misconception_ids.minItems).toBe(1);
     expect(schema.properties.misconception_ids.maxItems).toBe(MAX_MISCONCEPTIONS);
     expect(schema.properties.misconception_ids.items.enum).toEqual(["MIS-001", "MIS-002"]);
     expect(schema.required).toEqual(["misconception_ids"]);

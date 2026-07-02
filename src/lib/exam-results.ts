@@ -35,6 +35,10 @@ export type SnapshotOption = {
   imageUrl?: string | null;
 };
 export type SnapshotQuestion = {
+  // Durable identifier used to attach teacher-only misconception labels to the
+  // exact quiz error. Optional so snapshots created before this field existed
+  // remain readable.
+  questionId?: string;
   text: string;
   isCorrect: boolean;
   options: SnapshotOption[];
@@ -104,6 +108,7 @@ export function buildReviewSnapshot(
       const answer = answerByQuestion.get(q.id);
       const selected = new Set(answer?.selectedOptionIds ?? []);
       const base: SnapshotQuestion = {
+        questionId: q.id,
         text: q.text,
         isCorrect: answer?.isCorrect ?? false,
         options: q.options.map((opt) => {
@@ -246,16 +251,19 @@ export type StoredRecommendation = {
   reason: string;
   pages: StoredRecPage[];
 };
-// A catalog misconception attached to an attempt's recommendations. Statement
-// only — deliberately carries no per-question linkage (blind-results contract).
 export type StoredMisconception = { misconceptionId: string; statement: string };
+export type StoredQuestionMisconceptions = {
+  questionId: string | null;
+  questionIndex: number;
+  misconceptions: StoredMisconception[];
+};
 
 export type StoredRecommendations = {
   items: StoredRecommendation[];
   truncated: boolean;
-  // Present only when the labeling step (exam-results-engine.ts) found at
-  // least one catalog misconception likely explaining the attempt's errors.
-  misconceptions?: StoredMisconception[];
+  // Teacher-only labels, attached to individual incorrect answers. Student
+  // APIs and components must never expose this field.
+  errorMisconceptions?: StoredQuestionMisconceptions[];
 };
 
 /** A page ready for the client: presigned, short-lived image URL. */
@@ -266,7 +274,7 @@ export type PresignedRecommendation = Omit<StoredRecommendation, "pages"> & {
 export type PresignedRecommendations = {
   items: PresignedRecommendation[];
   truncated: boolean;
-  misconceptions?: StoredMisconception[];
+  errorMisconceptions?: StoredQuestionMisconceptions[];
 };
 
 /** True for a value shaped like a valid StoredMisconception entry. */
@@ -276,18 +284,36 @@ function isStoredMisconception(value: unknown): value is StoredMisconception {
   return typeof entry.misconceptionId === "string" && typeof entry.statement === "string";
 }
 
+function isStoredQuestionMisconceptions(value: unknown): value is StoredQuestionMisconceptions {
+  if (!value || typeof value !== "object") return false;
+  const entry = value as {
+    questionId?: unknown;
+    questionIndex?: unknown;
+    misconceptions?: unknown;
+  };
+  return (
+    (entry.questionId === null || typeof entry.questionId === "string") &&
+    Number.isInteger(entry.questionIndex) &&
+    (entry.questionIndex as number) >= 0 &&
+    Array.isArray(entry.misconceptions) &&
+    entry.misconceptions.length >= 1 &&
+    entry.misconceptions.length <= 3 &&
+    entry.misconceptions.every(isStoredMisconception)
+  );
+}
+
 /** Safely parse the stored recommendations JSON blob. */
 export function parseStoredRecommendations(raw: string | null): StoredRecommendations {
   if (!raw) return { items: [], truncated: false };
   try {
     const parsed = JSON.parse(raw);
-    const misconceptions = Array.isArray(parsed?.misconceptions)
-      ? parsed.misconceptions.filter(isStoredMisconception)
+    const errorMisconceptions = Array.isArray(parsed?.errorMisconceptions)
+      ? parsed.errorMisconceptions.filter(isStoredQuestionMisconceptions)
       : [];
     return {
       items: Array.isArray(parsed?.items) ? parsed.items : [],
       truncated: parsed?.truncated === true,
-      ...(misconceptions.length > 0 ? { misconceptions } : {}),
+      ...(errorMisconceptions.length > 0 ? { errorMisconceptions } : {}),
     };
   } catch {
     return { items: [], truncated: false };
@@ -323,5 +349,9 @@ export async function mapPresignedRecommendations(
       return { ...rest, pages };
     })
   );
-  return { items, truncated: stored.truncated };
+  return {
+    items,
+    truncated: stored.truncated,
+    ...(stored.errorMisconceptions ? { errorMisconceptions: stored.errorMisconceptions } : {}),
+  };
 }

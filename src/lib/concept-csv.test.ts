@@ -81,6 +81,13 @@ describe("parseCsvRecords", () => {
   it("trims cell whitespace", () => {
     expect(parseCsvRecords(" a , b ,c\n")).toEqual([["a", "b", "c"]]);
   });
+
+  it("strips a UTF-8 BOM before the first header", () => {
+    expect(parseCsvRecords("\uFEFFa,b\n1,2")).toEqual([
+      ["a", "b"],
+      ["1", "2"],
+    ]);
+  });
 });
 
 describe("parseConceptsCsv", () => {

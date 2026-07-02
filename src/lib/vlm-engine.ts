@@ -56,12 +56,10 @@ const TIER2_SCHEMA = {
 const NONE_CONCEPT = "None";
 
 /**
- * Build the tier-1 (per-page) response schema. With an empty allow-list this
- * returns the exact TIER1_SCHEMA object used today (free-form key_concept
- * string) — callers must pass [] when no concept catalog is configured.
+ * Build the tier-1 (per-page) response schema. Empty catalogs fail closed.
  */
 export function buildTier1Schema(allowedConcepts: string[]) {
-  if (allowedConcepts.length === 0) return TIER1_SCHEMA;
+  requireActiveConcepts(allowedConcepts);
   return {
     ...TIER1_SCHEMA,
     schema: {
@@ -75,12 +73,10 @@ export function buildTier1Schema(allowedConcepts: string[]) {
 }
 
 /**
- * Build the tier-2 (batch summary) response schema. With an empty allow-list
- * this returns the exact TIER2_SCHEMA object used today (free-form
- * key_concept string array).
+ * Build the tier-2 (batch summary) response schema. Empty catalogs fail closed.
  */
 export function buildTier2Schema(allowedConcepts: string[]) {
-  if (allowedConcepts.length === 0) return TIER2_SCHEMA;
+  requireActiveConcepts(allowedConcepts);
   return {
     ...TIER2_SCHEMA,
     schema: {
@@ -98,6 +94,14 @@ export function formatConceptBulletList(allowedConcepts: string[]): string {
   return allowedConcepts.map((label) => `- ${label}`).join("\n");
 }
 
+function requireActiveConcepts(allowedConcepts: string[]): void {
+  if (allowedConcepts.length === 0) {
+    throw new Error(
+      "The active concept catalog is empty. Upload concepts in the admin dashboard before generating material descriptions."
+    );
+  }
+}
+
 const TIER1_BASE_PROMPT =
   "You are analyzing a single page from an educational document. Extract the key concept and a brief description. Determine if this page is needed for understanding the core material (e.g., skip table of contents or blank pages).";
 
@@ -105,43 +109,39 @@ const TIER2_BASE_PROMPT =
   "Based on these pages from a learning material, provide a cohesive batch summary and a list of overarching key concepts across the document.";
 
 /**
- * Build the tier-1 (per-page) prompt. With an empty allow-list this returns
- * exactly TIER1_BASE_PROMPT unchanged.
+ * Build the tier-1 (per-page) prompt. Empty catalogs fail closed.
  */
 export function buildTier1Prompt(allowedConcepts: string[]): string {
-  if (allowedConcepts.length === 0) return TIER1_BASE_PROMPT;
-  return `${TIER1_BASE_PROMPT} Choose key_concept ONLY from this list (use the exact label). If no listed concept fits, use "None".\n${formatConceptBulletList(allowedConcepts)}`;
+  requireActiveConcepts(allowedConcepts);
+  return `${TIER1_BASE_PROMPT} Choose key_concept ONLY from this list (use the exact label). If no listed concept fits, use "None". The description must discuss only the selected listed concept and must not introduce unlisted concepts.\n${formatConceptBulletList(allowedConcepts)}`;
 }
 
 /**
- * Build the tier-2 (batch summary) prompt. With an empty allow-list this
- * returns exactly TIER2_BASE_PROMPT unchanged.
+ * Build the tier-2 (batch summary) prompt. Empty catalogs fail closed.
  */
 export function buildTier2Prompt(allowedConcepts: string[]): string {
-  if (allowedConcepts.length === 0) return TIER2_BASE_PROMPT;
-  return `${TIER2_BASE_PROMPT} Choose key concepts ONLY from this list (use the exact labels). Return an empty list if none apply.\n${formatConceptBulletList(allowedConcepts)}`;
+  requireActiveConcepts(allowedConcepts);
+  return `${TIER2_BASE_PROMPT} Choose key concepts ONLY from this list (use the exact labels). Return an empty list if none apply. The description must discuss only concepts selected from this list and must not introduce unlisted concepts.\n${formatConceptBulletList(allowedConcepts)}`;
 }
 
 /**
  * Post-validation for tier-1 key_concept (defense in depth: ai-streaming falls
  * back to plain, unconstrained streaming when a provider rejects
- * response_format, so the schema enum alone isn't a guarantee). With an empty
- * allow-list, the raw value passes through untouched (today's free-form
- * behavior). Otherwise "None" or any value outside the catalog is nulled out.
+ * response_format, so the schema enum alone isn't a guarantee). "None" or any
+ * value outside the catalog is nulled out; empty catalogs fail closed.
  */
 export function resolveTier1KeyConcept(value: string, allowedConcepts: string[]): string | null {
-  if (allowedConcepts.length === 0) return value;
+  requireActiveConcepts(allowedConcepts);
   if (value === NONE_CONCEPT) return null;
   return allowedConcepts.includes(value) ? value : null;
 }
 
 /**
  * Post-validation for tier-2 key_concept array (same defense-in-depth
- * rationale as resolveTier1KeyConcept). With an empty allow-list, the raw
- * array passes through untouched.
+ * rationale as resolveTier1KeyConcept). Empty catalogs fail closed.
  */
 export function filterTier2KeyConcepts(values: string[], allowedConcepts: string[]): string[] {
-  if (allowedConcepts.length === 0) return values;
+  requireActiveConcepts(allowedConcepts);
   return values.filter((v) => allowedConcepts.includes(v));
 }
 
@@ -256,13 +256,13 @@ export async function processMaterial(materialId: string) {
     throw new Error("S3 not configured");
   }
 
+  // Fail closed before making any AI call: material concept metadata and its
+  // prose description must always be grounded in the admin-managed catalog.
+  const allowedConcepts = await getActiveConceptLabels();
+  requireActiveConcepts(allowedConcepts);
+
   // Resolve provider from DB config
   const { client: openai, model, serviceTier, isLocal } = await getConfiguredOpenAI();
-
-  // Active concept catalog, loaded once for the whole run. Empty means no
-  // curated catalog is configured — every prompt/schema/post-validation
-  // helper below treats [] as "free-form, exactly like today".
-  const allowedConcepts = await getActiveConceptLabels();
 
   // Per-call AI metrics (TTFT + generated tokens) collected across every page
   // and the batch-summary call, aggregated onto the material when it succeeds.

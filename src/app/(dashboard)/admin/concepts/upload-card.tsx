@@ -89,7 +89,7 @@ export function UploadCard({ title, description, ariaLabel, onFile, onSuccess }:
               {detailCount} row detail{detailCount === 1 ? "" : "s"}
             </summary>
             <ul className="mt-2 space-y-1 list-disc pl-4">
-              {result?.details?.map((d, i) => <li key={i}>{d}</li>)}
+              {result?.details?.map((detail) => <li key={detail}>{detail}</li>)}
             </ul>
           </details>
         )}

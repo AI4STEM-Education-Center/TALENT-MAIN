@@ -11,10 +11,8 @@ import {
 
 // These cover the pure schema/prompt/post-validation helpers that constrain
 // VLM material-description key-concept selection to the active concept
-// catalog (src/lib/concept-catalog.ts). An empty allow-list must reproduce
-// today's free-form behavior byte-for-byte — every "empty catalog" case below
-// pins down the exact original prompt/schema text so a future edit can't
-// silently change default (no-catalog) behavior.
+// catalog (src/lib/concept-catalog.ts). Empty catalogs must fail closed so
+// material metadata never falls back to free-form concepts.
 
 const TODAYS_TIER1_PROMPT =
   "You are analyzing a single page from an educational document. Extract the key concept and a brief description. Determine if this page is needed for understanding the core material (e.g., skip table of contents or blank pages).";
@@ -22,40 +20,11 @@ const TODAYS_TIER1_PROMPT =
 const TODAYS_TIER2_PROMPT =
   "Based on these pages from a learning material, provide a cohesive batch summary and a list of overarching key concepts across the document.";
 
-const TODAYS_TIER1_SCHEMA = {
-  name: "page_assessment",
-  strict: true,
-  schema: {
-    type: "object",
-    properties: {
-      needed: { type: "boolean" },
-      key_concept: { type: "string" },
-      description: { type: "string" },
-    },
-    required: ["needed", "key_concept", "description"],
-    additionalProperties: false,
-  },
-};
-
-const TODAYS_TIER2_SCHEMA = {
-  name: "batch_summary",
-  strict: true,
-  schema: {
-    type: "object",
-    properties: {
-      key_concept: { type: "array", items: { type: "string" } },
-      description: { type: "string" },
-    },
-    required: ["key_concept", "description"],
-    additionalProperties: false,
-  },
-};
-
 const LABELS = ["Force Vector: Forces", "Newton's 2nd Law", "Kinematics: Velocity"];
 
 describe("buildTier1Prompt", () => {
-  it("returns exactly today's prompt when the catalog is empty", () => {
-    expect(buildTier1Prompt([])).toBe(TODAYS_TIER1_PROMPT);
+  it("fails closed when the catalog is empty", () => {
+    expect(() => buildTier1Prompt([])).toThrow("concept catalog is empty");
   });
 
   it("appends the concept list instruction and bullets when non-empty", () => {
@@ -65,12 +34,13 @@ describe("buildTier1Prompt", () => {
     expect(prompt).toContain("- Force Vector: Forces");
     expect(prompt).toContain("- Newton's 2nd Law");
     expect(prompt).toContain("- Kinematics: Velocity");
+    expect(prompt).toContain("must not introduce unlisted concepts");
   });
 });
 
 describe("buildTier2Prompt", () => {
-  it("returns exactly today's prompt when the catalog is empty", () => {
-    expect(buildTier2Prompt([])).toBe(TODAYS_TIER2_PROMPT);
+  it("fails closed when the catalog is empty", () => {
+    expect(() => buildTier2Prompt([])).toThrow("concept catalog is empty");
   });
 
   it("appends the concept list instruction and bullets when non-empty, with no None escape", () => {
@@ -93,8 +63,8 @@ describe("formatConceptBulletList", () => {
 });
 
 describe("buildTier1Schema", () => {
-  it("returns exactly today's schema when the catalog is empty", () => {
-    expect(buildTier1Schema([])).toEqual(TODAYS_TIER1_SCHEMA);
+  it("fails closed when the catalog is empty", () => {
+    expect(() => buildTier1Schema([])).toThrow("concept catalog is empty");
   });
 
   it("adds an enum (labels + None) to key_concept when non-empty", () => {
@@ -111,8 +81,8 @@ describe("buildTier1Schema", () => {
 });
 
 describe("buildTier2Schema", () => {
-  it("returns exactly today's schema when the catalog is empty", () => {
-    expect(buildTier2Schema([])).toEqual(TODAYS_TIER2_SCHEMA);
+  it("fails closed when the catalog is empty", () => {
+    expect(() => buildTier2Schema([])).toThrow("concept catalog is empty");
   });
 
   it("adds an enum of labels (no None) to key_concept items when non-empty", () => {
@@ -126,8 +96,8 @@ describe("buildTier2Schema", () => {
 });
 
 describe("resolveTier1KeyConcept (post-validation defense in depth)", () => {
-  it("passes the raw value through untouched when the catalog is empty", () => {
-    expect(resolveTier1KeyConcept("Anything the model said", [])).toBe("Anything the model said");
+  it("fails closed when the catalog is empty", () => {
+    expect(() => resolveTier1KeyConcept("Anything the model said", [])).toThrow("concept catalog is empty");
   });
 
   it("maps the None sentinel to null", () => {
@@ -144,8 +114,8 @@ describe("resolveTier1KeyConcept (post-validation defense in depth)", () => {
 });
 
 describe("filterTier2KeyConcepts (post-validation defense in depth)", () => {
-  it("passes the raw array through untouched when the catalog is empty", () => {
-    expect(filterTier2KeyConcepts(["a", "b"], [])).toEqual(["a", "b"]);
+  it("fails closed when the catalog is empty", () => {
+    expect(() => filterTier2KeyConcepts(["a", "b"], [])).toThrow("concept catalog is empty");
   });
 
   it("filters out values outside the allowed set", () => {

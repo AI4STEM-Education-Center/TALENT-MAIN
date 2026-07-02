@@ -2,8 +2,8 @@
 // AI-generated key-concept labels (material description, and later recommendation
 // misconception labeling) to the curated list maintained at /admin/concepts.
 //
-// An empty catalog means "no constraint configured yet" — callers must treat []
-// as a signal to fall back to today's free-form behavior, not as an error.
+// Material generation fails closed when this list is empty; free-form concept
+// generation is never allowed.
 
 import { prisma } from "@/lib/prisma";
 

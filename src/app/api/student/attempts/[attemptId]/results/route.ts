@@ -62,6 +62,5 @@ export async function GET(
     recommendationsStatus: examResult.recommendationsStatus,
     recommendations: recommendations.items,
     truncated: recommendations.truncated,
-    misconceptions: recommendations.misconceptions ?? [],
   });
 }

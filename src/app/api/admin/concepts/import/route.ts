@@ -7,9 +7,9 @@ import { parseBody, conceptsImportSchema } from "@/lib/validation";
 // POST /api/admin/concepts/import
 // Admin-only. Body: { concepts: ParsedConcept[] } (already parsed client-side
 // by src/lib/concept-csv.ts). Full-sync semantics: every row is upserted by
-// its natural key (conceptId), then any concept NOT present in the payload is
-// deleted — so re-uploading the latest export always leaves the catalog
-// matching the file exactly.
+// its natural key (conceptId), then records absent from the payload are soft
+// deprecated. This preserves mapping history and prevents a partial import
+// from cascading into destructive data loss.
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user || session.user.role !== "ADMIN") {
@@ -79,16 +79,12 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // Full sync: remove concepts no longer present in the upload. This
-      // cascade-deletes their ConceptMisconception mapping rows (Concept ->
-      // ConceptMisconception is onDelete: Cascade) — acceptable per spec,
-      // since re-uploading the mapping CSV after the concepts CSV re-creates
-      // whatever mappings are still valid.
-      const { count: deleted } = await tx.concept.deleteMany({
-        where: { conceptId: { notIn: payloadIds } },
+      const { count: deprecated } = await tx.concept.updateMany({
+        where: { conceptId: { notIn: payloadIds }, deprecated: false },
+        data: { deprecated: true },
       });
 
-      return { created, updated, deleted };
+      return { created, updated, deprecated };
     });
 
     return NextResponse.json(result);

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ArrowLeft } from "lucide-react";
 import { ScoreBanner, QuizReviewList } from "@/components/student/QuizReviewResult";
-import { parseReviewSnapshot } from "@/lib/exam-results";
+import { parseReviewSnapshot, parseStoredRecommendations } from "@/lib/exam-results";
 import { presignQuestionFigure, presignOptionImage } from "@/lib/question-figures";
 
 const fmtDateTime = (d: Date) =>
@@ -37,6 +37,7 @@ export default async function TeacherAttemptDetailPage({
   if (!examResult || examResult.classId !== id || examResult.studentId !== studentId) notFound();
 
   const snapshot = parseReviewSnapshot(examResult.reviewSnapshot);
+  const recommendations = parseStoredRecommendations(examResult.recommendations);
 
   // Attach transient presigned URLs (never persisted) for figures + image
   // answer-choices, mirroring how the old student results page did it.
@@ -80,7 +81,10 @@ export default async function TeacherAttemptDetailPage({
         </CardContent>
       </Card>
 
-      <QuizReviewList questions={snapshot.questions} />
+      <QuizReviewList
+        questions={snapshot.questions}
+        errorMisconceptions={recommendations.errorMisconceptions}
+      />
     </div>
   );
 }

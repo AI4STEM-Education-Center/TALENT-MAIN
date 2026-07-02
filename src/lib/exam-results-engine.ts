@@ -45,6 +45,7 @@ import {
   type StoredRecommendation,
   type StoredRecommendations,
   type StoredMisconception,
+  type StoredQuestionMisconceptions,
   type PresignedRecommendations,
 } from "./exam-results";
 
@@ -214,42 +215,66 @@ async function selectPagesForMaterial(
 }
 
 /**
- * Label the attempt's incorrect answers with catalog misconceptions (at most
- * MAX_MISCONCEPTIONS). Independent of study-material availability — it only
+ * Label each incorrect answer with 1-3 catalog misconceptions. Independent of
+ * study-material availability — it only
  * needs a usable provider, a non-empty active catalog, and at least one
  * incorrect answer. Any failure (empty catalog, no incorrect answers, LLM
- * error) resolves to no misconceptions rather than throwing, so it never fails
- * recommendation generation as a whole.
+ * error) fails the recommendation section closed so an attempt is never marked
+ * READY with an unlabeled quiz error.
  */
 async function labelMisconceptions(
   client: OpenAI,
   model: string,
   isLocal: boolean,
   snapshot: ReviewSnapshot
-): Promise<{ misconceptions: StoredMisconception[]; metrics: AiCallMetrics | null }> {
-  try {
-    const catalog = await getActiveMisconceptions();
-    if (catalog.length === 0) return { misconceptions: [], metrics: null };
-
-    const incorrect = extractIncorrectAnswerEvidence(snapshot);
-    if (incorrect.length === 0) return { misconceptions: [], metrics: null };
-
-    const ids = catalog.map((m) => m.misconceptionId);
-    const { value, metrics } = await retryWithExponentialBackoff(() =>
-      streamJsonCompletion<MisconceptionLabeling>(
-        client,
-        { model, messages: [{ role: "user", content: buildMisconceptionLabelingPrompt(incorrect, catalog) }] },
-        { name: "misconception_labeling", schema: buildMisconceptionSchema(ids), strict: true },
-        { includeUsage: !isLocal, requestOptions: { maxRetries: isLocal ? 0 : 3 } }
-      )
-    );
-
-    const misconceptions = resolveLabeledMisconceptions(value.misconception_ids ?? [], catalog);
-    return { misconceptions, metrics };
-  } catch (err) {
-    console.error("[ExamResults] Misconception labeling failed:", err);
-    return { misconceptions: [], metrics: null };
+): Promise<{ errorMisconceptions: StoredQuestionMisconceptions[]; metrics: AiCallMetrics[] }> {
+  const catalog = await getActiveMisconceptions();
+  if (catalog.length === 0) {
+    throw new Error("The active misconception catalog is empty.");
   }
+
+  const incorrect = extractIncorrectAnswerEvidence(snapshot);
+  if (incorrect.length === 0) return { errorMisconceptions: [], metrics: [] };
+
+  const ids = catalog.map((m) => m.misconceptionId);
+  const labeled = await Promise.all(
+    incorrect.map(async (error) => {
+      const { value, metrics } = await retryWithExponentialBackoff(() =>
+        streamJsonCompletion<MisconceptionLabeling>(
+          client,
+          {
+            model,
+            messages: [
+              { role: "user", content: buildMisconceptionLabelingPrompt([error], catalog) },
+            ],
+          },
+          { name: "misconception_labeling", schema: buildMisconceptionSchema(ids), strict: true },
+          { includeUsage: !isLocal, requestOptions: { maxRetries: isLocal ? 0 : 3 } }
+        )
+      );
+      const misconceptions: StoredMisconception[] = resolveLabeledMisconceptions(
+        value.misconception_ids ?? [],
+        catalog
+      );
+      if (misconceptions.length === 0) {
+        throw new Error(
+          `No valid misconception was returned for question index ${error.questionIndex}.`
+        );
+      }
+      return {
+        label: {
+          questionId: error.questionId,
+          questionIndex: error.questionIndex,
+          misconceptions,
+        },
+        metrics,
+      };
+    })
+  );
+  return {
+    errorMisconceptions: labeled.map((result) => result.label),
+    metrics: labeled.map((result) => result.metrics),
+  };
 }
 
 /** Generate the markdown summary from the durable review snapshot. */
@@ -310,13 +335,13 @@ async function generateRecommendations(
   // them whenever there's a usable provider and incorrect answers, even when
   // no materials end up being recommended below (or S3 isn't configured at
   // all). A labeling failure never blocks the material recommendations.
-  const { misconceptions, metrics: labelMetrics } = await labelMisconceptions(
+  const { errorMisconceptions, metrics: labelMetrics } = await labelMisconceptions(
     client,
     provider.model,
     isLocal,
     snapshot
   );
-  if (labelMetrics) allMetrics.push(labelMetrics);
+  allMetrics.push(...labelMetrics);
 
   let items: StoredRecommendation[] = [];
   let truncated = false;
@@ -412,7 +437,7 @@ async function generateRecommendations(
   const metrics = aggregateMetrics(allMetrics);
 
   return {
-    stored: { items, truncated, ...(misconceptions.length > 0 ? { misconceptions } : {}) },
+    stored: { items, truncated, ...(errorMisconceptions.length > 0 ? { errorMisconceptions } : {}) },
     metrics,
   };
 }
@@ -492,19 +517,19 @@ export async function presignStoredRecommendations(
   raw: string | null
 ): Promise<PresignedRecommendations> {
   const stored = parseStoredRecommendations(raw);
-  // Misconceptions carry no images to presign, so pass them through unchanged
+  // Teacher-only misconception labels carry no images to presign, so pass them through unchanged
   // even when there are no material recommendations to presign (e.g. a
   // catalog match with zero available class materials).
-  const misconceptions = stored.misconceptions;
+  const errorMisconceptions = stored.errorMisconceptions;
   if (stored.items.length === 0) {
-    return { items: [], truncated: stored.truncated, ...(misconceptions ? { misconceptions } : {}) };
+    return { items: [], truncated: stored.truncated, ...(errorMisconceptions ? { errorMisconceptions } : {}) };
   }
 
   let bucket: string;
   try {
     bucket = getS3Config().bucket;
   } catch {
-    return { items: [], truncated: stored.truncated, ...(misconceptions ? { misconceptions } : {}) };
+    return { items: [], truncated: stored.truncated, ...(errorMisconceptions ? { errorMisconceptions } : {}) };
   }
 
   return mapPresignedRecommendations(stored, (key) => presignGetUrl(bucket, key));

@@ -56,7 +56,7 @@ export const conceptImportRowSchema = z.object({
 });
 
 export const conceptsImportSchema = z.object({
-  concepts: z.array(conceptImportRowSchema).max(MAX_IMPORT_ROWS),
+  concepts: z.array(conceptImportRowSchema).min(1).max(MAX_IMPORT_ROWS),
 });
 
 export const misconceptionImportRowSchema = z.object({
@@ -71,7 +71,7 @@ export const misconceptionImportRowSchema = z.object({
 });
 
 export const misconceptionsImportSchema = z.object({
-  misconceptions: z.array(misconceptionImportRowSchema).max(MAX_IMPORT_ROWS),
+  misconceptions: z.array(misconceptionImportRowSchema).min(1).max(MAX_IMPORT_ROWS),
 });
 
 export const mappingImportRowSchema = z.object({
@@ -88,10 +88,14 @@ export const externalRefImportRowSchema = z.object({
   sourceUrl: optionalTrimmed,
 });
 
-export const conceptMappingsImportSchema = z.object({
-  mappings: z.array(mappingImportRowSchema).max(MAX_IMPORT_ROWS),
-  externalRefs: z.array(externalRefImportRowSchema).max(MAX_IMPORT_ROWS),
-});
+export const conceptMappingsImportSchema = z
+  .object({
+    mappings: z.array(mappingImportRowSchema).max(MAX_IMPORT_ROWS),
+    externalRefs: z.array(externalRefImportRowSchema).max(MAX_IMPORT_ROWS),
+  })
+  .refine((value) => value.mappings.length + value.externalRefs.length > 0, {
+    message: "At least one mapping or external reference is required.",
+  });
 
 export type ParseResult<T> =
   | { ok: true; data: T }

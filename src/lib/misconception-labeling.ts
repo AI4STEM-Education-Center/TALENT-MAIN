@@ -1,10 +1,7 @@
 // Misconception-labeling workflow: given a student's incorrect answers on a
-// completed quiz attempt, ask the model to pick AT MOST 3 misconceptions from
-// the active catalog that most likely explain the errors. Attached (as
-// statements only — no per-question linkage) to the stored recommendations so
-// the results page can render a "Possible misconceptions to review" section
-// without breaking the blind-results contract (no question/answer is ever
-// revealed to the student).
+// completed quiz attempt, ask the model to pick 1-3 catalog misconceptions for
+// each incorrect answer. Labels are stored with a durable question identifier
+// and are exposed only on the teacher attempt-detail surface.
 //
 // Mirrors the shape of `recommendation.ts`: pure prompt/schema builders + one
 // DB helper (`getActiveMisconceptions`), so the prompt/schema/validation logic
@@ -18,6 +15,8 @@ export type MisconceptionCatalogEntry = { misconceptionId: string; statement: st
 
 /** Evidence for one incorrect answer: question text + student/correct answer text. */
 export type IncorrectAnswerEvidence = {
+  questionId: string | null;
+  questionIndex: number;
   questionText: string;
   studentAnswer: string;
   correctAnswer: string;
@@ -26,7 +25,7 @@ export type IncorrectAnswerEvidence = {
 /** The model's raw structured response. */
 export type MisconceptionLabeling = { misconception_ids: string[] };
 
-/** At most this many misconceptions may be attached to one attempt's recommendations. */
+/** Maximum number of misconceptions attached to one quiz error. */
 export const MAX_MISCONCEPTIONS = 3;
 
 // $...$ LaTeX in question/option text is emitted RAW on purpose, matching
@@ -48,9 +47,8 @@ const optionDisplayText = (o: SnapshotQuestion["options"][number]): string =>
  * both prompts describe a student's errors identically.
  */
 export function extractIncorrectAnswerEvidence(snapshot: ReviewSnapshot): IncorrectAnswerEvidence[] {
-  return snapshot.questions
-    .filter((q) => !q.isCorrect)
-    .map((q) => {
+  return snapshot.questions.flatMap((q, questionIndex) => {
+      if (q.isCorrect) return [];
       // NUMERIC questions carry no options; report the submitted number (or "No
       // answer") and the correct number, each with the optional unit.
       if (isNumeric(q)) {
@@ -58,28 +56,30 @@ export function extractIncorrectAnswerEvidence(snapshot: ReviewSnapshot): Incorr
           q.submittedNumeric != null ? withUnit(String(q.submittedNumeric), q.unit) : "No answer";
         const correctAnswer =
           q.correctNumeric != null ? withUnit(String(q.correctNumeric), q.unit) : "Unknown";
-        return { questionText: q.text, studentAnswer, correctAnswer };
+        return [{ questionId: q.questionId ?? null, questionIndex, questionText: q.text, studentAnswer, correctAnswer }];
       }
 
-      const selected = q.options.filter((o) => o.selected).map(optionDisplayText);
-      const correct = q.options.filter((o) => o.isCorrect).map(optionDisplayText);
+      const selected = q.options.flatMap((o) => (o.selected ? [optionDisplayText(o)] : []));
+      const correct = q.options.flatMap((o) => (o.isCorrect ? [optionDisplayText(o)] : []));
 
-      return {
+      return [{
+        questionId: q.questionId ?? null,
+        questionIndex,
         questionText: q.text,
         studentAnswer: selected.length > 0 ? selected.join(" | ") : "No answer selected",
         correctAnswer: correct.length > 0 ? correct.join(" | ") : "Unknown",
-      };
+      }];
     });
 }
 
 const MISCONCEPTION_LABELING_INSTRUCTIONS =
   "You are an educational assistant analyzing a student's quiz errors to identify likely " +
-  "misconceptions. You are given evidence from the student's incorrect answers (the question, " +
+  "misconceptions. You are given evidence from one incorrect answer (the question, " +
   "the student's answer, and the correct answer) and a catalog of known misconceptions. Select " +
-  "AT MOST 3 catalog misconceptions that most likely explain the student's errors. Only choose " +
+  "1 TO 3 catalog misconceptions that most likely explain this error. Only choose " +
   "from the provided catalog — never invent a misconception or return an id that isn't listed. " +
-  "Return an empty list if none of the catalog entries clearly apply. Return ONLY a JSON object " +
-  "with a `misconception_ids` array of catalog misconception id strings (at most 3 entries).";
+  "Return ONLY a JSON object with a `misconception_ids` array containing 1 to 3 catalog " +
+  "misconception id strings.";
 
 /**
  * Build the misconception-labeling prompt: the evidence from every incorrect
@@ -107,13 +107,12 @@ export function buildMisconceptionLabelingPrompt(
     "Misconception catalog:",
     ...catalogLines,
     "",
-    "Select at most 3 catalog misconception ids that most likely explain these errors, or an " +
-      "empty list if none clearly apply.",
+    "Select 1 to 3 catalog misconception ids that most likely explain this error.",
   ].join("\n");
 }
 
 /**
- * Strict JSON schema for the labeling response: an array of at most 3 ids,
+ * Strict JSON schema for the labeling response: an array of 1-3 ids,
  * each constrained to the active catalog via `enum` (mirrors the
  * `MATERIAL_SELECTION_SCHEMA` style in recommendation.ts).
  */
@@ -125,7 +124,8 @@ export function buildMisconceptionSchema(ids: string[]) {
       misconception_ids: {
         type: "array",
         description:
-          "Up to 3 catalog misconception ids that most likely explain the student's errors.",
+          "One to three catalog misconception ids that most likely explain this quiz error.",
+        minItems: 1,
         maxItems: MAX_MISCONCEPTIONS,
         items: { type: "string", enum: ids },
       },

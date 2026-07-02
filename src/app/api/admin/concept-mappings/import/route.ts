@@ -17,9 +17,8 @@ import { parseBody, conceptMappingsImportSchema } from "@/lib/validation";
 // the recreate, keeps the table from ever being briefly out of sync with a
 // half-applied upload.
 //
-// Mapping rows whose conceptId or misconceptionId isn't in the DB are skipped
-// (reported in `skipped`) rather than failing the whole import, since the
-// mapping CSV commonly references concepts that were deprecated/removed.
+// Unknown references abort the entire transaction before the existing mapping
+// tables are touched. Admins get a validation error instead of a partial sync.
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user || session.user.role !== "ADMIN") {
@@ -63,6 +62,10 @@ export async function POST(req: NextRequest) {
         validMappings.set(`${m.misconceptionId}|${m.conceptId}`, m);
       }
 
+      if (skipped.length > 0) {
+        return { ok: false as const, skipped };
+      }
+
       const dedupedExternalRefs = new Map<string, (typeof externalRefs)[number]>();
       for (const r of externalRefs) {
         dedupedExternalRefs.set(`${r.conceptId}|${r.refCode}|${r.refType}`, r);
@@ -97,11 +100,22 @@ export async function POST(req: NextRequest) {
       }
 
       return {
+        ok: true as const,
         mappings: validMappings.size,
         externalRefs: dedupedExternalRefs.size,
         skipped,
       };
     });
+
+    if (!result.ok) {
+      return NextResponse.json(
+        {
+          error: `Import cancelled: ${result.skipped.length} mapping row(s) reference unknown concepts or misconceptions. No data was changed.`,
+          skipped: result.skipped,
+        },
+        { status: 400 }
+      );
+    }
 
     return NextResponse.json(result);
   } catch (error) {
