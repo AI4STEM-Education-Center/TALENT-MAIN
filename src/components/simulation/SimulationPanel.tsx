@@ -58,10 +58,10 @@ export function SimulationPanel({
     else setMsg("Failed to load the simulation.");
   }, [simulationId]);
 
+  // Callers mount this component fresh per opening (see QuizEditor), so state
+  // starts empty and this only needs to kick off the initial load.
   useEffect(() => {
     if (!open) return;
-    setDetail(null);
-    setMsg("");
     refresh();
   }, [open, refresh]);
 

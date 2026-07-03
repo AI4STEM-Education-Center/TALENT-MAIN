@@ -189,6 +189,7 @@ export default function QuizPage() {
           summary: null,
           summaryStatus: RESULT_STATUS.PENDING,
           recommendations: [],
+          simulations: [],
           recommendationsStatus: RESULT_STATUS.PENDING,
           truncated: false,
         }}
