@@ -14,10 +14,18 @@ import { parseQtiQuestionBank } from "@/lib/question-import/qti";
 import { normalizeNumericValue } from "@/lib/quiz-scoring";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { QuizPdfImport } from "@/components/quiz/QuizPdfImport";
-import { Plus, Pencil, Trash2, Check, X, ArrowLeft, FileQuestion, Upload, Download } from "lucide-react";
+import { SimulationStatusBadge } from "@/components/simulation/SimulationStatusBadge";
+import { SimulationPanel } from "@/components/simulation/SimulationPanel";
+import { Plus, Pencil, Trash2, Check, X, ArrowLeft, FileQuestion, Upload, Download, Atom } from "lucide-react";
 
 type AnswerMode = "SINGLE_SELECT" | "MULTI_SELECT" | "NUMERIC";
 interface Option { id?: string; text: string; isCorrect: boolean; imageUrl?: string | null; imageAlt?: string | null }
+interface QuestionSimulation {
+  id: string;
+  status: string;
+  title: string | null;
+  hasContent: boolean;
+}
 interface Question {
   id: string;
   title?: string | null;
@@ -27,6 +35,7 @@ interface Question {
   points?: number | null;
   feedbackGeneral?: string | null;
   sourceQuestionId?: string | null;
+  simulation?: QuestionSimulation | null;
   options: Option[];
   // NUMERIC questions only.
   answerNumeric?: number | null;
@@ -85,6 +94,8 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
   const [poolImportBusy, setPoolImportBusy] = useState(false);
   // True while a PDF import is in progress; hides the QTI card to free up space.
   const [pdfImportActive, setPdfImportActive] = useState(false);
+  // Simulation being viewed/reviewed in the dialog, if any.
+  const [openSimulationId, setOpenSimulationId] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
 
   useEffect(() => {
@@ -492,6 +503,7 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
                       <Badge variant="outline" className="text-xs">{q.difficultyLevel}</Badge>
                       <Badge variant="outline" className="text-xs">{q.answerMode === "NUMERIC" ? "Numeric" : q.answerMode === "MULTI_SELECT" ? "Multi-select" : "Single-select"}</Badge>
                       {q.sourceQuestionId && <Badge variant="secondary" className="text-xs">{q.sourceQuestionId}</Badge>}
+                      {q.simulation && <SimulationStatusBadge status={q.simulation.status} />}
                     </div>
                     {q.title && <p className="text-sm font-semibold">{q.title}</p>}
                     <p className="font-medium"><MathText text={q.text} /></p>
@@ -530,17 +542,40 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
                       </div>
                     )}
                   </div>
-                  {!readOnly && (
-                    <div className="flex gap-1 shrink-0">
-                      <Button size="sm" variant="ghost" onClick={() => startEdit(q)}><Pencil className="size-3" /></Button>
-                      <Button size="sm" variant="ghost" onClick={() => deleteQuestion(q.id)}><Trash2 className="size-3 text-destructive" /></Button>
-                    </div>
-                  )}
+                  <div className="flex gap-1 shrink-0">
+                    {q.simulation && (q.simulation.hasContent || q.simulation.status === "DECLINED") && (
+                      <Button size="sm" variant="ghost" onClick={() => setOpenSimulationId(q.simulation!.id)}>
+                        <Atom className="size-3" /> Simulation
+                      </Button>
+                    )}
+                    {!readOnly && (
+                      <>
+                        <Button size="sm" variant="ghost" onClick={() => startEdit(q)}><Pencil className="size-3" /></Button>
+                        <Button size="sm" variant="ghost" onClick={() => deleteQuestion(q.id)}><Trash2 className="size-3 text-destructive" /></Button>
+                      </>
+                    )}
+                  </div>
                 </div>
               </CardContent>
             </Card>
           ))}
         </div>
+      )}
+
+      {/* Simulation viewer + feedback loop. Refresh on close so a feedback
+          round's REVISING (or a finished revision's READY) badge shows. */}
+      {openSimulationId && (
+        <SimulationPanel
+          simulationId={openSimulationId}
+          canGiveFeedback={!readOnly}
+          open
+          onOpenChange={(open) => {
+            if (!open) {
+              setOpenSimulationId(null);
+              refreshQuestions();
+            }
+          }}
+        />
       )}
     </div>
   );
