@@ -46,6 +46,7 @@ export default async function ExamResultsPage({
         summary: examResult.summary,
         summaryStatus: examResult.summaryStatus as ResultStatus,
         recommendations: presigned.items,
+        simulations: presigned.simulations ?? [],
         recommendationsStatus: examResult.recommendationsStatus as ResultStatus,
         truncated: presigned.truncated,
       }}

@@ -56,11 +56,13 @@ export async function GET(
 
   const recommendations = await presignStoredRecommendations(examResult.recommendations);
 
+  // NOTE: errorMisconceptions is teacher-only and deliberately NOT included.
   return NextResponse.json({
     summaryStatus: examResult.summaryStatus,
     summary: examResult.summary,
     recommendationsStatus: examResult.recommendationsStatus,
     recommendations: recommendations.items,
+    simulations: recommendations.simulations ?? [],
     truncated: recommendations.truncated,
   });
 }

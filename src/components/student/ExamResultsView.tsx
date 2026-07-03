@@ -9,10 +9,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScoreBanner } from "@/components/student/QuizReviewResult";
 import { HolisticRecommendations } from "@/components/student/HolisticRecommendations";
+import { SimulationRecommendations } from "@/components/student/SimulationRecommendations";
 import {
   RESULT_STATUS,
   type ResultStatus,
   type PresignedRecommendation,
+  type StoredSimulationRecommendation,
 } from "@/lib/exam-results";
 
 const POLL_MS = 2500;
@@ -23,6 +25,7 @@ type AiState = {
   summary: string | null;
   summaryStatus: ResultStatus;
   recommendations: PresignedRecommendation[];
+  simulations: StoredSimulationRecommendation[];
   recommendationsStatus: ResultStatus;
   truncated: boolean;
 };
@@ -90,6 +93,7 @@ export function ExamResultsView({
             summary: data.summary ?? null,
             summaryStatus: data.summaryStatus,
             recommendations: Array.isArray(data.recommendations) ? data.recommendations : [],
+            simulations: Array.isArray(data.simulations) ? data.simulations : [],
             recommendationsStatus: data.recommendationsStatus,
             truncated: data.truncated === true,
           });
@@ -138,6 +142,10 @@ export function ExamResultsView({
         recommendations={ai.recommendations}
         status={ai.recommendationsStatus}
       />
+
+      {/* Interactive topic simulations — question-detail-free by construction,
+          so safe to show while the per-question review stays hidden. */}
+      <SimulationRecommendations simulations={ai.simulations} />
 
       {actions && <div className="flex flex-wrap gap-3">{actions}</div>}
     </div>
