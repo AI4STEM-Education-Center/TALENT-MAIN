@@ -103,7 +103,10 @@ export async function POST(req: NextRequest) {
       }
       continue;
     }
-    if (IN_FLIGHT.has(sim.status)) {
+    // force (question scope) also rescues a row stuck PENDING/REVISING after a
+    // dead worker: resetting to PENDING makes any stale redelivery a no-op for
+    // the old job while the new one regenerates from scratch.
+    if (IN_FLIGHT.has(sim.status) && !force) {
       skipped += 1;
       continue;
     }

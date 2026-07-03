@@ -24,6 +24,7 @@ import {
   Inbox,
   HardDrive,
   PanelLeftClose,
+  Atom,
 } from "lucide-react";
 
 interface NavItem {
@@ -61,6 +62,7 @@ const studentNav: NavItem[] = [
 const adminNav: NavItem[] = [
   { href: "/admin", label: "Overview", icon: <LayoutDashboard className="size-4" /> },
   { href: "/admin/quizzes", label: "Quiz Pool", icon: <FileQuestion className="size-4" /> },
+  { href: "/admin/simulations", label: "Simulations", icon: <Atom className="size-4" /> },
   { href: "/admin/materials", label: "Materials Processing", icon: <FolderOpen className="size-4" /> },
   { href: "/admin/concepts", label: "Concepts", icon: <BookOpen className="size-4" /> },
   { href: "/admin/users", label: "Users", icon: <Users className="size-4" /> },
