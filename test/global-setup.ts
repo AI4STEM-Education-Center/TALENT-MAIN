@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { existsSync, rmSync } from "node:fs";
 import path from "node:path";
 
@@ -24,8 +24,25 @@ export default function setup() {
   // Prisma 7 removed `--skip-generate` from `db push` (push no longer triggers
   // client generation). The datasource URL is read from prisma.config.ts, which
   // picks up the DATABASE_URL passed below.
-  execSync("npx prisma db push --accept-data-loss", {
-    stdio: "inherit",
-    env: { ...process.env, DATABASE_URL: testDbUrl() },
-  });
+  // Prisma's macOS schema-engine can exit with a generic startup error when
+  // creating a fresh SQLite file unless Rust engine logging is initialized.
+  // `trace` is consumed internally (the CLI remains quiet) and makes startup
+  // reliable; retries remain as a guard against genuinely transient failures.
+  const env = { ...process.env, DATABASE_URL: testDbUrl(), RUST_LOG: "trace" };
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      execFileSync("npx", ["prisma", "db", "push", "--accept-data-loss"], {
+        stdio: "inherit",
+        env,
+      });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt < 3) {
+        console.warn(`[test setup] Prisma db push failed (attempt ${attempt}/3); retrying.`);
+      }
+    }
+  }
+  throw lastError;
 }
