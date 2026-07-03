@@ -4,9 +4,14 @@ import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { normalizeEmail, normalizeUsername, validatePassword } from "@/lib/account-validation";
+import { rateLimit } from "@/lib/rate-limit";
 
 // GET: validate token and return class info
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  // Throttle invitation-token guessing per IP.
+  const limited = rateLimit(req, "invite-validate", 30, 60_000);
+  if (limited) return limited;
+
   const { token } = await params;
   const invitation = await prisma.invitation.findUnique({
     where: { token },
@@ -33,6 +38,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
 // POST: use invitation (enroll current user, or create account + enroll)
 // Now requires orgDefinedId (81 number) verification against the class roster.
 export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  // Throttle enrollment/signup attempts (token + 81-number guessing) per IP.
+  const limited = rateLimit(req, "invite-enroll", 15, 60_000);
+  if (limited) return limited;
+
   try {
     const { token } = await params;
     const invitation = await prisma.invitation.findUnique({

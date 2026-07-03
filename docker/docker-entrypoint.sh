@@ -33,8 +33,21 @@ fi
 rm -f "$DB_DIR/.pending-restore"
 
 echo "Applying database schema..."
-node ./node_modules/prisma/build/index.js db push --accept-data-loss 2>&1 || {
-  echo "WARNING: prisma db push failed — the app will start but may have schema issues" >&2
+# In production we do NOT pass --accept-data-loss: additive changes (new
+# tables/columns) still apply automatically, but a destructive change makes
+# `db push` refuse rather than silently drop data — surfacing it for manual
+# review. Non-production (dev/CI containers) keeps --accept-data-loss so the
+# schema can be reset freely. The longer-term path is versioned
+# `prisma migrate deploy`; that requires establishing a migration history first.
+if [ "${NODE_ENV:-}" = "production" ]; then
+  PUSH_FLAGS=""
+else
+  PUSH_FLAGS="--accept-data-loss"
+fi
+# shellcheck disable=SC2086
+node ./node_modules/prisma/build/index.js db push $PUSH_FLAGS 2>&1 || {
+  echo "WARNING: prisma db push failed — the app will start but may have schema issues." >&2
+  echo "         In production this can mean a destructive schema change needs manual review." >&2
 }
 
 exec node server.js
