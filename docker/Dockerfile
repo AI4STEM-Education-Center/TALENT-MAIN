@@ -102,6 +102,10 @@ COPY --from=builder /app/node_modules/@russellthehippo ./node_modules/@russellth
 COPY --from=builder /app/node_modules/better-sqlite3 ./node_modules/better-sqlite3
 
 COPY docker/docker-entrypoint.sh ./docker-entrypoint.sh
+# One-time cutover migration the entrypoint runs before `prisma db push`
+# (moves legacy _honker_* tables into the sibling queue DB). Uses better-sqlite3,
+# copied above. Safe to remove once every environment has migrated.
+COPY docker/migrate-honker-db.cjs ./migrate-honker-db.cjs
 RUN chmod +x ./docker-entrypoint.sh && \
     chown -R nextjs:nodejs /app
 
