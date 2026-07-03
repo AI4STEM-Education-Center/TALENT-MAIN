@@ -3,8 +3,11 @@ import {
   buildTriagePrompt,
   buildSimulationHtmlPrompt,
   buildRevisionPrompt,
+  buildRevisionReviewPrompt,
+  buildRevisionCorrectionPrompt,
   buildRepairPrompt,
   validateTriagePlan,
+  validateRevisionReview,
   extractHtmlDocument,
   validateSimulationHtml,
   MAX_SIMULATION_HTML_BYTES,
@@ -251,6 +254,73 @@ describe("build/revision/repair prompts", () => {
     const prompt = buildRepairPrompt(["document has no <script>", "forbidden element <iframe>"]);
     expect(prompt).toContain("- document has no <script>");
     expect(prompt).toContain("- forbidden element <iframe>");
+  });
+
+  it("the revision-review prompt carries the revised document, both feedbacks, and every check", () => {
+    const prompt = buildRevisionReviewPrompt(plan, VALID_HTML, ["fix the axis labels"], "period formula is wrong");
+    expect(prompt).toContain(VALID_HTML);
+    expect(prompt).toContain("1. fix the axis labels");
+    expect(prompt).toContain("period formula is wrong");
+    expect(prompt).toContain("feedback_applied");
+    expect(prompt).toContain("physics_intact");
+    expect(prompt).toContain("layout_intact");
+    expect(prompt).toContain("simulation_works");
+    expect(prompt).not.toContain(QUESTION.text);
+  });
+
+  it("the correction prompt lists the review's problems and re-states the feedback", () => {
+    const prompt = buildRevisionCorrectionPrompt(VALID_HTML, "period formula is wrong", [
+      "the period ignores L",
+      "the reset button is dead",
+    ]);
+    expect(prompt).toContain(VALID_HTML);
+    expect(prompt).toContain("period formula is wrong");
+    expect(prompt).toContain("- the period ignores L");
+    expect(prompt).toContain("- the reset button is dead");
+    expect(prompt).toContain("HARD REQUIREMENTS");
+  });
+});
+
+describe("validateRevisionReview", () => {
+  const allTrue = {
+    feedback_applied: true,
+    physics_intact: true,
+    layout_intact: true,
+    simulation_works: true,
+    ok: true,
+    problems: [],
+  };
+
+  it("passes only when the verdict and every sub-check are true", () => {
+    expect(validateRevisionReview(allTrue)).toEqual({ ok: true, problems: [] });
+  });
+
+  it("fails (with the model's problems) when ok is false", () => {
+    const review = validateRevisionReview({
+      ...allTrue,
+      ok: false,
+      physics_intact: false,
+      problems: ["the period formula ignores L"],
+    });
+    expect(review.ok).toBe(false);
+    expect(review.problems).toContain("the period formula ignores L");
+  });
+
+  it("treats a failed sub-check as a failure even when ok is true", () => {
+    const review = validateRevisionReview({ ...allTrue, layout_intact: false, ok: true });
+    expect(review.ok).toBe(false);
+    // With no explicit problems, it synthesizes one from the failed check.
+    expect(review.problems.length).toBeGreaterThan(0);
+  });
+
+  it("always yields at least one problem when failing", () => {
+    const review = validateRevisionReview({ ...allTrue, ok: false, problems: [] });
+    expect(review.ok).toBe(false);
+    expect(review.problems.length).toBeGreaterThan(0);
+  });
+
+  it("throws on a non-object payload", () => {
+    expect(() => validateRevisionReview(null)).toThrow(/object/);
   });
 });
 

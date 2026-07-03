@@ -81,6 +81,38 @@ export const SIMULATION_TRIAGE_SCHEMA = {
   },
 } as const;
 
+/**
+ * Strict schema for the post-revision integrity review: an independent pass
+ * over a revised artifact that must confirm the requested change was applied
+ * AND the physics/math, the required layout, and the working simulation all
+ * survived it. `ok` is the reviewer's overall verdict; `problems` enumerates
+ * anything that must be fixed before the revision can ship.
+ */
+export const SIMULATION_REVIEW_SCHEMA = {
+  name: "simulation_revision_review",
+  strict: true,
+  schema: {
+    type: "object",
+    properties: {
+      feedback_applied: { type: "boolean" },
+      physics_intact: { type: "boolean" },
+      layout_intact: { type: "boolean" },
+      simulation_works: { type: "boolean" },
+      ok: { type: "boolean" },
+      problems: { type: "array", items: { type: "string" } },
+    },
+    required: [
+      "feedback_applied",
+      "physics_intact",
+      "layout_intact",
+      "simulation_works",
+      "ok",
+      "problems",
+    ],
+    additionalProperties: false,
+  },
+} as const;
+
 // ─── Prompts ──────────────────────────────────────────────────────────────────
 
 /**
@@ -123,7 +155,7 @@ ${siblingBlock}
 
 THE PRIVACY RULE (absolute): the simulation is shown while quiz results are blind, so it must never reveal anything about this specific question. The topic, title, learning_goal, and ESPECIALLY the spec must not contain the question's numbers, given values, named scenario, option values, or its answer. Zoom out to the general concept the question tests (e.g. a question about a 3 kg block on a 30° incline becomes "forces on an inclined plane" with fully student-adjustable mass and angle). Someone reading the spec must not be able to reconstruct the question or infer its answer.
 
-THE SPEC: a self-contained build brief (a few hundred words) for a developer who will NOT see the question. Describe: the physical system and the quantitative relationship to make explorable; which parameters the student can adjust (with sensible generic ranges and defaults — never the question's values); what is animated/plotted and how it responds; which formulas govern the model; readouts to display; and the layout (canvas area + controls). Target a simple, single-screen, canvas-based interactive that runs at 60fps with plain JavaScript — no external libraries.
+THE SPEC: a self-contained build brief (a few hundred words) for a developer who will NOT see the question. Describe: the physical system and the quantitative relationship to make explorable; which parameters the student can adjust (with sensible generic ranges and defaults — never the question's values); what is animated/plotted and how it responds; which formulas govern the model; readouts to display; and the layout, which follows the platform's fixed three-section structure (a header with the title, a one-line description and a short how-to guide; a key-formulas section directly beneath it; then a two-column simulation-plus-controls area). Target a simple, single-screen, canvas-based interactive that runs at 60fps with plain JavaScript — no external libraries.
 
 Use the exact JSON schema provided. Every property must be present (null where unused).`;
 }
@@ -137,11 +169,15 @@ const HTML_REQUIREMENTS = `HARD REQUIREMENTS for the document:
 - Everything inline: CSS in a <style> tag, JavaScript in <script> tags, plain JavaScript only (no external libraries, imports, or module loading).
 - ZERO external references: no http(s):// or protocol-relative URLs in src/href/CSS url()/@import (an SVG xmlns attribute is fine), and no network APIs (fetch, XMLHttpRequest, WebSocket, EventSource, sendBeacon). The page runs in a sandboxed iframe with a CSP that blocks all of these — any external reference will simply break. Embedded images/fonts must be data: URIs.
 - Forbidden elements: <iframe>, <object>, <embed>, <base>, <link>.
-- Render the simulation on a <canvas> (or inline SVG), animated with requestAnimationFrame, with a pause/resume and a reset control.
-- Controls: sliders/buttons with visible labels and current values; the simulation responds immediately when they change.
-- Responsive: fill the viewport width, work from ~360px phones up to desktop, and keep controls usable with touch. No horizontal page scrolling.
-- Self-explanatory: a short title and one or two sentences telling the student what to try and what to notice. Show live numeric readouts of the governing quantities, and the key formula(s) where they help.
-- Use accurate physics with correct units. Prefer simple and correct over flashy.
+
+REQUIRED PAGE STRUCTURE — lay the page out top-to-bottom in exactly these three stacked sections, in this order:
+  1. HEADER: an <h1> title that names the key function(s)/relationship being explored (e.g. "Simple Pendulum: T = 2π√(L/g)"), then a one-line description of the physical system, then a short "How to use" quick guide — one or two sentences (or a few bullets) telling the student which controls to change and what to watch for.
+  2. FUNCTIONS: a clearly-labelled section (e.g. a "Key functions / formulas" heading) placed DIRECTLY under the header — never at the bottom — listing every governing formula the model uses, with each symbol defined. This states the math the simulation is built on and is not optional.
+  3. SIMULATION + CONTROLS: a two-column layout — the animated simulation on the left, the controls on the right. On narrow/phone widths the two columns stack vertically (simulation first).
+- Simulation column: render on a <canvas> (or inline SVG), animated with requestAnimationFrame. Show the key live readouts (e.g. speed AND acceleration together) on or beside the animation, and include a pause/resume and a reset control.
+- Controls column: sliders/buttons with visible labels AND their current numeric value; the simulation responds immediately when they change.
+- Responsive with NO clipping or overflow: fill the viewport width, work from ~360px phones up to desktop, keep controls usable with touch, and never let a title, label, readout, or value spill outside its box or get cut off — wrap or shrink text so everything stays readable. No horizontal page scrolling.
+- Use accurate physics with correct units, consistent with the formulas shown in the FUNCTIONS section. Prefer simple and correct over flashy.
 - Do NOT reference any quiz, question, or answer anywhere in the page.`;
 
 /**
@@ -209,6 +245,79 @@ Return ONLY the complete revised HTML document.`;
 }
 
 /**
+ * Build the integrity-review prompt run AFTER a revision, as an independent
+ * pass. The reviewer sees the plan, the applied + new feedback, and the REVISED
+ * document, and must re-derive the physics/math, confirm the required layout
+ * survived, confirm the new feedback was actually applied without undoing prior
+ * feedback, and confirm the simulation still works — reporting any problem that
+ * must be fixed before it ships. Pure + deterministic.
+ */
+export function buildRevisionReviewPrompt(
+  plan: { topic: string; title: string; learningGoal: string; spec: string },
+  revisedHtml: string,
+  priorFeedback: string[],
+  newFeedback: string
+): string {
+  const prior =
+    priorFeedback.length > 0
+      ? priorFeedback.map((f, i) => `  ${i + 1}. ${f}`).join("\n")
+      : "  (none)";
+  return `You are the integrity reviewer for a learning-platform physics/STEM simulation. A revision was just made to apply a teacher's feedback, and you must confirm — independently and skeptically — that the change is correct and did not break anything BEFORE it is shown to students.
+
+Topic: ${plan.topic}
+Title: ${plan.title}
+Learning goal: ${plan.learningGoal}
+
+BUILD SPEC (what the simulation is meant to teach):
+${plan.spec}
+
+FEEDBACK APPLIED IN EARLIER REVISIONS (must still hold):
+${prior}
+
+FEEDBACK THIS REVISION WAS MEANT TO APPLY:
+${newFeedback}
+
+THE REVISED DOCUMENT:
+${revisedHtml}
+
+Check every one of these and set the matching boolean:
+- feedback_applied: the new feedback above is genuinely and fully addressed in the document (not merely acknowledged), and no earlier feedback was undone.
+- physics_intact: re-derive the governing formulas yourself. The math and physics are correct, dimensionally consistent, in correct units, and match the formulas the page displays. There are no sign errors, wrong constants, or broken relationships.
+- layout_intact: the required three-section structure is present and in order — a header (title + one-line description + short how-to guide), a key-functions/formulas section directly below it, then a two-column simulation-plus-controls area — with no text overflowing or clipped.
+- simulation_works: the JavaScript is coherent and would run — the animation loop, the reset/pause controls, and every slider/button are wired to the model and update the readouts; there are no obvious runtime errors, undefined references, or dead controls.
+- ok: true ONLY when all four above are true.
+
+List every concrete defect in "problems" (empty only when ok is true). Be specific and actionable — name the formula, control, or section at fault — so a follow-up pass can fix it. When unsure whether something is correct, treat it as a problem rather than passing it.`;
+}
+
+/**
+ * Build the correction prompt used when the integrity review rejects a revised
+ * document: re-apply the original feedback correctly and fix the listed
+ * problems, without undoing prior feedback or breaking the simulation. Pure +
+ * deterministic.
+ */
+export function buildRevisionCorrectionPrompt(
+  revisedHtml: string,
+  newFeedback: string,
+  problems: string[]
+): string {
+  return `The revision you produced was reviewed and did NOT pass. It was meant to apply this feedback:
+${newFeedback}
+
+The review found these problems that must be fixed:
+${problems.map((p) => `- ${p}`).join("\n")}
+
+Here is the document to correct:
+${revisedHtml}
+
+Fix every listed problem AND make sure the intended feedback is fully and correctly applied. Keep the physics/math correct, keep the required page structure (header with title + description + how-to guide, then the key-functions section, then the two-column simulation + controls), and do not break the working simulation or undo earlier feedback. The privacy rule still holds: never add anything about a specific quiz question or its answer.
+
+${HTML_REQUIREMENTS}
+
+Return ONLY the complete corrected HTML document.`;
+}
+
+/**
  * Build the one-shot repair prompt used when a generated document fails the
  * static validator. Pure + deterministic.
  */
@@ -271,6 +380,41 @@ export function validateTriagePlan(input: unknown, siblingCount: number): Triage
   if (!spec) throw new Error("triage: spec is required when helpful and not a duplicate");
 
   return { helpful: true, duplicateOfIndex: null, topic, title, learningGoal, spec };
+}
+
+/**
+ * Collapse the raw integrity-review JSON into a pass/fail verdict + a
+ * non-empty problem list when it fails. `ok` requires the model's overall
+ * verdict AND every individual check to hold, so a stray `ok:true` with a
+ * failed sub-check is still treated as a failure. Guarantees at least one
+ * problem string whenever the verdict is a fail, so the caller always has
+ * something actionable to record / re-prompt with.
+ */
+export function validateRevisionReview(input: unknown): { ok: boolean; problems: string[] } {
+  if (!isRecord(input)) throw new Error("simulation review: payload must be an object");
+
+  const checks: [keyof typeof input, string][] = [
+    ["feedback_applied", "the requested change was not fully applied to the document"],
+    ["physics_intact", "the physics/math is incorrect or inconsistent with the displayed formulas"],
+    ["layout_intact", "the required page layout (header, key-functions section, two-column simulation) is broken"],
+    ["simulation_works", "the simulation no longer runs correctly (broken controls, animation, or readouts)"],
+  ];
+
+  const problems = Array.isArray(input.problems)
+    ? input.problems.map((p) => (typeof p === "string" ? p.trim() : "")).filter(Boolean)
+    : [];
+
+  const failedChecks = checks.filter(([key]) => input[key] !== true);
+  const passed = input.ok === true && failedChecks.length === 0;
+
+  if (!passed && problems.length === 0) {
+    for (const [, message] of failedChecks) problems.push(message);
+    if (problems.length === 0) {
+      problems.push("the integrity review rejected the revision without giving specifics");
+    }
+  }
+
+  return { ok: passed, problems };
 }
 
 // ─── HTML extraction + static validation ─────────────────────────────────────

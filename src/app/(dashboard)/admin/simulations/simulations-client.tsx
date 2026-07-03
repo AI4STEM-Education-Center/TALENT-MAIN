@@ -8,7 +8,7 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { SimulationStatusBadge } from "@/components/simulation/SimulationStatusBadge";
 import { SimulationViewer } from "@/components/simulation/SimulationViewer";
-import { Atom, ChevronDown, ChevronRight, Eye, Loader2, Play, RefreshCw, Sparkles } from "lucide-react";
+import { Atom, ChevronDown, ChevronRight, Eye, Loader2, Play, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 
 interface Counts { ready: number; declined: number; failed: number; inFlight: number; missing: number }
 interface QuizRow { id: string; name: string; topicName: string | null; questionCount: number; counts: Counts }
@@ -141,6 +141,37 @@ export function AdminSimulationsClient() {
     });
     if (!ok) return;
     await generate({ scope: "question", questionId: question.id, force: true }, `q:${question.id}`, quizId);
+  }
+
+  async function remove(question: QuestionRow, quizId: string) {
+    const sim = question.simulation;
+    if (!sim) return;
+    const ok = await confirm({
+      title: "Delete this simulation?",
+      description:
+        "The simulation and its feedback history are permanently removed. Teachers' imported copies are not affected. You can generate a fresh one for this question later.",
+      confirmText: "Delete",
+    });
+    if (!ok) return;
+    const busyKey = `q:${question.id}`;
+    setBusy((prev) => new Set(prev).add(busyKey));
+    try {
+      const res = await fetch(`/api/simulations/${sim.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setMsg(data.error ?? "Failed to delete simulation.");
+        return;
+      }
+      setMsg("Simulation deleted.");
+      await refreshSummary();
+      await refreshDetail(quizId);
+    } finally {
+      setBusy((prev) => {
+        const next = new Set(prev);
+        next.delete(busyKey);
+        return next;
+      });
+    }
   }
 
   if (!summary) {
@@ -320,6 +351,17 @@ export function AdminSimulationsClient() {
                                   <Button size="sm" variant="ghost" disabled={qBusy} onClick={() => regenerate(question, quiz.id)}>
                                     {qBusy ? <Loader2 className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
                                     {sim.status === "PENDING" || sim.status === "REVISING" ? "Restart" : "Regenerate"}
+                                  </Button>
+                                )}
+                                {sim && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    disabled={qBusy}
+                                    aria-label="Delete simulation"
+                                    onClick={() => remove(question, quiz.id)}
+                                  >
+                                    <Trash2 className="size-3 text-destructive" />
                                   </Button>
                                 )}
                               </div>

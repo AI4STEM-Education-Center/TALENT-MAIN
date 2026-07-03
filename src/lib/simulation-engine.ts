@@ -24,11 +24,15 @@ import {
 } from "./ai-streaming";
 import {
   SIMULATION_TRIAGE_SCHEMA,
+  SIMULATION_REVIEW_SCHEMA,
   buildTriagePrompt,
   buildSimulationHtmlPrompt,
   buildRevisionPrompt,
+  buildRevisionReviewPrompt,
+  buildRevisionCorrectionPrompt,
   buildRepairPrompt,
   validateTriagePlan,
+  validateRevisionReview,
   extractHtmlDocument,
   validateSimulationHtml,
   type SimulationQuestionInput,
@@ -123,6 +127,63 @@ async function generateValidatedHtml(
     throw new Error(`Generated document failed validation after repair: ${problems.join("; ")}`);
   }
   return html;
+}
+
+/**
+ * The "complete go-over" for a teacher-driven revision: an independent review
+ * pass that re-derives the physics/math and confirms the required layout, the
+ * applied feedback, and the working simulation all survived the change. When it
+ * fails, the model gets exactly ONE correction round (re-validated statically
+ * and re-reviewed); if the second attempt still fails, this THROWS with the
+ * reviewer's problems — the caller (runRevision) treats that as a failed
+ * revision, so a change that can't be verified as intact is never published and
+ * the previous artifact keeps serving.
+ */
+async function reviewAndCorrectRevision(
+  ctx: CallContext,
+  plan: { topic: string; title: string; learningGoal: string; spec: string },
+  html: string,
+  priorFeedback: string[],
+  newFeedback: string,
+  callMetrics: AiCallMetrics[]
+): Promise<string> {
+  const review = async (doc: string) => {
+    const result = await retryWithExponentialBackoff(() =>
+      streamJsonCompletion(
+        ctx.client,
+        {
+          model: ctx.model,
+          messages: [
+            {
+              role: "user",
+              content: buildRevisionReviewPrompt(plan, doc, priorFeedback, newFeedback),
+            },
+          ],
+          service_tier: tierParam(ctx),
+        },
+        SIMULATION_REVIEW_SCHEMA,
+        { includeUsage: !ctx.isLocal, requestOptions: { maxRetries: ctx.isLocal ? 0 : 3 } }
+      )
+    );
+    callMetrics.push(result.metrics);
+    return validateRevisionReview(result.value);
+  };
+
+  const first = await review(html);
+  if (first.ok) return html;
+
+  console.warn(`[Simulation] Revision failed integrity review (${first.problems.join("; ")}); correcting`);
+  const corrected = await generateValidatedHtml(
+    ctx,
+    buildRevisionCorrectionPrompt(html, newFeedback, first.problems),
+    callMetrics
+  );
+
+  const second = await review(corrected);
+  if (!second.ok) {
+    throw new Error(`Revision failed integrity review after correction: ${second.problems.join("; ")}`);
+  }
+  return corrected;
 }
 
 /**
@@ -384,18 +445,26 @@ async function runRevision(sim: LoadedSimulation, feedbackId: string): Promise<v
       orderBy: { createdAt: "asc" },
     });
 
-    const prompt = buildRevisionPrompt(
-      {
-        topic: sim.topic,
-        title: sim.title,
-        learningGoal: sim.learningGoal ?? "",
-        spec: sim.simSpec,
-      },
-      currentHtml,
-      applied.map((f) => f.feedback),
-      feedback.feedback
+    const plan = {
+      topic: sim.topic,
+      title: sim.title,
+      learningGoal: sim.learningGoal ?? "",
+      spec: sim.simSpec,
+    };
+    const priorFeedback = applied.map((f) => f.feedback);
+    const prompt = buildRevisionPrompt(plan, currentHtml, priorFeedback, feedback.feedback);
+    const draft = await generateValidatedHtml(ctx, prompt, callMetrics);
+    // The "complete go-over": an independent pass must confirm the change kept
+    // the physics/math, the required layout, and the working simulation intact
+    // before it replaces the live artifact. Throws if it can't be verified.
+    const html = await reviewAndCorrectRevision(
+      ctx,
+      { topic: sim.topic, title: sim.title, learningGoal: sim.learningGoal ?? "", spec: sim.simSpec },
+      draft,
+      priorFeedback,
+      feedback.feedback,
+      callMetrics
     );
-    const html = await generateValidatedHtml(ctx, prompt, callMetrics);
 
     const { bucket } = getS3Config();
     const version = sim.version + 1;
