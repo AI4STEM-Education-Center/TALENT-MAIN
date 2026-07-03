@@ -5,6 +5,7 @@ import { existsSync, rmSync } from "node:fs";
 import honker from "@russellthehippo/honker-node";
 import {
   resolveQueueDbPath,
+  deriveQueueDbPath,
   EXAM_RESULTS_QUEUE,
   QUIZ_EXTRACTIONS_QUEUE,
   type ExamResultsJobPayload,
@@ -18,25 +19,51 @@ describe("resolveQueueDbPath", () => {
     else process.env.DATABASE_URL = original;
   });
 
-  it("maps the default dev sqlite url under prisma/", () => {
+  it("maps the default dev sqlite url to a sibling queue file under prisma/", () => {
     process.env.DATABASE_URL = "file:./dev.db";
-    expect(resolveQueueDbPath()).toBe(path.join(process.cwd(), "prisma", "dev.db"));
+    expect(resolveQueueDbPath()).toBe(
+      path.join(process.cwd(), "prisma", "dev.queue.db"),
+    );
   });
 
-  it("maps the prod sqlite url under prisma/data/", () => {
+  it("maps the prod sqlite url to a sibling queue file under prisma/data/", () => {
     process.env.DATABASE_URL = "file:./data/prod.db";
-    expect(resolveQueueDbPath()).toBe(path.join(process.cwd(), "prisma", "data", "prod.db"));
+    expect(resolveQueueDbPath()).toBe(
+      path.join(process.cwd(), "prisma", "data", "prod.queue.db"),
+    );
   });
 
   it("resolves a relative file path against prisma/ and strips query params", () => {
     process.env.DATABASE_URL = "file:custom.db?connection_limit=1";
-    expect(resolveQueueDbPath()).toBe(path.join(process.cwd(), "prisma", "custom.db"));
+    expect(resolveQueueDbPath()).toBe(
+      path.join(process.cwd(), "prisma", "custom.queue.db"),
+    );
   });
 
-  it("passes through an absolute file path unchanged", () => {
+  it("derives the queue file beside an absolute app db path", () => {
     const abs = path.resolve(os.tmpdir(), "abs.db");
     process.env.DATABASE_URL = `file:${abs}`;
-    expect(resolveQueueDbPath()).toBe(abs);
+    expect(resolveQueueDbPath()).toBe(
+      path.resolve(os.tmpdir(), "abs.queue.db"),
+    );
+  });
+});
+
+describe("deriveQueueDbPath", () => {
+  it("swaps a trailing .db for .queue.db", () => {
+    expect(deriveQueueDbPath("/var/data/prod.db")).toBe(
+      "/var/data/prod.queue.db",
+    );
+  });
+
+  it("appends .queue.db when there is no .db suffix", () => {
+    expect(deriveQueueDbPath("/var/data/appdb")).toBe(
+      "/var/data/appdb.queue.db",
+    );
+  });
+
+  it("leaves an in-memory database unchanged", () => {
+    expect(deriveQueueDbPath(":memory:")).toBe(":memory:");
   });
 });
 

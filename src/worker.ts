@@ -1,5 +1,4 @@
 import honker from "@russellthehippo/honker-node";
-import path from "path";
 import { processMaterial } from "./lib/vlm-engine";
 import { prisma } from "./lib/prisma";
 import { generateExamResult } from "./lib/exam-results-engine";
@@ -9,24 +8,15 @@ import {
   QUIZ_EXTRACTIONS_QUEUE,
   BACKUPS_QUEUE,
   enqueueBackup,
+  resolveQueueDbPath,
   type ExamResultsJobPayload,
   type QuizExtractionJobPayload,
 } from "./lib/queue";
 import { runBackupJob, claimDueBackup } from "./lib/backup";
 
-// Parse DATABASE_URL from process.env
-const dbUrl = process.env.DATABASE_URL || "file:./dev.db";
-let dbPath = dbUrl.replace("file:", "").split("?")[0];
-
-// Prisma resolves file:./... relative to the prisma directory.
-// The worker is typically run from the project root.
-if (dbPath === "./dev.db") {
-  dbPath = path.join(process.cwd(), "prisma", "dev.db");
-} else if (dbPath === "./data/prod.db") {
-  dbPath = path.join(process.cwd(), "prisma", "data", "prod.db");
-} else if (!path.isAbsolute(dbPath)) {
-  dbPath = path.join(process.cwd(), "prisma", dbPath);
-}
+// Honker opens its own SQLite file (a sibling of the Prisma DB); see
+// resolveQueueDbPath for why the queue never shares the app's database.
+const dbPath = resolveQueueDbPath();
 
 console.log(`[Worker] Connecting to SQLite at ${dbPath}`);
 
