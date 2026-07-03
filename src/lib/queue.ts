@@ -16,8 +16,7 @@ export type BackupJobPayload = { action: "backup" };
 
 /**
  * Map a main SQLite path to Honker's sibling queue path (`foo.db` ->
- * `foo.queue.db`). Kept as a pure helper so the one-time cutover migration
- * (docker/migrate-honker-db.cjs) can replicate the exact same derivation.
+ * `foo.queue.db`). Pure helper, split out so the derivation is easy to unit test.
  */
 export function deriveQueueDbPath(mainDbPath: string): string {
   if (mainDbPath === ":memory:" || mainDbPath === "file::memory:") {
