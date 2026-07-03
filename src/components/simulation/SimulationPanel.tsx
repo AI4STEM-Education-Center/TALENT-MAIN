@@ -5,8 +5,9 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { SimulationViewer } from "@/components/simulation/SimulationViewer";
-import { Loader2, Send } from "lucide-react";
+import { Loader2, Send, Trash2 } from "lucide-react";
 
 interface FeedbackRound {
   id: string;
@@ -47,9 +48,11 @@ export function SimulationPanel({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const confirm = useConfirm();
   const [detail, setDetail] = useState<SimDetail | null>(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [msg, setMsg] = useState("");
 
   const refresh = useCallback(async () => {
@@ -93,6 +96,30 @@ export function SimulationPanel({
       await refresh();
     } finally {
       setSending(false);
+    }
+  }
+
+  async function handleDelete() {
+    const ok = await confirm({
+      title: "Delete this simulation?",
+      description:
+        "This simulation and its feedback history are permanently removed from this question. This cannot be undone.",
+      confirmText: "Delete",
+    });
+    if (!ok) return;
+    setDeleting(true);
+    setMsg("");
+    try {
+      const res = await fetch(`/api/simulations/${simulationId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setMsg(data.error ?? "Failed to delete the simulation.");
+        return;
+      }
+      // Closing triggers the parent's refresh (see QuizEditor onOpenChange).
+      onOpenChange(false);
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -187,6 +214,15 @@ export function SimulationPanel({
               </div>
             )}
           </>
+        )}
+
+        {detail && canGiveFeedback && (
+          <div className="flex justify-end border-t pt-3">
+            <Button variant="ghost" size="sm" onClick={handleDelete} disabled={deleting || sending}>
+              {deleting ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4 text-destructive" />}
+              Delete simulation
+            </Button>
+          </div>
         )}
       </DialogContent>
     </Dialog>
