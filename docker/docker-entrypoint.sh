@@ -32,6 +32,20 @@ if [ -f "$DB_DIR/.pending-restore" ] && [ -f "$DB_DIR/.restore-staged.db" ]; the
 fi
 rm -f "$DB_DIR/.pending-restore"
 
+# One-time cutover: move any legacy `_honker_*` queue tables OUT of the app DB
+# into their own sibling `<name>.queue.db` file (see docker/migrate-honker-db.cjs).
+# Historically Honker shared the Prisma DB, so `db push` wants to drop those
+# unknown tables — a destructive diff that makes the production push refuse. This
+# migrates them losslessly first so the push diff is purely additive. No-ops once
+# migrated. If it fails we SKIP the push rather than risk dropping queued jobs.
+echo "Checking Honker queue tables (one-time cutover)..."
+node ./migrate-honker-db.cjs || {
+  echo "ERROR: Honker queue migration failed. Skipping schema push to avoid" >&2
+  echo "       dropping queued jobs. The app will start, but schema changes are" >&2
+  echo "       NOT applied until this is resolved." >&2
+  exec node server.js
+}
+
 echo "Applying database schema..."
 # In production we do NOT pass --accept-data-loss: additive changes (new
 # tables/columns) still apply automatically, but a destructive change makes
