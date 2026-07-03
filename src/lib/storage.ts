@@ -99,6 +99,21 @@ export function quizExtractionPrefix(pdfStorageKey: string): string {
   return pdfStorageKey.slice(0, pdfStorageKey.lastIndexOf("/") + 1);
 }
 
+// ─── Question simulation keys ─────────────────────────────────────────────────
+// Same scope convention as quiz extractions: pool questions live under "pool".
+// Every (re)generation writes a NEW version — objects are immutable because
+// deep-copied questions share simulation keys the way they share figure keys,
+// so an in-place overwrite would silently change someone else's copy.
+
+export function buildSimulationKey(
+  teacherId: string | null,
+  quizId: string,
+  questionId: string,
+  version: number
+): string {
+  return `simulations/${quizExtractionScope(teacherId)}/${quizId}/${questionId}/v${version}.html`;
+}
+
 export function getS3Config(): { bucket: string; region: string } {
   const bucket = process.env.AWS_S3_BUCKET;
   const region = process.env.AWS_REGION;
@@ -183,6 +198,30 @@ export async function resolveModelImageUrl(
   return opts.inlineBase64
     ? getS3ObjectAsDataUrl(bucket, key)
     : presignGetUrl(bucket, key, opts.expiresIn);
+}
+
+/**
+ * Upload a server-generated object directly (no presign round-trip). Used by
+ * the background worker for simulation HTML artifacts.
+ */
+export async function putS3Object(
+  bucket: string,
+  key: string,
+  body: string | Uint8Array,
+  contentType: string
+): Promise<void> {
+  const client = getS3Client();
+  await client.send(
+    new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: contentType })
+  );
+}
+
+/** Download an S3 object and decode it as UTF-8 text (simulation HTML artifacts). */
+export async function getS3ObjectAsString(bucket: string, key: string): Promise<string> {
+  const client = getS3Client();
+  const out = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+  if (!out.Body) throw new Error(`S3 object ${key} has no body`);
+  return out.Body.transformToString("utf-8");
 }
 
 export async function headS3Object(bucket: string, key: string): Promise<{ contentLength: number }> {

@@ -8,6 +8,7 @@ const VALID_USE_CASES: UseCase[] = [
   "student_chat",
   "pdf_description",
   "quiz_extraction",
+  "simulation_generation",
 ];
 
 /**

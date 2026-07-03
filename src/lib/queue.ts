@@ -9,10 +9,13 @@ import { resolveDatabaseUrl } from "./db-url";
 export const EXAM_RESULTS_QUEUE = "exam-results";
 export const QUIZ_EXTRACTIONS_QUEUE = "quiz-extractions";
 export const BACKUPS_QUEUE = "backups";
+export const SIMULATIONS_QUEUE = "simulations";
 
 export type ExamResultsJobPayload = { examResultId: string };
 export type QuizExtractionJobPayload = { extractionId: string };
 export type BackupJobPayload = { action: "backup" };
+// feedbackId present = a revision of an existing artifact; absent = first generation.
+export type SimulationJobPayload = { simulationId: string; feedbackId?: string };
 
 /**
  * Map a main SQLite path to Honker's sibling queue path (`foo.db` ->
@@ -66,6 +69,18 @@ export function enqueueQuizExtraction(extractionId: string): void {
   const db = honker.open(resolveQueueDbPath());
   const payload: QuizExtractionJobPayload = { extractionId };
   db.queue(QUIZ_EXTRACTIONS_QUEUE).enqueue(payload);
+}
+
+/**
+ * Enqueue a background job to generate (or, with a feedbackId, revise) one
+ * question's simulation. Like enqueueQuizExtraction, callers must NOT swallow
+ * failures: the job is the feature, so trigger routes mark the simulation row
+ * FAILED if this throws.
+ */
+export function enqueueSimulation(simulationId: string, feedbackId?: string): void {
+  const db = honker.open(resolveQueueDbPath());
+  const payload: SimulationJobPayload = feedbackId ? { simulationId, feedbackId } : { simulationId };
+  db.queue(SIMULATIONS_QUEUE).enqueue(payload);
 }
 
 /**
