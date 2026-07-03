@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import honker from "@russellthehippo/honker-node";
-import path from "path";
+import { resolveQueueDbPath } from "@/lib/queue";
 
 export const runtime = "nodejs";
 
@@ -9,20 +9,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string; materialId: string }> }
 ) {
   const { materialId } = await params;
-  
-  // Resolve SQLite database path
-  const dbUrl = process.env.DATABASE_URL || "file:./dev.db";
-  let dbPath = dbUrl.replace("file:", "").split("?")[0];
-  if (dbPath === "./dev.db") {
-    dbPath = path.join(process.cwd(), "prisma", "dev.db");
-  } else if (dbPath === "./data/prod.db") {
-    dbPath = path.join(process.cwd(), "prisma", "data", "prod.db");
-  } else if (!path.isAbsolute(dbPath)) {
-    dbPath = path.join(process.cwd(), "prisma", dbPath);
-  }
 
-  // Open the Honker database connection and queue
-  const db = honker.open(dbPath);
+  // Open the Honker queue (its own SQLite file, a sibling of the Prisma DB).
+  const db = honker.open(resolveQueueDbPath());
   const materialsQueue = db.queue("materials");
 
   // Enqueue the job for the background worker

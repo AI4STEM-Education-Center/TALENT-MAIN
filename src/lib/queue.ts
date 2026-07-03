@@ -1,10 +1,10 @@
 import honker from "@russellthehippo/honker-node";
-import path from "path";
+import { resolveDatabaseUrl } from "./db-url";
 
 // Centralizes the Honker (SQLite-backed job queue) wiring shared by the API
-// routes that enqueue jobs and the background worker that consumes them. The
-// db-path resolution mirrors the existing inline logic in worker.ts and the
-// materials `process` route so all producers/consumers open the same file.
+// routes that enqueue jobs and the background worker that consumes them. All
+// producers/consumers resolve the queue file the same way so they open the
+// same database.
 
 export const EXAM_RESULTS_QUEUE = "exam-results";
 export const QUIZ_EXTRACTIONS_QUEUE = "quiz-extractions";
@@ -15,20 +15,35 @@ export type QuizExtractionJobPayload = { extractionId: string };
 export type BackupJobPayload = { action: "backup" };
 
 /**
- * Resolve the absolute SQLite path Honker should open from DATABASE_URL,
- * matching Prisma's relative `file:` resolution (relative to the prisma dir).
+ * Map a main SQLite path to Honker's sibling queue path (`foo.db` ->
+ * `foo.queue.db`). Pure helper, split out so the derivation is easy to unit test.
+ */
+export function deriveQueueDbPath(mainDbPath: string): string {
+  if (mainDbPath === ":memory:" || mainDbPath === "file::memory:") {
+    return mainDbPath;
+  }
+  return mainDbPath.endsWith(".db")
+    ? `${mainDbPath.slice(0, -".db".length)}.queue.db`
+    : `${mainDbPath}.queue.db`;
+}
+
+/**
+ * Absolute path to the DEDICATED SQLite file Honker opens for its queue tables.
+ *
+ * Honker creates its own `_honker_*` tables in whatever file it opens. That used
+ * to be the same file Prisma manages, which made `prisma db push` want to DROP
+ * those unknown tables — a destructive diff that (in production, where
+ * `--accept-data-loss` is withheld) makes the whole push refuse, so legitimate
+ * additive schema changes never apply. We give Honker a sibling `<name>.queue.db`
+ * so the app schema and the queue never share a file: Prisma never sees the
+ * `_honker_*` tables, and the queue is structurally immune to schema-push data
+ * loss. Resolution reuses resolveDatabaseUrl so the queue file always sits
+ * beside the exact file Prisma opens.
  */
 export function resolveQueueDbPath(): string {
-  const dbUrl = process.env.DATABASE_URL || "file:./dev.db";
-  let dbPath = dbUrl.replace("file:", "").split("?")[0];
-  if (dbPath === "./dev.db") {
-    dbPath = path.join(process.cwd(), "prisma", "dev.db");
-  } else if (dbPath === "./data/prod.db") {
-    dbPath = path.join(process.cwd(), "prisma", "data", "prod.db");
-  } else if (!path.isAbsolute(dbPath)) {
-    dbPath = path.join(process.cwd(), "prisma", dbPath);
-  }
-  return dbPath;
+  const url = resolveDatabaseUrl();
+  const mainPath = url.startsWith("file:") ? url.slice("file:".length) : url;
+  return deriveQueueDbPath(mainPath);
 }
 
 /**
