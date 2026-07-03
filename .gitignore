@@ -45,6 +45,11 @@ next-env.d.ts
 /test/test.db-journal
 /test/test.db-wal
 /test/test.db-shm
+# Honker queue DB (sibling of the test DB; created by queue/worker tests)
+/test/test.queue.db
+/test/test.queue.db-journal
+/test/test.queue.db-wal
+/test/test.queue.db-shm
 /coverage
 
 # Python legacy (keep .venv ignored)
