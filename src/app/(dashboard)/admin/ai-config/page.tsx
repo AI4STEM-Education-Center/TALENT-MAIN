@@ -101,6 +101,7 @@ const USE_CASE_LABELS: Record<string, string> = {
   student_chat: "Student Chat",
   pdf_description: "PDF Description Generation",
   quiz_extraction: "Quiz PDF Extraction",
+  simulation_generation: "Question Simulation Generation",
 };
 
 const EMPTY_PROVIDER_FORM: ProviderForm = {

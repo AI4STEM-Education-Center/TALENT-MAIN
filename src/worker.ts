@@ -3,14 +3,17 @@ import { processMaterial } from "./lib/vlm-engine";
 import { prisma } from "./lib/prisma";
 import { generateExamResult } from "./lib/exam-results-engine";
 import { runQuizExtraction } from "./lib/quiz-extraction-engine";
+import { runSimulationJob } from "./lib/simulation-engine";
 import {
   EXAM_RESULTS_QUEUE,
   QUIZ_EXTRACTIONS_QUEUE,
   BACKUPS_QUEUE,
+  SIMULATIONS_QUEUE,
   enqueueBackup,
   resolveQueueDbPath,
   type ExamResultsJobPayload,
   type QuizExtractionJobPayload,
+  type SimulationJobPayload,
 } from "./lib/queue";
 import { runBackupJob, claimDueBackup } from "./lib/backup";
 
@@ -25,6 +28,7 @@ const materialsQueue = db.queue("materials");
 const examResultsQueue = db.queue(EXAM_RESULTS_QUEUE);
 const quizExtractionsQueue = db.queue(QUIZ_EXTRACTIONS_QUEUE);
 const backupsQueue = db.queue(BACKUPS_QUEUE);
+const simulationsQueue = db.queue(SIMULATIONS_QUEUE);
 
 async function consumeMaterials() {
   console.log("[Worker] Starting Honker queue consumer for 'materials'...");
@@ -94,6 +98,26 @@ async function consumeQuizExtractions() {
   }
 }
 
+async function consumeSimulations() {
+  console.log(`[Worker] Starting Honker queue consumer for '${SIMULATIONS_QUEUE}'...`);
+  for await (const job of simulationsQueue.claim("simulations-worker")) {
+    const { simulationId, feedbackId } = job.payload as SimulationJobPayload;
+    console.log(
+      `[Worker] Picked up job ${job.id} for simulation ${simulationId}${feedbackId ? ` (feedback ${feedbackId})` : ""}`
+    );
+    try {
+      // runSimulationJob is idempotent + records FAILED internally, so it
+      // always returns; ack unconditionally to avoid blocking the queue.
+      await runSimulationJob(simulationId, feedbackId);
+      console.log(`[Worker] Finished simulation job ${job.id}`);
+    } catch (err: any) {
+      console.error(`[Worker] Error on simulation job ${job.id}:`, err?.message ?? err);
+    } finally {
+      job.ack();
+    }
+  }
+}
+
 async function consumeBackups() {
   console.log(`[Worker] Starting Honker queue consumer for '${BACKUPS_QUEUE}'...`);
   for await (const job of backupsQueue.claim("backups-worker")) {
@@ -141,6 +165,7 @@ async function startWorker() {
       consumeMaterials(),
       consumeExamResults(),
       consumeQuizExtractions(),
+      consumeSimulations(),
       consumeBackups(),
       runBackupScheduler(),
     ]);
