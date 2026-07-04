@@ -62,8 +62,12 @@ export async function presignOptionImage(o: OptionImageSource): Promise<string |
 /**
  * Map a list of question rows so each option's raw image key + bucket are
  * dropped and replaced with a transient presigned `imageUrl` (null when absent
- * or un-presignable). The question fields and every other option field pass
- * through. Compose after `attachFigureUrls` to cover both figures and choices.
+ * or un-presignable). `hasImage` is the DURABLE image signal: it reflects the
+ * stored key, not the presign outcome, so a transient presign failure can't
+ * make an image option look text-less-and-imageless (the editor would then
+ * drop it on save, permanently losing the crop). The question fields and every
+ * other option field pass through. Compose after `attachFigureUrls` to cover
+ * both figures and choices.
  */
 export async function attachOptionImageUrls<
   O extends OptionImageSource,
@@ -71,7 +75,11 @@ export async function attachOptionImageUrls<
 >(
   questions: T[]
 ): Promise<
-  Array<Omit<T, "options"> & { options: Array<Omit<O, "imageStorageKey" | "imageBucket"> & { imageUrl: string | null }> }>
+  Array<
+    Omit<T, "options"> & {
+      options: Array<Omit<O, "imageStorageKey" | "imageBucket"> & { imageUrl: string | null; hasImage: boolean }>;
+    }
+  >
 > {
   return Promise.all(
     questions.map(async (q) => {
@@ -79,7 +87,7 @@ export async function attachOptionImageUrls<
         q.options.map(async (o) => {
           const imageUrl = await presignOptionImage(o);
           const { imageStorageKey: _key, imageBucket: _bucket, ...rest } = o;
-          return { ...rest, imageUrl };
+          return { ...rest, imageUrl, hasImage: Boolean(o.imageStorageKey) };
         })
       );
       return { ...q, options };

@@ -126,7 +126,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   return NextResponse.json(cq);
 }
 
-// DELETE: remove quiz from class
+// DELETE: remove quiz from class. Removing the LAST class link deletes the
+// quiz itself (questions cascade; QuizAttempt.quizId is SetNull so students'
+// attempt history survives) — a quiz in no class must not linger as an
+// importable ghost. S3 assets are not touched here: figure/simulation objects
+// can be shared by deep copies, so the worker's S3 GC reference-checks and
+// sweeps them once nothing references them.
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user || session.user.role !== "TEACHER") {
@@ -138,6 +143,20 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const cls = await getTeacherClass(session.user.id, id);
   if (!cls) return NextResponse.json({ error: "Class not found" }, { status: 404 });
 
-  await prisma.classQuiz.deleteMany({ where: { classId: id, quizId } });
-  return NextResponse.json({ success: true });
+  const removed = await prisma.classQuiz.deleteMany({ where: { classId: id, quizId } });
+
+  let quizDeleted = false;
+  // Only a request that actually unlinked something may escalate to deleting
+  // the quiz — otherwise a DELETE naming a never-assigned quiz would erase it.
+  if (removed.count > 0 && (await prisma.classQuiz.count({ where: { quizId } })) === 0) {
+    const quiz = await prisma.quiz.findUnique({ where: { id: quizId } });
+    // Owner check is belt-and-braces: assignment (POST above) only ever links
+    // the class teacher's own quizzes, and pool quizzes are never linked.
+    if (quiz && quiz.teacherId === cls.teacherId) {
+      await prisma.quiz.delete({ where: { id: quizId } });
+      quizDeleted = true;
+    }
+  }
+
+  return NextResponse.json({ success: true, quizDeleted });
 }

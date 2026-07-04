@@ -264,6 +264,41 @@ export async function listS3Objects(bucket: string, prefix: string): Promise<str
   return keys;
 }
 
+export type S3ObjectMeta = { key: string; lastModified: Date | null };
+
+/**
+ * Like listS3Objects but keeps each object's LastModified, which the S3
+ * garbage collector needs to grant a grace period to freshly-written objects
+ * (their DB reference may not be committed yet).
+ */
+export async function listS3ObjectsWithMeta(bucket: string, prefix: string): Promise<S3ObjectMeta[]> {
+  const client = getS3Client();
+  let isTruncated = true;
+  let continuationToken: string | undefined;
+  const objects: S3ObjectMeta[] = [];
+
+  while (isTruncated) {
+    const response = await client.send(
+      new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: prefix,
+        ContinuationToken: continuationToken,
+      })
+    );
+
+    if (response.Contents) {
+      for (const item of response.Contents) {
+        if (item.Key) objects.push({ key: item.Key, lastModified: item.LastModified ?? null });
+      }
+    }
+
+    isTruncated = response.IsTruncated ?? false;
+    continuationToken = response.NextContinuationToken;
+  }
+
+  return objects;
+}
+
 export async function deleteS3Objects(bucket: string, keys: string[]): Promise<void> {
   const client = getS3Client();
   // AWS limits delete batch to 1000 objects.

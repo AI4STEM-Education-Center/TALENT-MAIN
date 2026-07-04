@@ -12,6 +12,9 @@ import { formatAiMetrics } from "@/lib/ai-metrics";
 
 const MAX_PAGES = 20;
 const POLL_MS = 2500;
+// A PENDING_UPLOAD younger than this may be another tab actively uploading —
+// don't offer a Discard that would kill it mid-flight.
+const PENDING_UPLOAD_STALL_MS = 15 * 60 * 1000;
 
 type ExtractionStatus = "PENDING_UPLOAD" | "EXTRACTING" | "AWAITING_REVIEW" | "COMMITTED" | "FAILED";
 
@@ -155,6 +158,14 @@ export function QuizPdfImport({
           setPhase("review");
         } else if (data.status === "FAILED") {
           setPhase("failed");
+        } else if (data.status === "PENDING_UPLOAD") {
+          // Only reachable via mount-resume. If the upload stalled long ago
+          // (tab closed mid-upload), surface it like a failure so the teacher
+          // gets a Discard button instead of a dead end. A FRESH one may be
+          // another tab still uploading — leave this flow idle and untouched
+          // (the worker's GC discards it after a day if truly abandoned).
+          const age = Date.now() - new Date(data.createdAt).getTime();
+          if (age > PENDING_UPLOAD_STALL_MS) setPhase("failed");
         } else if (data.status === "COMMITTED") {
           setPhase("idle");
           setExtractionId(null);
@@ -451,10 +462,15 @@ export function QuizPdfImport({
         {phase === "failed" && (
           <div className="space-y-3">
             <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-              {detail?.errorMessage || "Extraction failed."}
+              {detail?.status === "PENDING_UPLOAD"
+                ? `The upload of "${detail.originalName}" never finished. Discard it and choose the PDF again.`
+                : detail?.errorMessage || "Extraction failed."}
             </div>
             <div className="flex gap-2">
-              <Button size="sm" onClick={retry}><RotateCw className="size-4" /> Retry</Button>
+              {/* No Retry for a half-uploaded PDF — there is nothing to re-run. */}
+              {detail?.status !== "PENDING_UPLOAD" && (
+                <Button size="sm" onClick={retry}><RotateCw className="size-4" /> Retry</Button>
+              )}
               <Button size="sm" variant="outline" onClick={discard}><Trash2 className="size-4" /> Discard</Button>
             </div>
           </div>
