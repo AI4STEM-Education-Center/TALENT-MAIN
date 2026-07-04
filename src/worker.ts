@@ -16,6 +16,7 @@ import {
   type SimulationJobPayload,
 } from "./lib/queue";
 import { runBackupJob, claimDueBackup } from "./lib/backup";
+import { runS3Gc } from "./lib/s3-gc";
 
 // Honker opens its own SQLite file (a sibling of the Prisma DB); see
 // resolveQueueDbPath for why the queue never shares the app's database.
@@ -158,6 +159,35 @@ async function runBackupScheduler() {
   }
 }
 
+// GC cadence. The 24h object grace period in s3-gc.ts is what guarantees
+// correctness; the interval only bounds how long orphans linger.
+const S3_GC_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const S3_GC_STARTUP_DELAY_MS = 60_000;
+
+/**
+ * S3 garbage collector loop: discards abandoned quiz-PDF extractions and
+ * deletes bucket objects nothing in the database references anymore (deleted
+ * quizzes/questions/users, superseded simulation versions, committed
+ * extractions' PDFs and page rasters). The short startup delay keeps a
+ * crash-looping worker from hammering full-bucket listings.
+ */
+async function runS3GcLoop() {
+  await new Promise((resolve) => setTimeout(resolve, S3_GC_STARTUP_DELAY_MS));
+  console.log("[Worker] S3 GC loop started (6h interval)...");
+  for (;;) {
+    try {
+      const result = await runS3Gc();
+      console.log(
+        `[Worker] S3 GC done: ${result.staleExtractionsDiscarded} stale extraction(s) discarded, ` +
+          `${result.orphanObjectsDeleted} orphaned object(s) deleted`
+      );
+    } catch (err: any) {
+      console.error("[Worker] S3 GC run failed:", err?.message ?? err);
+    }
+    await new Promise((resolve) => setTimeout(resolve, S3_GC_INTERVAL_MS));
+  }
+}
+
 async function startWorker() {
   try {
     // Run all consumers + the scheduler concurrently; each blocks on its own loop.
@@ -168,6 +198,7 @@ async function startWorker() {
       consumeSimulations(),
       consumeBackups(),
       runBackupScheduler(),
+      runS3GcLoop(),
     ]);
   } catch (err) {
     console.error("[Worker] Fatal error in worker loop:", err);

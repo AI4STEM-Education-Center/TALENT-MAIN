@@ -80,7 +80,7 @@ export function ClassQuizzesClient({
 }) {
   const confirm = useConfirm();
   const [classQuizzes, setClassQuizzes] = useState<ClassQuiz[]>(initialClassQuizzes);
-  const [allQuizzes] = useState<Quiz[]>(initialAllQuizzes);
+  const [allQuizzes, setAllQuizzes] = useState<Quiz[]>(initialAllQuizzes);
   const [msg, setMsg] = useState("");
 
   // The quiz whose settings dialog is open, plus its working form values.
@@ -156,6 +156,8 @@ export function ClassQuizzesClient({
   async function removeQuiz(quizId: string) {
     const ok = await confirm({
       title: "Remove this quiz from the class?",
+      description:
+        "If this is the only class using the quiz, the quiz and its questions are permanently deleted (students' past attempts are kept).",
       confirmText: "Remove",
       variant: "destructive",
     });
@@ -166,8 +168,15 @@ export function ClassQuizzesClient({
       body: JSON.stringify({ quizId }),
     });
     if (res.ok) {
+      const { quizDeleted } = await res.json();
       setClassQuizzes((prev) => prev.filter((cq) => cq.quizId !== quizId));
-      setMsg("Quiz removed.");
+      if (quizDeleted) {
+        // It's gone from the library too — don't reoffer it under "Add Quizzes".
+        setAllQuizzes((prev) => prev.filter((q) => q.id !== quizId));
+        setMsg("Quiz removed — it was in no other class, so it has been deleted.");
+      } else {
+        setMsg("Quiz removed from this class.");
+      }
     }
   }
 

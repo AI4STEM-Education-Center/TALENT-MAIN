@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
@@ -294,10 +295,10 @@ export default function AdminMaterialsPage() {
                   currentClassMaterials.map((mat) => (
                     <tr key={mat.id}>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        <div className="flex items-center gap-2">
+                        <Link href={`/admin/materials/${mat.id}`} className="flex items-center gap-2 hover:text-blue-600 hover:underline">
                           <FileText className="size-4 text-gray-400 shrink-0" />
                           {mat.title || mat.originalName}
-                        </div>
+                        </Link>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {mat.processingStatus === "SUCCESS" && (

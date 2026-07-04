@@ -19,7 +19,9 @@ import { SimulationPanel } from "@/components/simulation/SimulationPanel";
 import { Plus, Pencil, Trash2, Check, X, ArrowLeft, FileQuestion, Upload, Download, Atom } from "lucide-react";
 
 type AnswerMode = "SINGLE_SELECT" | "MULTI_SELECT" | "NUMERIC";
-interface Option { id?: string; text: string; isCorrect: boolean; imageUrl?: string | null; imageAlt?: string | null }
+// hasImage is the durable "this option is an image choice" signal; imageUrl is
+// a transient presigned URL that can be null even when a stored crop exists.
+interface Option { id?: string; text: string; isCorrect: boolean; imageUrl?: string | null; imageAlt?: string | null; hasImage?: boolean }
 interface QuestionSimulation {
   id: string;
   status: string;
@@ -57,7 +59,11 @@ interface QuizDetail {
 }
 interface ImportSummary { importedCount: number; skippedCount: number; errorCount: number; bankTitle?: string; errors?: { index: number; sourceQuestionId?: string; message: string }[] }
 
-const emptyOptions = () => [{ id: crypto.randomUUID(), text: "", isCorrect: false }, { id: crypto.randomUUID(), text: "", isCorrect: false }, { id: crypto.randomUUID(), text: "", isCorrect: false }, { id: crypto.randomUUID(), text: "", isCorrect: false }];
+// FormOption carries imageUrl/imageAlt so image answer-choices survive an
+// edit round-trip; blank text-only rows are what new questions start from.
+type FormOption = { id: string; text: string; isCorrect: boolean; imageUrl?: string | null; imageAlt?: string | null; hasImage?: boolean };
+const emptyOption = (): FormOption => ({ id: crypto.randomUUID(), text: "", isCorrect: false });
+const emptyOptions = (): FormOption[] => [emptyOption(), emptyOption(), emptyOption(), emptyOption()];
 
 /**
  * Full quiz editor: rename/regroup the quiz, add/edit/delete questions, import
@@ -163,7 +169,16 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
       // Keep choice options even for a NUMERIC question (usually empty), so a
       // teacher who switches the type back doesn't lose any prior options.
       options: q.options.length > 0
-        ? q.options.map((o) => ({ id: o.id ?? crypto.randomUUID(), text: o.text, isCorrect: o.isCorrect }))
+        ? q.options.map((o) => ({
+            id: o.id ?? crypto.randomUUID(),
+            text: o.text,
+            isCorrect: o.isCorrect,
+            // Image choices ride along so a text edit doesn't drop them: the
+            // id is echoed to PATCH, which preserves the stored crop by id.
+            imageUrl: o.imageUrl ?? null,
+            imageAlt: o.imageAlt ?? null,
+            hasImage: o.hasImage ?? Boolean(o.imageUrl),
+          }))
         : emptyOptions(),
       answerNumeric: q.answerNumeric != null ? String(q.answerNumeric) : "",
       answerTolerance: q.answerTolerance != null ? String(q.answerTolerance) : "",
@@ -231,7 +246,11 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
         ? { id: editingQuestion.id, text: form.text, difficultyLevel: form.difficultyLevel, ...numericFields }
         : { text: form.text, difficultyLevel: form.difficultyLevel, quizId, ...numericFields };
     } else {
-      const validOptions = form.options.filter((o) => o.text.trim());
+      // An option counts if it has text OR is an image choice (image options
+      // store text = "" by design — see the Option schema comment). hasImage,
+      // not imageUrl, is the image signal: a transient presign failure must
+      // not get a stored crop silently filtered out and deleted on save.
+      const validOptions = form.options.filter((o) => o.text.trim() || o.hasImage);
       if (validOptions.length < 2) { setMsg("Add at least 2 options."); return; }
       if (!validOptions.some((o) => o.isCorrect)) { setMsg("Mark one option as correct."); return; }
       body = editingQuestion
@@ -467,7 +486,17 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
                 {form.options.map((opt, i) => (
                   <div key={opt.id ?? i} className="flex items-center gap-2">
                     <button type="button" aria-label={opt.isCorrect ? "Mark as incorrect" : "Mark as correct"} onClick={() => markCorrect(i)} className={`size-4 border-2 shrink-0 ${form.answerMode === "MULTI_SELECT" ? "rounded" : "rounded-full"} ${opt.isCorrect ? "bg-green-500 border-green-500" : "border-muted-foreground"}`} />
-                    <Input placeholder={`Option ${i + 1}`} value={opt.text} onChange={(e) => setOption(i, "text", e.target.value)} />
+                    {opt.imageUrl ? (
+                      // Image choice from the PDF pipeline: shown, not editable here.
+                      // Plain <img>: short-lived presigned S3 URL (see figure img below).
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={opt.imageUrl} alt={opt.imageAlt ?? `Option ${i + 1}`} className="max-h-16 rounded border bg-white" />
+                    ) : opt.hasImage ? (
+                      // Stored crop whose preview failed to presign — still an image choice.
+                      <span className="text-sm text-muted-foreground italic">Image choice (preview unavailable)</span>
+                    ) : (
+                      <Input placeholder={`Option ${i + 1}`} value={opt.text} onChange={(e) => setOption(i, "text", e.target.value)} />
+                    )}
                   </div>
                 ))}
                 <Button variant="ghost" size="sm" onClick={addOption}>

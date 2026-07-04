@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { canManage, getContentActor } from "@/lib/quiz-access";
 import { mapStagedToQuestionData, validateCommitQuestions } from "@/lib/quiz-extraction";
-import { headS3Object, quizExtractionPrefix } from "@/lib/storage";
+import { deleteS3Objects, headS3Object, listS3Objects, quizExtractionPrefix } from "@/lib/storage";
 
 export const runtime = "nodejs";
 
@@ -145,6 +145,21 @@ export async function POST(
 
     return { importId: questionImport.id, importedCount, skippedCount };
   });
+
+  // The extraction is committed — the source PDF and page rasters have served
+  // their purpose, so delete them (plus their page rows) rather than keep them
+  // forever. figures/ stays: the just-created Question/Option rows reference
+  // those objects in place. Best-effort — the worker's S3 GC sweeps leftovers.
+  try {
+    const prefix = quizExtractionPrefix(extraction.storageKey);
+    const keys = (await listS3Objects(extraction.bucket, prefix)).filter(
+      (key) => !key.startsWith(figurePrefix)
+    );
+    if (keys.length > 0) await deleteS3Objects(extraction.bucket, keys);
+    await prisma.quizPdfExtractionPage.deleteMany({ where: { extractionId: extraction.id } });
+  } catch (e) {
+    console.error("Post-commit extraction cleanup failed:", e);
+  }
 
   return NextResponse.json({
     importId: result.importId,
