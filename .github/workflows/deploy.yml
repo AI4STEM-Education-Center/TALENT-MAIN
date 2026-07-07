@@ -38,12 +38,16 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # ── Build & Push Docker image ─────────────────────────────────────────
+      # Layer cache lives in GHCR (type=registry) — see ci.yml's build-image
+      # job for why. The dev cache ref matters here: main is promoted from dev
+      # with an identical tree, so most layers hit the cache dev already built.
       - name: Build and push Docker image
         uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/Dockerfile
           push: true
+          provenance: false
           build-args: |
             APP_VERSION=${{ steps.version.outputs.version }}
             APP_RELEASE_DATE=${{ steps.version.outputs.release_date }}
@@ -51,8 +55,10 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:v${{ steps.version.outputs.version }}
-          cache-from: type=gha,scope=prod
-          cache-to: type=gha,mode=max,scope=prod
+          cache-from: |
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-prod
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-dev
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-prod,mode=max,image-manifest=true,oci-mediatypes=true
 
       - name: Create git tag
         uses: actions/github-script@v9
