@@ -31,6 +31,24 @@ __pycache__
 docker-compose*.yml
 data/
 
+# Tests, docs, and dev tooling — never read by the image build. Excluding them
+# keeps test/doc-only changes from invalidating the builder's `COPY . .` layer
+# (which would force a full `next build` inside Docker for nothing).
+# CHANGELOG.md and version.json must stay in the context: next.config.mjs
+# inlines them at build time.
+test
+docs
+benchmark
+coverage
+scripts
+dist
+vitest.config.ts
+vitest.setup.ts
+tsconfig.tsbuildinfo
+package.tmp.json
+.claude
+SECURITY.md
+
 # Misc
 README.md
 .github
