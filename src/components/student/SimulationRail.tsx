@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 import { Atom, ChevronRight, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import {
@@ -20,7 +20,7 @@ import {
 /**
  * Must match the `lg:` breakpoint of the results-page grid: below it the rail
  * renders as a stacked section and an active simulation opens full-screen; at
- * or above it the active simulation takes over the whole right column.
+ * or above it the active simulation takes over the wide side of the grid.
  */
 const DESKTOP_QUERY = "(min-width: 1024px)";
 
@@ -42,29 +42,74 @@ const displayTitle = (sim: StoredSimulationRecommendation) =>
   sim.title ?? sim.topic ?? "Interactive simulation";
 
 /**
+ * Topic-switcher chips shown above an active simulation (both layouts).
+ * Rendered only when there is more than one simulation to switch between.
+ */
+function SimulationChips({
+  sims,
+  activeId,
+  onSelect,
+}: {
+  sims: StoredSimulationRecommendation[];
+  activeId: string;
+  onSelect: (id: string) => void;
+}) {
+  if (sims.length < 2) return null;
+  return (
+    <div className="flex gap-2 overflow-x-auto pb-1">
+      {sims.map((sim) => {
+        const isActive = sim.simulationId === activeId;
+        return (
+          <button
+            key={sim.simulationId}
+            type="button"
+            onClick={() => onSelect(sim.simulationId)}
+            aria-pressed={isActive}
+            className={cn(
+              "shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+              isActive
+                ? "border-primary bg-primary/10 text-primary"
+                : "text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+            )}
+          >
+            {displayTitle(sim)}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
  * Student-facing interactive simulations surfaced with the post-quiz
  * recommendations. Like the material cards, these carry NO per-question
  * framing — each simulation teaches a broad topic from the quiz (that
  * constraint is enforced when the simulation is generated), so nothing here
  * hints at which answers were right or wrong beyond the topics to revisit.
  *
- * All simulations start collapsed (no physics loop boots with the page). On
- * desktop the list lives in the results page's right column and an activated
- * simulation expands to fill that entire column; on mobile activation opens a
- * full-screen dialog. Only one iframe is ever mounted at a time.
+ * All simulations start collapsed (no physics loop boots with the page). The
+ * active-simulation state is owned by the results page, because activating a
+ * simulation on desktop flips the page grid so the simulation gets the whole
+ * right side at full viewport height while the summary shrinks into the
+ * narrow column; on mobile activation opens a full-screen dialog. Only one
+ * iframe is ever mounted at a time.
  */
 export function SimulationRail({
   simulations,
   attemptId,
+  activeId,
+  onActiveChange,
 }: {
   simulations: StoredSimulationRecommendation[];
   /** Links telemetry sessions to the attempt whose results surfaced the sims. */
   attemptId?: string;
+  /** Owned by the results page so it can widen this rail's grid column. */
+  activeId: string | null;
+  onActiveChange: (id: string | null) => void;
 }) {
   // Defensive render-time dedup: ExamResult snapshots are durable, so results
   // stored before generation-time dedup existed may still carry duplicates.
   const sims = dedupeStoredSimulations(simulations);
-  const [activeId, setActiveId] = useState<string | null>(null);
   const isDesktop = useIsDesktop();
 
   if (sims.length === 0) return null;
@@ -89,36 +134,14 @@ export function SimulationRail({
           </div>
           <button
             type="button"
-            onClick={() => setActiveId(null)}
+            onClick={() => onActiveChange(null)}
             aria-label="Close simulation"
             className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
           >
             <X className="size-4" />
           </button>
         </div>
-        {sims.length > 1 && (
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {sims.map((sim) => {
-              const isActive = sim.simulationId === active.simulationId;
-              return (
-                <button
-                  key={sim.simulationId}
-                  type="button"
-                  onClick={() => setActiveId(sim.simulationId)}
-                  aria-pressed={isActive}
-                  className={cn(
-                    "shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-                    isActive
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:bg-muted/40 hover:text-foreground"
-                  )}
-                >
-                  {displayTitle(sim)}
-                </button>
-              );
-            })}
-          </div>
-        )}
+        <SimulationChips sims={sims} activeId={active.simulationId} onSelect={onActiveChange} />
         <Card className="min-h-0 flex-1 overflow-hidden p-2">
           {/* Remount per simulation so switching restarts cleanly. */}
           <SimulationViewer
@@ -146,7 +169,7 @@ export function SimulationRail({
           <Card key={sim.simulationId} className="overflow-hidden">
             <button
               type="button"
-              onClick={() => setActiveId(sim.simulationId)}
+              onClick={() => onActiveChange(sim.simulationId)}
               className="flex w-full items-center justify-between gap-3 p-4 text-left transition-colors hover:bg-muted/40"
             >
               <span className="min-w-0">
@@ -166,18 +189,23 @@ export function SimulationRail({
       {/* Mobile/tablet: the active simulation fills the screen. Rendered only
           below the desktop breakpoint — desktop activation is handled above. */}
       {active && !isDesktop && (
-        <Dialog open onOpenChange={(open) => !open && setActiveId(null)}>
+        <Dialog open onOpenChange={(open) => !open && onActiveChange(null)}>
           <DialogContent className="inset-0 left-0 top-0 h-dvh w-full max-w-none translate-x-0 translate-y-0 grid-rows-[auto_minmax(0,1fr)] gap-0 rounded-none border-0 p-0 sm:rounded-none">
-            <DialogHeader className="space-y-0.5 border-b px-4 py-3 pr-12 text-left">
-              <DialogTitle className="text-base">{displayTitle(active)}</DialogTitle>
-              {active.learningGoal ? (
-                <DialogDescription className="text-xs">{active.learningGoal}</DialogDescription>
-              ) : (
-                <DialogDescription className="sr-only">Interactive simulation</DialogDescription>
-              )}
+            <DialogHeader className="space-y-2 border-b px-4 py-3 pr-12 text-left">
+              <div>
+                <DialogTitle className="text-base">{displayTitle(active)}</DialogTitle>
+                {active.learningGoal ? (
+                  <DialogDescription className="text-xs">{active.learningGoal}</DialogDescription>
+                ) : (
+                  <DialogDescription className="sr-only">Interactive simulation</DialogDescription>
+                )}
+              </div>
+              <SimulationChips sims={sims} activeId={active.simulationId} onSelect={onActiveChange} />
             </DialogHeader>
             <div className="min-h-0 p-2">
+              {/* Remount per simulation so switching restarts cleanly. */}
               <SimulationViewer
+                key={active.simulationId}
                 simulationId={active.simulationId}
                 title={displayTitle(active)}
                 telemetry={{ attemptId, surface: "mobile" }}
