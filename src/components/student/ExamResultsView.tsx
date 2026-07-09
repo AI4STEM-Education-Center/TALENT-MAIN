@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ScoreBanner } from "@/components/student/QuizReviewResult";
 import { HolisticRecommendations } from "@/components/student/HolisticRecommendations";
 import { SimulationRail } from "@/components/student/SimulationRail";
+import { useContentFullWidth } from "@/components/dashboard/content-width";
 import { cn } from "@/lib/utils";
 import {
   RESULT_STATUS,
@@ -122,6 +123,9 @@ export function ExamResultsView({
 
   const hasSimulations = ai.simulations.length > 0;
   const simOpen = activeSimId !== null;
+  // The dashboard layout caps pages at max-w-7xl, which our own max-w-none
+  // can't escape — ask it to lift the cap while a simulation is open.
+  useContentFullWidth(simOpen);
 
   return (
     <div
