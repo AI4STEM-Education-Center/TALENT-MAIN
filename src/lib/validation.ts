@@ -1,5 +1,10 @@
 import { z } from "zod";
 import { NextResponse } from "next/server";
+import {
+  MAX_TELEMETRY_MS,
+  MAX_TELEMETRY_COUNT,
+  sanitizeControlCounts,
+} from "./simulation-telemetry";
 
 /**
  * Centralized request-body validation built on zod. Routes parse untrusted
@@ -96,6 +101,44 @@ export const conceptMappingsImportSchema = z
   .refine((value) => value.mappings.length + value.externalRefs.length > 0, {
     message: "At least one mapping or external reference is required.",
   });
+
+// ─── Simulation telemetry ───────────────────────────────────────────────────
+// Payloads for the student simulation-session endpoints. Durations/counters
+// are clamped (not rejected) past their caps — see simulation-telemetry.ts —
+// so an overflowing honest session still records.
+
+const boundedMs = z
+  .number()
+  .int()
+  .min(0)
+  .transform((v) => Math.min(v, MAX_TELEMETRY_MS));
+const boundedCount = z
+  .number()
+  .int()
+  .min(0)
+  .transform((v) => Math.min(v, MAX_TELEMETRY_COUNT));
+
+export const simulationSessionCreateSchema = z.object({
+  attemptId: z
+    .string()
+    .max(64)
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
+  surface: z.enum(["rail", "mobile"]),
+});
+
+export const simulationSessionUpdateSchema = z.object({
+  dwellMs: boundedMs,
+  activeMs: boundedMs,
+  interactionCount: boundedCount,
+  paramChanges: boundedCount,
+  controls: z
+    .record(z.string().max(200), z.number().int().min(0))
+    .optional()
+    .transform((v) => sanitizeControlCounts(v ?? {})),
+  ended: z.boolean().default(false),
+});
 
 export type ParseResult<T> =
   | { ok: true; data: T }
