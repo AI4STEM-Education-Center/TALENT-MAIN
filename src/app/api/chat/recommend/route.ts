@@ -20,6 +20,7 @@ import {
   type SelectedMaterial,
   type PageSelection,
 } from "@/lib/recommendation";
+import { logApiError } from "@/lib/system-log";
 
 export const runtime = "nodejs";
 
@@ -280,7 +281,7 @@ export async function POST() {
             isLocal
           );
         } catch (err) {
-          console.error("[Recommend] Failed to build a recommendation:", err);
+          logApiError("CHAT_RECOMMEND", err, "Failed to build a recommendation");
           return null;
         }
       })

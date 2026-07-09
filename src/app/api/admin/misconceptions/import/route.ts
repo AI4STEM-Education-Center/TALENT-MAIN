@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rate-limit";
 import { parseBody, misconceptionsImportSchema } from "@/lib/validation";
+import { logApiError } from "@/lib/system-log";
 
 // POST /api/admin/misconceptions/import
 // Admin-only. Body: { misconceptions: ParsedMisconception[] } (already parsed
@@ -76,7 +77,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(result);
   } catch (error) {
-    console.error("[ADMIN_MISCONCEPTIONS_IMPORT]", error);
+    logApiError("ADMIN_MISCONCEPTIONS_IMPORT", error);
     return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }

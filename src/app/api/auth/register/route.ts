@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { normalizeEmail, normalizeUsername, validatePassword } from "@/lib/account-validation";
 import { rateLimit } from "@/lib/rate-limit";
 import { parseBody, registerSchema } from "@/lib/validation";
+import { logApiError } from "@/lib/system-log";
 
 export async function POST(req: NextRequest) {
   // Throttle signup-token guessing and account-creation abuse per IP.
@@ -78,7 +79,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `${field} already in use.` }, { status: 409 });
     }
 
-    console.error("[REGISTER]", err);
+    logApiError("REGISTER", err);
     return NextResponse.json({ error: "Internal server error." }, { status: 500 });
   }
 }

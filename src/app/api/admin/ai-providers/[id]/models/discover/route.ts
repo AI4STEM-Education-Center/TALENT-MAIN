@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { decryptApiKey } from "@/lib/crypto";
+import { logApiError } from "@/lib/system-log";
 
 /**
  * POST /api/admin/ai-providers/[id]/models/discover
@@ -111,7 +112,7 @@ export async function POST(
       );
     }
 
-    console.error("[AI_MODELS_DISCOVER]", error);
+    logApiError("AI_MODELS_DISCOVER", error);
     return NextResponse.json(
       { error: "Failed to discover models from the provider" },
       { status: 502 }

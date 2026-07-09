@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { resolveProvider, createOpenAIClient, type UseCase } from "@/lib/ai-provider";
 import { streamChatCompletion } from "@/lib/ai-streaming";
+import { logApiError } from "@/lib/system-log";
 
 const VALID_USE_CASES: UseCase[] = [
   "teacher_chat",
@@ -86,7 +87,7 @@ export async function POST(req: Request) {
       providerType: provider.providerType,
     });
   } catch (error: any) {
-    console.error("[AI_ASSIGNMENT_TEST]", error);
+    logApiError("AI_ASSIGNMENT_TEST", error);
     return NextResponse.json({
       success: false,
       error: error.message || "Connection test failed",

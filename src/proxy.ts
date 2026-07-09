@@ -1,5 +1,7 @@
 import { auth } from "@/lib/auth";
 import { NextResponse } from "next/server";
+import { clientIp } from "@/lib/rate-limit";
+import { trackRequest } from "@/lib/usage-tracker";
 
 const ALLOWED_HOSTS = [
   "dev.ai4talent.org",
@@ -26,6 +28,10 @@ export default auth((req) => {
   }
 
   const { pathname } = req.nextUrl;
+
+  // Feed the admin system log's traffic samples (request + unique-IP counts).
+  // Counted after host validation so rejected garbage doesn't inflate usage.
+  trackRequest(clientIp(req), pathname);
 
   // --- CSRF defense-in-depth: reject cross-site state-changing API requests ---
   // The session cookie is SameSite=Lax (NextAuth default), which already blocks

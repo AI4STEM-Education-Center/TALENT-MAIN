@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { encryptApiKey, maskApiKey } from "@/lib/crypto";
 import { invalidateProviderCache } from "@/lib/ai-provider";
+import { logApiError } from "@/lib/system-log";
 
 const VALID_TYPES = new Set(["openai", "local", "cloudflare"]);
 
@@ -122,7 +123,7 @@ export async function PATCH(
       },
     });
   } catch (error) {
-    console.error("[AI_PROVIDER_PATCH]", error);
+    logApiError("AI_PROVIDER_PATCH", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
@@ -154,7 +155,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("[AI_PROVIDER_DELETE]", error);
+    logApiError("AI_PROVIDER_DELETE", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

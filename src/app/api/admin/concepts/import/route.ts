@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rate-limit";
 import { parseBody, conceptsImportSchema } from "@/lib/validation";
+import { logApiError } from "@/lib/system-log";
 
 // POST /api/admin/concepts/import
 // Admin-only. Body: { concepts: ParsedConcept[] } (already parsed client-side
@@ -89,7 +90,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(result);
   } catch (error) {
-    console.error("[ADMIN_CONCEPTS_IMPORT]", error);
+    logApiError("ADMIN_CONCEPTS_IMPORT", error);
     return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }
