@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rate-limit";
 import { parseBody, conceptMappingsImportSchema } from "@/lib/validation";
+import { logApiError } from "@/lib/system-log";
 
 // POST /api/admin/concept-mappings/import
 // Admin-only. Body: { mappings: ParsedMapping[], externalRefs: ParsedExternalRef[] }
@@ -119,7 +120,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(result);
   } catch (error) {
-    console.error("[ADMIN_CONCEPT_MAPPINGS_IMPORT]", error);
+    logApiError("ADMIN_CONCEPT_MAPPINGS_IMPORT", error);
     return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }

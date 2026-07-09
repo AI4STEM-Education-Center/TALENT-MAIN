@@ -17,6 +17,7 @@ import {
 } from "./lib/queue";
 import { runBackupJob, claimDueBackup } from "./lib/backup";
 import { runS3Gc } from "./lib/s3-gc";
+import { logSystemEvent } from "./lib/system-log";
 
 // Honker opens its own SQLite file (a sibling of the Prisma DB); see
 // resolveQueueDbPath for why the queue never shares the app's database.
@@ -43,6 +44,13 @@ async function consumeMaterials() {
       console.log(`[Worker] Successfully processed and acked job ${job.id}`);
     } catch (err: any) {
       console.error(`[Worker] Error processing job ${job.id}:`, err.message);
+      await logSystemEvent({
+        category: "WORKER",
+        type: "JOB_FAILED",
+        severity: "ERROR",
+        message: `Material processing job failed: ${err.message ?? err}`,
+        metadata: { queue: "materials", jobId: job.id, materialId },
+      });
 
       // Mark material as FAILED in the database if processMaterial threw an unhandled error
       try {
@@ -75,6 +83,13 @@ async function consumeExamResults() {
       console.log(`[Worker] Finished exam-result job ${job.id}`);
     } catch (err: any) {
       console.error(`[Worker] Error on exam-result job ${job.id}:`, err?.message ?? err);
+      await logSystemEvent({
+        category: "WORKER",
+        type: "JOB_FAILED",
+        severity: "ERROR",
+        message: `Exam-result job failed: ${err?.message ?? err}`,
+        metadata: { queue: EXAM_RESULTS_QUEUE, jobId: job.id, examResultId },
+      });
     } finally {
       job.ack();
     }
@@ -93,6 +108,13 @@ async function consumeQuizExtractions() {
       console.log(`[Worker] Finished quiz-extraction job ${job.id}`);
     } catch (err: any) {
       console.error(`[Worker] Error on quiz-extraction job ${job.id}:`, err?.message ?? err);
+      await logSystemEvent({
+        category: "WORKER",
+        type: "JOB_FAILED",
+        severity: "ERROR",
+        message: `Quiz-extraction job failed: ${err?.message ?? err}`,
+        metadata: { queue: QUIZ_EXTRACTIONS_QUEUE, jobId: job.id, extractionId },
+      });
     } finally {
       job.ack();
     }
@@ -113,6 +135,13 @@ async function consumeSimulations() {
       console.log(`[Worker] Finished simulation job ${job.id}`);
     } catch (err: any) {
       console.error(`[Worker] Error on simulation job ${job.id}:`, err?.message ?? err);
+      await logSystemEvent({
+        category: "WORKER",
+        type: "JOB_FAILED",
+        severity: "ERROR",
+        message: `Simulation job failed: ${err?.message ?? err}`,
+        metadata: { queue: SIMULATIONS_QUEUE, jobId: job.id, simulationId, feedbackId },
+      });
     } finally {
       job.ack();
     }
@@ -130,6 +159,13 @@ async function consumeBackups() {
       );
     } catch (err: any) {
       console.error(`[Worker] Backup job ${job.id} failed:`, err?.message ?? err);
+      await logSystemEvent({
+        category: "WORKER",
+        type: "BACKUP_FAILED",
+        severity: "ERROR",
+        message: `Backup job failed: ${err?.message ?? err}`,
+        metadata: { queue: BACKUPS_QUEUE, jobId: job.id },
+      });
     } finally {
       // Ack regardless — runBackupJob records FAILED status itself; a stuck job
       // must not block the queue.
@@ -183,8 +219,47 @@ async function runS3GcLoop() {
       );
     } catch (err: any) {
       console.error("[Worker] S3 GC run failed:", err?.message ?? err);
+      await logSystemEvent({
+        category: "WORKER",
+        type: "S3_GC_FAILED",
+        severity: "ERROR",
+        message: `S3 GC run failed: ${err?.message ?? err}`,
+      });
     }
     await new Promise((resolve) => setTimeout(resolve, S3_GC_INTERVAL_MS));
+  }
+}
+
+// How long SystemLog rows are kept before the daily prune below deletes them.
+const SYSTEM_LOG_RETENTION_DAYS = Math.max(
+  1,
+  Number(process.env.SYSTEM_LOG_RETENTION_DAYS) || 90
+);
+const LOG_PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Daily retention prune for the admin system log: the instrumentation writes
+ * rows from every login attempt and traffic sample, so without a cap the
+ * table would grow without bound. Deleting by cutoff is idempotent — a missed
+ * or repeated run just deletes nothing extra.
+ */
+async function runLogRetentionLoop() {
+  console.log(
+    `[Worker] System log retention loop started (24h interval, keep ${SYSTEM_LOG_RETENTION_DAYS} days)...`
+  );
+  for (;;) {
+    try {
+      const cutoff = new Date(Date.now() - SYSTEM_LOG_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+      const { count } = await prisma.systemLog.deleteMany({
+        where: { createdAt: { lt: cutoff } },
+      });
+      if (count > 0) {
+        console.log(`[Worker] Pruned ${count} system log row(s) older than ${cutoff.toISOString()}`);
+      }
+    } catch (err: any) {
+      console.error("[Worker] System log prune failed:", err?.message ?? err);
+    }
+    await new Promise((resolve) => setTimeout(resolve, LOG_PRUNE_INTERVAL_MS));
   }
 }
 
@@ -199,9 +274,16 @@ async function startWorker() {
       consumeBackups(),
       runBackupScheduler(),
       runS3GcLoop(),
+      runLogRetentionLoop(),
     ]);
   } catch (err) {
     console.error("[Worker] Fatal error in worker loop:", err);
+    await logSystemEvent({
+      category: "WORKER",
+      type: "WORKER_FATAL",
+      severity: "ERROR",
+      message: `Worker crashed: ${err instanceof Error ? err.message : err}`,
+    });
     process.exit(1);
   }
 }

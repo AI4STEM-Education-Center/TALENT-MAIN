@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { normalizeEmail, normalizeUsername, validatePassword } from "@/lib/account-validation";
 import { rateLimit } from "@/lib/rate-limit";
+import { logApiError } from "@/lib/system-log";
 
 // GET: validate token and return class info
 export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
@@ -169,7 +170,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       return NextResponse.json({ error: `${field} already in use.` }, { status: 409 });
     }
 
-    console.error("[INVITATION_POST]", err);
+    logApiError("INVITATION_POST", err);
     return NextResponse.json({ error: "Internal server error." }, { status: 500 });
   }
 }

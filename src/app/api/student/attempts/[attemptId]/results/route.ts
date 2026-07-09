@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { presignStoredRecommendations } from "@/lib/exam-results-engine";
 import { RESULT_STATUS } from "@/lib/exam-results";
 import { enqueueExamResult } from "@/lib/queue";
+import { logApiError } from "@/lib/system-log";
 
 export const runtime = "nodejs";
 
@@ -50,7 +51,7 @@ export async function GET(
     try {
       enqueueExamResult(examResult.id);
     } catch (err) {
-      console.error("[Results] Failed to re-enqueue exam-result generation:", err);
+      logApiError("STUDENT_RESULTS", err, "Failed to re-enqueue exam-result generation");
     }
   }
 
