@@ -74,6 +74,9 @@ export function ExamResultsView({
   actions?: ReactNode;
 }) {
   const [ai, setAi] = useState<AiState>(initial);
+  // Owned here (not in SimulationRail) because an active simulation reshapes
+  // the whole page: the grid flips so the simulation takes the wide side.
+  const [activeSimId, setActiveSimId] = useState<string | null>(null);
   const needPoll = isPending(ai.summaryStatus) || isPending(ai.recommendationsStatus);
   // Strict-Mode double-mount guard so we don't run two polling loops.
   const pollingRef = useRef(false);
@@ -118,9 +121,15 @@ export function ExamResultsView({
   }, [attemptId, needPoll]);
 
   const hasSimulations = ai.simulations.length > 0;
+  const simOpen = activeSimId !== null;
 
   return (
-    <div className={cn("p-4 md:p-6 space-y-6", hasSimulations ? "max-w-7xl" : "max-w-6xl")}>
+    <div
+      className={cn(
+        "p-4 md:p-6 space-y-6",
+        simOpen ? "max-w-none" : hasSimulations ? "max-w-7xl" : "max-w-6xl"
+      )}
+    >
       {backHref && (
         <Button variant="ghost" size="sm" asChild>
           <Link href={backHref}>
@@ -130,11 +139,16 @@ export function ExamResultsView({
       )}
 
       {/* With simulations, desktop splits into content (left) + simulation
-          rail (right); on smaller screens the rail stacks below as a section. */}
+          rail (right); on smaller screens the rail stacks below as a section.
+          While a simulation is open the columns flip: the summary shrinks
+          into the narrow column and the simulation gets the rest of the page. */}
       <div
         className={cn(
+          hasSimulations && "grid gap-6 lg:items-start",
           hasSimulations &&
-            "grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,26rem)] lg:items-start"
+            (simOpen
+              ? "lg:grid-cols-[minmax(320px,26rem)_minmax(0,1fr)]"
+              : "lg:grid-cols-[minmax(0,1fr)_minmax(320px,26rem)]")
         )}
       >
         <div className="min-w-0 space-y-6">
@@ -159,7 +173,14 @@ export function ExamResultsView({
 
         {/* Interactive topic simulations — question-detail-free by construction,
             so safe to show while the per-question review stays hidden. */}
-        {hasSimulations && <SimulationRail simulations={ai.simulations} attemptId={attemptId} />}
+        {hasSimulations && (
+          <SimulationRail
+            simulations={ai.simulations}
+            attemptId={attemptId}
+            activeId={activeSimId}
+            onActiveChange={setActiveSimId}
+          />
+        )}
       </div>
 
       {actions && <div className="flex flex-wrap gap-3">{actions}</div>}
