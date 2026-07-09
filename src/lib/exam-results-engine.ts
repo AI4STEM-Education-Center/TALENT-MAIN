@@ -41,6 +41,7 @@ import {
   snapshotToHolisticInput,
   snapshotToSummaryAttempt,
   mapPresignedRecommendations,
+  dedupeStoredSimulations,
   type ReviewSnapshot,
   type StoredRecommendation,
   type StoredRecommendations,
@@ -302,25 +303,26 @@ async function collectSimulationRecommendations(
   });
   if (sims.length === 0) return [];
 
-  // Preserve attempt order, dedupe by artifact key (fallback: lowercased topic).
+  // Preserve attempt order, dedupe by artifact key AND by display identity —
+  // two questions can carry independently-built artifacts (distinct
+  // storageKeys) that still present as the same simulation to the student.
   const byQuestion = new Map(sims.map((s) => [s.questionId, s]));
-  const seen = new Set<string>();
+  const seenArtifacts = new Set<string>();
   const picked: StoredSimulationRecommendation[] = [];
   for (const questionId of incorrectIds) {
     const sim = byQuestion.get(questionId);
     if (!sim) continue;
-    const key = sim.storageKey ?? sim.topic?.trim().toLowerCase() ?? sim.id;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    const artifactKey = sim.storageKey ?? sim.id;
+    if (seenArtifacts.has(artifactKey)) continue;
+    seenArtifacts.add(artifactKey);
     picked.push({
       simulationId: sim.id,
       title: sim.title,
       topic: sim.topic,
       learningGoal: sim.learningGoal,
     });
-    if (picked.length >= MAX_SIMULATION_RECS) break;
   }
-  return picked;
+  return dedupeStoredSimulations(picked).slice(0, MAX_SIMULATION_RECS);
 }
 
 /** Generate the markdown summary from the durable review snapshot. */

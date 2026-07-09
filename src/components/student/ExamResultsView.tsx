@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScoreBanner } from "@/components/student/QuizReviewResult";
 import { HolisticRecommendations } from "@/components/student/HolisticRecommendations";
-import { SimulationRecommendations } from "@/components/student/SimulationRecommendations";
+import { SimulationRail } from "@/components/student/SimulationRail";
+import { cn } from "@/lib/utils";
 import {
   RESULT_STATUS,
   type ResultStatus,
@@ -116,8 +117,10 @@ export function ExamResultsView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attemptId, needPoll]);
 
+  const hasSimulations = ai.simulations.length > 0;
+
   return (
-    <div className="p-4 md:p-6 max-w-6xl space-y-6">
+    <div className={cn("p-4 md:p-6 space-y-6", hasSimulations ? "max-w-7xl" : "max-w-6xl")}>
       {backHref && (
         <Button variant="ghost" size="sm" asChild>
           <Link href={backHref}>
@@ -126,26 +129,38 @@ export function ExamResultsView({
         </Button>
       )}
 
-      {/* Unified header: the score banner (percentage only — no per-question
-          count) and the AI summary live in one full-width card. */}
-      <Card>
-        <CardContent className="space-y-4 py-5">
-          <ScoreBanner score={score} />
-          <div className="border-t" />
-          <SummaryBody ai={ai} />
-        </CardContent>
-      </Card>
+      {/* With simulations, desktop splits into content (left) + simulation
+          rail (right); on smaller screens the rail stacks below as a section. */}
+      <div
+        className={cn(
+          hasSimulations &&
+            "grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,26rem)] lg:items-start"
+        )}
+      >
+        <div className="min-w-0 space-y-6">
+          {/* Unified header: the score banner (percentage only — no per-question
+              count) and the AI summary live in one full-width card. */}
+          <Card>
+            <CardContent className="space-y-4 py-5">
+              <ScoreBanner score={score} />
+              <div className="border-t" />
+              <SummaryBody ai={ai} />
+            </CardContent>
+          </Card>
 
-      {/* Holistic study recommendations — up to 3 cards chosen across the whole
-          attempt, with NO per-question correctness or correct answers shown. */}
-      <HolisticRecommendations
-        recommendations={ai.recommendations}
-        status={ai.recommendationsStatus}
-      />
+          {/* Holistic study recommendations — up to 3 cards chosen across the
+              whole attempt, with NO per-question correctness or correct answers
+              shown. */}
+          <HolisticRecommendations
+            recommendations={ai.recommendations}
+            status={ai.recommendationsStatus}
+          />
+        </div>
 
-      {/* Interactive topic simulations — question-detail-free by construction,
-          so safe to show while the per-question review stays hidden. */}
-      <SimulationRecommendations simulations={ai.simulations} />
+        {/* Interactive topic simulations — question-detail-free by construction,
+            so safe to show while the per-question review stays hidden. */}
+        {hasSimulations && <SimulationRail simulations={ai.simulations} />}
+      </div>
 
       {actions && <div className="flex flex-wrap gap-3">{actions}</div>}
     </div>
