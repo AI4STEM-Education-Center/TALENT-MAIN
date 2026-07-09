@@ -4,9 +4,10 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, ChevronRight } from "lucide-react";
-import { getStudentStats } from "@/lib/quiz-stats-server";
+import { ArrowLeft, ChevronRight, Atom } from "lucide-react";
+import { getStudentStats, getStudentSimulationSessions } from "@/lib/quiz-stats-server";
 import { StatCard, pct } from "@/components/teacher/stats-ui";
+import { formatDurationMs } from "@/lib/simulation-stats";
 
 const fmtDateTime = (d: Date | null) =>
   d
@@ -32,7 +33,10 @@ export default async function StudentStatsPage({
   });
   if (!enrollment) notFound();
 
-  const stats = await getStudentStats(id, studentId);
+  const [stats, simSessions] = await Promise.all([
+    getStudentStats(id, studentId),
+    getStudentSimulationSessions(id, studentId),
+  ]);
   if (!stats) notFound();
 
   return (
@@ -87,6 +91,43 @@ export default async function StudentStatsPage({
           </div>
         </CardContent>
       </Card>
+
+      {/* Simulations this student explored (client-reported telemetry). */}
+      {simSessions.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Atom className="size-4" /> Simulations explored
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
+                    <th className="py-2 pr-3 font-medium">Simulation</th>
+                    <th className="py-2 px-3 font-medium">Quiz</th>
+                    <th className="py-2 px-3 font-medium text-right">Active time</th>
+                    <th className="py-2 px-3 font-medium text-right">Param changes</th>
+                    <th className="py-2 px-3 font-medium text-right">When</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {simSessions.map((s) => (
+                    <tr key={s.sessionId} className="border-b last:border-0">
+                      <td className="py-2 pr-3">{s.title}</td>
+                      <td className="py-2 px-3 text-muted-foreground">{s.quizName ?? "—"}</td>
+                      <td className="py-2 px-3 text-right tabular-nums">{formatDurationMs(s.activeMs)}</td>
+                      <td className="py-2 px-3 text-right tabular-nums">{s.paramChanges}</td>
+                      <td className="py-2 px-3 text-right tabular-nums text-muted-foreground">{fmtDateTime(s.startedAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Individual attempts (drill into full per-question detail) */}
       <Card>

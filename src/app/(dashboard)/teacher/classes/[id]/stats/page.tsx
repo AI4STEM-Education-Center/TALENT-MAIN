@@ -4,9 +4,10 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, BookOpen, Users, ChevronRight } from "lucide-react";
-import { getClassStatsOverview } from "@/lib/quiz-stats-server";
-import { pct, ratePct } from "@/components/teacher/stats-ui";
+import { ArrowLeft, BookOpen, Users, ChevronRight, Atom } from "lucide-react";
+import { getClassStatsOverview, getClassSimulationInsights } from "@/lib/quiz-stats-server";
+import { StatCard, pct, ratePct } from "@/components/teacher/stats-ui";
+import { formatDurationMs } from "@/lib/simulation-stats";
 
 const fmtDate = (d: Date | null) =>
   d ? new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "—";
@@ -20,7 +21,14 @@ export default async function ClassStatsPage({ params }: { params: Promise<{ id:
   const cls = await prisma.class.findFirst({ where: { id, teacherId: teacher?.id ?? "" } });
   if (!cls) notFound();
 
-  const { quizzes, students } = await getClassStatsOverview(id);
+  const [{ quizzes, students }, sim] = await Promise.all([
+    getClassStatsOverview(id),
+    getClassSimulationInsights(id),
+  ]);
+  const retakeDelta =
+    sim.retake.withSim.students > 0 && sim.retake.withoutSim.students > 0
+      ? sim.retake.withSim.meanDelta - sim.retake.withoutSim.meanDelta
+      : null;
 
   return (
     <div className="p-4 md:p-6 space-y-6">
@@ -34,6 +42,38 @@ export default async function ClassStatsPage({ params }: { params: Promise<{ id:
           Per-quiz and per-student performance. Click any row for the full breakdown.
         </p>
       </div>
+
+      {/* Simulation engagement summary — client-reported telemetry, so these
+          are engagement signals; the retake comparison is correlation only. */}
+      {sim.totalSessions > 0 && (
+        <div className="space-y-2">
+          <h2 className="flex items-center gap-1.5 text-sm font-semibold text-muted-foreground">
+            <Atom className="size-4" /> Simulation engagement
+          </h2>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <StatCard
+              label="Students exploring"
+              value={`${sim.studentsWithSessions}`}
+              sub={sim.studentsAttempted > 0 ? `of ${sim.studentsAttempted} who attempted a quiz` : undefined}
+            />
+            <StatCard label="Sessions" value={`${sim.totalSessions}`} />
+            <StatCard label="Median active time" value={formatDurationMs(sim.medianActiveMs)} sub="per session" />
+            <StatCard
+              label="Retake improvement"
+              value={
+                retakeDelta === null
+                  ? "—"
+                  : `${retakeDelta >= 0 ? "+" : ""}${Math.round(retakeDelta)} pts`
+              }
+              sub={
+                retakeDelta === null
+                  ? "needs retakers with and without simulation use"
+                  : `with sims (${sim.retake.withSim.students}) vs without (${sim.retake.withoutSim.students}) — correlation, not causation`
+              }
+            />
+          </div>
+        </div>
+      )}
 
       {/* Quizzes table */}
       <Card>
