@@ -159,7 +159,7 @@ export function ExamResultsView({
 
         {/* Interactive topic simulations — question-detail-free by construction,
             so safe to show while the per-question review stays hidden. */}
-        {hasSimulations && <SimulationRail simulations={ai.simulations} />}
+        {hasSimulations && <SimulationRail simulations={ai.simulations} attemptId={attemptId} />}
       </div>
 
       {actions && <div className="flex flex-wrap gap-3">{actions}</div>}

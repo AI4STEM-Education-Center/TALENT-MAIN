@@ -55,8 +55,11 @@ const displayTitle = (sim: StoredSimulationRecommendation) =>
  */
 export function SimulationRail({
   simulations,
+  attemptId,
 }: {
   simulations: StoredSimulationRecommendation[];
+  /** Links telemetry sessions to the attempt whose results surfaced the sims. */
+  attemptId?: string;
 }) {
   // Defensive render-time dedup: ExamResult snapshots are durable, so results
   // stored before generation-time dedup existed may still carry duplicates.
@@ -122,6 +125,7 @@ export function SimulationRail({
             key={active.simulationId}
             simulationId={active.simulationId}
             title={displayTitle(active)}
+            telemetry={{ attemptId, surface: "rail" }}
           />
         </Card>
       </section>
@@ -173,7 +177,11 @@ export function SimulationRail({
               )}
             </DialogHeader>
             <div className="min-h-0 p-2">
-              <SimulationViewer simulationId={active.simulationId} title={displayTitle(active)} />
+              <SimulationViewer
+                simulationId={active.simulationId}
+                title={displayTitle(active)}
+                telemetry={{ attemptId, surface: "mobile" }}
+              />
             </div>
           </DialogContent>
         </Dialog>
