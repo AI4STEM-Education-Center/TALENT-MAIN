@@ -28,8 +28,8 @@
     "picomatch": "^4.0.3"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1080.0",
-    "@aws-sdk/s3-request-presigner": "^3.1080.0",
+    "@aws-sdk/client-s3": "^3.1083.0",
+    "@aws-sdk/s3-request-presigner": "^3.1083.0",
     "@hyzyla/pdfium": "^2.1.13",
     "@prisma/adapter-better-sqlite3": "^7.8.0",
     "@prisma/client": "^7.8.0",
@@ -37,7 +37,7 @@
     "@radix-ui/react-label": "^2.1.11",
     "@radix-ui/react-select": "^2.3.3",
     "@radix-ui/react-slot": "^1.1.0",
-    "@russellthehippo/honker-node": "^0.3.3",
+    "@russellthehippo/honker-node": "^0.4.0",
     "@types/nodemailer": "^7.0.12",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.11.1",
