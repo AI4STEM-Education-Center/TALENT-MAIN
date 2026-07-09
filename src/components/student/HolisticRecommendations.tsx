@@ -21,13 +21,17 @@ export function HolisticRecommendations({
   const pending = status === RESULT_STATUS.PENDING || status === RESULT_STATUS.GENERATING;
 
   return (
-    <div className="space-y-3">
+    /* Container for the card grid below: column count must follow the
+       available width, not the viewport — while a simulation is open this
+       section lives in the page's narrow column and the cards must stack
+       instead of splitting into slivers. */
+    <div className="space-y-3 @container">
       <h2 className="flex items-center gap-1.5 text-lg font-semibold">
         <Sparkles className="size-5 text-primary" /> Study recommendations
       </h2>
 
       {recommendations.length > 0 ? (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-3 @lg:grid-cols-2 @3xl:grid-cols-3">
           {recommendations.map((rec, i) => (
             <RecommendationCard key={`${rec.materialTitle}-${i}`} rec={rec} />
           ))}
