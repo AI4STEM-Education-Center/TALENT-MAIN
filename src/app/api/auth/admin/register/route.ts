@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { normalizeEmail, normalizeUsername, validatePassword } from "@/lib/account-validation";
 import { rateLimit } from "@/lib/rate-limit";
 import { parseBody, registerSchema } from "@/lib/validation";
+import { logApiError } from "@/lib/system-log";
 
 export async function POST(req: NextRequest) {
   // Throttle admin signup-token guessing per IP.
@@ -75,7 +76,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `${field} already in use.` }, { status: 409 });
     }
 
-    console.error("[ADMIN REGISTER]", err);
+    logApiError("ADMIN REGISTER", err);
     return NextResponse.json({ error: "Internal server error." }, { status: 500 });
   }
 }

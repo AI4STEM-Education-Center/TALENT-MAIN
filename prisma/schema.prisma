@@ -871,3 +871,31 @@ model SimulationSession {
   @@index([quizId, startedAt])
   @@index([classId, startedAt])
 }
+
+// ─── System operation log ─────────────────────────────────────────────────────
+// Admin-viewable operational log persisted for error diagnosis: auth events
+// (failed / successful / throttled logins), API route errors, worker job
+// failures, and periodic traffic samples (request + unique-IP counts).
+// Deliberately RELATION-FREE (plain userId column) so the audit trail survives
+// user deletion. Rows are pruned by the worker after SYSTEM_LOG_RETENTION_DAYS
+// (default 90). Writes go through src/lib/system-log.ts and are best-effort —
+// logging must never break the flow that emits it.
+// category: "AUTH" | "API" | "WORKER" | "USAGE" | "SYSTEM"
+// severity: "INFO" | "WARNING" | "ERROR"
+model SystemLog {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  category  String
+  type      String // e.g. "LOGIN_FAILED", "JOB_FAILED", "USAGE_SAMPLE", or an API route tag
+  severity  String   @default("INFO")
+  message   String
+  userId    String? // acting/affected user when known (no FK on purpose)
+  ip        String? // best-effort client IP from the proxy chain
+  metadata  String? // JSON-as-text detail payload (SQLite has no JSON type)
+
+  // Admin list: newest-first, optionally narrowed by category/severity/type.
+  @@index([createdAt])
+  @@index([category, createdAt])
+  @@index([severity, createdAt])
+  @@index([type, createdAt])
+}

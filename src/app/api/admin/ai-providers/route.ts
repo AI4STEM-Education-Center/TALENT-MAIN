@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { encryptApiKey, maskApiKey, decryptApiKey } from "@/lib/crypto";
+import { logApiError } from "@/lib/system-log";
 
 const VALID_TYPES = new Set(["openai", "local", "cloudflare"]);
 
@@ -84,7 +85,7 @@ export async function GET() {
 
     return NextResponse.json({ providers: masked });
   } catch (error) {
-    console.error("[AI_PROVIDERS_GET]", error);
+    logApiError("AI_PROVIDERS_GET", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
@@ -178,7 +179,7 @@ export async function POST(req: Request) {
       },
     }, { status: 201 });
   } catch (error) {
-    console.error("[AI_PROVIDERS_POST]", error);
+    logApiError("AI_PROVIDERS_POST", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

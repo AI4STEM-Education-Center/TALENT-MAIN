@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { sendEmail, SmtpNotConfiguredError } from "@/lib/email";
 import { isValidEmail } from "@/lib/csv-roster";
 import { getTeacherEmailQuota, parseChannels, serializeChannels } from "@/lib/email-limits";
+import { logApiError } from "@/lib/system-log";
 
 // GET: list messages for this class (teacher only)
 export async function GET(
@@ -154,7 +155,7 @@ export async function POST(
         emailStatus = "FAILED";
         emailError = error.message;
       } else {
-        console.error("[CLASS_MESSAGES_POST]", error);
+        logApiError("CLASS_MESSAGES_POST", error);
         if (!channels.inApp) {
           return NextResponse.json({ error: "Failed to send email." }, { status: 500 });
         }
