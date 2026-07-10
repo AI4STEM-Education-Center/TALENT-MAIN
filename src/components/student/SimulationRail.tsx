@@ -1,7 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { Atom, ChevronRight, X } from "lucide-react";
+import { Atom, ChevronRight, CircleOff, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import {
   Dialog,
@@ -14,7 +14,7 @@ import { SimulationViewer } from "@/components/simulation/SimulationViewer";
 import { cn } from "@/lib/utils";
 import {
   dedupeStoredSimulations,
-  type StoredSimulationRecommendation,
+  type SimulationRecommendationView,
 } from "@/lib/exam-results";
 
 /**
@@ -38,7 +38,7 @@ function useIsDesktop(): boolean {
   );
 }
 
-const displayTitle = (sim: StoredSimulationRecommendation) =>
+const displayTitle = (sim: SimulationRecommendationView) =>
   sim.title ?? sim.topic ?? "Interactive simulation";
 
 /**
@@ -50,7 +50,7 @@ function SimulationChips({
   activeId,
   onSelect,
 }: {
-  sims: StoredSimulationRecommendation[];
+  sims: SimulationRecommendationView[];
   activeId: string;
   onSelect: (id: string) => void;
 }) {
@@ -100,7 +100,7 @@ export function SimulationRail({
   activeId,
   onActiveChange,
 }: {
-  simulations: StoredSimulationRecommendation[];
+  simulations: SimulationRecommendationView[];
   /** Links telemetry sessions to the attempt whose results surfaced the sims. */
   attemptId?: string;
   /** Owned by the results page so it can widen this rail's grid column. */
@@ -110,11 +110,15 @@ export function SimulationRail({
   // Defensive render-time dedup: ExamResult snapshots are durable, so results
   // stored before generation-time dedup existed may still carry duplicates.
   const sims = dedupeStoredSimulations(simulations);
+  // A ref whose simulation was deleted after the result was stored stays
+  // listed as an unavailable card (never activatable), so the student sees
+  // why it's gone instead of a dead iframe.
+  const openable = sims.filter((sim) => !sim.unavailable);
   const isDesktop = useIsDesktop();
 
   if (sims.length === 0) return null;
 
-  const active = sims.find((sim) => sim.simulationId === activeId) ?? null;
+  const active = openable.find((sim) => sim.simulationId === activeId) ?? null;
 
   if (isDesktop && active) {
     return (
@@ -141,7 +145,7 @@ export function SimulationRail({
             <X className="size-4" />
           </button>
         </div>
-        <SimulationChips sims={sims} activeId={active.simulationId} onSelect={onActiveChange} />
+        <SimulationChips sims={openable} activeId={active.simulationId} onSelect={onActiveChange} />
         <Card className="min-h-0 flex-1 overflow-hidden p-2">
           {/* Remount per simulation so switching restarts cleanly. */}
           <SimulationViewer
@@ -165,25 +169,41 @@ export function SimulationRail({
         happens.
       </p>
       <div className="space-y-3">
-        {sims.map((sim) => (
-          <Card key={sim.simulationId} className="overflow-hidden">
-            <button
-              type="button"
-              onClick={() => onActiveChange(sim.simulationId)}
-              className="flex w-full items-center justify-between gap-3 p-4 text-left transition-colors hover:bg-muted/40"
-            >
-              <span className="min-w-0">
-                <span className="block font-medium">{displayTitle(sim)}</span>
-                {sim.learningGoal && (
-                  <span className="mt-0.5 block text-sm text-muted-foreground">
-                    {sim.learningGoal}
+        {sims.map((sim) =>
+          sim.unavailable ? (
+            <Card key={sim.simulationId} className="overflow-hidden border-dashed">
+              <div className="flex w-full items-center justify-between gap-3 p-4">
+                <span className="min-w-0">
+                  <span className="block font-medium text-muted-foreground">
+                    {displayTitle(sim)}
                   </span>
-                )}
-              </span>
-              <ChevronRight className="size-4 shrink-0" />
-            </button>
-          </Card>
-        ))}
+                  <span className="mt-0.5 block text-sm text-muted-foreground">
+                    This simulation is no longer available.
+                  </span>
+                </span>
+                <CircleOff aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+              </div>
+            </Card>
+          ) : (
+            <Card key={sim.simulationId} className="overflow-hidden">
+              <button
+                type="button"
+                onClick={() => onActiveChange(sim.simulationId)}
+                className="flex w-full items-center justify-between gap-3 p-4 text-left transition-colors hover:bg-muted/40"
+              >
+                <span className="min-w-0">
+                  <span className="block font-medium">{displayTitle(sim)}</span>
+                  {sim.learningGoal && (
+                    <span className="mt-0.5 block text-sm text-muted-foreground">
+                      {sim.learningGoal}
+                    </span>
+                  )}
+                </span>
+                <ChevronRight className="size-4 shrink-0" />
+              </button>
+            </Card>
+          )
+        )}
       </div>
 
       {/* Mobile/tablet: the active simulation fills the screen. Rendered only
@@ -200,7 +220,7 @@ export function SimulationRail({
                   <DialogDescription className="sr-only">Interactive simulation</DialogDescription>
                 )}
               </div>
-              <SimulationChips sims={sims} activeId={active.simulationId} onSelect={onActiveChange} />
+              <SimulationChips sims={openable} activeId={active.simulationId} onSelect={onActiveChange} />
             </DialogHeader>
             <div className="min-h-0 p-2">
               {/* Remount per simulation so switching restarts cleanly. */}

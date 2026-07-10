@@ -46,6 +46,7 @@ import {
   type StoredRecommendation,
   type StoredRecommendations,
   type StoredSimulationRecommendation,
+  type SimulationRecommendationView,
   type StoredMisconception,
   type StoredQuestionMisconceptions,
   type PresignedRecommendations,
@@ -572,6 +573,25 @@ export async function generateExamResult(examResultId: string): Promise<void> {
 }
 
 /**
+ * Mark stored simulation refs whose backing row no longer exists (deleted by
+ * staff after the result snapshot was written) or no longer has an artifact to
+ * serve. The student UI shows those as "no longer available" instead of
+ * mounting an iframe whose content request would 404.
+ */
+async function annotateSimulationAvailability(
+  simulations: StoredSimulationRecommendation[]
+): Promise<SimulationRecommendationView[]> {
+  const rows = await prisma.questionSimulation.findMany({
+    where: { id: { in: simulations.map((s) => s.simulationId) } },
+    select: { id: true, storageKey: true },
+  });
+  const serveable = new Set(rows.filter((r) => r.storageKey !== null).map((r) => r.id));
+  return simulations.map((s) =>
+    serveable.has(s.simulationId) ? s : { ...s, unavailable: true }
+  );
+}
+
+/**
  * Parse stored recommendations and re-presign each page's image URL for display.
  * Returns empty when there is nothing stored or S3 is not configured.
  */
@@ -579,13 +599,17 @@ export async function presignStoredRecommendations(
   raw: string | null
 ): Promise<PresignedRecommendations> {
   const stored = parseStoredRecommendations(raw);
-  // Misconception labels and simulation refs carry no images to presign, so
-  // pass them through unchanged even when there are no material
-  // recommendations to presign (e.g. a catalog match with zero available
-  // class materials, or S3 missing — simulations stream via their own route).
+  // Misconception labels carry no images to presign, so pass them through
+  // unchanged even when there are no material recommendations to presign
+  // (e.g. a catalog match with zero available class materials, or S3 missing).
+  // Simulations stream via their own route, but the snapshot outlives the
+  // simulation rows themselves, so flag refs whose row is gone as unavailable.
   const errorMisconceptions = stored.errorMisconceptions;
+  const simulations = stored.simulations
+    ? await annotateSimulationAvailability(stored.simulations)
+    : undefined;
   const passthrough = {
-    ...(stored.simulations ? { simulations: stored.simulations } : {}),
+    ...(simulations ? { simulations } : {}),
     ...(errorMisconceptions ? { errorMisconceptions } : {}),
   };
   if (stored.items.length === 0) {

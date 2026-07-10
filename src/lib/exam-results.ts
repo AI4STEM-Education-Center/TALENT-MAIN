@@ -273,6 +273,17 @@ export type StoredSimulationRecommendation = {
 };
 
 /**
+ * A simulation recommendation as served to the student results UI: the stored
+ * ref plus an availability flag resolved at read time. ExamResult snapshots
+ * are durable while simulations can be deleted by staff afterwards, so a
+ * stored ref may point at nothing — the flag lets the UI say "no longer
+ * available" instead of mounting an iframe that 404s.
+ */
+export type SimulationRecommendationView = StoredSimulationRecommendation & {
+  unavailable?: boolean;
+};
+
+/**
  * Display identity of a simulation recommendation: normalized title + topic.
  * Two rows whose artifacts were built independently for same-topic questions
  * (so their storageKeys differ) still read as the same simulation to a student;
@@ -291,12 +302,18 @@ export function simulationDisplayKey(sim: StoredSimulationRecommendation): strin
  * ExamResult snapshots are durable — results stored before this dedup existed
  * still contain the duplicates.
  */
-export function dedupeStoredSimulations(
-  simulations: StoredSimulationRecommendation[]
-): StoredSimulationRecommendation[] {
+export function dedupeStoredSimulations<T extends SimulationRecommendationView>(
+  simulations: T[]
+): T[] {
+  const availableKeys = new Set(
+    simulations.filter((sim) => !sim.unavailable).map(simulationDisplayKey)
+  );
   const seen = new Set<string>();
   return simulations.filter((sim) => {
     const key = simulationDisplayKey(sim);
+    // An unavailable entry whose display identity is also carried by a live
+    // entry is pure noise — the student can still open that simulation.
+    if (sim.unavailable && availableKeys.has(key)) return false;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -320,7 +337,7 @@ export type PresignedRecommendation = Omit<StoredRecommendation, "pages"> & {
 export type PresignedRecommendations = {
   items: PresignedRecommendation[];
   truncated: boolean;
-  simulations?: StoredSimulationRecommendation[];
+  simulations?: SimulationRecommendationView[];
   errorMisconceptions?: StoredQuestionMisconceptions[];
 };
 
