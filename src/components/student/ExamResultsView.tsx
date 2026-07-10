@@ -16,7 +16,7 @@ import {
   RESULT_STATUS,
   type ResultStatus,
   type PresignedRecommendation,
-  type StoredSimulationRecommendation,
+  type SimulationRecommendationView,
 } from "@/lib/exam-results";
 
 const POLL_MS = 2500;
@@ -27,7 +27,7 @@ type AiState = {
   summary: string | null;
   summaryStatus: ResultStatus;
   recommendations: PresignedRecommendation[];
-  simulations: StoredSimulationRecommendation[];
+  simulations: SimulationRecommendationView[];
   recommendationsStatus: ResultStatus;
   truncated: boolean;
 };
