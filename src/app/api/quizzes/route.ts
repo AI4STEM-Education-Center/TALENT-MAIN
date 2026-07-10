@@ -23,13 +23,32 @@ export async function POST(req: NextRequest) {
   const actor = await getContentActor();
   if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { name, topicId, order } = await req.json();
+  const { name, topicId, order, dedupeByName } = await req.json();
   if (!name?.trim()) return NextResponse.json({ error: "Quiz name required." }, { status: 400 });
 
   if (topicId) {
     const topic = await prisma.topic.findUnique({ where: { id: topicId } });
     if (!topic || topic.teacherId !== actor.teacherId) {
       return NextResponse.json({ error: "Topic not found." }, { status: 400 });
+    }
+  }
+
+  // Opt-in duplicate guard (used by the batch PDF uploader): refuse to create a
+  // second quiz with the same name under the same topic in the caller's scope.
+  // Compared case-insensitively in JS — quiz counts per scope are small and
+  // SQLite has no Prisma-supported insensitive filter.
+  if (dedupeByName) {
+    const target = name.trim().toLowerCase();
+    const siblings = await prisma.quiz.findMany({
+      where: { teacherId: ownScope(actor), topicId: topicId || null },
+      select: { id: true, name: true },
+    });
+    const existing = siblings.find((q) => q.name.trim().toLowerCase() === target);
+    if (existing) {
+      return NextResponse.json(
+        { error: `A quiz named "${existing.name}" already exists here.`, duplicate: true, existingQuizId: existing.id },
+        { status: 409 }
+      );
     }
   }
 

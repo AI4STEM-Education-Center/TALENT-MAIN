@@ -1,0 +1,627 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI4Talent — User Guide</title>
+<meta name="description" content="Step-by-step guide to AI4Talent, the adaptive learning platform: how administrators, teachers, and students sign up and use every feature.">
+<style>
+  :root {
+    --bg: #f7f8fb;
+    --surface: #ffffff;
+    --text: #1c2333;
+    --muted: #5b6478;
+    --border: #e3e7ef;
+    --accent: #4f46e5;
+    --accent-soft: #eef0fe;
+    --admin: #7c3aed;   --admin-soft: #f3eefe;
+    --teacher: #0d9488; --teacher-soft: #e8f7f5;
+    --student: #2563eb; --student-soft: #eaf1fe;
+    --tip: #0d9488;     --tip-soft: #e8f7f5;
+    --note: #b45309;    --note-soft: #fdf3e3;
+    --code-bg: #eef1f6;
+    --shadow: 0 1px 2px rgba(20, 27, 45, .06), 0 8px 24px -12px rgba(20, 27, 45, .12);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #10141f;
+      --surface: #181e2d;
+      --text: #e7eaf2;
+      --muted: #9aa3b8;
+      --border: #2a3247;
+      --accent: #8b90ff;
+      --accent-soft: #232948;
+      --admin: #b795f8;   --admin-soft: #2b2344;
+      --teacher: #4fd1c0; --teacher-soft: #15332f;
+      --student: #7aa8f7; --student-soft: #1c2a45;
+      --tip: #4fd1c0;     --tip-soft: #15332f;
+      --note: #e5a54b;    --note-soft: #3a2d16;
+      --code-bg: #232a3d;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.5);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: .9em;
+    background: var(--code-bg);
+    border-radius: 5px;
+    padding: .12em .38em;
+  }
+  a { color: var(--accent); }
+
+  /* ── Header ─────────────────────────────────────────── */
+  header.hero {
+    padding: 3.2rem 1.5rem 2.4rem;
+    text-align: center;
+  }
+  .hero .logo {
+    display: inline-flex; align-items: center; gap: .55rem;
+    font-weight: 800; font-size: 1.05rem; letter-spacing: .02em;
+    color: var(--muted); text-transform: uppercase;
+  }
+  .hero .logo .dot {
+    width: .95rem; height: .95rem; border-radius: 32%;
+    background: linear-gradient(135deg, var(--admin), var(--student));
+  }
+  .hero h1 {
+    margin: .7rem auto .6rem;
+    font-size: clamp(1.9rem, 4.5vw, 2.7rem);
+    line-height: 1.15; letter-spacing: -.02em; max-width: 46rem;
+  }
+  .hero p.sub {
+    margin: 0 auto; max-width: 40rem; color: var(--muted); font-size: 1.06rem;
+  }
+
+  /* ── What is it ─────────────────────────────────────── */
+  .wrap { max-width: 900px; margin: 0 auto; padding: 0 1.25rem 4rem; }
+  .about {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; box-shadow: var(--shadow);
+    padding: 1.4rem 1.6rem; margin-bottom: 2.2rem;
+  }
+  .about h2 { margin: 0 0 .5rem; font-size: 1.15rem; }
+  .about p { margin: .4rem 0; color: var(--muted); }
+  .about strong { color: var(--text); }
+
+  /* ── Tabs ───────────────────────────────────────────── */
+  .tabbar {
+    position: sticky; top: 0; z-index: 10;
+    background: var(--bg);
+    padding: .8rem 0 .6rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 2rem;
+  }
+  [role="tablist"] {
+    display: flex; gap: .5rem; max-width: 900px; margin: 0 auto;
+    padding: 0 1.25rem;
+  }
+  [role="tab"] {
+    flex: 1; display: flex; align-items: center; justify-content: center; gap: .5rem;
+    padding: .7rem .9rem;
+    font: inherit; font-weight: 600; font-size: .98rem;
+    color: var(--muted);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: color .15s, border-color .15s, background .15s;
+  }
+  [role="tab"] .glyph {
+    width: 1.5rem; height: 1.5rem; border-radius: 8px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: .85rem; color: #fff;
+  }
+  #tab-admin .glyph   { background: var(--admin); }
+  #tab-teacher .glyph { background: var(--teacher); }
+  #tab-student .glyph { background: var(--student); }
+  #tab-admin[aria-selected="true"]   { color: var(--admin);   border-color: var(--admin);   background: var(--admin-soft); }
+  #tab-teacher[aria-selected="true"] { color: var(--teacher); border-color: var(--teacher); background: var(--teacher-soft); }
+  #tab-student[aria-selected="true"] { color: var(--student); border-color: var(--student); background: var(--student-soft); }
+  [role="tab"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ── Panels & sections ──────────────────────────────── */
+  [role="tabpanel"][hidden] { display: none; }
+  .panel-intro { color: var(--muted); margin: 0 0 1.6rem; font-size: 1.03rem; }
+  section.block {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; box-shadow: var(--shadow);
+    padding: 1.5rem 1.7rem; margin-bottom: 1.4rem;
+    scroll-margin-top: 5.5rem;
+  }
+  section.block > h2 {
+    margin: 0 0 .3rem; font-size: 1.3rem; letter-spacing: -.01em;
+    display: flex; align-items: baseline; gap: .6rem;
+  }
+  section.block > h2 .kicker {
+    font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+    padding: .18em .6em; border-radius: 999px; white-space: nowrap;
+  }
+  .panel-admin   .kicker { color: var(--admin);   background: var(--admin-soft); }
+  .panel-teacher .kicker { color: var(--teacher); background: var(--teacher-soft); }
+  .panel-student .kicker { color: var(--student); background: var(--student-soft); }
+  section.block > p.lead { margin: .2rem 0 1rem; color: var(--muted); }
+  section.block h3 { font-size: 1.02rem; margin: 1.3rem 0 .5rem; }
+
+  /* Steps */
+  ol.steps { list-style: none; margin: 1rem 0 0; padding: 0; counter-reset: step; }
+  ol.steps > li {
+    counter-increment: step;
+    position: relative;
+    padding: 0 0 1.15rem 3rem;
+  }
+  ol.steps > li::before {
+    content: counter(step);
+    position: absolute; left: 0; top: .05rem;
+    width: 2rem; height: 2rem; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: .9rem; color: #fff;
+    background: var(--accent);
+  }
+  .panel-admin   ol.steps > li::before { background: var(--admin); }
+  .panel-teacher ol.steps > li::before { background: var(--teacher); }
+  .panel-student ol.steps > li::before { background: var(--student); }
+  ol.steps > li:not(:last-child)::after {
+    content: ""; position: absolute; left: calc(1rem - 1px); top: 2.35rem; bottom: .15rem;
+    width: 2px; background: var(--border);
+  }
+  ol.steps > li > strong:first-child { display: block; margin-bottom: .1rem; }
+  ol.steps p { margin: .25rem 0; color: var(--muted); }
+  ol.steps ul { margin: .35rem 0 0; padding-left: 1.1rem; color: var(--muted); }
+  ol.steps ul li { margin: .18rem 0; }
+
+  /* Callouts */
+  .callout {
+    display: grid; grid-template-columns: auto 1fr; gap: .6rem;
+    border-radius: 12px; padding: .8rem 1rem; margin: 1rem 0;
+    font-size: .95rem;
+  }
+  .callout .ic { font-weight: 800; }
+  .callout.tip  { background: var(--tip-soft);  color: var(--text); }
+  .callout.tip .ic  { color: var(--tip); }
+  .callout.note { background: var(--note-soft); color: var(--text); }
+  .callout.note .ic { color: var(--note); }
+  .callout p { margin: 0; }
+
+  /* Tables */
+  .tablewrap { overflow-x: auto; margin: .8rem 0; }
+  table { border-collapse: collapse; width: 100%; font-size: .93rem; }
+  th, td { text-align: left; padding: .55rem .75rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  td { color: var(--text); }
+  td .dim { color: var(--muted); }
+
+  /* Feature grid */
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: .8rem; margin-top: .9rem; }
+  .grid .cell {
+    border: 1px solid var(--border); border-radius: 12px; padding: .8rem .95rem;
+  }
+  .grid .cell b { display: block; margin-bottom: .15rem; }
+  .grid .cell span { color: var(--muted); font-size: .92rem; }
+
+  footer {
+    text-align: center; color: var(--muted); font-size: .88rem;
+    padding: 2rem 1rem 3rem;
+  }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <span class="logo"><span class="dot" aria-hidden="true"></span>AI4Talent</span>
+  <h1>Getting started with the Adaptive Learning Platform</h1>
+  <p class="sub">Everything administrators, teachers, and students need to sign up, set up, and start learning — with step-by-step guides for each role.</p>
+</header>
+
+<div class="wrap">
+  <div class="about">
+    <h2>What is AI4Talent?</h2>
+    <p><strong>AI4Talent</strong> is a class-based quiz platform for science education. Teachers create classes from their official roster, assign quizzes from a shared quiz pool, and invite students with a secure link. Students take quizzes online and, after each attempt, receive <strong>AI-generated feedback</strong>: a performance summary, targeted study recommendations pointing at specific pages of the class's learning materials, and interactive <strong>simulations</strong> that let them explore the concepts they struggled with.</p>
+    <p>Results are intentionally <strong>“blind”</strong> — students see their overall score and personalized guidance, but never the individual questions' correct answers, so quizzes stay reusable and the focus stays on learning the concepts.</p>
+    <p>Pick your role below to see your guide. Your school hosts its own AI4Talent server — all paths in this guide (like <code>/login</code>) are relative to that address.</p>
+  </div>
+</div>
+
+<div class="tabbar">
+  <div role="tablist" aria-label="Choose your role">
+    <button role="tab" id="tab-admin" aria-controls="panel-admin" aria-selected="true">
+      <span class="glyph" aria-hidden="true">A</span> Administrator
+    </button>
+    <button role="tab" id="tab-teacher" aria-controls="panel-teacher" aria-selected="false" tabindex="-1">
+      <span class="glyph" aria-hidden="true">T</span> Teacher
+    </button>
+    <button role="tab" id="tab-student" aria-controls="panel-student" aria-selected="false" tabindex="-1">
+      <span class="glyph" aria-hidden="true">S</span> Student
+    </button>
+  </div>
+</div>
+
+<main class="wrap">
+
+  <!-- ══════════════════════ ADMIN ══════════════════════ -->
+  <div role="tabpanel" id="panel-admin" class="panel-admin" aria-labelledby="tab-admin">
+    <p class="panel-intro">Administrators run the platform: they curate the shared quiz pool, configure the AI features, manage every account, and keep the system healthy. Here's how to get set up and what each part of the admin dashboard does.</p>
+
+    <section class="block" id="admin-signup">
+      <h2><span class="kicker">Setup</span> Create your admin account</h2>
+      <ol class="steps">
+        <li><strong>Get the admin registration code.</strong>
+          <p>Admin sign-up is protected by a registration code configured on the server. Get it from whoever operates your AI4Talent deployment.</p></li>
+        <li><strong>Open <code>/admin-register</code>.</strong>
+          <p>Fill in your first name, last name, a username, your email, and a password, then enter the admin registration code and submit.</p></li>
+        <li><strong>Sign in at <code>/login</code>.</strong>
+          <p>You can sign in with either your email or your username. You'll land on the admin overview with stat cards for users, quizzes, and more.</p></li>
+      </ol>
+    </section>
+
+    <section class="block" id="admin-tour">
+      <h2><span class="kicker">Overview</span> What you manage</h2>
+      <p class="lead">The admin sidebar gives you these areas:</p>
+      <div class="grid">
+        <div class="cell"><b>Quiz Pool</b><span>The shared, topic-organized quiz library teachers assign from. Create quizzes by hand or batch-import from PDFs.</span></div>
+        <div class="cell"><b>Simulations</b><span>Generate and curate the interactive concept simulations attached to quiz questions.</span></div>
+        <div class="cell"><b>Materials Processing</b><span>Monitor AI processing of teachers' learning materials across all classes.</span></div>
+        <div class="cell"><b>Concepts</b><span>Import and manage the concept catalog, concept mappings, and misconceptions via CSV.</span></div>
+        <div class="cell"><b>Users</b><span>Search and manage every admin, teacher, and student account.</span></div>
+        <div class="cell"><b>AI Config</b><span>Connect LLM providers and assign a model to each AI feature.</span></div>
+        <div class="cell"><b>Email</b><span>Configure SMTP so the platform can send mail, and set per-teacher email limits.</span></div>
+        <div class="cell"><b>Backup &amp; Logs</b><span>Run and restore database backups; audit the searchable system operation log.</span></div>
+      </div>
+    </section>
+
+    <section class="block" id="admin-quiz-pool">
+      <h2><span class="kicker">Content</span> Build the quiz pool</h2>
+      <p class="lead">The quiz pool is the platform's shared library. Quizzes are grouped under <strong>topics</strong>; teachers browse this pool when adding quizzes to their classes.</p>
+      <ol class="steps">
+        <li><strong>Create topics.</strong>
+          <p>On <strong>Quiz Pool</strong>, add topics (e.g. “Mechanics”, “Thermodynamics”) to organize the library.</p></li>
+        <li><strong>Add quizzes.</strong>
+          <p>Create a quiz under a topic, then open it to add questions in the quiz editor. Questions support single-select, multi-select (“select all that apply”), and numeric answers, with optional figures and image answer choices.</p></li>
+        <li><strong>Or import from PDFs.</strong>
+          <p>Use the <strong>Upload PDF Quizzes</strong> panel to turn existing PDF quizzes into editable quizzes automatically — see the next guide.</p></li>
+      </ol>
+    </section>
+
+    <section class="block" id="admin-pdf-upload">
+      <h2><span class="kicker">Content</span> Import quizzes from PDFs</h2>
+      <p class="lead">The <strong>Upload PDF Quizzes</strong> panel on the Quiz Pool page converts a batch of PDF files into pool quizzes using AI extraction. Each PDF becomes one quiz, named after the file.</p>
+      <ol class="steps">
+        <li><strong>Pick a topic.</strong>
+          <p>Choose the destination topic from the dropdown. The file picker stays disabled until a topic is selected.</p></li>
+        <li><strong>Choose your PDFs.</strong>
+          <p>Select one or more PDF files, up to <strong>20 pages each</strong>. Files whose names match a quiz that already exists under that topic are automatically <em>skipped</em>, so you can safely re-run a folder without creating duplicates.</p></li>
+        <li><strong>Watch the batch process.</strong>
+          <p>Files are handled one at a time, each moving through <em>queued → creating → uploading → extracting</em>. Extraction runs on the server, so it keeps going even while later files upload.</p></li>
+        <li><strong>Review and commit.</strong>
+          <p>When a file reaches <strong>ready</strong> (“N questions extracted — review and commit”), click <strong>Review</strong> to open the quiz editor, check the extracted questions and figures, fix anything the AI misread, and commit them. Extracted questions are never published without your review.</p></li>
+      </ol>
+      <div class="callout note"><span class="ic">!</span><p>The footer tally (“X ready for review · Y skipped · Z failed…”) tracks the whole batch. If a file fails mid-flight, its partial quiz is rolled back automatically — fix the issue and just upload it again.</p></div>
+      <div class="callout tip"><span class="ic">✓</span><p>PDF extraction requires an AI model assigned to the <strong>Quiz PDF Extraction</strong> use case — see <a href="#admin-ai-config">AI configuration</a>.</p></div>
+    </section>
+
+    <section class="block" id="admin-simulations">
+      <h2><span class="kicker">Content</span> Generate simulations</h2>
+      <p class="lead">Simulations are small interactive explorations (e.g. a projectile-motion sandbox) shown to students after a quiz to teach the concepts behind questions they missed — without revealing the questions' answers.</p>
+      <ol class="steps">
+        <li><strong>Open <code>Simulations</code></strong> and browse pool quizzes down to individual questions.</li>
+        <li><strong>Generate.</strong>
+          <p>Click generate on a question; a background worker builds a self-contained interactive simulation for its concept.</p></li>
+        <li><strong>Preview and curate.</strong>
+          <p>Preview the result, regenerate if it misses the mark (or restart one that got stuck), and delete any you don't want students to see.</p></li>
+      </ol>
+      <div class="callout tip"><span class="ic">✓</span><p>Generation requires a model assigned to the <strong>Question Simulation Generation</strong> use case and a running background worker.</p></div>
+    </section>
+
+    <section class="block" id="admin-users">
+      <h2><span class="kicker">People</span> Manage users</h2>
+      <p class="lead">The <strong>Users</strong> page lists every account, grouped into Admins, Teachers, and Students, with search across the lot.</p>
+      <ol class="steps">
+        <li><strong>Onboard teachers.</strong>
+          <p>Teachers self-register at <code>/register</code> using the <strong>teacher registration code</strong> configured on the server — share it only with your teaching staff. Students never register directly; they join through class invite links.</p></li>
+        <li><strong>Remove accounts carefully.</strong>
+          <p>Deleting a user opens a confirmation explaining the consequences: removing a <em>teacher</em> also removes their classes and materials; removing a <em>student</em> removes their enrollments and progress. You cannot delete your own account.</p></li>
+      </ol>
+    </section>
+
+    <section class="block" id="admin-ai-config">
+      <h2><span class="kicker">System</span> Configure the AI</h2>
+      <p class="lead">On <strong>AI Config</strong> you connect model providers and decide which model powers each feature.</p>
+      <ol class="steps">
+        <li><strong>Add a provider.</strong>
+          <p>Enter the provider type, base URL, and API key for any OpenAI-compatible endpoint.</p></li>
+        <li><strong>Discover models.</strong>
+          <p>Use model discovery to pull the provider's available models, and adjust their settings as needed.</p></li>
+        <li><strong>Assign models to use cases.</strong>
+          <p>Each AI feature runs on the provider + model you assign it:</p>
+          <div class="tablewrap"><table>
+            <tr><th>Use case</th><th>Powers</th></tr>
+            <tr><td>Teacher &amp; Admin Chat</td><td class="dim">The assistant available to staff</td></tr>
+            <tr><td>Student Chat</td><td class="dim">The student-facing assistant</td></tr>
+            <tr><td>PDF Description Generation</td><td class="dim">Page summaries of learning materials (drives study recommendations)</td></tr>
+            <tr><td>Quiz PDF Extraction</td><td class="dim">The PDF quiz batch importer</td></tr>
+            <tr><td>Question Simulation Generation</td><td class="dim">Interactive simulation building</td></tr>
+          </table></div></li>
+      </ol>
+      <div class="callout note"><span class="ic">!</span><p>A feature whose use case has no assignment will fail with a “no provider” error — assign every use case you intend to use, and check usage metrics on this page to monitor consumption.</p></div>
+    </section>
+
+    <section class="block" id="admin-ops">
+      <h2><span class="kicker">System</span> Email, backups &amp; logs</h2>
+      <h3>Email (SMTP)</h3>
+      <p class="lead">On <strong>Email</strong>, enter your SMTP host, port, username, password, from-address, and from-name, then use <strong>send test email</strong> to verify delivery. You can also cap how many emails each teacher may send.</p>
+      <h3>Database backup</h3>
+      <p class="lead">On <strong>Backup</strong>, run on-demand backups, list existing ones, test the storage connection (WebDAV / OneDrive / S3), and restore when needed.</p>
+      <h3>System logs</h3>
+      <p class="lead">On <strong>Logs</strong>, audit everything the platform records — logins, API activity, worker jobs, system events. Filter by category (<code>AUTH</code>, <code>API</code>, <code>WORKER</code>, <code>USAGE</code>, <code>SYSTEM</code>) and severity (info / warning / error), or free-text search by message, type, or IP.</p>
+    </section>
+  </div>
+
+  <!-- ══════════════════════ TEACHER ══════════════════════ -->
+  <div role="tabpanel" id="panel-teacher" class="panel-teacher" aria-labelledby="tab-teacher" hidden>
+    <p class="panel-intro">Teachers create classes from a roster, invite students with a secure link, assign quizzes from the shared pool, upload learning materials that power AI study recommendations, and export grades straight back to the eLC gradebook.</p>
+
+    <section class="block" id="teacher-signup">
+      <h2><span class="kicker">Setup</span> Create your teacher account</h2>
+      <ol class="steps">
+        <li><strong>Get the teacher registration code</strong> from your platform administrator.</li>
+        <li><strong>Open <code>/register</code>.</strong>
+          <p>Fill in your first name, last name, a username, your email, and a password, then enter the registration code and submit.</p></li>
+        <li><strong>Sign in at <code>/login</code></strong> with your email or username. Your sidebar shows <em>Dashboard, My Classes, Stats, Quizzes, and Messages</em>.</li>
+      </ol>
+    </section>
+
+    <section class="block" id="teacher-create-class">
+      <h2><span class="kicker">Classes</span> Create a class &amp; upload the roster</h2>
+      <p class="lead">A class is created together with its official student roster. The roster is what later verifies students' identities when they join, so it comes first.</p>
+      <ol class="steps">
+        <li><strong>Export your classlist from eLC.</strong>
+          <p>In eLC (Brightspace), export your classlist as CSV. AI4Talent reads the standard export directly — it needs these columns (extra columns are ignored):</p>
+          <div class="tablewrap"><table>
+            <tr><th>Column</th><th>Accepted headers</th></tr>
+            <tr><td>Student ID</td><td class="dim">OrgDefinedId · Id · Student ID · 81 Number (a leading <code>#</code> is fine)</td></tr>
+            <tr><td>Last Name</td><td class="dim">Last Name</td></tr>
+            <tr><td>First Name</td><td class="dim">First Name</td></tr>
+            <tr><td>Email</td><td class="dim">Email</td></tr>
+          </table></div>
+          <p>If the file has no header row, columns are read in the order <em>ID, Last Name, First Name, Email</em>. Rows missing an ID, name, or email are skipped.</p></li>
+        <li><strong>Go to My Classes → Create New Class.</strong>
+          <p>Enter the <strong>Class Name</strong> (e.g. “CSCI4300 Web Programming – Spring 2026”) and an optional description.</p></li>
+        <li><strong>Upload the roster CSV.</strong>
+          <p>Click the <strong>Class List (CSV)</strong> upload area and pick your file. A live preview table shows every parsed student (last name, first name, email) so you can confirm the import looks right.</p></li>
+        <li><strong>Click Create Class.</strong>
+          <p>You'll land on the class page, with cards for Quizzes, Learning Materials, and your roster.</p></li>
+      </ol>
+      <div class="callout note"><span class="ic">!</span><p>Only students on the roster can join the class — the invite flow checks each student's 81 number against this list. If enrollment changes, update the class list before sharing the invite link with new students.</p></div>
+    </section>
+
+    <section class="block" id="teacher-invite">
+      <h2><span class="kicker">Classes</span> Invite students</h2>
+      <p class="lead">Students join through a tokenized invite link plus an identity check against your roster — no accounts to create by hand.</p>
+      <ol class="steps">
+        <li><strong>Open the class and click Invite Link.</strong></li>
+        <li><strong>Generate a link.</strong>
+          <p>Under <strong>Generate New Link</strong>, optionally set <strong>Expires in (days)</strong> and <strong>Max uses</strong> — leave them blank for a link that never expires and has unlimited uses. Click <strong>Generate</strong>.</p></li>
+        <li><strong>Copy and share.</strong>
+          <p>The link appears under <strong>Active Links</strong> with a <strong>Copy</strong> button, a usage counter, and its expiry. Share it with your class by email or your LMS.</p></li>
+        <li><strong>Students verify and join.</strong>
+          <p>Each student opens the link, enters their <strong>81 number</strong>, and the platform matches it to your roster. Their name is pre-filled from the roster; they pick a username, email, and password, and are enrolled the moment the account is created. An 81 number can only register once.</p></li>
+      </ol>
+      <div class="callout tip"><span class="ic">✓</span><p>Set an expiry or max-uses on links you post somewhere semi-public. You can keep several active links with different limits at the same time.</p></div>
+    </section>
+
+    <section class="block" id="teacher-quizzes">
+      <h2><span class="kicker">Content</span> Add, schedule &amp; publish quizzes</h2>
+      <p class="lead">Classes are assigned quizzes from the shared quiz pool. A quiz only becomes visible to students when you publish it.</p>
+      <ol class="steps">
+        <li><strong>Open the class → Manage Quizzes.</strong>
+          <p>The page shows <strong>Assigned Quizzes</strong> (with Published/Draft badges) and an <strong>Add Quizzes</strong> section.</p></li>
+        <li><strong>Add quizzes from the pool.</strong>
+          <p>Pick quizzes from the pool, organized by topic. Need something custom? Create your own quizzes under <strong>Quizzes</strong> in the sidebar — they appear in your pool to assign.</p></li>
+        <li><strong>Configure quiz settings.</strong>
+          <p>Each assigned quiz has a settings dialog with:</p>
+          <ul>
+            <li><strong>Opens / Closes</strong> — the availability window; outside it students can't start the quiz.</li>
+            <li><strong>Max attempts</strong> — cap the number of attempts, or leave blank for unlimited retries.</li>
+          </ul></li>
+        <li><strong>Publish.</strong>
+          <p>Toggle <strong>Publish</strong> when the quiz is ready. You can unpublish or remove a quiz from the class at any time.</p></li>
+      </ol>
+    </section>
+
+    <section class="block" id="teacher-materials">
+      <h2><span class="kicker">Content</span> Upload learning materials</h2>
+      <p class="lead">Learning materials (lecture notes, textbook chapters as PDFs) do double duty: students can study them, and the AI uses them to build <em>page-level study recommendations</em> after each quiz.</p>
+      <ol class="steps">
+        <li><strong>Open the class → Manage Materials</strong> and upload your PDFs.</li>
+        <li><strong>Let processing finish.</strong>
+          <p>A background worker analyzes each document page-by-page. Once processed, post-quiz recommendations can point students at the exact pages that cover what they missed.</p></li>
+      </ol>
+      <div class="callout tip"><span class="ic">✓</span><p>Upload materials <em>before</em> students start taking quizzes — recommendations can only cite documents that exist in the class.</p></div>
+    </section>
+
+    <section class="block" id="teacher-results">
+      <h2><span class="kicker">Results</span> Monitor results &amp; message students</h2>
+      <ol class="steps">
+        <li><strong>Class statistics.</strong>
+          <p>Open <strong>Statistics</strong> on the class page (or <strong>Stats</strong> in the sidebar for everything at once) for performance across quizzes.</p></li>
+        <li><strong>Per-quiz stats.</strong>
+          <p>Each assigned quiz has its own stats page showing how the class did on it.</p></li>
+        <li><strong>Per-student drill-down.</strong>
+          <p>Click a student in the roster to see their progress and open any individual attempt.</p></li>
+        <li><strong>Message students.</strong>
+          <p>Use <strong>Messages</strong> to send announcements; students see them under Notifications, and they can contact you from their class page.</p></li>
+      </ol>
+    </section>
+
+    <section class="block" id="teacher-export">
+      <h2><span class="kicker">Results</span> Export grades to eLC</h2>
+      <p class="lead">Quiz grades export as a CSV in the exact eLC (Brightspace) gradebook format, ready to import into the Grades tool with no manual editing.</p>
+      <ol class="steps">
+        <li><strong>Open the quiz's stats page</strong> and click <strong>Export grades (eLC CSV)</strong>.</li>
+        <li><strong>Name the grade column.</strong>
+          <p>The dialog pre-fills the eLC-style column header (e.g. <code>Quiz 3 Points Grade &lt;Numeric MaxPoints:100&gt;</code>); adjust it to match the gradebook item you're importing into.</p></li>
+        <li><strong>Download and import.</strong>
+          <p>The CSV contains every roster student with their <strong>best completed score</strong> (0–100). Import it in eLC's Grades tool.</p></li>
+      </ol>
+      <div class="callout note"><span class="ic">!</span><p>Students who haven't completed the quiz appear without a score, so you can spot missing submissions during import.</p></div>
+    </section>
+  </div>
+
+  <!-- ══════════════════════ STUDENT ══════════════════════ -->
+  <div role="tabpanel" id="panel-student" class="panel-student" aria-labelledby="tab-student" hidden>
+    <p class="panel-intro">As a student you join your class with an invite link from your teacher, take quizzes online, and get personalized AI feedback after every attempt — a performance summary, reading recommendations, and interactive simulations to explore what you missed.</p>
+
+    <section class="block" id="student-join">
+      <h2><span class="kicker">Setup</span> Join your class</h2>
+      <p class="lead">There's no open sign-up page for students — your account is created the moment you join your first class through your teacher's invite link.</p>
+      <ol class="steps">
+        <li><strong>Open the invite link</strong> your teacher shared. You'll see the class name and teacher so you know you're in the right place.</li>
+        <li><strong>Verify your identity.</strong>
+          <p>Enter your <strong>81 number</strong> (your university ID — with or without the leading <code>#</code>). The platform checks it against the official class roster and shows your name once verified.</p>
+          <ul>
+            <li>“81 not found” means you're not on the roster yet — ask your teacher to update the class list.</li>
+            <li>“Already registered” means an account already exists for your 81 number — just <a href="#student-signin">sign in</a> instead.</li>
+          </ul></li>
+        <li><strong>Create your account.</strong>
+          <p>Your name is pre-filled from the roster. Choose a username, enter your email, set a password, and click <strong>Create account &amp; join class</strong>. You're signed in automatically and taken straight to your class.</p></li>
+      </ol>
+      <div class="callout tip"><span class="ic">✓</span><p>Already have an account from another class? Open the new invite link while signed in and you'll get a one-click <strong>Join</strong> button — no second account needed.</p></div>
+    </section>
+
+    <section class="block" id="student-signin">
+      <h2><span class="kicker">Setup</span> Sign in &amp; find your way around</h2>
+      <ol class="steps">
+        <li><strong>Sign in at <code>/login</code></strong> with your email <em>or</em> username, plus your password.</li>
+        <li><strong>Your dashboard</strong> shows your enrolled classes, how many quizzes you've completed, and recent notifications. The sidebar has <em>Dashboard, My Classes, Notifications, and Exam History</em>.</li>
+        <li><strong>Open a class</strong> to see its quizzes grouped by topic. Each quiz shows <strong>Start</strong>, <strong>Continue</strong> (you have an attempt in progress), or <strong>Retry</strong> (you've completed it); quizzes outside their availability window appear locked.</li>
+      </ol>
+    </section>
+
+    <section class="block" id="student-quiz">
+      <h2><span class="kicker">Quizzes</span> Take a quiz</h2>
+      <ol class="steps">
+        <li><strong>Click Start.</strong>
+          <p>An attempt begins immediately and the first question appears, with a progress bar and numbered dots for every question — answered ones turn green.</p></li>
+        <li><strong>Answer each question.</strong>
+          <ul>
+            <li><strong>Single choice</strong> — pick one option.</li>
+            <li><strong>“Select all that apply”</strong> — check every correct option.</li>
+            <li><strong>Numeric</strong> — type a number (the unit is shown next to the field).</li>
+            <li>Click any figure or image choice to enlarge it.</li>
+          </ul></li>
+        <li><strong>Move around freely.</strong>
+          <p>Use Previous/Next or jump straight to a question via its dot. Your progress is saved — if you leave, the quiz shows <strong>Continue</strong> next time.</p></li>
+        <li><strong>Submit.</strong>
+          <p>The <strong>Submit Quiz</strong> button unlocks once <em>every</em> question is answered. Watch the closing date, and note your teacher may cap attempts.</p></li>
+      </ol>
+    </section>
+
+    <section class="block" id="student-results">
+      <h2><span class="kicker">Feedback</span> Understand your results</h2>
+      <p class="lead">Right after you submit you'll see your <strong>score</strong> — and within moments, personalized feedback generated for your attempt:</p>
+      <ol class="steps">
+        <li><strong>AI performance summary.</strong>
+          <p>A short readout of how you did and which concept areas need attention.</p></li>
+        <li><strong>Study recommendations.</strong>
+          <p>Up to three pointers into your class's learning materials, down to the specific page ranges that cover what you missed.</p></li>
+        <li><strong>Interactive simulations.</strong>
+          <p>Hands-on concept explorations matched to the questions you saw — open one and experiment until the idea clicks.</p></li>
+      </ol>
+      <div class="callout note"><span class="ic">!</span><p>You won't see per-question correct answers — that's by design. The feedback tells you <em>what to study</em>, and if retries are allowed you can hit <strong>Retry Quiz</strong> once you've reviewed.</p></div>
+      <div class="callout tip"><span class="ic">✓</span><p>Feedback keeps generating even if you close the page — find it later under <strong>Exam History</strong>, which stores the results of every attempt.</p></div>
+    </section>
+
+    <section class="block" id="student-progress">
+      <h2><span class="kicker">Progress</span> Track progress &amp; get help</h2>
+      <ol class="steps">
+        <li><strong>Exam History</strong> lists all your past attempts — per class or across everything — with their saved results pages.</li>
+        <li><strong>Notifications</strong> collects announcements and messages from your teachers (the sidebar badge shows unread count).</li>
+        <li><strong>Contact your teacher</strong> straight from the class page via the <strong>Contact teacher</strong> button.</li>
+      </ol>
+    </section>
+  </div>
+
+</main>
+
+<footer>
+  AI4Talent · Adaptive Learning Platform — User Guide
+</footer>
+
+<script>
+(function () {
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('[role="tab"]'));
+  var order = ['admin', 'teacher', 'student'];
+
+  function roleOf(el) { return el.id.replace(/^tab-/, ''); }
+
+  function select(role, opts) {
+    opts = opts || {};
+    tabs.forEach(function (tab) {
+      var active = roleOf(tab) === role;
+      tab.setAttribute('aria-selected', active ? 'true' : 'false');
+      tab.tabIndex = active ? 0 : -1;
+      document.getElementById('panel-' + roleOf(tab)).hidden = !active;
+      if (active && opts.focus) tab.focus();
+    });
+    if (opts.updateHash !== false) {
+      history.replaceState(null, '', '#' + (opts.hash || role));
+    }
+  }
+
+  tabs.forEach(function (tab) {
+    tab.addEventListener('click', function () { select(roleOf(tab)); });
+    tab.addEventListener('keydown', function (e) {
+      var i = order.indexOf(roleOf(tab)), next = null;
+      if (e.key === 'ArrowRight') next = order[(i + 1) % order.length];
+      if (e.key === 'ArrowLeft') next = order[(i + order.length - 1) % order.length];
+      if (e.key === 'Home') next = order[0];
+      if (e.key === 'End') next = order[order.length - 1];
+      if (next) { e.preventDefault(); select(next, { focus: true }); }
+    });
+  });
+
+  // Deep links: #teacher activates a tab; #teacher-invite activates the tab and scrolls.
+  function applyHash() {
+    var hash = location.hash.replace(/^#/, '');
+    if (!hash) return;
+    var role = order.filter(function (r) { return hash === r || hash.indexOf(r + '-') === 0; })[0];
+    if (!role) return;
+    select(role, { updateHash: false });
+    var target = document.getElementById(hash);
+    if (target && hash !== role) {
+      var raf = window.requestAnimationFrame || function (fn) { setTimeout(fn, 0); };
+      raf(function () { target.scrollIntoView(); });
+    }
+  }
+  window.addEventListener('hashchange', applyHash);
+  applyHash();
+
+  // Cross-tab in-page links (e.g. admin → #admin-ai-config) work natively;
+  // links that target another tab's section route through applyHash.
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest ? e.target.closest('a[href^="#"]') : null;
+    if (!a) return;
+    var hash = a.getAttribute('href').slice(1);
+    var role = order.filter(function (r) { return hash === r || hash.indexOf(r + '-') === 0; })[0];
+    if (role) {
+      e.preventDefault();
+      history.replaceState(null, '', '#' + hash);
+      select(role, { updateHash: false });
+      var target = document.getElementById(hash);
+      if (target && hash !== role) target.scrollIntoView();
+    }
+  });
+})();
+</script>
+</body>
+</html>
