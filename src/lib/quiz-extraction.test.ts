@@ -1,10 +1,19 @@
 import { describe, it, expect } from "vitest";
 import {
   QUIZ_EXTRACTION_SCHEMA,
+  QUIZ_ANSWER_KEY_SCHEMA,
   QUIZ_LOCALIZATION_SCHEMA,
   buildExtractionPrompt,
+  buildAnswerKeyPrompt,
   buildLocalizationPrompt,
+  summarizeQuestionsForAnswerKey,
+  optionLetter,
+  letterToOptionIndex,
   validateExtractedQuiz,
+  validateAnswerKeyResult,
+  applyAnswerKey,
+  normalizeStructure,
+  finalizeAnswers,
   normalizeExtractedQuiz,
   validateCommitQuestions,
   mapStagedToQuestionData,
@@ -16,6 +25,7 @@ import {
   validateLocalizationResult,
   mergeLocalizedBoxes,
   LATEX_INLINE_DELIMITER,
+  type AnswerKeyResult,
   type ExtractedQuiz,
   type StagedQuestion,
 } from "./quiz-extraction";
@@ -483,13 +493,20 @@ describe("buildExtractionPrompt", () => {
     expect(buildExtractionPrompt(1)).toContain("1 page image,");
   });
 
-  it("includes the green checkmark / green bold answer-key rule", () => {
-    expect(prompt).toMatch(/green checkmark/i);
-    expect(prompt).toMatch(/green bold/i);
+  it("tells the model NOT to determine answers in this pass", () => {
+    expect(prompt).toMatch(/do not decide which option is correct/i);
+    expect(prompt).toMatch(/leave every is_correct null/i);
   });
 
-  it("includes the never-guess instruction for a missing key", () => {
-    expect(prompt).toMatch(/never infer, guess, or solve/i);
+  it("explains shared / unified labeled option banks reused across numbered items", () => {
+    expect(prompt).toMatch(/shared/i);
+    expect(prompt).toMatch(/matching \/ classification/i);
+    expect(prompt).toMatch(/full shared option list/i);
+  });
+
+  it("tells the model to strip option labels and rely on position", () => {
+    expect(prompt).toMatch(/strip the leading label/i);
+    expect(prompt).toMatch(/labeled/i);
   });
 
   it("includes the $ LaTeX instruction", () => {
@@ -509,6 +526,315 @@ describe("buildExtractionPrompt", () => {
 
   it("is deterministic for a given page count", () => {
     expect(buildExtractionPrompt(5)).toBe(buildExtractionPrompt(5));
+  });
+});
+
+// ─── optionLetter / letterToOptionIndex ─────────────────────────────────────────
+
+describe("optionLetter / letterToOptionIndex", () => {
+  it("maps 0-based indices to spreadsheet-style letters", () => {
+    expect(optionLetter(0)).toBe("A");
+    expect(optionLetter(3)).toBe("D");
+    expect(optionLetter(25)).toBe("Z");
+    expect(optionLetter(26)).toBe("AA");
+  });
+
+  it("maps letters back to indices, case-insensitively", () => {
+    expect(letterToOptionIndex("A")).toBe(0);
+    expect(letterToOptionIndex("d")).toBe(3);
+    expect(letterToOptionIndex("Z")).toBe(25);
+    expect(letterToOptionIndex("AA")).toBe(26);
+  });
+
+  it("returns null for non A..Z labels", () => {
+    expect(letterToOptionIndex("1")).toBeNull();
+    expect(letterToOptionIndex("")).toBeNull();
+    expect(letterToOptionIndex("A1")).toBeNull();
+  });
+
+  it("round-trips index → letter → index", () => {
+    for (let i = 0; i < 60; i += 1) {
+      expect(letterToOptionIndex(optionLetter(i))).toBe(i);
+    }
+  });
+});
+
+// ─── summarizeQuestionsForAnswerKey ─────────────────────────────────────────────
+
+describe("summarizeQuestionsForAnswerKey", () => {
+  it("enumerates each question with lettered options and marks numeric questions", () => {
+    const summary = summarizeQuestionsForAnswerKey([
+      staged({ text: "Marital status", options: [{ text: "Nominal", isCorrect: null }, { text: "Ordinal", isCorrect: null }] }),
+      staged({ type: "NUMERIC", text: "Family income in dollars", options: [] }),
+    ]);
+    expect(summary).toContain("[0] Marital status");
+    expect(summary).toContain("A. Nominal");
+    expect(summary).toContain("B. Ordinal");
+    expect(summary).toContain("[1] Family income in dollars");
+    expect(summary).toMatch(/numeric/i);
+  });
+
+  it("renders an image option as [image: alt]", () => {
+    const summary = summarizeQuestionsForAnswerKey([
+      staged({ options: [{ text: "", isCorrect: null, isImage: true, imageAlt: "rising graph" }, { text: "plain", isCorrect: null }] }),
+    ]);
+    expect(summary).toContain("A. [image: rising graph]");
+    expect(summary).toContain("B. plain");
+  });
+});
+
+// ─── buildAnswerKeyPrompt ────────────────────────────────────────────────────────
+
+describe("buildAnswerKeyPrompt", () => {
+  const questions = [
+    staged({ text: "Marital status", options: [{ text: "Nominal", isCorrect: null }, { text: "Ordinal", isCorrect: null }] }),
+  ];
+  const prompt = buildAnswerKeyPrompt(2, questions);
+
+  it("mentions the page count", () => {
+    expect(prompt).toContain("2 page images");
+  });
+
+  it("lists all three answer-source families", () => {
+    expect(prompt).toMatch(/inline/i);
+    expect(prompt).toMatch(/consolidated key block/i);
+    expect(prompt).toMatch(/green/i);
+  });
+
+  it("instructs the model to reconcile disagreeing sources", () => {
+    expect(prompt).toMatch(/reconcil/i);
+    expect(prompt).toMatch(/conflict/i);
+  });
+
+  it("forbids solving or guessing the answer", () => {
+    expect(prompt).toMatch(/never solve the question yourself or guess/i);
+  });
+
+  it("embeds the enumerated questions", () => {
+    expect(prompt).toContain("[0] Marital status");
+    expect(prompt).toContain("A. Nominal");
+  });
+
+  it("is deterministic for the same inputs", () => {
+    expect(buildAnswerKeyPrompt(2, questions)).toBe(buildAnswerKeyPrompt(2, questions));
+  });
+});
+
+// ─── QUIZ_ANSWER_KEY_SCHEMA ─────────────────────────────────────────────────────
+
+describe("QUIZ_ANSWER_KEY_SCHEMA", () => {
+  it("is a strict json_schema payload named quiz_answer_key", () => {
+    expect(QUIZ_ANSWER_KEY_SCHEMA.name).toBe("quiz_answer_key");
+    expect(QUIZ_ANSWER_KEY_SCHEMA.strict).toBe(true);
+    expect(QUIZ_ANSWER_KEY_SCHEMA.schema.required).toEqual(["has_answer_key", "answers"]);
+    expect(QUIZ_ANSWER_KEY_SCHEMA.schema.additionalProperties).toBe(false);
+  });
+});
+
+// ─── validateAnswerKeyResult ─────────────────────────────────────────────────────
+
+function rawAnswer(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    question_index: 0,
+    correct_labels: ["A"],
+    numeric_answer: null,
+    source: "inline",
+    confidence: 0.9,
+    conflict: false,
+    note: null,
+    ...overrides,
+  };
+}
+
+describe("validateAnswerKeyResult", () => {
+  it("validates a well-formed payload", () => {
+    const result = validateAnswerKeyResult({
+      has_answer_key: true,
+      answers: [rawAnswer(), rawAnswer({ question_index: 1, correct_labels: [], numeric_answer: 3.21, source: "key_block" })],
+    });
+    expect(result.hasAnswerKey).toBe(true);
+    expect(result.answers[0].correctLabels).toEqual(["A"]);
+    expect(result.answers[1].numericAnswer).toBe(3.21);
+    expect(result.answers[1].source).toBe("key_block");
+  });
+
+  it("rejects a non-object payload / bad has_answer_key / non-array answers", () => {
+    expect(() => validateAnswerKeyResult(null)).toThrow(/must be an object/i);
+    expect(() => validateAnswerKeyResult({ has_answer_key: "yes", answers: [] })).toThrow(/has_answer_key/i);
+    expect(() => validateAnswerKeyResult({ has_answer_key: true, answers: {} })).toThrow(/answers must be an array/i);
+  });
+
+  it("rejects a negative / non-integer question_index", () => {
+    expect(() =>
+      validateAnswerKeyResult({ has_answer_key: true, answers: [rawAnswer({ question_index: -1 })] })
+    ).toThrow(/question_index/i);
+  });
+
+  it("degrades an unknown source to none, clamps confidence, and drops empty labels", () => {
+    const result = validateAnswerKeyResult({
+      has_answer_key: true,
+      answers: [rawAnswer({ source: "guessed", confidence: 5, correct_labels: ["A", "", "  ", "C"] })],
+    });
+    expect(result.answers[0].source).toBe("none");
+    expect(result.answers[0].confidence).toBe(1);
+    expect(result.answers[0].correctLabels).toEqual(["A", "C"]);
+  });
+});
+
+// ─── applyAnswerKey ──────────────────────────────────────────────────────────────
+
+function quizFrom(questions: StagedQuestion[], hasAnswerKey = false): ExtractedQuiz {
+  return { hasAnswerKey, quizTitle: null, questions, warnings: [] };
+}
+
+function answerKey(answers: AnswerKeyResult["answers"], hasAnswerKey = true): AnswerKeyResult {
+  return { hasAnswerKey, answers };
+}
+
+describe("applyAnswerKey", () => {
+  const abcd = () => [
+    { text: "Nominal", isCorrect: null },
+    { text: "Ordinal", isCorrect: null },
+    { text: "Interval", isCorrect: null },
+    { text: "Ratio", isCorrect: null },
+  ];
+
+  it("maps a correct letter onto the option position", () => {
+    const quiz = quizFrom([staged({ text: "Marital status", options: abcd() })]);
+    const applied = applyAnswerKey(quiz, answerKey([{ questionIndex: 0, correctLabels: ["A"], numericAnswer: null, source: "inline", confidence: 1, conflict: false, note: null }]));
+    expect(applied.hasAnswerKey).toBe(true);
+    expect(applied.questions[0].options.map((o) => o.isCorrect)).toEqual([true, false, false, false]);
+  });
+
+  it("handles a whole shared-bank quiz (the Week 5 keys A B C B D…)", () => {
+    const stems = ["Marital status", "Achievement rank", "Raw score", "Educational level", "Years of education"];
+    const letters = ["A", "B", "C", "B", "D"];
+    const quiz = quizFrom(stems.map((text) => staged({ text, options: abcd() })));
+    const applied = applyAnswerKey(
+      quiz,
+      answerKey(
+        letters.map((l, i) => ({ questionIndex: i, correctLabels: [l], numericAnswer: null, source: "mixed" as const, confidence: 1, conflict: false, note: null }))
+      )
+    );
+    applied.questions.forEach((q, i) => {
+      const expectedIdx = letterToOptionIndex(letters[i])!;
+      expect(q.options.findIndex((o) => o.isCorrect === true)).toBe(expectedIdx);
+      expect(q.options.filter((o) => o.isCorrect === true)).toHaveLength(1);
+    });
+  });
+
+  it("copies a numeric answer without touching options", () => {
+    const quiz = quizFrom([staged({ type: "NUMERIC", options: [] })]);
+    const applied = applyAnswerKey(quiz, answerKey([{ questionIndex: 0, correctLabels: [], numericAnswer: 3.21, source: "key_block", confidence: 1, conflict: false, note: null }]));
+    expect(applied.questions[0].numericAnswer).toBe(3.21);
+  });
+
+  it("flags a conflict for review", () => {
+    const quiz = quizFrom([staged({ options: abcd() })]);
+    const applied = applyAnswerKey(quiz, answerKey([{ questionIndex: 0, correctLabels: ["A"], numericAnswer: null, source: "mixed", confidence: 0.5, conflict: true, note: "inline said A, key said B" }]));
+    expect(applied.questions[0].needsReview).toBe(true);
+    expect(applied.questions[0].reviewNote).toMatch(/disagreed/i);
+  });
+
+  it("flags an out-of-range answer letter for review", () => {
+    const quiz = quizFrom([staged({ options: [{ text: "x", isCorrect: null }, { text: "y", isCorrect: null }] })]);
+    const applied = applyAnswerKey(quiz, answerKey([{ questionIndex: 0, correctLabels: ["Z"], numericAnswer: null, source: "inline", confidence: 1, conflict: false, note: null }]));
+    expect(applied.questions[0].needsReview).toBe(true);
+    expect(applied.questions[0].reviewNote).toMatch(/did not match an option/i);
+    expect(applied.questions[0].options.every((o) => o.isCorrect === false)).toBe(true);
+  });
+
+  it("leaves correctness null when the question has no key entry", () => {
+    const quiz = quizFrom([staged({ options: abcd() }), staged({ options: abcd() })]);
+    const applied = applyAnswerKey(quiz, answerKey([{ questionIndex: 0, correctLabels: ["A"], numericAnswer: null, source: "inline", confidence: 1, conflict: false, note: null }]));
+    expect(applied.questions[1].options.every((o) => o.isCorrect === null)).toBe(true);
+  });
+
+  it("leaves everything null and hasAnswerKey false when there is no key", () => {
+    const quiz = quizFrom([staged({ options: abcd() })]);
+    const applied = applyAnswerKey(quiz, answerKey([{ questionIndex: 0, correctLabels: ["A"], numericAnswer: null, source: "none", confidence: 0, conflict: false, note: null }], false));
+    expect(applied.hasAnswerKey).toBe(false);
+    expect(applied.questions[0].options.every((o) => o.isCorrect === null)).toBe(true);
+  });
+
+  it("does not mutate a deep-frozen input", () => {
+    const quiz = quizFrom([staged({ options: abcd() })]);
+    const deepFreeze = (obj: unknown): void => {
+      if (obj && typeof obj === "object") {
+        Object.values(obj).forEach(deepFreeze);
+        Object.freeze(obj);
+      }
+    };
+    deepFreeze(quiz);
+    expect(() =>
+      applyAnswerKey(quiz, answerKey([{ questionIndex: 0, correctLabels: ["A"], numericAnswer: null, source: "inline", confidence: 1, conflict: false, note: null }]))
+    ).not.toThrow();
+    expect(quiz.questions[0].options.every((o) => o.isCorrect === null)).toBe(true);
+  });
+});
+
+// ─── normalizeStructure / finalizeAnswers split ─────────────────────────────────
+
+describe("normalizeStructure", () => {
+  it("does NOT null correctness or add a no-key note (leaves answers to a later pass)", () => {
+    const quiz = quizFrom([staged({ options: [{ text: "a", isCorrect: true }, { text: "b", isCorrect: false }] })], false);
+    const result = normalizeStructure(quiz);
+    expect(result.questions[0].options.map((o) => o.isCorrect)).toEqual([true, false]);
+    expect(result.questions[0].reviewNote ?? "").not.toMatch(/no answer key/i);
+  });
+
+  it("still strips artifact options and forces figure review", () => {
+    const quiz = validateExtractedQuiz(
+      rawQuizPayload({
+        questions: [
+          rawQuestion({ options: [rawOption("3", false), rawOption("4", false), rawOption("◄▬►", false)], has_figure: true, figure_page: 1, figure_bbox: { x: 0.1, y: 0.1, w: 0.4, h: 0.4 } }),
+        ],
+      })
+    );
+    const result = normalizeStructure(quiz);
+    expect(result.questions[0].options.map((o) => o.text)).toEqual(["3", "4"]);
+    expect(result.questions[0].needsReview).toBe(true);
+    expect(result.questions[0].reviewNote).toMatch(/figure crop/i);
+  });
+});
+
+describe("finalizeAnswers", () => {
+  it("converts an over-marked multiple_choice to multi-select", () => {
+    const quiz = quizFrom([staged({ options: [{ text: "a", isCorrect: true }, { text: "b", isCorrect: true }, { text: "c", isCorrect: false }] })], true);
+    const result = finalizeAnswers(quiz);
+    expect(result.questions[0].type).toBe("MULTI_SELECT");
+  });
+
+  it("nulls everything and reviews all when there is no key", () => {
+    const quiz = quizFrom([staged({ options: [{ text: "a", isCorrect: true }, { text: "b", isCorrect: false }] })], false);
+    const result = finalizeAnswers(quiz);
+    expect(result.questions[0].options.every((o) => o.isCorrect === null)).toBe(true);
+    expect(result.questions[0].needsReview).toBe(true);
+    expect(result.questions[0].reviewNote).toMatch(/no answer key/i);
+  });
+});
+
+describe("structure → answer key → finalize (shared-bank end to end)", () => {
+  it("resolves a matching-style quiz with a consolidated key into fully answered questions", () => {
+    // Pass 1 produced 3 questions all sharing the A/B/C/D bank, no answers yet.
+    const structured = normalizeStructure(
+      quizFrom([
+        staged({ text: "Marital status", options: [{ text: "Nominal", isCorrect: null }, { text: "Ordinal", isCorrect: null }, { text: "Interval", isCorrect: null }, { text: "Ratio", isCorrect: null }] }),
+        staged({ text: "Achievement rank", options: [{ text: "Nominal", isCorrect: null }, { text: "Ordinal", isCorrect: null }, { text: "Interval", isCorrect: null }, { text: "Ratio", isCorrect: null }] }),
+        staged({ text: "Raw score", options: [{ text: "Nominal", isCorrect: null }, { text: "Ordinal", isCorrect: null }, { text: "Interval", isCorrect: null }, { text: "Ratio", isCorrect: null }] }),
+      ])
+    );
+    // Pass 2 read "Keys: A B C" from the bottom of the page.
+    const withKey = applyAnswerKey(
+      structured,
+      answerKey(["A", "B", "C"].map((l, i) => ({ questionIndex: i, correctLabels: [l], numericAnswer: null, source: "key_block" as const, confidence: 1, conflict: false, note: null })))
+    );
+    const final = finalizeAnswers(withKey);
+    expect(final.hasAnswerKey).toBe(true);
+    expect(final.questions.map((q) => q.options.findIndex((o) => o.isCorrect === true))).toEqual([0, 1, 2]);
+    expect(final.questions.every((q) => q.options.filter((o) => o.isCorrect === true).length === 1)).toBe(true);
+    // No spurious "no answer key" / "not marked" review flags.
+    expect(final.questions.some((q) => /no answer key|no correct option/i.test(q.reviewNote ?? ""))).toBe(false);
   });
 });
 
