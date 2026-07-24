@@ -19,9 +19,9 @@ import { retryWithExponentialBackoff } from "./retry";
 import {
   streamChatCompletion,
   streamJsonCompletion,
-  aggregateMetrics,
   type AiCallMetrics,
 } from "./ai-streaming";
+import { buildSimulationMetrics } from "./simulation-metrics";
 import {
   SIMULATION_TRIAGE_SCHEMA,
   SIMULATION_REVIEW_SCHEMA,
@@ -54,6 +54,7 @@ const NO_PROVIDER_MESSAGE =
 type CallContext = {
   client: OpenAI;
   model: string;
+  providerType: ResolvedProvider["providerType"];
   serviceTier: string | null;
   tierActive: boolean;
   isLocal: boolean;
@@ -65,7 +66,14 @@ async function buildCallContext(provider: ResolvedProvider): Promise<CallContext
   const serviceTier = provider.serviceTier;
   const tierActive =
     !isLocal && (serviceTier === "auto" || serviceTier === "default" || serviceTier === "flex");
-  return { client, model: provider.model, serviceTier, tierActive, isLocal };
+  return {
+    client,
+    model: provider.model,
+    providerType: provider.providerType,
+    serviceTier,
+    tierActive,
+    isLocal,
+  };
 }
 
 function tierParam(ctx: CallContext) {
@@ -297,16 +305,13 @@ async function runFirstGeneration(sim: LoadedSimulation): Promise<void> {
     const plan = validateTriagePlan(triage.value, siblings.length);
 
     if (!plan.helpful) {
-      const agg = aggregateMetrics(callMetrics);
       await prisma.questionSimulation.update({
         where: { id: sim.id },
         data: {
           status: "DECLINED",
           declineReason: plan.refusalReason,
           errorMessage: null,
-          aiModel: agg?.model ?? null,
-          aiTtftMs: agg?.ttftMs ?? null,
-          aiTokens: agg?.completionTokens ?? null,
+          ...buildSimulationMetrics(ctx.providerType, callMetrics),
         },
       });
       console.log(`[Simulation] ${sim.id} declined: ${plan.refusalReason}`);
@@ -315,7 +320,6 @@ async function runFirstGeneration(sim: LoadedSimulation): Promise<void> {
 
     if (plan.duplicateOfIndex !== null) {
       const source = siblingRows[plan.duplicateOfIndex];
-      const agg = aggregateMetrics(callMetrics);
       await prisma.questionSimulation.update({
         where: { id: sim.id },
         data: {
@@ -330,9 +334,7 @@ async function runFirstGeneration(sim: LoadedSimulation): Promise<void> {
           bucket: source.bucket,
           declineReason: null,
           errorMessage: null,
-          aiModel: agg?.model ?? null,
-          aiTtftMs: agg?.ttftMs ?? null,
-          aiTokens: agg?.completionTokens ?? null,
+          ...buildSimulationMetrics(ctx.providerType, callMetrics),
         },
       });
       console.log(`[Simulation] ${sim.id} reuses sibling ${source.id} (${source.topic})`);
@@ -352,7 +354,6 @@ async function runFirstGeneration(sim: LoadedSimulation): Promise<void> {
     );
     await putS3Object(bucket, key, html, "text/html; charset=utf-8");
 
-    const agg = aggregateMetrics(callMetrics);
     await prisma.questionSimulation.update({
       where: { id: sim.id },
       data: {
@@ -366,9 +367,7 @@ async function runFirstGeneration(sim: LoadedSimulation): Promise<void> {
         version,
         declineReason: null,
         errorMessage: null,
-        aiModel: agg?.model ?? null,
-        aiTtftMs: agg?.ttftMs ?? null,
-        aiTokens: agg?.completionTokens ?? null,
+        ...buildSimulationMetrics(ctx.providerType, callMetrics),
       },
     });
     console.log(`[Simulation] ${sim.id} ready: "${plan.title}" (${plan.topic}) v${version}`);
@@ -476,7 +475,6 @@ async function runRevision(sim: LoadedSimulation, feedbackId: string): Promise<v
     );
     await putS3Object(bucket, key, html, "text/html; charset=utf-8");
 
-    const agg = aggregateMetrics(callMetrics);
     await prisma.$transaction([
       prisma.questionSimulation.update({
         where: { id: sim.id },
@@ -486,9 +484,7 @@ async function runRevision(sim: LoadedSimulation, feedbackId: string): Promise<v
           bucket,
           version,
           errorMessage: null,
-          aiModel: agg?.model ?? null,
-          aiTtftMs: agg?.ttftMs ?? null,
-          aiTokens: agg?.completionTokens ?? null,
+          ...buildSimulationMetrics(ctx.providerType, callMetrics),
         },
       }),
       prisma.simulationFeedback.update({

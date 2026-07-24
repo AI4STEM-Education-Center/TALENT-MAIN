@@ -6,7 +6,7 @@ interface AiMetricsLineProps {
   prefix?: string;
 }
 
-/** Compact persisted extraction stats shared by teacher and admin material lists. */
+/** Compact persisted AI-generation stats shared across staff and student views. */
 export function AiMetricsLine({
   metrics,
   className,

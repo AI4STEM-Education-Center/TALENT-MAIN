@@ -813,10 +813,13 @@ model QuestionSimulation {
 
   sourceSimulationId String? // lineage: the sim this row was deep-copied from (plain id, no FK)
 
-  // AI generation metrics, aggregated across the job's calls.
-  aiModel  String?
-  aiTtftMs Int?
-  aiTokens Int?
+  // AI generation metrics, aggregated across the most recent job's calls.
+  aiModel           String? // provider-qualified, e.g. "openai/gpt-5.5"
+  aiTtftMs          Int?
+  aiGenerationMs    Int?
+  aiTotalMs         Int?
+  aiTokens          Int?
+  aiTokensEstimated Boolean?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
