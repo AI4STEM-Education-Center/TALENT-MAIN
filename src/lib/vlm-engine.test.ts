@@ -15,7 +15,7 @@ import {
 // material metadata never falls back to free-form concepts.
 
 const TODAYS_TIER1_PROMPT =
-  "You are analyzing a single page from an educational document. Extract the key concept and a brief description. Determine if this page is needed for understanding the core material (e.g., skip table of contents or blank pages).";
+  "You are analyzing a single page from an educational document. Extract the key concept and a brief description. Determine if this page is needed for understanding the core material (e.g., skip table of contents or blank pages). Pages consisting mainly of example or practice problems do not convey core content on their own—especially problem statements presented without worked solutions or explanations—so mark such pages as not needed unless they include the explanatory solution or derivation that actually teaches the concept.";
 
 const TODAYS_TIER2_PROMPT =
   "Based on these pages from a learning material, provide a cohesive batch summary and a list of overarching key concepts across the document.";
@@ -35,6 +35,13 @@ describe("buildTier1Prompt", () => {
     expect(prompt).toContain("- Newton's 2nd Law");
     expect(prompt).toContain("- Kinematics: Velocity");
     expect(prompt).toContain("must not introduce unlisted concepts");
+  });
+
+  it("instructs that example/practice problems are not core content on their own", () => {
+    const prompt = buildTier1Prompt(LABELS);
+    expect(prompt).toContain("example or practice problems");
+    expect(prompt).toContain("without worked solutions or explanations");
+    expect(prompt).toContain("mark such pages as not needed");
   });
 });
 
