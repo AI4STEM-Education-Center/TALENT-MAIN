@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { invalidateProviderCache } from "@/lib/ai-provider";
+import { logApiError } from "@/lib/system-log";
 
 const VALID_USE_CASES = [
   "teacher_chat",
@@ -55,7 +56,7 @@ export async function GET() {
 
     return NextResponse.json({ assignments: assignmentMap });
   } catch (error) {
-    console.error("[AI_ASSIGNMENTS_GET]", error);
+    logApiError("AI_ASSIGNMENTS_GET", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
@@ -143,7 +144,7 @@ export async function PUT(req: Request) {
 
     return NextResponse.json({ results });
   } catch (error) {
-    console.error("[AI_ASSIGNMENTS_PUT]", error);
+    logApiError("AI_ASSIGNMENTS_PUT", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

@@ -484,4 +484,20 @@ describe("dedupeStoredSimulations", () => {
     const list = [sim("a", "One"), sim("b", "Two")];
     expect(dedupeStoredSimulations(list)).toEqual(list);
   });
+
+  it("drops an unavailable entry when a live entry shares its display identity", () => {
+    const deduped = dedupeStoredSimulations([
+      { ...sim("a", "Friction Explorer", "Friction"), unavailable: true },
+      sim("b", "friction  explorer", "FRICTION"),
+    ]);
+    expect(deduped.map((s) => s.simulationId)).toEqual(["b"]);
+  });
+
+  it("keeps an unavailable entry that has no live duplicate", () => {
+    const deduped = dedupeStoredSimulations([
+      { ...sim("a", "Friction Explorer", "Friction"), unavailable: true },
+      sim("b", "Projectile Lab", "Kinematics"),
+    ]);
+    expect(deduped.map((s) => s.simulationId)).toEqual(["a", "b"]);
+  });
 });

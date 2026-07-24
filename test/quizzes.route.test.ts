@@ -98,6 +98,37 @@ describe("POST /api/quizzes (create)", () => {
     expect(body.topicId).toBe(topic.id);
     expect(body.topic.name).toBe("Mine");
   });
+
+  it("409s with dedupeByName when a same-named quiz exists under the topic (case/space-insensitive)", async () => {
+    const topic = await prisma.topic.create({ data: { name: "T", teacherId: null } });
+    const existing = await prisma.quiz.create({ data: { name: "Chapter 1", topicId: topic.id, teacherId: null } });
+    asAdmin();
+    const res = await POST(jsonReq({ name: "  chapter 1 ", topicId: topic.id, dedupeByName: true }));
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.duplicate).toBe(true);
+    expect(body.existingQuizId).toBe(existing.id);
+  });
+
+  it("dedupeByName only matches within the same topic and scope", async () => {
+    const topicA = await prisma.topic.create({ data: { name: "A", teacherId: null } });
+    const topicB = await prisma.topic.create({ data: { name: "B", teacherId: null } });
+    await prisma.quiz.create({ data: { name: "Chapter 1", topicId: topicA.id, teacherId: null } });
+    const { teacher } = await createTeacher();
+    // Same name under a teacher's scope must not block the admin pool either.
+    await prisma.quiz.create({ data: { name: "Chapter 1", teacherId: teacher.id } });
+
+    asAdmin();
+    const res = await POST(jsonReq({ name: "Chapter 1", topicId: topicB.id, dedupeByName: true }));
+    expect(res.status).toBe(201);
+  });
+
+  it("allows duplicate names without the dedupeByName flag (existing behavior)", async () => {
+    const topic = await prisma.topic.create({ data: { name: "T", teacherId: null } });
+    await prisma.quiz.create({ data: { name: "Chapter 1", topicId: topic.id, teacherId: null } });
+    asAdmin();
+    expect((await POST(jsonReq({ name: "Chapter 1", topicId: topic.id }))).status).toBe(201);
+  });
 });
 
 describe("GET /api/quizzes/[id] (detail)", () => {

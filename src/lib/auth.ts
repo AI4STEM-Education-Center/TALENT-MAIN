@@ -3,6 +3,7 @@ import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit, clientIp } from "@/lib/rate-limit";
+import { logSystemEvent } from "@/lib/system-log";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
@@ -18,11 +19,27 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
         if (!identifier || !password) return null;
 
+        const ip = request instanceof Request ? clientIp(request) : null;
+
         // Throttle password brute force per IP. Over the limit we behave like a
         // failed login (return null) rather than surfacing a distinct error.
-        if (process.env.NODE_ENV !== "test" && request instanceof Request) {
-          const { allowed } = checkRateLimit(`login:${clientIp(request)}`, 10, 60_000);
-          if (!allowed) return null;
+        if (process.env.NODE_ENV !== "test" && ip !== null) {
+          const { allowed } = checkRateLimit(`login:${ip}`, 10, 60_000);
+          if (!allowed) {
+            // Record the throttling at most once per window per IP (via a
+            // second limiter bucket) so a brute-force run can't flood the log.
+            if (checkRateLimit(`login-throttle-log:${ip}`, 1, 60_000).allowed) {
+              await logSystemEvent({
+                category: "AUTH",
+                type: "LOGIN_RATE_LIMITED",
+                severity: "WARNING",
+                message: `Login attempts throttled for ${ip} (possible brute force)`,
+                ip,
+                metadata: { identifier },
+              });
+            }
+            return null;
+          }
         }
 
         // Find by email OR username
@@ -35,10 +52,39 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           },
         });
 
-        if (!user) return null;
+        if (!user) {
+          await logSystemEvent({
+            category: "AUTH",
+            type: "LOGIN_FAILED",
+            severity: "WARNING",
+            message: `Failed login: no account matches "${identifier}"`,
+            ip,
+            metadata: { identifier, reason: "unknown_user" },
+          });
+          return null;
+        }
 
         const isValid = await bcrypt.compare(password, user.hashedPassword);
-        if (!isValid) return null;
+        if (!isValid) {
+          await logSystemEvent({
+            category: "AUTH",
+            type: "LOGIN_FAILED",
+            severity: "WARNING",
+            message: `Failed login: wrong password for ${user.username}`,
+            userId: user.id,
+            ip,
+            metadata: { identifier, reason: "wrong_password" },
+          });
+          return null;
+        }
+
+        await logSystemEvent({
+          category: "AUTH",
+          type: "LOGIN_SUCCESS",
+          message: `${user.username} (${user.role}) signed in`,
+          userId: user.id,
+          ip,
+        });
 
         return {
           id: user.id,

@@ -64,5 +64,7 @@ data/
 docker-compose.override.yml
 ec2-setup.sh
 
-docs/
+# Ignore ad-hoc docs, but track the published user guide (GitHub Pages).
+docs/*
+!docs/site/
 scripts/

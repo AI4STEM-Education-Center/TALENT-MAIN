@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { invalidateProviderCache } from "@/lib/ai-provider";
+import { logApiError } from "@/lib/system-log";
 
 /**
  * GET /api/admin/ai-providers/[id]/models
@@ -39,7 +40,7 @@ export async function GET(
       })),
     });
   } catch (error) {
-    console.error("[AI_MODELS_GET]", error);
+    logApiError("AI_MODELS_GET", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
@@ -121,7 +122,7 @@ export async function POST(
       );
     }
 
-    console.error("[AI_MODELS_POST]", error);
+    logApiError("AI_MODELS_POST", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
@@ -229,7 +230,7 @@ export async function PATCH(
       );
     }
 
-    console.error("[AI_MODELS_PATCH]", error);
+    logApiError("AI_MODELS_PATCH", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
@@ -271,7 +272,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("[AI_MODELS_DELETE]", error);
+    logApiError("AI_MODELS_DELETE", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

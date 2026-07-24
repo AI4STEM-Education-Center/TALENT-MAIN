@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { encryptApiKey, maskApiKey, decryptApiKey } from "@/lib/crypto";
+import { logApiError } from "@/lib/system-log";
 
 const SINGLETON_ID = "singleton";
 
@@ -117,7 +118,7 @@ export async function PUT(req: Request) {
       },
     });
   } catch (error) {
-    console.error("[SMTP_PUT]", error);
+    logApiError("SMTP_PUT", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

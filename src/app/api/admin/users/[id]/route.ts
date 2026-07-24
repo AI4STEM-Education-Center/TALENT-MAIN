@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
+import { logApiError } from "@/lib/system-log";
 
 export async function DELETE(
   req: NextRequest,
@@ -36,7 +37,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("[ADMIN_USER_DELETE]", error);
+    logApiError("ADMIN_USER_DELETE", error);
     return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }

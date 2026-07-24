@@ -9,6 +9,7 @@ import { getQuizStats, getQuizSimulationStats } from "@/lib/quiz-stats-server";
 import { StatCard, DistributionBars, RateBar, pct, ratePct } from "@/components/teacher/stats-ui";
 import { MathText } from "@/components/ui/math-text";
 import { formatDurationMs } from "@/lib/simulation-stats";
+import { ExportGradesDialog } from "./export-grades-dialog";
 
 export default async function QuizStatsPage({
   params,
@@ -37,11 +38,14 @@ export default async function QuizStatsPage({
         <Link href={`/teacher/classes/${id}/stats`}><ArrowLeft className="size-4" /> Class statistics</Link>
       </Button>
 
-      <div>
-        <h1 className="text-2xl font-bold">{stats.quizName}</h1>
-        <p className="text-muted-foreground text-sm mt-1">
-          {stats.studentsAttempted} student{stats.studentsAttempted !== 1 ? "s" : ""} · {stats.attemptsTotal} attempt{stats.attemptsTotal !== 1 ? "s" : ""}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">{stats.quizName}</h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            {stats.studentsAttempted} student{stats.studentsAttempted !== 1 ? "s" : ""} · {stats.attemptsTotal} attempt{stats.attemptsTotal !== 1 ? "s" : ""}
+          </p>
+        </div>
+        <ExportGradesDialog classId={id} quizId={quizId} quizName={stats.quizName} />
       </div>
 
       {!hasData ? (
