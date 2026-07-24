@@ -5,6 +5,7 @@ import MaterialUploadForm from "./material-upload";
 import Link from "next/link";
 import MaterialsList, { MaterialItem } from "./materials-list";
 import MaterialImportDialog from "./material-import-dialog";
+import { listClassMaterials } from "@/lib/learning-material";
 
 export default async function ClassMaterialsPage(props: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -27,36 +28,7 @@ export default async function ClassMaterialsPage(props: { params: Promise<{ id: 
 
   if (!cls) redirect("/teacher/classes");
 
-  const links = await prisma.materialClass.findMany({
-    where: { classId },
-    orderBy: { material: { createdAt: "desc" } },
-    select: {
-      material: {
-        select: {
-          id: true,
-          classId: true,
-          title: true,
-          originalName: true,
-          sizeBytes: true,
-          totalPages: true,
-          processedPages: true,
-          uploadStatus: true,
-          processingStatus: true,
-          errorMessage: true,
-          createdAt: true,
-        },
-      },
-    },
-  });
-
-  const initialMaterials: MaterialItem[] = links.map((link) => {
-    const { classId: originClassId, createdAt, ...rest } = link.material;
-    return {
-      ...rest,
-      createdAt: createdAt.toISOString(),
-      isImported: originClassId !== classId,
-    };
-  });
+  const initialMaterials: MaterialItem[] = await listClassMaterials(classId);
 
   return (
     <div className="max-w-5xl p-6">

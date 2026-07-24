@@ -9,6 +9,7 @@ import {
   getS3Config,
   sanitizeFilename,
 } from "@/lib/storage";
+import { listClassMaterials } from "@/lib/learning-material";
 
 export const runtime = "nodejs";
 
@@ -32,39 +33,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: "Class not found" }, { status: 404 });
   }
 
-  const links = await prisma.materialClass.findMany({
-    where: { classId },
-    orderBy: { material: { createdAt: "desc" } },
-    select: {
-      material: {
-        select: {
-          id: true,
-          classId: true,
-          title: true,
-          originalName: true,
-          mimeType: true,
-          sizeBytes: true,
-          bucket: true,
-          uploadStatus: true,
-          processingStatus: true,
-          totalPages: true,
-          processedPages: true,
-          errorMessage: true,
-          folder: true,
-          createdAt: true,
-          aiModel: true,
-          aiTtftMs: true,
-          aiTokens: true,
-          aiTotalMs: true,
-        },
-      },
-    },
-  });
-
-  const items = links.map((link) => {
-    const { classId: originClassId, ...rest } = link.material;
-    return { ...rest, isImported: originClassId !== classId };
-  });
+  const items = await listClassMaterials(classId);
 
   return NextResponse.json({ materials: items });
 }
