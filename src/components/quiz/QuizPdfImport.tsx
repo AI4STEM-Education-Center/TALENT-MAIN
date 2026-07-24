@@ -36,6 +36,7 @@ type ExtractionDetail = ListItem & {
   aiModel?: string | null;
   aiTtftMs?: number | null;
   aiTokens?: number | null;
+  aiTotalMs?: number | null;
 };
 
 type InitResponse = {
@@ -478,9 +479,9 @@ export function QuizPdfImport({
 
         {(phase === "review" || phase === "committing") && detail && (
           <div className="space-y-4">
-            {formatAiMetrics({ model: detail.aiModel, ttftMs: detail.aiTtftMs, tokens: detail.aiTokens }) && (
+            {formatAiMetrics({ model: detail.aiModel, ttftMs: detail.aiTtftMs, totalMs: detail.aiTotalMs, tokens: detail.aiTokens }) && (
               <p className="text-xs text-muted-foreground">
-                Extracted by {formatAiMetrics({ model: detail.aiModel, ttftMs: detail.aiTtftMs, tokens: detail.aiTokens })}
+                Extracted by {formatAiMetrics({ model: detail.aiModel, ttftMs: detail.aiTtftMs, totalMs: detail.aiTotalMs, tokens: detail.aiTokens })}
               </p>
             )}
             <QuizPdfReview

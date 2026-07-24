@@ -55,6 +55,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
           aiModel: true,
           aiTtftMs: true,
           aiTokens: true,
+          aiTotalMs: true,
         },
       },
     },
