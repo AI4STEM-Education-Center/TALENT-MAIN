@@ -512,13 +512,22 @@ model ExamResult {
   recommendations       String? // JSON: { items: StoredRecommendation[], truncated: boolean }
   recommendationsStatus String  @default("PENDING")
 
-  // AI generation metrics (TTFT + generated tokens) for each section. Persisted
-  // for observability; the student results page does not display them.
-  aiModel       String?
-  summaryTtftMs Int?
-  summaryTokens Int?
-  recsTtftMs    Int?
-  recsTokens    Int?
+  // AI generation metrics for each student-visible generated section.
+  // `aiModel` remains as a legacy last-used value; the per-section labels are
+  // provider-qualified (for example "openai/gpt-5.5").
+  aiModel                String?
+  summaryAiModel         String?
+  summaryTtftMs          Int?
+  summaryGenerationMs    Int?
+  summaryTotalMs         Int?
+  summaryTokens          Int?
+  summaryTokensEstimated Boolean?
+  recsAiModel            String?
+  recsTtftMs             Int?
+  recsGenerationMs       Int?
+  recsTotalMs            Int?
+  recsTokens             Int?
+  recsTokensEstimated    Boolean?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

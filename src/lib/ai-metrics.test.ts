@@ -40,4 +40,18 @@ describe("formatAiMetrics", () => {
   it("marks estimated token counts with a ~ suffix", () => {
     expect(formatAiMetrics({ tokens: 512, tokensEstimated: true })).toBe("512~ tokens");
   });
+
+  it("uses an explicit generation window for aggregated multi-call work", () => {
+    expect(
+      formatAiMetrics({
+        model: "openai/gpt-5.5",
+        ttftMs: 200,
+        generationMs: 500,
+        totalMs: 900,
+        tokens: 50,
+      })
+    ).toBe(
+      "openai/gpt-5.5 · TTFT 200ms · gen 500ms · total 900ms · 50 tokens · 100.0 tok/s"
+    );
+  });
 });

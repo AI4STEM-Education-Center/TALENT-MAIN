@@ -65,6 +65,30 @@ describe("streamChatCompletion", () => {
     expect(metrics.tokensEstimated).toBe(true);
   });
 
+  it("forwards accumulated text as each content delta arrives", async () => {
+    const create = vi.fn(async () =>
+      streamOf([contentChunk("First"), contentChunk(" response")])
+    );
+    const client = { chat: { completions: { create } } } as unknown as OpenAI;
+    const updates: Array<[string, string]> = [];
+
+    await streamChatCompletion(
+      client,
+      { model: "m", messages: [] },
+      {
+        now: clock([0, 1, 2]),
+        onContent: (text, delta) => {
+          updates.push([text, delta]);
+        },
+      }
+    );
+
+    expect(updates).toEqual([
+      ["First", "First"],
+      ["First response", " response"],
+    ]);
+  });
+
   it("requests usage and forwards request options only when asked", async () => {
     const create = vi.fn(async () => streamOf([contentChunk("x")]));
     const client = { chat: { completions: { create } } } as unknown as OpenAI;

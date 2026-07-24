@@ -17,6 +17,16 @@ export const RESULT_STATUS = {
 } as const;
 export type ResultStatus = (typeof RESULT_STATUS)[keyof typeof RESULT_STATUS];
 
+/** Metrics displayed after one generated result component reaches READY. */
+export type ResultComponentMetrics = {
+  model: string | null;
+  ttftMs: number | null;
+  generationMs: number | null;
+  totalMs: number | null;
+  tokens: number | null;
+  tokensEstimated: boolean;
+};
+
 /** At most this many holistic study-material recommendations per attempt. */
 export const MAX_RECOMMENDATIONS = 3;
 

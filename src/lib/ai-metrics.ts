@@ -6,6 +6,8 @@ export interface DisplayAiMetrics {
   model?: string | null;
   /** Time to first token, ms. */
   ttftMs?: number | null;
+  /** Generation window, ms. Takes precedence over total - TTFT when present. */
+  generationMs?: number | null;
   /** Total wall-clock time for the call(s), ms. */
   totalMs?: number | null;
   tokens?: number | null;
@@ -25,17 +27,27 @@ export function formatMs(ms: number): string {
  * Format AI-generation metrics as a single compact line, e.g.
  * "gpt-4o-mini · TTFT 240ms · gen 5.685s · total 25.123s · 512 tokens · 90.1 tok/s".
  *
- * Generation time (total minus TTFT) and the token rate are derived from the
- * displayed TTFT/total/token numbers so the line stays internally consistent
- * (TTFT + gen = total, and tok/s = tokens / gen). For a single-call metric this
- * is exact; for a multi-call aggregate (TTFT is averaged, total is summed) it is
- * a close, self-consistent approximation.
+ * Generation time defaults to total minus TTFT, while multi-call callers can
+ * supply their summed generation window explicitly. The token rate is derived
+ * from the displayed token count and generation window.
  *
  * Omits any missing field and returns "" when nothing is available (callers
  * should then render nothing).
  */
-export function formatAiMetrics({ model, ttftMs, totalMs, tokens, tokensEstimated }: DisplayAiMetrics): string {
-  const genMs = ttftMs != null && totalMs != null ? Math.max(0, totalMs - ttftMs) : null;
+export function formatAiMetrics({
+  model,
+  ttftMs,
+  generationMs,
+  totalMs,
+  tokens,
+  tokensEstimated,
+}: DisplayAiMetrics): string {
+  const genMs =
+    generationMs != null
+      ? generationMs
+      : ttftMs != null && totalMs != null
+        ? Math.max(0, totalMs - ttftMs)
+        : null;
   const tokensPerSec = tokens != null && genMs != null && genMs > 0 ? tokens / (genMs / 1000) : null;
 
   return [
