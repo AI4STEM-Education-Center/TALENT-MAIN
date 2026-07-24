@@ -99,6 +99,21 @@ export function quizExtractionPrefix(pdfStorageKey: string): string {
   return pdfStorageKey.slice(0, pdfStorageKey.lastIndexOf("/") + 1);
 }
 
+// ─── Question simulation keys ─────────────────────────────────────────────────
+// Same scope convention as quiz extractions: pool questions live under "pool".
+// Every (re)generation writes a NEW version — objects are immutable because
+// deep-copied questions share simulation keys the way they share figure keys,
+// so an in-place overwrite would silently change someone else's copy.
+
+export function buildSimulationKey(
+  teacherId: string | null,
+  quizId: string,
+  questionId: string,
+  version: number
+): string {
+  return `simulations/${quizExtractionScope(teacherId)}/${quizId}/${questionId}/v${version}.html`;
+}
+
 export function getS3Config(): { bucket: string; region: string } {
   const bucket = process.env.AWS_S3_BUCKET;
   const region = process.env.AWS_REGION;
@@ -185,6 +200,30 @@ export async function resolveModelImageUrl(
     : presignGetUrl(bucket, key, opts.expiresIn);
 }
 
+/**
+ * Upload a server-generated object directly (no presign round-trip). Used by
+ * the background worker for simulation HTML artifacts.
+ */
+export async function putS3Object(
+  bucket: string,
+  key: string,
+  body: string | Uint8Array,
+  contentType: string
+): Promise<void> {
+  const client = getS3Client();
+  await client.send(
+    new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: contentType })
+  );
+}
+
+/** Download an S3 object and decode it as UTF-8 text (simulation HTML artifacts). */
+export async function getS3ObjectAsString(bucket: string, key: string): Promise<string> {
+  const client = getS3Client();
+  const out = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+  if (!out.Body) throw new Error(`S3 object ${key} has no body`);
+  return out.Body.transformToString("utf-8");
+}
+
 export async function headS3Object(bucket: string, key: string): Promise<{ contentLength: number }> {
   const client = getS3Client();
   const out = await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
@@ -223,6 +262,41 @@ export async function listS3Objects(bucket: string, prefix: string): Promise<str
   }
 
   return keys;
+}
+
+export type S3ObjectMeta = { key: string; lastModified: Date | null };
+
+/**
+ * Like listS3Objects but keeps each object's LastModified, which the S3
+ * garbage collector needs to grant a grace period to freshly-written objects
+ * (their DB reference may not be committed yet).
+ */
+export async function listS3ObjectsWithMeta(bucket: string, prefix: string): Promise<S3ObjectMeta[]> {
+  const client = getS3Client();
+  let isTruncated = true;
+  let continuationToken: string | undefined;
+  const objects: S3ObjectMeta[] = [];
+
+  while (isTruncated) {
+    const response = await client.send(
+      new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: prefix,
+        ContinuationToken: continuationToken,
+      })
+    );
+
+    if (response.Contents) {
+      for (const item of response.Contents) {
+        if (item.Key) objects.push({ key: item.Key, lastModified: item.LastModified ?? null });
+      }
+    }
+
+    isTruncated = response.IsTruncated ?? false;
+    continuationToken = response.NextContinuationToken;
+  }
+
+  return objects;
 }
 
 export async function deleteS3Objects(bucket: string, keys: string[]): Promise<void> {

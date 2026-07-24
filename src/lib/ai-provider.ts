@@ -5,7 +5,8 @@ export type UseCase =
   | "teacher_chat"
   | "student_chat"
   | "pdf_description"
-  | "quiz_extraction";
+  | "quiz_extraction"
+  | "simulation_generation";
 export type ProviderType = "openai" | "local" | "cloudflare";
 
 export interface ResolvedProvider {

@@ -281,6 +281,7 @@ model Question {
   import      QuestionImport? @relation(fields: [importId], references: [id], onDelete: SetNull)
   options     Option[]
   quizAnswers QuizAnswer[]
+  simulation  QuestionSimulation?
 
   @@index([importId])
   // Quiz generation: WHERE quizId ORDER BY createdAt ASC
@@ -567,7 +568,7 @@ model AiModel {
   @@index([providerId])
 }
 
-// useCase: "teacher_chat" | "student_chat" | "pdf_description" | "quiz_extraction"
+// useCase: "teacher_chat" | "student_chat" | "pdf_description" | "quiz_extraction" | "simulation_generation"
 model AiUseCaseAssignment {
   id         String   @id @default(cuid())
   useCase    String   @unique       // only one assignment per use case
@@ -764,4 +765,77 @@ model ConceptExternalRef {
   createdAt DateTime @default(now())
 
   @@unique([conceptId, refCode, refType])
+}
+
+// ─── Question simulations (AI-generated interactive HTML) ─────────────────────
+// One optional simulation per question: a self-contained HTML/JS page teaching
+// the question's BROAD topic (never the question's numbers, scenario, or
+// answer — it is shown to students post-quiz while results are still blind).
+// The artifact lives in S3; every (re)generation writes a NEW versioned key and
+// old objects are never deleted, because deep-copied questions share keys the
+// same way figures do (see deepCopyQuiz).
+// status: "PENDING"   queued/in-flight first generation (no artifact yet)
+//         "REVISING"  queued/in-flight feedback revision (old artifact stays visible)
+//         "READY" | "DECLINED" | "FAILED" terminal until re-triggered
+model QuestionSimulation {
+  id         String @id @default(cuid())
+  questionId String @unique
+  status     String @default("PENDING")
+
+  // What the simulation teaches — broad topic only, set by the triage call.
+  topic        String?
+  title        String?
+  learningGoal String?
+
+  // Triage's stated reason when it declines (helpful=false); shown to staff.
+  declineReason String?
+  errorMessage  String?
+
+  // Current HTML artifact. null until first READY. version counts uploads.
+  storageKey String?
+  bucket     String?
+  version    Int     @default(0)
+
+  // Build spec (plain text) produced by triage; revisions are generated from
+  // this spec + feedback, never from the raw question (leakage firewall).
+  simSpec String?
+
+  sourceSimulationId String? // lineage: the sim this row was deep-copied from (plain id, no FK)
+
+  // AI generation metrics, aggregated across the job's calls.
+  aiModel  String?
+  aiTtftMs Int?
+  aiTokens Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  question Question             @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  feedback SimulationFeedback[]
+
+  @@index([status])
+}
+
+// One teacher/admin correction round on a simulation ("the period formula is
+// wrong", "sliders overflow"). Each row drives one revision job.
+// status: "PENDING" | "APPLIED" | "FAILED"
+model SimulationFeedback {
+  id           String @id @default(cuid())
+  simulationId String
+  authorUserId String // plain User id (no FK; feedback must survive account deletion)
+  authorName   String?
+  feedback     String
+  status       String @default("PENDING")
+  errorMessage String?
+
+  // The storageKey the simulation had when this feedback was applied, kept so
+  // staff can compare versions.
+  previousStorageKey String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  simulation QuestionSimulation @relation(fields: [simulationId], references: [id], onDelete: Cascade)
+
+  @@index([simulationId, createdAt])
 }

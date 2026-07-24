@@ -13,7 +13,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     where: { id },
     include: {
       topic: true,
-      questions: { include: { options: true }, orderBy: { createdAt: "asc" } },
+      questions: {
+        include: {
+          options: true,
+          simulation: { include: { _count: { select: { feedback: true } } } },
+        },
+        orderBy: { createdAt: "asc" },
+      },
     },
   });
   if (!quiz || !canRead(actor, quiz)) {
@@ -22,7 +28,30 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   // Teacher-only route: the numeric answer scalars (answerNumeric etc.) are fine
   // to return. Swap the raw figure/option-image key+bucket for transient
   // presigned URLs so the editor can show thumbnails without leaking storage keys.
-  const questions = await attachOptionImageUrls(await attachFigureUrls(quiz.questions));
+  // The simulation is likewise reduced to a key-free summary (content is served
+  // only through /api/simulations/[id]/content).
+  const withImages = await attachOptionImageUrls(await attachFigureUrls(quiz.questions));
+  const questions = withImages.map((q) => {
+    const { simulation, ...rest } = q as typeof q & {
+      simulation: (NonNullable<(typeof quiz.questions)[number]["simulation"]>) | null;
+    };
+    return {
+      ...rest,
+      simulation: simulation
+        ? {
+            id: simulation.id,
+            status: simulation.status,
+            topic: simulation.topic,
+            title: simulation.title,
+            learningGoal: simulation.learningGoal,
+            declineReason: simulation.declineReason,
+            version: simulation.version,
+            hasContent: simulation.storageKey !== null,
+            feedbackCount: simulation._count.feedback,
+          }
+        : null,
+    };
+  });
   return NextResponse.json({ ...quiz, questions, editable: canManage(actor, quiz) });
 }
 
