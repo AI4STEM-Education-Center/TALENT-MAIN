@@ -19,7 +19,7 @@ jobs:
       PACKAGE: talent-main
       DRY_RUN: ${{ inputs.dry_run }}
     steps:
-      - name: Delete all GHCR versions except the latest prod and dev images
+      - name: Delete all GHCR versions except the latest prod/dev images and BuildKit caches
         run: |
           set -euo pipefail
 
@@ -30,15 +30,18 @@ jobs:
 
           versions=$(gh api --paginate "/orgs/$ORG/packages/container/$PACKAGE/versions")
 
-          keep_latest=$(echo "$versions" | jq -r \
-            '[.[] | select(.metadata.container.tags | index("latest"))]
-             | sort_by(.created_at) | reverse | .[0].id // empty')
-          keep_dev=$(echo "$versions" | jq -r \
-            '[.[] | select(.metadata.container.tags | index("dev-latest"))]
-             | sort_by(.created_at) | reverse | .[0].id // empty')
+          # A tag maps to at most one version in the registry, so collecting ids
+          # by tag needs no newest-first tie-breaking. buildcache-* are the
+          # BuildKit layer caches the deploy workflows push (cache-to
+          # type=registry); deleting them forces the next build to run cold.
+          keep_ids=$(echo "$versions" | jq -r \
+            '[.[] | select((.metadata.container.tags // [])
+               | map(. == "latest" or . == "dev-latest"
+                     or . == "buildcache-prod" or . == "buildcache-dev")
+               | any)
+             | .id] | join(" ")')
 
-          echo "Keeping version tagged 'latest':     ${keep_latest:-<none>}"
-          echo "Keeping version tagged 'dev-latest': ${keep_dev:-<none>}"
+          echo "Keeping version ids (latest, dev-latest, buildcache-*): ${keep_ids:-<none>}"
           echo
 
           total=0
@@ -47,7 +50,7 @@ jobs:
             id=${row%%|*}
             tags=${row#*|}
             total=$((total + 1))
-            if [[ "$id" == "$keep_latest" || "$id" == "$keep_dev" ]]; then
+            if [[ " $keep_ids " == *" $id "* ]]; then
               echo "  keep   $id  tags=[$tags]"
               continue
             fi
