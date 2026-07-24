@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import JSZip from "jszip";
@@ -103,6 +103,9 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
   // Simulation being viewed/reviewed in the dialog, if any.
   const [openSimulationId, setOpenSimulationId] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
+  // The "New Question" form renders inline at the end of the list; scroll it
+  // into view when opened so it isn't missed below a long list of questions.
+  const addFormRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -115,6 +118,12 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
       setLoading(false);
     });
   }, [quizId]);
+
+  useEffect(() => {
+    if (showForm && !editingQuestion) {
+      addFormRef.current?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    }
+  }, [showForm, editingQuestion]);
 
   async function refreshQuestions() {
     const q = await fetch(`/api/quizzes/${quizId}`).then((r) => r.json());
@@ -332,6 +341,80 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
     }
   }
 
+  // Shared add/edit question form body. Rendered inline in two places: inside
+  // the card of the question being edited, and in the "New Question" card at the
+  // end of the list. saveQuestion()/resetForm() branch on editingQuestion, so
+  // the same fields drive both create and update.
+  function renderFormFields() {
+    return (
+      <>
+        <div className="space-y-2">
+          <Label>Difficulty</Label>
+          <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={form.difficultyLevel} onChange={(e) => setForm((p) => ({ ...p, difficultyLevel: e.target.value }))}>
+            <option value="BEGINNER">Beginner</option>
+            <option value="INTERMEDIATE">Intermediate</option>
+            <option value="ADVANCED">Advanced</option>
+          </select>
+        </div>
+        <div className="space-y-2">
+          <Label>Answer Type</Label>
+          <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={form.answerMode} onChange={(e) => setAnswerMode(e.target.value as AnswerMode)}>
+            <option value="SINGLE_SELECT">Single correct answer</option>
+            <option value="MULTI_SELECT">Select all that apply</option>
+            <option value="NUMERIC">Numeric answer</option>
+          </select>
+        </div>
+        <div className="space-y-2">
+          <Label>Question Text</Label>
+          <Textarea value={form.text} onChange={(e) => setForm((p) => ({ ...p, text: e.target.value }))} rows={3} placeholder="Enter the question..." />
+        </div>
+        {form.answerMode === "NUMERIC" ? (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label>Correct answer</Label>
+              <Input inputMode="decimal" value={form.answerNumeric} onChange={(e) => setForm((p) => ({ ...p, answerNumeric: e.target.value }))} placeholder="e.g. 9.81" />
+            </div>
+            <div className="space-y-2">
+              <Label>Tolerance ±</Label>
+              <Input inputMode="decimal" value={form.answerTolerance} onChange={(e) => setForm((p) => ({ ...p, answerTolerance: e.target.value }))} placeholder="auto (±0.5%, min 0.01)" />
+            </div>
+            <div className="space-y-2">
+              <Label>Unit</Label>
+              <Input value={form.answerUnit} onChange={(e) => setForm((p) => ({ ...p, answerUnit: e.target.value }))} placeholder="display only, supports $LaTeX$" />
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <Label>Options <span className="text-muted-foreground text-xs">({form.answerMode === "MULTI_SELECT" ? "click boxes to mark all correct answers" : "click radio to mark correct"})</span></Label>
+            {form.options.map((opt, i) => (
+              <div key={opt.id ?? i} className="flex items-center gap-2">
+                <button type="button" aria-label={opt.isCorrect ? "Mark as incorrect" : "Mark as correct"} onClick={() => markCorrect(i)} className={`size-4 border-2 shrink-0 ${form.answerMode === "MULTI_SELECT" ? "rounded" : "rounded-full"} ${opt.isCorrect ? "bg-green-500 border-green-500" : "border-muted-foreground"}`} />
+                {opt.imageUrl ? (
+                  // Image choice from the PDF pipeline: shown, not editable here.
+                  // Plain <img>: short-lived presigned S3 URL (see figure img below).
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={opt.imageUrl} alt={opt.imageAlt ?? `Option ${i + 1}`} className="max-h-16 rounded border bg-white" />
+                ) : opt.hasImage ? (
+                  // Stored crop whose preview failed to presign — still an image choice.
+                  <span className="text-sm text-muted-foreground italic">Image choice (preview unavailable)</span>
+                ) : (
+                  <Input placeholder={`Option ${i + 1}`} value={opt.text} onChange={(e) => setOption(i, "text", e.target.value)} />
+                )}
+              </div>
+            ))}
+            <Button variant="ghost" size="sm" onClick={addOption}>
+              <Plus className="size-3" /> Add option
+            </Button>
+          </div>
+        )}
+        <div className="flex gap-3">
+          <Button onClick={saveQuestion}><Check className="size-4" /> {editingQuestion ? "Update" : "Save"}</Button>
+          <Button variant="outline" onClick={resetForm}><X className="size-4" /> Cancel</Button>
+        </div>
+      </>
+    );
+  }
+
   if (loading) return <div className="p-6 text-muted-foreground">Loading…</div>;
   if (notFound || !quiz) return <div className="p-6 text-muted-foreground">Quiz not found.</div>;
 
@@ -380,17 +463,15 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
             )}
           </div>
         </div>
-        <div className="flex gap-2 shrink-0">
-          {readOnly ? (
+        {/* Adding a question is inline (a trigger at the end of the list), so
+            the header only carries the read-only "import a copy" action. */}
+        {readOnly && (
+          <div className="flex gap-2 shrink-0">
             <Button onClick={importPoolCopy} disabled={poolImportBusy}>
               <Download className="size-4" /> {poolImportBusy ? "Importing…" : "Import to my quizzes"}
             </Button>
-          ) : (
-            <Button onClick={() => { resetForm(); setShowForm(true); }}>
-              <Plus className="size-4" /> Add Question
-            </Button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {msg && <div className="p-3 rounded-md bg-primary/10 text-primary text-sm">{msg}</div>}
@@ -438,93 +519,21 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
 
       {!readOnly && <QuizPdfImport quizId={quiz.id} onCommitted={refreshQuestions} onActiveChange={setPdfImportActive} />}
 
-      {/* Form */}
-      {showForm && !readOnly && (
-        <Card>
-          <CardHeader>
-            <CardTitle>{editingQuestion ? "Edit Question" : "New Question"}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label>Difficulty</Label>
-              <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={form.difficultyLevel} onChange={(e) => setForm((p) => ({ ...p, difficultyLevel: e.target.value }))}>
-                <option value="BEGINNER">Beginner</option>
-                <option value="INTERMEDIATE">Intermediate</option>
-                <option value="ADVANCED">Advanced</option>
-              </select>
-            </div>
-            <div className="space-y-2">
-              <Label>Answer Type</Label>
-              <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={form.answerMode} onChange={(e) => setAnswerMode(e.target.value as AnswerMode)}>
-                <option value="SINGLE_SELECT">Single correct answer</option>
-                <option value="MULTI_SELECT">Select all that apply</option>
-                <option value="NUMERIC">Numeric answer</option>
-              </select>
-            </div>
-            <div className="space-y-2">
-              <Label>Question Text</Label>
-              <Textarea value={form.text} onChange={(e) => setForm((p) => ({ ...p, text: e.target.value }))} rows={3} placeholder="Enter the question..." />
-            </div>
-            {form.answerMode === "NUMERIC" ? (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label>Correct answer</Label>
-                  <Input inputMode="decimal" value={form.answerNumeric} onChange={(e) => setForm((p) => ({ ...p, answerNumeric: e.target.value }))} placeholder="e.g. 9.81" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Tolerance ±</Label>
-                  <Input inputMode="decimal" value={form.answerTolerance} onChange={(e) => setForm((p) => ({ ...p, answerTolerance: e.target.value }))} placeholder="auto (±0.5%, min 0.01)" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Unit</Label>
-                  <Input value={form.answerUnit} onChange={(e) => setForm((p) => ({ ...p, answerUnit: e.target.value }))} placeholder="display only, supports $LaTeX$" />
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <Label>Options <span className="text-muted-foreground text-xs">({form.answerMode === "MULTI_SELECT" ? "click boxes to mark all correct answers" : "click radio to mark correct"})</span></Label>
-                {form.options.map((opt, i) => (
-                  <div key={opt.id ?? i} className="flex items-center gap-2">
-                    <button type="button" aria-label={opt.isCorrect ? "Mark as incorrect" : "Mark as correct"} onClick={() => markCorrect(i)} className={`size-4 border-2 shrink-0 ${form.answerMode === "MULTI_SELECT" ? "rounded" : "rounded-full"} ${opt.isCorrect ? "bg-green-500 border-green-500" : "border-muted-foreground"}`} />
-                    {opt.imageUrl ? (
-                      // Image choice from the PDF pipeline: shown, not editable here.
-                      // Plain <img>: short-lived presigned S3 URL (see figure img below).
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={opt.imageUrl} alt={opt.imageAlt ?? `Option ${i + 1}`} className="max-h-16 rounded border bg-white" />
-                    ) : opt.hasImage ? (
-                      // Stored crop whose preview failed to presign — still an image choice.
-                      <span className="text-sm text-muted-foreground italic">Image choice (preview unavailable)</span>
-                    ) : (
-                      <Input placeholder={`Option ${i + 1}`} value={opt.text} onChange={(e) => setOption(i, "text", e.target.value)} />
-                    )}
+      {/* Questions List. The add/edit form renders inline here: in place of the
+          edited question's card content, and as a "New Question" card at the end. */}
+      <div className="space-y-3">
+        {quiz.questions.map((q, i) => (
+          <Card key={q.id} className={editingQuestion?.id === q.id ? "ring-2 ring-primary" : undefined}>
+            <CardContent className="p-4">
+              {!readOnly && editingQuestion?.id === q.id ? (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground font-mono">Q{i + 1}</span>
+                    <span className="text-sm font-semibold">Editing question</span>
                   </div>
-                ))}
-                <Button variant="ghost" size="sm" onClick={addOption}>
-                  <Plus className="size-3" /> Add option
-                </Button>
-              </div>
-            )}
-            <div className="flex gap-3">
-              <Button onClick={saveQuestion}><Check className="size-4" /> {editingQuestion ? "Update" : "Save"}</Button>
-              <Button variant="outline" onClick={resetForm}><X className="size-4" /> Cancel</Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Questions List */}
-      {quiz.questions.length === 0 ? (
-        <Card>
-          <CardContent className="text-center py-12 text-muted-foreground">
-            <FileQuestion className="size-10 mx-auto mb-3" />
-            <p>{readOnly ? "This quiz has no questions." : "No questions yet. Add one above."}</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-3">
-          {quiz.questions.map((q, i) => (
-            <Card key={q.id}>
-              <CardContent className="p-4">
+                  {renderFormFields()}
+                </div>
+              ) : (
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 space-y-2">
                     <div className="flex items-center gap-2">
@@ -585,11 +594,46 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
                     )}
                   </div>
                 </div>
+              )}
+            </CardContent>
+          </Card>
+        ))}
+
+        {/* Add a new question inline, at the end of the list where it will
+            land (order is createdAt asc): the "New Question" form when active,
+            otherwise a trigger button in the same spot. */}
+        {!readOnly && (showForm && !editingQuestion ? (
+          <div ref={addFormRef}>
+            <Card className="ring-2 ring-primary">
+              <CardHeader>
+                <CardTitle>New Question</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {renderFormFields()}
               </CardContent>
             </Card>
-          ))}
-        </div>
-      )}
+          </div>
+        ) : !showForm && quiz.questions.length > 0 && (
+          <Button variant="outline" className="w-full border-dashed" onClick={() => { resetForm(); setShowForm(true); }}>
+            <Plus className="size-4" /> Add Question
+          </Button>
+        ))}
+
+        {/* Empty state, with an inline add trigger of its own. */}
+        {quiz.questions.length === 0 && !(showForm && !editingQuestion) && (
+          <Card>
+            <CardContent className="text-center py-12 text-muted-foreground space-y-4">
+              <FileQuestion className="size-10 mx-auto" />
+              <p>{readOnly ? "This quiz has no questions." : "No questions yet."}</p>
+              {!readOnly && (
+                <Button onClick={() => { resetForm(); setShowForm(true); }}>
+                  <Plus className="size-4" /> Add Question
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        )}
+      </div>
 
       {/* Simulation viewer + feedback loop. Refresh on close so a feedback
           round's REVISING (or a finished revision's READY) badge shows. */}
