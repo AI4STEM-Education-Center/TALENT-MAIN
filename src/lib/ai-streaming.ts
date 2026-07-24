@@ -48,6 +48,13 @@ export interface StreamOptions {
   includeUsage?: boolean;
   /** Injectable clock (ms). Defaults to Date.now; used by tests for deterministic timing. */
   now?: () => number;
+  /**
+   * Receives the accumulated text after each content delta. Callers can use
+   * this to forward partial output to their own persistence/transport layer.
+   * Awaited intentionally so a caller can apply backpressure (for example,
+   * while writing a throttled checkpoint).
+   */
+  onContent?: (text: string, delta: string) => void | Promise<void>;
 }
 
 /**
@@ -89,6 +96,7 @@ export async function streamChatCompletion(
       if (ttftMs === null) ttftMs = now() - start;
       text += content;
       deltaCount += 1;
+      await options.onContent?.(text, content);
     }
   }
 

@@ -115,7 +115,8 @@ function providerUsable(provider: ResolvedProvider | null): provider is Resolved
 async function runChatCompletionText(
   provider: ResolvedProvider,
   messages: ChatMessage[],
-  maxTokens: number
+  maxTokens: number,
+  onContent?: (text: string, delta: string) => void | Promise<void>
 ): Promise<{ text: string; metrics: AiCallMetrics }> {
   const client = await createOpenAIClient(provider);
   const isLocal = provider.providerType === "local";
@@ -132,9 +133,19 @@ async function runChatCompletionText(
       max_tokens: isLocal ? maxTokens : undefined,
       service_tier: tierActive ? (serviceTier as never) : undefined,
     },
-    { includeUsage: !isLocal, requestOptions: { maxRetries: isLocal ? 0 : 3 } }
+    {
+      includeUsage: !isLocal,
+      requestOptions: { maxRetries: isLocal ? 0 : 3 },
+      onContent,
+    }
   );
 }
+
+const providerModelLabel = (provider: ResolvedProvider): string =>
+  `${provider.providerType}/${provider.model}`;
+
+const generationMs = (metrics: AiCallMetrics): number =>
+  metrics.ttftMs === null ? 0 : Math.max(0, metrics.totalMs - metrics.ttftMs);
 
 /** Run one streamed structured (strict JSON schema) step, returning value + metrics. */
 async function runStructuredStep<T>(
@@ -329,7 +340,7 @@ async function collectSimulationRecommendations(
 /** Generate the markdown summary from the durable review snapshot. */
 async function generateSummary(
   examResult: ExamResultRow
-): Promise<{ summary: string; metrics: AiCallMetrics }> {
+): Promise<{ summary: string; metrics: AiCallMetrics; providerModel: string }> {
   const provider = await resolveProvider("description_generation");
   if (!providerUsable(provider)) {
     throw new Error("No usable AI provider configured for description_generation");
@@ -344,14 +355,36 @@ async function generateSummary(
     quizName: examResult.quizName,
   });
 
+  // Checkpoint the accumulated markdown while the model is still producing
+  // tokens. The results stream reads these checkpoints, so the student starts
+  // reading at TTFT instead of waiting for the full completion. Throttling
+  // avoids turning every token delta into a SQLite write.
+  let lastCheckpointAt = 0;
+  const checkpoint = async (text: string) => {
+    const now = Date.now();
+    if (now - lastCheckpointAt < 150) return;
+    lastCheckpointAt = now;
+    try {
+      await prisma.examResult.update({
+        where: { id: examResult.id },
+        data: { summary: text },
+      });
+    } catch (err) {
+      // A missed partial checkpoint is non-fatal; the final READY write below
+      // remains authoritative.
+      console.warn(`[ExamResults] Could not checkpoint summary ${examResult.id}:`, err);
+    }
+  };
+
   const { text, metrics } = await runChatCompletionText(
     provider,
     [{ role: "user", content: buildQuizReviewPrompt(attempt) }],
-    SUMMARY_MAX_TOKENS
+    SUMMARY_MAX_TOKENS,
+    checkpoint
   );
   const trimmed = text.trim();
   if (!trimmed) throw new Error("Model returned an empty summary");
-  return { summary: trimmed, metrics };
+  return { summary: trimmed, metrics, providerModel: providerModelLabel(provider) };
 }
 
 /**
@@ -365,12 +398,22 @@ async function generateSummary(
  */
 async function generateRecommendations(
   examResult: ExamResultRow
-): Promise<{ stored: StoredRecommendations; metrics: AiCallMetrics | null }> {
+): Promise<{
+  stored: StoredRecommendations;
+  metrics: AiCallMetrics | null;
+  providerModel: string | null;
+  generationMs: number | null;
+}> {
   const snapshot = parseReviewSnapshot(examResult.reviewSnapshot);
   const holistic = snapshotToHolisticInput(snapshot);
   // Nothing wrong (or an empty attempt) → no study recommendations needed.
   if (holistic.incorrectCount === 0) {
-    return { stored: { items: [], truncated: false }, metrics: null };
+    return {
+      stored: { items: [], truncated: false },
+      metrics: null,
+      providerModel: null,
+      generationMs: null,
+    };
   }
 
   // Interactive simulations are picked deterministically (no LLM), so they
@@ -383,7 +426,12 @@ async function generateRecommendations(
 
   const provider = await resolveProvider("recommendation");
   if (!providerUsable(provider)) {
-    return { stored: withSims({ items: [], truncated: false }), metrics: null };
+    return {
+      stored: withSims({ items: [], truncated: false }),
+      metrics: null,
+      providerModel: null,
+      generationMs: null,
+    };
   }
 
   const isLocal = provider.providerType === "local";
@@ -502,6 +550,10 @@ async function generateRecommendations(
       ...(errorMisconceptions.length > 0 ? { errorMisconceptions } : {}),
     }),
     metrics,
+    providerModel: metrics ? providerModelLabel(provider) : null,
+    generationMs: metrics
+      ? allMetrics.reduce((sum, part) => sum + generationMs(part), 0)
+      : null,
   };
 }
 
@@ -517,21 +569,35 @@ export async function generateExamResult(examResultId: string): Promise<void> {
   })) as ExamResultRow | null;
   if (!examResult) return;
 
-  if (examResult.summaryStatus !== RESULT_STATUS.READY) {
+  const generateSummarySection = async () => {
+    if (examResult.summaryStatus === RESULT_STATUS.READY) return;
     await prisma.examResult.update({
       where: { id: examResult.id },
-      data: { summaryStatus: RESULT_STATUS.GENERATING },
+      data: {
+        summary: null,
+        summaryStatus: RESULT_STATUS.GENERATING,
+        summaryAiModel: null,
+        summaryTtftMs: null,
+        summaryGenerationMs: null,
+        summaryTotalMs: null,
+        summaryTokens: null,
+        summaryTokensEstimated: null,
+      },
     });
     try {
-      const { summary, metrics } = await generateSummary(examResult);
+      const { summary, metrics, providerModel } = await generateSummary(examResult);
       await prisma.examResult.update({
         where: { id: examResult.id },
         data: {
           summary,
           summaryStatus: RESULT_STATUS.READY,
           aiModel: metrics.model,
+          summaryAiModel: providerModel,
           summaryTtftMs: metrics.ttftMs,
+          summaryGenerationMs: generationMs(metrics),
+          summaryTotalMs: metrics.totalMs,
           summaryTokens: metrics.completionTokens,
+          summaryTokensEstimated: metrics.tokensEstimated,
         },
       });
     } catch (err) {
@@ -541,15 +607,29 @@ export async function generateExamResult(examResultId: string): Promise<void> {
         data: { summaryStatus: RESULT_STATUS.FAILED },
       });
     }
-  }
+  };
 
-  if (examResult.recommendationsStatus !== RESULT_STATUS.READY) {
+  const generateRecommendationsSection = async () => {
+    if (examResult.recommendationsStatus === RESULT_STATUS.READY) return;
     await prisma.examResult.update({
       where: { id: examResult.id },
-      data: { recommendationsStatus: RESULT_STATUS.GENERATING },
+      data: {
+        recommendationsStatus: RESULT_STATUS.GENERATING,
+        recsAiModel: null,
+        recsTtftMs: null,
+        recsGenerationMs: null,
+        recsTotalMs: null,
+        recsTokens: null,
+        recsTokensEstimated: null,
+      },
     });
     try {
-      const { stored, metrics } = await generateRecommendations(examResult);
+      const {
+        stored,
+        metrics,
+        providerModel,
+        generationMs: recsGenerationMs,
+      } = await generateRecommendations(examResult);
       await prisma.examResult.update({
         where: { id: examResult.id },
         data: {
@@ -558,8 +638,12 @@ export async function generateExamResult(examResultId: string): Promise<void> {
           // Leave aiModel untouched (undefined) if this run made no LLM calls,
           // so a model recorded by the summary section survives.
           aiModel: metrics?.model ?? undefined,
+          recsAiModel: providerModel,
           recsTtftMs: metrics?.ttftMs ?? null,
+          recsGenerationMs,
+          recsTotalMs: metrics?.totalMs ?? null,
           recsTokens: metrics?.completionTokens ?? null,
+          recsTokensEstimated: metrics?.tokensEstimated ?? null,
         },
       });
     } catch (err) {
@@ -569,7 +653,12 @@ export async function generateExamResult(examResultId: string): Promise<void> {
         data: { recommendationsStatus: RESULT_STATUS.FAILED },
       });
     }
-  }
+  };
+
+  // The sections use independent provider assignments and persist independent
+  // status/content, so run them together. A slow recommendation workflow no
+  // longer delays the first summary token (and vice versa).
+  await Promise.all([generateSummarySection(), generateRecommendationsSection()]);
 }
 
 /**

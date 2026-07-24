@@ -45,9 +45,29 @@ export default async function ExamResultsPage({
       initial={{
         summary: examResult.summary,
         summaryStatus: examResult.summaryStatus as ResultStatus,
+        summaryMetrics: examResult.summaryAiModel
+          ? {
+              model: examResult.summaryAiModel,
+              ttftMs: examResult.summaryTtftMs,
+              generationMs: examResult.summaryGenerationMs,
+              totalMs: examResult.summaryTotalMs,
+              tokens: examResult.summaryTokens,
+              tokensEstimated: examResult.summaryTokensEstimated === true,
+            }
+          : null,
         recommendations: presigned.items,
         simulations: presigned.simulations ?? [],
         recommendationsStatus: examResult.recommendationsStatus as ResultStatus,
+        recommendationMetrics: examResult.recsAiModel
+          ? {
+              model: examResult.recsAiModel,
+              ttftMs: examResult.recsTtftMs,
+              generationMs: examResult.recsGenerationMs,
+              totalMs: examResult.recsTotalMs,
+              tokens: examResult.recsTokens,
+              tokensEstimated: examResult.recsTokensEstimated === true,
+            }
+          : null,
         truncated: presigned.truncated,
       }}
       backHref="/student/history"
