@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { canManage, canRead, getContentActor } from "@/lib/quiz-access";
 import { deleteS3Object } from "@/lib/storage";
+import { simulationMetricsView } from "@/lib/simulation-metrics";
 
 export const runtime = "nodejs";
 
@@ -36,7 +37,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     errorMessage: sim.errorMessage,
     version: sim.version,
     hasContent: sim.storageKey !== null,
-    aiModel: sim.aiModel,
+    aiMetrics: simulationMetricsView(sim),
     updatedAt: sim.updatedAt,
     feedback: sim.feedback.map((f) => ({
       id: f.id,

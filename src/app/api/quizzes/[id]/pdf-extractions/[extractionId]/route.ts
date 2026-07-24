@@ -52,6 +52,7 @@ export async function GET(
     aiModel: extraction.aiModel,
     aiTtftMs: extraction.aiTtftMs,
     aiTokens: extraction.aiTokens,
+    aiTotalMs: extraction.aiTotalMs,
   };
 
   if (extraction.status !== "AWAITING_REVIEW") {

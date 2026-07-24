@@ -188,6 +188,45 @@ describe("deepCopyQuiz", () => {
     expect(topicCount).toBe(1);
   });
 
+  it("carries complete simulation generation metrics into a teacher copy", async () => {
+    const { quiz: source } = await seedSourceQuiz(null);
+    const sourceQuestion = await prisma.question.findFirstOrThrow({
+      where: { quizId: source.id },
+    });
+    await prisma.questionSimulation.create({
+      data: {
+        questionId: sourceQuestion.id,
+        status: "READY",
+        title: "Force Lab",
+        storageKey: "simulations/pool/source/q/v1.html",
+        version: 1,
+        aiModel: "openai/gpt-5.5",
+        aiTtftMs: 43_787,
+        aiGenerationMs: 45_465,
+        aiTotalMs: 89_252,
+        aiTokens: 2_776,
+        aiTokensEstimated: false,
+      },
+    });
+    const { teacher } = await createTeacher();
+
+    const copy = await deepCopyQuiz(source.id, teacher.id);
+    const copiedQuestion = await prisma.question.findFirstOrThrow({
+      where: { quizId: copy!.id },
+      include: { simulation: true },
+    });
+
+    expect(copiedQuestion.simulation).toMatchObject({
+      status: "READY",
+      aiModel: "openai/gpt-5.5",
+      aiTtftMs: 43_787,
+      aiGenerationMs: 45_465,
+      aiTotalMs: 89_252,
+      aiTokens: 2_776,
+      aiTokensEstimated: false,
+    });
+  });
+
   it("produces an independent copy — deleting the source leaves the copy intact", async () => {
     const { quiz: source } = await seedSourceQuiz(null);
     const { teacher } = await createTeacher();

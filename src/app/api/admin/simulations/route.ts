@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { simulationMetricsView } from "@/lib/simulation-metrics";
 
 // Simulation status counts for one quiz. "missing" = questions with no
 // QuestionSimulation row at all (never triggered).
@@ -67,7 +68,7 @@ export async function GET(req: NextRequest) {
               version: q.simulation.version,
               hasContent: q.simulation.storageKey !== null,
               feedbackCount: q.simulation._count.feedback,
-              aiModel: q.simulation.aiModel,
+              aiMetrics: simulationMetricsView(q.simulation),
               updatedAt: q.simulation.updatedAt,
             }
           : null,
