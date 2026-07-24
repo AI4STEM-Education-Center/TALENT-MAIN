@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { stageRestoreForCurrentEnv } from "@/lib/backup";
+import { logApiError } from "@/lib/system-log";
 
 /**
  * POST /api/admin/backup/restore  { name }
@@ -28,7 +29,7 @@ export async function POST(req: Request) {
         "Backup verified and staged. Restart the service to apply it (the staged DB is swapped in before the app connects).",
     });
   } catch (error) {
-    console.error("[BACKUP_RESTORE]", error);
+    logApiError("BACKUP_RESTORE", error);
     const message = error instanceof Error ? error.message : "Failed to stage restore.";
     return NextResponse.json({ error: message }, { status: 500 });
   }

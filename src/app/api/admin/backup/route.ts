@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { encryptApiKey, maskApiKey, decryptApiKey } from "@/lib/crypto";
 import { computeNextRun } from "@/lib/backup";
 import { resolveAppEnv } from "@/lib/backup-core";
+import { logApiError } from "@/lib/system-log";
 
 const SINGLETON_ID = "singleton";
 
@@ -165,7 +166,7 @@ export async function PUT(req: Request) {
 
     return NextResponse.json({ config: serialize(cfg) });
   } catch (error) {
-    console.error("[BACKUP_PUT]", error);
+    logApiError("BACKUP_PUT", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

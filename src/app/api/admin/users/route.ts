@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
+import { logApiError } from "@/lib/system-log";
 
 export async function GET() {
   try {
@@ -24,7 +25,7 @@ export async function GET() {
 
     return NextResponse.json(users);
   } catch (error) {
-    console.error("[ADMIN_USERS_GET]", error);
+    logApiError("ADMIN_USERS_GET", error);
     return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }

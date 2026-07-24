@@ -5,6 +5,7 @@ import { scoreQuiz, type ScorableQuestion } from "@/lib/quiz-scoring";
 import { buildReviewSnapshot } from "@/lib/exam-results";
 import { attachFigureUrls, attachOptionImageUrls } from "@/lib/question-figures";
 import { enqueueExamResult } from "@/lib/queue";
+import { logApiError } from "@/lib/system-log";
 
 // POST: Start a quiz attempt
 export async function POST(req: NextRequest) {
@@ -236,10 +237,10 @@ export async function PATCH(req: NextRequest) {
     try {
       enqueueExamResult(examResult.id);
     } catch (err) {
-      console.error("[Quiz] Failed to enqueue exam-result generation:", err);
+      logApiError("QUIZ_SUBMIT", err, "Failed to enqueue exam-result generation");
     }
   } catch (err) {
-    console.error("[Quiz] Failed to create ExamResult snapshot:", err);
+    logApiError("QUIZ_SUBMIT", err, "Failed to create ExamResult snapshot");
   }
 
   // Blind results: the student must never receive the grading data. The inline

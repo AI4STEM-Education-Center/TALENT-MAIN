@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
  */
 export async function resetDb() {
   // Children first, parents last.
+  await prisma.systemLog.deleteMany();
   await prisma.quizAnswer.deleteMany();
   await prisma.quizAttempt.deleteMany();
   await prisma.quizProgress.deleteMany();

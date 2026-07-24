@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sendEmail, SmtpNotConfiguredError } from "@/lib/email";
+import { logApiError } from "@/lib/system-log";
 
 // POST: an enrolled student sends a message to their class teacher
 export async function POST(
@@ -78,7 +79,7 @@ export async function POST(
     if (error instanceof SmtpNotConfiguredError) {
       return NextResponse.json({ error: error.message }, { status: 503 });
     }
-    console.error("[CONTACT_TEACHER_POST]", error);
+    logApiError("CONTACT_TEACHER_POST", error);
     return NextResponse.json({ error: "Failed to send message." }, { status: 500 });
   }
 }

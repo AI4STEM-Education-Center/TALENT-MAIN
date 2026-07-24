@@ -155,7 +155,7 @@ ${siblingBlock}
 
 THE PRIVACY RULE (absolute): the simulation is shown while quiz results are blind, so it must never reveal anything about this specific question. The topic, title, learning_goal, and ESPECIALLY the spec must not contain the question's numbers, given values, named scenario, option values, or its answer. Zoom out to the general concept the question tests (e.g. a question about a 3 kg block on a 30° incline becomes "forces on an inclined plane" with fully student-adjustable mass and angle). Someone reading the spec must not be able to reconstruct the question or infer its answer.
 
-THE SPEC: a self-contained build brief (a few hundred words) for a developer who will NOT see the question. Describe: the physical system and the quantitative relationship to make explorable; which parameters the student can adjust (with sensible generic ranges and defaults — never the question's values); what is animated/plotted and how it responds; which formulas govern the model; readouts to display; and the layout, which follows the platform's fixed three-section structure (a header with the title, a one-line description and a short how-to guide; a key-formulas section directly beneath it; then a simulation-plus-controls area that is side-by-side on desktop and stacked on phones). Target a simple, canvas-based interactive that runs at 60fps with plain JavaScript, fits on a single desktop screen with everything visible at once, and adapts to the phone layout — no external libraries.
+THE SPEC: a self-contained build brief (a few hundred words) for a developer who will NOT see the question. Describe: the physical system and the quantitative relationship to make explorable; which parameters the student can adjust (with sensible generic ranges and defaults — never the question's values); what is animated/plotted and how it responds; which formulas govern the model; readouts to display; and the layout, which follows the platform's fixed three-section structure (a compact header band with the title, a one-line description and a short how-to hint; a thin key-formulas strip directly beneath it; then a simulation-plus-controls area that absorbs all remaining height — side-by-side on desktop, stacked on phones). Target a simple, canvas-based interactive that runs at 60fps with plain JavaScript, locks to the desktop frame with no scrolling at any size up to full-screen 4K, and adapts to the phone layout — no external libraries.
 
 Use the exact JSON schema provided. Every property must be present (null where unused).`;
 }
@@ -171,17 +171,22 @@ const HTML_REQUIREMENTS = `HARD REQUIREMENTS for the document:
 - Forbidden elements: <iframe>, <object>, <embed>, <base>, <link>.
 
 REQUIRED PAGE STRUCTURE — the page is made of exactly these three sections:
-  1. HEADER: an <h1> title that names the key function(s)/relationship being explored (e.g. "Simple Pendulum: T = 2π√(L/g)"), then a one-line description of the physical system, then a short "How to use" quick guide — one or two sentences (or a few bullets) telling the student which controls to change and what to watch for.
-  2. FUNCTIONS: a clearly-labelled section (e.g. a "Key functions / formulas" heading) listing every governing formula the model uses, with each symbol defined. This states the math the simulation is built on and is not optional.
-  3. SIMULATION + CONTROLS: the animated simulation plus its control panel.
+  1. HEADER: an <h1> title that names the key function(s)/relationship being explored (e.g. "Simple Pendulum: T = 2π√(L/g)"), a one-line description of the physical system, and a short "How to use" hint — one or two sentences telling the student which controls to change and what to watch for. This is a compact information band, NOT a hero banner: no large vertical padding, no oversized display type.
+  2. FUNCTIONS: a clearly-labelled thin strip (e.g. a "Key formulas" heading) listing every governing formula the model uses, with each symbol defined in one short line of small text per formula. This states the math the simulation is built on and is not optional — but it is a reference strip, not the main content.
+  3. SIMULATION + CONTROLS: the animated simulation plus its control panel. This is the star of the page and must receive the large majority of the space.
 
 REQUIRED TWO LAYOUTS — implement BOTH and switch between them with a CSS media query on the page's own width:
-- DESKTOP LAYOUT (width ≥ 700px) — the primary target; optimize for it: EVERY element visible at once with NO scrolling in any direction. Make the document fill exactly the frame height (html, body { height: 100%; margin: 0 }) and lay the sections out with CSS grid/flexbox: a compact header row, the functions section directly under it (never at the bottom), then the simulation + controls area flexing to absorb ALL remaining height — animated simulation on the left (roughly two-thirds of the width), controls on the right.
-- PHONE LAYOUT (width < 700px): a vertical stack that may scroll — header first, then the simulation with its live readouts, then the full controls, so every major element stays present; the functions section may collapse into a <details> element directly under the header to save space. Keep controls usable with touch (comfortable hit targets).
+- DESKTOP LAYOUT (width ≥ 700px) — the primary target. The page must fit the frame EXACTLY with no scrolling in any direction, at every desktop frame size from a small side panel up to full-screen on a 4K display. Achieve this structurally, so overflow is impossible by construction, not by hoping the content is short:
+  * Lock the document to the frame: html, body { height: 100%; margin: 0; overflow: hidden } and make the page a single CSS grid with grid-template-rows: auto auto minmax(0, 1fr) — header band, functions strip, simulation area. Never give the desktop layout a natural flow height.
+  * HEADER band (row 1): title, description, and how-to hint arranged horizontally (e.g. title + description on the left, how-to hint on the right). Keep it to roughly 2–3 text lines of total height — at most ~12% of the frame height.
+  * FUNCTIONS strip (row 2): a single horizontal row of compact formula cards (display: flex; each card = the formula plus its one-line symbol key in small text). If there are many formulas, allow at most two rows. The strip must stay thin — at most ~20% of the frame height.
+  * SIMULATION + CONTROLS (row 3): the minmax(0, 1fr) row absorbs ALL remaining height — on a large display that is most of the page, which is exactly right. Simulation on the left (roughly two-thirds of the width), controls on the right. Give every nested flex/grid child min-height: 0 and min-width: 0 so the canvas cell can actually shrink and grow with the row.
+  * Scale typography with clamp() (e.g. font-size: clamp(13px, 1vw + 8px, 20px)) so text stays proportionate from a 700px panel to a full-screen 4K frame, and the fixed-content rows never balloon.
+- PHONE LAYOUT (width < 700px): a vertical stack that may scroll — header first, then the simulation with its live readouts, then the full controls, so every major element stays present; the functions section may collapse into a <details> element directly under the header to save space. Keep controls usable with touch (comfortable hit targets). Only the phone layout may scroll vertically; the desktop layout never scrolls.
 - The frame this page runs in is RESIZED live (a side panel expanding to full screen, a phone rotating): derive the canvas size from its container's current size, listen for size changes (window resize or a ResizeObserver), and rescale + redraw on every change. Never hard-code pixel dimensions for the stage.
 - Simulation area: render on a <canvas> (or inline SVG), animated with requestAnimationFrame. Show the key live readouts (e.g. speed AND acceleration together) on or beside the animation, and include a pause/resume and a reset control.
 - Controls: sliders/buttons with visible labels AND their current numeric value; the simulation responds immediately when they change.
-- NO clipping or overflow at any size, from ~360px phones up to large desktops: never let a title, label, readout, or value spill outside its box or get cut off — wrap or shrink text so everything stays readable. No horizontal scrolling ever.
+- NO clipping or overflow at any size, from ~360px phones up to full-screen 4K desktops: never let a title, label, readout, or value spill outside its box or get cut off — wrap or shrink text so everything stays readable. On desktop the overflow: hidden lock means anything over-budget gets CLIPPED, so respect the per-row height budgets above. No horizontal scrolling ever.
 - Use accurate physics with correct units, consistent with the formulas shown in the FUNCTIONS section. Prefer simple and correct over flashy.
 - Do NOT reference any quiz, question, or answer anywhere in the page.`;
 
@@ -288,7 +293,7 @@ ${revisedHtml}
 Check every one of these and set the matching boolean:
 - feedback_applied: the new feedback above is genuinely and fully addressed in the document (not merely acknowledged), and no earlier feedback was undone.
 - physics_intact: re-derive the governing formulas yourself. The math and physics are correct, dimensionally consistent, in correct units, and match the formulas the page displays. There are no sign errors, wrong constants, or broken relationships.
-- layout_intact: the required three sections are present — a header (title + one-line description + short how-to guide), a key-functions/formulas section, and the simulation-plus-controls area — AND both required layouts survive: the desktop layout (≥700px: everything visible at once, document filling the frame height, no scrolling, simulation left / controls right) and the phone layout (<700px: vertical stack with every major element), with the canvas rescaling when the frame resizes and no text overflowing or clipped.
+- layout_intact: the required three sections are present — a compact header band (title + one-line description + short how-to hint), a thin key-formulas strip, and the simulation-plus-controls area — AND both required layouts survive: the desktop layout (≥700px: html/body locked to 100% height with overflow hidden, a grid of header band / formulas strip / height-filling simulation row, no scrolling at any desktop size, simulation left / controls right) and the phone layout (<700px: vertical stack with every major element), with the canvas rescaling when the frame resizes and no text overflowing or clipped.
 - simulation_works: the JavaScript is coherent and would run — the animation loop, the reset/pause controls, and every slider/button are wired to the model and update the readouts; there are no obvious runtime errors, undefined references, or dead controls.
 - ok: true ONLY when all four above are true.
 
@@ -315,7 +320,7 @@ ${problems.map((p) => `- ${p}`).join("\n")}
 Here is the document to correct:
 ${revisedHtml}
 
-Fix every listed problem AND make sure the intended feedback is fully and correctly applied. Keep the physics/math correct, keep the required page structure (header with title + description + how-to guide, the key-functions section, and the simulation + controls area in both its desktop and phone layouts), and do not break the working simulation or undo earlier feedback. The privacy rule still holds: never add anything about a specific quiz question or its answer.
+Fix every listed problem AND make sure the intended feedback is fully and correctly applied. Keep the physics/math correct, keep the required page structure (compact header band with title + description + how-to hint, the thin key-formulas strip, and the simulation + controls area filling the remaining height, in both the non-scrolling desktop layout and the phone layout), and do not break the working simulation or undo earlier feedback. The privacy rule still holds: never add anything about a specific quiz question or its answer.
 
 ${HTML_REQUIREMENTS}
 
@@ -401,7 +406,7 @@ export function validateRevisionReview(input: unknown): { ok: boolean; problems:
   const checks: [keyof typeof input, string][] = [
     ["feedback_applied", "the requested change was not fully applied to the document"],
     ["physics_intact", "the physics/math is incorrect or inconsistent with the displayed formulas"],
-    ["layout_intact", "the required page layout (header, key-functions section, two-column simulation) is broken"],
+    ["layout_intact", "the required page layout (header band, formulas strip, height-filling non-scrolling simulation area) is broken"],
     ["simulation_works", "the simulation no longer runs correctly (broken controls, animation, or readouts)"],
   ];
 

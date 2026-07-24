@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { listBackupsForCurrentEnv } from "@/lib/backup";
 import { resolveAppEnv } from "@/lib/backup-core";
+import { logApiError } from "@/lib/system-log";
 
 /**
  * GET /api/admin/backup/list
@@ -24,7 +25,7 @@ export async function GET() {
       })),
     });
   } catch (error) {
-    console.error("[BACKUP_LIST]", error);
+    logApiError("BACKUP_LIST", error);
     return NextResponse.json({ error: "Failed to list backups." }, { status: 500 });
   }
 }

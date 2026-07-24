@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { resolveWebdav } from "@/lib/backup";
 import { enqueueBackup } from "@/lib/queue";
+import { logApiError } from "@/lib/system-log";
 
 /**
  * POST /api/admin/backup/run
@@ -23,7 +24,7 @@ export async function POST() {
     enqueueBackup();
     return NextResponse.json({ success: true, message: "Backup queued." });
   } catch (error) {
-    console.error("[BACKUP_RUN]", error);
+    logApiError("BACKUP_RUN", error);
     return NextResponse.json({ error: "Failed to queue backup." }, { status: 500 });
   }
 }

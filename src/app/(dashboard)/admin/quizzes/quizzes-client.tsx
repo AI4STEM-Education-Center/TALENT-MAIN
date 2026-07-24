@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Plus, Pencil, Trash2, FileQuestion, Globe, ArrowUpToLine, BookOpen, Check, X, ChevronRight, ChevronDown, Tags } from "lucide-react";
+import { PdfBatchUpload } from "./pdf-batch-upload";
 
 interface Topic { id: string; name: string; order: number; _count: { quizzes: number } }
 // The topic embedded in a quiz carries only id/name (no per-topic counts).
@@ -276,6 +277,14 @@ export function AdminQuizPoolClient({
               </div>
             </CardContent>
           </Card>
+
+          {/* Batch import: one quiz per PDF under a chosen topic, deduped by name. */}
+          <PdfBatchUpload
+            topics={topics}
+            existingQuizzes={pool}
+            onQuizCreated={(quiz) => setPool((prev) => [...prev, quiz])}
+            onQuizRemoved={(id) => setPool((prev) => prev.filter((q) => q.id !== id))}
+          />
 
           {pool.length === 0 ? (
             <Card>
