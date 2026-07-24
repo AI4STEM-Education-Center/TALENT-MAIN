@@ -5,10 +5,6 @@
 // (when `stream_options.include_usage` is set); local OpenAI-compatible servers
 // usually don't, so we fall back to counting streamed content deltas and flag
 // the count as estimated.
-//
-// The chat route (src/app/api/chat/route.ts) proxies raw SSE straight to the
-// browser and measures TTFT/tokens client-side, so it does NOT use this helper;
-// every other (server-collected) call site does.
 
 import type OpenAI from "openai";
 

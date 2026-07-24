@@ -1,23 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { roleToChatUseCase, buildProviderHeaders, type ResolvedProvider } from "./ai-provider";
+import { buildProviderHeaders, type ResolvedProvider } from "./ai-provider";
 
 // resolveProvider() (DB + cache TTL) is covered in test/ai-provider.resolve.test.ts.
 // These cover the pure helpers.
-
-describe("roleToChatUseCase", () => {
-  it("maps STUDENT to student_chat", () => {
-    expect(roleToChatUseCase("STUDENT")).toBe("student_chat");
-  });
-
-  it("maps TEACHER and ADMIN to teacher_chat", () => {
-    expect(roleToChatUseCase("TEACHER")).toBe("teacher_chat");
-    expect(roleToChatUseCase("ADMIN")).toBe("teacher_chat");
-  });
-
-  it("defaults unknown roles to teacher_chat", () => {
-    expect(roleToChatUseCase("WHATEVER")).toBe("teacher_chat");
-  });
-});
 
 function provider(overrides: Partial<ResolvedProvider>): ResolvedProvider {
   return {

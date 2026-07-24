@@ -97,9 +97,9 @@ interface ModelForm {
 // ─── Constants ──────────────────────────────────────────────────────────────────
 
 const USE_CASE_LABELS: Record<string, string> = {
-  teacher_chat: "Teacher & Admin Chat",
-  student_chat: "Student Chat",
   pdf_description: "PDF Description Generation",
+  description_generation: "Description Generation",
+  recommendation: "Recommendation",
   quiz_extraction: "Quiz PDF Extraction",
   simulation_generation: "Question Simulation Generation",
 };

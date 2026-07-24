@@ -330,9 +330,9 @@ async function collectSimulationRecommendations(
 async function generateSummary(
   examResult: ExamResultRow
 ): Promise<{ summary: string; metrics: AiCallMetrics }> {
-  const provider = await resolveProvider("student_chat");
+  const provider = await resolveProvider("description_generation");
   if (!providerUsable(provider)) {
-    throw new Error("No usable AI provider configured for student_chat");
+    throw new Error("No usable AI provider configured for description_generation");
   }
 
   const snapshot = parseReviewSnapshot(examResult.reviewSnapshot);
@@ -381,7 +381,7 @@ async function generateRecommendations(
     ...(simulations.length > 0 ? { simulations } : {}),
   });
 
-  const provider = await resolveProvider("student_chat");
+  const provider = await resolveProvider("recommendation");
   if (!providerUsable(provider)) {
     return { stored: withSims({ items: [], truncated: false }), metrics: null };
   }
