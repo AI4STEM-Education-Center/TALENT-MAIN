@@ -9,7 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScoreBanner } from "@/components/student/QuizReviewResult";
 import { HolisticRecommendations } from "@/components/student/HolisticRecommendations";
-import { SimulationRecommendations } from "@/components/student/SimulationRecommendations";
+import { SimulationRail } from "@/components/student/SimulationRail";
+import { useContentFullWidth } from "@/components/dashboard/content-width";
+import { cn } from "@/lib/utils";
 import {
   RESULT_STATUS,
   type ResultStatus,
@@ -73,6 +75,9 @@ export function ExamResultsView({
   actions?: ReactNode;
 }) {
   const [ai, setAi] = useState<AiState>(initial);
+  // Owned here (not in SimulationRail) because an active simulation reshapes
+  // the whole page: the grid flips so the simulation takes the wide side.
+  const [activeSimId, setActiveSimId] = useState<string | null>(null);
   const needPoll = isPending(ai.summaryStatus) || isPending(ai.recommendationsStatus);
   // Strict-Mode double-mount guard so we don't run two polling loops.
   const pollingRef = useRef(false);
@@ -116,8 +121,19 @@ export function ExamResultsView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attemptId, needPoll]);
 
+  const hasSimulations = ai.simulations.length > 0;
+  const simOpen = activeSimId !== null;
+  // The dashboard layout caps pages at max-w-7xl, which our own max-w-none
+  // can't escape — ask it to lift the cap while a simulation is open.
+  useContentFullWidth(simOpen);
+
   return (
-    <div className="p-4 md:p-6 max-w-6xl space-y-6">
+    <div
+      className={cn(
+        "p-4 md:p-6 space-y-6",
+        simOpen ? "max-w-none" : hasSimulations ? "max-w-7xl" : "max-w-6xl"
+      )}
+    >
       {backHref && (
         <Button variant="ghost" size="sm" asChild>
           <Link href={backHref}>
@@ -126,26 +142,50 @@ export function ExamResultsView({
         </Button>
       )}
 
-      {/* Unified header: the score banner (percentage only — no per-question
-          count) and the AI summary live in one full-width card. */}
-      <Card>
-        <CardContent className="space-y-4 py-5">
-          <ScoreBanner score={score} />
-          <div className="border-t" />
-          <SummaryBody ai={ai} />
-        </CardContent>
-      </Card>
+      {/* With simulations, desktop splits into content (left) + simulation
+          rail (right); on smaller screens the rail stacks below as a section.
+          While a simulation is open the columns flip: the summary shrinks
+          into the narrow column and the simulation gets the rest of the page. */}
+      <div
+        className={cn(
+          hasSimulations && "grid gap-6 lg:items-start",
+          hasSimulations &&
+            (simOpen
+              ? "lg:grid-cols-[minmax(320px,26rem)_minmax(0,1fr)]"
+              : "lg:grid-cols-[minmax(0,1fr)_minmax(320px,26rem)]")
+        )}
+      >
+        <div className="min-w-0 space-y-6">
+          {/* Unified header: the score banner (percentage only — no per-question
+              count) and the AI summary live in one full-width card. */}
+          <Card>
+            <CardContent className="space-y-4 py-5">
+              <ScoreBanner score={score} />
+              <div className="border-t" />
+              <SummaryBody ai={ai} />
+            </CardContent>
+          </Card>
 
-      {/* Holistic study recommendations — up to 3 cards chosen across the whole
-          attempt, with NO per-question correctness or correct answers shown. */}
-      <HolisticRecommendations
-        recommendations={ai.recommendations}
-        status={ai.recommendationsStatus}
-      />
+          {/* Holistic study recommendations — up to 3 cards chosen across the
+              whole attempt, with NO per-question correctness or correct answers
+              shown. */}
+          <HolisticRecommendations
+            recommendations={ai.recommendations}
+            status={ai.recommendationsStatus}
+          />
+        </div>
 
-      {/* Interactive topic simulations — question-detail-free by construction,
-          so safe to show while the per-question review stays hidden. */}
-      <SimulationRecommendations simulations={ai.simulations} />
+        {/* Interactive topic simulations — question-detail-free by construction,
+            so safe to show while the per-question review stays hidden. */}
+        {hasSimulations && (
+          <SimulationRail
+            simulations={ai.simulations}
+            attemptId={attemptId}
+            activeId={activeSimId}
+            onActiveChange={setActiveSimId}
+          />
+        )}
+      </div>
 
       {actions && <div className="flex flex-wrap gap-3">{actions}</div>}
     </div>

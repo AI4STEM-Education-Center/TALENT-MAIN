@@ -16,6 +16,12 @@ import {
   PASS_THRESHOLD,
   type DistributionBucket,
 } from "./quiz-stats";
+import {
+  summarizeSimulationEngagement,
+  retakeImprovementBySimUse,
+  type SimulationEngagementRow,
+  type RetakeImpact,
+} from "./simulation-stats";
 
 const fullName = (u: { firstName: string; lastName: string }): string =>
   [u.firstName, u.lastName].filter(Boolean).join(" ").trim() || "Unknown student";
@@ -348,4 +354,120 @@ export async function getClassStatsOverview(classId: string): Promise<ClassStats
   });
 
   return { quizzes, students };
+}
+
+// ─── Simulation engagement ───────────────────────────────────────────────────
+
+const SESSION_SELECT = {
+  simulationId: true,
+  studentId: true,
+  quizId: true,
+  startedAt: true,
+  activeMs: true,
+  interactionCount: true,
+  paramChanges: true,
+} as const;
+
+/** Display titles for a set of simulation ids (fallback handled by the caller). */
+async function simulationTitles(ids: string[]): Promise<Map<string, string>> {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return new Map();
+  const sims = await prisma.questionSimulation.findMany({
+    where: { id: { in: unique } },
+    select: { id: true, title: true, topic: true },
+  });
+  return new Map(sims.map((s) => [s.id, s.title ?? s.topic ?? "Interactive simulation"]));
+}
+
+export type QuizSimulationStats = {
+  totalSessions: number;
+  uniqueStudents: number;
+  engagement: SimulationEngagementRow[];
+};
+
+/** Per-quiz simulation engagement for one class: one row per simulation. */
+export async function getQuizSimulationStats(
+  classId: string,
+  quizId: string
+): Promise<QuizSimulationStats> {
+  const sessions = await prisma.simulationSession.findMany({
+    where: { classId, quizId },
+    select: SESSION_SELECT,
+  });
+  const titles = await simulationTitles(sessions.map((s) => s.simulationId));
+  return {
+    totalSessions: sessions.length,
+    uniqueStudents: new Set(sessions.map((s) => s.studentId)).size,
+    engagement: summarizeSimulationEngagement(sessions, titles),
+  };
+}
+
+export type ClassSimulationInsights = {
+  totalSessions: number;
+  studentsWithSessions: number;
+  studentsAttempted: number;
+  medianActiveMs: number;
+  retake: RetakeImpact;
+};
+
+/**
+ * Class-level simulation insights: adoption (students with any session vs.
+ * students who attempted a quiz), median active time, and the retake-
+ * improvement split by simulation use. Correlation only — the UI labels it so.
+ */
+export async function getClassSimulationInsights(classId: string): Promise<ClassSimulationInsights> {
+  const [sessions, attempts] = await Promise.all([
+    prisma.simulationSession.findMany({ where: { classId }, select: SESSION_SELECT }),
+    prisma.quizAttempt.findMany({
+      where: { classId, completedAt: { not: null } },
+      select: { studentId: true, quizId: true, score: true, completedAt: true },
+    }),
+  ]);
+  return {
+    totalSessions: sessions.length,
+    studentsWithSessions: new Set(sessions.map((s) => s.studentId)).size,
+    studentsAttempted: new Set(attempts.map((a) => a.studentId)).size,
+    medianActiveMs: median(sessions.map((s) => s.activeMs)),
+    retake: retakeImprovementBySimUse(attempts, sessions),
+  };
+}
+
+export type StudentSimulationSessionRow = {
+  sessionId: string;
+  title: string;
+  quizName: string | null;
+  surface: string;
+  startedAt: Date;
+  activeMs: number;
+  paramChanges: number;
+};
+
+/** A student's recent simulation sessions in one class, newest first. */
+export async function getStudentSimulationSessions(
+  classId: string,
+  studentId: string,
+  limit = 50
+): Promise<StudentSimulationSessionRow[]> {
+  const sessions = await prisma.simulationSession.findMany({
+    where: { classId, studentId },
+    orderBy: { startedAt: "desc" },
+    take: limit,
+  });
+  const [titles, quizzes] = await Promise.all([
+    simulationTitles(sessions.map((s) => s.simulationId)),
+    prisma.quiz.findMany({
+      where: { id: { in: [...new Set(sessions.flatMap((s) => (s.quizId ? [s.quizId] : [])))] } },
+      select: { id: true, name: true },
+    }),
+  ]);
+  const quizNames = new Map(quizzes.map((q) => [q.id, q.name]));
+  return sessions.map((s) => ({
+    sessionId: s.id,
+    title: titles.get(s.simulationId) ?? "Removed simulation",
+    quizName: s.quizId ? (quizNames.get(s.quizId) ?? null) : null,
+    surface: s.surface,
+    startedAt: s.startedAt,
+    activeMs: s.activeMs,
+    paramChanges: s.paramChanges,
+  }));
 }

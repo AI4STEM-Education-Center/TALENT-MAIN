@@ -839,3 +839,35 @@ model SimulationFeedback {
 
   @@index([simulationId, createdAt])
 }
+
+// ─── Simulation telemetry ─────────────────────────────────────────────────────
+// One row per simulation open on the student results page. Deliberately
+// RELATION-FREE (plain id columns, like ExamResult) so engagement history
+// survives deletion of simulations/quizzes/students. Counters are cumulative
+// per-session totals reported by the client and clamped server-side — they are
+// engagement signal, not ground truth. surface: "rail" | "mobile".
+model SimulationSession {
+  id           String @id @default(cuid())
+  simulationId String
+  studentId    String
+  classId      String?
+  quizId       String?
+  attemptId    String? // the quiz attempt whose results page surfaced the sim
+  surface      String
+
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+
+  dwellMs          Int     @default(0) // wall-clock ms the viewer was open
+  activeMs         Int     @default(0) // ms with recent in-sim activity
+  interactionCount Int     @default(0) // pointer/key interactions inside the sim
+  paramChanges     Int     @default(0) // control (slider/select/…) changes
+  controlsJson     String? // JSON {controlLabel: changeCount}, capped + sanitized
+
+  updatedAt DateTime @updatedAt
+
+  @@index([simulationId, startedAt])
+  @@index([studentId, startedAt])
+  @@index([quizId, startedAt])
+  @@index([classId, startedAt])
+}
