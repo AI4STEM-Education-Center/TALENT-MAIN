@@ -6,11 +6,15 @@
 // pure transforms (schemas, prompts, validation, normalization, localization)
 // live in `quiz-extraction.ts` and are consumed by this engine.
 //
-// Extraction is two-pass: pass 1 identifies every question (text, options,
-// answer key) over all pages and flags figures / image answer-choices; pass 2
-// runs ONLY when something needs a tight crop box, doing one focused
-// localization call per page and merging the boxes back. A text-only quiz makes
-// exactly one call, unchanged from before.
+// Extraction is three-pass: pass 1 identifies every question (text + options)
+// over all pages and flags figures / image answer-choices, but reads NO answers;
+// pass 2 is a dedicated answer-key call that finds the correct answers from any
+// source (inline marks, a consolidated key block, green LMS markings), reconciles
+// across sources, and maps them onto pass-1's option positions; pass 3 runs ONLY
+// when something needs a tight crop box, doing one focused localization call per
+// page and merging the boxes back. A blank (no-answer-key) text-only quiz still
+// makes two calls (structure + answer-key); localization is skipped when there is
+// nothing to crop.
 
 import type OpenAI from "openai";
 import { prisma } from "./prisma";
@@ -20,16 +24,22 @@ import { retryWithExponentialBackoff } from "./retry";
 import { streamJsonCompletion, aggregateMetrics, type AiCallMetrics } from "./ai-streaming";
 import {
   QUIZ_EXTRACTION_SCHEMA,
+  QUIZ_ANSWER_KEY_SCHEMA,
   QUIZ_LOCALIZATION_SCHEMA,
   buildExtractionPrompt,
+  buildAnswerKeyPrompt,
   buildLocalizationPrompt,
   validateExtractedQuiz,
-  normalizeExtractedQuiz,
+  validateAnswerKeyResult,
+  applyAnswerKey,
+  normalizeStructure,
+  finalizeAnswers,
   needsLocalization,
   collectLocalizationTargets,
   groupTargetsByPage,
   validateLocalizationResult,
   mergeLocalizedBoxes,
+  type ExtractedQuiz,
   type LocalizedBox,
 } from "./quiz-extraction";
 
@@ -177,9 +187,42 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
       isLocal,
     });
     callMetrics.push(pass1Metrics);
-    let quiz = normalizeExtractedQuiz(validateExtractedQuiz(pass1Parsed));
+    let quiz: ExtractedQuiz = normalizeStructure(validateExtractedQuiz(pass1Parsed));
 
-    // ── Pass 2: tight bounding boxes — only when something needs cropping. ──
+    // ── Pass 2: isolated answer-key detection over all pages. ──
+    // A dedicated call reads the answer key from ANY source (inline marks, a
+    // consolidated key block, green LMS markings) and reconciles across them,
+    // then maps the answers back onto pass-1's option positions. Best-effort:
+    // if the model or validation fails, we proceed with no key — finalizeAnswers
+    // then nulls every correctness signal and flags each question for the
+    // teacher to answer during review, rather than failing the extraction.
+    if (quiz.questions.length > 0) {
+      try {
+        const answerKeyPrompt = buildAnswerKeyPrompt(extraction.totalPages, quiz.questions);
+        const answerKeyMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+          { role: "user", content: buildExtractionContent(answerKeyPrompt, imageUrls) },
+        ];
+        const { value: keyParsed, metrics: keyMetrics } = await callJsonModel(client, {
+          model: provider.model,
+          messages: answerKeyMessages,
+          schema: QUIZ_ANSWER_KEY_SCHEMA,
+          serviceTier,
+          tierActive,
+          isLocal,
+        });
+        callMetrics.push(keyMetrics);
+        quiz = applyAnswerKey(quiz, validateAnswerKeyResult(keyParsed));
+      } catch (keyErr) {
+        console.warn(
+          `[QuizExtraction] ${extractionId}: answer-key pass failed; committing with no key:`,
+          keyErr instanceof Error ? keyErr.message : keyErr
+        );
+      }
+    }
+    // Answer-dependent cleanup, now that the key (if any) has been applied.
+    quiz = finalizeAnswers(quiz);
+
+    // ── Pass 3: tight bounding boxes — only when something needs cropping. ──
     // Best-effort: any failure (whole block or a single page) leaves the
     // pass-1/coarse boxes in place rather than failing the extraction.
     if (needsLocalization(quiz)) {

@@ -5,9 +5,9 @@ import { invalidateProviderCache } from "@/lib/ai-provider";
 import { logApiError } from "@/lib/system-log";
 
 const VALID_USE_CASES = [
-  "teacher_chat",
-  "student_chat",
   "pdf_description",
+  "description_generation",
+  "recommendation",
   "quiz_extraction",
   "simulation_generation",
 ] as const;

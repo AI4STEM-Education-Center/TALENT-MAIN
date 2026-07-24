@@ -2,9 +2,9 @@ import { prisma } from "@/lib/prisma";
 import { decryptApiKey } from "@/lib/crypto";
 
 export type UseCase =
-  | "teacher_chat"
-  | "student_chat"
   | "pdf_description"
+  | "description_generation"
+  | "recommendation"
   | "quiz_extraction"
   | "simulation_generation";
 export type ProviderType = "openai" | "local" | "cloudflare";
@@ -64,9 +64,9 @@ export function buildProviderHeaders(
  * Resolve the active AI provider config for a given use case.
  * Returns null if no assignment exists (caller should return 503).
  *
- * For ADMIN and TEACHER roles, use "teacher_chat".
- * For STUDENT role, use "student_chat".
- * For PDF processing, use "pdf_description".
+ * For PDF page descriptions, use "pdf_description".
+ * For exam-result summaries, use "description_generation".
+ * For study-material recommendations, use "recommendation".
  */
 export async function resolveProvider(
   useCase: UseCase
@@ -135,22 +135,10 @@ export async function resolveProvider(
 }
 
 /**
- * Map a user role to the appropriate chat use case.
- */
-export function roleToChatUseCase(
-  role: string
-): UseCase {
-  if (role === "STUDENT") return "student_chat";
-  // ADMIN and TEACHER both use teacher_chat
-  return "teacher_chat";
-}
-
-/**
- * Construct an OpenAI SDK client from a resolved provider. Mirrors the inline
- * client setup in the chat route: local/cloudflare providers point the SDK at
- * their base URL (with any trailing `/chat/completions` stripped), while OpenAI
- * uses the default endpoint. Cloudflare's BYOK alias header is injected via
- * `buildProviderHeaders`.
+ * Construct an OpenAI SDK client from a resolved provider. Local/cloudflare
+ * providers point the SDK at their base URL (with any trailing
+ * `/chat/completions` stripped), while OpenAI uses the default endpoint.
+ * Cloudflare's BYOK alias header is injected via `buildProviderHeaders`.
  */
 export async function createOpenAIClient(provider: ResolvedProvider) {
   const { OpenAI } = await import("openai");
