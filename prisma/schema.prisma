@@ -73,6 +73,7 @@ model LearningMaterial {
   aiModel  String?
   aiTtftMs Int? // time to first token (ms)
   aiTokens Int? // generated tokens summed across all page + batch calls
+  aiTotalMs Int? // total wall-clock time summed across all page + batch calls (ms)
 
   teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   class   Class?  @relation(fields: [classId], references: [id], onDelete: SetNull)
@@ -343,6 +344,7 @@ model QuizPdfExtraction {
   aiModel  String?
   aiTtftMs Int?
   aiTokens Int?
+  aiTotalMs Int? // total wall-clock time summed across all passes (ms)
 
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt

@@ -1,0 +1,43 @@
+import { describe, it, expect } from "vitest";
+import { formatMs, formatAiMetrics } from "./ai-metrics";
+
+describe("formatMs", () => {
+  it("keeps whole milliseconds at or below one second", () => {
+    expect(formatMs(0)).toBe("0ms");
+    expect(formatMs(240)).toBe("240ms");
+    expect(formatMs(1000)).toBe("1000ms"); // exactly 1s is not "larger than 1 second"
+  });
+
+  it("switches to seconds with three decimals once past one second", () => {
+    expect(formatMs(1001)).toBe("1.001s");
+    expect(formatMs(19438)).toBe("19.438s");
+    expect(formatMs(25123)).toBe("25.123s");
+  });
+
+  it("rounds sub-second fractional inputs", () => {
+    expect(formatMs(240.6)).toBe("241ms");
+  });
+});
+
+describe("formatAiMetrics", () => {
+  it("returns an empty string when nothing is available", () => {
+    expect(formatAiMetrics({})).toBe("");
+  });
+
+  it("derives generation time and token rate from total minus TTFT", () => {
+    // TTFT 19.438s, total 25.123s -> gen 5.685s; 3077 / 5.685 ≈ 541.2 tok/s
+    expect(
+      formatAiMetrics({ model: "openai/gpt-5.5", ttftMs: 19438, totalMs: 25123, tokens: 3077 })
+    ).toBe("openai/gpt-5.5 · TTFT 19.438s · gen 5.685s · total 25.123s · 3077 tokens · 541.2 tok/s");
+  });
+
+  it("omits gen/total/rate when total time is missing (legacy rows)", () => {
+    expect(formatAiMetrics({ model: "m", ttftMs: 240, tokens: 512 })).toBe(
+      "m · TTFT 240ms · 512 tokens"
+    );
+  });
+
+  it("marks estimated token counts with a ~ suffix", () => {
+    expect(formatAiMetrics({ tokens: 512, tokensEstimated: true })).toBe("512~ tokens");
+  });
+});

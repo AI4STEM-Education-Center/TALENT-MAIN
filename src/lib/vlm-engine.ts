@@ -380,6 +380,7 @@ export async function processMaterial(materialId: string) {
         aiModel: agg?.model ?? null,
         aiTtftMs: agg?.ttftMs ?? null,
         aiTokens: agg?.completionTokens ?? null,
+        aiTotalMs: agg?.totalMs ?? null,
       },
     });
     return;
@@ -427,6 +428,7 @@ export async function processMaterial(materialId: string) {
         aiModel: agg?.model ?? null,
         aiTtftMs: agg?.ttftMs ?? null,
         aiTokens: agg?.completionTokens ?? null,
+        aiTotalMs: agg?.totalMs ?? null,
       },
     });
   } catch (err: any) {

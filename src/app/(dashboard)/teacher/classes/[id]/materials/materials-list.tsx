@@ -24,6 +24,7 @@ export interface MaterialItem {
   aiModel?: string | null;
   aiTtftMs?: number | null;
   aiTokens?: number | null;
+  aiTotalMs?: number | null;
 }
 
 interface MaterialsListProps {
@@ -136,9 +137,9 @@ export default function MaterialsList({ classId, initialMaterials }: MaterialsLi
                   <div className="flex items-center text-green-600 font-medium text-sm">
                     <CheckCircle className="size-4 mr-1" /> Ready
                   </div>
-                  {formatAiMetrics({ model: mat.aiModel, ttftMs: mat.aiTtftMs, tokens: mat.aiTokens }) && (
+                  {formatAiMetrics({ model: mat.aiModel, ttftMs: mat.aiTtftMs, totalMs: mat.aiTotalMs, tokens: mat.aiTokens }) && (
                     <span className="mt-0.5 text-xs text-gray-400 text-right">
-                      {formatAiMetrics({ model: mat.aiModel, ttftMs: mat.aiTtftMs, tokens: mat.aiTokens })}
+                      {formatAiMetrics({ model: mat.aiModel, ttftMs: mat.aiTtftMs, totalMs: mat.aiTotalMs, tokens: mat.aiTokens })}
                     </span>
                   )}
                 </div>

@@ -36,6 +36,7 @@ import {
   Trash2,
   Zap,
 } from "lucide-react";
+import { formatAiMetrics } from "@/lib/ai-metrics";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -523,15 +524,13 @@ export default function AiConfigPage() {
 
       const data = await res.json();
 
-      const metricsLine = [
-        data.model,
-        data.ttftMs != null ? `TTFT ${data.ttftMs}ms` : null,
-        data.tokens != null ? `${data.tokens}${data.tokensEstimated ? "~" : ""} tokens` : null,
-        typeof data.tokensPerSec === "number" ? `${data.tokensPerSec.toFixed(1)} tok/s` : null,
-        `${data.latencyMs}ms total`,
-      ]
-        .filter(Boolean)
-        .join(" · ");
+      const metricsLine = formatAiMetrics({
+        model: data.model,
+        ttftMs: data.ttftMs,
+        totalMs: data.latencyMs,
+        tokens: data.tokens,
+        tokensEstimated: data.tokensEstimated,
+      });
 
       setTestResults((prev) => ({
         ...prev,
