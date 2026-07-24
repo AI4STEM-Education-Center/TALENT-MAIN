@@ -1,9 +1,72 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { deleteS3Object, deleteS3Objects, getS3Config, listS3Objects, materialPrefixFromStorageKey } from "@/lib/storage";
+import {
+  deleteS3Object,
+  deleteS3Objects,
+  getS3Config,
+  listS3Objects,
+  materialPrefixFromStorageKey,
+  presignGetUrl,
+} from "@/lib/storage";
 
 export const runtime = "nodejs";
+
+// GET: material detail for the admin viewer — metadata plus presigned URLs for
+// the original file and every rasterized page. Presigning here (rather than
+// routing admins through the class-scoped page-image endpoint) keeps the admin
+// view working for materials whose class link is gone (classId is SetNull).
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ materialId: string }> }
+) {
+  const session = await auth();
+  if (!session?.user || session.user.role !== "ADMIN") {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { materialId } = await params;
+  const material = await prisma.learningMaterial.findUnique({
+    where: { id: materialId },
+    include: {
+      pages: { orderBy: { pageNumber: "asc" } },
+      teacher: { select: { user: { select: { username: true, firstName: true, lastName: true } } } },
+      class: { select: { name: true } },
+    },
+  });
+  if (!material) {
+    return NextResponse.json({ error: "Material not found" }, { status: 404 });
+  }
+
+  const [fileUrl, pages] = await Promise.all([
+    presignGetUrl(material.bucket, material.storageKey).catch(() => null),
+    Promise.all(
+      material.pages.map(async (page) => ({
+        pageNumber: page.pageNumber,
+        keyConcept: page.keyConcept,
+        description: page.description,
+        url: await presignGetUrl(material.bucket, page.storageKey).catch(() => null),
+      }))
+    ),
+  ]);
+
+  return NextResponse.json({
+    id: material.id,
+    title: material.title,
+    originalName: material.originalName,
+    mimeType: material.mimeType,
+    sizeBytes: material.sizeBytes,
+    processingStatus: material.processingStatus,
+    totalPages: material.totalPages,
+    processedPages: material.processedPages,
+    errorMessage: material.errorMessage,
+    createdAt: material.createdAt,
+    teacher: material.teacher,
+    class: material.class,
+    fileUrl,
+    pages,
+  });
+}
 
 export async function DELETE(
   req: NextRequest,

@@ -162,14 +162,24 @@ export async function PATCH(req: NextRequest) {
     // NUMERIC questions hold zero options; drop any left from a prior mode.
     await prisma.option.deleteMany({ where: { questionId: id } });
   } else if (options) {
-    // Delete existing options and re-create
+    // Bulk-replace, but carry image answer-choice crops (which only the PDF
+    // pipeline can create) across the replace: the editor echoes each existing
+    // option's id, so match on it to preserve the image fields.
+    const prior = await prisma.option.findMany({ where: { questionId: id } });
+    const priorById = new Map(prior.map((o) => [o.id, o]));
     await prisma.option.deleteMany({ where: { questionId: id } });
     await prisma.option.createMany({
-      data: options.map((o: { text: string; isCorrect: boolean }) => ({
-        questionId: id,
-        text: o.text.trim(),
-        isCorrect: o.isCorrect,
-      })),
+      data: options.map((o: { id?: string; text: string; isCorrect: boolean }) => {
+        const carried = o.id ? priorById.get(o.id) : undefined;
+        return {
+          questionId: id,
+          text: o.text.trim(),
+          isCorrect: o.isCorrect,
+          imageStorageKey: carried?.imageStorageKey ?? null,
+          imageBucket: carried?.imageBucket ?? null,
+          imageAlt: carried?.imageAlt ?? null,
+        };
+      }),
     });
   }
 

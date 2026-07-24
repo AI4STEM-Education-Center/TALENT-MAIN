@@ -258,9 +258,24 @@ export type StoredQuestionMisconceptions = {
   misconceptions: StoredMisconception[];
 };
 
+/**
+ * An interactive simulation surfaced with the recommendations. Deliberately
+ * carries no question reference — the simulation itself teaches only the broad
+ * topic (enforced at generation time), so showing it during blind review leaks
+ * nothing. Content is served via /api/simulations/[id]/content, so only the id
+ * + display fields are stored.
+ */
+export type StoredSimulationRecommendation = {
+  simulationId: string;
+  title: string | null;
+  topic: string | null;
+  learningGoal: string | null;
+};
+
 export type StoredRecommendations = {
   items: StoredRecommendation[];
   truncated: boolean;
+  simulations?: StoredSimulationRecommendation[];
   // Teacher-only labels, attached to individual incorrect answers. Student
   // APIs and components must never expose this field.
   errorMisconceptions?: StoredQuestionMisconceptions[];
@@ -274,6 +289,7 @@ export type PresignedRecommendation = Omit<StoredRecommendation, "pages"> & {
 export type PresignedRecommendations = {
   items: PresignedRecommendation[];
   truncated: boolean;
+  simulations?: StoredSimulationRecommendation[];
   errorMisconceptions?: StoredQuestionMisconceptions[];
 };
 
@@ -302,6 +318,22 @@ function isStoredQuestionMisconceptions(value: unknown): value is StoredQuestion
   );
 }
 
+function isStoredSimulationRecommendation(value: unknown): value is StoredSimulationRecommendation {
+  if (!value || typeof value !== "object") return false;
+  const entry = value as {
+    simulationId?: unknown;
+    title?: unknown;
+    topic?: unknown;
+    learningGoal?: unknown;
+  };
+  return (
+    typeof entry.simulationId === "string" &&
+    (entry.title === null || typeof entry.title === "string") &&
+    (entry.topic === null || typeof entry.topic === "string") &&
+    (entry.learningGoal === null || typeof entry.learningGoal === "string")
+  );
+}
+
 /** Safely parse the stored recommendations JSON blob. */
 export function parseStoredRecommendations(raw: string | null): StoredRecommendations {
   if (!raw) return { items: [], truncated: false };
@@ -310,9 +342,13 @@ export function parseStoredRecommendations(raw: string | null): StoredRecommenda
     const errorMisconceptions = Array.isArray(parsed?.errorMisconceptions)
       ? parsed.errorMisconceptions.filter(isStoredQuestionMisconceptions)
       : [];
+    const simulations = Array.isArray(parsed?.simulations)
+      ? parsed.simulations.filter(isStoredSimulationRecommendation)
+      : [];
     return {
       items: Array.isArray(parsed?.items) ? parsed.items : [],
       truncated: parsed?.truncated === true,
+      ...(simulations.length > 0 ? { simulations } : {}),
       ...(errorMisconceptions.length > 0 ? { errorMisconceptions } : {}),
     };
   } catch {
@@ -352,6 +388,7 @@ export async function mapPresignedRecommendations(
   return {
     items,
     truncated: stored.truncated,
+    ...(stored.simulations ? { simulations: stored.simulations } : {}),
     ...(stored.errorMisconceptions ? { errorMisconceptions: stored.errorMisconceptions } : {}),
   };
 }

@@ -54,7 +54,7 @@ export async function deepCopyQuiz(sourceQuizId: string, targetTeacherId: string
     where: { id: sourceQuizId },
     include: {
       topic: true,
-      questions: { include: { options: true }, orderBy: { createdAt: "asc" } },
+      questions: { include: { options: true, simulation: true }, orderBy: { createdAt: "asc" } },
     },
   });
   if (!source) return null;
@@ -84,7 +84,7 @@ export async function deepCopyQuiz(sourceQuizId: string, targetTeacherId: string
     });
 
     for (const question of source.questions) {
-      await tx.question.create({
+      const copied = await tx.question.create({
         data: {
           quizId: quiz.id,
           title: question.title,
@@ -119,6 +119,33 @@ export async function deepCopyQuiz(sourceQuizId: string, targetTeacherId: string
           },
         },
       });
+
+      // Carry the question's simulation along with the copy. Only settled
+      // outcomes travel (READY, or DECLINED so the copy shows "not applicable"
+      // instead of looking never-generated); in-flight/FAILED states stay
+      // behind. The HTML artifact is shared by reference like figures — every
+      // revision writes a NEW S3 key, so the copies can never diverge under
+      // each other. Feedback history is deliberately not copied: it belongs to
+      // the review that produced the current artifact.
+      const sim = question.simulation;
+      if (sim && (sim.status === "READY" || sim.status === "DECLINED")) {
+        await tx.questionSimulation.create({
+          data: {
+            questionId: copied.id,
+            status: sim.status,
+            topic: sim.topic,
+            title: sim.title,
+            learningGoal: sim.learningGoal,
+            declineReason: sim.declineReason,
+            simSpec: sim.simSpec,
+            storageKey: sim.storageKey,
+            bucket: sim.bucket,
+            version: sim.version,
+            sourceSimulationId: sim.id,
+            aiModel: sim.aiModel,
+          },
+        });
+      }
     }
 
     return tx.quiz.findUniqueOrThrow({

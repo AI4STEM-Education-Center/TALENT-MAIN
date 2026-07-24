@@ -44,6 +44,7 @@ import {
   type ReviewSnapshot,
   type StoredRecommendation,
   type StoredRecommendations,
+  type StoredSimulationRecommendation,
   type StoredMisconception,
   type StoredQuestionMisconceptions,
   type PresignedRecommendations,
@@ -51,6 +52,7 @@ import {
 
 const SUMMARY_MAX_TOKENS = 500;
 const MAX_PAGES_PER_REC = 5;
+const MAX_SIMULATION_RECS = 3;
 const PROCESSED_STATUS = "SUCCESS";
 
 type MaterialPageRow = {
@@ -277,6 +279,50 @@ async function labelMisconceptions(
   };
 }
 
+/**
+ * Deterministically pick interactive simulations for the attempt: the READY
+ * simulations of the questions answered incorrectly, in attempt order, deduped
+ * by artifact (triage may point several same-topic questions at one shared
+ * artifact) and capped. No LLM involved — the simulations were already
+ * generated (and teacher-reviewed) against the quiz's questions, and they
+ * contain no question details by construction, so surfacing them during blind
+ * review leaks nothing beyond the broad topics the student should revisit —
+ * the same signal the material recommendations already give.
+ */
+async function collectSimulationRecommendations(
+  snapshot: ReviewSnapshot
+): Promise<StoredSimulationRecommendation[]> {
+  const incorrectIds = snapshot.questions
+    .filter((q) => !q.isCorrect && typeof q.questionId === "string")
+    .map((q) => q.questionId as string);
+  if (incorrectIds.length === 0) return [];
+
+  const sims = await prisma.questionSimulation.findMany({
+    where: { questionId: { in: incorrectIds }, status: "READY", storageKey: { not: null } },
+  });
+  if (sims.length === 0) return [];
+
+  // Preserve attempt order, dedupe by artifact key (fallback: lowercased topic).
+  const byQuestion = new Map(sims.map((s) => [s.questionId, s]));
+  const seen = new Set<string>();
+  const picked: StoredSimulationRecommendation[] = [];
+  for (const questionId of incorrectIds) {
+    const sim = byQuestion.get(questionId);
+    if (!sim) continue;
+    const key = sim.storageKey ?? sim.topic?.trim().toLowerCase() ?? sim.id;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    picked.push({
+      simulationId: sim.id,
+      title: sim.title,
+      topic: sim.topic,
+      learningGoal: sim.learningGoal,
+    });
+    if (picked.length >= MAX_SIMULATION_RECS) break;
+  }
+  return picked;
+}
+
 /** Generate the markdown summary from the durable review snapshot. */
 async function generateSummary(
   examResult: ExamResultRow
@@ -324,8 +370,18 @@ async function generateRecommendations(
     return { stored: { items: [], truncated: false }, metrics: null };
   }
 
+  // Interactive simulations are picked deterministically (no LLM), so they
+  // reach the student even when the chat provider is unassigned or down.
+  const simulations = await collectSimulationRecommendations(snapshot);
+  const withSims = (stored: StoredRecommendations): StoredRecommendations => ({
+    ...stored,
+    ...(simulations.length > 0 ? { simulations } : {}),
+  });
+
   const provider = await resolveProvider("student_chat");
-  if (!providerUsable(provider)) return { stored: { items: [], truncated: false }, metrics: null };
+  if (!providerUsable(provider)) {
+    return { stored: withSims({ items: [], truncated: false }), metrics: null };
+  }
 
   const isLocal = provider.providerType === "local";
   const client = await createOpenAIClient(provider);
@@ -437,7 +493,11 @@ async function generateRecommendations(
   const metrics = aggregateMetrics(allMetrics);
 
   return {
-    stored: { items, truncated, ...(errorMisconceptions.length > 0 ? { errorMisconceptions } : {}) },
+    stored: withSims({
+      items,
+      truncated,
+      ...(errorMisconceptions.length > 0 ? { errorMisconceptions } : {}),
+    }),
     metrics,
   };
 }
@@ -517,19 +577,24 @@ export async function presignStoredRecommendations(
   raw: string | null
 ): Promise<PresignedRecommendations> {
   const stored = parseStoredRecommendations(raw);
-  // Teacher-only misconception labels carry no images to presign, so pass them through unchanged
-  // even when there are no material recommendations to presign (e.g. a
-  // catalog match with zero available class materials).
+  // Misconception labels and simulation refs carry no images to presign, so
+  // pass them through unchanged even when there are no material
+  // recommendations to presign (e.g. a catalog match with zero available
+  // class materials, or S3 missing — simulations stream via their own route).
   const errorMisconceptions = stored.errorMisconceptions;
+  const passthrough = {
+    ...(stored.simulations ? { simulations: stored.simulations } : {}),
+    ...(errorMisconceptions ? { errorMisconceptions } : {}),
+  };
   if (stored.items.length === 0) {
-    return { items: [], truncated: stored.truncated, ...(errorMisconceptions ? { errorMisconceptions } : {}) };
+    return { items: [], truncated: stored.truncated, ...passthrough };
   }
 
   let bucket: string;
   try {
     bucket = getS3Config().bucket;
   } catch {
-    return { items: [], truncated: stored.truncated, ...(errorMisconceptions ? { errorMisconceptions } : {}) };
+    return { items: [], truncated: stored.truncated, ...passthrough };
   }
 
   return mapPresignedRecommendations(stored, (key) => presignGetUrl(bucket, key));
