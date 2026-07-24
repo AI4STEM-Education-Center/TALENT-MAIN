@@ -188,9 +188,11 @@ export default function QuizPage() {
         initial={{
           summary: null,
           summaryStatus: RESULT_STATUS.PENDING,
+          summaryMetrics: null,
           recommendations: [],
           simulations: [],
           recommendationsStatus: RESULT_STATUS.PENDING,
+          recommendationMetrics: null,
           truncated: false,
         }}
         backHref={`/student/classes/${classId}`}

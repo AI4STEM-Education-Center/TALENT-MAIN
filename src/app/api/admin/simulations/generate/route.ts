@@ -113,7 +113,16 @@ export async function POST(req: NextRequest) {
     if (RETRYABLE.has(sim.status) || force) {
       await prisma.questionSimulation.update({
         where: { id: sim.id },
-        data: { status: "PENDING", errorMessage: null },
+        data: {
+          status: "PENDING",
+          errorMessage: null,
+          aiModel: null,
+          aiTtftMs: null,
+          aiGenerationMs: null,
+          aiTotalMs: null,
+          aiTokens: null,
+          aiTokensEstimated: null,
+        },
       });
       retried += 1;
       toEnqueue.push(sim.id);

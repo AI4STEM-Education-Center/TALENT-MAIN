@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { AiMetricsLine } from "@/components/ai-metrics-line";
 import {
   Folder,
   FolderOpen,
@@ -24,6 +25,10 @@ interface Material {
   processedPages: number;
   totalPages: number | null;
   errorMessage: string | null;
+  aiModel: string | null;
+  aiTtftMs: number | null;
+  aiTokens: number | null;
+  aiTotalMs: number | null;
   teacher: {
     user: {
       username: string;
@@ -294,11 +299,22 @@ export default function AdminMaterialsPage() {
                 ) : (
                   currentClassMaterials.map((mat) => (
                     <tr key={mat.id}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      <td className="px-6 py-4 text-sm font-medium text-gray-900">
                         <Link href={`/admin/materials/${mat.id}`} className="flex items-center gap-2 hover:text-blue-600 hover:underline">
                           <FileText className="size-4 text-gray-400 shrink-0" />
                           {mat.title || mat.originalName}
                         </Link>
+                        {mat.processingStatus === "SUCCESS" && (
+                          <AiMetricsLine
+                            metrics={{
+                              model: mat.aiModel,
+                              ttftMs: mat.aiTtftMs,
+                              totalMs: mat.aiTotalMs,
+                              tokens: mat.aiTokens,
+                            }}
+                            className="mt-1 block whitespace-normal text-xs font-normal text-gray-400"
+                          />
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {mat.processingStatus === "SUCCESS" && (

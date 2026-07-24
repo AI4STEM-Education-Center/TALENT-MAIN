@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { canManage, canRead, getContentActor } from "@/lib/quiz-access";
 import { attachFigureUrls, attachOptionImageUrls } from "@/lib/question-figures";
+import { simulationMetricsView } from "@/lib/simulation-metrics";
 
 // GET: quiz detail with questions. Own quizzes are fully visible; pool quizzes
 // are readable by any teacher/admin (so the pool can be previewed before import).
@@ -48,6 +49,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
             version: simulation.version,
             hasContent: simulation.storageKey !== null,
             feedbackCount: simulation._count.feedback,
+            aiMetrics: simulationMetricsView(simulation),
           }
         : null,
     };

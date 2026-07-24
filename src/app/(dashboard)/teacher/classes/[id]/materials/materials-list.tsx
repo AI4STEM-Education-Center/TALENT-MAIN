@@ -6,7 +6,7 @@ import { FileText, Clock, AlertTriangle, CheckCircle } from "lucide-react";
 import MaterialDeleteButton from "./material-delete-button";
 import MaterialRetryButton from "./material-retry-button";
 import MaterialTitleEdit from "./material-title-edit";
-import { formatAiMetrics } from "@/lib/ai-metrics";
+import { AiMetricsLine } from "@/components/ai-metrics-line";
 
 export interface MaterialItem {
   id: string;
@@ -24,6 +24,7 @@ export interface MaterialItem {
   aiModel?: string | null;
   aiTtftMs?: number | null;
   aiTokens?: number | null;
+  aiTotalMs?: number | null;
 }
 
 interface MaterialsListProps {
@@ -136,11 +137,15 @@ export default function MaterialsList({ classId, initialMaterials }: MaterialsLi
                   <div className="flex items-center text-green-600 font-medium text-sm">
                     <CheckCircle className="size-4 mr-1" /> Ready
                   </div>
-                  {formatAiMetrics({ model: mat.aiModel, ttftMs: mat.aiTtftMs, tokens: mat.aiTokens }) && (
-                    <span className="mt-0.5 text-xs text-gray-400 text-right">
-                      {formatAiMetrics({ model: mat.aiModel, ttftMs: mat.aiTtftMs, tokens: mat.aiTokens })}
-                    </span>
-                  )}
+                  <AiMetricsLine
+                    metrics={{
+                      model: mat.aiModel,
+                      ttftMs: mat.aiTtftMs,
+                      totalMs: mat.aiTotalMs,
+                      tokens: mat.aiTokens,
+                    }}
+                    className="mt-0.5 text-xs text-gray-400 text-right"
+                  />
                 </div>
               )}
               {mat.processingStatus === "FAILED" && (

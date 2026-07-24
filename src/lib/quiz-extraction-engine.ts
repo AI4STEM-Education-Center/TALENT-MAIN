@@ -280,6 +280,7 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
         aiModel: agg?.model ?? null,
         aiTtftMs: agg?.ttftMs ?? null,
         aiTokens: agg?.completionTokens ?? null,
+        aiTotalMs: agg?.totalMs ?? null,
       },
     });
     console.log(
