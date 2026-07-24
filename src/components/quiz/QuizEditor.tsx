@@ -463,17 +463,15 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
             )}
           </div>
         </div>
-        <div className="flex gap-2 shrink-0">
-          {readOnly ? (
+        {/* Adding a question is inline (a trigger at the end of the list), so
+            the header only carries the read-only "import a copy" action. */}
+        {readOnly && (
+          <div className="flex gap-2 shrink-0">
             <Button onClick={importPoolCopy} disabled={poolImportBusy}>
               <Download className="size-4" /> {poolImportBusy ? "Importing…" : "Import to my quizzes"}
             </Button>
-          ) : (
-            <Button onClick={() => { resetForm(); setShowForm(true); }}>
-              <Plus className="size-4" /> Add Question
-            </Button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {msg && <div className="p-3 rounded-md bg-primary/10 text-primary text-sm">{msg}</div>}
@@ -601,18 +599,12 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
           </Card>
         ))}
 
-        {quiz.questions.length === 0 && !(showForm && !editingQuestion) && (
-          <Card>
-            <CardContent className="text-center py-12 text-muted-foreground">
-              <FileQuestion className="size-10 mx-auto mb-3" />
-              <p>{readOnly ? "This quiz has no questions." : 'No questions yet. Click "Add Question" to get started.'}</p>
-            </CardContent>
-          </Card>
-        )}
-
-        {showForm && !editingQuestion && !readOnly && (
+        {/* Add a new question inline, at the end of the list where it will
+            land (order is createdAt asc): the "New Question" form when active,
+            otherwise a trigger button in the same spot. */}
+        {!readOnly && (showForm && !editingQuestion ? (
           <div ref={addFormRef}>
-            <Card>
+            <Card className="ring-2 ring-primary">
               <CardHeader>
                 <CardTitle>New Question</CardTitle>
               </CardHeader>
@@ -621,6 +613,25 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
               </CardContent>
             </Card>
           </div>
+        ) : !showForm && quiz.questions.length > 0 && (
+          <Button variant="outline" className="w-full border-dashed" onClick={() => { resetForm(); setShowForm(true); }}>
+            <Plus className="size-4" /> Add Question
+          </Button>
+        ))}
+
+        {/* Empty state, with an inline add trigger of its own. */}
+        {quiz.questions.length === 0 && !(showForm && !editingQuestion) && (
+          <Card>
+            <CardContent className="text-center py-12 text-muted-foreground space-y-4">
+              <FileQuestion className="size-10 mx-auto" />
+              <p>{readOnly ? "This quiz has no questions." : "No questions yet."}</p>
+              {!readOnly && (
+                <Button onClick={() => { resetForm(); setShowForm(true); }}>
+                  <Plus className="size-4" /> Add Question
+                </Button>
+              )}
+            </CardContent>
+          </Card>
         )}
       </div>
 
