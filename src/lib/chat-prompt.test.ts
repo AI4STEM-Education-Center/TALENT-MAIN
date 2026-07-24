@@ -1,40 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isChatMessageArray, buildQuizReviewPrompt, type QuizReviewAttempt } from "./chat-prompt";
-
-describe("isChatMessageArray", () => {
-  it("accepts a well-formed message array", () => {
-    expect(
-      isChatMessageArray([
-        { role: "system", content: "hi" },
-        { role: "user", content: "hello" },
-        { role: "assistant", content: "hey" },
-      ])
-    ).toBe(true);
-  });
-
-  it("accepts an empty array", () => {
-    expect(isChatMessageArray([])).toBe(true);
-  });
-
-  it("rejects non-arrays", () => {
-    expect(isChatMessageArray(null)).toBe(false);
-    expect(isChatMessageArray({ role: "user", content: "x" })).toBe(false);
-    expect(isChatMessageArray("hello")).toBe(false);
-  });
-
-  it("rejects an unknown role", () => {
-    expect(isChatMessageArray([{ role: "robot", content: "x" }])).toBe(false);
-  });
-
-  it("rejects non-string content", () => {
-    expect(isChatMessageArray([{ role: "user", content: 42 }])).toBe(false);
-  });
-
-  it("rejects null/primitive entries", () => {
-    expect(isChatMessageArray([null])).toBe(false);
-    expect(isChatMessageArray(["just a string"])).toBe(false);
-  });
-});
+import { buildQuizReviewPrompt, type QuizReviewAttempt } from "./chat-prompt";
 
 function makeAttempt(overrides: Partial<QuizReviewAttempt> = {}): QuizReviewAttempt {
   return {

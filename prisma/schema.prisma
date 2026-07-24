@@ -568,7 +568,7 @@ model AiModel {
   @@index([providerId])
 }
 
-// useCase: "teacher_chat" | "student_chat" | "pdf_description" | "quiz_extraction" | "simulation_generation"
+// useCase: "pdf_description" | "description_generation" | "recommendation" | "quiz_extraction" | "simulation_generation"
 model AiUseCaseAssignment {
   id         String   @id @default(cuid())
   useCase    String   @unique       // only one assignment per use case

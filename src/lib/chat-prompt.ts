@@ -1,25 +1,11 @@
-// Pure chat helpers, extracted from the chat route so the request-validation
-// guard and the quiz-review prompt builder can be unit-tested without a server.
+// Pure prompt helpers: the chat-style message shape and the quiz-review prompt
+// builder, kept server-free so they can be unit-tested and reused by the
+// exam-results engine.
 
 export type ChatMessage = {
   role: "system" | "user" | "assistant";
   content: string;
 };
-
-/** Type guard: a value is a well-formed array of chat messages. */
-export function isChatMessageArray(value: unknown): value is ChatMessage[] {
-  return (
-    Array.isArray(value) &&
-    value.every((message) => {
-      if (!message || typeof message !== "object") return false;
-      const entry = message as { role?: unknown; content?: unknown };
-      return (
-        (entry.role === "system" || entry.role === "user" || entry.role === "assistant") &&
-        typeof entry.content === "string"
-      );
-    })
-  );
-}
 
 export type QuizReviewAttempt = {
   score: number | null;
