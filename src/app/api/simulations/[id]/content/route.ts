@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getS3ObjectAsString } from "@/lib/storage";
 import { SIMULATION_CSP } from "@/lib/simulation";
+import { injectTelemetryScript } from "@/lib/simulation-telemetry";
 
 export const runtime = "nodejs";
 
@@ -62,6 +63,13 @@ export async function GET(
     console.error(`[Simulation] Failed to load artifact for ${sim.id}:`, err);
     return NextResponse.json({ error: "Failed to load simulation" }, { status: 502 });
   }
+
+  // Students get the interaction-telemetry snippet injected at serve time (the
+  // stored artifact is never modified, and pre-telemetry artifacts report like
+  // new ones). It only postMessages cumulative counters to the parent viewer —
+  // no network APIs, so it works under the strict CSP. Staff previews stay
+  // byte-identical to the reviewed artifact.
+  if (role === "STUDENT") html = injectTelemetryScript(html);
 
   return new NextResponse(html, {
     status: 200,

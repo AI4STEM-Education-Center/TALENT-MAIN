@@ -272,6 +272,37 @@ export type StoredSimulationRecommendation = {
   learningGoal: string | null;
 };
 
+/**
+ * Display identity of a simulation recommendation: normalized title + topic.
+ * Two rows whose artifacts were built independently for same-topic questions
+ * (so their storageKeys differ) still read as the same simulation to a student;
+ * this key is what "the same simulation" means at display time. Falls back to
+ * the id when a simulation carries no title/topic at all.
+ */
+export function simulationDisplayKey(sim: StoredSimulationRecommendation): string {
+  const norm = (value: string | null) => value?.trim().toLowerCase().replace(/\s+/g, " ") ?? "";
+  const key = `${norm(sim.title)}|${norm(sim.topic)}`;
+  return key === "|" ? sim.simulationId : key;
+}
+
+/**
+ * Drop simulations that duplicate an earlier entry's display identity, keeping
+ * order. Applied when results are generated AND again at render time, because
+ * ExamResult snapshots are durable — results stored before this dedup existed
+ * still contain the duplicates.
+ */
+export function dedupeStoredSimulations(
+  simulations: StoredSimulationRecommendation[]
+): StoredSimulationRecommendation[] {
+  const seen = new Set<string>();
+  return simulations.filter((sim) => {
+    const key = simulationDisplayKey(sim);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export type StoredRecommendations = {
   items: StoredRecommendation[];
   truncated: boolean;

@@ -6,9 +6,12 @@ import {
   snapshotToSummaryAttempt,
   parseStoredRecommendations,
   mapPresignedRecommendations,
+  simulationDisplayKey,
+  dedupeStoredSimulations,
   MAX_RECOMMENDATIONS,
   type ReviewSnapshot,
   type StoredRecommendations,
+  type StoredSimulationRecommendation,
 } from "./exam-results";
 import { buildQuizReviewPrompt } from "./chat-prompt";
 
@@ -424,5 +427,61 @@ describe("mapPresignedRecommendations", () => {
   it("returns empty items when there is nothing stored", async () => {
     const result = await mapPresignedRecommendations({ items: [], truncated: false }, async () => "x");
     expect(result).toEqual({ items: [], truncated: false });
+  });
+});
+
+// ─── simulation display dedup ────────────────────────────────────────────────────
+
+const sim = (
+  id: string,
+  title: string | null,
+  topic: string | null = null
+): StoredSimulationRecommendation => ({
+  simulationId: id,
+  title,
+  topic,
+  learningGoal: null,
+});
+
+describe("simulationDisplayKey", () => {
+  it("normalizes case and whitespace in title + topic", () => {
+    expect(simulationDisplayKey(sim("a", "  Friction   Explorer ", "Forces"))).toBe(
+      simulationDisplayKey(sim("b", "friction explorer", " FORCES "))
+    );
+  });
+
+  it("distinguishes simulations that differ in title or topic", () => {
+    expect(simulationDisplayKey(sim("a", "Friction Explorer", "Forces"))).not.toBe(
+      simulationDisplayKey(sim("b", "Friction Explorer", "Energy"))
+    );
+    expect(simulationDisplayKey(sim("a", "Friction Explorer"))).not.toBe(
+      simulationDisplayKey(sim("b", "Projectile Lab"))
+    );
+  });
+
+  it("falls back to the id when there is no title and no topic", () => {
+    expect(simulationDisplayKey(sim("a", null))).toBe("a");
+    expect(simulationDisplayKey(sim("a", null))).not.toBe(simulationDisplayKey(sim("b", null)));
+  });
+});
+
+describe("dedupeStoredSimulations", () => {
+  it("keeps the first of duplicate display identities, preserving order", () => {
+    const deduped = dedupeStoredSimulations([
+      sim("a", "Friction Explorer", "Friction"),
+      sim("b", "Projectile Lab", "Kinematics"),
+      sim("c", "friction  explorer", "FRICTION"),
+    ]);
+    expect(deduped.map((s) => s.simulationId)).toEqual(["a", "b"]);
+  });
+
+  it("never merges untitled simulations", () => {
+    const deduped = dedupeStoredSimulations([sim("a", null), sim("b", null)]);
+    expect(deduped).toHaveLength(2);
+  });
+
+  it("passes an already-unique list through unchanged", () => {
+    const list = [sim("a", "One"), sim("b", "Two")];
+    expect(dedupeStoredSimulations(list)).toEqual(list);
   });
 });
