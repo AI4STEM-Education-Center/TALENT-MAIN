@@ -22,24 +22,9 @@
     --code-bg: #eef1f6;
     --shadow: 0 1px 2px rgba(20, 27, 45, .06), 0 8px 24px -12px rgba(20, 27, 45, .12);
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #10141f;
-      --surface: #181e2d;
-      --text: #e7eaf2;
-      --muted: #9aa3b8;
-      --border: #2a3247;
-      --accent: #8b90ff;
-      --accent-soft: #232948;
-      --admin: #b795f8;   --admin-soft: #2b2344;
-      --teacher: #4fd1c0; --teacher-soft: #15332f;
-      --student: #7aa8f7; --student-soft: #1c2a45;
-      --tip: #4fd1c0;     --tip-soft: #15332f;
-      --note: #e5a54b;    --note-soft: #3a2d16;
-      --code-bg: #232a3d;
-      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.5);
-    }
-  }
+  /* Light only — matches the app, which defaults to light and ignores the OS
+     preference (see the ThemeProvider in src/app/layout.tsx). */
+  :root { color-scheme: light; }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
   body {
