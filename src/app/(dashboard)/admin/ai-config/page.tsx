@@ -99,7 +99,7 @@ interface ModelForm {
 
 const USE_CASE_LABELS: Record<string, string> = {
   pdf_description: "PDF Description Generation",
-  description_generation: "Description Generation",
+  description_generation: "Exam Summary Generation",
   recommendation: "Recommendation",
   quiz_extraction: "Quiz PDF Extraction",
   simulation_generation: "Question Simulation Generation",
