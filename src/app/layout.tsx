@@ -30,7 +30,15 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning className={`${inter.variable} ${lexend.variable}`}>
       <body>
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+        {/* Light is the default for everyone; the OS preference is deliberately
+            not followed. The sidebar toggle still switches to dark and persists
+            that choice per browser. */}
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="light"
+          enableSystem={false}
+          disableTransitionOnChange
+        >
           <ConfirmDialogProvider>
             {children}
           </ConfirmDialogProvider>
