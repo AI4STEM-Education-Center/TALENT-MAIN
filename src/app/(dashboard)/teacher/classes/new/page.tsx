@@ -34,7 +34,7 @@ export default function NewClassPage() {
     const reader = new FileReader();
     reader.onload = (ev) => {
       const text = ev.target?.result as string;
-      const { students, headerInferred, skipped } = parseRosterCsv(text);
+      const { students, headerInferred, skipped, normalizedEmails } = parseRosterCsv(text);
       if (students.length === 0) {
         setError(
           "Could not parse any students with a valid email from the CSV. " +
@@ -54,6 +54,12 @@ export default function NewClassPage() {
         }
         if (skipped > 0) {
           notes.push(`${skipped} row(s) were skipped for missing or invalid email addresses.`);
+        }
+        if (normalizedEmails > 0) {
+          notes.push(
+            `${normalizedEmails} email address(es) used the LMS-only ` +
+              "@uga.view.usg.edu domain and were rewritten to @uga.edu."
+          );
         }
         setWarning(notes.join(" "));
       }

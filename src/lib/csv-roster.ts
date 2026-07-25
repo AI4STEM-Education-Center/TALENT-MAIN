@@ -15,6 +15,8 @@ export interface RosterParseResult {
   headerInferred: boolean;
   /** Rows dropped because they were missing a required field (id / name / email). */
   skipped: number;
+  /** Kept rows whose email was rewritten off an LMS-only export domain. */
+  normalizedEmails: number;
   /** The column header labels that were applied (detected or inferred). */
   headerMap: { orgDefinedId: number; lastName: number; firstName: number; email: number };
 }
@@ -41,6 +43,25 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function isValidEmail(value: string): boolean {
   return EMAIL_RE.test(value.trim());
+}
+
+// Brightspace/D2L grade exports carry the UGA LMS "view" address instead of the
+// student's real mailbox — e.g. the CSCI 4300 export lists
+// yue-yin-student@uga.view.usg.edu. Mail to that host does not reach the
+// student, so rewrite exactly that one domain:
+//   uga.view.usg.edu → uga.edu
+// Deliberately narrow: no other *.view.usg.edu host is rewritten, since we have
+// only confirmed the mapping for UGA.
+const UGA_LMS_DOMAIN_RE = /@uga\.view\.usg\.edu$/;
+
+/**
+ * Canonical form for a roster email: trimmed, lower-cased, and with the UGA
+ * LMS-only export domain rewritten to the real mailbox. Idempotent, and safe to
+ * call on addresses that are already clean.
+ */
+export function normalizeEmail(value: unknown): string {
+  const email = String(value ?? "").trim().toLowerCase();
+  return email.replace(UGA_LMS_DOMAIN_RE, "@uga.edu");
 }
 
 /** Tokenize a single CSV line, honoring double-quoted fields. */
@@ -105,7 +126,13 @@ function detectHeader(headerCols: string[]): RosterParseResult["headerMap"] | nu
 export function parseRosterCsv(text: string): RosterParseResult {
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
   if (lines.length === 0) {
-    return { students: [], headerInferred: false, skipped: 0, headerMap: FALLBACK_MAP };
+    return {
+      students: [],
+      headerInferred: false,
+      skipped: 0,
+      normalizedEmails: 0,
+      headerMap: FALLBACK_MAP,
+    };
   }
 
   const firstCols = splitCsvLine(lines[0]);
@@ -119,20 +146,23 @@ export function parseRosterCsv(text: string): RosterParseResult {
 
   const students: ParsedRosterStudent[] = [];
   let skipped = 0;
+  let normalizedEmails = 0;
 
   for (let i = dataStart; i < lines.length; i++) {
     const cols = splitCsvLine(lines[i]);
     const orgDefinedId = (cols[map.orgDefinedId] ?? "").replace(/^#/, "").trim();
     const lastName = (cols[map.lastName] ?? "").trim();
     const firstName = (cols[map.firstName] ?? "").trim();
-    const email = (cols[map.email] ?? "").trim().toLowerCase();
+    const rawEmail = (cols[map.email] ?? "").trim().toLowerCase();
+    const email = normalizeEmail(rawEmail);
 
     if (!orgDefinedId || !firstName || !lastName || !isValidEmail(email)) {
       skipped++;
       continue;
     }
     students.push({ orgDefinedId, firstName, lastName, email });
+    if (email !== rawEmail) normalizedEmails++;
   }
 
-  return { students, headerInferred, skipped, headerMap: map };
+  return { students, headerInferred, skipped, normalizedEmails, headerMap: map };
 }
