@@ -13,6 +13,11 @@ export async function resetDb() {
   await prisma.quizAttempt.deleteMany();
   await prisma.quizProgress.deleteMany();
   await prisma.option.deleteMany();
+  // Simulation rows cascade from Question, but SimulationSession is relation-free
+  // (see schema) — clear all three explicitly so nothing bleeds between specs.
+  await prisma.simulationFeedback.deleteMany();
+  await prisma.questionSimulation.deleteMany();
+  await prisma.simulationSession.deleteMany();
   await prisma.question.deleteMany();
   await prisma.questionImport.deleteMany();
   await prisma.classQuiz.deleteMany();

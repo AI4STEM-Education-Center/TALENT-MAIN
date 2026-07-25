@@ -46,6 +46,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
             title: simulation.title,
             learningGoal: simulation.learningGoal,
             declineReason: simulation.declineReason,
+            errorMessage: simulation.errorMessage,
             version: simulation.version,
             hasContent: simulation.storageKey !== null,
             feedbackCount: simulation._count.feedback,

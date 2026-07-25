@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import JSZip from "jszip";
@@ -18,7 +18,7 @@ import { SimulationStatusBadge } from "@/components/simulation/SimulationStatusB
 import { SimulationPanel } from "@/components/simulation/SimulationPanel";
 import { AiMetricsLine } from "@/components/ai-metrics-line";
 import type { DisplayAiMetrics } from "@/lib/ai-metrics";
-import { Plus, Pencil, Trash2, Check, X, ArrowLeft, FileQuestion, Upload, Download, Atom } from "lucide-react";
+import { Plus, Pencil, Trash2, Check, X, ArrowLeft, FileQuestion, Upload, Download, Atom, Eye, Loader2, RefreshCw, Sparkles } from "lucide-react";
 
 type AnswerMode = "SINGLE_SELECT" | "MULTI_SELECT" | "NUMERIC";
 // hasImage is the durable "this option is an image choice" signal; imageUrl is
@@ -28,6 +28,8 @@ interface QuestionSimulation {
   id: string;
   status: string;
   title: string | null;
+  declineReason: string | null;
+  errorMessage: string | null;
   hasContent: boolean;
   aiMetrics: DisplayAiMetrics;
 }
@@ -65,6 +67,11 @@ interface ImportSummary { importedCount: number; skippedCount: number; errorCoun
 // FormOption carries imageUrl/imageAlt so image answer-choices survive an
 // edit round-trip; blank text-only rows are what new questions start from.
 type FormOption = { id: string; text: string; isCorrect: boolean; imageUrl?: string | null; imageAlt?: string | null; hasImage?: boolean };
+/** A simulation the viewer dialog can meaningfully open (artifact or a decline). */
+function simulationViewable(sim: QuestionSimulation | null | undefined): boolean {
+  return Boolean(sim && (sim.hasContent || sim.status === "DECLINED"));
+}
+
 const emptyOption = (): FormOption => ({ id: crypto.randomUUID(), text: "", isCorrect: false });
 const emptyOptions = (): FormOption[] => [emptyOption(), emptyOption(), emptyOption(), emptyOption()];
 
@@ -105,6 +112,8 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
   const [pdfImportActive, setPdfImportActive] = useState(false);
   // Simulation being viewed/reviewed in the dialog, if any.
   const [openSimulationId, setOpenSimulationId] = useState<string | null>(null);
+  // Keys ("quiz" / `q:<questionId>`) with a simulation action in flight.
+  const [simBusy, setSimBusy] = useState<Set<string>>(new Set());
   const [msg, setMsg] = useState("");
   // The "New Question" form renders inline at the end of the list; scroll it
   // into view when opened so it isn't missed below a long list of questions.
@@ -128,10 +137,22 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
     }
   }, [showForm, editingQuestion]);
 
-  async function refreshQuestions() {
+  const refreshQuestions = useCallback(async () => {
     const q = await fetch(`/api/quizzes/${quizId}`).then((r) => r.json());
     setQuiz(q);
-  }
+  }, [quizId]);
+
+  // While the worker is generating or revising a simulation for this quiz,
+  // poll so the badges settle (and the artifact becomes viewable) without a
+  // manual reload. In-progress edits live in `form`, so a refresh is safe.
+  const simsInFlight = (quiz?.questions ?? []).some(
+    (q) => q.simulation?.status === "PENDING" || q.simulation?.status === "REVISING"
+  );
+  useEffect(() => {
+    if (!simsInFlight) return;
+    const timer = setInterval(() => void refreshQuestions(), 5000);
+    return () => clearInterval(timer);
+  }, [simsInFlight, refreshQuestions]);
 
   async function saveName() {
     if (!nameDraft.trim() || !quiz) return;
@@ -290,6 +311,93 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
     setQuiz((prev) => prev ? { ...prev, questions: prev.questions.filter((q) => q.id !== id) } : prev);
   }
 
+  // ── Simulations ─────────────────────────────────────────────────────────────
+  // These act on THIS quiz's own simulation rows. A quiz imported from the
+  // global pool carries its own rows over shared, immutable artifacts (every
+  // (re)generation writes a new versioned object — see deepCopyQuiz), so
+  // generating, regenerating or deleting here never touches the pool version.
+
+  const simBusyFor = (questionId: string) => simBusy.has(`q:${questionId}`);
+
+  async function withSimBusy(busyKey: string, run: () => Promise<void>) {
+    setSimBusy((prev) => new Set(prev).add(busyKey));
+    try {
+      await run();
+    } finally {
+      setSimBusy((prev) => {
+        const next = new Set(prev);
+        next.delete(busyKey);
+        return next;
+      });
+    }
+  }
+
+  async function generateSimulations(
+    payload: { scope: "quiz"; quizId: string } | { scope: "question"; questionId: string; force?: boolean },
+    busyKey: string
+  ) {
+    setMsg("");
+    await withSimBusy(busyKey, async () => {
+      const res = await fetch("/api/simulations/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setMsg(data.error ?? "Failed to start simulation generation.");
+        return;
+      }
+      const parts = [
+        data.created > 0 ? `${data.created} queued` : null,
+        data.retried > 0 ? `${data.retried} re-queued` : null,
+        data.skipped > 0 ? `${data.skipped} skipped` : null,
+        data.enqueueFailed > 0 ? `${data.enqueueFailed} failed to enqueue` : null,
+      ].filter(Boolean);
+      setMsg(parts.length > 0 ? `Simulation generation started: ${parts.join(", ")}.` : "Nothing to generate.");
+      await refreshQuestions();
+    });
+  }
+
+  async function regenerateSimulation(q: Question) {
+    const sim = q.simulation;
+    if (!sim) return;
+    const stuck = sim.status === "PENDING" || sim.status === "REVISING";
+    const ok = await confirm({
+      title: stuck ? "Restart this generation?" : "Regenerate this simulation?",
+      description: stuck
+        ? "Use this only when a job looks stuck (e.g. the worker restarted). The current job's result will be discarded."
+        : "The current simulation (and its decline decision, if any) is replaced by a fresh generation. Only this quiz's copy changes — the global pool version is untouched.",
+      confirmText: stuck ? "Restart" : "Regenerate",
+    });
+    if (!ok) return;
+    await generateSimulations({ scope: "question", questionId: q.id, force: true }, `q:${q.id}`);
+  }
+
+  async function deleteSimulation(q: Question) {
+    const sim = q.simulation;
+    if (!sim) return;
+    const ok = await confirm({
+      title: "Delete this simulation?",
+      description:
+        "The simulation and its feedback history are permanently removed from this question, and students stop seeing it. Only this quiz's copy is affected — the global pool version is untouched. You can generate a fresh one later.",
+      confirmText: "Delete",
+      variant: "destructive",
+    });
+    if (!ok) return;
+    setMsg("");
+    await withSimBusy(`q:${q.id}`, async () => {
+      const res = await fetch(`/api/simulations/${sim.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setMsg(data.error ?? "Failed to delete the simulation.");
+        return;
+      }
+      setMsg("Simulation deleted.");
+      await refreshQuestions();
+    });
+  }
+
   async function importQuestions() {
     setMsg("");
     setImportSummary(null);
@@ -423,6 +531,11 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
 
   const readOnly = !quiz.editable;
   const isPoolQuiz = quiz.teacherId === null;
+  // Questions a whole-quiz trigger would act on: never generated, or FAILED.
+  // READY/DECLINED/in-flight ones need the per-question Regenerate instead.
+  const missingSimulations = quiz.questions.filter(
+    (q) => !q.simulation || q.simulation.status === "FAILED"
+  ).length;
 
   return (
     <div className="max-w-6xl p-4 md:p-6 space-y-6">
@@ -467,14 +580,26 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
           </div>
         </div>
         {/* Adding a question is inline (a trigger at the end of the list), so
-            the header only carries the read-only "import a copy" action. */}
-        {readOnly && (
-          <div className="flex gap-2 shrink-0">
+            the header only carries the "import a copy" action (read-only) or
+            the whole-quiz simulation trigger. */}
+        <div className="flex gap-2 shrink-0">
+          {readOnly ? (
             <Button onClick={importPoolCopy} disabled={poolImportBusy}>
               <Download className="size-4" /> {poolImportBusy ? "Importing…" : "Import to my quizzes"}
             </Button>
-          </div>
-        )}
+          ) : (
+            missingSimulations > 0 && (
+              <Button
+                variant="outline"
+                onClick={() => generateSimulations({ scope: "quiz", quizId: quiz.id }, "quiz")}
+                disabled={simBusy.has("quiz")}
+              >
+                {simBusy.has("quiz") ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+                Generate simulations ({missingSimulations})
+              </Button>
+            )
+          )}
+        </div>
       </div>
 
       {msg && <div className="p-3 rounded-md bg-primary/10 text-primary text-sm">{msg}</div>}
@@ -589,20 +714,65 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
                         {q.feedbackGeneral ? <p>Feedback: {q.feedbackGeneral}</p> : null}
                       </div>
                     )}
-                  </div>
-                  <div className="flex gap-1 shrink-0">
-                    {q.simulation && (q.simulation.hasContent || q.simulation.status === "DECLINED") && (
-                      <Button size="sm" variant="ghost" onClick={() => setOpenSimulationId(q.simulation!.id)}>
-                        <Atom className="size-3" /> Simulation
-                      </Button>
+                    {/* Simulation strip: viewing is open to anyone who can read
+                        the quiz, generating/deleting only to whoever manages it. */}
+                    {(!readOnly || simulationViewable(q.simulation)) && (
+                      <div className="flex flex-wrap items-center gap-1 border-t pt-2">
+                        <span className="mr-1 flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                          <Atom className="size-3" /> Simulation
+                        </span>
+                        {simulationViewable(q.simulation) && (
+                          <Button size="sm" variant="ghost" onClick={() => setOpenSimulationId(q.simulation!.id)}>
+                            <Eye className="size-3" /> View
+                          </Button>
+                        )}
+                        {!readOnly && (
+                          <>
+                            {(!q.simulation || q.simulation.status === "FAILED") && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={simBusyFor(q.id)}
+                                onClick={() => generateSimulations({ scope: "question", questionId: q.id }, `q:${q.id}`)}
+                              >
+                                {simBusyFor(q.id) ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
+                                {q.simulation?.status === "FAILED" ? "Retry" : "Generate"}
+                              </Button>
+                            )}
+                            {q.simulation && q.simulation.status !== "FAILED" && (
+                              <Button size="sm" variant="ghost" disabled={simBusyFor(q.id)} onClick={() => regenerateSimulation(q)}>
+                                {simBusyFor(q.id) ? <Loader2 className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
+                                {q.simulation.status === "PENDING" || q.simulation.status === "REVISING" ? "Restart" : "Regenerate"}
+                              </Button>
+                            )}
+                            {q.simulation && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={simBusyFor(q.id)}
+                                aria-label="Delete simulation"
+                                onClick={() => deleteSimulation(q)}
+                              >
+                                <Trash2 className="size-3 text-destructive" />
+                              </Button>
+                            )}
+                          </>
+                        )}
+                        {q.simulation?.status === "DECLINED" && q.simulation.declineReason && (
+                          <p className="w-full text-xs italic text-muted-foreground">{q.simulation.declineReason}</p>
+                        )}
+                        {q.simulation?.status === "FAILED" && q.simulation.errorMessage && (
+                          <p className="w-full text-xs text-destructive">{q.simulation.errorMessage}</p>
+                        )}
+                      </div>
                     )}
-                    {!readOnly && (
-                      <>
-                        <Button size="sm" variant="ghost" onClick={() => startEdit(q)}><Pencil className="size-3" /></Button>
-                        <Button size="sm" variant="ghost" onClick={() => deleteQuestion(q.id)}><Trash2 className="size-3 text-destructive" /></Button>
-                      </>
-                    )}
                   </div>
+                  {!readOnly && (
+                    <div className="flex gap-1 shrink-0">
+                      <Button size="sm" variant="ghost" aria-label="Edit question" onClick={() => startEdit(q)}><Pencil className="size-3" /></Button>
+                      <Button size="sm" variant="ghost" aria-label="Delete question" onClick={() => deleteQuestion(q.id)}><Trash2 className="size-3 text-destructive" /></Button>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>
