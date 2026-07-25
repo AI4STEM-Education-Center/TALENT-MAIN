@@ -161,7 +161,7 @@ export default function StudentsPage() {
     const reader = new FileReader();
     reader.onload = async (ev) => {
       const text = ev.target?.result as string;
-      const { students: parsed, skipped } = parseRosterCsv(text);
+      const { students: parsed, skipped, normalizedEmails } = parseRosterCsv(text);
       if (parsed.length === 0) {
         setUploadError(
           "Could not parse any students with a valid email. Each row needs an 81 number, first name, last name, and email."
@@ -185,6 +185,11 @@ export default function StudentsPage() {
           const parts = [`Added ${data.added} student${data.added === 1 ? "" : "s"}.`];
           if (data.skipped > 0) parts.push(`${data.skipped} already on the roster (skipped).`);
           if (skipped > 0) parts.push(`${skipped} row(s) skipped for missing/invalid email.`);
+          if (normalizedEmails > 0) {
+            parts.push(
+              `${normalizedEmails} @uga.view.usg.edu address(es) rewritten to @uga.edu.`
+            );
+          }
           setUploadMsg(parts.join(" "));
         }
       } catch {
