@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI4Talent — User Guide</title>
-<meta name="description" content="Step-by-step guide to AI4Talent, the adaptive learning platform: how administrators, teachers, and students sign up and use every feature.">
+<title>AI4Talent — Guide for Dr. Yue Yin</title>
+<meta name="description" content="Step-by-step guide to AI4Talent at dev.ai4talent.org: how to use the platform as a teacher and as a student, with direct links into every screen.">
 <style>
   :root {
     --bg: #f7f8fb;
@@ -208,6 +208,45 @@
   .grid .cell b { display: block; margin-bottom: .15rem; }
   .grid .cell span { color: var(--muted); font-size: .92rem; }
 
+  /* ── Links into the live site ───────────────────────── */
+  a.path { text-decoration: none; }
+  a.path code {
+    color: var(--accent); background: var(--accent-soft);
+    border-bottom: 1px dashed currentColor;
+    transition: background .15s, color .15s;
+  }
+  a.path:hover code, a.path:focus-visible code {
+    background: var(--accent); color: #fff; border-bottom-color: transparent;
+  }
+  .btn-row { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: 1.1rem; }
+  .btn {
+    display: inline-flex; align-items: center; gap: .45rem;
+    padding: .55rem 1rem; border-radius: 10px;
+    font-weight: 600; font-size: .94rem; text-decoration: none;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    transition: border-color .15s, background .15s, color .15s;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.teacher { background: var(--teacher); border-color: var(--teacher); color: #fff; }
+  .btn.student { background: var(--student); border-color: var(--student); color: #fff; }
+  .btn.teacher:hover, .btn.student:hover { filter: brightness(1.08); color: #fff; }
+
+  /* ── Welcome card ───────────────────────────────────── */
+  .about.welcome { border-color: var(--accent); }
+  .about.welcome h2 { display: flex; align-items: center; gap: .55rem; flex-wrap: wrap; }
+  .about.welcome .site {
+    font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--accent); background: var(--accent-soft);
+    padding: .2em .65em; border-radius: 999px; text-decoration: none;
+  }
+  .rolechip {
+    display: inline-block; font-size: .72rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .07em;
+    padding: .2em .6em; border-radius: 999px; white-space: nowrap;
+  }
+  .rolechip.t { color: var(--teacher); background: var(--teacher-soft); }
+  .rolechip.s { color: var(--student); background: var(--student-soft); }
+
   footer {
     text-align: center; color: var(--muted); font-size: .88rem;
     padding: 2rem 1rem 3rem;
@@ -219,8 +258,8 @@
 
 <header class="hero">
   <span class="logo"><span class="dot" aria-hidden="true"></span>AI4Talent</span>
-  <h1>Getting started with the Adaptive Learning Platform</h1>
-  <p class="sub">Everything administrators, teachers, and students need to sign up, set up, and start learning — with step-by-step guides for each role.</p>
+  <h1>Welcome, Dr. Yue Yin — getting started with AI4Talent</h1>
+  <p class="sub">A walkthrough of the Adaptive Learning Platform written for your two accounts: one <strong>teacher</strong> account for running a class, and one <strong>student</strong> account for seeing exactly what your students see. Every screen below links straight into the live site.</p>
 </header>
 
 <div class="wrap">
@@ -228,16 +267,58 @@
     <h2>What is AI4Talent?</h2>
     <p><strong>AI4Talent</strong> is a class-based quiz platform for science education. Teachers create classes from their official roster, assign quizzes from a shared quiz pool, and invite students with a secure link. Students take quizzes online and, after each attempt, receive <strong>AI-generated feedback</strong>: a performance summary, targeted study recommendations pointing at specific pages of the class's learning materials, and interactive <strong>simulations</strong> that let them explore the concepts they struggled with.</p>
     <p>Results are intentionally <strong>“blind”</strong> — students see their overall score and personalized guidance, but never the individual questions' correct answers, so quizzes stay reusable and the focus stays on learning the concepts.</p>
-    <p>Pick your role below to see your guide. Your school hosts its own AI4Talent server — all paths in this guide (like <code>/login</code>) are relative to that address.</p>
+    <p>Your instance is hosted at <a href="https://dev.ai4talent.org/">dev.ai4talent.org</a>. Every path in this guide (like <a class="path" href="https://dev.ai4talent.org/login"><code>/login</code></a>) is a live link — click it to open that screen directly.</p>
+  </div>
+
+  <div class="about welcome">
+    <h2>Your accounts <a class="site" href="https://dev.ai4talent.org/">dev.ai4talent.org</a></h2>
+    <p>Two accounts have been created for you so you can walk both sides of the platform. Sign in with either the email address or the username on each account — your credentials were sent to you separately.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Account</th><th>Use it to</th><th>Start here</th></tr>
+      <tr>
+        <td><span class="rolechip t">Teacher</span></td>
+        <td class="dim">Create a class from a roster, invite students, assign and publish quizzes, upload learning materials, review results, export grades.</td>
+        <td><a class="path" href="https://dev.ai4talent.org/teacher"><code>/teacher</code></a></td>
+      </tr>
+      <tr>
+        <td><span class="rolechip s">Student</span></td>
+        <td class="dim">Join a class from an invite link, take a quiz, and see the AI feedback, study recommendations, and simulations your students receive.</td>
+        <td><a class="path" href="https://dev.ai4talent.org/student"><code>/student</code></a></td>
+      </tr>
+    </table></div>
+    <div class="callout tip"><span class="ic">✓</span><p>Use two browser profiles (or one normal window and one private window) to stay signed into both accounts at once — that way you can publish a quiz as the teacher and immediately take it as the student without signing out.</p></div>
+    <div class="btn-row">
+      <a class="btn teacher" href="https://dev.ai4talent.org/login?callbackUrl=%2Fteacher">Sign in as teacher →</a>
+      <a class="btn student" href="https://dev.ai4talent.org/login?callbackUrl=%2Fstudent">Sign in as student →</a>
+      <a class="btn" href="https://dev.ai4talent.org/">Open dev.ai4talent.org</a>
+    </div>
+  </div>
+
+  <div class="about">
+    <h2>A 15-minute tour</h2>
+    <p>If you'd like the shortest path through the whole platform, follow these in order:</p>
+    <ol class="steps">
+      <li><p><strong>Sign in as the teacher</strong> and <a href="#teacher-create-class">create a class</a> with a small roster CSV — include the 81 number tied to your student account so it can join.</p></li>
+      <li><p><a href="#teacher-quizzes"><strong>Assign a quiz</strong></a> from the shared pool and publish it.</p></li>
+      <li><p><a href="#teacher-materials"><strong>Upload a PDF</strong></a> of lecture notes to the class, so the AI can cite specific pages in its recommendations.</p></li>
+      <li><p><a href="#teacher-invite"><strong>Generate an invite link</strong></a> and copy it.</p></li>
+      <li><p><strong>Switch to the student account</strong>, open the invite link to <a href="#student-join">join the class</a>, then <a href="#student-quiz">take the quiz</a> and read the <a href="#student-results">AI feedback</a>.</p></li>
+      <li><p><strong>Back as the teacher</strong>, check <a href="#teacher-results">the results</a> and <a href="#teacher-export">export the grades</a>.</p></li>
+    </ol>
   </div>
 </div>
 
 <div class="tabbar">
   <div role="tablist" aria-label="Choose your role">
-    <button role="tab" id="tab-admin" aria-controls="panel-admin" aria-selected="true">
+    <!-- TEMPORARILY HIDDEN: the Administrator tab. Dr. Yin has teacher + student
+         accounts only. To restore, un-comment the button below AND unwrap the
+         <template id="hidden-admin-panel"> further down in this file. -->
+    <!--
+    <button role="tab" id="tab-admin" aria-controls="panel-admin" aria-selected="false" tabindex="-1">
       <span class="glyph" aria-hidden="true">A</span> Administrator
     </button>
-    <button role="tab" id="tab-teacher" aria-controls="panel-teacher" aria-selected="false" tabindex="-1">
+    -->
+    <button role="tab" id="tab-teacher" aria-controls="panel-teacher" aria-selected="true">
       <span class="glyph" aria-hidden="true">T</span> Teacher
     </button>
     <button role="tab" id="tab-student" aria-controls="panel-student" aria-selected="false" tabindex="-1">
@@ -248,7 +329,13 @@
 
 <main class="wrap">
 
-  <!-- ══════════════════════ ADMIN ══════════════════════ -->
+  <!-- ══════════════════════ ADMIN (temporarily hidden) ══════════════════════
+       Kept verbatim inside a <template> so nothing is lost. Template content is
+       inert: it does not render, is not in the accessibility tree, and is NOT
+       reachable via document.getElementById, so the tab script ignores it.
+       To restore: delete the <template> open/close tags below and un-comment the
+       Administrator <button role="tab"> in the tablist above. -->
+  <template id="hidden-admin-panel">
   <div role="tabpanel" id="panel-admin" class="panel-admin" aria-labelledby="tab-admin">
     <p class="panel-intro">Administrators run the platform: they curate the shared quiz pool, configure the AI features, manage every account, and keep the system healthy. Here's how to get set up and what each part of the admin dashboard does.</p>
 
@@ -365,19 +452,26 @@
       <p class="lead">On <strong>Logs</strong>, audit everything the platform records — logins, API activity, worker jobs, system events. Filter by category (<code>AUTH</code>, <code>API</code>, <code>WORKER</code>, <code>USAGE</code>, <code>SYSTEM</code>) and severity (info / warning / error), or free-text search by message, type, or IP.</p>
     </section>
   </div>
+  </template>
+  <!-- ═══════════════════ end hidden ADMIN panel ═══════════════════ -->
 
   <!-- ══════════════════════ TEACHER ══════════════════════ -->
-  <div role="tabpanel" id="panel-teacher" class="panel-teacher" aria-labelledby="tab-teacher" hidden>
+  <div role="tabpanel" id="panel-teacher" class="panel-teacher" aria-labelledby="tab-teacher">
     <p class="panel-intro">Teachers create classes from a roster, invite students with a secure link, assign quizzes from the shared pool, upload learning materials that power AI study recommendations, and export grades straight back to the eLC gradebook.</p>
 
     <section class="block" id="teacher-signup">
-      <h2><span class="kicker">Setup</span> Create your teacher account</h2>
+      <h2><span class="kicker">Setup</span> Sign in to your teacher account</h2>
+      <p class="lead">Your teacher account is already set up — there's nothing to register.</p>
       <ol class="steps">
-        <li><strong>Get the teacher registration code</strong> from your platform administrator.</li>
-        <li><strong>Open <code>/register</code>.</strong>
-          <p>Fill in your first name, last name, a username, your email, and a password, then enter the registration code and submit.</p></li>
-        <li><strong>Sign in at <code>/login</code></strong> with your email or username. Your sidebar shows <em>Dashboard, My Classes, Stats, Quizzes, and Messages</em>.</li>
+        <li><strong>Go to <a class="path" href="https://dev.ai4talent.org/login"><code>/login</code></a></strong> and sign in with the teacher email address (or username) and password sent to you.</li>
+        <li><strong>You land on your dashboard at <a class="path" href="https://dev.ai4talent.org/teacher"><code>/teacher</code></a>.</strong>
+          <p>The sidebar has <a class="path" href="https://dev.ai4talent.org/teacher"><code>Dashboard</code></a>,
+            <a class="path" href="https://dev.ai4talent.org/teacher/classes"><code>My Classes</code></a>,
+            <a class="path" href="https://dev.ai4talent.org/teacher/stats"><code>Stats</code></a>,
+            <a class="path" href="https://dev.ai4talent.org/teacher/quizzes"><code>Quizzes</code></a>, and
+            <a class="path" href="https://dev.ai4talent.org/teacher/messages"><code>Messages</code></a>.</p></li>
       </ol>
+      <div class="callout tip"><span class="ic">✓</span><p>Colleagues who need their own teacher account can self-register at <a class="path" href="https://dev.ai4talent.org/register"><code>/register</code></a> using the teacher registration code — ask the platform administrator for it.</p></div>
     </section>
 
     <section class="block" id="teacher-create-class">
@@ -394,7 +488,7 @@
             <tr><td>Email</td><td class="dim">Email</td></tr>
           </table></div>
           <p>If the file has no header row, columns are read in the order <em>ID, Last Name, First Name, Email</em>. Rows missing an ID, name, or email are skipped.</p></li>
-        <li><strong>Go to My Classes → Create New Class.</strong>
+        <li><strong>Go to <a class="path" href="https://dev.ai4talent.org/teacher/classes"><code>My Classes</code></a> → <a class="path" href="https://dev.ai4talent.org/teacher/classes/new"><code>Create New Class</code></a>.</strong>
           <p>Enter the <strong>Class Name</strong> (e.g. “CSCI4300 Web Programming – Spring 2026”) and an optional description.</p></li>
         <li><strong>Upload the roster CSV.</strong>
           <p>Click the <strong>Class List (CSV)</strong> upload area and pick your file. A live preview table shows every parsed student (last name, first name, email) so you can confirm the import looks right.</p></li>
@@ -402,6 +496,7 @@
           <p>You'll land on the class page, with cards for Quizzes, Learning Materials, and your roster.</p></li>
       </ol>
       <div class="callout note"><span class="ic">!</span><p>Only students on the roster can join the class — the invite flow checks each student's 81 number against this list. If enrollment changes, update the class list before sharing the invite link with new students.</p></div>
+      <div class="callout tip"><span class="ic">✓</span><p><strong>Trying the platform end to end?</strong> Put the 81 number tied to your <span class="rolechip s">Student</span> account on the roster CSV. Then the invite link you generate in the next step will let that account join this class, and you can experience the quiz exactly as a student does.</p></div>
     </section>
 
     <section class="block" id="teacher-invite">
@@ -423,10 +518,10 @@
       <h2><span class="kicker">Content</span> Add, schedule &amp; publish quizzes</h2>
       <p class="lead">Classes are assigned quizzes from the shared quiz pool. A quiz only becomes visible to students when you publish it.</p>
       <ol class="steps">
-        <li><strong>Open the class → Manage Quizzes.</strong>
+        <li><strong>Open the class from <a class="path" href="https://dev.ai4talent.org/teacher/classes"><code>My Classes</code></a> → Manage Quizzes.</strong>
           <p>The page shows <strong>Assigned Quizzes</strong> (with Published/Draft badges) and an <strong>Add Quizzes</strong> section.</p></li>
         <li><strong>Add quizzes from the pool.</strong>
-          <p>Pick quizzes from the pool, organized by topic. Need something custom? Create your own quizzes under <strong>Quizzes</strong> in the sidebar — they appear in your pool to assign.</p></li>
+          <p>Pick quizzes from the pool, organized by topic. Need something custom? Create your own under <a class="path" href="https://dev.ai4talent.org/teacher/quizzes"><code>Quizzes</code></a> in the sidebar — they appear in your pool to assign.</p></li>
         <li><strong>Configure quiz settings.</strong>
           <p>Each assigned quiz has a settings dialog with:</p>
           <ul>
@@ -442,7 +537,7 @@
       <h2><span class="kicker">Content</span> Upload learning materials</h2>
       <p class="lead">Learning materials (lecture notes, textbook chapters as PDFs) do double duty: students can study them, and the AI uses them to build <em>page-level study recommendations</em> after each quiz.</p>
       <ol class="steps">
-        <li><strong>Open the class → Manage Materials</strong> and upload your PDFs.</li>
+        <li><strong>Open the class from <a class="path" href="https://dev.ai4talent.org/teacher/classes"><code>My Classes</code></a> → Manage Materials</strong> and upload your PDFs.</li>
         <li><strong>Let processing finish.</strong>
           <p>A background worker analyzes each document page-by-page. Once processed, post-quiz recommendations can point students at the exact pages that cover what they missed.</p></li>
       </ol>
@@ -453,13 +548,13 @@
       <h2><span class="kicker">Results</span> Monitor results &amp; message students</h2>
       <ol class="steps">
         <li><strong>Class statistics.</strong>
-          <p>Open <strong>Statistics</strong> on the class page (or <strong>Stats</strong> in the sidebar for everything at once) for performance across quizzes.</p></li>
+          <p>Open <strong>Statistics</strong> on the class page, or <a class="path" href="https://dev.ai4talent.org/teacher/stats"><code>Stats</code></a> in the sidebar to see every class at once.</p></li>
         <li><strong>Per-quiz stats.</strong>
           <p>Each assigned quiz has its own stats page showing how the class did on it.</p></li>
         <li><strong>Per-student drill-down.</strong>
           <p>Click a student in the roster to see their progress and open any individual attempt.</p></li>
         <li><strong>Message students.</strong>
-          <p>Use <strong>Messages</strong> to send announcements; students see them under Notifications, and they can contact you from their class page.</p></li>
+          <p>Use <a class="path" href="https://dev.ai4talent.org/teacher/messages"><code>Messages</code></a> to send announcements; students see them under Notifications, and they can contact you from their class page.</p></li>
       </ol>
     </section>
 
@@ -481,9 +576,11 @@
   <div role="tabpanel" id="panel-student" class="panel-student" aria-labelledby="tab-student" hidden>
     <p class="panel-intro">As a student you join your class with an invite link from your teacher, take quizzes online, and get personalized AI feedback after every attempt — a performance summary, reading recommendations, and interactive simulations to explore what you missed.</p>
 
+    <div class="callout tip"><span class="ic">✓</span><p><strong>Dr. Yin:</strong> your <span class="rolechip s">Student</span> account already exists, so you can skip straight to <a href="#student-signin">signing in</a> at <a class="path" href="https://dev.ai4talent.org/login"><code>/login</code></a>. The <em>Join your class</em> section below is what your students will go through — and what you'll do with your student account once you've generated an invite link from the teacher side.</p></div>
+
     <section class="block" id="student-join">
       <h2><span class="kicker">Setup</span> Join your class</h2>
-      <p class="lead">There's no open sign-up page for students — your account is created the moment you join your first class through your teacher's invite link.</p>
+      <p class="lead">There's no open sign-up page for students — a student account is created the moment they join their first class through their teacher's invite link.</p>
       <ol class="steps">
         <li><strong>Open the invite link</strong> your teacher shared. You'll see the class name and teacher so you know you're in the right place.</li>
         <li><strong>Verify your identity.</strong>
@@ -501,8 +598,12 @@
     <section class="block" id="student-signin">
       <h2><span class="kicker">Setup</span> Sign in &amp; find your way around</h2>
       <ol class="steps">
-        <li><strong>Sign in at <code>/login</code></strong> with your email <em>or</em> username, plus your password.</li>
-        <li><strong>Your dashboard</strong> shows your enrolled classes, how many quizzes you've completed, and recent notifications. The sidebar has <em>Dashboard, My Classes, Notifications, and Exam History</em>.</li>
+        <li><strong>Sign in at <a class="path" href="https://dev.ai4talent.org/login"><code>/login</code></a></strong> with your email <em>or</em> username, plus your password.</li>
+        <li><strong>Your dashboard at <a class="path" href="https://dev.ai4talent.org/student"><code>/student</code></a></strong> shows your enrolled classes, how many quizzes you've completed, and recent notifications. The sidebar has
+          <a class="path" href="https://dev.ai4talent.org/student"><code>Dashboard</code></a>,
+          <a class="path" href="https://dev.ai4talent.org/student/classes"><code>My Classes</code></a>,
+          <a class="path" href="https://dev.ai4talent.org/student/notifications"><code>Notifications</code></a>, and
+          <a class="path" href="https://dev.ai4talent.org/student/history"><code>Exam History</code></a>.</li>
         <li><strong>Open a class</strong> to see its quizzes grouped by topic. Each quiz shows <strong>Start</strong>, <strong>Continue</strong> (you have an attempt in progress), or <strong>Retry</strong> (you've completed it); quizzes outside their availability window appear locked.</li>
       </ol>
     </section>
@@ -538,14 +639,14 @@
           <p>Hands-on concept explorations matched to the questions you saw — open one and experiment until the idea clicks.</p></li>
       </ol>
       <div class="callout note"><span class="ic">!</span><p>You won't see per-question correct answers — that's by design. The feedback tells you <em>what to study</em>, and if retries are allowed you can hit <strong>Retry Quiz</strong> once you've reviewed.</p></div>
-      <div class="callout tip"><span class="ic">✓</span><p>Feedback keeps generating even if you close the page — find it later under <strong>Exam History</strong>, which stores the results of every attempt.</p></div>
+      <div class="callout tip"><span class="ic">✓</span><p>Feedback keeps generating even if you close the page — find it later under <a class="path" href="https://dev.ai4talent.org/student/history"><code>Exam History</code></a>, which stores the results of every attempt.</p></div>
     </section>
 
     <section class="block" id="student-progress">
       <h2><span class="kicker">Progress</span> Track progress &amp; get help</h2>
       <ol class="steps">
-        <li><strong>Exam History</strong> lists all your past attempts — per class or across everything — with their saved results pages.</li>
-        <li><strong>Notifications</strong> collects announcements and messages from your teachers (the sidebar badge shows unread count).</li>
+        <li><strong><a class="path" href="https://dev.ai4talent.org/student/history"><code>Exam History</code></a></strong> lists all your past attempts — per class or across everything — with their saved results pages.</li>
+        <li><strong><a class="path" href="https://dev.ai4talent.org/student/notifications"><code>Notifications</code></a></strong> collects announcements and messages from your teachers (the sidebar badge shows unread count).</li>
         <li><strong>Contact your teacher</strong> straight from the class page via the <strong>Contact teacher</strong> button.</li>
       </ol>
     </section>
@@ -554,15 +655,19 @@
 </main>
 
 <footer>
-  AI4Talent · Adaptive Learning Platform — User Guide
+  <p>AI4Talent · Adaptive Learning Platform — guide prepared for Dr. Yue Yin</p>
+  <p><a href="https://dev.ai4talent.org/">dev.ai4talent.org</a> ·
+     <a href="https://dev.ai4talent.org/login">Sign in</a></p>
 </footer>
 
 <script>
 (function () {
   var tabs = Array.prototype.slice.call(document.querySelectorAll('[role="tab"]'));
-  var order = ['admin', 'teacher', 'student'];
 
   function roleOf(el) { return el.id.replace(/^tab-/, ''); }
+
+  // Derived from the DOM, so hiding a role's tab (e.g. admin) needs no JS change.
+  var order = tabs.map(roleOf);
 
   function select(role, opts) {
     opts = opts || {};
@@ -604,6 +709,11 @@
     }
   }
   window.addEventListener('hashchange', applyHash);
+
+  // Normalize on load so exactly one panel is ever shown, whatever the markup
+  // says — otherwise hiding a role can leave every panel with `hidden` set.
+  var initial = tabs.filter(function (t) { return t.getAttribute('aria-selected') === 'true'; })[0] || tabs[0];
+  if (initial) select(roleOf(initial), { updateHash: false });
   applyHash();
 
   // Cross-tab in-page links (e.g. admin → #admin-ai-config) work natively;
