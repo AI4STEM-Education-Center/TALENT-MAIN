@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { normalizeEmail, normalizeUsername, validatePassword } from "@/lib/account-validation";
+import { isValidEmail, normalizeEmail as normalizeRosterEmail } from "@/lib/csv-roster";
 import { rateLimit } from "@/lib/rate-limit";
 import { logApiError } from "@/lib/system-log";
 
@@ -89,6 +90,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
     let studentId: string;
     let firstName = rosterEntry.firstName;
     let lastName = rosterEntry.lastName;
+    // Set when the student signed up with an address other than the one on the
+    // roster, so teacher notifications follow them to the mailbox they confirmed.
+    let rosterEmailUpdate: string | null = null;
 
     if (session?.user) {
       // Already logged in — enroll this user
@@ -112,6 +116,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
 
       const normalizedEmail = normalizeEmail(email);
       const normalizedUsername = normalizeUsername(username);
+
+      // The address doubles as the roster's notification target, so reject
+      // anything unsendable here rather than storing it and failing silently.
+      if (!isValidEmail(normalizedEmail)) {
+        return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
+      }
+
+      const canonicalRosterEmail = normalizeRosterEmail(normalizedEmail);
+      if (canonicalRosterEmail !== rosterEntry.email) {
+        rosterEmailUpdate = canonicalRosterEmail;
+      }
 
       const existingEmail = await prisma.user.findUnique({ where: { email: normalizedEmail } });
       if (existingEmail) {
@@ -149,7 +164,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       }),
       prisma.classStudentList.update({
         where: { id: rosterEntry.id },
-        data: { isRegistered: true },
+        data: {
+          isRegistered: true,
+          ...(rosterEmailUpdate ? { email: rosterEmailUpdate } : {}),
+        },
       }),
       prisma.invitation.update({
         where: { id: invitation.id },
