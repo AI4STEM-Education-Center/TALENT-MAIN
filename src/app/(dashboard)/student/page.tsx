@@ -8,6 +8,9 @@ import { Badge } from "@/components/ui/badge";
 import { GraduationCap, BookOpen, ChevronRight, Inbox } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+/** Classes shown on the dashboard before deferring to the full /student/classes list. */
+const DASHBOARD_CLASS_PREVIEW = 3;
+
 export default async function StudentDashboard() {
   const session = await auth();
   if (!session?.user || session.user.role !== "STUDENT") redirect("/login");
@@ -113,9 +116,18 @@ export default async function StudentDashboard() {
         </Card>
       </div>
 
-      {/* Classes */}
+      {/* Classes — a preview; the full list lives at /student/classes */}
       <div>
-        <h2 className="text-xl font-semibold mb-4">My Classes</h2>
+        <div className="flex items-center justify-between gap-2 flex-wrap mb-4">
+          <h2 className="text-xl font-semibold flex items-center gap-2">
+            <GraduationCap className="size-5" /> My Classes
+          </h2>
+          {enrollments.length > 0 && (
+            <Button variant="outline" size="sm" asChild className="shrink-0">
+              <Link href="/student/classes">View all</Link>
+            </Button>
+          )}
+        </div>
         {enrollments.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center py-12 text-center">
@@ -126,7 +138,7 @@ export default async function StudentDashboard() {
           </Card>
         ) : (
           <div className="grid gap-4">
-            {enrollments.map((e) => {
+            {enrollments.slice(0, DASHBOARD_CLASS_PREVIEW).map((e) => {
               const totalQuizzes = e.class.classQuizzes.length;
               return (
                 <Card key={e.classId} className="hover:shadow-md transition-shadow">
@@ -152,6 +164,15 @@ export default async function StudentDashboard() {
                 </Card>
               );
             })}
+            {enrollments.length > DASHBOARD_CLASS_PREVIEW && (
+              <Link
+                href="/student/classes"
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors text-center"
+              >
+                + {enrollments.length - DASHBOARD_CLASS_PREVIEW} more class
+                {enrollments.length - DASHBOARD_CLASS_PREVIEW !== 1 ? "es" : ""}
+              </Link>
+            )}
           </div>
         )}
       </div>
