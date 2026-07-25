@@ -7,9 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { GraduationCap, CheckCircle, XCircle, Loader2, User } from "lucide-react";
+import { GraduationCap, CheckCircle, XCircle, Loader2, User, Mail } from "lucide-react";
 import { SessionProvider } from "next-auth/react";
-import { PASSWORD_REQUIREMENTS, validatePassword } from "@/lib/account-validation";
+import { normalizeEmail, PASSWORD_REQUIREMENTS, validatePassword } from "@/lib/account-validation";
 
 export interface InviteInfo {
   valid: boolean;
@@ -22,6 +22,8 @@ interface LookupResult {
   found: boolean;
   firstName?: string;
   lastName?: string;
+  /** Roster email the teacher has on file; absent when the row has none. */
+  email?: string;
   error?: string;
 }
 
@@ -54,6 +56,42 @@ function InviteContent({
     confirmPassword: "",
   });
 
+  // Email the teacher has on roster (empty when there is none). While it is on
+  // file the email field is locked to it; replacing it requires re-typing the
+  // new address, since a typo here costs the student both their sign-in and
+  // every class notification.
+  const [rosterEmail, setRosterEmail] = useState("");
+  const [changingEmail, setChangingEmail] = useState(false);
+  const [confirmEmail, setConfirmEmail] = useState("");
+
+  const emailMismatch =
+    changingEmail &&
+    confirmEmail.trim() !== "" &&
+    normalizeEmail(form.email) !== normalizeEmail(confirmEmail);
+
+  function resetEmailStep(next: LookupResult | null) {
+    const email = next?.found ? next.email ?? "" : "";
+    setRosterEmail(email);
+    setChangingEmail(false);
+    setConfirmEmail("");
+    setForm((p) => ({ ...p, email }));
+  }
+
+  function startEmailChange() {
+    setChangingEmail(true);
+    setConfirmEmail("");
+    // Clear rather than pre-fill: retyping is what makes the confirmation real.
+    setForm((p) => ({ ...p, email: "" }));
+    setError("");
+  }
+
+  function cancelEmailChange() {
+    setChangingEmail(false);
+    setConfirmEmail("");
+    setForm((p) => ({ ...p, email: rosterEmail }));
+    setError("");
+  }
+
   async function handleVerify(e?: React.FormEvent) {
     e?.preventDefault();
     const cleanId = orgDefinedId.replace(/^#/, "").trim();
@@ -70,8 +108,10 @@ function InviteContent({
       );
       const data: LookupResult = await res.json();
       setLookupResult(data);
+      resetEmailStep(data);
     } catch {
       setLookupResult({ found: false, error: "Failed to verify. Please try again." });
+      resetEmailStep(null);
     } finally {
       setLookupLoading(false);
     }
@@ -102,6 +142,11 @@ function InviteContent({
   async function handleSignupAndJoin(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+
+    if (changingEmail && normalizeEmail(form.email) !== normalizeEmail(confirmEmail)) {
+      setError("Emails do not match.");
+      return;
+    }
 
     if (form.password !== form.confirmPassword) {
       setError("Passwords do not match.");
@@ -196,7 +241,10 @@ function InviteContent({
                     onChange={(e) => {
                       setOrgDefinedId(e.target.value);
                       // Reset lookup when input changes
-                      if (lookupResult) setLookupResult(null);
+                      if (lookupResult) {
+                        setLookupResult(null);
+                        resetEmailStep(null);
+                      }
                     }}
                     placeholder="e.g. 811947904"
                     className="font-mono"
@@ -286,13 +334,77 @@ function InviteContent({
                         </div>
                         <div className="space-y-1">
                           <Label htmlFor="email" className="text-xs">Email</Label>
-                          <Input
-                            id="email"
-                            type="email"
-                            value={form.email}
-                            onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
-                            required
-                          />
+                          {rosterEmail && !changingEmail ? (
+                            <>
+                              <div className="relative">
+                                <Mail className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                                <Input
+                                  id="email"
+                                  type="email"
+                                  value={rosterEmail}
+                                  readOnly
+                                  className="bg-muted pl-9 cursor-default"
+                                />
+                              </div>
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-xs text-muted-foreground">
+                                  On file for you in this class.
+                                </p>
+                                <Button
+                                  type="button"
+                                  variant="link"
+                                  className="h-auto p-0 text-xs"
+                                  onClick={startEmailChange}
+                                >
+                                  Use a different email
+                                </Button>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <Input
+                                id="email"
+                                type="email"
+                                value={form.email}
+                                onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
+                                required
+                                autoComplete="email"
+                              />
+                              {changingEmail && (
+                                <div className="space-y-1 pt-2">
+                                  <Label htmlFor="confirmEmail" className="text-xs">
+                                    Confirm email
+                                  </Label>
+                                  <Input
+                                    id="confirmEmail"
+                                    type="email"
+                                    value={confirmEmail}
+                                    onChange={(e) => setConfirmEmail(e.target.value)}
+                                    required
+                                    autoComplete="off"
+                                  />
+                                  {emailMismatch ? (
+                                    <p className="text-xs text-destructive">
+                                      Emails do not match.
+                                    </p>
+                                  ) : (
+                                    <p className="text-xs text-muted-foreground">
+                                      Retype the new address to confirm it. Class notifications
+                                      will go here instead of {rosterEmail}.
+                                    </p>
+                                  )}
+                                  <Button
+                                    type="button"
+                                    variant="link"
+                                    className="h-auto p-0 text-xs"
+                                    onClick={cancelEmailChange}
+                                  >
+                                    Keep {rosterEmail}
+                                  </Button>
+                                </div>
+                              )}
+                            </>
+                          )}
                         </div>
                         <div className="space-y-1">
                           <Label htmlFor="password" className="text-xs">Password</Label>
