@@ -526,7 +526,10 @@ export default function AiConfigPage() {
 
       const metricsLine = formatAiMetrics({
         model: data.model,
+        provider: data.providerType,
+        serviceTier: data.serviceTier,
         ttftMs: data.ttftMs,
+        generationMs: data.generationMs,
         totalMs: data.latencyMs,
         tokens: data.tokens,
         tokensEstimated: data.tokensEstimated,

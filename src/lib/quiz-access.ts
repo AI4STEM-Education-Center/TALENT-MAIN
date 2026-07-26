@@ -143,6 +143,8 @@ export async function deepCopyQuiz(sourceQuizId: string, targetTeacherId: string
             version: sim.version,
             sourceSimulationId: sim.id,
             aiModel: sim.aiModel,
+            aiProvider: sim.aiProvider,
+            aiServiceTier: sim.aiServiceTier,
             aiTtftMs: sim.aiTtftMs,
             aiGenerationMs: sim.aiGenerationMs,
             aiTotalMs: sim.aiTotalMs,

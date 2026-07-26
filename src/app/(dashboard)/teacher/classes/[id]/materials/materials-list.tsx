@@ -22,6 +22,8 @@ export interface MaterialItem {
   isImported?: boolean;
   // AI generation metrics from the VLM processing run (teacher/admin only).
   aiModel?: string | null;
+  aiProvider?: string | null;
+  aiServiceTier?: string | null;
   aiTtftMs?: number | null;
   aiTokens?: number | null;
   aiTotalMs?: number | null;
@@ -140,6 +142,8 @@ export default function MaterialsList({ classId, initialMaterials }: MaterialsLi
                   <AiMetricsLine
                     metrics={{
                       model: mat.aiModel,
+                      provider: mat.aiProvider,
+                      serviceTier: mat.aiServiceTier,
                       ttftMs: mat.aiTtftMs,
                       totalMs: mat.aiTotalMs,
                       tokens: mat.aiTokens,

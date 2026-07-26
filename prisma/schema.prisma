@@ -71,6 +71,8 @@ model LearningMaterial {
   // AI generation metrics from the most recent VLM processing run. Shown to
   // teachers/admins; null until the material is processed.
   aiModel  String?
+  aiProvider String? // "openai" | "local" | "cloudflare"; null on runs from before it was recorded
+  aiServiceTier String? // "flex" | "auto" | "default"; null when the model has no tier set
   aiTtftMs Int? // time to first token (ms)
   aiTokens Int? // generated tokens summed across all page + batch calls
   aiTotalMs Int? // total wall-clock time summed across all page + batch calls (ms)
@@ -342,6 +344,8 @@ model QuizPdfExtraction {
   // AI generation metrics from the extraction run (all passes aggregated).
   // Shown to teachers/admins on the review screen; null until extracted.
   aiModel  String?
+  aiProvider String? // "openai" | "local" | "cloudflare"; null on runs from before it was recorded
+  aiServiceTier String? // "flex" | "auto" | "default"; null when the model has no tier set
   aiTtftMs Int?
   aiTokens Int?
   aiTotalMs Int? // total wall-clock time summed across all passes (ms)
@@ -515,14 +519,20 @@ model ExamResult {
   // AI generation metrics for each student-visible generated section.
   // `aiModel` remains as a legacy last-used value; the per-section labels are
   // provider-qualified (for example "openai/gpt-5.5").
+  // Provider + service tier are recorded per section from this run's resolved
+  // assignment; both stay null on sections generated before they were stored.
   aiModel                String?
   summaryAiModel         String?
+  summaryAiProvider      String? // "openai" | "local" | "cloudflare"
+  summaryServiceTier     String? // "flex" | "auto" | "default"
   summaryTtftMs          Int?
   summaryGenerationMs    Int?
   summaryTotalMs         Int?
   summaryTokens          Int?
   summaryTokensEstimated Boolean?
   recsAiModel            String?
+  recsAiProvider         String?
+  recsServiceTier        String?
   recsTtftMs             Int?
   recsGenerationMs       Int?
   recsTotalMs            Int?
@@ -814,7 +824,11 @@ model QuestionSimulation {
   sourceSimulationId String? // lineage: the sim this row was deep-copied from (plain id, no FK)
 
   // AI generation metrics, aggregated across the most recent job's calls.
-  aiModel           String? // provider-qualified, e.g. "openai/gpt-5.5"
+  // Rows written before aiProvider existed hold a provider-qualified aiModel
+  // ("cloudflare/openai/gpt-5.5"); newer rows keep the two apart.
+  aiModel           String?
+  aiProvider        String? // "openai" | "local" | "cloudflare"
+  aiServiceTier     String? // "flex" | "auto" | "default"
   aiTtftMs          Int?
   aiGenerationMs    Int?
   aiTotalMs         Int?

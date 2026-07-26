@@ -25,6 +25,8 @@ type ExamResultRow = NonNullable<
 
 function componentMetrics(
   model: string | null,
+  provider: string | null,
+  serviceTier: string | null,
   ttftMs: number | null,
   generationMs: number | null,
   totalMs: number | null,
@@ -42,6 +44,8 @@ function componentMetrics(
   }
   return {
     model,
+    provider,
+    serviceTier,
     ttftMs,
     generationMs,
     totalMs,
@@ -64,6 +68,8 @@ async function resultPayload(
     summary: examResult.summary,
     summaryMetrics: componentMetrics(
       examResult.summaryAiModel,
+      examResult.summaryAiProvider,
+      examResult.summaryServiceTier,
       examResult.summaryTtftMs,
       examResult.summaryGenerationMs,
       examResult.summaryTotalMs,
@@ -74,6 +80,8 @@ async function resultPayload(
     recommendations: recommendations.items,
     recommendationMetrics: componentMetrics(
       examResult.recsAiModel,
+      examResult.recsAiProvider,
+      examResult.recsServiceTier,
       examResult.recsTtftMs,
       examResult.recsGenerationMs,
       examResult.recsTotalMs,

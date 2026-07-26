@@ -311,7 +311,7 @@ async function runFirstGeneration(sim: LoadedSimulation): Promise<void> {
           status: "DECLINED",
           declineReason: plan.refusalReason,
           errorMessage: null,
-          ...buildSimulationMetrics(ctx.providerType, callMetrics),
+          ...buildSimulationMetrics(ctx, callMetrics),
         },
       });
       console.log(`[Simulation] ${sim.id} declined: ${plan.refusalReason}`);
@@ -334,7 +334,7 @@ async function runFirstGeneration(sim: LoadedSimulation): Promise<void> {
           bucket: source.bucket,
           declineReason: null,
           errorMessage: null,
-          ...buildSimulationMetrics(ctx.providerType, callMetrics),
+          ...buildSimulationMetrics(ctx, callMetrics),
         },
       });
       console.log(`[Simulation] ${sim.id} reuses sibling ${source.id} (${source.topic})`);
@@ -367,7 +367,7 @@ async function runFirstGeneration(sim: LoadedSimulation): Promise<void> {
         version,
         declineReason: null,
         errorMessage: null,
-        ...buildSimulationMetrics(ctx.providerType, callMetrics),
+        ...buildSimulationMetrics(ctx, callMetrics),
       },
     });
     console.log(`[Simulation] ${sim.id} ready: "${plan.title}" (${plan.topic}) v${version}`);
@@ -484,7 +484,7 @@ async function runRevision(sim: LoadedSimulation, feedbackId: string): Promise<v
           bucket,
           version,
           errorMessage: null,
-          ...buildSimulationMetrics(ctx.providerType, callMetrics),
+          ...buildSimulationMetrics(ctx, callMetrics),
         },
       }),
       prisma.simulationFeedback.update({

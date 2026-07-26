@@ -278,6 +278,8 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
         status: "AWAITING_REVIEW",
         errorMessage: null,
         aiModel: agg?.model ?? null,
+        aiProvider: agg ? provider.providerType : null,
+        aiServiceTier: agg ? provider.serviceTier : null,
         aiTtftMs: agg?.ttftMs ?? null,
         aiTokens: agg?.completionTokens ?? null,
         aiTotalMs: agg?.totalMs ?? null,
