@@ -8,7 +8,7 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { rasterizePdfToPngBlobs } from "@/lib/pdf-rasterize-client";
 import type { FigureBbox, StagedQuestion } from "@/lib/quiz-extraction";
 import { isQuestionComplete, QuizPdfReview, type PageImage } from "./QuizPdfReview";
-import { formatAiMetrics } from "@/lib/ai-metrics";
+import { AiMetricsLine } from "@/components/ai-metrics-line";
 
 const MAX_PAGES = 20;
 const POLL_MS = 2500;
@@ -34,6 +34,8 @@ type ExtractionDetail = ListItem & {
   pageImages?: PageImage[];
   // AI generation metrics for the extraction run (teacher-facing).
   aiModel?: string | null;
+  aiProvider?: string | null;
+  aiServiceTier?: string | null;
   aiTtftMs?: number | null;
   aiTokens?: number | null;
   aiTotalMs?: number | null;
@@ -479,11 +481,17 @@ export function QuizPdfImport({
 
         {(phase === "review" || phase === "committing") && detail && (
           <div className="space-y-4">
-            {formatAiMetrics({ model: detail.aiModel, ttftMs: detail.aiTtftMs, totalMs: detail.aiTotalMs, tokens: detail.aiTokens }) && (
-              <p className="text-xs text-muted-foreground">
-                Extracted by {formatAiMetrics({ model: detail.aiModel, ttftMs: detail.aiTtftMs, totalMs: detail.aiTotalMs, tokens: detail.aiTokens })}
-              </p>
-            )}
+            <AiMetricsLine
+              metrics={{
+                model: detail.aiModel,
+                provider: detail.aiProvider,
+                serviceTier: detail.aiServiceTier,
+                ttftMs: detail.aiTtftMs,
+                totalMs: detail.aiTotalMs,
+                tokens: detail.aiTokens,
+              }}
+              className="block text-xs text-muted-foreground"
+            />
             <QuizPdfReview
               questions={questions}
               hasAnswerKey={detail.hasAnswerKey}

@@ -1,7 +1,7 @@
 import { OpenAI } from "openai";
 import { prisma } from "@/lib/prisma";
 import { getS3Config, resolveModelImageUrl } from "@/lib/storage";
-import { resolveProvider, createOpenAIClient } from "@/lib/ai-provider";
+import { resolveProvider, createOpenAIClient, type ResolvedProvider } from "@/lib/ai-provider";
 import { retryWithExponentialBackoff } from "./retry";
 import { streamJsonCompletion, aggregateMetrics, type AiCallMetrics } from "./ai-streaming";
 import { getActiveConceptLabels } from "./concept-catalog";
@@ -155,6 +155,7 @@ export function filterTier2KeyConcepts(values: string[], allowedConcepts: string
 async function getConfiguredOpenAI(): Promise<{
   client: OpenAI;
   model: string;
+  providerType: ResolvedProvider["providerType"];
   serviceTier: string | null;
   isLocal: boolean;
 }> {
@@ -177,6 +178,7 @@ async function getConfiguredOpenAI(): Promise<{
   return {
     client,
     model: provider.model,
+    providerType: provider.providerType,
     serviceTier: provider.serviceTier,
     isLocal,
   };
@@ -262,7 +264,7 @@ export async function processMaterial(materialId: string) {
   requireActiveConcepts(allowedConcepts);
 
   // Resolve provider from DB config
-  const { client: openai, model, serviceTier, isLocal } = await getConfiguredOpenAI();
+  const { client: openai, model, providerType, serviceTier, isLocal } = await getConfiguredOpenAI();
 
   // Per-call AI metrics (TTFT + generated tokens) collected across every page
   // and the batch-summary call, aggregated onto the material when it succeeds.
@@ -378,6 +380,8 @@ export async function processMaterial(materialId: string) {
         batchDescription: "No pages were identified as core learning material.",
         batchKeyConcepts: "[]",
         aiModel: agg?.model ?? null,
+        aiProvider: agg ? providerType : null,
+        aiServiceTier: agg ? serviceTier : null,
         aiTtftMs: agg?.ttftMs ?? null,
         aiTokens: agg?.completionTokens ?? null,
         aiTotalMs: agg?.totalMs ?? null,
@@ -426,6 +430,8 @@ export async function processMaterial(materialId: string) {
         batchDescription: value.description,
         batchKeyConcepts: JSON.stringify(filterTier2KeyConcepts(value.key_concept, allowedConcepts)),
         aiModel: agg?.model ?? null,
+        aiProvider: agg ? providerType : null,
+        aiServiceTier: agg ? serviceTier : null,
         aiTtftMs: agg?.ttftMs ?? null,
         aiTokens: agg?.completionTokens ?? null,
         aiTotalMs: agg?.totalMs ?? null,
