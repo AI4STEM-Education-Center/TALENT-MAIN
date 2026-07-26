@@ -48,6 +48,8 @@ export default async function ExamResultsPage({
         summaryMetrics: examResult.summaryAiModel
           ? {
               model: examResult.summaryAiModel,
+              provider: examResult.summaryAiProvider,
+              serviceTier: examResult.summaryServiceTier,
               ttftMs: examResult.summaryTtftMs,
               generationMs: examResult.summaryGenerationMs,
               totalMs: examResult.summaryTotalMs,
@@ -61,6 +63,8 @@ export default async function ExamResultsPage({
         recommendationMetrics: examResult.recsAiModel
           ? {
               model: examResult.recsAiModel,
+              provider: examResult.recsAiProvider,
+              serviceTier: examResult.recsServiceTier,
               ttftMs: examResult.recsTtftMs,
               generationMs: examResult.recsGenerationMs,
               totalMs: examResult.recsTotalMs,

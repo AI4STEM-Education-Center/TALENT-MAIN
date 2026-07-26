@@ -51,8 +51,35 @@ describe("streamChatCompletion", () => {
     expect(metrics.totalMs).toBe(300);
     expect(metrics.completionTokens).toBe(7);
     expect(metrics.tokensEstimated).toBe(false);
-    // tokensPerSec = 7 / ((300-50)/1000) = 28
+    // The content streamed over 250 of the call's 300ms, so that window stands
+    // as the generation window: 7 / 0.25s = 28 tok/s.
+    expect(metrics.generationMs).toBe(250);
     expect(metrics.tokensPerSec).toBeCloseTo(28);
+  });
+
+  it("reports no generation window when the content arrived in one flush", async () => {
+    const create = vi.fn(async () =>
+      streamOf([
+        contentChunk("a"),
+        contentChunk("b"),
+        { choices: [{ delta: {} }], usage: { completion_tokens: 222 } },
+      ])
+    );
+    const client = { chat: { completions: { create } } } as unknown as OpenAI;
+
+    // A buffering gateway: first delta at 6805ms, stream done 32ms later. Those
+    // 222 tokens were produced during the wait, not the flush.
+    const { metrics } = await streamChatCompletion(
+      client,
+      { model: "openai/gpt-5.5", messages: [] },
+      { now: clock([0, 6805, 6837]) }
+    );
+
+    expect(metrics.ttftMs).toBe(6805);
+    expect(metrics.totalMs).toBe(6837);
+    expect(metrics.generationMs).toBeNull();
+    // Rate over the whole call (32.5 tok/s), not 6937 tok/s over the flush.
+    expect(metrics.tokensPerSec).toBeCloseTo(222 / 6.837, 2);
   });
 
   it("estimates token count from streamed deltas when the provider omits usage", async () => {
@@ -194,6 +221,7 @@ describe("aggregateMetrics", () => {
     completionTokens: 10,
     tokensEstimated: false,
     totalMs: 300,
+    generationMs: 200,
     tokensPerSec: 50,
     ...over,
   });
@@ -204,22 +232,42 @@ describe("aggregateMetrics", () => {
 
   it("sums tokens, averages TTFT, and recomputes the rate over summed generation time", () => {
     const agg = aggregateMetrics([
-      m({ ttftMs: 100, completionTokens: 10, totalMs: 300 }), // genMs 200
-      m({ ttftMs: 200, completionTokens: 30, totalMs: 500 }), // genMs 300
+      m({ ttftMs: 100, completionTokens: 10, totalMs: 300, generationMs: 200 }),
+      m({ ttftMs: 200, completionTokens: 30, totalMs: 500, generationMs: 300 }),
     ])!;
     expect(agg.completionTokens).toBe(40);
     expect(agg.ttftMs).toBe(150);
     expect(agg.totalMs).toBe(800);
+    expect(agg.generationMs).toBe(500);
     // 40 tokens / ((200+300)/1000)s = 80 tok/s
     expect(agg.tokensPerSec).toBeCloseTo(80);
   });
 
+  it("drops the summed window when one contentful call didn't stream", () => {
+    const agg = aggregateMetrics([
+      m({ ttftMs: 100, completionTokens: 10, totalMs: 300, generationMs: 200 }),
+      m({ ttftMs: 400, completionTokens: 90, totalMs: 410, generationMs: null }),
+    ])!;
+    // Summing 200ms would understate a job that spent 710ms generating.
+    expect(agg.generationMs).toBeNull();
+    expect(agg.tokensPerSec).toBeCloseTo(100 / 0.71, 2);
+  });
+
   it("ignores null TTFTs when averaging and flags estimation if any part is estimated", () => {
     const agg = aggregateMetrics([
-      m({ ttftMs: null, completionTokens: 5, totalMs: 100, tokensEstimated: true }),
-      m({ ttftMs: 80, completionTokens: 5, totalMs: 200 }),
+      m({
+        ttftMs: null,
+        completionTokens: 5,
+        totalMs: 100,
+        generationMs: null,
+        tokensEstimated: true,
+      }),
+      m({ ttftMs: 80, completionTokens: 5, totalMs: 200, generationMs: 120 }),
     ])!;
     expect(agg.ttftMs).toBe(80);
     expect(agg.tokensEstimated).toBe(true);
+    // The call that produced nothing has no window to contribute, and doesn't
+    // disqualify the one that does.
+    expect(agg.generationMs).toBe(120);
   });
 });

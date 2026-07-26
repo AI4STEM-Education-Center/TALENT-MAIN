@@ -67,6 +67,8 @@ export async function triggerSimulations(
           status: "PENDING",
           errorMessage: null,
           aiModel: null,
+          aiProvider: null,
+          aiServiceTier: null,
           aiTtftMs: null,
           aiGenerationMs: null,
           aiTotalMs: null,

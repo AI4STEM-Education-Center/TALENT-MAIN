@@ -7,6 +7,8 @@ import type { DisplayAiMetrics } from "./ai-metrics";
 
 export type StoredSimulationMetrics = {
   aiModel: string | null;
+  aiProvider: string | null;
+  aiServiceTier: string | null;
   aiTtftMs: number | null;
   aiGenerationMs: number | null;
   aiTotalMs: number | null;
@@ -14,22 +16,34 @@ export type StoredSimulationMetrics = {
   aiTokensEstimated: boolean | null;
 };
 
-const qualifyModel = (providerType: ProviderType, model: string): string =>
-  model.startsWith(`${providerType}/`) ? model : `${providerType}/${model}`;
+/** The bits of the resolved provider that describe who served a job's calls. */
+export type MetricsProvider = {
+  providerType: ProviderType;
+  serviceTier: string | null;
+};
 
 /**
  * Aggregate one simulation job's calls into the fields persisted on its row.
- * Generation time sums only the post-TTFT windows, which stays accurate when
- * a job contains several calls.
+ * The provider and its service tier are stored beside the model rather than
+ * mashed into it — a gateway's model id already carries a vendor prefix
+ * ("openai/gpt-5.5" on Cloudflare), so a single string couldn't say who served
+ * it. Rows written before these columns existed keep their provider-qualified
+ * aiModel and are left exactly as they are.
+ *
+ * Generation time comes from the aggregate, which reports it only when the
+ * calls actually streamed (see `aggregateMetrics`) — null otherwise, so the UI
+ * shows no generation window instead of a buffering gateway's flush time.
  */
 export function buildSimulationMetrics(
-  providerType: ProviderType,
+  provider: MetricsProvider,
   calls: AiCallMetrics[]
 ): StoredSimulationMetrics {
   const aggregate = aggregateMetrics(calls);
   if (!aggregate) {
     return {
       aiModel: null,
+      aiProvider: null,
+      aiServiceTier: null,
       aiTtftMs: null,
       aiGenerationMs: null,
       aiTotalMs: null,
@@ -39,16 +53,11 @@ export function buildSimulationMetrics(
   }
 
   return {
-    aiModel: qualifyModel(providerType, aggregate.model),
+    aiModel: aggregate.model,
+    aiProvider: provider.providerType,
+    aiServiceTier: provider.serviceTier,
     aiTtftMs: aggregate.ttftMs,
-    aiGenerationMs: calls.reduce(
-      (sum, call) =>
-        sum +
-        (call.ttftMs === null
-          ? 0
-          : Math.max(0, call.totalMs - call.ttftMs)),
-      0
-    ),
+    aiGenerationMs: aggregate.generationMs,
     aiTotalMs: aggregate.totalMs,
     aiTokens: aggregate.completionTokens,
     aiTokensEstimated: aggregate.tokensEstimated,
@@ -61,6 +70,8 @@ export function simulationMetricsView(
 ): DisplayAiMetrics {
   return {
     model: stored.aiModel,
+    provider: stored.aiProvider,
+    serviceTier: stored.aiServiceTier,
     ttftMs: stored.aiTtftMs,
     generationMs: stored.aiGenerationMs,
     totalMs: stored.aiTotalMs,

@@ -141,11 +141,15 @@ async function runChatCompletionText(
   );
 }
 
-const providerModelLabel = (provider: ResolvedProvider): string =>
-  `${provider.providerType}/${provider.model}`;
-
-const generationMs = (metrics: AiCallMetrics): number =>
-  metrics.ttftMs === null ? 0 : Math.max(0, metrics.totalMs - metrics.ttftMs);
+/**
+ * Who served a section's calls, persisted beside the model rather than folded
+ * into it. Sections written before these columns existed keep the older
+ * "providerType/model" label in `*AiModel` and are never rewritten.
+ */
+const providerLabels = (provider: ResolvedProvider) => ({
+  providerType: provider.providerType,
+  serviceTier: provider.serviceTier,
+});
 
 /** Run one streamed structured (strict JSON schema) step, returning value + metrics. */
 async function runStructuredStep<T>(
@@ -340,7 +344,12 @@ async function collectSimulationRecommendations(
 /** Generate the markdown summary from the durable review snapshot. */
 async function generateSummary(
   examResult: ExamResultRow
-): Promise<{ summary: string; metrics: AiCallMetrics; providerModel: string }> {
+): Promise<{
+  summary: string;
+  metrics: AiCallMetrics;
+  providerType: string;
+  serviceTier: string | null;
+}> {
   const provider = await resolveProvider("description_generation");
   if (!providerUsable(provider)) {
     throw new Error("No usable AI provider configured for description_generation");
@@ -384,7 +393,7 @@ async function generateSummary(
   );
   const trimmed = text.trim();
   if (!trimmed) throw new Error("Model returned an empty summary");
-  return { summary: trimmed, metrics, providerModel: providerModelLabel(provider) };
+  return { summary: trimmed, metrics, ...providerLabels(provider) };
 }
 
 /**
@@ -401,7 +410,8 @@ async function generateRecommendations(
 ): Promise<{
   stored: StoredRecommendations;
   metrics: AiCallMetrics | null;
-  providerModel: string | null;
+  providerType: string | null;
+  serviceTier: string | null;
   generationMs: number | null;
 }> {
   const snapshot = parseReviewSnapshot(examResult.reviewSnapshot);
@@ -411,7 +421,8 @@ async function generateRecommendations(
     return {
       stored: { items: [], truncated: false },
       metrics: null,
-      providerModel: null,
+      providerType: null,
+      serviceTier: null,
       generationMs: null,
     };
   }
@@ -429,7 +440,8 @@ async function generateRecommendations(
     return {
       stored: withSims({ items: [], truncated: false }),
       metrics: null,
-      providerModel: null,
+      providerType: null,
+      serviceTier: null,
       generationMs: null,
     };
   }
@@ -550,10 +562,11 @@ async function generateRecommendations(
       ...(errorMisconceptions.length > 0 ? { errorMisconceptions } : {}),
     }),
     metrics,
-    providerModel: metrics ? providerModelLabel(provider) : null,
-    generationMs: metrics
-      ? allMetrics.reduce((sum, part) => sum + generationMs(part), 0)
-      : null,
+    providerType: metrics ? provider.providerType : null,
+    serviceTier: metrics ? provider.serviceTier : null,
+    // Null unless every call that produced content actually streamed, so a
+    // buffering gateway's flush time never gets shown as generation time.
+    generationMs: metrics?.generationMs ?? null,
   };
 }
 
@@ -577,6 +590,8 @@ export async function generateExamResult(examResultId: string): Promise<void> {
         summary: null,
         summaryStatus: RESULT_STATUS.GENERATING,
         summaryAiModel: null,
+        summaryAiProvider: null,
+        summaryServiceTier: null,
         summaryTtftMs: null,
         summaryGenerationMs: null,
         summaryTotalMs: null,
@@ -585,16 +600,18 @@ export async function generateExamResult(examResultId: string): Promise<void> {
       },
     });
     try {
-      const { summary, metrics, providerModel } = await generateSummary(examResult);
+      const { summary, metrics, providerType, serviceTier } = await generateSummary(examResult);
       await prisma.examResult.update({
         where: { id: examResult.id },
         data: {
           summary,
           summaryStatus: RESULT_STATUS.READY,
           aiModel: metrics.model,
-          summaryAiModel: providerModel,
+          summaryAiModel: metrics.model,
+          summaryAiProvider: providerType,
+          summaryServiceTier: serviceTier,
           summaryTtftMs: metrics.ttftMs,
-          summaryGenerationMs: generationMs(metrics),
+          summaryGenerationMs: metrics.generationMs,
           summaryTotalMs: metrics.totalMs,
           summaryTokens: metrics.completionTokens,
           summaryTokensEstimated: metrics.tokensEstimated,
@@ -616,6 +633,8 @@ export async function generateExamResult(examResultId: string): Promise<void> {
       data: {
         recommendationsStatus: RESULT_STATUS.GENERATING,
         recsAiModel: null,
+        recsAiProvider: null,
+        recsServiceTier: null,
         recsTtftMs: null,
         recsGenerationMs: null,
         recsTotalMs: null,
@@ -627,7 +646,8 @@ export async function generateExamResult(examResultId: string): Promise<void> {
       const {
         stored,
         metrics,
-        providerModel,
+        providerType,
+        serviceTier,
         generationMs: recsGenerationMs,
       } = await generateRecommendations(examResult);
       await prisma.examResult.update({
@@ -638,7 +658,9 @@ export async function generateExamResult(examResultId: string): Promise<void> {
           // Leave aiModel untouched (undefined) if this run made no LLM calls,
           // so a model recorded by the summary section survives.
           aiModel: metrics?.model ?? undefined,
-          recsAiModel: providerModel,
+          recsAiModel: metrics?.model ?? null,
+          recsAiProvider: providerType,
+          recsServiceTier: serviceTier,
           recsTtftMs: metrics?.ttftMs ?? null,
           recsGenerationMs,
           recsTotalMs: metrics?.totalMs ?? null,

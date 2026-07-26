@@ -7,6 +7,7 @@
 // the count as estimated.
 
 import type OpenAI from "openai";
+import { isStreamedGenerationWindow } from "./ai-metrics";
 
 export interface AiCallMetrics {
   /** The model id that produced the response. */
@@ -22,7 +23,17 @@ export interface AiCallMetrics {
   tokensEstimated: boolean;
   /** Total wall-clock time for the call, in ms. */
   totalMs: number;
-  /** Mean generation rate over the streaming window, or null when not derivable. */
+  /**
+   * The window the content streamed over, in ms — null when the response wasn't
+   * delivered incrementally (a buffering gateway flushes every delta at once,
+   * making that window a transport artifact rather than generation time). See
+   * `isStreamedGenerationWindow`.
+   */
+  generationMs: number | null;
+  /**
+   * Mean generation rate, over `generationMs` when we observed one and over the
+   * whole call when we didn't. null when no tokens were generated.
+   */
   tokensPerSec: number | null;
 }
 
@@ -103,13 +114,26 @@ export async function streamChatCompletion(
   const totalMs = now() - start;
   const tokensEstimated = usageTokens === null;
   const completionTokens = usageTokens ?? deltaCount;
-  const genMs = ttftMs !== null ? totalMs - ttftMs : 0;
+  // The post-TTFT window is only the generation window if the content really
+  // arrived across it; a gateway that buffered the upstream stream flushes it
+  // in a few ms, and dividing the token count by that yields nonsense rates.
+  const streamedMs = ttftMs !== null ? Math.max(0, totalMs - ttftMs) : 0;
+  const generationMs = isStreamedGenerationWindow(streamedMs, totalMs) ? streamedMs : null;
+  const rateWindowMs = generationMs ?? totalMs;
   const tokensPerSec =
-    completionTokens > 0 && genMs > 0 ? completionTokens / (genMs / 1000) : null;
+    completionTokens > 0 && rateWindowMs > 0 ? completionTokens / (rateWindowMs / 1000) : null;
 
   return {
     text,
-    metrics: { model: params.model, ttftMs, completionTokens, tokensEstimated, totalMs, tokensPerSec },
+    metrics: {
+      model: params.model,
+      ttftMs,
+      completionTokens,
+      tokensEstimated,
+      totalMs,
+      generationMs,
+      tokensPerSec,
+    },
   };
 }
 
@@ -170,6 +194,10 @@ export async function streamJsonCompletion<T = unknown>(
  * into a single representative row for display/storage: tokens summed, TTFT
  * averaged across the calls that produced content, and the rate recomputed over
  * the summed generation window. Returns null when there is nothing to report.
+ *
+ * The summed generation window only survives if every call that produced
+ * content actually streamed — one buffered call would make the sum understate
+ * the job by however long that call spent generating unobserved.
  */
 export function aggregateMetrics(parts: AiCallMetrics[]): AiCallMetrics | null {
   if (parts.length === 0) return null;
@@ -178,9 +206,25 @@ export function aggregateMetrics(parts: AiCallMetrics[]): AiCallMetrics | null {
   const ttfts = parts.map((m) => m.ttftMs).filter((t): t is number => t !== null);
   const ttftMs = ttfts.length > 0 ? Math.round(ttfts.reduce((a, b) => a + b, 0) / ttfts.length) : null;
   const totalMs = parts.reduce((sum, m) => sum + m.totalMs, 0);
-  const genMs = parts.reduce((sum, m) => sum + (m.ttftMs !== null ? m.totalMs - m.ttftMs : 0), 0);
-  const tokensPerSec = completionTokens > 0 && genMs > 0 ? completionTokens / (genMs / 1000) : null;
+  // Calls that produced no content have no window to contribute and shouldn't
+  // disqualify the sum; a contentful call with an unobservable window does.
+  const contentful = parts.filter((m) => m.ttftMs !== null);
+  const generationMs =
+    contentful.length > 0 && contentful.every((m) => m.generationMs !== null)
+      ? contentful.reduce((sum, m) => sum + (m.generationMs ?? 0), 0)
+      : null;
+  const rateWindowMs = generationMs ?? totalMs;
+  const tokensPerSec =
+    completionTokens > 0 && rateWindowMs > 0 ? completionTokens / (rateWindowMs / 1000) : null;
   const tokensEstimated = parts.some((m) => m.tokensEstimated);
 
-  return { model: parts[0].model, ttftMs, completionTokens, tokensEstimated, totalMs, tokensPerSec };
+  return {
+    model: parts[0].model,
+    ttftMs,
+    completionTokens,
+    tokensEstimated,
+    totalMs,
+    generationMs,
+    tokensPerSec,
+  };
 }

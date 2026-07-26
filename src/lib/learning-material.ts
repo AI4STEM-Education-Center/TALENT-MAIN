@@ -37,6 +37,8 @@ export async function listClassMaterials(classId: string) {
           folder: true,
           createdAt: true,
           aiModel: true,
+          aiProvider: true,
+          aiServiceTier: true,
           aiTtftMs: true,
           aiTokens: true,
           aiTotalMs: true,

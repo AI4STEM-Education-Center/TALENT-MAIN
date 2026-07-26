@@ -50,6 +50,8 @@ export async function GET(
     warnings: parseWarnings(extraction.warnings),
     createdAt: extraction.createdAt,
     aiModel: extraction.aiModel,
+    aiProvider: extraction.aiProvider,
+    aiServiceTier: extraction.aiServiceTier,
     aiTtftMs: extraction.aiTtftMs,
     aiTokens: extraction.aiTokens,
     aiTotalMs: extraction.aiTotalMs,

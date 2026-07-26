@@ -17,9 +17,15 @@ export const RESULT_STATUS = {
 } as const;
 export type ResultStatus = (typeof RESULT_STATUS)[keyof typeof RESULT_STATUS];
 
-/** Metrics displayed after one generated result component reaches READY. */
+/**
+ * Metrics displayed after one generated result component reaches READY.
+ * `provider`/`serviceTier` are null for sections generated before they were
+ * recorded — those rows keep the provider-qualified label in `model`.
+ */
 export type ResultComponentMetrics = {
   model: string | null;
+  provider: string | null;
+  serviceTier: string | null;
   ttftMs: number | null;
   generationMs: number | null;
   totalMs: number | null;

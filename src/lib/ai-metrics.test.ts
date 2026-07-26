@@ -37,6 +37,59 @@ describe("formatAiMetrics", () => {
     );
   });
 
+  it("names the provider and service tier separately from the model", () => {
+    expect(
+      formatAiMetrics({
+        model: "openai/gpt-5.5",
+        provider: "cloudflare",
+        serviceTier: "flex",
+        ttftMs: 19438,
+        totalMs: 25123,
+        tokens: 3077,
+      })
+    ).toBe(
+      "openai/gpt-5.5 · via cloudflare · tier flex · TTFT 19.438s · gen 5.685s · total 25.123s · 3077 tokens · 541.2 tok/s"
+    );
+  });
+
+  it("leaves rows written before provider/tier were stored exactly as they were", () => {
+    expect(
+      formatAiMetrics({ model: "cloudflare/openai/gpt-5.5", ttftMs: 19438, totalMs: 25123, tokens: 3077 })
+    ).toBe(
+      "cloudflare/openai/gpt-5.5 · TTFT 19.438s · gen 5.685s · total 25.123s · 3077 tokens · 541.2 tok/s"
+    );
+  });
+
+  it("drops a derived gen window the response was too buffered to have earned", () => {
+    // A gateway that flushed 222 tokens 32ms after the first delta: the tokens
+    // were produced during the 6.805s we recorded as TTFT, so report the rate
+    // over the whole call (32.5 tok/s) rather than 6937 tok/s over the flush.
+    expect(
+      formatAiMetrics({
+        model: "openai/gpt-5.5",
+        provider: "cloudflare",
+        ttftMs: 6805,
+        totalMs: 6837,
+        tokens: 222,
+      })
+    ).toBe(
+      "openai/gpt-5.5 · via cloudflare · TTFT 6.805s · total 6.837s · 222 tokens · 32.5 tok/s"
+    );
+  });
+
+  it("drops an explicitly stored generation window that is a flush artifact", () => {
+    // Same guard for the multi-call aggregate persisted on older rows.
+    expect(
+      formatAiMetrics({
+        model: "openai/gpt-5.5",
+        ttftMs: 5779,
+        generationMs: 92,
+        totalMs: 40547,
+        tokens: 2283,
+      })
+    ).toBe("openai/gpt-5.5 · TTFT 5.779s · total 40.547s · 2283 tokens · 56.3 tok/s");
+  });
+
   it("marks estimated token counts with a ~ suffix", () => {
     expect(formatAiMetrics({ tokens: 512, tokensEstimated: true })).toBe("512~ tokens");
   });
