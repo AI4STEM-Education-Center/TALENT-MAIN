@@ -12,6 +12,9 @@ services:
     environment:
       NODE_ENV: production
       APP_ENV: prod
+      # Prod and dev have independent DBs, so they must never GC the same key
+      # namespace even when they share an S3 bucket.
+      S3_KEY_PREFIX: "prod/"
       DATABASE_URL: ${PROD_DATABASE_URL}
     volumes:
       - ./data/db/prod:/app/prisma/data
@@ -30,6 +33,7 @@ services:
     environment:
       NODE_ENV: production
       APP_ENV: prod
+      S3_KEY_PREFIX: "prod/"
       DATABASE_URL: ${PROD_DATABASE_URL}
     volumes:
       - ./data/db/prod:/app/prisma/data

@@ -92,14 +92,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   return NextResponse.json(updated);
 }
 
-// DELETE: remove a quiz (owner only). Past attempts survive — QuizAttempt.quizId
-// is SetNull and ExamResult is a relation-free snapshot.
+// DELETE: remove a quiz. Teachers may remove only their own; admins may remove
+// pool quizzes and teacher-owned quizzes from the admin oversight screen. The
+// broader admin exception is deliberately DELETE-only — it does not grant edit
+// access through canManage. Past attempts survive because QuizAttempt.quizId is
+// SetNull and ExamResult is a relation-free snapshot.
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const [actor, { id }] = await Promise.all([getContentActor(), params]);
   if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const quiz = await prisma.quiz.findUnique({ where: { id } });
-  if (!quiz || !canManage(actor, quiz)) {
+  const adminDeletingTeacherQuiz =
+    actor.role === "ADMIN" && quiz !== null && quiz.teacherId !== null;
+  if (!quiz || (!canManage(actor, quiz) && !adminDeletingTeacherQuiz)) {
     return NextResponse.json({ error: "Quiz not found" }, { status: 404 });
   }
 

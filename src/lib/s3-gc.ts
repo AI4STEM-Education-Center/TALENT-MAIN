@@ -2,6 +2,7 @@ import { prisma } from "./prisma";
 import {
   deleteS3Objects,
   getS3Config,
+  getS3KeyPrefix,
   listS3Objects,
   listS3ObjectsWithMeta,
   quizExtractionPrefix,
@@ -16,8 +17,8 @@ import {
 // failures) that no user action will ever clean up.
 //
 // Safety properties:
-// - Only the three key families we own (learning-materials/, quiz-extractions/,
-//   simulations/) are ever touched; anything else in the bucket is ignored.
+// - Only the three key families under this deployment's S3_KEY_PREFIX are ever
+//   touched; another environment sharing the bucket remains invisible.
 // - Objects younger than ORPHAN_GRACE_MS are never deleted, so an object
 //   uploaded before its DB reference commits can't be swept mid-flight.
 // - Every delete is best-effort: an S3 hiccup leaves orphans for the next run.
@@ -52,8 +53,17 @@ export type GcRefs = {
  * Decide one object's fate against the DB reference sets. Pure so it's unit
  * testable; unknown or unparseable keys are always kept.
  */
-export function classifyForGc(key: string, refs: GcRefs): "keep" | "delete" {
-  const segments = key.split("/");
+export function classifyForGc(
+  key: string,
+  refs: GcRefs,
+  keyPrefix = ""
+): "keep" | "delete" {
+  // Never classify an object outside this deployment's namespace. The caller
+  // also scopes ListObjects to the prefix; this guard keeps the pure helper
+  // safe if it is ever handed a mixed-environment object list.
+  if (keyPrefix && !key.startsWith(keyPrefix)) return "keep";
+  const managedKey = keyPrefix ? key.slice(keyPrefix.length) : key;
+  const segments = managedKey.split("/");
 
   if (segments[0] === "learning-materials") {
     // learning-materials/{teacherId}/{classId}/{materialId}/...
@@ -174,23 +184,27 @@ async function discardStaleExtractions(bucket: string, now: Date): Promise<numbe
 }
 
 /**
- * Pass 2 — full bucket-vs-DB reconciliation: list every object in the three
- * managed families and delete the ones nothing in the database references
- * anymore. Because the check is per-object against ALL references, it is safe
- * under deep-copied quizzes sharing figure/simulation keys, and its first run
- * also clears orphans accumulated before the collector existed.
+ * Pass 2 — namespace-vs-DB reconciliation: list every object in the three
+ * managed families under this deployment's prefix and delete the ones nothing
+ * in its database references anymore. Because the check is per-object against
+ * ALL references, it is safe under deep-copied quizzes sharing figure/
+ * simulation keys, and its first run also clears older in-namespace orphans.
  */
 async function reconcileBucket(bucket: string, now: Date): Promise<number> {
   const refs = await loadGcRefs();
   const graceCutoff = now.getTime() - ORPHAN_GRACE_MS;
+  const keyPrefix = getS3KeyPrefix();
 
   const doomed: string[] = [];
-  for (const family of ["learning-materials/", "quiz-extractions/", "simulations/"]) {
-    const objects = await listS3ObjectsWithMeta(bucket, family);
+  const families = ["learning-materials/", "quiz-extractions/", "simulations/"];
+  const objectGroups = await Promise.all(
+    families.map((family) => listS3ObjectsWithMeta(bucket, `${keyPrefix}${family}`))
+  );
+  for (const objects of objectGroups) {
     for (const obj of objects) {
       // No LastModified = can't prove it's old enough; leave it for next run.
       if (!obj.lastModified || obj.lastModified.getTime() > graceCutoff) continue;
-      if (classifyForGc(obj.key, refs) === "delete") doomed.push(obj.key);
+      if (classifyForGc(obj.key, refs, keyPrefix) === "delete") doomed.push(obj.key);
     }
   }
 

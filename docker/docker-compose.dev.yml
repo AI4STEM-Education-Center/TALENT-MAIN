@@ -13,6 +13,9 @@ services:
     environment:
       NODE_ENV: production
       APP_ENV: dev
+      # Dev shares the bucket with prod but has a separate database. Namespace
+      # its objects so either environment's GC can only see its own assets.
+      S3_KEY_PREFIX: "dev/"
       DATABASE_URL: ${DEV_DATABASE_URL}
     volumes:
       - ./data/db/dev:/app/prisma/data
@@ -32,6 +35,7 @@ services:
     environment:
       NODE_ENV: production
       APP_ENV: dev
+      S3_KEY_PREFIX: "dev/"
       DATABASE_URL: ${DEV_DATABASE_URL}
     volumes:
       - ./data/db/dev:/app/prisma/data
