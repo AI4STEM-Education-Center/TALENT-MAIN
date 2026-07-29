@@ -13,6 +13,8 @@
 // question — only the triage-written spec, which is itself instructed to stay
 // generic (a leakage firewall between the two calls).
 
+import { Script } from "node:vm";
+
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export type SimulationQuestionInput = {
@@ -41,8 +43,12 @@ export type TriagePlan =
 
 // ─── Limits / headers ─────────────────────────────────────────────────────────
 
-/** Hard cap on the generated HTML artifact (bytes of UTF-8 text, ~400 KB). */
-export const MAX_SIMULATION_HTML_BYTES = 400_000;
+/**
+ * Hard cap on the generated HTML artifact. A simulation is intentionally a
+ * small teaching aid, not a miniature application; keeping this tight also
+ * makes truncated or needlessly elaborate model output fail validation.
+ */
+export const MAX_SIMULATION_HTML_BYTES = 80_000;
 
 /**
  * CSP sent when serving a simulation artifact. Everything external is blocked
@@ -113,17 +119,17 @@ ${optionLines}
 
 YOUR JOB — decide one of three outcomes:
 
-1. DECLINE (helpful=false): an interactive simulation would not aid understanding. Decline for pure recall/definition/terminology questions, questions about conventions or notation, history-of-science facts, or anything with no dynamic quantitative relationship to explore. Give a short refusal_reason. When declining, every other field is null.
+1. DECLINE (helpful=false): DEFAULT TO DECLINE unless a small interactive visual clearly teaches the concept better than a short explanation. Decline for recall/definition/terminology, conventions or notation, history-of-science facts, purely qualitative prompts, and topics that require a large multi-step model. A BUILD must have one causal or quantitative relationship a student can discover by changing only 1 or 2 values and watching one visual. Give a short refusal_reason. When declining, every other field is null.
 
-2. DUPLICATE (helpful=true, duplicate_of set): a simulation ALREADY generated for this quiz (listed below) covers the same broad topic this question tests. Set duplicate_of to that entry's number and every other field to null — do not write a new spec for a topic that already has one.
+2. DUPLICATE (helpful=true, duplicate_of set): a simulation ALREADY generated for this quiz (listed below) teaches the same governing relationship, even if its title or real-world scenario differs. Prefer reuse over a near-duplicate. Set duplicate_of to that entry's number and every other field to null.
 Existing simulations for this quiz:
 ${siblingBlock}
 
-3. BUILD (helpful=true, duplicate_of=null): fill in topic, title, learning_goal, and spec.
+3. BUILD (helpful=true, duplicate_of=null): fill in topic, title, learning_goal, and spec. Cover only the single most important relationship; do not combine adjacent concepts.
 
 THE PRIVACY RULE (absolute): the simulation is shown while quiz results are blind, so it must never reveal anything about this specific question. The topic, title, learning_goal, and ESPECIALLY the spec must not contain the question's numbers, given values, named scenario, option values, or its answer. Zoom out to the general concept the question tests (e.g. a question about a 3 kg block on a 30° incline becomes "forces on an inclined plane" with fully student-adjustable mass and angle). Someone reading the spec must not be able to reconstruct the question or infer its answer.
 
-THE SPEC: a self-contained build brief (a few hundred words) for a developer who will NOT see the question. Describe: the physical system and the quantitative relationship to make explorable; which parameters the student can adjust (with sensible generic ranges and defaults — never the question's values); what is animated/plotted and how it responds; which formulas govern the model; readouts to display; and the layout, which follows the platform's fixed three-section structure (a compact header band with the title, a one-line description and a short how-to hint; a thin key-formulas strip directly beneath it; then a simulation-plus-controls area that absorbs all remaining height — side-by-side on desktop, stacked on phones). Target a simple, canvas-based interactive that runs at 60fps with plain JavaScript, locks to the desktop frame with no scrolling at any size up to full-screen 4K, and adapts to the phone layout — no external libraries.
+THE SPEC: write a compact implementation brief of at most 140 words for a developer who will NOT see the question. It must name exactly: (a) the one relationship to explore, (b) only 1 or 2 adjustable parameters with generic ranges/defaults, (c) one canvas or SVG visual, (d) 1–3 live readouts, (e) no more than 2 governing formulas, and (f) what changes immediately when each control moves. Prefer a direct, event-driven diagram; request continuous animation only when motion over time is essential. Do not request graphs, tabs, menus, presets, multiple scenes, particle effects, trails, challenges, scoring, or decorative features. The implementation must stay small and dependable.
 
 Use the exact JSON schema provided. Every property must be present (null where unused).`;
 }
@@ -132,30 +138,30 @@ Use the exact JSON schema provided. Every property must be present (null where u
  * Shared hard requirements for the artifact, embedded in both the build and
  * revision prompts so revised documents obey the same contract.
  */
-const HTML_REQUIREMENTS = `HARD REQUIREMENTS for the document:
+const HTML_REQUIREMENTS = `PRIORITY: working interaction first, correct model second, clarity third, appearance last. Build the smallest page that fully teaches the learning goal.
+
+HARD REQUIREMENTS for the document:
 - ONE complete, self-contained HTML document. Start with <!doctype html> and end with </html>. No markdown fences, no commentary before or after.
 - Everything inline: CSS in a <style> tag, JavaScript in <script> tags, plain JavaScript only (no external libraries, imports, or module loading).
 - ZERO external references: no http(s):// or protocol-relative URLs in src/href/CSS url()/@import (an SVG xmlns attribute is fine), and no network APIs (fetch, XMLHttpRequest, WebSocket, EventSource, sendBeacon). The page runs in a sandboxed iframe with a CSP that blocks all of these — any external reference will simply break. Embedded images/fonts must be data: URIs.
 - Forbidden elements: <iframe>, <object>, <embed>, <base>, <link>.
+- Keep the complete document below 80 KB. Use one <style>, one visual stage (one <canvas> OR one root <svg>), and one non-module <script> placed at the end of <body>.
 
-REQUIRED PAGE STRUCTURE — the page is made of exactly these three sections:
-  1. HEADER: an <h1> title that names the key function(s)/relationship being explored (e.g. "Simple Pendulum: T = 2π√(L/g)"), a one-line description of the physical system, and a short "How to use" hint — one or two sentences telling the student which controls to change and what to watch for. This is a compact information band, NOT a hero banner: no large vertical padding, no oversized display type.
-  2. FUNCTIONS: a clearly-labelled thin strip (e.g. a "Key formulas" heading) listing every governing formula the model uses, with each symbol defined in one short line of small text per formula. This states the math the simulation is built on and is not optional — but it is a reference strip, not the main content.
-  3. SIMULATION + CONTROLS: the animated simulation plus its control panel. This is the star of the page and must receive the large majority of the space.
+SIMPLE PRODUCT SHAPE:
+- Compact header: one short <h1>, one-sentence description, and one-sentence instruction.
+- Compact formula strip: show at most 2 formulas and define their symbols/units.
+- Main area: the single visual plus a plain control panel. Provide only the 1–2 adjustable parameters from the spec and at most 3 live readouts. Each control needs a visible label and current value.
+- Do not add graphs, tabs, menus, accordions, presets, multiple modes/scenes, quizzes, challenges, scoring, legends, particle systems, trails, or decorative animation. Do not invent extra controls or readouts.
+- Use pause/resume and reset only when continuous time animation is genuinely needed. For a static relationship, redraw directly on input and omit the animation loop.
 
-REQUIRED TWO LAYOUTS — implement BOTH and switch between them with a CSS media query on the page's own width:
-- DESKTOP LAYOUT (width ≥ 700px) — the primary target. The page must fit the frame EXACTLY with no scrolling in any direction, at every desktop frame size from a small side panel up to full-screen on a 4K display. Achieve this structurally, so overflow is impossible by construction, not by hoping the content is short:
-  * Lock the document to the frame: html, body { height: 100%; margin: 0; overflow: hidden } and make the page a single CSS grid with grid-template-rows: auto auto minmax(0, 1fr) — header band, functions strip, simulation area. Never give the desktop layout a natural flow height.
-  * HEADER band (row 1): title, description, and how-to hint arranged horizontally (e.g. title + description on the left, how-to hint on the right). Keep it to roughly 2–3 text lines of total height — at most ~12% of the frame height.
-  * FUNCTIONS strip (row 2): a single horizontal row of compact formula cards (display: flex; each card = the formula plus its one-line symbol key in small text). If there are many formulas, allow at most two rows. The strip must stay thin — at most ~20% of the frame height.
-  * SIMULATION + CONTROLS (row 3): the minmax(0, 1fr) row absorbs ALL remaining height — on a large display that is most of the page, which is exactly right. Simulation on the left (roughly two-thirds of the width), controls on the right. Give every nested flex/grid child min-height: 0 and min-width: 0 so the canvas cell can actually shrink and grow with the row.
-  * Scale typography with clamp() (e.g. font-size: clamp(13px, 1vw + 8px, 20px)) so text stays proportionate from a 700px panel to a full-screen 4K frame, and the fixed-content rows never balloon.
-- PHONE LAYOUT (width < 700px): a vertical stack that may scroll — header first, then the simulation with its live readouts, then the full controls, so every major element stays present; the functions section may collapse into a <details> element directly under the header to save space. Keep controls usable with touch (comfortable hit targets). Only the phone layout may scroll vertically; the desktop layout never scrolls.
-- The frame this page runs in is RESIZED live (a side panel expanding to full screen, a phone rotating): derive the canvas size from its container's current size, listen for size changes (window resize or a ResizeObserver), and rescale + redraw on every change. Never hard-code pixel dimensions for the stage.
-- Simulation area: render on a <canvas> (or inline SVG), animated with requestAnimationFrame. Show the key live readouts (e.g. speed AND acceleration together) on or beside the animation, and include a pause/resume and a reset control.
-- Controls: sliders/buttons with visible labels AND their current numeric value; the simulation responds immediately when they change.
-- NO clipping or overflow at any size, from ~360px phones up to full-screen 4K desktops: never let a title, label, readout, or value spill outside its box or get cut off — wrap or shrink text so everything stays readable. On desktop the overflow: hidden lock means anything over-budget gets CLIPPED, so respect the per-row height budgets above. No horizontal scrolling ever.
-- Use accurate physics with correct units, consistent with the formulas shown in the FUNCTIONS section. Prefer simple and correct over flashy.
+LAYOUT AND RELIABILITY:
+- Desktop (width >= 700px): html/body are height:100%, margin:0, overflow:hidden. Use a three-row grid (compact header, compact formula strip, minmax(0,1fr) main area). The main area is visual-left/control-right and receives most of the space. Give shrinking grid/flex children min-width:0 and min-height:0.
+- Phone (width < 700px): stack header, formulas, visual, then controls and allow vertical scrolling. Never allow horizontal scrolling.
+- Size the visual from its actual container, not hard-coded stage dimensions. Redraw on resize. For canvas, account for devicePixelRatio without repeatedly scaling an already-scaled context.
+- Put all DOM markup before the script. Give every parameter control a unique id and look each one up explicitly with document.getElementById(). Use one small state object and one named updateAndDraw() path that recalculates the model, updates every readout, and draws the visual. Every input listener calls that path. Call it once during startup.
+- If animation is essential, keep exactly one requestAnimationFrame loop, clamp elapsed time after a background-tab pause, and prevent duplicate loops after pause/resume/reset.
+- Use accurate math and units. Clamp invalid/zero denominators and non-finite values before drawing. Do not use eval or Function.
+- Before returning, silently check: every referenced element ID exists exactly once; every control changes the state; every readout is updated; reset restores the displayed defaults; resize redraws; and the script has no undeclared or misspelled names.
 - Do NOT reference any quiz, question, or answer anywhere in the page.`;
 
 /**
@@ -237,7 +243,9 @@ export function buildRepairPrompt(problems: string[]): string {
   return `The document you returned failed validation:
 ${problems.map((p) => `- ${p}`).join("\n")}
 
-Fix every problem and return ONLY the complete corrected HTML document (starting with <!doctype html>, ending with </html>, no markdown fences).`;
+Fix every problem. Simplify or rewrite the document when that is safer than patching it. Keep one visual and only 1–2 adjustable parameters. Before returning, trace startup and each control event through the calculations, readouts, and draw call; correct any runtime or wiring mistake you find.
+
+Return ONLY the complete corrected HTML document (starting with <!doctype html>, ending with </html>, no markdown fences).`;
 }
 
 // ─── Triage validation ────────────────────────────────────────────────────────
@@ -318,6 +326,25 @@ const EXTERNAL_ATTR_RE = /\b(?:src|href)\s*=\s*["']?\s*(?:https?:)?\/\//i;
 const EXTERNAL_CSS_URL_RE = /url\(\s*["']?\s*(?:https?:)?\/\//i;
 const CSS_IMPORT_RE = /@import\b/i;
 const NETWORK_API_RE = /\b(?:fetch|XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts)\s*\(/;
+const VISUAL_STAGE_RE = /<\s*(canvas|svg)\b/gi;
+const STYLE_TAG_RE = /<\s*style\b/gi;
+const SCRIPT_BLOCK_RE = /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi;
+const PARAMETER_CONTROL_RE = /<\s*(input|select)\b([^>]*)>/gi;
+const ID_ATTRIBUTE_RE = /<[a-z][^>]*\bid\s*=\s*["']([^"']+)["'][^>]*>/gi;
+const GET_ELEMENT_BY_ID_RE = /\bgetElementById\(\s*["']([^"']+)["']\s*\)/g;
+
+function matches(text: string, pattern: RegExp): RegExpMatchArray[] {
+  return Array.from(text.matchAll(pattern));
+}
+
+/** Find student-adjustable inputs, excluding action buttons and hidden fields. */
+function parameterControls(html: string): RegExpMatchArray[] {
+  return matches(html, PARAMETER_CONTROL_RE).filter((match) => {
+    if (match[1].toLowerCase() === "select") return true;
+    const type = match[2].match(/\btype\s*=\s*["']?([^\s"'>]+)/i)?.[1]?.toLowerCase() ?? "text";
+    return !["button", "submit", "reset", "hidden"].includes(type);
+  });
+}
 
 /**
  * Static safety/structure check for a generated simulation document. Returns a
@@ -343,6 +370,76 @@ export function validateSimulationHtml(html: string): string[] {
   if (!lower.includes("<script")) {
     problems.push("document has no <script> — the simulation must be interactive");
   }
+
+  const styles = matches(text, STYLE_TAG_RE);
+  if (styles.length !== 1) {
+    problems.push(`document must contain exactly one <style> tag (found ${styles.length})`);
+  }
+
+  const stages = matches(text, VISUAL_STAGE_RE);
+  if (stages.length !== 1) {
+    problems.push(`document must contain exactly one visual stage: one <canvas> or one <svg> (found ${stages.length})`);
+  }
+
+  const controls = parameterControls(text);
+  if (controls.length < 1 || controls.length > 2) {
+    problems.push(`document must contain only 1 or 2 adjustable parameter controls (found ${controls.length})`);
+  }
+
+  const scripts = matches(text, SCRIPT_BLOCK_RE);
+  if (scripts.length !== 1) {
+    problems.push(`document must contain exactly one inline <script> (found ${scripts.length})`);
+  } else {
+    const [attributes, source] = [scripts[0][1], scripts[0][2]];
+    if (/\b(?:src|type\s*=\s*["']?module)\b/i.test(attributes)) {
+      problems.push("document script must be inline and non-module");
+    } else {
+      try {
+        new Script(source, { filename: "generated-simulation.js" });
+      } catch (error) {
+        const message = error instanceof Error ? error.message.split("\n")[0] : "unknown syntax error";
+        problems.push(`document JavaScript does not parse: ${message}`);
+      }
+    }
+  }
+
+  const ids = matches(text, ID_ATTRIBUTE_RE).map((match) => match[1]);
+  const idCounts = new Map<string, number>();
+  for (const id of ids) idCounts.set(id, (idCounts.get(id) ?? 0) + 1);
+  const duplicateIds: string[] = [];
+  for (const [id, count] of idCounts) {
+    if (count > 1) duplicateIds.push(id);
+  }
+  if (duplicateIds.length > 0) {
+    problems.push(`document has duplicate element id(s): ${duplicateIds.join(", ")}`);
+  }
+
+  const referencedIds = new Set<string>();
+  const missingIdSet = new Set<string>();
+  for (const match of matches(text, GET_ELEMENT_BY_ID_RE)) {
+    const id = match[1];
+    referencedIds.add(id);
+    if (!idCounts.has(id)) missingIdSet.add(id);
+  }
+  const missingIds = [...missingIdSet];
+  if (missingIds.length > 0) {
+    problems.push(`script references missing element id(s): ${missingIds.join(", ")}`);
+  }
+
+  const controlsWithoutIds: string[] = [];
+  const unwiredControlIds: string[] = [];
+  for (const control of controls) {
+    const id = control[0].match(/\bid\s*=\s*["']([^"']+)["']/i)?.[1];
+    if (!id) controlsWithoutIds.push(control[1].toLowerCase());
+    else if (!referencedIds.has(id)) unwiredControlIds.push(id);
+  }
+  if (controlsWithoutIds.length > 0) {
+    problems.push(`every adjustable parameter control needs a unique id (missing on: ${controlsWithoutIds.join(", ")})`);
+  }
+  if (unwiredControlIds.length > 0) {
+    problems.push(`script must look up every adjustable parameter control by id (missing: ${unwiredControlIds.join(", ")})`);
+  }
+
   const tag = text.match(FORBIDDEN_TAG_RE);
   if (tag) problems.push(`forbidden element <${tag[1].toLowerCase()}>`);
   if (EXTERNAL_ATTR_RE.test(text)) {
