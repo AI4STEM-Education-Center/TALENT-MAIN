@@ -14,6 +14,7 @@
 // generic (a leakage firewall between the two calls).
 
 import { Script } from "node:vm";
+import { validateSimulationLatex } from "./simulation-math";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -48,7 +49,7 @@ export type TriagePlan =
  * small teaching aid, not a miniature application; keeping this tight also
  * makes truncated or needlessly elaborate model output fail validation.
  */
-export const MAX_SIMULATION_HTML_BYTES = 80_000;
+export const MAX_SIMULATION_HTML_BYTES = 120_000;
 
 /**
  * CSP sent when serving a simulation artifact. Everything external is blocked
@@ -119,17 +120,17 @@ ${optionLines}
 
 YOUR JOB — decide one of three outcomes:
 
-1. DECLINE (helpful=false): DEFAULT TO DECLINE unless a small interactive visual clearly teaches the concept better than a short explanation. Decline for recall/definition/terminology, conventions or notation, history-of-science facts, purely qualitative prompts, and topics that require a large multi-step model. A BUILD must have one causal or quantitative relationship a student can discover by changing only 1 or 2 values and watching one visual. Give a short refusal_reason. When declining, every other field is null.
+1. DECLINE (helpful=false): decline when an interactive visual would not teach the concept better than a short explanation. Decline for recall/definition/terminology, conventions or notation, history-of-science facts, purely qualitative prompts, and topics with no meaningful adjustable model. A BUILD should expose one coherent system through 4 or 5 meaningful parameters and one visual. Give a short refusal_reason. When declining, every other field is null.
 
 2. DUPLICATE (helpful=true, duplicate_of set): a simulation ALREADY generated for this quiz (listed below) teaches the same governing relationship, even if its title or real-world scenario differs. Prefer reuse over a near-duplicate. Set duplicate_of to that entry's number and every other field to null.
 Existing simulations for this quiz:
 ${siblingBlock}
 
-3. BUILD (helpful=true, duplicate_of=null): fill in topic, title, learning_goal, and spec. Cover only the single most important relationship; do not combine adjacent concepts.
+3. BUILD (helpful=true, duplicate_of=null): fill in topic, title, learning_goal, and spec. Model one coherent system; related quantities and derived relationships within that system belong together.
 
 THE PRIVACY RULE (absolute): the simulation is shown while quiz results are blind, so it must never reveal anything about this specific question. The topic, title, learning_goal, and ESPECIALLY the spec must not contain the question's numbers, given values, named scenario, option values, or its answer. Zoom out to the general concept the question tests (e.g. a question about a 3 kg block on a 30° incline becomes "forces on an inclined plane" with fully student-adjustable mass and angle). Someone reading the spec must not be able to reconstruct the question or infer its answer.
 
-THE SPEC: write a compact implementation brief of at most 140 words for a developer who will NOT see the question. It must name exactly: (a) the one relationship to explore, (b) only 1 or 2 adjustable parameters with generic ranges/defaults, (c) one canvas or SVG visual, (d) 1–3 live readouts, (e) no more than 2 governing formulas, and (f) what changes immediately when each control moves. Prefer a direct, event-driven diagram; request continuous animation only when motion over time is essential. Do not request graphs, tabs, menus, presets, multiple scenes, particle effects, trails, challenges, scoring, or decorative features. The implementation must stay small and dependable.
+THE SPEC: write a compact implementation brief of at most 200 words for a developer who will NOT see the question. It must name: (a) the coherent system to explore, (b) exactly 4 or 5 meaningful adjustable parameters with generic ranges/defaults, (c) one canvas or SVG visual, (d) 3–6 live readouts, (e) every governing and derived formula used by the model, up to 8 formulas, and (f) what changes when each control moves. A single graph may be drawn inside the main visual only when it directly clarifies the relationship. Request continuous animation only when motion over time is essential. Do not request tabs, menus, presets, multiple scenes, particle effects, challenges, scoring, or decorative features. Keep the interaction focused and dependable.
 
 Use the exact JSON schema provided. Every property must be present (null where unused).`;
 }
@@ -145,18 +146,18 @@ HARD REQUIREMENTS for the document:
 - Everything inline: CSS in a <style> tag, JavaScript in <script> tags, plain JavaScript only (no external libraries, imports, or module loading).
 - ZERO external references: no http(s):// or protocol-relative URLs in src/href/CSS url()/@import (an SVG xmlns attribute is fine), and no network APIs (fetch, XMLHttpRequest, WebSocket, EventSource, sendBeacon). The page runs in a sandboxed iframe with a CSP that blocks all of these — any external reference will simply break. Embedded images/fonts must be data: URIs.
 - Forbidden elements: <iframe>, <object>, <embed>, <base>, <link>.
-- Keep the complete document below 80 KB. Use one <style>, one visual stage (one <canvas> OR one root <svg>), and one non-module <script> placed at the end of <body>.
+- Keep the complete document below 120 KB. Use one <style>, one visual stage (one <canvas> OR one root <svg>), and one non-module <script> placed at the end of <body>.
 
 SIMPLE PRODUCT SHAPE:
 - Compact header: one short <h1>, one-sentence description, and one-sentence instruction.
-- Compact formula strip: show at most 2 formulas and define their symbols/units.
-- Main area: the single visual plus a plain control panel. Provide only the 1–2 adjustable parameters from the spec and at most 3 live readouts. Each control needs a visible label and current value.
-- Do not add graphs, tabs, menus, accordions, presets, multiple modes/scenes, quizzes, challenges, scoring, legends, particle systems, trails, or decorative animation. Do not invent extra controls or readouts.
+- Formula section: show EVERY governing, derived, and helper relationship actually used by the JavaScript calculations, up to 8 formulas. Define every symbol and unit. Never show a mathematical expression as plain text. Write each formula as raw LaTeX inside exactly <span class="sim-latex" data-display="block">LATEX_HERE</span> (or data-display="inline" inside prose). Do not include dollar-sign delimiters or HTML inside these markers. The server validates the LaTeX and renders it to MathML before display.
+- Main area: the single visual plus a clear control panel. Provide exactly 4 or 5 meaningful adjustable parameters from the spec and 3–6 useful live readouts. Each control needs a visible label and current value with units.
+- A single graph may be part of the main canvas/SVG when it materially explains the relationship. Do not add tabs, menus, accordions, presets, multiple modes/scenes, quizzes, challenges, scoring, particle systems, or decorative animation. Do not invent controls unrelated to the model.
 - Use pause/resume and reset only when continuous time animation is genuinely needed. For a static relationship, redraw directly on input and omit the animation loop.
 
 LAYOUT AND RELIABILITY:
-- Desktop (width >= 700px): html/body are height:100%, margin:0, overflow:hidden. Use a three-row grid (compact header, compact formula strip, minmax(0,1fr) main area). The main area is visual-left/control-right and receives most of the space. Give shrinking grid/flex children min-width:0 and min-height:0.
-- Phone (width < 700px): stack header, formulas, visual, then controls and allow vertical scrolling. Never allow horizontal scrolling.
+- Desktop (width >= 700px): html/body are height:100%, margin:0, overflow:hidden. Use a three-row grid (compact header, formula panel, minmax(0,1fr) main area). Let the formula panel use a compact wrapping grid and internal overflow:auto when needed so every formula remains accessible instead of being clipped. The main area is visual-left/control-right and receives most of the space. Give shrinking grid/flex children min-width:0 and min-height:0.
+- Phone (width < 700px): stack header, the complete formula panel, visual, then controls and allow vertical scrolling. Never allow horizontal scrolling or hide formulas.
 - Size the visual from its actual container, not hard-coded stage dimensions. Redraw on resize. For canvas, account for devicePixelRatio without repeatedly scaling an already-scaled context.
 - Put all DOM markup before the script. Give every parameter control a unique id and look each one up explicitly with document.getElementById(). Use one small state object and one named updateAndDraw() path that recalculates the model, updates every readout, and draws the visual. Every input listener calls that path. Call it once during startup.
 - If animation is essential, keep exactly one requestAnimationFrame loop, clamp elapsed time after a background-tab pause, and prevent duplicate loops after pause/resume/reset.
@@ -243,7 +244,7 @@ export function buildRepairPrompt(problems: string[]): string {
   return `The document you returned failed validation:
 ${problems.map((p) => `- ${p}`).join("\n")}
 
-Fix every problem. Simplify or rewrite the document when that is safer than patching it. Keep one visual and only 1–2 adjustable parameters. Before returning, trace startup and each control event through the calculations, readouts, and draw call; correct any runtime or wiring mistake you find.
+Fix every problem. Simplify or rewrite the document when that is safer than patching it. Keep one visual, exactly 4 or 5 adjustable parameters, and render every formula through a valid sim-latex marker. Before returning, trace startup and each control event through the calculations, readouts, and draw call; correct any runtime or wiring mistake you find.
 
 Return ONLY the complete corrected HTML document (starting with <!doctype html>, ending with </html>, no markdown fences).`;
 }
@@ -382,8 +383,8 @@ export function validateSimulationHtml(html: string): string[] {
   }
 
   const controls = parameterControls(text);
-  if (controls.length < 1 || controls.length > 2) {
-    problems.push(`document must contain only 1 or 2 adjustable parameter controls (found ${controls.length})`);
+  if (controls.length < 4 || controls.length > 5) {
+    problems.push(`document must contain exactly 4 or 5 adjustable parameter controls (found ${controls.length})`);
   }
 
   const scripts = matches(text, SCRIPT_BLOCK_RE);
@@ -439,6 +440,8 @@ export function validateSimulationHtml(html: string): string[] {
   if (unwiredControlIds.length > 0) {
     problems.push(`script must look up every adjustable parameter control by id (missing: ${unwiredControlIds.join(", ")})`);
   }
+
+  problems.push(...validateSimulationLatex(text));
 
   const tag = text.match(FORBIDDEN_TAG_RE);
   if (tag) problems.push(`forbidden element <${tag[1].toLowerCase()}>`);

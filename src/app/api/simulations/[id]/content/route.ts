@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getS3ObjectAsString } from "@/lib/storage";
 import { SIMULATION_CSP } from "@/lib/simulation";
+import { renderSimulationLatex } from "@/lib/simulation-math";
 import { injectTelemetryScript } from "@/lib/simulation-telemetry";
 
 export const runtime = "nodejs";
@@ -63,6 +64,11 @@ export async function GET(
     console.error(`[Simulation] Failed to load artifact for ${sim.id}:`, err);
     return NextResponse.json({ error: "Failed to load simulation" }, { status: 502 });
   }
+
+  // Generated formula markers contain raw LaTeX. Parse them with KaTeX on the
+  // server and emit self-contained MathML, so formulas render correctly inside
+  // the no-network sandbox without shipping a runtime or external font assets.
+  html = renderSimulationLatex(html);
 
   // Students get the interaction-telemetry snippet injected at serve time (the
   // stored artifact is never modified, and pre-telemetry artifacts report like
