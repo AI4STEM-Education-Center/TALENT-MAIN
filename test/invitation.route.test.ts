@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 vi.mock("@/lib/auth", () => ({ auth: vi.fn() }));
 
 import { GET, POST } from "@/app/api/invitations/[token]/route";
+import { GET as LOOKUP } from "@/app/api/invitations/[token]/lookup/route";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { resetDb, createTeacher, createStudent, createClass } from "./db";
@@ -38,10 +39,15 @@ async function seedInvite(opts: {
   return { cls, invitation };
 }
 
-function addRoster(classId: string, orgDefinedId: string, isRegistered = false) {
+function addRoster(classId: string, orgDefinedId: string, isRegistered = false, email = "") {
   return prisma.classStudentList.create({
-    data: { classId, orgDefinedId, firstName: "Ross", lastName: "Tee", isRegistered },
+    data: { classId, orgDefinedId, firstName: "Ross", lastName: "Tee", isRegistered, email },
   });
+}
+
+function lookupReq(token: string, orgDefinedId: string) {
+  const url = `http://localhost/api/invitations/${token}/lookup?orgDefinedId=${encodeURIComponent(orgDefinedId)}`;
+  return [new Request(url) as never, ctx(token)] as const;
 }
 
 beforeEach(async () => {
@@ -86,6 +92,48 @@ describe("GET /api/invitations/[token]", () => {
     expect(body.valid).toBe(true);
     expect(body.className).toBe("Chemistry");
     expect(body.teacherName).toBe("Tess Teacher");
+  });
+});
+
+describe("GET /api/invitations/[token]/lookup", () => {
+  it("returns the roster email so the student can confirm it", async () => {
+    const { cls, invitation } = await seedInvite();
+    await addRoster(cls.id, "811947904", false, "ross-tee@uga.edu");
+
+    const res = await LOOKUP(...lookupReq(invitation.token, "#811947904"));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.found).toBe(true);
+    expect(body.firstName).toBe("Ross");
+    expect(body.email).toBe("ross-tee@uga.edu");
+  });
+
+  it("omits the email for a roster row that has none", async () => {
+    const { cls, invitation } = await seedInvite();
+    await addRoster(cls.id, "811947904");
+
+    const res = await LOOKUP(...lookupReq(invitation.token, "811947904"));
+    const body = await res.json();
+    expect(body.found).toBe(true);
+    expect(body.email).toBeUndefined();
+  });
+
+  it("omits an unusable email instead of prefilling it", async () => {
+    const { cls, invitation } = await seedInvite();
+    await addRoster(cls.id, "811947904", false, "not-an-email");
+
+    const res = await LOOKUP(...lookupReq(invitation.token, "811947904"));
+    const body = await res.json();
+    expect(body.found).toBe(true);
+    expect(body.email).toBeUndefined();
+  });
+
+  it("reveals nothing for an 81 number outside this class", async () => {
+    const { invitation } = await seedInvite();
+    const res = await LOOKUP(...lookupReq(invitation.token, "999"));
+    const body = await res.json();
+    expect(body.found).toBe(false);
+    expect(body.email).toBeUndefined();
   });
 });
 
@@ -137,6 +185,64 @@ describe("POST /api/invitations/[token] — signup flow", () => {
 
     const refreshed = await prisma.invitation.findUnique({ where: { id: invitation.id } });
     expect(refreshed?.usedCount).toBe(1);
+  });
+
+  it("leaves the roster email alone when the student keeps it", async () => {
+    const { cls, invitation } = await seedInvite();
+    await addRoster(cls.id, "811947904", false, "ross-tee@uga.edu");
+
+    const res = await POST(
+      req({ ...signup, email: "Ross-Tee@UGA.edu", orgDefinedId: "811947904" }) as never,
+      ctx(invitation.token)
+    );
+    expect(res.status).toBe(200);
+
+    const roster = await prisma.classStudentList.findFirst({ where: { classId: cls.id } });
+    expect(roster?.email).toBe("ross-tee@uga.edu");
+  });
+
+  it("moves the roster email to the address the student confirmed", async () => {
+    const { cls, invitation } = await seedInvite();
+    await addRoster(cls.id, "811947904", false, "stale@uga.edu");
+
+    const res = await POST(
+      req({ ...signup, email: "ross.tee@gmail.com", orgDefinedId: "811947904" }) as never,
+      ctx(invitation.token)
+    );
+    expect(res.status).toBe(200);
+
+    const roster = await prisma.classStudentList.findFirst({ where: { classId: cls.id } });
+    expect(roster?.email).toBe("ross.tee@gmail.com");
+    const user = await prisma.user.findUnique({ where: { email: "ross.tee@gmail.com" } });
+    expect(user).not.toBeNull();
+  });
+
+  it("rewrites the LMS-only domain before it reaches the roster", async () => {
+    const { cls, invitation } = await seedInvite();
+    await addRoster(cls.id, "811947904");
+
+    const res = await POST(
+      req({ ...signup, email: "ross-tee@uga.view.usg.edu", orgDefinedId: "811947904" }) as never,
+      ctx(invitation.token)
+    );
+    expect(res.status).toBe(200);
+
+    const roster = await prisma.classStudentList.findFirst({ where: { classId: cls.id } });
+    expect(roster?.email).toBe("ross-tee@uga.edu");
+  });
+
+  it("rejects an email that cannot receive mail", async () => {
+    const { cls, invitation } = await seedInvite();
+    await addRoster(cls.id, "811947904");
+
+    const res = await POST(
+      req({ ...signup, email: "not-an-email", orgDefinedId: "811947904" }) as never,
+      ctx(invitation.token)
+    );
+    expect(res.status).toBe(400);
+
+    const roster = await prisma.classStudentList.findFirst({ where: { classId: cls.id } });
+    expect(roster?.isRegistered).toBe(false);
   });
 
   it("rejects a weak password during signup", async () => {

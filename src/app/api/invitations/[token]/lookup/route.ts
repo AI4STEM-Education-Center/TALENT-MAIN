@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { isValidEmail } from "@/lib/csv-roster";
 import { rateLimit } from "@/lib/rate-limit";
 
 // GET: Look up a student's name by orgDefinedId, scoped to the class tied to this invitation token.
@@ -56,9 +57,13 @@ export async function GET(
     });
   }
 
+  // Surface the roster email so the student can confirm the address the teacher
+  // has on file instead of retyping it. Only when it is actually usable: the
+  // column defaults to "" for rows imported before it existed.
   return NextResponse.json({
     found: true,
     firstName: entry.firstName,
     lastName: entry.lastName,
+    ...(isValidEmail(entry.email) ? { email: entry.email } : {}),
   });
 }

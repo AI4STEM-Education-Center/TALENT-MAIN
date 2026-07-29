@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { isValidEmail } from "@/lib/csv-roster";
+import { isValidEmail, normalizeEmail } from "@/lib/csv-roster";
 
 // POST: Bulk-add students to an existing class roster from an uploaded CSV
 // (teacher only). Expects { students: [{ orgDefinedId, firstName, lastName, email }] }.
@@ -36,7 +36,7 @@ export async function POST(
     const orgDefinedId = String(s?.orgDefinedId ?? "").replace(/^#/, "").trim();
     const firstName = String(s?.firstName ?? "").trim();
     const lastName = String(s?.lastName ?? "").trim();
-    const email = String(s?.email ?? "").trim().toLowerCase();
+    const email = normalizeEmail(s?.email);
     if (!orgDefinedId || !firstName || !lastName || !isValidEmail(email)) {
       return NextResponse.json(
         { error: "Every row needs an 81 number, first name, last name, and a valid email." },

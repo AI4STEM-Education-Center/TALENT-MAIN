@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { isValidEmail } from "@/lib/csv-roster";
+import { isValidEmail, normalizeEmail } from "@/lib/csv-roster";
 
 // GET: Return all ClassStudentList entries for this class with enrollment status (teacher only)
 export async function GET(
@@ -101,7 +101,7 @@ export async function POST(
       orgDefinedId: cleanId,
       firstName: firstName.trim(),
       lastName: lastName.trim(),
-      email: email.trim().toLowerCase(),
+      email: normalizeEmail(email),
     },
   });
 
