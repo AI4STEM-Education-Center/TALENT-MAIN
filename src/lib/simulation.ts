@@ -1,7 +1,7 @@
 // Pure helpers for the per-question physics-simulation feature: the triage
 // JSON schema + prompt (decide whether a simulation helps, pick the broad
-// topic, write a build spec — or decline), the HTML-generation / revision /
-// repair prompts, validation of the triage JSON, and the static safety
+// topic, write a build spec — or decline), the HTML-generation / one-pass
+// revision / repair prompts, validation of the triage JSON, and the static safety
 // validator for the generated HTML artifact. Everything here is pure (no DB /
 // LLM / S3 / Prisma imports) so it can be unit-tested like `quiz-extraction.ts`;
 // the impure engine that runs the calls lives in `simulation-engine.ts`.
@@ -77,38 +77,6 @@ export const SIMULATION_TRIAGE_SCHEMA = {
       spec: { type: ["string", "null"] },
     },
     required: ["helpful", "refusal_reason", "duplicate_of", "topic", "title", "learning_goal", "spec"],
-    additionalProperties: false,
-  },
-} as const;
-
-/**
- * Strict schema for the post-revision integrity review: an independent pass
- * over a revised artifact that must confirm the requested change was applied
- * AND the physics/math, the required layout, and the working simulation all
- * survived it. `ok` is the reviewer's overall verdict; `problems` enumerates
- * anything that must be fixed before the revision can ship.
- */
-export const SIMULATION_REVIEW_SCHEMA = {
-  name: "simulation_revision_review",
-  strict: true,
-  schema: {
-    type: "object",
-    properties: {
-      feedback_applied: { type: "boolean" },
-      physics_intact: { type: "boolean" },
-      layout_intact: { type: "boolean" },
-      simulation_works: { type: "boolean" },
-      ok: { type: "boolean" },
-      problems: { type: "array", items: { type: "string" } },
-    },
-    required: [
-      "feedback_applied",
-      "physics_intact",
-      "layout_intact",
-      "simulation_works",
-      "ok",
-      "problems",
-    ],
     additionalProperties: false,
   },
 } as const;
@@ -249,82 +217,16 @@ ${currentHtml}
 
 Apply the new feedback with the smallest change that fully fixes it; keep everything else working as-is. The privacy rule still holds: never add anything about a specific quiz question or its answer.
 
+COMPLETE THE REVISION IN ONE PASS. Before returning, silently inspect the finished document and correct every issue you find:
+- Confirm the new feedback is genuinely and fully applied, and no earlier feedback was undone.
+- Re-derive the governing physics/math; keep it correct, dimensionally consistent, in the right units, and identical to the displayed formulas.
+- Preserve the required three-section layout on desktop and phone, including the non-scrolling height-filling desktop frame and responsive canvas.
+- Trace the JavaScript end to end: animation, pause/resume, reset, every control, and every live readout must remain wired and free of obvious runtime errors.
+Do not describe this inspection or return a checklist. Fix the document itself, then return only the finished HTML.
+
 ${HTML_REQUIREMENTS}
 
 Return ONLY the complete revised HTML document.`;
-}
-
-/**
- * Build the integrity-review prompt run AFTER a revision, as an independent
- * pass. The reviewer sees the plan, the applied + new feedback, and the REVISED
- * document, and must re-derive the physics/math, confirm the required layout
- * survived, confirm the new feedback was actually applied without undoing prior
- * feedback, and confirm the simulation still works — reporting any problem that
- * must be fixed before it ships. Pure + deterministic.
- */
-export function buildRevisionReviewPrompt(
-  plan: { topic: string; title: string; learningGoal: string; spec: string },
-  revisedHtml: string,
-  priorFeedback: string[],
-  newFeedback: string
-): string {
-  const prior =
-    priorFeedback.length > 0
-      ? priorFeedback.map((f, i) => `  ${i + 1}. ${f}`).join("\n")
-      : "  (none)";
-  return `You are the integrity reviewer for a learning-platform physics/STEM simulation. A revision was just made to apply a teacher's feedback, and you must confirm — independently and skeptically — that the change is correct and did not break anything BEFORE it is shown to students.
-
-Topic: ${plan.topic}
-Title: ${plan.title}
-Learning goal: ${plan.learningGoal}
-
-BUILD SPEC (what the simulation is meant to teach):
-${plan.spec}
-
-FEEDBACK APPLIED IN EARLIER REVISIONS (must still hold):
-${prior}
-
-FEEDBACK THIS REVISION WAS MEANT TO APPLY:
-${newFeedback}
-
-THE REVISED DOCUMENT:
-${revisedHtml}
-
-Check every one of these and set the matching boolean:
-- feedback_applied: the new feedback above is genuinely and fully addressed in the document (not merely acknowledged), and no earlier feedback was undone.
-- physics_intact: re-derive the governing formulas yourself. The math and physics are correct, dimensionally consistent, in correct units, and match the formulas the page displays. There are no sign errors, wrong constants, or broken relationships.
-- layout_intact: the required three sections are present — a compact header band (title + one-line description + short how-to hint), a thin key-formulas strip, and the simulation-plus-controls area — AND both required layouts survive: the desktop layout (≥700px: html/body locked to 100% height with overflow hidden, a grid of header band / formulas strip / height-filling simulation row, no scrolling at any desktop size, simulation left / controls right) and the phone layout (<700px: vertical stack with every major element), with the canvas rescaling when the frame resizes and no text overflowing or clipped.
-- simulation_works: the JavaScript is coherent and would run — the animation loop, the reset/pause controls, and every slider/button are wired to the model and update the readouts; there are no obvious runtime errors, undefined references, or dead controls.
-- ok: true ONLY when all four above are true.
-
-List every concrete defect in "problems" (empty only when ok is true). Be specific and actionable — name the formula, control, or section at fault — so a follow-up pass can fix it. When unsure whether something is correct, treat it as a problem rather than passing it.`;
-}
-
-/**
- * Build the correction prompt used when the integrity review rejects a revised
- * document: re-apply the original feedback correctly and fix the listed
- * problems, without undoing prior feedback or breaking the simulation. Pure +
- * deterministic.
- */
-export function buildRevisionCorrectionPrompt(
-  revisedHtml: string,
-  newFeedback: string,
-  problems: string[]
-): string {
-  return `The revision you produced was reviewed and did NOT pass. It was meant to apply this feedback:
-${newFeedback}
-
-The review found these problems that must be fixed:
-${problems.map((p) => `- ${p}`).join("\n")}
-
-Here is the document to correct:
-${revisedHtml}
-
-Fix every listed problem AND make sure the intended feedback is fully and correctly applied. Keep the physics/math correct, keep the required page structure (compact header band with title + description + how-to hint, the thin key-formulas strip, and the simulation + controls area filling the remaining height, in both the non-scrolling desktop layout and the phone layout), and do not break the working simulation or undo earlier feedback. The privacy rule still holds: never add anything about a specific quiz question or its answer.
-
-${HTML_REQUIREMENTS}
-
-Return ONLY the complete corrected HTML document.`;
 }
 
 /**
@@ -390,41 +292,6 @@ export function validateTriagePlan(input: unknown, siblingCount: number): Triage
   if (!spec) throw new Error("triage: spec is required when helpful and not a duplicate");
 
   return { helpful: true, duplicateOfIndex: null, topic, title, learningGoal, spec };
-}
-
-/**
- * Collapse the raw integrity-review JSON into a pass/fail verdict + a
- * non-empty problem list when it fails. `ok` requires the model's overall
- * verdict AND every individual check to hold, so a stray `ok:true` with a
- * failed sub-check is still treated as a failure. Guarantees at least one
- * problem string whenever the verdict is a fail, so the caller always has
- * something actionable to record / re-prompt with.
- */
-export function validateRevisionReview(input: unknown): { ok: boolean; problems: string[] } {
-  if (!isRecord(input)) throw new Error("simulation review: payload must be an object");
-
-  const checks: [keyof typeof input, string][] = [
-    ["feedback_applied", "the requested change was not fully applied to the document"],
-    ["physics_intact", "the physics/math is incorrect or inconsistent with the displayed formulas"],
-    ["layout_intact", "the required page layout (header band, formulas strip, height-filling non-scrolling simulation area) is broken"],
-    ["simulation_works", "the simulation no longer runs correctly (broken controls, animation, or readouts)"],
-  ];
-
-  const problems = Array.isArray(input.problems)
-    ? input.problems.map((p) => (typeof p === "string" ? p.trim() : "")).filter(Boolean)
-    : [];
-
-  const failedChecks = checks.filter(([key]) => input[key] !== true);
-  const passed = input.ok === true && failedChecks.length === 0;
-
-  if (!passed && problems.length === 0) {
-    for (const [, message] of failedChecks) problems.push(message);
-    if (problems.length === 0) {
-      problems.push("the integrity review rejected the revision without giving specifics");
-    }
-  }
-
-  return { ok: passed, problems };
 }
 
 // ─── HTML extraction + static validation ─────────────────────────────────────
