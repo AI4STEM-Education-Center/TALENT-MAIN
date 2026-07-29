@@ -66,6 +66,7 @@ export function AdminQuizPoolClient({
   const [editingTopicId, setEditingTopicId] = useState<string | null>(null);
   const [editTopicName, setEditTopicName] = useState("");
   const [promoteBusyId, setPromoteBusyId] = useState<string | null>(null);
+  const [deleteBusyId, setDeleteBusyId] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
   // Pool tab opens with every topic collapsed (quizzes hidden) — click a topic
   // header to reveal its quizzes. Topic-label management is collapsed too.
@@ -168,6 +169,42 @@ export function AdminQuizPoolClient({
       setMsg(`"${data.name}" copied to the global pool. The teacher's original stays independent.`);
     } finally {
       setPromoteBusyId(null);
+    }
+  }
+
+  async function deleteTeacherQuiz(quiz: TeacherQuiz) {
+    if (deleteBusyId !== null) return;
+    const owner = `${quiz.teacher.user.firstName} ${quiz.teacher.user.lastName}`.trim();
+    const ok = await confirm({
+      title: `Delete ${owner || "this teacher"}'s quiz?`,
+      description: (
+        <>
+          This permanently deletes <strong>&quot;{quiz.name}&quot;</strong>, its questions, class
+          assignments, and generated simulations from the teacher&apos;s account. Students&apos;
+          historical attempts and results are kept, and any pool copy remains independent. This
+          cannot be undone.
+        </>
+      ),
+      confirmText: "Delete teacher quiz",
+      variant: "destructive",
+    });
+    if (!ok) return;
+
+    setDeleteBusyId(quiz.id);
+    setMsg("");
+    try {
+      const res = await fetch(`/api/quizzes/${quiz.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setMsg(data.error ?? "Failed to delete the teacher quiz.");
+        return;
+      }
+      setTeacherQuizzes((prev) => prev.filter((q) => q.id !== quiz.id));
+      setMsg(`Deleted "${quiz.name}" from ${owner || "the teacher"}'s account.`);
+    } catch {
+      setMsg("Failed to delete the teacher quiz.");
+    } finally {
+      setDeleteBusyId(null);
     }
   }
 
@@ -371,9 +408,26 @@ export function AdminQuizPoolClient({
                       {quiz.alreadyPromoted && <Badge variant="success">In pool</Badge>}
                     </div>
                   </div>
-                  <Button size="sm" variant="outline" className="shrink-0" disabled={promoteBusyId === quiz.id} onClick={() => promote(quiz.id)}>
-                    <ArrowUpToLine className="size-3" /> {promoteBusyId === quiz.id ? "Copying…" : quiz.alreadyPromoted ? "Copy again" : "Add to pool"}
-                  </Button>
+                  <div className="flex shrink-0 gap-1">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={promoteBusyId === quiz.id || deleteBusyId === quiz.id}
+                      onClick={() => promote(quiz.id)}
+                    >
+                      <ArrowUpToLine className="size-3" />
+                      {promoteBusyId === quiz.id ? "Copying…" : quiz.alreadyPromoted ? "Copy again" : "Add to pool"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={promoteBusyId === quiz.id || deleteBusyId === quiz.id}
+                      onClick={() => deleteTeacherQuiz(quiz)}
+                    >
+                      <Trash2 className="size-3 text-destructive" />
+                      {deleteBusyId === quiz.id ? "Deleting…" : "Delete"}
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             ))}

@@ -6,7 +6,7 @@ import { GET as LIST, POST } from "@/app/api/quizzes/route";
 import { GET as DETAIL, PATCH, DELETE } from "@/app/api/quizzes/[id]/route";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { resetDb, createTeacher } from "./db";
+import { resetDb, createTeacher, createStudent, createClass } from "./db";
 
 const mockAuth = vi.mocked(auth);
 
@@ -183,6 +183,16 @@ describe("PATCH /api/quizzes/[id]", () => {
     expect(body.name).toBe("New");
     expect(body.topicId).toBeNull();
   });
+
+  it("does not let an admin edit a teacher quiz", async () => {
+    const { teacher } = await createTeacher();
+    const quiz = await prisma.quiz.create({ data: { name: "Teacher Quiz", teacherId: teacher.id } });
+    asAdmin();
+    expect((await PATCH(jsonReq({ name: "Admin Rename" }), params(quiz.id))).status).toBe(404);
+    expect(await prisma.quiz.findUnique({ where: { id: quiz.id } })).toMatchObject({
+      name: "Teacher Quiz",
+    });
+  });
 });
 
 describe("DELETE /api/quizzes/[id]", () => {
@@ -199,5 +209,38 @@ describe("DELETE /api/quizzes/[id]", () => {
     asTeacher(user.id);
     expect((await DELETE({} as never, params(quiz.id))).status).toBe(200);
     expect(await prisma.quiz.findUnique({ where: { id: quiz.id } })).toBeNull();
+  });
+
+  it("lets an admin delete a teacher quiz while preserving history and an independent pool copy", async () => {
+    const { teacher } = await createTeacher();
+    const cls = await createClass(teacher.id);
+    const { student } = await createStudent();
+    const quiz = await prisma.quiz.create({ data: { name: "Teacher Quiz", teacherId: teacher.id } });
+    const question = await prisma.question.create({ data: { text: "Q", quizId: quiz.id } });
+    await prisma.classQuiz.create({ data: { classId: cls.id, quizId: quiz.id } });
+    const attempt = await prisma.quizAttempt.create({
+      data: {
+        studentId: student.id,
+        classId: cls.id,
+        quizId: quiz.id,
+        completedAt: new Date(),
+        score: 80,
+      },
+    });
+    const poolCopy = await prisma.quiz.create({
+      data: { name: "Teacher Quiz", teacherId: null, sourceQuizId: quiz.id },
+    });
+
+    asAdmin();
+    expect((await DELETE({} as never, params(quiz.id))).status).toBe(200);
+
+    expect(await prisma.quiz.findUnique({ where: { id: quiz.id } })).toBeNull();
+    expect(await prisma.question.findUnique({ where: { id: question.id } })).toBeNull();
+    expect(await prisma.classQuiz.count({ where: { quizId: quiz.id } })).toBe(0);
+    expect(await prisma.quiz.findUnique({ where: { id: poolCopy.id } })).not.toBeNull();
+    expect(await prisma.quizAttempt.findUnique({ where: { id: attempt.id } })).toMatchObject({
+      quizId: null,
+      score: 80,
+    });
   });
 });
