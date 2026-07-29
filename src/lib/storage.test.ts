@@ -10,6 +10,9 @@ import {
   buildQuizExtractionPdfKey,
   buildQuizExtractionPageKey,
   buildQuizExtractionFigureKey,
+  buildQuizExtractionOptionImageKey,
+  buildSimulationKey,
+  getS3KeyPrefix,
   quizExtractionPrefix,
 } from "./storage";
 
@@ -19,6 +22,7 @@ afterEach(() => {
   delete process.env.LEARNING_MATERIAL_MAX_BYTES;
   delete process.env.AWS_S3_BUCKET;
   delete process.env.AWS_REGION;
+  delete process.env.S3_KEY_PREFIX;
 });
 
 describe("sanitizeFilename", () => {
@@ -69,6 +73,40 @@ describe("buildStorageKey / buildPageStorageKey", () => {
     expect(buildPageStorageKey("t1", "c1", "m1", 3)).toBe(
       "learning-materials/t1/c1/m1/pages/page-3.png"
     );
+  });
+});
+
+describe("S3 key namespace", () => {
+  it("normalizes a configured prefix and applies it to every managed key family", () => {
+    process.env.S3_KEY_PREFIX = "/dev//";
+
+    expect(getS3KeyPrefix()).toBe("dev/");
+    expect(buildStorageKey("t1", "c1", "m1", "notes.pdf")).toBe(
+      "dev/learning-materials/t1/c1/m1/notes.pdf"
+    );
+    expect(buildPageStorageKey("t1", "c1", "m1", 1)).toBe(
+      "dev/learning-materials/t1/c1/m1/pages/page-1.png"
+    );
+    expect(buildQuizExtractionPdfKey(null, "q1", "e1", "quiz.pdf")).toBe(
+      "dev/quiz-extractions/pool/q1/e1/quiz.pdf"
+    );
+    expect(buildQuizExtractionPageKey(null, "q1", "e1", 1)).toBe(
+      "dev/quiz-extractions/pool/q1/e1/pages/page-1.png"
+    );
+    expect(buildQuizExtractionFigureKey(null, "q1", "e1", 0)).toBe(
+      "dev/quiz-extractions/pool/q1/e1/figures/figure-0.png"
+    );
+    expect(buildQuizExtractionOptionImageKey(null, "q1", "e1", 0, 1)).toBe(
+      "dev/quiz-extractions/pool/q1/e1/figures/option-0-1.png"
+    );
+    expect(buildSimulationKey(null, "q1", "question1", 1)).toBe(
+      "dev/simulations/pool/q1/question1/v1.html"
+    );
+  });
+
+  it("rejects unsafe namespace segments", () => {
+    process.env.S3_KEY_PREFIX = "../dev";
+    expect(() => getS3KeyPrefix()).toThrow(/safe path segments/);
   });
 });
 

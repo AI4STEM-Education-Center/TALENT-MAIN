@@ -11,6 +11,33 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 const DEFAULT_MAX_BYTES = 50 * 1024 * 1024;
 const PRESIGN_EXPIRES_SEC = 3600;
 
+/**
+ * Optional namespace for every object this deployment creates. The compose
+ * stacks use `prod/` and `dev/` so their independent databases and garbage
+ * collectors can safely share the same bucket. An empty prefix remains the
+ * local/backward-compatible default for previously stored full keys.
+ */
+export function getS3KeyPrefix(): string {
+  const raw = process.env.S3_KEY_PREFIX?.trim();
+  if (!raw) return "";
+
+  const segments = raw.split("/").filter(Boolean);
+  if (
+    segments.length === 0 ||
+    segments.some(
+      (segment) =>
+        segment === "." || segment === ".." || !/^[a-zA-Z0-9._-]+$/.test(segment)
+    )
+  ) {
+    throw new Error("S3_KEY_PREFIX must contain only safe path segments");
+  }
+  return `${segments.join("/")}/`;
+}
+
+function prefixedS3Key(key: string): string {
+  return `${getS3KeyPrefix()}${key}`;
+}
+
 export function getMaxUploadBytes(): number {
   const raw = process.env.LEARNING_MATERIAL_MAX_BYTES;
   if (!raw) return DEFAULT_MAX_BYTES;
@@ -25,11 +52,13 @@ export function sanitizeFilename(name: string): string {
 
 export function buildStorageKey(teacherId: string, classId: string, materialId: string, originalName: string): string {
   const safe = sanitizeFilename(originalName);
-  return `learning-materials/${teacherId}/${classId}/${materialId}/${safe}`;
+  return prefixedS3Key(`learning-materials/${teacherId}/${classId}/${materialId}/${safe}`);
 }
 
 export function buildPageStorageKey(teacherId: string, classId: string, materialId: string, pageNumber: number): string {
-  return `learning-materials/${teacherId}/${classId}/${materialId}/pages/page-${pageNumber}.png`;
+  return prefixedS3Key(
+    `learning-materials/${teacherId}/${classId}/${materialId}/pages/page-${pageNumber}.png`
+  );
 }
 
 /**
@@ -58,7 +87,9 @@ export function buildQuizExtractionPdfKey(
   originalName: string
 ): string {
   const safe = sanitizeFilename(originalName);
-  return `quiz-extractions/${quizExtractionScope(teacherId)}/${quizId}/${extractionId}/${safe}`;
+  return prefixedS3Key(
+    `quiz-extractions/${quizExtractionScope(teacherId)}/${quizId}/${extractionId}/${safe}`
+  );
 }
 
 export function buildQuizExtractionPageKey(
@@ -67,7 +98,9 @@ export function buildQuizExtractionPageKey(
   extractionId: string,
   pageNumber: number
 ): string {
-  return `quiz-extractions/${quizExtractionScope(teacherId)}/${quizId}/${extractionId}/pages/page-${pageNumber}.png`;
+  return prefixedS3Key(
+    `quiz-extractions/${quizExtractionScope(teacherId)}/${quizId}/${extractionId}/pages/page-${pageNumber}.png`
+  );
 }
 
 export function buildQuizExtractionFigureKey(
@@ -76,7 +109,9 @@ export function buildQuizExtractionFigureKey(
   extractionId: string,
   questionIndex: number
 ): string {
-  return `quiz-extractions/${quizExtractionScope(teacherId)}/${quizId}/${extractionId}/figures/figure-${questionIndex}.png`;
+  return prefixedS3Key(
+    `quiz-extractions/${quizExtractionScope(teacherId)}/${quizId}/${extractionId}/figures/figure-${questionIndex}.png`
+  );
 }
 
 /**
@@ -91,7 +126,9 @@ export function buildQuizExtractionOptionImageKey(
   questionIndex: number,
   optionIndex: number
 ): string {
-  return `quiz-extractions/${quizExtractionScope(teacherId)}/${quizId}/${extractionId}/figures/option-${questionIndex}-${optionIndex}.png`;
+  return prefixedS3Key(
+    `quiz-extractions/${quizExtractionScope(teacherId)}/${quizId}/${extractionId}/figures/option-${questionIndex}-${optionIndex}.png`
+  );
 }
 
 /** Prefix covering every object of one extraction (PDF, pages, figures). */
@@ -111,7 +148,9 @@ export function buildSimulationKey(
   questionId: string,
   version: number
 ): string {
-  return `simulations/${quizExtractionScope(teacherId)}/${quizId}/${questionId}/v${version}.html`;
+  return prefixedS3Key(
+    `simulations/${quizExtractionScope(teacherId)}/${quizId}/${questionId}/v${version}.html`
+  );
 }
 
 export function getS3Config(): { bucket: string; region: string } {

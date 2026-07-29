@@ -87,6 +87,23 @@ describe("classifyForGc", () => {
     });
   });
 
+  describe("environment namespace", () => {
+    const devKey = "dev/simulations/t1/quiz1/q1/v1.html";
+
+    it("classifies keys inside the active namespace against full stored references", () => {
+      expect(
+        classifyForGc(devKey, refs({ simulationKeys: new Set([devKey]) }), "dev/")
+      ).toBe("keep");
+      expect(classifyForGc(devKey, refs(), "dev/")).toBe("delete");
+    });
+
+    it("never deletes an object outside the active namespace", () => {
+      expect(classifyForGc("simulations/t1/quiz1/q1/v1.html", refs(), "dev/")).toBe(
+        "keep"
+      );
+    });
+  });
+
   it("never touches prefixes it does not manage", () => {
     expect(classifyForGc("backups/2026-07-01.sqlite", refs())).toBe("keep");
     expect(classifyForGc("some-random-object.txt", refs())).toBe("keep");

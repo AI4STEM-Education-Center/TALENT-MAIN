@@ -112,6 +112,7 @@ LEARNING_MATERIAL_MAX_BYTES="52428800"
 | `LEARNING_MATERIAL_MAX_BYTES` | Max upload size for learning materials in bytes (default 52428800 = 50 MiB) |
 | `AWS_REGION` | AWS S3 region for bucket operations (e.g., `us-east-1`) |
 | `AWS_S3_BUCKET` | AWS S3 bucket name (e.g., `talent4ai-101561168021-us-east-1-an`) |
+| `S3_KEY_PREFIX` | Optional namespace for deployments sharing one bucket. Compose fixes prod at `prod/` and dev at `dev/` so their independent garbage collectors cannot delete each other's objects. Existing full keys stored in the database remain readable. |
 | `AWS_S3_ENDPOINT` | Optional: Endpoint URL for S3 alternative providers (MinIO / LocalStack) |
 | `AWS_ACCESS_KEY_ID` | Optional: Static access key if not using an IAM role on EC2 |
 | `AWS_SECRET_ACCESS_KEY` | Optional: Static secret key if not using an IAM role on EC2 |
