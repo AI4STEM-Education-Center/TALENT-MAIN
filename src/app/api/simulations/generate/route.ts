@@ -1,17 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { canManage, getContentActor } from "@/lib/quiz-access";
 import { triggerSimulations } from "@/lib/simulation-trigger";
 
 export const runtime = "nodejs";
 
 type Scope =
-  | { scope: "pool" }
   | { scope: "quiz"; quizId: string }
   | { scope: "question"; questionId: string; force: boolean };
 
 function parseScope(body: Record<string, unknown>): Scope | null {
-  if (body.scope === "pool") return { scope: "pool" };
   if (body.scope === "quiz" && typeof body.quizId === "string" && body.quizId.trim()) {
     return { scope: "quiz", quizId: body.quizId.trim() };
   }
@@ -22,22 +20,22 @@ function parseScope(body: Record<string, unknown>): Scope | null {
 }
 
 /**
- * POST /api/admin/simulations/generate
- * Enqueue simulation generation at one of three scopes:
- *   { scope: "pool" }                          — every global-pool question
+ * POST /api/simulations/generate
+ * Content-owner trigger for simulation generation, from the quiz editor:
  *   { scope: "quiz", quizId }                  — every question of one quiz
  *   { scope: "question", questionId, force? }  — one question; force re-generates
  *                                                even a READY/DECLINED simulation
- * Creates missing QuestionSimulation rows and re-enqueues FAILED ones; READY,
- * DECLINED, and in-flight rows are skipped unless force (question scope only).
  *
- * Teachers use the ownership-checked ../../simulations/generate instead.
+ * Scoped by the usual canManage rule — a teacher may only generate on their own
+ * quizzes, an admin only on the pool. A teacher who wants simulations on a pool
+ * quiz imports it first; that copy's artifacts are independent of the pool's
+ * (see deepCopyQuiz), so regenerating here never touches the global version.
+ * Force is question-scoped on purpose, so a whole-quiz trigger can never
+ * discard settled work.
  */
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const actor = await getContentActor();
+  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   let body: Record<string, unknown>;
   try {
@@ -48,29 +46,31 @@ export async function POST(req: NextRequest) {
   const scope = parseScope(body);
   if (!scope) {
     return NextResponse.json(
-      { error: "scope must be 'pool', 'quiz' (with quizId), or 'question' (with questionId)" },
+      { error: "scope must be 'quiz' (with quizId) or 'question' (with questionId)" },
       { status: 400 }
     );
   }
 
-  // Resolve the target question ids.
   let questionIds: string[];
-  if (scope.scope === "pool") {
-    const questions = await prisma.question.findMany({
-      where: { quiz: { teacherId: null } },
-      select: { id: true },
-    });
-    questionIds = questions.map((q) => q.id);
-  } else if (scope.scope === "quiz") {
+  if (scope.scope === "quiz") {
     const quiz = await prisma.quiz.findUnique({
       where: { id: scope.quizId },
       include: { questions: { select: { id: true } } },
     });
-    if (!quiz) return NextResponse.json({ error: "Quiz not found" }, { status: 404 });
+    // 404, not 403: an unmanageable quiz is indistinguishable from a missing
+    // one here, matching /api/quizzes/[id].
+    if (!quiz || !canManage(actor, quiz)) {
+      return NextResponse.json({ error: "Quiz not found" }, { status: 404 });
+    }
     questionIds = quiz.questions.map((q) => q.id);
   } else {
-    const question = await prisma.question.findUnique({ where: { id: scope.questionId } });
-    if (!question) return NextResponse.json({ error: "Question not found" }, { status: 404 });
+    const question = await prisma.question.findUnique({
+      where: { id: scope.questionId },
+      include: { quiz: { select: { teacherId: true } } },
+    });
+    if (!question || !canManage(actor, question.quiz)) {
+      return NextResponse.json({ error: "Question not found" }, { status: 404 });
+    }
     questionIds = [question.id];
   }
 

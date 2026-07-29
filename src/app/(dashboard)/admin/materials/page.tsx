@@ -26,6 +26,8 @@ interface Material {
   totalPages: number | null;
   errorMessage: string | null;
   aiModel: string | null;
+  aiProvider: string | null;
+  aiServiceTier: string | null;
   aiTtftMs: number | null;
   aiTokens: number | null;
   aiTotalMs: number | null;
@@ -308,6 +310,8 @@ export default function AdminMaterialsPage() {
                           <AiMetricsLine
                             metrics={{
                               model: mat.aiModel,
+                              provider: mat.aiProvider,
+                              serviceTier: mat.aiServiceTier,
                               ttftMs: mat.aiTtftMs,
                               totalMs: mat.aiTotalMs,
                               tokens: mat.aiTokens,

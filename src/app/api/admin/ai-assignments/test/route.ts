@@ -79,12 +79,16 @@ export async function POST(req: Request) {
       success: true,
       latencyMs: metrics.totalMs,
       ttftMs: metrics.ttftMs,
+      // null when the response wasn't delivered incrementally — see
+      // AiCallMetrics.generationMs.
+      generationMs: metrics.generationMs,
       tokens: metrics.completionTokens,
       tokensEstimated: metrics.tokensEstimated,
       tokensPerSec: metrics.tokensPerSec,
       reply: text.trim(),
       model: provider.model,
       providerType: provider.providerType,
+      serviceTier: provider.serviceTier,
     });
   } catch (error: any) {
     logApiError("AI_ASSIGNMENT_TEST", error);

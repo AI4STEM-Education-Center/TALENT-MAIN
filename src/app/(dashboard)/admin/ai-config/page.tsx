@@ -99,7 +99,7 @@ interface ModelForm {
 
 const USE_CASE_LABELS: Record<string, string> = {
   pdf_description: "PDF Description Generation",
-  description_generation: "Description Generation",
+  description_generation: "Exam Summary Generation",
   recommendation: "Recommendation",
   quiz_extraction: "Quiz PDF Extraction",
   simulation_generation: "Question Simulation Generation",
@@ -526,7 +526,10 @@ export default function AiConfigPage() {
 
       const metricsLine = formatAiMetrics({
         model: data.model,
+        provider: data.providerType,
+        serviceTier: data.serviceTier,
         ttftMs: data.ttftMs,
+        generationMs: data.generationMs,
         totalMs: data.latencyMs,
         tokens: data.tokens,
         tokensEstimated: data.tokensEstimated,
