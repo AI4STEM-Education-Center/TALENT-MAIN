@@ -5,8 +5,17 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { RotateCcw } from "lucide-react";
 import { ExamResultsView } from "@/components/student/ExamResultsView";
-import { RESULT_STATUS, type ResultStatus } from "@/lib/exam-results";
-import { presignStoredRecommendations } from "@/lib/exam-results-engine";
+import {
+  RESULT_STATUS,
+  parseReviewSnapshot,
+  snapshotToStudentMistakes,
+  type PresignedRecommendations,
+  type ResultStatus,
+} from "@/lib/exam-results";
+import {
+  presignStoredRecommendations,
+  presignStudentMistakes,
+} from "@/lib/exam-results-engine";
 
 export default async function ExamResultsPage({
   params,
@@ -30,18 +39,28 @@ export default async function ExamResultsPage({
   const examResult = await prisma.examResult.findUnique({ where: { quizAttemptId: attemptId } });
   if (!examResult || examResult.studentId !== student.id) notFound();
 
-  // Blind results: the student sees only their score %, the AI summary, and the
-  // holistic study recommendations — never the per-question review or the
-  // correct answers. So we don't parse or presign the question snapshot here.
+  // Build the student-safe review before crossing the server/client boundary.
+  // The transform keeps missed prompts and submitted responses only; correct
+  // answers, unselected choices, grading flags, and raw storage keys stay out.
+  const mistakesSource = snapshotToStudentMistakes(
+    parseReviewSnapshot(examResult.reviewSnapshot)
+  );
   const recsReady = examResult.recommendationsStatus === RESULT_STATUS.READY;
-  const presigned = recsReady
-    ? await presignStoredRecommendations(examResult.recommendations)
-    : { items: [], truncated: false };
+  const [presigned, mistakes] = await Promise.all([
+    recsReady
+      ? presignStoredRecommendations(examResult.recommendations)
+      : Promise.resolve<PresignedRecommendations>({
+          items: [],
+          truncated: false,
+        }),
+    presignStudentMistakes(mistakesSource),
+  ]);
 
   return (
     <ExamResultsView
       attemptId={attemptId}
       score={examResult.score}
+      mistakes={mistakes}
       initial={{
         summary: examResult.summary,
         summaryStatus: examResult.summaryStatus as ResultStatus,

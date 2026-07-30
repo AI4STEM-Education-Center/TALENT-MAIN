@@ -77,6 +77,56 @@ export type SnapshotQuestion = {
 export type ReviewSnapshot = { questions: SnapshotQuestion[] };
 
 /**
+ * Server-side, answer-key-free representation of one missed question. Storage
+ * keys are kept only long enough to presign the images; callers must convert
+ * this to StudentMistakeView before passing it to a client component.
+ */
+export type StudentMistakeChoiceSource = {
+  text: string;
+  imageStorageKey: string | null;
+  imageAlt: string | null;
+};
+export type StudentMistakeSource = {
+  questionNumber: number;
+  text: string;
+  figureStorageKey: string | null;
+  figureAlt: string | null;
+  response:
+    | {
+        kind: "choices";
+        choices: StudentMistakeChoiceSource[];
+      }
+    | {
+        kind: "numeric";
+        value: number | null;
+        unit: string | null;
+      };
+};
+
+/** Client-safe missed-question view. It contains URLs, never raw storage keys. */
+export type StudentMistakeChoiceView = {
+  text: string;
+  imageUrl: string | null;
+  imageAlt: string | null;
+};
+export type StudentMistakeView = {
+  questionNumber: number;
+  text: string;
+  figureUrl: string | null;
+  figureAlt: string | null;
+  response:
+    | {
+        kind: "choices";
+        choices: StudentMistakeChoiceView[];
+      }
+    | {
+        kind: "numeric";
+        value: number | null;
+        unit: string | null;
+      };
+};
+
+/**
  * A question as it exists at submit time (live options carry ids + isCorrect).
  * The numeric/figure fields are OPTIONAL so existing callers (e.g. the inline
  * results view in the student quiz page) compile unchanged.
@@ -171,6 +221,75 @@ export function parseReviewSnapshot(raw: string | null): ReviewSnapshot {
   } catch {
     return { questions: [] };
   }
+}
+
+/**
+ * Reduce the durable teacher review snapshot to the exact evidence a student
+ * may see: missed prompts and only the responses they submitted. Correct
+ * answers, unselected choices, correctness flags, numeric solutions/tolerances,
+ * question ids, and teacher misconception labels are deliberately absent.
+ */
+export function snapshotToStudentMistakes(
+  snapshot: ReviewSnapshot
+): StudentMistakeSource[] {
+  return snapshot.questions.flatMap<StudentMistakeSource>((question, index) => {
+    if (question.isCorrect) return [];
+
+    const base = {
+      questionNumber: index + 1,
+      text: typeof question.text === "string" ? question.text : "",
+      figureStorageKey:
+        typeof question.figureStorageKey === "string"
+          ? question.figureStorageKey
+          : null,
+      figureAlt:
+        typeof question.figureAlt === "string" ? question.figureAlt : null,
+    };
+
+    if (question.answerMode === "NUMERIC") {
+      return [
+        {
+          ...base,
+          response: {
+            kind: "numeric" as const,
+            value:
+              typeof question.submittedNumeric === "number" &&
+              Number.isFinite(question.submittedNumeric)
+                ? question.submittedNumeric
+                : null,
+            unit: typeof question.unit === "string" ? question.unit : null,
+          },
+        },
+      ];
+    }
+
+    const options = Array.isArray(question.options) ? question.options : [];
+    return [
+      {
+        ...base,
+        response: {
+          kind: "choices" as const,
+          choices: options.flatMap((option) =>
+            option?.selected === true
+              ? [
+                  {
+                    text: typeof option.text === "string" ? option.text : "",
+                    imageStorageKey:
+                      typeof option.imageStorageKey === "string"
+                        ? option.imageStorageKey
+                        : null,
+                    imageAlt:
+                      typeof option.imageAlt === "string"
+                        ? option.imageAlt
+                        : null,
+                  },
+                ]
+              : []
+          ),
+        },
+      },
+    ];
+  });
 }
 
 // ─── Snapshot → generator inputs ────────────────────────────────────────────────
