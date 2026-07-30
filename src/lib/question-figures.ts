@@ -1,10 +1,10 @@
-// Presigning helpers for question figures (images cropped from quiz PDFs).
-// Kept tiny and tolerant: a question whose figure can't be presigned (e.g. the
-// underlying object was deleted, or S3 config is missing) simply loses its
+// URL-signing helpers for question figures (images cropped from quiz PDFs).
+// Kept tiny and tolerant: a question whose figure can't be signed (e.g. the
+// underlying object was deleted, or storage config is missing) simply loses its
 // `figureUrl` rather than failing the whole request — mirroring the
 // drop-on-failure tolerance of `mapPresignedRecommendations` in exam-results.
 
-import { presignGetUrl, getS3Config } from "@/lib/storage";
+import { signObjectReadUrl, getS3Config } from "@/lib/storage";
 
 /** The figure-location columns we read off a Question row. */
 type FigureSource = { figureStorageKey: string | null; figureBucket: string | null };
@@ -18,9 +18,9 @@ export async function presignQuestionFigure(q: FigureSource): Promise<string | n
   if (!q.figureStorageKey) return null;
   try {
     const bucket = q.figureBucket ?? getS3Config().bucket;
-    return await presignGetUrl(bucket, q.figureStorageKey, 3600);
+    return await signObjectReadUrl(bucket, q.figureStorageKey, 3600);
   } catch {
-    // Object gone / S3 misconfigured / presign error — drop the figure silently.
+    // Object gone / storage misconfigured / signing error — drop the figure silently.
     return null;
   }
 }
@@ -53,7 +53,7 @@ export async function presignOptionImage(o: OptionImageSource): Promise<string |
   if (!o.imageStorageKey) return null;
   try {
     const bucket = o.imageBucket ?? getS3Config().bucket;
-    return await presignGetUrl(bucket, o.imageStorageKey, 3600);
+    return await signObjectReadUrl(bucket, o.imageStorageKey, 3600);
   } catch {
     return null;
   }

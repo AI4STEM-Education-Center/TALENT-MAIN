@@ -7,6 +7,7 @@ import {
   buildPageStorageKey,
   materialPrefixFromStorageKey,
   getS3Config,
+  getAwsCredentials,
   quizExtractionScope,
   buildQuizExtractionPdfKey,
   buildQuizExtractionPageKey,
@@ -16,14 +17,19 @@ import {
   getS3KeyPrefix,
   quizExtractionPrefix,
 } from "./storage";
+import { TEST_AWS_ENV } from "../../vitest.setup";
 
 const DEFAULT_MAX_BYTES = 50 * 1024 * 1024;
 
+// Restore the shared baseline rather than deleting the AWS variables: vitest
+// runs spec files serially in one worker (fileParallelism: false), so unsetting
+// them here would leave later files without the credentials storage.ts now
+// requires.
 afterEach(() => {
   delete process.env.LEARNING_MATERIAL_MAX_BYTES;
-  delete process.env.AWS_S3_BUCKET;
-  delete process.env.AWS_REGION;
   delete process.env.S3_KEY_PREFIX;
+  delete process.env.AWS_SESSION_TOKEN;
+  Object.assign(process.env, TEST_AWS_ENV);
 });
 
 describe("sanitizeFilename", () => {
@@ -226,5 +232,44 @@ describe("maxDerivedPageBytes", () => {
     process.env.LEARNING_MATERIAL_MAX_BYTES = String(10 * MB);
     expect(maxDerivedPageBytes(1)).toBe(40 * MB);
     delete process.env.LEARNING_MATERIAL_MAX_BYTES;
+  });
+});
+
+describe("getAwsCredentials", () => {
+  it("returns the static key pair from the environment", () => {
+    process.env.AWS_ACCESS_KEY_ID = "AKIA_EXAMPLE";
+    process.env.AWS_SECRET_ACCESS_KEY = "secret";
+    expect(getAwsCredentials()).toEqual({
+      accessKeyId: "AKIA_EXAMPLE",
+      secretAccessKey: "secret",
+    });
+  });
+
+  it("includes a session token only when one is set", () => {
+    process.env.AWS_SESSION_TOKEN = "temp-token";
+    expect(getAwsCredentials()).toMatchObject({ sessionToken: "temp-token" });
+  });
+
+  // The whole point of the change: no silent fall-through to an EC2 instance
+  // role, so an incomplete .env must fail loudly on either half of the pair.
+  it("throws when either half of the key pair is missing", () => {
+    delete process.env.AWS_ACCESS_KEY_ID;
+    expect(() => getAwsCredentials()).toThrow(
+      /AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY/
+    );
+
+    process.env.AWS_ACCESS_KEY_ID = "AKIA_EXAMPLE";
+    delete process.env.AWS_SECRET_ACCESS_KEY;
+    expect(() => getAwsCredentials()).toThrow(
+      /AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY/
+    );
+  });
+
+  it("treats whitespace-only values as missing", () => {
+    process.env.AWS_ACCESS_KEY_ID = "   ";
+    process.env.AWS_SECRET_ACCESS_KEY = "secret";
+    expect(() => getAwsCredentials()).toThrow(
+      /AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY/
+    );
   });
 });

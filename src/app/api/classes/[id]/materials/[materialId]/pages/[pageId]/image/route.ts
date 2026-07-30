@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { presignGetUrl, getS3Config } from "@/lib/storage";
+import { signObjectReadUrl, getS3Config } from "@/lib/storage";
 
 export const runtime = "nodejs";
 
@@ -45,7 +45,7 @@ export async function GET(
 
   try {
     const bucket = getS3Config().bucket;
-    const url = await presignGetUrl(bucket, pageRecord.storageKey, 3600);
+    const url = await signObjectReadUrl(bucket, pageRecord.storageKey, 3600);
     return NextResponse.json({ url });
   } catch (e) {
     return NextResponse.json(

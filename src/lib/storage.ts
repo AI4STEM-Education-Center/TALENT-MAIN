@@ -7,7 +7,10 @@ import {
   ListObjectsV2Command,
   CopyObjectCommand,
 } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+// Both packages export `getSignedUrl` with different signatures, so each import
+// is aliased to the delivery path it belongs to.
+import { getSignedUrl as getS3PresignedUrl } from "@aws-sdk/s3-request-presigner";
+import { getSignedUrl as getCloudFrontSignedUrl } from "@aws-sdk/cloudfront-signer";
 
 const DEFAULT_MAX_BYTES = 50 * 1024 * 1024;
 const PRESIGN_EXPIRES_SEC = 3600;
@@ -194,6 +197,31 @@ export function getS3Config(): { bucket: string; region: string } {
   return { bucket, region };
 }
 
+/**
+ * Static credentials, read straight from the environment. Deliberately NOT the
+ * AWS SDK's default provider chain: passing no `credentials` let the SDK fall
+ * through to the EC2 instance metadata service, so which identity a deployment
+ * used silently depended on the host it happened to run on. Requiring the keys
+ * here means a misconfigured `.env` fails with this message instead of
+ * half-working. `AWS_SESSION_TOKEN` is optional and only set for temporary STS
+ * credentials.
+ */
+export function getAwsCredentials(): {
+  accessKeyId: string;
+  secretAccessKey: string;
+  sessionToken?: string;
+} {
+  const accessKeyId = process.env.AWS_ACCESS_KEY_ID?.trim();
+  const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY?.trim();
+  if (!accessKeyId || !secretAccessKey) {
+    throw new Error(
+      "S3 access requires AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in the environment (IAM instance roles are not used)"
+    );
+  }
+  const sessionToken = process.env.AWS_SESSION_TOKEN?.trim();
+  return { accessKeyId, secretAccessKey, ...(sessionToken ? { sessionToken } : {}) };
+}
+
 let s3Client: S3Client | null = null;
 
 /**
@@ -205,8 +233,12 @@ let s3Client: S3Client | null = null;
 export function getS3Client(): S3Client {
   if (!s3Client) {
     const endpoint = process.env.AWS_S3_ENDPOINT;
+    // Region comes from getS3Config() rather than a second process.env read so
+    // the client can never be built with `region: undefined` while the config
+    // check would have rejected the same environment.
     s3Client = new S3Client({
-      region: process.env.AWS_REGION,
+      region: getS3Config().region,
+      credentials: getAwsCredentials(),
       requestChecksumCalculation: "WHEN_REQUIRED",
       responseChecksumValidation: "WHEN_REQUIRED",
       ...(endpoint
@@ -218,6 +250,73 @@ export function getS3Client(): S3Client {
     });
   }
   return s3Client;
+}
+
+// ─── CloudFront delivery ──────────────────────────────────────────────────────
+// Images and PDFs are read through a CloudFront distribution whose origin is the
+// private bucket (Origin Access Control), using signed URLs so objects stay
+// non-public. Uploads are unaffected: they remain presigned S3 PUTs straight to
+// the bucket, because a CDN adds nothing to writes.
+
+export type CloudFrontConfig = { domain: string; keyPairId: string; privateKey: string };
+
+/**
+ * A `.env` consumed by Docker Compose's `env_file:` cannot hold real newlines,
+ * so the PEM arrives in one of two single-line forms. Base64 is the documented
+ * recommendation (no shell-special characters); a PEM with literal `\n` escape
+ * sequences is accepted too, since that is the other common convention.
+ */
+function normalizeCloudFrontPrivateKey(raw: string): string {
+  if (raw.includes("BEGIN")) return raw.replace(/\\n/g, "\n");
+  return Buffer.from(raw, "base64").toString("utf8");
+}
+
+/** Accepts `d111.cloudfront.net`, `https://cdn.example.org`, or a trailing slash. */
+function normalizeCloudFrontDomain(raw: string): string {
+  return raw.replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+}
+
+let cloudFrontConfig: CloudFrontConfig | null | undefined;
+
+/**
+ * Resolved CloudFront settings, or null when the CDN is not configured — local
+ * dev and MinIO/LocalStack setups serve from S3 directly. A PARTIAL
+ * configuration throws instead of falling back: signing cannot work without all
+ * three values, and silently serving from S3 would hide the mistake until
+ * someone noticed the CDN was doing nothing.
+ */
+export function getCloudFrontConfig(): CloudFrontConfig | null {
+  if (cloudFrontConfig !== undefined) return cloudFrontConfig;
+
+  const domain = process.env.CLOUDFRONT_DOMAIN?.trim();
+  const keyPairId = process.env.CLOUDFRONT_KEY_PAIR_ID?.trim();
+  const privateKey = process.env.CLOUDFRONT_PRIVATE_KEY?.trim();
+
+  if (!domain && !keyPairId && !privateKey) {
+    cloudFrontConfig = null;
+    return cloudFrontConfig;
+  }
+  if (!domain || !keyPairId || !privateKey) {
+    throw new Error(
+      "CloudFront delivery needs CLOUDFRONT_DOMAIN, CLOUDFRONT_KEY_PAIR_ID and CLOUDFRONT_PRIVATE_KEY together (leave all three empty to serve from S3)"
+    );
+  }
+
+  cloudFrontConfig = {
+    domain: normalizeCloudFrontDomain(domain),
+    keyPairId,
+    privateKey: normalizeCloudFrontPrivateKey(privateKey),
+  };
+  return cloudFrontConfig;
+}
+
+/**
+ * Percent-encode each path segment without escaping the `/` separators. Storage
+ * keys are built from `sanitizeFilename`, so they are already URL-safe, but the
+ * URL is not worth assembling by raw concatenation.
+ */
+function encodeS3KeyPath(key: string): string {
+  return key.split("/").map(encodeURIComponent).join("/");
 }
 
 export async function presignPutUpload(
@@ -235,13 +334,56 @@ export async function presignPutUpload(
     // from replacing an object after the completion endpoint HEADs it.
     IfNoneMatch: "*",
   });
-  return getSignedUrl(client, cmd, { expiresIn: PRESIGN_EXPIRES_SEC });
+  return getS3PresignedUrl(client, cmd, { expiresIn: PRESIGN_EXPIRES_SEC });
 }
 
-export async function presignGetUrl(bucket: string, key: string, expiresIn = PRESIGN_EXPIRES_SEC): Promise<string> {
+/**
+ * Signed, time-limited read URL for a stored object — the single entry point for
+ * every image and PDF the browser or a hosted model fetches.
+ *
+ * Routes through CloudFront when the CDN is configured AND the object lives in
+ * the distribution's origin bucket. The bucket is checked because rows carry
+ * their own `bucket` column (LearningMaterial, QuizPdfExtraction,
+ * Question.figureBucket, Option.imageBucket), so historical rows may name a
+ * bucket that is not behind the CDN; those must keep resolving. Everything else
+ * falls back to a presigned S3 GET, which is also the rollback path: clear the
+ * CLOUDFRONT_* variables and delivery returns to S3 with no code change.
+ *
+ * Signed CloudFront URLs are fetchable by any client, so the hosted-model
+ * consumers in vlm-engine / quiz-extraction-engine work unchanged.
+ */
+export async function signObjectReadUrl(
+  bucket: string,
+  key: string,
+  expiresIn = PRESIGN_EXPIRES_SEC
+): Promise<string> {
+  const cloudFront = getCloudFrontConfig();
+  if (cloudFront && bucket === getS3Config().bucket) {
+    return getCloudFrontSignedUrl({
+      url: `https://${cloudFront.domain}/${encodeS3KeyPath(key)}`,
+      keyPairId: cloudFront.keyPairId,
+      privateKey: cloudFront.privateKey,
+      dateLessThan: new Date(Date.now() + expiresIn * 1000).toISOString(),
+    });
+  }
+
   const client = getS3Client();
   const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
-  return getSignedUrl(client, cmd, { expiresIn });
+  return getS3PresignedUrl(client, cmd, { expiresIn });
+}
+
+/**
+ * Preserve direct S3 delivery for generated archives that are not part of the
+ * CloudFront image/PDF origin contract (for example bulk consent exports).
+ */
+export async function presignGetUrl(
+  bucket: string,
+  key: string,
+  expiresIn = PRESIGN_EXPIRES_SEC
+): Promise<string> {
+  const client = getS3Client();
+  const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
+  return getS3PresignedUrl(client, cmd, { expiresIn });
 }
 
 /**
@@ -266,9 +408,10 @@ export async function getS3ObjectAsDataUrl(bucket: string, key: string): Promise
 /**
  * Resolve a stored image into the string an `image_url` model message part
  * expects, picking the transport by provider capability. Hosted providers fetch
- * over HTTP, so they get a short-lived presigned GET URL; local providers can't
- * reach S3, so `inlineBase64` embeds the bytes as a base64 data URL instead.
- * `expiresIn` is ignored on the base64 path (inlined bytes never expire).
+ * over HTTP, so they get a short-lived signed read URL (CloudFront or S3, see
+ * `signObjectReadUrl`); local providers can't reach either, so `inlineBase64`
+ * embeds the bytes as a base64 data URL instead. `expiresIn` is ignored on the
+ * base64 path (inlined bytes never expire).
  */
 export async function resolveModelImageUrl(
   bucket: string,
@@ -277,7 +420,7 @@ export async function resolveModelImageUrl(
 ): Promise<string> {
   return opts.inlineBase64
     ? getS3ObjectAsDataUrl(bucket, key)
-    : presignGetUrl(bucket, key, opts.expiresIn);
+    : signObjectReadUrl(bucket, key, opts.expiresIn);
 }
 
 /**

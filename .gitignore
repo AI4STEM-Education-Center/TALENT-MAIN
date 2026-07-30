@@ -64,9 +64,11 @@ data/
 docker-compose.override.yml
 ec2-setup.sh
 
-# Ignore ad-hoc docs, but track the published user guide (GitHub Pages).
+# Ignore ad-hoc docs, but track the published user guide (GitHub Pages) and the
+# infrastructure setup guide (README links to it, so it has to be in the repo).
 docs/*
 !docs/site/
+!docs/SETUP.md
 
 # Deployment automation is tracked; generated state and credentials are not.
 scripts/config.env

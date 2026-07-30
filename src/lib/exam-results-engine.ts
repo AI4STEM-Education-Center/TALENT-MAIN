@@ -10,7 +10,7 @@ import { hasResearchConsent } from "./consent";
 import { resolveProvider, createOpenAIClient, type ResolvedProvider } from "./ai-provider";
 import { streamChatCompletion, streamJsonCompletion, aggregateMetrics, type AiCallMetrics } from "./ai-streaming";
 import { retryWithExponentialBackoff } from "./retry";
-import { presignGetUrl, getS3Config } from "./storage";
+import { signObjectReadUrl, getS3Config } from "./storage";
 import { presignOptionImage, presignQuestionFigure } from "./question-figures";
 import { buildQuizReviewPrompt, type ChatMessage } from "./chat-prompt";
 import {
@@ -759,7 +759,7 @@ export async function presignStoredRecommendations(
     return { items: [], truncated: stored.truncated, ...passthrough };
   }
 
-  return mapPresignedRecommendations(stored, (key) => presignGetUrl(bucket, key));
+  return mapPresignedRecommendations(stored, (key) => signObjectReadUrl(bucket, key));
 }
 
 /**
