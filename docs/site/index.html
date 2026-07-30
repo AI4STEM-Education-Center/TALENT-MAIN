@@ -271,7 +271,7 @@
   <div class="about">
     <h2>What is AI4Talent?</h2>
     <p><strong>AI4Talent</strong> is a class-based quiz platform for science education. Teachers create classes from their official roster, import quizzes from a shared global pool (or build them from a PDF, which the AI reads for you), and invite students with a secure link. Students take quizzes online and, after each attempt, receive <strong>AI-generated feedback</strong>: a performance summary, targeted study recommendations pointing at specific pages of the class's learning materials, and interactive <strong>simulations</strong> that let them explore the concepts they struggled with.</p>
-    <p>Results are intentionally <strong>“blind”</strong> — students see their overall score and personalized guidance, but never the individual questions' correct answers, so quizzes stay reusable and the focus stays on learning the concepts.</p>
+    <p>Results are intentionally <strong>“blind”</strong> — students see their overall score, the questions they missed, their own submitted responses, and personalized guidance, but never the correct answers or unselected choices. Quizzes stay reusable while students still know what to revisit.</p>
     <p>Your instance is hosted at <a href="https://dev.ai4talent.org/">dev.ai4talent.org</a>. Every path in this guide (like <a class="path" href="https://dev.ai4talent.org/login"><code>/login</code></a>) is a live link — click it to open that screen directly.</p>
   </div>
 
@@ -678,6 +678,8 @@
       <h2><span class="kicker">Feedback</span> Understand your results</h2>
       <p class="lead">Right after you submit you'll see your <strong>score</strong> — and within moments, personalized feedback generated for your attempt:</p>
       <ol class="steps">
+        <li><strong>Questions to review.</strong>
+          <p>Each question you missed is shown with the response you submitted, including numeric values and image choices. Correct answers and choices you did not select stay hidden.</p></li>
         <li><strong>AI performance summary.</strong>
           <p>A short readout of how you did and which concept areas need attention.</p></li>
         <li><strong>Study recommendations.</strong>
@@ -685,8 +687,8 @@
         <li><strong>Interactive simulations.</strong>
           <p>Hands-on concept explorations matched to the questions you saw — open one and experiment until the idea clicks.</p></li>
       </ol>
-      <div class="callout note"><span class="ic">!</span><p>You won't see per-question correct answers — that's by design. The feedback tells you <em>what to study</em>, and if retries are allowed you can hit <strong>Retry Quiz</strong> once you've reviewed.</p></div>
-      <div class="callout tip"><span class="ic">✓</span><p>Feedback keeps generating even if you close the page — find it later under <a class="path" href="https://dev.ai4talent.org/student/history"><code>Exam History</code></a>, which stores the results of every attempt.</p></div>
+      <div class="callout note"><span class="ic">!</span><p>You won't see per-question correct answers or unselected choices — that's by design. Review what you submitted, follow the study guidance, and if retries are allowed hit <strong>Retry Quiz</strong> once you're ready.</p></div>
+      <div class="callout tip"><span class="ic">✓</span><p>Feedback keeps generating even if you close the page — find the missed-question review and AI guidance later under <a class="path" href="https://dev.ai4talent.org/student/history"><code>Exam History</code></a>, which stores the results of every attempt.</p></div>
     </section>
 
     <section class="block" id="student-progress">

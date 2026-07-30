@@ -11,6 +11,7 @@ import { ScoreBanner } from "@/components/student/QuizReviewResult";
 import { HolisticRecommendations } from "@/components/student/HolisticRecommendations";
 import { AiMetricsLine } from "@/components/ai-metrics-line";
 import { SimulationRail } from "@/components/student/SimulationRail";
+import { StudentMistakesReview } from "@/components/student/StudentMistakesReview";
 import { useContentFullWidth } from "@/components/dashboard/content-width";
 import { cn } from "@/lib/utils";
 import {
@@ -19,6 +20,7 @@ import {
   type ResultStatus,
   type PresignedRecommendation,
   type SimulationRecommendationView,
+  type StudentMistakeView,
 } from "@/lib/exam-results";
 
 const RECONNECT_MS = 1000;
@@ -80,6 +82,7 @@ function SummaryBody({ ai }: { ai: AiState }) {
 export function ExamResultsView({
   attemptId,
   score,
+  mistakes,
   initial,
   backHref,
   backLabel = "Back",
@@ -87,6 +90,7 @@ export function ExamResultsView({
 }: {
   attemptId: string;
   score: number;
+  mistakes: StudentMistakeView[];
   initial: AiState;
   backHref?: string;
   backLabel?: string;
@@ -209,6 +213,8 @@ export function ExamResultsView({
               <SummaryBody ai={ai} />
             </CardContent>
           </Card>
+
+          <StudentMistakesReview mistakes={mistakes} />
 
           {/* Holistic study recommendations — up to 3 cards chosen across the
               whole attempt, with NO per-question correctness or correct answers
