@@ -5,7 +5,7 @@ import { parseStagedQuestions } from "@/lib/quiz-extraction";
 import {
   deleteS3Objects,
   listS3Objects,
-  presignGetUrl,
+  signObjectReadUrl,
   quizExtractionPrefix,
 } from "@/lib/storage";
 
@@ -69,7 +69,7 @@ export async function GET(
   const pageImages = await Promise.all(
     pages.map(async (page) => ({
       pageNumber: page.pageNumber,
-      url: await presignGetUrl(extraction.bucket, page.storageKey),
+      url: await signObjectReadUrl(extraction.bucket, page.storageKey),
     }))
   );
 

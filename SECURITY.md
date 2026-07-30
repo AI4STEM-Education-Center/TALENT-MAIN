@@ -83,8 +83,11 @@ inlining checks.
 
 - `Content-Security-Policy-Report-Only` — shipped in **report-only** mode
   first because the app relies on inline scripts (Next bootstrap, next-themes),
-  KaTeX inline styles, and cross-origin S3 images. Observe violations, wire up
-  a report endpoint, then promote to the enforced `Content-Security-Policy`.
+  KaTeX inline styles, and cross-origin CloudFront-signed images. Observe
+  violations, wire up a report endpoint, then promote to the enforced
+  `Content-Security-Policy`. Enforcing it also needs `connect-src` widened to
+  the CloudFront domain **and** the S3 host (uploads `fetch` a presigned PUT
+  directly to the bucket).
 - `X-Content-Type-Options: nosniff`
 - `X-Frame-Options: DENY`
 - `Referrer-Policy: strict-origin-when-cross-origin`
@@ -124,6 +127,28 @@ To rotate `API_KEY_ENCRYPTION_SECRET`:
 Long term, store the master key in a managed secrets service (AWS Secrets
 Manager / KMS) instead of a plain env var.
 
+### AWS and CloudFront credential rotation
+`src/lib/storage.ts` requires **static** AWS credentials from the environment
+(`getAwsCredentials()`); it no longer falls through to an EC2 instance role. That
+is deliberate — the credential source is now explicit and a bad `.env` fails
+loudly — but it trades away the instance role's automatic rotation, so these are
+long-lived secrets in `~/app/.env` that must be rotated deliberately:
+
+- `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` — the app's IAM user. Scope the
+  policy to the bucket and `S3_KEY_PREFIX` only (`docs/SETUP.md`). IAM allows
+  two active access keys per user, so rotation is zero-downtime: create the
+  second key, deploy it, verify, then delete the first.
+- `CLOUDFRONT_PRIVATE_KEY` / `CLOUDFRONT_KEY_PAIR_ID` — the trusted key group's
+  signing key. **Anyone holding this private key can mint valid read URLs for
+  every object in the bucket.** A key group accepts multiple public keys, so
+  rotation is also zero-downtime: add the new public key to the group, deploy
+  the new private key + key-pair ID, then remove the old public key once no
+  signed URL issued with it can still be in flight (one `PRESIGN_EXPIRES_SEC`
+  window, 1h by default).
+
+Never commit `private_key.pem`. Prefer `AWS_SESSION_TOKEN` with short-lived STS
+credentials where the deployment can supply them.
+
 ### Database schema apply (`docker/docker-entrypoint.sh`)
 Production no longer passes `--accept-data-loss` to `prisma db push`: additive
 changes still apply automatically, but a **destructive** change makes the push
@@ -139,7 +164,13 @@ refuses where they're missing, but verify them on each deploy:
   all stored provider/SMTP/WebDAV secrets undecryptable.** Back it up securely.
 - `ADMIN_SIGNUP_TOKEN` / teacher signup token — gate self-registration. Treat
   as secrets; rotate if leaked.
-- `NEXTAUTH_SECRET` / `AUTH_SECRET` — session signing.
+- `AUTH_SECRET` — session signing. (Only this name is read; `NEXTAUTH_SECRET` is
+  not referenced anywhere in the code.)
+- `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` — required; object storage fails
+  without them. See the rotation note above.
+- `CLOUDFRONT_DOMAIN` / `CLOUDFRONT_KEY_PAIR_ID` / `CLOUDFRONT_PRIVATE_KEY` —
+  required **together** to serve images and PDFs over the CDN; all three empty
+  falls back to presigned S3. A partial set is rejected.
 
 ---
 
