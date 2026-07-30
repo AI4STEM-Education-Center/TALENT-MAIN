@@ -7,7 +7,7 @@ import {
   getS3Config,
   listS3Objects,
   materialPrefixFromStorageKey,
-  presignGetUrl,
+  signObjectReadUrl,
 } from "@/lib/storage";
 
 export const runtime = "nodejs";
@@ -39,13 +39,13 @@ export async function GET(
   }
 
   const [fileUrl, pages] = await Promise.all([
-    presignGetUrl(material.bucket, material.storageKey).catch(() => null),
+    signObjectReadUrl(material.bucket, material.storageKey).catch(() => null),
     Promise.all(
       material.pages.map(async (page) => ({
         pageNumber: page.pageNumber,
         keyConcept: page.keyConcept,
         description: page.description,
-        url: await presignGetUrl(material.bucket, page.storageKey).catch(() => null),
+        url: await signObjectReadUrl(material.bucket, page.storageKey).catch(() => null),
       }))
     ),
   ]);
