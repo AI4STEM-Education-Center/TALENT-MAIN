@@ -9,7 +9,7 @@ import { ArrowLeft, XCircle, RotateCcw, Maximize2 } from "lucide-react";
 import { ExamResultsView } from "@/components/student/ExamResultsView";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { MathText } from "@/components/ui/math-text";
-import { RESULT_STATUS } from "@/lib/exam-results";
+import { RESULT_STATUS, type StudentMistakeView } from "@/lib/exam-results";
 import { normalizeNumericValue } from "@/lib/quiz-scoring";
 
 interface Option { id: string; text: string; isCorrect?: boolean; imageUrl?: string | null; imageAlt?: string | null }
@@ -25,10 +25,10 @@ interface Question {
   answerTolerance?: number | null;
   options: Option[];
 }
-// Blind results: the submit API returns only the score. Per-question
-// correctness and correct answers are never sent to the student.
+// The submit API identifies missed questions without returning any answer key.
 interface QuizResult {
   score: number;
+  incorrectQuestionIds: string[];
 }
 
 type Phase = "loading" | "quiz" | "results" | "error";
@@ -72,6 +72,7 @@ export default function QuizPage() {
       setQuestions(data.questions);
       setSelections({});
       setNumericInputs({});
+      setResult(null);
       setCurrentIndex(0);
       setPhase("quiz");
     } catch {
@@ -176,15 +177,59 @@ export default function QuizPage() {
   }
 
   if (phase === "results" && result) {
-    // Blind results: the inline view shows only the score %, the AI summary,
-    // and holistic study recommendations — never the per-question review or the
-    // correct answers. AI sections start PENDING and the view polls until the
-    // worker fills them in (generation continues server-side even if the
-    // student leaves). So we no longer build/pass the question snapshot.
+    const incorrectIds = new Set(result.incorrectQuestionIds);
+    const mistakes = questions.flatMap<StudentMistakeView>((question, index) => {
+      if (!incorrectIds.has(question.id)) return [];
+
+      const base = {
+        questionNumber: index + 1,
+        text: question.text,
+        figureUrl: question.figureUrl ?? null,
+        figureAlt: question.figureAlt ?? null,
+      };
+      if (question.answerMode === "NUMERIC") {
+        return [
+          {
+            ...base,
+            response: {
+              kind: "numeric" as const,
+              value: normalizeNumericValue(numericInputs[question.id]),
+              unit: question.answerUnit ?? null,
+            },
+          },
+        ];
+      }
+
+      const selectedIds = new Set(selections[question.id] ?? []);
+      return [
+        {
+          ...base,
+          response: {
+            kind: "choices" as const,
+            choices: question.options.flatMap((option) =>
+              selectedIds.has(option.id)
+                ? [
+                    {
+                      text: option.text,
+                      imageUrl: option.imageUrl ?? null,
+                      imageAlt: option.imageAlt ?? null,
+                    },
+                  ]
+                : []
+            ),
+          },
+        },
+      ];
+    });
+
+    // AI sections start PENDING and stream in independently. The missed-question
+    // review is built only from prompts/responses already held by this client
+    // plus the server's incorrect-id list, never from an answer key.
     return (
       <ExamResultsView
         attemptId={attemptId}
         score={result.score}
+        mistakes={mistakes}
         initial={{
           summary: null,
           summaryStatus: RESULT_STATUS.PENDING,
