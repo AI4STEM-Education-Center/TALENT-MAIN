@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { canManage, getContentActor } from "@/lib/quiz-access";
 import { enqueueSimulation } from "@/lib/queue";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -16,6 +17,10 @@ const MAX_FEEDBACK_CHARS = 4000;
  * feature: an enqueue failure rolls the round back and returns 500.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  // Each accepted revision re-runs generation against the AI provider.
+  const limited = rateLimit(req, "sim-feedback", 30, 60_000);
+  if (limited) return limited;
+
   const [actor, { id }] = await Promise.all([getContentActor(), params]);
   if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { canManage, getContentActor } from "@/lib/quiz-access";
 import { QuestionImportError, validateParsedQuestionBank } from "@/lib/question-import/qti";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -20,6 +21,10 @@ function serializeErrors(errors: QuestionImportError[]) {
 // POST: import a parsed QTI question bank into a quiz. Teachers import into
 // their own quizzes; admins import straight into global-pool quizzes.
 export async function POST(req: NextRequest) {
+  // Imports run parsing + validation over caller-supplied question banks.
+  const limited = rateLimit(req, "question-import", 30, 60_000);
+  if (limited) return limited;
+
   const actor = await getContentActor();
   if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 

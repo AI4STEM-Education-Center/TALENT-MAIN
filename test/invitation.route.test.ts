@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 
 vi.mock("@/lib/auth", () => ({ auth: vi.fn() }));
@@ -30,6 +31,10 @@ async function seedInvite(opts: {
   const invitation = await prisma.invitation.create({
     data: {
       classId: cls.id,
+      // Invitation.token carries no schema default any more — it is a bearer
+      // credential the API mints with crypto.randomBytes, so every creator
+      // (tests included) supplies one explicitly.
+      token: randomBytes(32).toString("base64url"),
       expiresAt: opts.expiresAt ?? null,
       maxUses: opts.maxUses ?? null,
       usedCount: opts.usedCount ?? 0,

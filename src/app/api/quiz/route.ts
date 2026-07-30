@@ -123,6 +123,18 @@ export async function PATCH(req: NextRequest) {
   if (!attempt || attempt.studentId !== student.id) {
     return NextResponse.json({ error: "Attempt not found" }, { status: 404 });
   }
+  // SECURITY: an attempt may be graded exactly once. Without this, a student
+  // could re-submit the same attemptId indefinitely — the per-class
+  // `maxAttempts` cap counts COMPLETED attempts, so replaying one attempt
+  // never consumes another. Combined with the `incorrectQuestionIds` reply
+  // below that turns submission into an answer-key oracle: guess, see which
+  // ids came back wrong, flip those, resubmit until everything is correct.
+  if (attempt.completedAt) {
+    return NextResponse.json(
+      { error: "This attempt has already been submitted." },
+      { status: 409 }
+    );
+  }
   // quizId is null only if the quiz was deleted mid-attempt — nothing left to score against.
   const quizId = attempt.quizId;
   if (!quizId) {
@@ -133,23 +145,43 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "answers must be an array" }, { status: 400 });
   }
 
-  // Fetch every answered question once (with options) — used for both scoring
-  // and the response payload.
+  // SECURITY: one answer per question. Repeating a question the student knows
+  // would otherwise inflate `correct` past the question count (20 copies of one
+  // right answer against a 5-question quiz scored 400%).
   const questionIds = answers.map((a: { questionId: string }) => a.questionId);
-  const questionsWithAnswers = await prisma.question.findMany({
-    where: { id: { in: questionIds } },
+  if (new Set(questionIds).size !== questionIds.length) {
+    return NextResponse.json(
+      { error: "Each question may be answered only once." },
+      { status: 400 }
+    );
+  }
+
+  // SECURITY: grade against THIS quiz's questions only, and take the
+  // denominator from the quiz rather than from the client's array. Loading the
+  // full set does both in one query — a submitted id belonging to another quiz
+  // simply won't resolve below, and a partial submission can no longer score
+  // 100% by omitting every question the student didn't know.
+  const quizQuestions = await prisma.question.findMany({
+    where: { quizId },
     include: { options: true },
   });
+  const answeredIds = new Set(questionIds);
+  const questionsWithAnswers = quizQuestions.filter((q) => answeredIds.has(q.id));
   const questionsById = new Map<string, ScorableQuestion>(
     questionsWithAnswers.map((q) => [q.id, q])
   );
 
-  // Any answer referencing an unknown question is rejected (matches prior behavior).
+  // Any answer referencing a question outside this quiz is rejected.
   if (answers.some((a: { questionId: string }) => !questionsById.has(a.questionId))) {
     return NextResponse.json({ error: "Question not found" }, { status: 404 });
   }
 
-  const { correct, score, answerRecords } = scoreQuiz({ attemptId, questionsById, answers });
+  const { correct, score, answerRecords } = scoreQuiz({
+    attemptId,
+    questionsById,
+    answers,
+    totalQuestions: quizQuestions.length,
+  });
   const completedAt = new Date();
 
   const [_, __, existing] = await Promise.all([
@@ -228,7 +260,9 @@ export async function PATCH(req: NextRequest) {
         quizName: names?.quiz?.name ?? "",
         score,
         correctCount: correct,
-        totalCount: answers.length,
+        // The quiz's question count, matching the scored denominator — not the
+        // length of the client-supplied answers array.
+        totalCount: quizQuestions.length,
         completedAt,
         reviewSnapshot: JSON.stringify(snapshot),
       },

@@ -297,3 +297,88 @@ describe("PATCH /api/quiz (submit answers)", () => {
     expect(res.status).toBe(404);
   });
 });
+
+// Regression tests for the submission-integrity fixes. Each of these was
+// exploitable by a student against their own attempt.
+describe("PATCH /api/quiz (submission integrity)", () => {
+  const startAttempt = (studentId: string, classId: string, quizId: string) =>
+    prisma.quizAttempt.create({ data: { studentId, classId, quizId } });
+
+  it("refuses to re-grade an already-submitted attempt", async () => {
+    const s = await setup();
+    asStudent(s.studentUser.id);
+    const attempt = await startAttempt(s.student.id, s.cls.id, s.quiz.id);
+
+    const first = await PATCH(
+      jsonReq({ attemptId: attempt.id, answers: [{ questionId: s.question.id, selectedOptionId: s.optionId("3") }] })
+    );
+    expect((await first.json()).score).toBe(0);
+
+    // Replaying the same attempt is what turned the response's
+    // incorrectQuestionIds into an answer-key oracle, and it sidestepped the
+    // per-class maxAttempts cap (which only counts completed attempts).
+    const replay = await PATCH(
+      jsonReq({ attemptId: attempt.id, answers: [{ questionId: s.question.id, selectedOptionId: s.optionId("4") }] })
+    );
+    expect(replay.status).toBe(409);
+
+    const stored = await prisma.quizAttempt.findUnique({ where: { id: attempt.id } });
+    expect(stored?.score).toBe(0); // the replay did not overwrite the real score
+  });
+
+  it("scores against the quiz's question count, not the submitted subset", async () => {
+    const s = await setup();
+    // A second question the student simply won't answer.
+    await prisma.question.create({
+      data: {
+        text: "What is 3 + 3?",
+        quizId: s.quiz.id,
+        answerMode: "SINGLE_SELECT",
+        options: { create: [{ text: "6", isCorrect: true }, { text: "7", isCorrect: false }] },
+      },
+    });
+    asStudent(s.studentUser.id);
+    const attempt = await startAttempt(s.student.id, s.cls.id, s.quiz.id);
+
+    const res = await PATCH(
+      jsonReq({ attemptId: attempt.id, answers: [{ questionId: s.question.id, selectedOptionId: s.optionId("4") }] })
+    );
+    // 1 of the quiz's 2 questions correct. Deriving the denominator from the
+    // client's array would have scored this 100.
+    expect((await res.json()).score).toBe(50);
+  });
+
+  it("rejects an answer for a question belonging to another quiz", async () => {
+    const s = await setup();
+    const other = await createPublishedQuiz({ classId: s.cls.id, teacherId: s.teacher.id });
+    asStudent(s.studentUser.id);
+    const attempt = await startAttempt(s.student.id, s.cls.id, s.quiz.id);
+
+    const res = await PATCH(
+      jsonReq({
+        attemptId: attempt.id,
+        answers: [{ questionId: other.question.id, selectedOptionId: other.question.options.find((o) => o.isCorrect)!.id }],
+      })
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("rejects the same question answered twice", async () => {
+    const s = await setup();
+    asStudent(s.studentUser.id);
+    const attempt = await startAttempt(s.student.id, s.cls.id, s.quiz.id);
+
+    // Repeating a known-correct answer would otherwise push `correct` past the
+    // question count and score above 100.
+    const res = await PATCH(
+      jsonReq({
+        attemptId: attempt.id,
+        answers: [
+          { questionId: s.question.id, selectedOptionId: s.optionId("4") },
+          { questionId: s.question.id, selectedOptionId: s.optionId("4") },
+        ],
+      })
+    );
+    expect(res.status).toBe(400);
+  });
+});

@@ -197,7 +197,12 @@ model ClassEnrollment {
 model Invitation {
   id        String    @id @default(cuid())
   classId   String
-  token     String    @unique @default(cuid())
+  // No @default(cuid()): this token is a BEARER CREDENTIAL for joining a class
+  // (and for the roster lookup that discloses student names/emails), so it must
+  // be unguessable. cuid v1 is timestamp-prefixed with Math.random-derived
+  // blocks — fine for row ids, not for secrets. The API generates it with
+  // crypto.randomBytes; see src/app/api/invitations/route.ts.
+  token     String    @unique
   expiresAt DateTime?
   maxUses   Int?
   usedCount Int       @default(0)

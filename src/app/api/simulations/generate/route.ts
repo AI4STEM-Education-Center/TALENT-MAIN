@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { canManage, getContentActor } from "@/lib/quiz-access";
 import { triggerSimulations } from "@/lib/simulation-trigger";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -34,6 +35,11 @@ function parseScope(body: Record<string, unknown>): Scope | null {
  * discard settled work.
  */
 export async function POST(req: NextRequest) {
+  // Simulation generation fans out one AI job per question, so a loop here
+  // burns provider spend fast. Throttle the trigger itself.
+  const limited = rateLimit(req, "sim-generate", 20, 60_000);
+  if (limited) return limited;
+
   const actor = await getContentActor();
   if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 

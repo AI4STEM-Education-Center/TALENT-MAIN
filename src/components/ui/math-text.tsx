@@ -121,6 +121,12 @@ export function MathText({ text, className }: { text: string; className?: string
         const html = katex.renderToString(segment.value, {
           throwOnError: false,
           displayMode: segment.type === "display",
+          // Explicit, even though it is KaTeX's default: this output goes
+          // straight into dangerouslySetInnerHTML, and `trust` is what keeps
+          // \href/\url/\includegraphics/\htmlClass from turning question text
+          // (teacher- and AI-authored) into arbitrary markup. Mirrors
+          // src/lib/simulation-math.ts.
+          trust: false,
         });
         return <span key={index} dangerouslySetInnerHTML={{ __html: html }} />;
       })}

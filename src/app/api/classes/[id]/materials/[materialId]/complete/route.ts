@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { headS3Object, getS3Config } from "@/lib/storage";
+import {
+  headS3Object,
+  getS3Config,
+  getMaxUploadBytes,
+  materialPrefixFromStorageKey,
+} from "@/lib/storage";
 import { materialLinkedToClass } from "@/lib/learning-material";
 
 export const runtime = "nodejs";
@@ -48,6 +53,26 @@ export async function POST(
     return NextResponse.json({ error: "pages array is required" }, { status: 400 });
   }
 
+  // SECURITY: page storageKeys arrive from the client and are later handed
+  // straight to presignGetUrl by the page-image route, so an unchecked key
+  // would let a teacher attach ANY object in the bucket to their own material
+  // and read it back — other teachers' materials and page renders, quiz
+  // extraction PDFs, simulation artifacts, and (because deployments share one
+  // bucket behind S3_KEY_PREFIX) the other environment's objects too. Pin every
+  // key under this material's own pages/ prefix, derived from the server-built
+  // storageKey rather than from anything the caller sent. Same guard the quiz
+  // extraction commit route applies to figure keys.
+  const pagesPrefix = `${materialPrefixFromStorageKey(material.storageKey)}pages/`;
+  const badKey = body.pages.find(
+    (p) => typeof p?.storageKey !== "string" || !p.storageKey.startsWith(pagesPrefix)
+  );
+  if (badKey) {
+    return NextResponse.json(
+      { error: "Each page storageKey must belong to this material." },
+      { status: 400 }
+    );
+  }
+
   let bucket: string;
   try {
     bucket = getS3Config().bucket;
@@ -58,10 +83,33 @@ export async function POST(
     );
   }
 
+  // The presigned PUT can't bound the upload (S3 signs the key and content type,
+  // not the length), so the sizeBytes checked when the URL was issued is only a
+  // declaration. Verify what actually landed and refuse to finalize an object
+  // over the cap — otherwise the limit is advisory and a teacher can park
+  // arbitrarily large objects in the bucket. The orphaned object is left to the
+  // S3 garbage collector (src/lib/s3-gc.ts), which sweeps unreferenced keys.
+  let uploaded: { contentLength: number };
   try {
-    await headS3Object(bucket, material.storageKey);
+    uploaded = await headS3Object(bucket, material.storageKey);
   } catch {
     return NextResponse.json({ error: "Original PDF not found in storage" }, { status: 404 });
+  }
+
+  const maxBytes = getMaxUploadBytes();
+  if (uploaded.contentLength > maxBytes) {
+    // Stays PENDING (the one non-READY state the materials UI renders) so the
+    // teacher can re-upload; the reason goes in errorMessage.
+    await prisma.learningMaterial.update({
+      where: { id: material.id },
+      data: {
+        errorMessage: `Uploaded file is ${uploaded.contentLength} bytes, over the ${maxBytes}-byte limit.`,
+      },
+    });
+    return NextResponse.json(
+      { error: `Uploaded file exceeds the ${maxBytes}-byte limit.` },
+      { status: 413 }
+    );
   }
 
   try {
