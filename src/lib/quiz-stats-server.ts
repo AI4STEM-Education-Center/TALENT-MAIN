@@ -31,8 +31,10 @@ const fullName = (u: { firstName: string; lastName: string }): string =>
 export type QuizStudentRow = {
   studentId: string;
   name: string;
-  bestScore: number;
+  bestScore: number | null;
+  manualGrade: number | null;
   attempts: number;
+  canEditManualGrade: boolean;
 };
 
 export type QuestionStat = {
@@ -69,7 +71,7 @@ export async function getQuizStats(classId: string, quizId: string): Promise<Qui
   const quiz = await prisma.quiz.findUnique({ where: { id: quizId }, select: { name: true } });
   if (!quiz) return null;
 
-  const [attempts, questions, grouped] = await Promise.all([
+  const [attempts, questions, grouped, enrollments, manualGrades] = await Promise.all([
     prisma.quizAttempt.findMany({
       where: { classId, quizId, completedAt: { not: null } },
       select: {
@@ -88,6 +90,17 @@ export async function getQuizStats(classId: string, quizId: string): Promise<Qui
       where: { quizAttempt: { classId, quizId, completedAt: { not: null } } },
       _count: { _all: true },
     }),
+    prisma.classEnrollment.findMany({
+      where: { classId },
+      select: {
+        studentId: true,
+        student: { select: { user: { select: { firstName: true, lastName: true } } } },
+      },
+    }),
+    prisma.quizProgress.findMany({
+      where: { classId, quizId, manualGrade: { not: null } },
+      select: { studentId: true, manualGrade: true },
+    }),
   ]);
 
   // Collapse attempts into one row per student (best score + attempt count).
@@ -98,12 +111,39 @@ export async function getQuizStats(classId: string, quizId: string): Promise<Qui
     row.attempts += 1;
     byStudent.set(a.studentId, row);
   }
-  const students: QuizStudentRow[] = [...byStudent.entries()]
-    .map(([studentId, v]) => ({ studentId, name: v.name, bestScore: max(v.scores), attempts: v.attempts }))
-    .toSorted((a, b) => b.bestScore - a.bestScore);
+  const manualByStudent = new Map(manualGrades.map((row) => [row.studentId, row.manualGrade]));
+  const enrolledIds = new Set(enrollments.map((row) => row.studentId));
+  const students: QuizStudentRow[] = enrollments.map((enrollment) => {
+    const attempt = byStudent.get(enrollment.studentId);
+    return {
+      studentId: enrollment.studentId,
+      name: fullName(enrollment.student.user),
+      bestScore: attempt ? max(attempt.scores) : null,
+      manualGrade: manualByStudent.get(enrollment.studentId) ?? null,
+      attempts: attempt?.attempts ?? 0,
+      canEditManualGrade: true,
+    };
+  });
+  // Keep historical attempts visible even if a student was later unenrolled.
+  for (const [studentId, attempt] of byStudent) {
+    if (!enrolledIds.has(studentId)) {
+      students.push({
+        studentId,
+        name: attempt.name,
+        bestScore: max(attempt.scores),
+        manualGrade: manualByStudent.get(studentId) ?? null,
+        attempts: attempt.attempts,
+        canEditManualGrade: false,
+      });
+    }
+  }
+  students.sort((a, b) => a.name.localeCompare(b.name));
 
-  const bestScores = students.map((s) => s.bestScore);
-  const attemptCounts = students.map((s) => s.attempts);
+  const attemptedStudents = students.filter(
+    (student): student is QuizStudentRow & { bestScore: number } => student.bestScore !== null
+  );
+  const bestScores = attemptedStudents.map((s) => s.bestScore);
+  const attemptCounts = attemptedStudents.map((s) => s.attempts);
 
   // Per-question correctness: fold the (questionId, isCorrect) groups into
   // correct/total counts, then join the live question text.
@@ -129,7 +169,7 @@ export async function getQuizStats(classId: string, quizId: string): Promise<Qui
     quizId,
     quizName: quiz.name,
     attemptsTotal: attempts.length,
-    studentsAttempted: students.length,
+    studentsAttempted: byStudent.size,
     mean: mean(bestScores),
     median: median(bestScores),
     min: min(bestScores),
