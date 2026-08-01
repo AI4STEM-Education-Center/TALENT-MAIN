@@ -38,6 +38,17 @@ export function buildGradeHeader(name: string, maxPoints: number): string {
   return `${name} Points Grade <Numeric MaxPoints:${formatGrade(maxPoints)}>`;
 }
 
+/** Read an eLC MaxPoints value from a complete teacher-entered grade column. */
+export function parseMaxPointsFromGradeHeader(header: string): number | null {
+  const match = header.match(/\bMaxPoints\s*:\s*(\d+(?:\.\d+)?)/i);
+  if (!match) return null;
+
+  const maxPoints = Number(match[1]);
+  return Number.isFinite(maxPoints) && maxPoints > 0 && maxPoints <= 1_000_000
+    ? maxPoints
+    : null;
+}
+
 /**
  * Convert a percentage into points for export. A manual percentage always
  * wins; otherwise completion mode awards full credit and best-attempt mode

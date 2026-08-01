@@ -21,7 +21,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAlert } from "@/components/ui/confirm-dialog";
-import type { GradeExportMode } from "@/lib/grades-csv";
+import {
+  formatGrade,
+  parseMaxPointsFromGradeHeader,
+  type GradeExportMode,
+} from "@/lib/grades-csv";
 
 /** Export an eLC-compatible grade CSV with configurable scoring and points. */
 export function ExportGradesDialog({
@@ -35,20 +39,25 @@ export function ExportGradesDialog({
 }) {
   const alert = useAlert();
   const [open, setOpen] = useState(false);
-  const [gradeName, setGradeName] = useState<string | null>(null);
+  const [gradeHeader, setGradeHeader] = useState("");
   const [mode, setMode] = useState<GradeExportMode>("best-attempt");
   const [maxPoints, setMaxPoints] = useState("100");
   const [downloading, setDownloading] = useState(false);
   const parsedMaxPoints = Number(maxPoints);
-  const resolvedGradeName = gradeName ?? quizName;
   const maxPointsValid =
     Number.isFinite(parsedMaxPoints) && parsedMaxPoints > 0 && parsedMaxPoints <= 1_000_000;
+
+  function handleGradeHeaderChange(value: string) {
+    setGradeHeader(value);
+    const headerMaxPoints = parseMaxPointsFromGradeHeader(value);
+    if (headerMaxPoints !== null) setMaxPoints(formatGrade(headerMaxPoints));
+  }
 
   async function handleDownload() {
     setDownloading(true);
     try {
       const query = new URLSearchParams({
-        name: resolvedGradeName.trim(),
+        header: gradeHeader.trim(),
         mode,
         maxPoints,
       });
@@ -92,18 +101,18 @@ export function ExportGradesDialog({
           <DialogHeader>
             <DialogTitle>Export grades (eLC CSV)</DialogTitle>
             <DialogDescription>
-              Choose how completed work is graded and the point value of this grade item.
+              Enter the exact eLC grade column, then choose how completed work is graded.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="grade-item-name">Grade item name</Label>
+              <Label htmlFor="grade-item-name">Grade item column</Label>
               <Input
                 id="grade-item-name"
-                value={resolvedGradeName}
-                onChange={(event) => setGradeName(event.target.value)}
-                placeholder="e.g. Quiz 3"
+                value={gradeHeader}
+                onChange={(event) => handleGradeHeaderChange(event.target.value)}
+                placeholder={`${quizName} Points Grade <Numeric MaxPoints:100>`}
               />
             </div>
 
@@ -156,9 +165,9 @@ export function ExportGradesDialog({
             </div>
 
             <p className="text-xs text-muted-foreground">
-              Exported column: <span className="font-medium text-foreground">
-                {resolvedGradeName.trim() || quizName} Points Grade &lt;Numeric MaxPoints:
-                {maxPointsValid ? maxPoints : "…"}&gt;
+              Exported column:{" "}
+              <span className="font-medium text-foreground">
+                {gradeHeader.trim() || "Enter the complete grade item column above"}
               </span>
             </p>
           </div>
@@ -169,7 +178,7 @@ export function ExportGradesDialog({
             </Button>
             <Button
               onClick={handleDownload}
-              disabled={downloading || !resolvedGradeName.trim() || !maxPointsValid}
+              disabled={downloading || !gradeHeader.trim() || !maxPointsValid}
             >
               {downloading ? "Preparing…" : "Download CSV"}
             </Button>
