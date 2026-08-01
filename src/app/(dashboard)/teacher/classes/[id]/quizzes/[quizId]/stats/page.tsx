@@ -10,6 +10,7 @@ import { StatCard, DistributionBars, RateBar, pct, ratePct } from "@/components/
 import { MathText } from "@/components/ui/math-text";
 import { formatDurationMs } from "@/lib/simulation-stats";
 import { ExportGradesDialog } from "./export-grades-dialog";
+import { ManualGradesTable } from "./manual-grades-table";
 
 export default async function QuizStatsPage({
   params,
@@ -141,37 +142,24 @@ export default async function QuizStatsPage({
             </Card>
           )}
 
-          <Card>
-            <CardHeader><CardTitle className="text-base">Students</CardTitle></CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
-                      <th className="py-2 pr-3 font-medium">Student</th>
-                      <th className="py-2 px-3 font-medium text-right">Best score</th>
-                      <th className="py-2 px-3 font-medium text-right">Attempts</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {stats.students.map((s) => (
-                      <tr key={s.studentId} className="border-b last:border-0 hover:bg-muted/30">
-                        <td className="py-2 pr-3">
-                          <Link href={`/teacher/classes/${id}/students/${s.studentId}/stats`} className="text-primary hover:underline">
-                            {s.name}
-                          </Link>
-                        </td>
-                        <td className="py-2 px-3 text-right tabular-nums">{pct(s.bestScore)}</td>
-                        <td className="py-2 px-3 text-right tabular-nums">{s.attempts}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
         </>
       )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Student grades</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Manual percentages override calculated grades for this test in every export.
+          </p>
+          <ManualGradesTable
+            classId={id}
+            quizId={quizId}
+            initialStudents={stats.students}
+          />
+        </CardContent>
+      </Card>
     </div>
   );
 }
