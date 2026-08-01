@@ -49,7 +49,11 @@ export function canRead(actor: ContentActor, content: { teacherId: string | null
  * The source quiz's topic (if any) is matched by name within the target scope,
  * or created there, so grouping carries over without sharing Topic rows.
  */
-export async function deepCopyQuiz(sourceQuizId: string, targetTeacherId: string | null) {
+export async function deepCopyQuiz(
+  sourceQuizId: string,
+  targetTeacherId: string | null,
+  targetTopicId?: string | null
+) {
   const source = await prisma.quiz.findUnique({
     where: { id: sourceQuizId },
     include: {
@@ -60,8 +64,8 @@ export async function deepCopyQuiz(sourceQuizId: string, targetTeacherId: string
   if (!source) return null;
 
   return prisma.$transaction(async (tx) => {
-    let topicId: string | null = null;
-    if (source.topic) {
+    let topicId: string | null = targetTopicId ?? null;
+    if (targetTopicId === undefined && source.topic) {
       const existing = await tx.topic.findFirst({
         where: { teacherId: targetTeacherId, name: source.topic.name },
       });

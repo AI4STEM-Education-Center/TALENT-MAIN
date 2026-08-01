@@ -11,7 +11,7 @@ export async function GET() {
 
   const topics = await prisma.topic.findMany({
     where: { teacherId: ownScope(actor) },
-    include: { _count: { select: { quizzes: true } } },
+    include: { _count: { select: { quizzes: true, learningMaterials: true } } },
     orderBy: [{ order: "asc" }, { createdAt: "asc" }],
   });
   return NextResponse.json(topics);
