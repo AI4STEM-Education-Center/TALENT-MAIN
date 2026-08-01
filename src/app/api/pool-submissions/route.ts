@@ -6,9 +6,10 @@ import { sendEmail } from "@/lib/email";
 function applicationOrigin(req: NextRequest): string {
   const configured = process.env.APP_URL || process.env.AUTH_URL || process.env.NEXTAUTH_URL;
   if (configured) return configured.replace(/\/$/, "");
+  const requestUrl = new URL(req.url);
   const host = req.headers.get("x-forwarded-host") || req.headers.get("host");
-  const protocol = req.headers.get("x-forwarded-proto") || req.nextUrl.protocol.replace(":", "");
-  return host ? `${protocol}://${host}` : req.nextUrl.origin;
+  const protocol = req.headers.get("x-forwarded-proto") || requestUrl.protocol.replace(":", "");
+  return host ? `${protocol}://${host}` : requestUrl.origin;
 }
 
 export async function GET() {
