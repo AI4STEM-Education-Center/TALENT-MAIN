@@ -190,7 +190,7 @@ describe("POST /api/classes/[id]/messages", () => {
 
 describe("GET /api/classes/[id]/messages", () => {
   it("returns the audience a message would reach and each message's delivery tally", async () => {
-    const { cls } = await seedClass(2, { emails: ["a@example.com", "b@example.com"] });
+    const { cls, students } = await seedClass(2, { emails: ["a@example.com", "b@example.com"] });
     await POST(jsonReq({ subject: "s", body: "b" }), params(cls.id));
 
     const [first] = await prisma.messageEmailDelivery.findMany({ orderBy: { email: "asc" } });
@@ -201,6 +201,9 @@ describe("GET /api/classes/[id]/messages", () => {
 
     const payload = await (await GET(getReq(), params(cls.id))).json();
     expect(payload.audience).toEqual({ enrolled: 2, emailable: 2 });
+    expect(payload.recipients.map((recipient: { userId: string }) => recipient.userId).sort()).toEqual(
+      students.map((student) => student.user.id).sort()
+    );
     expect(payload.messages).toHaveLength(1);
     expect(payload.messages[0].email).toEqual({ queued: 1, sent: 1, failed: 0 });
   });
