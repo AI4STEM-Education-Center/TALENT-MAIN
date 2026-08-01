@@ -15,6 +15,7 @@ export const runtime = "nodejs";
 
 /** Maximum number of pages accepted in a single quiz-PDF extraction. */
 export const MAX_QUIZ_PDF_PAGES = 20;
+const MAX_DERIVED_BYTES_MULTIPLIER = 4;
 
 type InitPage = { pageNumber: number; sizeBytes: number };
 
@@ -91,13 +92,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       );
     }
     const pageSize = typeof raw.sizeBytes === "number" ? raw.sizeBytes : 0;
-    if (pageSize < 1) {
+    if (pageSize < 1 || pageSize > maxBytes) {
       return NextResponse.json(
-        { error: `pages[${i}].sizeBytes must be positive` },
+        { error: `pages[${i}].sizeBytes must be between 1 and ${maxBytes}` },
         { status: 400 }
       );
     }
     pages.push({ pageNumber, sizeBytes: pageSize });
+  }
+  if (
+    pages.reduce((total, page) => total + page.sizeBytes, 0) >
+    maxBytes * MAX_DERIVED_BYTES_MULTIPLIER
+  ) {
+    return NextResponse.json(
+      { error: "Rendered pages exceed the aggregate upload limit" },
+      { status: 413 }
+    );
   }
 
   const extractionId = randomUUID();

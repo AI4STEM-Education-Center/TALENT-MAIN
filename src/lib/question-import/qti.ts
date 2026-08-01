@@ -192,6 +192,7 @@ export function validateParsedQuestionBank(input: unknown): ParsedQuestionBank {
 
   const rawQuestions = input.questions;
   if (!Array.isArray(rawQuestions)) throw new Error("Import payload must contain a questions array.");
+  if (rawQuestions.length > 5_000) throw new Error("Import payload cannot contain more than 5,000 questions.");
 
   const questions: ImportedQuestion[] = rawQuestions.map((entry, index) => {
     if (!isRecord(entry)) throw new Error(`Question ${index + 1} must be an object.`);
@@ -200,13 +201,16 @@ export function validateParsedQuestionBank(input: unknown): ParsedQuestionBank {
     const answerMode = cleanAnswerMode(entry.answerMode);
     const rawOptions = entry.options;
     if (!text) throw new Error(`Question ${index + 1} is missing text.`);
+    if (text.length > 10_000) throw new Error(`Question ${index + 1} text is too long.`);
     if (!answerMode) throw new Error(`Question ${index + 1} has an invalid answer mode.`);
     if (!Array.isArray(rawOptions)) throw new Error(`Question ${index + 1} must include options.`);
+    if (rawOptions.length > 20) throw new Error(`Question ${index + 1} cannot include more than 20 options.`);
 
     const options = rawOptions.map((option, optionIndex) => {
       if (!isRecord(option)) throw new Error(`Question ${index + 1}, option ${optionIndex + 1} must be an object.`);
       const optionText = cleanString(option.text);
       if (!optionText) throw new Error(`Question ${index + 1}, option ${optionIndex + 1} is missing text.`);
+      if (optionText.length > 2_000) throw new Error(`Question ${index + 1}, option ${optionIndex + 1} is too long.`);
       return { text: optionText, isCorrect: option.isCorrect === true };
     });
 

@@ -35,13 +35,11 @@ function parseScope(body: Record<string, unknown>): Scope | null {
  * discard settled work.
  */
 export async function POST(req: NextRequest) {
-  // Simulation generation fans out one AI job per question, so a loop here
-  // burns provider spend fast. Throttle the trigger itself.
-  const limited = rateLimit(req, "sim-generate", 20, 60_000);
-  if (limited) return limited;
-
   const actor = await getContentActor();
   if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const limited = rateLimit(req, "sim-generate", 20, 60_000, actor.userId);
+  if (limited) return limited;
 
   let body: Record<string, unknown>;
   try {

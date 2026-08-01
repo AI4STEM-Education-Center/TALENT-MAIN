@@ -73,6 +73,23 @@ export async function POST(
     return NextResponse.json({ error: "Maximum 100 pages per request" }, { status: 400 });
   }
 
+  const pageNumbers = body.pages.map((page) => page?.pageNumber);
+  if (
+    pageNumbers.some(
+      (pageNumber) =>
+        typeof pageNumber !== "number" ||
+        !Number.isInteger(pageNumber) ||
+        pageNumber < 1 ||
+        pageNumber > 100
+    ) ||
+    new Set(pageNumbers).size !== pageNumbers.length
+  ) {
+    return NextResponse.json(
+      { error: "pageNumber must be a unique integer between 1 and 100" },
+      { status: 400 }
+    );
+  }
+
   const maxBytes = getMaxUploadBytes();
   const mimeType = "image/png"; // Using PNG for page slices
 

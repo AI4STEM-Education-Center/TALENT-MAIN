@@ -2,12 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { canManage, getContentActor } from "@/lib/quiz-access";
 import { enqueueQuizExtraction } from "@/lib/queue";
-import { buildQuizExtractionPageKey, headS3Object } from "@/lib/storage";
+import {
+  buildQuizExtractionPageKey,
+  getMaxUploadBytes,
+  headS3Object,
+} from "@/lib/storage";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
 /** Maximum number of pages accepted in a single quiz-PDF extraction. */
 const MAX_QUIZ_PDF_PAGES = 20;
+const MAX_DERIVED_BYTES_MULTIPLIER = 4;
+class ExtractionAlreadyClaimedError extends Error {}
 
 type CompletePage = { pageNumber: number; storageKey: string };
 
@@ -21,6 +28,8 @@ export async function POST(
 ) {
   const [actor, { id: quizId, extractionId }] = await Promise.all([getContentActor(), params]);
   if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const limited = rateLimit(req, "quiz-extraction-complete", 10, 60_000, actor.userId);
+  if (limited) return limited;
 
   const quiz = await prisma.quiz.findUnique({ where: { id: quizId } });
   if (!quiz || !canManage(actor, quiz)) {
@@ -90,26 +99,57 @@ export async function POST(
 
   // Confirm the PDF and every page actually landed in S3 before we commit to
   // running the (paid) extraction job.
+  let pdfHead: { contentLength: number };
+  let pageHeads: Array<{ contentLength: number }>;
   try {
-    await headS3Object(extraction.bucket, extraction.storageKey);
-    await Promise.all(pages.map((p) => headS3Object(extraction.bucket, p.storageKey)));
+    [pdfHead, pageHeads] = await Promise.all([
+      headS3Object(extraction.bucket, extraction.storageKey),
+      Promise.all(pages.map((p) => headS3Object(extraction.bucket, p.storageKey))),
+    ]);
   } catch {
     return NextResponse.json({ error: "upload incomplete" }, { status: 400 });
   }
 
-  await prisma.$transaction([
-    prisma.quizPdfExtractionPage.createMany({
+  const maxBytes = getMaxUploadBytes();
+  if (
+    pdfHead.contentLength < 1 ||
+    pdfHead.contentLength > maxBytes ||
+    pageHeads.some((page) => page.contentLength < 1 || page.contentLength > maxBytes) ||
+    pageHeads.reduce((total, page) => total + page.contentLength, 0) >
+      maxBytes * MAX_DERIVED_BYTES_MULTIPLIER
+  ) {
+    return NextResponse.json({ error: "Uploaded objects exceed size limits" }, { status: 413 });
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const claimed = await tx.quizPdfExtraction.updateMany({
+        where: { id: extraction.id, status: "PENDING_UPLOAD" },
+        data: {
+          status: "EXTRACTING",
+          totalPages: pages.length,
+          sizeBytes: pdfHead.contentLength,
+        },
+      });
+      if (claimed.count !== 1) throw new ExtractionAlreadyClaimedError();
+
+      await tx.quizPdfExtractionPage.createMany({
       data: pages.map((p) => ({
         extractionId: extraction.id,
         pageNumber: p.pageNumber,
         storageKey: p.storageKey,
       })),
-    }),
-    prisma.quizPdfExtraction.update({
-      where: { id: extraction.id },
-      data: { status: "EXTRACTING", totalPages: pages.length },
-    }),
-  ]);
+      });
+    });
+  } catch (error) {
+    if (error instanceof ExtractionAlreadyClaimedError) {
+      return NextResponse.json(
+        { error: "Extraction upload has already been finalized" },
+        { status: 409 }
+      );
+    }
+    throw error;
+  }
 
   try {
     enqueueQuizExtraction(extraction.id);

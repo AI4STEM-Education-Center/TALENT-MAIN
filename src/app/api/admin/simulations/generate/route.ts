@@ -35,14 +35,13 @@ function parseScope(body: Record<string, unknown>): Scope | null {
  * Teachers use the ownership-checked ../../simulations/generate instead.
  */
 export async function POST(req: NextRequest) {
-  // Same AI-spend exposure as the teacher-facing trigger.
-  const limited = rateLimit(req, "admin-sim-generate", 20, 60_000);
-  if (limited) return limited;
-
   const session = await auth();
   if (!session?.user || session.user.role !== "ADMIN") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+
+  const limited = rateLimit(req, "admin-sim-generate", 20, 60_000, session.user.id);
+  if (limited) return limited;
 
   let body: Record<string, unknown>;
   try {

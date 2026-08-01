@@ -7,6 +7,9 @@ import { attachFigureUrls, attachOptionImageUrls } from "@/lib/question-figures"
 import { enqueueExamResult } from "@/lib/queue";
 import { logApiError } from "@/lib/system-log";
 
+class AttemptLimitError extends Error {}
+class AttemptAlreadySubmittedError extends Error {}
+
 // POST: Start a quiz attempt
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -46,18 +49,6 @@ export async function POST(req: NextRequest) {
   if (classQuiz.availableUntil && now > classQuiz.availableUntil) {
     return NextResponse.json({ error: "This quiz has closed." }, { status: 403 });
   }
-  if (classQuiz.maxAttempts && classQuiz.maxAttempts > 0) {
-    const usedAttempts = await prisma.quizAttempt.count({
-      where: { studentId: student.id, classId, quizId, completedAt: { not: null } },
-    });
-    if (usedAttempts >= classQuiz.maxAttempts) {
-      return NextResponse.json(
-        { error: `You've used all ${classQuiz.maxAttempts} attempts.` },
-        { status: 403 }
-      );
-    }
-  }
-
   // Get questions for this quiz. SECURITY: students must never receive the
   // grading data — `omit` strips the NUMERIC answer/tolerance scalars, options
   // are selected without `isCorrect`, and the raw figure storage key/bucket are
@@ -78,25 +69,50 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No questions available for this quiz." }, { status: 404 });
   }
 
-  // These are independent: presigning the figure + option-image URLs (S3),
-  // creating the attempt, and flipping progress to IN_PROGRESS don't read each
-  // other's results, so race them instead of waterfalling. Only `questions` and
-  // `attempt.id` feed the response. (Option-image presigning still chains after
-  // figure presigning, since it consumes the figure-augmented rows.)
-  const [questions, attempt] = await Promise.all([
-    // Replace figure + option-image storage keys with transient presigned URLs.
-    attachFigureUrls(questionRows).then((rows) => attachOptionImageUrls(rows)),
-    // Create attempt
-    prisma.quizAttempt.create({
-      data: { studentId: student.id, classId, quizId },
-    }),
-    // Update QuizProgress to IN_PROGRESS
-    prisma.quizProgress.upsert({
-      where: { studentId_classId_quizId: { studentId: student.id, classId, quizId } },
-      update: { status: "IN_PROGRESS" },
-      create: { studentId: student.id, classId, quizId, status: "IN_PROGRESS" },
-    }),
-  ]);
+  // Reserve the attempt before doing optional S3 presigning work. The attempt
+  // allocation and progress update must stay together for cap enforcement.
+  let attempt: { id: string };
+  try {
+    // SECURITY: allocating an attempt consumes one slot. Counting only
+    // completed attempts let a student pre-create many pending attempt IDs,
+    // then submit them one by one after seeing per-question feedback. Keep
+    // the count + create in one SQLite transaction so concurrent starts are
+    // serialized by the database connection used by this deployment.
+    attempt = await prisma.$transaction(async (tx) => {
+      if (classQuiz.maxAttempts && classQuiz.maxAttempts > 0) {
+        const allocatedAttempts = await tx.quizAttempt.count({
+          where: { studentId: student.id, classId, quizId },
+        });
+        if (allocatedAttempts >= classQuiz.maxAttempts) {
+          throw new AttemptLimitError();
+        }
+      }
+
+      const created = await tx.quizAttempt.create({
+        data: { studentId: student.id, classId, quizId },
+        select: { id: true },
+      });
+      await tx.quizProgress.upsert({
+        where: { studentId_classId_quizId: { studentId: student.id, classId, quizId } },
+        update: { status: "IN_PROGRESS" },
+        create: { studentId: student.id, classId, quizId, status: "IN_PROGRESS" },
+      });
+      return created;
+    });
+  } catch (error) {
+    if (error instanceof AttemptLimitError) {
+      return NextResponse.json(
+        { error: `You've used all ${classQuiz.maxAttempts} attempts.` },
+        { status: 403 }
+      );
+    }
+    throw error;
+  }
+
+  // Replace figure + option-image storage keys with transient presigned URLs.
+  const questions = await attachFigureUrls(questionRows).then((rows) =>
+    attachOptionImageUrls(rows)
+  );
 
   return NextResponse.json({ attemptId: attempt.id, questions });
 }
@@ -111,11 +127,17 @@ export async function PATCH(req: NextRequest) {
   const student = await prisma.student.findUnique({ where: { userId: session.user.id } });
   if (!student) return NextResponse.json({ error: "Student not found" }, { status: 404 });
 
-  const { attemptId, answers } = await req.json();
+  let body: { attemptId?: unknown; answers?: unknown };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+  const { attemptId, answers } = body;
   // answers: [{ questionId, selectedOptionId }] | [{ questionId, selectedOptionIds }]
   // | [{ questionId, numericValue }] (NUMERIC). The raw array is handed straight
   // to scoreQuiz, which reads/normalizes the relevant field per question mode.
-  if (!attemptId || !answers) {
+  if (typeof attemptId !== "string" || !attemptId || !Array.isArray(answers)) {
     return NextResponse.json({ error: "attemptId and answers required" }, { status: 400 });
   }
 
@@ -141,14 +163,27 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "This quiz no longer exists." }, { status: 410 });
   }
 
-  if (!Array.isArray(answers)) {
-    return NextResponse.json({ error: "answers must be an array" }, { status: 400 });
-  }
-
   // SECURITY: one answer per question. Repeating a question the student knows
   // would otherwise inflate `correct` past the question count (20 copies of one
   // right answer against a 5-question quiz scored 400%).
-  const questionIds = answers.map((a: { questionId: string }) => a.questionId);
+  if (
+    answers.some(
+      (answer) =>
+        !answer ||
+        typeof answer !== "object" ||
+        typeof (answer as { questionId?: unknown }).questionId !== "string" ||
+        !(answer as { questionId: string }).questionId
+    )
+  ) {
+    return NextResponse.json({ error: "Each answer requires a questionId." }, { status: 400 });
+  }
+  const submittedAnswers = answers as Array<{
+    questionId: string;
+    selectedOptionId?: unknown;
+    selectedOptionIds?: unknown;
+    numericValue?: unknown;
+  }>;
+  const questionIds = submittedAnswers.map((a) => a.questionId);
   if (new Set(questionIds).size !== questionIds.length) {
     return NextResponse.json(
       { error: "Each question may be answered only once." },
@@ -165,57 +200,88 @@ export async function PATCH(req: NextRequest) {
     where: { quizId },
     include: { options: true },
   });
-  const answeredIds = new Set(questionIds);
-  const questionsWithAnswers = quizQuestions.filter((q) => answeredIds.has(q.id));
   const questionsById = new Map<string, ScorableQuestion>(
-    questionsWithAnswers.map((q) => [q.id, q])
+    quizQuestions.map((q) => [q.id, q])
   );
 
   // Any answer referencing a question outside this quiz is rejected.
-  if (answers.some((a: { questionId: string }) => !questionsById.has(a.questionId))) {
+  if (submittedAnswers.some((a) => !questionsById.has(a.questionId))) {
     return NextResponse.json({ error: "Question not found" }, { status: 404 });
   }
+
+  // Persist an explicit incorrect record for every unanswered question. This
+  // keeps the score denominator, review snapshot, and missed-question UI in
+  // agreement instead of scoring omissions as wrong while silently dropping
+  // them from the durable result.
+  const submittedByQuestion = new Map(submittedAnswers.map((answer) => [answer.questionId, answer]));
+  const completeAnswers = quizQuestions.map(
+    (question) => submittedByQuestion.get(question.id) ?? { questionId: question.id }
+  );
 
   const { correct, score, answerRecords } = scoreQuiz({
     attemptId,
     questionsById,
-    answers,
+    answers: completeAnswers,
     totalQuestions: quizQuestions.length,
   });
   const completedAt = new Date();
 
-  const [_, __, existing] = await Promise.all([
-    // selectedOptionIds is persisted as a JSON string (schema: String @default("[]")).
-    prisma.quizAnswer.createMany({
-      data: answerRecords.map((record) => ({
-        ...record,
-        selectedOptionIds: JSON.stringify(record.selectedOptionIds),
-      })),
-    }),
-    prisma.quizAttempt.update({
-      where: { id: attemptId },
-      data: { score, completedAt },
-    }),
-    prisma.quizProgress.findUnique({
-      where: { studentId_classId_quizId: { studentId: student.id, classId: attempt.classId, quizId } },
-    }),
-  ]);
+  try {
+    await prisma.$transaction(async (tx) => {
+      // SECURITY: the completedAt read above is only a fast-path. This
+      // conditional write is the real one-shot claim, so parallel PATCHes
+      // cannot all grade the same attempt before any sees it completed.
+      const claimed = await tx.quizAttempt.updateMany({
+        where: { id: attemptId, studentId: student.id, completedAt: null },
+        data: { score, completedAt },
+      });
+      if (claimed.count !== 1) throw new AttemptAlreadySubmittedError();
 
-  // Update QuizProgress: COMPLETED + bestScore
-  await prisma.quizProgress.upsert({
-    where: { studentId_classId_quizId: { studentId: student.id, classId: attempt.classId, quizId } },
-    update: {
-      status: "COMPLETED",
-      bestScore: Math.max(score, existing?.bestScore ?? 0),
-    },
-    create: {
-      studentId: student.id,
-      classId: attempt.classId,
-      quizId,
-      status: "COMPLETED",
-      bestScore: score,
-    },
-  });
+      const existing = await tx.quizProgress.findUnique({
+        where: {
+          studentId_classId_quizId: {
+            studentId: student.id,
+            classId: attempt.classId,
+            quizId,
+          },
+        },
+      });
+      await tx.quizAnswer.createMany({
+        data: answerRecords.map((record) => ({
+          ...record,
+          selectedOptionIds: JSON.stringify(record.selectedOptionIds),
+        })),
+      });
+      await tx.quizProgress.upsert({
+        where: {
+          studentId_classId_quizId: {
+            studentId: student.id,
+            classId: attempt.classId,
+            quizId,
+          },
+        },
+        update: {
+          status: "COMPLETED",
+          bestScore: Math.max(score, existing?.bestScore ?? 0),
+        },
+        create: {
+          studentId: student.id,
+          classId: attempt.classId,
+          quizId,
+          status: "COMPLETED",
+          bestScore: score,
+        },
+      });
+    });
+  } catch (error) {
+    if (error instanceof AttemptAlreadySubmittedError) {
+      return NextResponse.json(
+        { error: "This attempt has already been submitted." },
+        { status: 409 }
+      );
+    }
+    throw error;
+  }
 
   // Build a durable, self-contained ExamResult snapshot and kick off background
   // AI generation. Best-effort: a failure here must never fail quiz submission,
@@ -231,7 +297,7 @@ export async function PATCH(req: NextRequest) {
     });
 
     const snapshot = buildReviewSnapshot(
-      questionsWithAnswers.map((q) => ({
+      quizQuestions.map((q) => ({
         id: q.id,
         text: q.text,
         options: q.options,

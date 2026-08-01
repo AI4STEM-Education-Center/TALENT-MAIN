@@ -54,7 +54,7 @@ export default function MaterialUploadForm({ classId }: MaterialUploadProps) {
         // 2. Upload original PDF
         const uploadRes = await fetch(presignedUrl, {
           method: "PUT",
-          headers: { "Content-Type": mimeType },
+          headers: { "Content-Type": mimeType, "If-None-Match": "*" },
           body: file,
         });
 
@@ -102,7 +102,7 @@ export default function MaterialUploadForm({ classId }: MaterialUploadProps) {
 
               const res = await fetch(pageData.presignedUrl, {
                 method: "PUT",
-                headers: { "Content-Type": pageData.mimeType },
+                headers: { "Content-Type": pageData.mimeType, "If-None-Match": "*" },
                 body: blobData.blob,
               });
 

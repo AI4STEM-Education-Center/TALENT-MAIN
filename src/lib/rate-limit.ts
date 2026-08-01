@@ -75,11 +75,12 @@ export function rateLimit(
   req: Request,
   name: string,
   limit: number,
-  windowMs: number
+  windowMs: number,
+  identity?: string
 ): NextResponse | null {
   if (process.env.NODE_ENV === "test") return null;
 
-  const result = checkRateLimit(`${name}:${clientIp(req)}`, limit, windowMs);
+  const result = checkRateLimit(`${name}:${identity ?? clientIp(req)}`, limit, windowMs);
   if (result.allowed) return null;
 
   return NextResponse.json(

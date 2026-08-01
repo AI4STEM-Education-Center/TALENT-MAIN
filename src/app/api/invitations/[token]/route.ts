@@ -8,6 +8,9 @@ import { isValidEmail, normalizeEmail as normalizeRosterEmail } from "@/lib/csv-
 import { rateLimit } from "@/lib/rate-limit";
 import { logApiError } from "@/lib/system-log";
 
+class InvitationUnavailableError extends Error {}
+class RosterAlreadyClaimedError extends Error {}
+
 // GET: validate token and return class info
 export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   // Throttle invitation-token guessing per IP.
@@ -87,21 +90,38 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
     }
 
     const session = await auth();
-    let studentId: string;
-    let firstName = rosterEntry.firstName;
-    let lastName = rosterEntry.lastName;
-    // Set when the student signed up with an address other than the one on the
-    // roster, so teacher notifications follow them to the mailbox they confirmed.
+    let existingStudentId: string | null = null;
+    const firstName = rosterEntry.firstName;
+    const lastName = rosterEntry.lastName;
     let rosterEmailUpdate: string | null = null;
+    let signupData: {
+      email: string;
+      username: string;
+      hashedPassword: string;
+    } | null = null;
 
     if (session?.user) {
       // Already logged in — enroll this user
       if (session.user.role !== "STUDENT") {
         return NextResponse.json({ error: "Only students can join classes." }, { status: 403 });
       }
-      const student = await prisma.student.findUnique({ where: { userId: session.user.id } });
+      const student = await prisma.student.findUnique({
+        where: { userId: session.user.id },
+        include: { user: { select: { email: true } } },
+      });
       if (!student) return NextResponse.json({ error: "Student record not found." }, { status: 404 });
-      studentId = student.id;
+      const canonicalRosterEmail = normalizeRosterEmail(rosterEntry.email);
+      const canonicalUserEmail = normalizeRosterEmail(student.user.email);
+      if (
+        isValidEmail(canonicalRosterEmail) &&
+        canonicalUserEmail !== canonicalRosterEmail
+      ) {
+        return NextResponse.json(
+          { error: "Your account email does not match the class roster." },
+          { status: 409 }
+        );
+      }
+      existingStudentId = student.id;
     } else {
       // New signup flow — requires username, email, password
       const { username, email, password } = body;
@@ -114,7 +134,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
         return NextResponse.json({ error: passwordError }, { status: 400 });
       }
 
-      const normalizedEmail = normalizeEmail(email);
+      const normalizedEmail = normalizeRosterEmail(normalizeEmail(email));
       const normalizedUsername = normalizeUsername(username);
 
       // The address doubles as the roster's notification target, so reject
@@ -123,9 +143,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
         return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
       }
 
-      const canonicalRosterEmail = normalizeRosterEmail(normalizedEmail);
-      if (canonicalRosterEmail !== rosterEntry.email) {
-        rosterEmailUpdate = canonicalRosterEmail;
+      // A roster address is the identity binding for anonymous signup. Merely
+      // knowing an invitation token + 81 number must not let a caller replace a
+      // valid student's mailbox with an arbitrary address. Empty legacy rows
+      // may be populated; LMS-only UGA addresses may be canonicalized.
+      const canonicalRosterEmail = normalizeRosterEmail(rosterEntry.email);
+      if (
+        isValidEmail(canonicalRosterEmail) &&
+        normalizedEmail !== canonicalRosterEmail
+      ) {
+        return NextResponse.json(
+          { error: "Email must match the address on the class roster." },
+          { status: 409 }
+        );
+      }
+      if (normalizedEmail !== rosterEntry.email) {
+        rosterEmailUpdate = normalizedEmail;
       }
 
       const existingEmail = await prisma.user.findUnique({ where: { email: normalizedEmail } });
@@ -138,42 +171,75 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
         return NextResponse.json({ error: "Username already taken." }, { status: 409 });
       }
 
-      const hashedPassword = await bcrypt.hash(password, 12);
-
-      const user = await prisma.user.create({
-        data: {
-          email: normalizedEmail,
-          username: normalizedUsername,
-          hashedPassword,
-          firstName,
-          lastName,
-          role: "STUDENT",
-          student: { create: {} },
-        },
-        include: { student: true },
-      });
-      studentId = user.student!.id;
+      signupData = {
+        email: normalizedEmail,
+        username: normalizedUsername,
+        hashedPassword: await bcrypt.hash(password, 12),
+      };
     }
 
-    // Enroll + mark roster entry as registered + increment invite use count
-    await prisma.$transaction([
-      prisma.classEnrollment.upsert({
-        where: { classId_studentId: { classId: invitation.classId, studentId } },
-        update: {},
-        create: { classId: invitation.classId, studentId },
-      }),
-      prisma.classStudentList.update({
-        where: { id: rosterEntry.id },
+    // SECURITY: claiming the invite slot, claiming the roster identity,
+    // creating the account, and enrolling it are one transaction. Previously
+    // two requests could both pass the preflight reads, create separate users,
+    // enroll both under one 81 number, and exceed maxUses.
+    await prisma.$transaction(async (tx) => {
+      const currentInvitation = await tx.invitation.findUnique({
+        where: { id: invitation.id },
+      });
+      const now = new Date();
+      if (
+        !currentInvitation ||
+        !currentInvitation.active ||
+        (currentInvitation.expiresAt && currentInvitation.expiresAt < now) ||
+        (currentInvitation.maxUses &&
+          currentInvitation.usedCount >= currentInvitation.maxUses)
+      ) {
+        throw new InvitationUnavailableError();
+      }
+
+      const inviteClaim = await tx.invitation.updateMany({
+        where: {
+          id: currentInvitation.id,
+          active: true,
+          usedCount: currentInvitation.usedCount,
+        },
+        data: { usedCount: { increment: 1 } },
+      });
+      if (inviteClaim.count !== 1) throw new InvitationUnavailableError();
+
+      const rosterClaim = await tx.classStudentList.updateMany({
+        where: { id: rosterEntry.id, isRegistered: false },
         data: {
           isRegistered: true,
           ...(rosterEmailUpdate ? { email: rosterEmailUpdate } : {}),
         },
-      }),
-      prisma.invitation.update({
-        where: { id: invitation.id },
-        data: { usedCount: { increment: 1 } },
-      }),
-    ]);
+      });
+      if (rosterClaim.count !== 1) throw new RosterAlreadyClaimedError();
+
+      let studentId = existingStudentId;
+      if (!studentId) {
+        if (!signupData) throw new Error("Missing signup data");
+        const user = await tx.user.create({
+          data: {
+            email: signupData.email,
+            username: signupData.username,
+            hashedPassword: signupData.hashedPassword,
+            firstName,
+            lastName,
+            role: "STUDENT",
+            student: { create: {} },
+          },
+          include: { student: true },
+        });
+        studentId = user.student!.id;
+      }
+
+      await tx.classEnrollment.upsert({
+        where: { classId_studentId: { classId: invitation.classId, studentId } },
+        update: {},
+        create: { classId: invitation.classId, studentId },
+      });
+    });
 
     return NextResponse.json({
       success: true,
@@ -182,6 +248,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       lastName,
     });
   } catch (err) {
+    if (err instanceof InvitationUnavailableError) {
+      return NextResponse.json({ error: "Invitation limit reached." }, { status: 410 });
+    }
+    if (err instanceof RosterAlreadyClaimedError) {
+      return NextResponse.json(
+        { error: "This 81 number is already registered." },
+        { status: 409 }
+      );
+    }
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       const target = Array.isArray(err.meta?.target) ? err.meta.target.join(", ") : "";
       const field = target.includes("username") ? "Username" : "Email";

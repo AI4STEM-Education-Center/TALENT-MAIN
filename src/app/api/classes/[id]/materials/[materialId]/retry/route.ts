@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { processMaterial } from "@/lib/vlm-engine";
 import { materialLinkedToClass } from "@/lib/learning-material";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -14,6 +15,8 @@ export async function POST(
   if (!session?.user || session.user.role !== "TEACHER") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const limited = rateLimit(req, "material-retry", 5, 60_000, session.user.id);
+  if (limited) return limited;
 
   const [{ id: classId, materialId }, teacher] = await Promise.all([
     params,
@@ -38,13 +41,16 @@ export async function POST(
   }
 
   // Update status back to PROCESSING and clear error
-  await prisma.learningMaterial.update({
-    where: { id: materialId },
+  const claimed = await prisma.learningMaterial.updateMany({
+    where: { id: materialId, processingStatus: "FAILED" },
     data: {
       processingStatus: "PROCESSING",
       errorMessage: null,
     },
   });
+  if (claimed.count !== 1) {
+    return NextResponse.json({ error: "Material is already being retried" }, { status: 409 });
+  }
 
   // Start background process
   processMaterial(materialId).catch(console.error);

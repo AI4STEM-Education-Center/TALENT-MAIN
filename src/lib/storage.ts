@@ -194,6 +194,9 @@ export async function presignPutUpload(
     Bucket: bucket,
     Key: key,
     ContentType: mimeType,
+    // Upload keys are immutable. This prevents a still-valid presigned URL
+    // from replacing an object after the completion endpoint HEADs it.
+    IfNoneMatch: "*",
   });
   return getSignedUrl(client, cmd, { expiresIn: PRESIGN_EXPIRES_SEC });
 }

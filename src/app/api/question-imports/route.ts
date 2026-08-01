@@ -5,6 +5,7 @@ import { QuestionImportError, validateParsedQuestionBank } from "@/lib/question-
 import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
+const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 
 function cleanString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -21,16 +22,24 @@ function serializeErrors(errors: QuestionImportError[]) {
 // POST: import a parsed QTI question bank into a quiz. Teachers import into
 // their own quizzes; admins import straight into global-pool quizzes.
 export async function POST(req: NextRequest) {
-  // Imports run parsing + validation over caller-supplied question banks.
-  const limited = rateLimit(req, "question-import", 30, 60_000);
-  if (limited) return limited;
-
   const actor = await getContentActor();
   if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const limited = rateLimit(req, "question-import", 30, 60_000, actor.userId);
+  if (limited) return limited;
+
+  const declaredLength = Number(req.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_IMPORT_BYTES) {
+    return NextResponse.json({ error: "Import payload is too large." }, { status: 413 });
+  }
+
   let payload: unknown;
   try {
-    payload = await req.json();
+    const raw = await req.text();
+    if (Buffer.byteLength(raw, "utf8") > MAX_IMPORT_BYTES) {
+      return NextResponse.json({ error: "Import payload is too large." }, { status: 413 });
+    }
+    payload = JSON.parse(raw);
   } catch {
     return NextResponse.json({ error: "Invalid JSON import payload." }, { status: 400 });
   }
@@ -39,6 +48,10 @@ export async function POST(req: NextRequest) {
   const quizId = cleanString(importPayload.quizId);
   const originalName = cleanString(importPayload.originalName);
   const sourcePath = cleanString(importPayload.sourcePath) || null;
+
+  if (originalName.length > 255 || (sourcePath?.length ?? 0) > 1000) {
+    return NextResponse.json({ error: "Import file metadata is too long." }, { status: 400 });
+  }
 
   if (!quizId) {
     return NextResponse.json({ error: "quizId is required." }, { status: 400 });

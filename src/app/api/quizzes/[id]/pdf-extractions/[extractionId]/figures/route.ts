@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { canManage, getContentActor } from "@/lib/quiz-access";
 import {
@@ -20,8 +21,9 @@ function isValidIndex(value: unknown, max: number): value is number {
 
 // POST: hand back presigned PUT URLs so the review UI can upload cropped figure
 // PNGs before commit — both the per-question figure crops AND the per-option
-// image-choice crops. Each key is deterministic (and lives under the
-// extraction's figures/ prefix) so it is verifiable at commit time.
+// image-choice crops. Each request gets fresh keys under the extraction's
+// figures/ prefix. Upload URLs are write-once, so fresh keys allow a safe retry
+// without making a previously validated/committed object mutable.
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string; extractionId: string }> }
@@ -101,25 +103,27 @@ export async function POST(
     const [questionFigures, optionImages] = await Promise.all([
       Promise.all(
         [...figureIndexes].map(async (questionIndex) => {
-          const storageKey = buildQuizExtractionFigureKey(
+          const baseKey = buildQuizExtractionFigureKey(
             extraction.teacherId,
             extraction.quizId,
             extraction.id,
             questionIndex
           );
+          const storageKey = baseKey.replace(/\.png$/, `-${randomUUID()}.png`);
           const presignedUrl = await presignPutUpload(extraction.bucket, storageKey, "image/png", 0);
           return { questionIndex, presignedUrl, storageKey };
         })
       ),
       Promise.all(
         optionPairs.map(async ({ questionIndex, optionIndex }) => {
-          const storageKey = buildQuizExtractionOptionImageKey(
+          const baseKey = buildQuizExtractionOptionImageKey(
             extraction.teacherId,
             extraction.quizId,
             extraction.id,
             questionIndex,
             optionIndex
           );
+          const storageKey = baseKey.replace(/\.png$/, `-${randomUUID()}.png`);
           const presignedUrl = await presignPutUpload(extraction.bucket, storageKey, "image/png", 0);
           return { questionIndex, optionIndex, presignedUrl, storageKey };
         })

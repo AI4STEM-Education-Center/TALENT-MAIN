@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 
 vi.mock("@/lib/auth", () => ({ auth: vi.fn() }));
+vi.mock("@/lib/queue", () => ({ enqueueExamResult: vi.fn() }));
 
 import { POST, PATCH } from "@/app/api/quiz/route";
 import { auth } from "@/lib/auth";
@@ -129,7 +130,7 @@ describe("POST /api/quiz (per-class settings enforcement)", () => {
     expect(res.status).toBe(200);
   });
 
-  it("rejects with 403 once maxAttempts completed attempts have been used", async () => {
+  it("rejects with 403 once maxAttempts attempt slots have been allocated", async () => {
     const { studentUser, student, cls, quiz } = await setup();
     await prisma.classQuiz.updateMany({
       where: { classId: cls.id, quizId: quiz.id },
@@ -145,19 +146,20 @@ describe("POST /api/quiz (per-class settings enforcement)", () => {
     expect((await res.json()).error).toMatch(/all 1 attempts/i);
   });
 
-  it("does not count incomplete attempts toward the cap", async () => {
+  it("counts incomplete attempts so slots cannot be stockpiled before grading", async () => {
     const { studentUser, student, cls, quiz } = await setup();
     await prisma.classQuiz.updateMany({
       where: { classId: cls.id, quizId: quiz.id },
       data: { maxAttempts: 1 },
     });
-    // An in-progress (not completed) attempt must not block a new one.
+    // A pending attempt consumes the slot; otherwise a student can pre-create
+    // many IDs, then submit them sequentially after seeing correctness feedback.
     await prisma.quizAttempt.create({
       data: { studentId: student.id, classId: cls.id, quizId: quiz.id },
     });
     asStudent(studentUser.id);
     const res = await POST(jsonReq({ classId: cls.id, quizId: quiz.id }));
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(403);
   });
 });
 
@@ -326,10 +328,37 @@ describe("PATCH /api/quiz (submission integrity)", () => {
     expect(stored?.score).toBe(0); // the replay did not overwrite the real score
   });
 
+  it("atomically accepts only one of two parallel submissions", async () => {
+    const s = await setup();
+    asStudent(s.studentUser.id);
+    const attempt = await startAttempt(s.student.id, s.cls.id, s.quiz.id);
+
+    const [one, two] = await Promise.all([
+      PATCH(
+        jsonReq({
+          attemptId: attempt.id,
+          answers: [{ questionId: s.question.id, selectedOptionId: s.optionId("3") }],
+        })
+      ),
+      PATCH(
+        jsonReq({
+          attemptId: attempt.id,
+          answers: [{ questionId: s.question.id, selectedOptionId: s.optionId("4") }],
+        })
+      ),
+    ]);
+
+    expect([one.status, two.status].sort()).toEqual([200, 409]);
+    expect(await prisma.quizAnswer.count({ where: { quizAttemptId: attempt.id } })).toBe(1);
+    expect(
+      await prisma.examResult.count({ where: { quizAttemptId: attempt.id } })
+    ).toBe(1);
+  });
+
   it("scores against the quiz's question count, not the submitted subset", async () => {
     const s = await setup();
     // A second question the student simply won't answer.
-    await prisma.question.create({
+    const unanswered = await prisma.question.create({
       data: {
         text: "What is 3 + 3?",
         quizId: s.quiz.id,
@@ -345,7 +374,10 @@ describe("PATCH /api/quiz (submission integrity)", () => {
     );
     // 1 of the quiz's 2 questions correct. Deriving the denominator from the
     // client's array would have scored this 100.
-    expect((await res.json()).score).toBe(50);
+    const body = await res.json();
+    expect(body.score).toBe(50);
+    expect(body.incorrectQuestionIds).toContain(unanswered.id);
+    expect(await prisma.quizAnswer.count({ where: { quizAttemptId: attempt.id } })).toBe(2);
   });
 
   it("rejects an answer for a question belonging to another quiz", async () => {
