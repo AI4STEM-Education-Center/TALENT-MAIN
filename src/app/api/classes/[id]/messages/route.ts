@@ -141,6 +141,7 @@ export async function POST(
         to: emailRecipients,
         subject: subject.trim(),
         text,
+        purpose: "NOTIFICATION",
         replyTo: teacher.user.email,
       });
       emailSent = result.sent;

@@ -51,6 +51,7 @@ export async function POST(
       to: [teacherEmail],
       subject: `[${cls.name}] ${subject.trim()}`,
       text,
+      purpose: "CONTACT_TEACHER",
       replyTo: student.user.email,
     });
 

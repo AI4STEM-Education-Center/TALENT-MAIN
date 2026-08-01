@@ -30,6 +30,66 @@ export const registerSchema = z.object({
   password: z.string().min(1),
 });
 
+/**
+ * Password inputs. Strength is enforced separately by validatePassword so its
+ * detailed, user-facing message is preserved; the cap only stops an absurdly
+ * long string from reaching bcrypt.
+ */
+const passwordField = z.string().min(1).max(200);
+
+/** Self-service profile edit (name + email). Username is not editable. */
+export const profileUpdateSchema = z.object({
+  firstName: trimmedNonEmpty,
+  lastName: trimmedNonEmpty,
+  email: trimmedNonEmpty,
+});
+
+/** Signed-in password change — the current password re-authenticates the user. */
+export const changePasswordSchema = z.object({
+  currentPassword: passwordField,
+  newPassword: passwordField,
+});
+
+/** "Forgot password?" — an email address or a username. */
+export const forgotPasswordSchema = z.object({
+  identifier: trimmedNonEmpty,
+});
+
+/** Redeeming an emailed reset link. */
+export const resetPasswordSchema = z.object({
+  token: z.string().min(1).max(200),
+  password: passwordField,
+});
+
+// ─── Per-purpose email senders ──────────────────────────────────────────────
+// Shapes for the admin's /admin/email sender overrides. Values are only
+// shape-checked here; address/domain syntax is normalized by
+// src/lib/email-purposes.ts so the UI and the sender share one definition.
+
+const optionalText = (max: number) =>
+  z
+    .string()
+    .max(max)
+    .transform((s) => s.trim())
+    .nullish()
+    .transform((s) => (s ? s : null));
+
+export const emailSenderRowSchema = z.object({
+  purpose: z.string().min(1).max(64),
+  localPart: z.string().max(64).transform((s) => s.trim()),
+  fromName: optionalText(200),
+  replyTo: optionalText(320),
+  subject: optionalText(300),
+  body: optionalText(10_000),
+});
+
+export const emailSendersUpdateSchema = z.object({
+  // Empty string clears the shared domain (every purpose falls back to the
+  // SMTP config's single From address).
+  senderDomain: z.string().max(253).transform((s) => s.trim()).nullish(),
+  senders: z.array(emailSenderRowSchema).max(50),
+});
+
 // ─── Concept / Misconception catalog import ────────────────────────────────
 // Bodies are the already-parsed rows produced client-side by
 // src/lib/concept-csv.ts (the browser parses the CSV; routes only validate the
