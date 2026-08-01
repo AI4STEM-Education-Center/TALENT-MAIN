@@ -60,7 +60,15 @@ export default auth((req) => {
   const session = req.auth;
 
   // Public routes
-  const publicRoutes = ["/", "/login", "/register", "/admin-register"];
+  const publicRoutes = [
+    "/",
+    "/login",
+    "/register",
+    "/admin-register",
+    // Password recovery: reachable precisely when the user has no session.
+    "/forgot-password",
+    "/reset-password",
+  ];
   const isPublicRoute = publicRoutes.includes(pathname);
   const isInviteRoute = pathname.startsWith("/invite/");
   const isApiAuth = pathname.startsWith("/api/auth");
