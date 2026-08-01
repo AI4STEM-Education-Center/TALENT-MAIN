@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { canManage, getContentActor } from "@/lib/quiz-access";
 import { QuestionImportError, validateParsedQuestionBank } from "@/lib/question-import/qti";
 import { rateLimit } from "@/lib/rate-limit";
+import { BODY_TOO_LARGE, readBoundedText } from "@/lib/request-body";
 
 export const runtime = "nodejs";
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
@@ -28,17 +29,16 @@ export async function POST(req: NextRequest) {
   const limited = rateLimit(req, "question-import", 30, 60_000, actor.userId);
   if (limited) return limited;
 
-  const declaredLength = Number(req.headers.get("content-length"));
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_IMPORT_BYTES) {
+  // Bound the body as it streams in. Measuring after `req.text()` would be too
+  // late: a request without content-length (chunked encoding) buffers in full
+  // before any check runs, so the cap is enforced during the read instead.
+  const raw = await readBoundedText(req, MAX_IMPORT_BYTES);
+  if (raw === BODY_TOO_LARGE) {
     return NextResponse.json({ error: "Import payload is too large." }, { status: 413 });
   }
 
   let payload: unknown;
   try {
-    const raw = await req.text();
-    if (Buffer.byteLength(raw, "utf8") > MAX_IMPORT_BYTES) {
-      return NextResponse.json({ error: "Import payload is too large." }, { status: 413 });
-    }
     payload = JSON.parse(raw);
   } catch {
     return NextResponse.json({ error: "Invalid JSON import payload." }, { status: 400 });

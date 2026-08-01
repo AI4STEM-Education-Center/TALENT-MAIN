@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import {
   getMaxUploadBytes,
+  maxDerivedPageBytes,
   sanitizeFilename,
   buildStorageKey,
   buildPageStorageKey,
@@ -195,5 +196,35 @@ describe("getS3Config", () => {
     process.env.AWS_S3_BUCKET = "my-bucket";
     delete process.env.AWS_REGION;
     expect(() => getS3Config()).toThrow(/AWS_S3_BUCKET and AWS_REGION/);
+  });
+});
+
+describe("maxDerivedPageBytes", () => {
+  const MB = 1024 * 1024;
+
+  it("keeps the old flat allowance for short documents", () => {
+    // 4x the 50 MB single-file limit, as before — a 3-page handout never needed
+    // more, and nothing that used to upload should start failing.
+    expect(maxDerivedPageBytes(3)).toBe(4 * DEFAULT_MAX_BYTES);
+  });
+
+  it("scales with page count once the flat allowance would bind", () => {
+    // The regression this exists for: a 100-page scan renders to far more than
+    // 200 MB of PNG while every individual page is comfortably legal, and the
+    // flat cap only rejected it after all 100 pages had been uploaded.
+    expect(maxDerivedPageBytes(100)).toBe(400 * MB);
+    expect(maxDerivedPageBytes(100)).toBeGreaterThan(4 * DEFAULT_MAX_BYTES);
+  });
+
+  it("never returns less than the flat allowance", () => {
+    for (const pages of [0, 1, 10, 50, 100]) {
+      expect(maxDerivedPageBytes(pages)).toBeGreaterThanOrEqual(4 * DEFAULT_MAX_BYTES);
+    }
+  });
+
+  it("tracks a configured per-file limit", () => {
+    process.env.LEARNING_MATERIAL_MAX_BYTES = String(10 * MB);
+    expect(maxDerivedPageBytes(1)).toBe(40 * MB);
+    delete process.env.LEARNING_MATERIAL_MAX_BYTES;
   });
 });

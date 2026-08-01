@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import {
   buildPageStorageKey,
   getMaxUploadBytes,
+  maxDerivedPageBytes,
   presignPutUpload,
   getS3Config,
 } from "@/lib/storage";
@@ -91,6 +92,28 @@ export async function POST(
   }
 
   const maxBytes = getMaxUploadBytes();
+
+  // Reject an over-budget document HERE, before a single upload URL is issued.
+  // The completion endpoint re-checks the sizes that actually landed (declared
+  // sizes are only a client claim), but finding out there means the teacher has
+  // already waited through the whole upload and the bucket is holding every
+  // orphaned page. These declared sizes are enough to answer immediately.
+  const declaredTotal = body.pages.reduce(
+    (total, page) => total + (typeof page?.sizeBytes === "number" ? page.sizeBytes : 0),
+    0
+  );
+  const aggregateLimit = maxDerivedPageBytes(body.pages.length);
+  if (declaredTotal > aggregateLimit) {
+    return NextResponse.json(
+      {
+        error:
+          `These ${body.pages.length} pages total ${declaredTotal} bytes, over the ` +
+          `${aggregateLimit}-byte limit for a document this length. Re-upload at a lower resolution.`,
+      },
+      { status: 413 }
+    );
+  }
+
   const mimeType = "image/png"; // Using PNG for page slices
 
   const results = await Promise.all(

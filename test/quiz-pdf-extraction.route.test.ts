@@ -595,7 +595,61 @@ describe("POST .../commit", () => {
     };
     const res = await commitPost(jsonReq({ questions: [foreign] }), extCtx(quiz.id, ext.id));
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toContain("does not belong");
+    expect((await res.json()).error).toContain("was not uploaded for this extraction");
+  });
+
+  // The case a prefix test cannot catch: a key shaped exactly like one of this
+  // extraction's own crops, under its own figures/ folder, that the extraction
+  // never handed out a presigned PUT for.
+  it("400 for a never-issued key inside this extraction's own figures/ prefix", async () => {
+    const { teacher, quiz, ext } = await setup();
+    const unissued = `${buildQuizExtractionFigureKey(teacher.id, quiz.id, ext.id, 0).replace(
+      /\.png$/,
+      ""
+    )}-00000000-0000-4000-8000-000000000000.png`;
+
+    const res = await commitPost(
+      jsonReq({
+        questions: [
+          {
+            ...trueFalseQuestion,
+            hasFigure: true,
+            figurePage: 1,
+            figureCaption: "diagram",
+            figureStorageKey: unissued,
+          },
+        ],
+      }),
+      extCtx(quiz.id, ext.id)
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain("was not uploaded for this extraction");
+    expect(await prisma.question.count({ where: { quizId: quiz.id } })).toBe(0);
+  });
+
+  it("commits a figure key that /figures actually issued", async () => {
+    const { quiz, ext } = await setup("AWAITING_REVIEW");
+    const figRes = await figuresPost(jsonReq({ questionFigures: [0] }), extCtx(quiz.id, ext.id));
+    const { questionFigures } = await figRes.json();
+    const issuedKey: string = questionFigures[0].storageKey;
+
+    const res = await commitPost(
+      jsonReq({
+        questions: [
+          {
+            ...trueFalseQuestion,
+            hasFigure: true,
+            figurePage: 1,
+            figureCaption: "diagram",
+            figureStorageKey: issuedKey,
+          },
+        ],
+      }),
+      extCtx(quiz.id, ext.id)
+    );
+    expect(res.status).toBe(200);
+    const question = await prisma.question.findFirst({ where: { quizId: quiz.id } });
+    expect(question?.figureStorageKey).toBe(issuedKey);
   });
 
   it("400 for an option-image key outside this extraction's prefix", async () => {
@@ -618,7 +672,7 @@ describe("POST .../commit", () => {
     };
     const res = await commitPost(jsonReq({ questions: [foreign] }), extCtx(quiz.id, ext.id));
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toContain("does not belong");
+    expect((await res.json()).error).toContain("was not uploaded for this extraction");
   });
 
   it("commits: QuestionImport + Question/Option rows, NUMERIC + TRUE_FALSE mapping, COMMITTED + import linked", async () => {

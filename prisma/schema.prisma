@@ -402,10 +402,11 @@ model QuizPdfExtraction {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  quiz    Quiz                    @relation(fields: [quizId], references: [id], onDelete: Cascade)
-  teacher Teacher?                @relation(fields: [teacherId], references: [id], onDelete: Cascade)
-  import  QuestionImport?         @relation(fields: [questionImportId], references: [id], onDelete: SetNull)
+  quiz    Quiz                      @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  teacher Teacher?                  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  import  QuestionImport?           @relation(fields: [questionImportId], references: [id], onDelete: SetNull)
   pages   QuizPdfExtractionPage[]
+  figures QuizPdfExtractionFigure[]
 
   @@index([quizId])
   @@index([teacherId])
@@ -420,6 +421,32 @@ model QuizPdfExtractionPage {
   extraction QuizPdfExtraction @relation(fields: [extractionId], references: [id], onDelete: Cascade)
 
   @@unique([extractionId, pageNumber])
+  @@index([extractionId])
+}
+
+// Every figure / image-choice key this extraction has handed out a presigned PUT
+// for. Commit accepts a key only if it is recorded here.
+//
+// A "does it start with the right prefix" test is satisfied by ANY object under
+// the folder, so it cannot tell an issued crop apart from one the extraction
+// never handed out. Recording the keys at issue time is what makes exact
+// verification possible while the keys stay UUID-versioned (which is what keeps
+// a retried crop from having to overwrite a write-once object).
+//
+// It also gives post-commit cleanup the list it needs: crops that were uploaded
+// but never referenced by the commit can be deleted instead of accumulating
+// under figures/, which the sweep otherwise preserves wholesale.
+model QuizPdfExtractionFigure {
+  id            String   @id @default(cuid())
+  extractionId  String
+  questionIndex Int
+  // null for a per-question figure crop; set for an image answer choice.
+  optionIndex   Int?
+  storageKey    String   @unique
+  createdAt     DateTime @default(now())
+
+  extraction QuizPdfExtraction @relation(fields: [extractionId], references: [id], onDelete: Cascade)
+
   @@index([extractionId])
 }
 

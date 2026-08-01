@@ -5,6 +5,7 @@ import { enqueueQuizExtraction } from "@/lib/queue";
 import {
   buildQuizExtractionPageKey,
   getMaxUploadBytes,
+  maxDerivedPageBytes,
   headS3Object,
 } from "@/lib/storage";
 import { rateLimit } from "@/lib/rate-limit";
@@ -13,7 +14,6 @@ export const runtime = "nodejs";
 
 /** Maximum number of pages accepted in a single quiz-PDF extraction. */
 const MAX_QUIZ_PDF_PAGES = 20;
-const MAX_DERIVED_BYTES_MULTIPLIER = 4;
 class ExtractionAlreadyClaimedError extends Error {}
 
 type CompletePage = { pageNumber: number; storageKey: string };
@@ -116,7 +116,7 @@ export async function POST(
     pdfHead.contentLength > maxBytes ||
     pageHeads.some((page) => page.contentLength < 1 || page.contentLength > maxBytes) ||
     pageHeads.reduce((total, page) => total + page.contentLength, 0) >
-      maxBytes * MAX_DERIVED_BYTES_MULTIPLIER
+      maxDerivedPageBytes(pageHeads.length)
   ) {
     return NextResponse.json({ error: "Uploaded objects exceed size limits" }, { status: 413 });
   }

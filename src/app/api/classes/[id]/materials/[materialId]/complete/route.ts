@@ -5,6 +5,7 @@ import {
   headS3Object,
   getS3Config,
   getMaxUploadBytes,
+  maxDerivedPageBytes,
   materialPrefixFromStorageKey,
   buildPageStorageKey,
 } from "@/lib/storage";
@@ -14,7 +15,6 @@ import { rateLimit } from "@/lib/rate-limit";
 export const runtime = "nodejs";
 
 const MAX_MATERIAL_PAGES = 100;
-const MAX_DERIVED_BYTES_MULTIPLIER = 4;
 class MaterialAlreadyCompletedError extends Error {}
 
 export async function POST(
@@ -154,9 +154,12 @@ export async function POST(
     (total, page) => total + page.contentLength,
     0
   );
+  // Scales with page count — see maxDerivedPageBytes. The /pages endpoint has
+  // already rejected an over-budget document from its declared sizes; this is
+  // the authoritative check against what actually landed in the bucket.
   if (
     oversizedPage !== -1 ||
-    totalPageBytes > maxBytes * MAX_DERIVED_BYTES_MULTIPLIER
+    totalPageBytes > maxDerivedPageBytes(uploadedPages.length)
   ) {
     return NextResponse.json(
       {

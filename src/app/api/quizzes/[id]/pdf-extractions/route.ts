@@ -6,6 +6,7 @@ import {
   buildQuizExtractionPdfKey,
   buildQuizExtractionPageKey,
   getMaxUploadBytes,
+  maxDerivedPageBytes,
   getS3Config,
   presignPutUpload,
   sanitizeFilename,
@@ -15,7 +16,6 @@ export const runtime = "nodejs";
 
 /** Maximum number of pages accepted in a single quiz-PDF extraction. */
 export const MAX_QUIZ_PDF_PAGES = 20;
-const MAX_DERIVED_BYTES_MULTIPLIER = 4;
 
 type InitPage = { pageNumber: number; sizeBytes: number };
 
@@ -102,7 +102,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
   if (
     pages.reduce((total, page) => total + page.sizeBytes, 0) >
-    maxBytes * MAX_DERIVED_BYTES_MULTIPLIER
+    maxDerivedPageBytes(pages.length)
   ) {
     return NextResponse.json(
       { error: "Rendered pages exceed the aggregate upload limit" },

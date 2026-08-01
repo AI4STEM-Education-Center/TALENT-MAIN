@@ -99,34 +99,60 @@ export async function POST(
     );
   }
 
+  // Build the keys first. Each carries a fresh UUID so a retried crop never has
+  // to overwrite a write-once object.
+  const figureSlots = [...figureIndexes].map((questionIndex) => ({
+    questionIndex,
+    optionIndex: null,
+    storageKey: buildQuizExtractionFigureKey(
+      extraction.teacherId,
+      extraction.quizId,
+      extraction.id,
+      questionIndex
+    ).replace(/\.png$/, `-${randomUUID()}.png`),
+  }));
+  const optionSlots = optionPairs.map(({ questionIndex, optionIndex }) => ({
+    questionIndex,
+    optionIndex,
+    storageKey: buildQuizExtractionOptionImageKey(
+      extraction.teacherId,
+      extraction.quizId,
+      extraction.id,
+      questionIndex,
+      optionIndex
+    ).replace(/\.png$/, `-${randomUUID()}.png`),
+  }));
+
   try {
+    // SECURITY: record every key BEFORE its upload URL exists. Commit accepts a
+    // key only if it is in this table, so a URL that escaped without a matching
+    // row would be unusable — and, worse, an unrecorded key that later turned up
+    // at commit would have to fall back to a prefix test to be accepted at all.
+    // Recording first means the set is always a superset of what was handed out.
+    await prisma.quizPdfExtractionFigure.createMany({
+      data: [...figureSlots, ...optionSlots].map((slot) => ({
+        extractionId: extraction.id,
+        questionIndex: slot.questionIndex,
+        optionIndex: slot.optionIndex,
+        storageKey: slot.storageKey,
+      })),
+    });
+
     const [questionFigures, optionImages] = await Promise.all([
       Promise.all(
-        [...figureIndexes].map(async (questionIndex) => {
-          const baseKey = buildQuizExtractionFigureKey(
-            extraction.teacherId,
-            extraction.quizId,
-            extraction.id,
-            questionIndex
-          );
-          const storageKey = baseKey.replace(/\.png$/, `-${randomUUID()}.png`);
-          const presignedUrl = await presignPutUpload(extraction.bucket, storageKey, "image/png", 0);
-          return { questionIndex, presignedUrl, storageKey };
-        })
+        figureSlots.map(async ({ questionIndex, storageKey }) => ({
+          questionIndex,
+          storageKey,
+          presignedUrl: await presignPutUpload(extraction.bucket, storageKey, "image/png", 0),
+        }))
       ),
       Promise.all(
-        optionPairs.map(async ({ questionIndex, optionIndex }) => {
-          const baseKey = buildQuizExtractionOptionImageKey(
-            extraction.teacherId,
-            extraction.quizId,
-            extraction.id,
-            questionIndex,
-            optionIndex
-          );
-          const storageKey = baseKey.replace(/\.png$/, `-${randomUUID()}.png`);
-          const presignedUrl = await presignPutUpload(extraction.bucket, storageKey, "image/png", 0);
-          return { questionIndex, optionIndex, presignedUrl, storageKey };
-        })
+        optionSlots.map(async ({ questionIndex, optionIndex, storageKey }) => ({
+          questionIndex,
+          optionIndex,
+          storageKey,
+          presignedUrl: await presignPutUpload(extraction.bucket, storageKey, "image/png", 0),
+        }))
       ),
     ]);
     return NextResponse.json({ questionFigures, optionImages });
