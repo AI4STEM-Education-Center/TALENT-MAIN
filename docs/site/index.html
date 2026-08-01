@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI4Talent — Guide for Dr. Yue Yin</title>
-<meta name="description" content="Step-by-step guide to AI4Talent at dev.ai4talent.org: your teacher and student accounts, class, roster and AI-labeled learning materials are already set up — here's how to use the platform from both sides, with direct links into every screen.">
+<title>AI4Talent — User Guide</title>
+<meta name="description" content="Step-by-step guide to AI4Talent, the Adaptive Learning Platform: what administrators, teachers and students each do, from setting up a class and AI-labeled learning materials to taking quizzes and reading AI feedback — with direct links into every screen.">
 <style>
   :root {
     --bg: #f7f8fb;
@@ -113,6 +113,18 @@
   #tab-teacher[aria-selected="true"] { color: var(--teacher); border-color: var(--teacher); background: var(--teacher-soft); }
   #tab-student[aria-selected="true"] { color: var(--student); border-color: var(--student); background: var(--student-soft); }
   [role="tab"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* Three tabs have to fit a phone without the sticky bar overflowing the page,
+     so tighten the type and shorten the longest label. Text hidden with
+     display:none is left out of the accessible name, so each tab keeps exactly
+     one. */
+  [role="tab"] .short { display: none; }
+  @media (max-width: 560px) {
+    [role="tablist"] { gap: .4rem; padding: 0 .75rem; }
+    [role="tab"] { padding: .6rem .45rem; font-size: .86rem; gap: .35rem; min-width: 0; }
+    [role="tab"] .glyph { width: 1.25rem; height: 1.25rem; border-radius: 6px; font-size: .75rem; }
+    [role="tab"] .full { display: none; }
+    [role="tab"] .short { display: inline; }
+  }
 
   /* ── Panels & sections ──────────────────────────────── */
   [role="tabpanel"][hidden] { display: none; }
@@ -212,11 +224,12 @@
     transition: border-color .15s, background .15s, color .15s;
   }
   .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.admin   { background: var(--admin);   border-color: var(--admin);   color: #fff; }
   .btn.teacher { background: var(--teacher); border-color: var(--teacher); color: #fff; }
   .btn.student { background: var(--student); border-color: var(--student); color: #fff; }
-  .btn.teacher:hover, .btn.student:hover { filter: brightness(1.08); color: #fff; }
+  .btn.admin:hover, .btn.teacher:hover, .btn.student:hover { filter: brightness(1.08); color: #fff; }
 
-  /* ── "Already set up" checklist ─────────────────────── */
+  /* ── Setup-order checklist ──────────────────────────── */
   ul.ready { list-style: none; margin: .9rem 0 0; padding: 0; display: grid; gap: .6rem; }
   ul.ready > li {
     display: grid; grid-template-columns: 1.4rem 1fr; gap: .6rem;
@@ -236,10 +249,10 @@
   }
   .panel-teacher section.block.spotlight > h2 .kicker { color: #fff; background: var(--accent); }
 
-  /* ── Welcome card ───────────────────────────────────── */
-  .about.welcome { border-color: var(--accent); }
-  .about.welcome h2 { display: flex; align-items: center; gap: .55rem; flex-wrap: wrap; }
-  .about.welcome .site {
+  /* ── Roles card ─────────────────────────────────────── */
+  .about.roles { border-color: var(--accent); }
+  .about.roles h2 { display: flex; align-items: center; gap: .55rem; flex-wrap: wrap; }
+  .about.roles .site {
     font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
     color: var(--accent); background: var(--accent-soft);
     padding: .2em .65em; border-radius: 999px; text-decoration: none;
@@ -249,6 +262,7 @@
     text-transform: uppercase; letter-spacing: .07em;
     padding: .2em .6em; border-radius: 999px; white-space: nowrap;
   }
+  .rolechip.a { color: var(--admin);   background: var(--admin-soft); }
   .rolechip.t { color: var(--teacher); background: var(--teacher-soft); }
   .rolechip.s { color: var(--student); background: var(--student-soft); }
 
@@ -263,8 +277,8 @@
 
 <header class="hero">
   <span class="logo"><span class="dot" aria-hidden="true"></span>AI4Talent</span>
-  <h1>Welcome, Dr. Yue Yin — getting started with AI4Talent</h1>
-  <p class="sub">A walkthrough of the Adaptive Learning Platform written for your two accounts: one <strong>teacher</strong> account for running a class, and one <strong>student</strong> account for seeing exactly what your students see. Your class, roster, enrollment and learning materials are <strong>already set up</strong> — sign in and start exploring. Every screen below links straight into the live site.</p>
+  <h1>Getting started with AI4Talent</h1>
+  <p class="sub">A walkthrough of the Adaptive Learning Platform for all three roles: the <strong>administrator</strong> who runs the deployment, the <strong>teacher</strong> who runs a class, and the <strong>student</strong> who takes the quizzes. Pick your role below — every screen links straight into the live site.</p>
 </header>
 
 <div class="wrap">
@@ -272,65 +286,67 @@
     <h2>What is AI4Talent?</h2>
     <p><strong>AI4Talent</strong> is a class-based quiz platform for science education. Teachers create classes from their official roster, import quizzes from a shared global pool (or build them from a PDF, which the AI reads for you), and invite students with a secure link. Students take quizzes online and, after each attempt, receive <strong>AI-generated feedback</strong>: a performance summary, targeted study recommendations pointing at specific pages of the class's learning materials, and interactive <strong>simulations</strong> that let them explore the concepts they struggled with.</p>
     <p>Results are intentionally <strong>“blind”</strong> — students see their overall score, the questions they missed, their own submitted responses, and personalized guidance, but never the correct answers or unselected choices. Quizzes stay reusable while students still know what to revisit.</p>
-    <p>Your instance is hosted at <a href="https://dev.ai4talent.org/">dev.ai4talent.org</a>. Every path in this guide (like <a class="path" href="https://dev.ai4talent.org/login"><code>/login</code></a>) is a live link — click it to open that screen directly.</p>
+    <p>This guide is written against the deployment at <a href="https://dev.ai4talent.org/">dev.ai4talent.org</a>. Every path in it (like <a class="path" href="https://dev.ai4talent.org/login"><code>/login</code></a>) is a live link — click it to open that screen directly. If your institution runs its own instance, the paths are the same under your own domain.</p>
   </div>
 
-  <div class="about welcome">
-    <h2>Your accounts &amp; your class are ready <a class="site" href="https://dev.ai4talent.org/">dev.ai4talent.org</a></h2>
-    <p>You don't have to build anything before you can try the platform — the whole environment has been provisioned for you:</p>
+  <div class="about roles">
+    <h2>Three roles, one workflow <a class="site" href="https://dev.ai4talent.org/">dev.ai4talent.org</a></h2>
+    <p>Each role picks up where the previous one leaves off. This is the order things happen in when a class goes live:</p>
     <ul class="ready">
-      <li><span class="ck" aria-hidden="true">✓</span><span><strong>A teacher account and a student account already exist.</strong> Nothing to register — your credentials were sent to you separately, and you can sign in with either the email address or the username.</span></li>
-      <li><span class="ck" aria-hidden="true">✓</span><span><strong>A class has been created, with its roster already imported.</strong> Open <a class="path" href="https://dev.ai4talent.org/teacher/classes"><code>My Classes</code></a> and it's waiting there.</span></li>
-      <li><span class="ck" aria-hidden="true">✓</span><span><strong>Your student account is already enrolled in that class.</strong> No invite link to generate, no 81-number verification to sit through — sign in as the student and the class is simply there.</span></li>
-      <li><span class="ck" aria-hidden="true">✓</span><span><strong>Learning materials are already uploaded and fully processed.</strong> Each document has an <strong>AI-generated summary</strong> and key-concept tags, and every page carries an AI-written key concept and description with the important pages labeled — see <a href="#teacher-materials">Learning materials</a>.</span></li>
-      <li><span class="ck" aria-hidden="true">✓</span><span><strong>The global quiz pool is stocked.</strong> Import any quiz into your own library with one click, then assign it to the class — see <a href="#teacher-quizzes">Import &amp; publish a quiz</a>.</span></li>
-      <li><span class="ck" aria-hidden="true">✓</span><span><strong>You can also turn any quiz PDF into a live quiz.</strong> Upload the PDF and the AI extracts the questions, choices and figures for you to review — see <a href="#teacher-quiz-pdf">Import a quiz from a PDF</a>.</span></li>
+      <li><span class="ck" aria-hidden="true">✓</span><span><strong>An administrator prepares the platform.</strong> Connects an AI provider, assigns a model to each AI feature, and stocks the shared global quiz pool — see <a href="#admin-signup">the Administrator tab</a>.</span></li>
+      <li><span class="ck" aria-hidden="true">✓</span><span><strong>A teacher registers and creates a class.</strong> Sign-up uses a teacher registration code from the administrator; the class is created together with its official roster — see <a href="#teacher-create-class">Create a class</a>.</span></li>
+      <li><span class="ck" aria-hidden="true">✓</span><span><strong>The teacher uploads learning materials.</strong> Each document gets an <strong>AI-generated summary</strong> and key-concept tags, and every page carries an AI-written key concept and description with the important pages labeled — see <a href="#teacher-materials">Learning materials</a>.</span></li>
+      <li><span class="ck" aria-hidden="true">✓</span><span><strong>The teacher adds quizzes and publishes them.</strong> Import from the global pool with one click, build one from scratch, or turn an existing quiz PDF into a live quiz — see <a href="#teacher-quizzes">Import &amp; publish a quiz</a> and <a href="#teacher-quiz-pdf">Import a quiz from a PDF</a>.</span></li>
+      <li><span class="ck" aria-hidden="true">✓</span><span><strong>Students join with an invite link and take the quizzes.</strong> There is no open student sign-up: an account is created when a student joins their first class and verifies their identity against the roster — see <a href="#student-join">How students join</a>.</span></li>
+      <li><span class="ck" aria-hidden="true">✓</span><span><strong>Everyone reads what comes back.</strong> Students get AI feedback, study recommendations and simulations after each attempt; teachers get per-class, per-quiz and per-student statistics plus a gradebook export — see <a href="#teacher-results">Monitor results</a>.</span></li>
     </ul>
     <div class="tablewrap"><table>
-      <tr><th>Account</th><th>Use it to</th><th>Start here</th></tr>
+      <tr><th>Role</th><th>Use it to</th><th>Start here</th></tr>
+      <tr>
+        <td><span class="rolechip a">Admin</span></td>
+        <td class="dim">Curate the global quiz pool and simulations, configure AI providers and models, manage accounts, run backups and audit logs.</td>
+        <td><a class="path" href="https://dev.ai4talent.org/admin"><code>/admin</code></a></td>
+      </tr>
       <tr>
         <td><span class="rolechip t">Teacher</span></td>
-        <td class="dim">Open your ready-made class, import and publish quizzes, build a quiz from a PDF, review the AI-labeled learning materials, monitor results, export grades.</td>
+        <td class="dim">Create a class from a roster, import and publish quizzes, build a quiz from a PDF, upload and review AI-labeled learning materials, monitor results, export grades.</td>
         <td><a class="path" href="https://dev.ai4talent.org/teacher"><code>/teacher</code></a></td>
       </tr>
       <tr>
         <td><span class="rolechip s">Student</span></td>
-        <td class="dim">Already enrolled in your class: take a quiz and see the AI feedback, study recommendations, and simulations your students receive.</td>
+        <td class="dim">Join a class, take quizzes, and read the AI feedback, study recommendations and simulations produced for each attempt.</td>
         <td><a class="path" href="https://dev.ai4talent.org/student"><code>/student</code></a></td>
       </tr>
     </table></div>
-    <div class="callout tip"><span class="ic">✓</span><p>Use two browser profiles (or one normal window and one private window) to stay signed into both accounts at once — that way you can publish a quiz as the teacher and immediately take it as the student without signing out.</p></div>
+    <div class="callout tip"><span class="ic">✓</span><p>Evaluating the platform from both sides? Use two browser profiles (or one normal window and one private window) to stay signed into a teacher and a student account at once — that way you can publish a quiz as the teacher and immediately take it as the student without signing out.</p></div>
     <div class="btn-row">
-      <a class="btn teacher" href="https://dev.ai4talent.org/login?callbackUrl=%2Fteacher">Sign in as teacher →</a>
-      <a class="btn student" href="https://dev.ai4talent.org/login?callbackUrl=%2Fstudent">Sign in as student →</a>
+      <a class="btn admin" href="https://dev.ai4talent.org/login?callbackUrl=%2Fadmin">Sign in as an admin →</a>
+      <a class="btn teacher" href="https://dev.ai4talent.org/login?callbackUrl=%2Fteacher">Sign in as a teacher →</a>
+      <a class="btn student" href="https://dev.ai4talent.org/login?callbackUrl=%2Fstudent">Sign in as a student →</a>
       <a class="btn" href="https://dev.ai4talent.org/">Open dev.ai4talent.org</a>
     </div>
   </div>
 
   <div class="about">
     <h2>A 15-minute tour</h2>
-    <p>Because the accounts, class, roster, enrollment and learning materials already exist, the shortest path through the platform is short indeed:</p>
+    <p>If the platform is already configured and you just want to see the full loop once, this is the shortest path through it:</p>
     <ol class="steps">
-      <li><p><strong>Sign in as the teacher</strong> and open your class from <a class="path" href="https://dev.ai4talent.org/teacher/classes"><code>My Classes</code></a> — <a href="#teacher-class">the roster is already in place</a>.</p></li>
+      <li><p><strong>Sign in as a teacher</strong> and open a class from <a class="path" href="https://dev.ai4talent.org/teacher/classes"><code>My Classes</code></a> — or <a href="#teacher-create-class">create one from a roster CSV</a> if there isn't one yet.</p></li>
       <li><p><a href="#teacher-materials"><strong>Open a learning material</strong></a> and read what the AI wrote: a document summary, key concepts, and a key concept + description for every page, with the core pages labeled.</p></li>
       <li><p><a href="#teacher-quizzes"><strong>Import a quiz from the global pool</strong></a>, add it to the class, and publish it.</p></li>
-      <li><p><strong>Switch to the student account</strong> — your class is already on its dashboard, so go straight to <a href="#student-quiz">taking the quiz</a> and reading the <a href="#student-results">AI feedback</a>.</p></li>
+      <li><p><strong>Switch to a student account</strong> enrolled in that class and go straight to <a href="#student-quiz">taking the quiz</a> and reading the <a href="#student-results">AI feedback</a>.</p></li>
       <li><p><strong>Back as the teacher</strong>, check <a href="#teacher-results">the results</a> and <a href="#teacher-export">export the grades</a>.</p></li>
-      <li><p><strong>Then the part worth seeing:</strong> <a href="#teacher-quiz-pdf">upload one of your own quiz PDFs</a> and watch the AI extract its questions, choices and figures for you to review.</p></li>
+      <li><p><strong>Then the part worth seeing:</strong> <a href="#teacher-quiz-pdf">upload a quiz PDF of your own</a> and watch the AI extract its questions, choices and figures for you to review.</p></li>
     </ol>
   </div>
 </div>
 
 <div class="tabbar">
   <div role="tablist" aria-label="Choose your role">
-    <!-- TEMPORARILY HIDDEN: the Administrator tab. Dr. Yin has teacher + student
-         accounts only. To restore, un-comment the button below AND unwrap the
-         <template id="hidden-admin-panel"> further down in this file. -->
-    <!--
     <button role="tab" id="tab-admin" aria-controls="panel-admin" aria-selected="false" tabindex="-1">
-      <span class="glyph" aria-hidden="true">A</span> Administrator
+      <span class="glyph" aria-hidden="true">A</span>
+      <span class="full">Administrator</span><span class="short">Admin</span>
     </button>
-    -->
     <button role="tab" id="tab-teacher" aria-controls="panel-teacher" aria-selected="true">
       <span class="glyph" aria-hidden="true">T</span> Teacher
     </button>
@@ -342,14 +358,8 @@
 
 <main class="wrap">
 
-  <!-- ══════════════════════ ADMIN (temporarily hidden) ══════════════════════
-       Kept verbatim inside a <template> so nothing is lost. Template content is
-       inert: it does not render, is not in the accessibility tree, and is NOT
-       reachable via document.getElementById, so the tab script ignores it.
-       To restore: delete the <template> open/close tags below and un-comment the
-       Administrator <button role="tab"> in the tablist above. -->
-  <template id="hidden-admin-panel">
-  <div role="tabpanel" id="panel-admin" class="panel-admin" aria-labelledby="tab-admin">
+  <!-- ══════════════════════ ADMIN ══════════════════════ -->
+  <div role="tabpanel" id="panel-admin" class="panel-admin" aria-labelledby="tab-admin" hidden>
     <p class="panel-intro">Administrators run the platform: they curate the shared quiz pool, configure the AI features, manage every account, and keep the system healthy. Here's how to get set up and what each part of the admin dashboard does.</p>
 
     <section class="block" id="admin-signup">
@@ -357,10 +367,10 @@
       <ol class="steps">
         <li><strong>Get the admin registration code.</strong>
           <p>Admin sign-up is protected by a registration code configured on the server. Get it from whoever operates your AI4Talent deployment.</p></li>
-        <li><strong>Open <code>/admin-register</code>.</strong>
+        <li><strong>Open <a class="path" href="https://dev.ai4talent.org/admin-register"><code>/admin-register</code></a>.</strong>
           <p>Fill in your first name, last name, a username, your email, and a password, then enter the admin registration code and submit.</p></li>
-        <li><strong>Sign in at <code>/login</code>.</strong>
-          <p>You can sign in with either your email or your username. You'll land on the admin overview with stat cards for users, quizzes, and more.</p></li>
+        <li><strong>Sign in at <a class="path" href="https://dev.ai4talent.org/login"><code>/login</code></a>.</strong>
+          <p>You can sign in with either your email or your username. You'll land on the admin overview at <a class="path" href="https://dev.ai4talent.org/admin"><code>/admin</code></a> with stat cards for users, quizzes, and more.</p></li>
       </ol>
     </section>
 
@@ -384,7 +394,7 @@
       <p class="lead">The quiz pool is the platform's shared library. Quizzes are grouped under <strong>topics</strong>; teachers browse this pool when adding quizzes to their classes.</p>
       <ol class="steps">
         <li><strong>Create topics.</strong>
-          <p>On <strong>Quiz Pool</strong>, add topics (e.g. “Mechanics”, “Thermodynamics”) to organize the library.</p></li>
+          <p>On <a class="path" href="https://dev.ai4talent.org/admin/quizzes"><code>Quiz Pool</code></a>, add topics (e.g. “Mechanics”, “Thermodynamics”) to organize the library.</p></li>
         <li><strong>Add quizzes.</strong>
           <p>Create a quiz under a topic, then open it to add questions in the quiz editor. Questions support single-select, multi-select (“select all that apply”), and numeric answers, with optional figures and image answer choices.</p></li>
         <li><strong>Or import from PDFs.</strong>
@@ -413,7 +423,7 @@
       <h2><span class="kicker">Content</span> Generate simulations</h2>
       <p class="lead">Simulations are small interactive explorations (e.g. a projectile-motion sandbox) shown to students after a quiz to teach the concepts behind questions they missed — without revealing the questions' answers.</p>
       <ol class="steps">
-        <li><strong>Open <code>Simulations</code></strong> and browse pool quizzes down to individual questions.</li>
+        <li><strong>Open <a class="path" href="https://dev.ai4talent.org/admin/simulations"><code>Simulations</code></a></strong> and browse pool quizzes down to individual questions.</li>
         <li><strong>Generate.</strong>
           <p>Click generate on a question; a background worker builds a self-contained interactive simulation for its concept.</p></li>
         <li><strong>Preview and curate.</strong>
@@ -424,10 +434,10 @@
 
     <section class="block" id="admin-users">
       <h2><span class="kicker">People</span> Manage users</h2>
-      <p class="lead">The <strong>Users</strong> page lists every account, grouped into Admins, Teachers, and Students, with search across the lot.</p>
+      <p class="lead">The <a class="path" href="https://dev.ai4talent.org/admin/users"><code>Users</code></a> page lists every account, grouped into Admins, Teachers, and Students, with search across the lot.</p>
       <ol class="steps">
         <li><strong>Onboard teachers.</strong>
-          <p>Teachers self-register at <code>/register</code> using the <strong>teacher registration code</strong> configured on the server — share it only with your teaching staff. Students never register directly; they join through class invite links.</p></li>
+          <p>Teachers self-register at <a class="path" href="https://dev.ai4talent.org/register"><code>/register</code></a> using the <strong>teacher registration code</strong> configured on the server — share it only with your teaching staff. Students never register directly; they join through class invite links.</p></li>
         <li><strong>Remove accounts carefully.</strong>
           <p>Deleting a user opens a confirmation explaining the consequences: removing a <em>teacher</em> also removes their classes and materials; removing a <em>student</em> removes their enrollments and progress. You cannot delete your own account.</p></li>
       </ol>
@@ -435,7 +445,7 @@
 
     <section class="block" id="admin-ai-config">
       <h2><span class="kicker">System</span> Configure the AI</h2>
-      <p class="lead">On <strong>AI Config</strong> you connect model providers and decide which model powers each feature.</p>
+      <p class="lead">On <a class="path" href="https://dev.ai4talent.org/admin/ai-config"><code>AI Config</code></a> you connect model providers and decide which model powers each feature.</p>
       <ol class="steps">
         <li><strong>Add a provider.</strong>
           <p>Enter the provider type, base URL, and API key for any OpenAI-compatible endpoint.</p></li>
@@ -458,25 +468,25 @@
     <section class="block" id="admin-ops">
       <h2><span class="kicker">System</span> Email, backups &amp; logs</h2>
       <h3>Email (SMTP)</h3>
-      <p class="lead">On <strong>Email</strong>, enter your SMTP host, port, username, password, from-address, and from-name, then use <strong>send test email</strong> to verify delivery. You can also cap how many emails each teacher may send.</p>
+      <p class="lead">On <a class="path" href="https://dev.ai4talent.org/admin/email"><code>Email</code></a>, enter your SMTP host, port, username, password, from-address, and from-name, then use <strong>send test email</strong> to verify delivery. You can also cap how many emails each teacher may send.</p>
       <h3>Database backup</h3>
-      <p class="lead">On <strong>Backup</strong>, run on-demand backups, list existing ones, test the storage connection (WebDAV / OneDrive / S3), and restore when needed.</p>
+      <p class="lead">On <a class="path" href="https://dev.ai4talent.org/admin/backup"><code>Backup</code></a>, run on-demand backups, list existing ones, test the storage connection (WebDAV / OneDrive / S3), and restore when needed.</p>
       <h3>System logs</h3>
-      <p class="lead">On <strong>Logs</strong>, audit everything the platform records — logins, API activity, worker jobs, system events. Filter by category (<code>AUTH</code>, <code>API</code>, <code>WORKER</code>, <code>USAGE</code>, <code>SYSTEM</code>) and severity (info / warning / error), or free-text search by message, type, or IP.</p>
+      <p class="lead">On <a class="path" href="https://dev.ai4talent.org/admin/logs"><code>Logs</code></a>, audit everything the platform records — logins, API activity, worker jobs, system events. Filter by category (<code>AUTH</code>, <code>API</code>, <code>WORKER</code>, <code>USAGE</code>, <code>SYSTEM</code>) and severity (info / warning / error), or free-text search by message, type, or IP.</p>
     </section>
   </div>
-  </template>
-  <!-- ═══════════════════ end hidden ADMIN panel ═══════════════════ -->
 
   <!-- ══════════════════════ TEACHER ══════════════════════ -->
   <div role="tabpanel" id="panel-teacher" class="panel-teacher" aria-labelledby="tab-teacher">
-    <p class="panel-intro">Your teacher side is already furnished: the account exists, the class exists, its roster is imported, and the learning materials are uploaded and AI-labeled. What's left is the interesting part — importing quizzes (from the global pool or straight from a PDF), publishing them, and reading what comes back.</p>
+    <p class="panel-intro">As a teacher you own the class: you create it from your official roster, invite your students, decide what they're assessed on — importing quizzes from the global pool, writing your own, or letting the AI read an existing quiz PDF — and read what comes back, from AI-labeled learning materials to per-student results and a gradebook export.</p>
 
     <section class="block" id="teacher-signup">
-      <h2><span class="kicker">Setup</span> Sign in to your teacher account</h2>
-      <p class="lead">Your teacher account has already been created — there's nothing to register.</p>
+      <h2><span class="kicker">Setup</span> Create your teacher account</h2>
       <ol class="steps">
-        <li><strong>Go to <a class="path" href="https://dev.ai4talent.org/login"><code>/login</code></a></strong> and sign in with the teacher email address (or username) and password sent to you.</li>
+        <li><strong>Get the teacher registration code.</strong>
+          <p>Teacher sign-up is gated by a registration code held by the platform administrator — ask them for it.</p></li>
+        <li><strong>Register at <a class="path" href="https://dev.ai4talent.org/register"><code>/register</code></a>,</strong>
+          <p>then sign in at <a class="path" href="https://dev.ai4talent.org/login"><code>/login</code></a> with either your email address or your username.</p></li>
         <li><strong>You land on your dashboard at <a class="path" href="https://dev.ai4talent.org/teacher"><code>/teacher</code></a>.</strong>
           <p>The sidebar has <a class="path" href="https://dev.ai4talent.org/teacher"><code>Dashboard</code></a>,
             <a class="path" href="https://dev.ai4talent.org/teacher/classes"><code>My Classes</code></a>,
@@ -484,26 +494,65 @@
             <a class="path" href="https://dev.ai4talent.org/teacher/quizzes"><code>Quizzes</code></a>, and
             <a class="path" href="https://dev.ai4talent.org/teacher/messages"><code>Messages</code></a>.</p></li>
       </ol>
-      <div class="callout tip"><span class="ic">✓</span><p>Colleagues who need their own teacher account can self-register at <a class="path" href="https://dev.ai4talent.org/register"><code>/register</code></a> using the teacher registration code — ask the platform administrator for it.</p></div>
+      <div class="callout tip"><span class="ic">✓</span><p>If your account was provisioned for you — as it often is for a pilot or evaluation — skip straight to signing in; your class and its roster may already be waiting under <a class="path" href="https://dev.ai4talent.org/teacher/classes"><code>My Classes</code></a>.</p></div>
+    </section>
+
+    <section class="block" id="teacher-create-class">
+      <h2><span class="kicker">Classes</span> Create a class from your roster</h2>
+      <p class="lead">A class is created together with its official student roster, because the roster is what verifies students' identities when they join.</p>
+      <ol class="steps">
+        <li><strong>Export your classlist from your LMS.</strong>
+          <p>In D2L Brightspace (eLC) and most learning management systems you can export the classlist as CSV. AI4Talent reads the standard export directly — it needs these columns (extra columns are ignored):</p>
+          <div class="tablewrap"><table>
+            <tr><th>Column</th><th>Accepted headers</th></tr>
+            <tr><td>Student ID</td><td class="dim">OrgDefinedId · Id · Student ID · 81 Number (a leading <code>#</code> is fine)</td></tr>
+            <tr><td>Last Name</td><td class="dim">Last Name</td></tr>
+            <tr><td>First Name</td><td class="dim">First Name</td></tr>
+            <tr><td>Email</td><td class="dim">Email</td></tr>
+          </table></div>
+          <p>If the file has no header row, columns are read in the order <em>ID, Last Name, First Name, Email</em>. Rows missing an ID, name, or email are skipped.</p></li>
+        <li><strong>Go to <a class="path" href="https://dev.ai4talent.org/teacher/classes"><code>My Classes</code></a> → <a class="path" href="https://dev.ai4talent.org/teacher/classes/new"><code>Create New Class</code></a>.</strong>
+          <p>Enter the <strong>Class Name</strong> (e.g. “CSCI4300 Web Programming – Spring 2026”) and an optional description.</p></li>
+        <li><strong>Upload the roster CSV.</strong>
+          <p>Click the <strong>Class List (CSV)</strong> upload area and pick your file. A live preview table shows every parsed student (last name, first name, email) so you can confirm the import looks right.</p></li>
+        <li><strong>Click Create Class.</strong>
+          <p>You'll land on the class page, with cards for Quizzes, Learning Materials, and your roster.</p></li>
+      </ol>
+      <div class="callout note"><span class="ic">!</span><p>Only students on the roster can join a class — the invite flow checks each student's ID against this list. If enrollment changes, update the class list before sharing the invite link with new students.</p></div>
     </section>
 
     <section class="block" id="teacher-class">
-      <h2><span class="kicker">Classes</span> Your class, roster &amp; enrolled student</h2>
-      <p class="lead">A class has already been created on your account, its official roster imported, and your <span class="rolechip s">Student</span> account enrolled in it. Open <a class="path" href="https://dev.ai4talent.org/teacher/classes"><code>My Classes</code></a> and click into it — everything below is already populated.</p>
+      <h2><span class="kicker">Classes</span> Inside a class</h2>
+      <p class="lead">Open a class from <a class="path" href="https://dev.ai4talent.org/teacher/classes"><code>My Classes</code></a> and everything you run for it sits on one page:</p>
       <div class="grid">
         <div class="cell"><b>Quizzes → Manage Quizzes</b><span>Assign quizzes to the class, set their availability window and attempt cap, publish or unpublish them.</span></div>
-        <div class="cell"><b>Learning Materials → Manage Materials</b><span>The PDFs already uploaded for this class, each processed by the AI page by page.</span></div>
+        <div class="cell"><b>Learning Materials → Manage Materials</b><span>The PDFs uploaded for this class, each processed by the AI page by page.</span></div>
         <div class="cell"><b>Student Roster → Manage Roster</b><span>The imported classlist, showing who has registered an account and who hasn't yet.</span></div>
         <div class="cell"><b>Statistics</b><span>How the class is doing overall, then per quiz and per student.</span></div>
-        <div class="cell"><b>Invite Link</b><span>Tokenized links for students to join. Already handled for your student account.</span></div>
+        <div class="cell"><b>Invite Link</b><span>Tokenized links students use to join the class.</span></div>
         <div class="cell"><b>Messages</b><span>Announcements to the class; students see them under Notifications.</span></div>
       </div>
-      <div class="callout tip"><span class="ic">✓</span><p>Nothing here is fixed in place — you can rename the class, add or remove roster entries, or start a second class from your own eLC export whenever you like (see <a href="#teacher-create-class">Start another class</a>).</p></div>
+      <div class="callout tip"><span class="ic">✓</span><p>Nothing here is fixed in place — you can rename the class, add or remove roster entries by hand, or start another class from a fresh export whenever you like.</p></div>
+    </section>
+
+    <section class="block" id="teacher-invite">
+      <h2><span class="kicker">People</span> Invite your students</h2>
+      <p class="lead">Students join through a tokenized invite link plus an identity check against your roster; there are no accounts to create by hand.</p>
+      <ol class="steps">
+        <li><strong>Open the class and click Invite Link.</strong></li>
+        <li><strong>Generate a link.</strong>
+          <p>Under <strong>Generate New Link</strong>, optionally set <strong>Expires in (days)</strong> and <strong>Max uses</strong> — leave them blank for a link that never expires and has unlimited uses. Click <strong>Generate</strong>.</p></li>
+        <li><strong>Copy and share.</strong>
+          <p>The link appears under <strong>Active Links</strong> with a <strong>Copy</strong> button, a usage counter, and its expiry. Share it with your class by email or your LMS.</p></li>
+        <li><strong>Students verify and join.</strong>
+          <p>Each student opens the link and enters their <strong>student ID</strong> — the ID column from your roster, labeled <em>81 Number</em> in the app — and the platform matches it to your roster. Their name is pre-filled from the roster; they pick a username, email, and password, and are enrolled the moment the account is created. Each ID can only register once.</p></li>
+      </ol>
+      <div class="callout tip"><span class="ic">✓</span><p>Set an expiry or max-uses on links you post somewhere semi-public. You can keep several active links with different limits at the same time.</p></div>
     </section>
 
     <section class="block" id="teacher-quizzes">
       <h2><span class="kicker">Content</span> Import a quiz from the global pool, then publish it</h2>
-      <p class="lead">The platform ships with a <strong>global quiz pool</strong> that is already stocked. You import from it into your own quiz library, assign the copy to your class, and publish — a quiz is invisible to students until that last step.</p>
+      <p class="lead">The platform ships with a <strong>global quiz pool</strong> curated by administrators. You import from it into your own quiz library, assign the copy to your class, and publish — a quiz is invisible to students until that last step.</p>
       <ol class="steps">
         <li><strong>Open <a class="path" href="https://dev.ai4talent.org/teacher/quizzes"><code>Quizzes</code></a> in the sidebar and switch to the <em>Global Pool</em> tab.</strong>
           <p>Pool quizzes are grouped by topic, each showing its question count. Click a quiz name to preview its questions read-only before you commit to it.</p></li>
@@ -547,11 +596,11 @@
     </section>
 
     <section class="block" id="teacher-materials">
-      <h2><span class="kicker">Content</span> Learning materials — already uploaded, described &amp; labeled</h2>
-      <p class="lead">Learning materials (lecture notes, textbook chapters as PDFs) do double duty: they're the class's reading, and they're what the AI cites when it tells a student <em>which pages to study</em>. <strong>Your class already has materials uploaded, and the AI has already read every page of them.</strong></p>
+      <h2><span class="kicker">Content</span> Learning materials — uploaded, described &amp; labeled by the AI</h2>
+      <p class="lead">Learning materials (lecture notes, textbook chapters as PDFs) do double duty: they're the class's reading, and they're what the AI cites when it tells a student <em>which pages to study</em>. Once a document is uploaded, the AI reads every page of it.</p>
       <ol class="steps">
-        <li><strong>Open your class → <em>Manage Materials</em>.</strong>
-          <p>Each document is listed with its page count and processing state. Processing is already finished for the materials provided to you.</p></li>
+        <li><strong>Open your class → <em>Manage Materials</em> and upload your PDFs.</strong>
+          <p>Each document is listed with its page count and processing state; a background worker handles it page by page and the page picks up the result automatically once it's finished. You can also use <strong>Import Materials</strong> to pull documents you've already uploaded to another one of your classes.</p></li>
         <li><strong>Click a document to see what the AI wrote.</strong>
           <p>The document page opens onto its AI analysis:</p>
           <ul>
@@ -562,10 +611,8 @@
           </ul></li>
         <li><strong>Edit anything the AI got wrong.</strong>
           <p>Key concept, description and the core-content tick are all editable per page and saved individually — your edits, not the AI's guess, are what drive students' recommendations from then on.</p></li>
-        <li><strong>Add more of your own.</strong>
-          <p>Upload further PDFs on the same page, or use <strong>Import Materials</strong> to pull documents you've already uploaded to another one of your classes. New uploads are processed page-by-page by a background worker and picked up automatically once finished.</p></li>
       </ol>
-      <div class="callout tip"><span class="ic">✓</span><p>Upload materials <em>before</em> students start taking quizzes — recommendations can only cite documents that exist in the class. That's already true for your class, so the first quiz attempt will produce page-level recommendations straight away.</p></div>
+      <div class="callout tip"><span class="ic">✓</span><p>Upload materials <em>before</em> students start taking quizzes — recommendations can only cite documents that exist in the class, so getting them in early means the first quiz attempt already produces page-level recommendations.</p></div>
       <div class="callout note"><span class="ic">!</span><p>Students never wade through the whole PDF: after a quiz they get the specific page range they need, which opens as a full-size reader (see <a href="#student-results">Understand your results</a>).</p></div>
     </section>
 
@@ -584,55 +631,16 @@
     </section>
 
     <section class="block" id="teacher-export">
-      <h2><span class="kicker">Results</span> Export grades to eLC</h2>
-      <p class="lead">Quiz grades export as a CSV in the exact eLC (Brightspace) gradebook format, ready to import into the Grades tool with no manual editing.</p>
+      <h2><span class="kicker">Results</span> Export grades to your gradebook</h2>
+      <p class="lead">Quiz grades export as a CSV in the D2L Brightspace (eLC) gradebook format, ready to import into your LMS's Grades tool with no manual editing.</p>
       <ol class="steps">
         <li><strong>Open the quiz's stats page</strong> and click <strong>Export grades (eLC CSV)</strong>.</li>
         <li><strong>Name the grade column.</strong>
-          <p>The dialog pre-fills the eLC-style column header (e.g. <code>Quiz 3 Points Grade &lt;Numeric MaxPoints:100&gt;</code>); adjust it to match the gradebook item you're importing into.</p></li>
+          <p>The dialog pre-fills the gradebook-style column header (e.g. <code>Quiz 3 Points Grade &lt;Numeric MaxPoints:100&gt;</code>); adjust it to match the gradebook item you're importing into.</p></li>
         <li><strong>Download and import.</strong>
-          <p>The CSV contains every roster student with their <strong>best completed score</strong> (0–100). Import it in eLC's Grades tool.</p></li>
+          <p>The CSV contains every roster student with their <strong>best completed score</strong> (0–100). Import it in your LMS's Grades tool.</p></li>
       </ol>
       <div class="callout note"><span class="ic">!</span><p>Students who haven't completed the quiz appear without a score, so you can spot missing submissions during import.</p></div>
-    </section>
-
-    <section class="block" id="teacher-create-class">
-      <h2><span class="kicker">Reference</span> Start another class from an eLC roster</h2>
-      <p class="lead">Your first class is already made — this is how you'd make the next one. A class is created together with its official student roster, because the roster is what verifies students' identities when they join.</p>
-      <ol class="steps">
-        <li><strong>Export your classlist from eLC.</strong>
-          <p>In eLC (Brightspace), export your classlist as CSV. AI4Talent reads the standard export directly — it needs these columns (extra columns are ignored):</p>
-          <div class="tablewrap"><table>
-            <tr><th>Column</th><th>Accepted headers</th></tr>
-            <tr><td>Student ID</td><td class="dim">OrgDefinedId · Id · Student ID · 81 Number (a leading <code>#</code> is fine)</td></tr>
-            <tr><td>Last Name</td><td class="dim">Last Name</td></tr>
-            <tr><td>First Name</td><td class="dim">First Name</td></tr>
-            <tr><td>Email</td><td class="dim">Email</td></tr>
-          </table></div>
-          <p>If the file has no header row, columns are read in the order <em>ID, Last Name, First Name, Email</em>. Rows missing an ID, name, or email are skipped.</p></li>
-        <li><strong>Go to <a class="path" href="https://dev.ai4talent.org/teacher/classes"><code>My Classes</code></a> → <a class="path" href="https://dev.ai4talent.org/teacher/classes/new"><code>Create New Class</code></a>.</strong>
-          <p>Enter the <strong>Class Name</strong> (e.g. “CSCI4300 Web Programming – Spring 2026”) and an optional description.</p></li>
-        <li><strong>Upload the roster CSV.</strong>
-          <p>Click the <strong>Class List (CSV)</strong> upload area and pick your file. A live preview table shows every parsed student (last name, first name, email) so you can confirm the import looks right.</p></li>
-        <li><strong>Click Create Class.</strong>
-          <p>You'll land on the class page, with cards for Quizzes, Learning Materials, and your roster — the same layout as the class already waiting for you.</p></li>
-      </ol>
-      <div class="callout note"><span class="ic">!</span><p>Only students on the roster can join a class — the invite flow checks each student's 81 number against this list. If enrollment changes, update the class list before sharing the invite link with new students.</p></div>
-    </section>
-
-    <section class="block" id="teacher-invite">
-      <h2><span class="kicker">Reference</span> Invite your own students</h2>
-      <p class="lead">Your <span class="rolechip s">Student</span> account is already enrolled, so you don't need this to try the platform — it's how real students get in. They join through a tokenized invite link plus an identity check against your roster; there are no accounts to create by hand.</p>
-      <ol class="steps">
-        <li><strong>Open the class and click Invite Link.</strong></li>
-        <li><strong>Generate a link.</strong>
-          <p>Under <strong>Generate New Link</strong>, optionally set <strong>Expires in (days)</strong> and <strong>Max uses</strong> — leave them blank for a link that never expires and has unlimited uses. Click <strong>Generate</strong>.</p></li>
-        <li><strong>Copy and share.</strong>
-          <p>The link appears under <strong>Active Links</strong> with a <strong>Copy</strong> button, a usage counter, and its expiry. Share it with your class by email or your LMS.</p></li>
-        <li><strong>Students verify and join.</strong>
-          <p>Each student opens the link, enters their <strong>81 number</strong>, and the platform matches it to your roster. Their name is pre-filled from the roster; they pick a username, email, and password, and are enrolled the moment the account is created. An 81 number can only register once.</p></li>
-      </ol>
-      <div class="callout tip"><span class="ic">✓</span><p>Set an expiry or max-uses on links you post somewhere semi-public. You can keep several active links with different limits at the same time.</p></div>
     </section>
   </div>
 
@@ -640,13 +648,28 @@
   <div role="tabpanel" id="panel-student" class="panel-student" aria-labelledby="tab-student" hidden>
     <p class="panel-intro">As a student you take quizzes online and get personalized AI feedback after every attempt — a performance summary, reading recommendations that open the exact pages you need, and interactive simulations to explore what you missed.</p>
 
-    <div class="callout tip"><span class="ic">✓</span><p><strong>Dr. Yin:</strong> your <span class="rolechip s">Student</span> account already exists <em>and is already enrolled in your class</em> — no invite link, no 81-number check, nothing to accept. Just <a href="#student-signin">sign in</a> at <a class="path" href="https://dev.ai4talent.org/login"><code>/login</code></a> and the class is on your dashboard. <a href="#student-join">Joining a class</a> is described at the end of this tab, because it's what your real students will go through.</p></div>
+    <section class="block" id="student-join">
+      <h2><span class="kicker">Setup</span> Join your class</h2>
+      <p class="lead">There's no open sign-up page for students: your account is created the moment you join your first class through your teacher's invite link.</p>
+      <ol class="steps">
+        <li><strong>Open the invite link</strong> your teacher shared. The class name and teacher are shown, so there's no doubt it's the right place.</li>
+        <li><strong>Verify your identity.</strong>
+          <p>Enter your <strong>student ID</strong> — the institution ID your teacher's roster is built from, labeled <em>81 Number</em> in the app (with or without a leading <code>#</code>). The platform checks it against the official class roster and shows your name once verified.</p>
+          <ul>
+            <li>“Not found” means you're not on the roster yet — ask your teacher to update the class list.</li>
+            <li>“Already registered” means an account already exists for that ID — <a href="#student-signin">sign in</a> instead.</li>
+          </ul></li>
+        <li><strong>Create the account.</strong>
+          <p>Your name is pre-filled from the roster. Choose a username, enter an email, set a password, and click <strong>Create account &amp; join class</strong> — you're signed in automatically and taken straight to the class.</p></li>
+      </ol>
+      <div class="callout tip"><span class="ic">✓</span><p>Already have an account from another class? Open the new invite link while signed in and you get a one-click <strong>Join</strong> button — no second account needed.</p></div>
+    </section>
 
     <section class="block" id="student-signin">
       <h2><span class="kicker">Setup</span> Sign in &amp; find your way around</h2>
       <ol class="steps">
         <li><strong>Sign in at <a class="path" href="https://dev.ai4talent.org/login"><code>/login</code></a></strong> with your email <em>or</em> username, plus your password.</li>
-        <li><strong>Your dashboard at <a class="path" href="https://dev.ai4talent.org/student"><code>/student</code></a></strong> shows your enrolled classes — your class is already among them — how many quizzes you've completed, and recent notifications. The sidebar has
+        <li><strong>Your dashboard at <a class="path" href="https://dev.ai4talent.org/student"><code>/student</code></a></strong> shows your enrolled classes, how many quizzes you've completed, and recent notifications. The sidebar has
           <a class="path" href="https://dev.ai4talent.org/student"><code>Dashboard</code></a>,
           <a class="path" href="https://dev.ai4talent.org/student/classes"><code>My Classes</code></a>,
           <a class="path" href="https://dev.ai4talent.org/student/notifications"><code>Notifications</code></a>, and
@@ -699,29 +722,12 @@
         <li><strong>Contact your teacher</strong> straight from the class page via the <strong>Contact teacher</strong> button.</li>
       </ol>
     </section>
-
-    <section class="block" id="student-join">
-      <h2><span class="kicker">Reference</span> How students join a class</h2>
-      <p class="lead">Your own student account is already enrolled, so you can skip this — it's what your real students do. There's no open sign-up page for students: an account is created the moment they join their first class through their teacher's invite link.</p>
-      <ol class="steps">
-        <li><strong>Open the invite link</strong> the teacher shared. The class name and teacher are shown, so there's no doubt it's the right place.</li>
-        <li><strong>Verify identity.</strong>
-          <p>Enter the <strong>81 number</strong> (the university ID — with or without the leading <code>#</code>). The platform checks it against the official class roster and shows the student's name once verified.</p>
-          <ul>
-            <li>“81 not found” means they're not on the roster yet — the teacher updates the class list.</li>
-            <li>“Already registered” means an account already exists for that 81 number — they <a href="#student-signin">sign in</a> instead.</li>
-          </ul></li>
-        <li><strong>Create the account.</strong>
-          <p>The name is pre-filled from the roster. They choose a username, enter an email, set a password, and click <strong>Create account &amp; join class</strong> — signed in automatically and taken straight to the class.</p></li>
-      </ol>
-      <div class="callout tip"><span class="ic">✓</span><p>A student who already has an account from another class opens the new invite link while signed in and gets a one-click <strong>Join</strong> button — no second account needed.</p></div>
-    </section>
   </div>
 
 </main>
 
 <footer>
-  <p>AI4Talent · Adaptive Learning Platform — guide prepared for Dr. Yue Yin</p>
+  <p>AI4Talent · Adaptive Learning Platform — user guide</p>
   <p><a href="https://dev.ai4talent.org/">dev.ai4talent.org</a> ·
      <a href="https://dev.ai4talent.org/login">Sign in</a></p>
 </footer>
@@ -732,7 +738,7 @@
 
   function roleOf(el) { return el.id.replace(/^tab-/, ''); }
 
-  // Derived from the DOM, so hiding a role's tab (e.g. admin) needs no JS change.
+  // Derived from the DOM, so adding or hiding a role's tab needs no JS change.
   var order = tabs.map(roleOf);
 
   function select(role, opts) {
