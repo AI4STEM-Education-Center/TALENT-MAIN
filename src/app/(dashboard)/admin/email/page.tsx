@@ -1,6 +1,7 @@
 "use client";
 import { Mail } from "lucide-react";
 import { SmtpSettings } from "./smtp-settings";
+import { EmailSenders } from "./email-senders";
 import { EmailLimits } from "./email-limits";
 
 export default function AdminEmailPage() {
@@ -11,12 +12,14 @@ export default function AdminEmailPage() {
           <Mail className="size-6" /> Email / SMTP Server
         </h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Configure the outgoing SMTP server used to deliver teacher and student emails.
+          Configure the outgoing SMTP server used to deliver password resets and teacher and
+          student emails, and choose the address each kind of email is sent from.
           In-app notifications are delivered without email and don&apos;t require SMTP.
         </p>
       </div>
 
       <SmtpSettings />
+      <EmailSenders />
       <EmailLimits />
     </div>
   );

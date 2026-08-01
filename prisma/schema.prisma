@@ -22,8 +22,9 @@ model User {
   teacher Teacher?
   student Student?
 
-  sentMessages  Message[]      @relation("MessageSender")
-  notifications Notification[] @relation("UserNotifications")
+  sentMessages        Message[]            @relation("MessageSender")
+  notifications       Notification[]       @relation("UserNotifications")
+  passwordResetTokens PasswordResetToken[]
 
   @@index([role])
 }
@@ -617,12 +618,60 @@ model SmtpConfig {
   passwordIv  String?
   passwordTag String?
 
-  fromEmail   String                             // envelope/from address
-  fromName    String?                            // optional display name
+  fromEmail   String                             // fallback envelope/from address
+  fromName    String?                            // fallback display name
+
+  // Shared domain for the per-purpose sender addresses below, stored without
+  // the "@" (e.g. "edwarcheng.net"). When set, each EmailSender's localPart is
+  // combined with it — password-reset@edwarcheng.net, notification@… — and
+  // fromEmail is only used as a fallback. Blank = every purpose uses fromEmail.
+  senderDomain String?
 
   isActive    Boolean  @default(false)           // email sending only enabled when true
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+// Per-purpose sender identity and (where the app writes the copy) message
+// template. One row per purpose key from EMAIL_PURPOSES in
+// src/lib/email-purposes.ts; missing rows fall back to that catalog's defaults,
+// so the table is an override layer rather than required configuration.
+model EmailSender {
+  id      String @id @default(cuid())
+  purpose String @unique // EmailPurpose key, e.g. "PASSWORD_RESET"
+
+  localPart String  // address prefix, combined with SmtpConfig.senderDomain
+  fromName  String? // display name override; falls back to SmtpConfig.fromName
+  replyTo   String? // optional Reply-To; blank means "no reply expected"
+
+  // Subject/body overrides for app-generated emails. Null keeps the built-in
+  // template. Purposes whose body is authored by a user (class announcements,
+  // student→teacher messages) ignore these.
+  subject String?
+  body    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Single-use, time-limited password reset grants. Only the SHA-256 hash of the
+// emailed token is stored, so a database leak can't be replayed into account
+// takeover. Rows are consumed (usedAt) rather than deleted so a reused link can
+// be told apart from an unknown one in the logs.
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  requestIp String?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Invalidate-all-for-user on issue/consume, and expiry sweeps.
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 // ─── Database backups ──────────────────────────────────────────────────────────

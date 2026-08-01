@@ -98,7 +98,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
       if (user) {
         token.id = user.id;
         token.role = (user as { role: string }).role;
@@ -106,6 +106,24 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.firstName = (user as { firstName: string }).firstName;
         token.lastName = (user as { lastName: string }).lastName;
       }
+
+      // The profile page calls useSession().update() after saving so the
+      // sidebar reflects a renamed account without a re-login. Re-read from the
+      // database rather than trusting the client-supplied patch.
+      if (trigger === "update" && token.id) {
+        const fresh = await prisma.user.findUnique({
+          where: { id: token.id as string },
+          select: { firstName: true, lastName: true, username: true, email: true, role: true },
+        });
+        if (fresh) {
+          token.firstName = fresh.firstName;
+          token.lastName = fresh.lastName;
+          token.username = fresh.username;
+          token.email = fresh.email;
+          token.role = fresh.role;
+        }
+      }
+
       return token;
     },
     async session({ session, token }) {

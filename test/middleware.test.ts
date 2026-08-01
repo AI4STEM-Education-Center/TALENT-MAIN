@@ -54,6 +54,18 @@ describe("middleware auth + routing", () => {
     expect(res.headers.get("location")).toBeNull(); // NextResponse.next()
   });
 
+  it("lets anonymous users reach the password recovery pages", () => {
+    for (const path of ["/forgot-password", "/reset-password"]) {
+      expect(run(makeReq({ host: "localhost", path })).headers.get("location")).toBeNull();
+    }
+  });
+
+  it("treats the password reset API as public (it lives under /api/auth)", () => {
+    for (const path of ["/api/auth/forgot-password", "/api/auth/reset-password"]) {
+      expect(run(makeReq({ host: "localhost", path })).headers.get("location")).toBeNull();
+    }
+  });
+
   it("treats the invitations API as public", () => {
     const res = run(makeReq({ host: "localhost", path: "/api/invitations/abc" }));
     expect(res.headers.get("location")).toBeNull();
