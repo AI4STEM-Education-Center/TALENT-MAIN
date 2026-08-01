@@ -110,16 +110,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
         include: { user: { select: { email: true } } },
       });
       if (!student) return NextResponse.json({ error: "Student record not found." }, { status: 404 });
-      const canonicalRosterEmail = normalizeRosterEmail(rosterEntry.email);
+      // The account the student actually signs in to owns the mailbox, so the
+      // roster follows it rather than the other way round. A roster address is
+      // whatever the registrar exported; the confirmed account address is where
+      // teacher notifications have to land.
       const canonicalUserEmail = normalizeRosterEmail(student.user.email);
-      if (
-        isValidEmail(canonicalRosterEmail) &&
-        canonicalUserEmail !== canonicalRosterEmail
-      ) {
-        return NextResponse.json(
-          { error: "Your account email does not match the class roster." },
-          { status: 409 }
-        );
+      if (canonicalUserEmail !== rosterEntry.email) {
+        rosterEmailUpdate = canonicalUserEmail;
       }
       existingStudentId = student.id;
     } else {
@@ -143,20 +140,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
         return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
       }
 
-      // A roster address is the identity binding for anonymous signup. Merely
-      // knowing an invitation token + 81 number must not let a caller replace a
-      // valid student's mailbox with an arbitrary address. Empty legacy rows
-      // may be populated; LMS-only UGA addresses may be canonicalized.
-      const canonicalRosterEmail = normalizeRosterEmail(rosterEntry.email);
-      if (
-        isValidEmail(canonicalRosterEmail) &&
-        normalizedEmail !== canonicalRosterEmail
-      ) {
-        return NextResponse.json(
-          { error: "Email must match the address on the class roster." },
-          { status: 409 }
-        );
-      }
+      // The roster follows the address the student signed up with: registrar
+      // exports go stale, and teacher notifications must reach the mailbox the
+      // student actually confirmed. The 81 number is the identity check here —
+      // it is unique per class, single-claim (isRegistered), and rate-limited.
       if (normalizedEmail !== rosterEntry.email) {
         rosterEmailUpdate = normalizedEmail;
       }

@@ -130,7 +130,7 @@ describe("POST /api/quiz (per-class settings enforcement)", () => {
     expect(res.status).toBe(200);
   });
 
-  it("rejects with 403 once maxAttempts attempt slots have been allocated", async () => {
+  it("rejects with 403 once maxAttempts completed attempts have been used", async () => {
     const { studentUser, student, cls, quiz } = await setup();
     await prisma.classQuiz.updateMany({
       where: { classId: cls.id, quizId: quiz.id },
@@ -146,20 +146,56 @@ describe("POST /api/quiz (per-class settings enforcement)", () => {
     expect((await res.json()).error).toMatch(/all 1 attempts/i);
   });
 
-  it("counts incomplete attempts so slots cannot be stockpiled before grading", async () => {
+  it("resumes an unfinished attempt instead of allocating a second slot", async () => {
     const { studentUser, student, cls, quiz } = await setup();
     await prisma.classQuiz.updateMany({
       where: { classId: cls.id, quizId: quiz.id },
       data: { maxAttempts: 1 },
     });
-    // A pending attempt consumes the slot; otherwise a student can pre-create
-    // many IDs, then submit them sequentially after seeing correctness feedback.
-    await prisma.quizAttempt.create({
+    // Left mid-quiz — closed the tab, lost the network, hit reload. Coming back
+    // must return the SAME attempt, not burn the student's only slot.
+    const pending = await prisma.quizAttempt.create({
       data: { studentId: student.id, classId: cls.id, quizId: quiz.id },
     });
     asStudent(studentUser.id);
     const res = await POST(jsonReq({ classId: cls.id, quizId: quiz.id }));
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).attemptId).toBe(pending.id);
+    // Reusing the pending attempt is also what stops a student stockpiling
+    // attempt IDs to submit one at a time against the correctness feedback.
+    expect(
+      await prisma.quizAttempt.count({ where: { studentId: student.id, quizId: quiz.id } })
+    ).toBe(1);
+  });
+
+  it("refuses to grade a stockpiled attempt once the cap is spent", async () => {
+    const { studentUser, student, cls, quiz } = await setup();
+    await prisma.classQuiz.updateMany({
+      where: { classId: cls.id, quizId: quiz.id },
+      data: { maxAttempts: 1 },
+    });
+    // Rows like these exist in databases written before starting a quiz reused
+    // the pending attempt: several unfinished attempts, whose ids the student
+    // still holds and can PATCH directly without going through POST.
+    const stockpiled = await prisma.quizAttempt.create({
+      data: { studentId: student.id, classId: cls.id, quizId: quiz.id },
+    });
+    await prisma.quizAttempt.create({
+      data: {
+        studentId: student.id,
+        classId: cls.id,
+        quizId: quiz.id,
+        completedAt: new Date(),
+        score: 50,
+      },
+    });
+    asStudent(studentUser.id);
+
+    const res = await PATCH(jsonReq({ attemptId: stockpiled.id, answers: [] }));
     expect(res.status).toBe(403);
+    const stored = await prisma.quizAttempt.findUnique({ where: { id: stockpiled.id } });
+    expect(stored?.completedAt).toBeNull();
   });
 });
 

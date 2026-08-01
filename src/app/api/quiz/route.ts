@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { scoreQuiz, type ScorableQuestion } from "@/lib/quiz-scoring";
 import { buildReviewSnapshot } from "@/lib/exam-results";
 import { attachFigureUrls, attachOptionImageUrls } from "@/lib/question-figures";
+import { shuffleAnswerChoices } from "@/lib/quiz-shuffle";
 import { enqueueExamResult } from "@/lib/queue";
 import { logApiError } from "@/lib/system-log";
 
@@ -73,31 +74,45 @@ export async function POST(req: NextRequest) {
   // allocation and progress update must stay together for cap enforcement.
   let attempt: { id: string };
   try {
-    // SECURITY: allocating an attempt consumes one slot. Counting only
-    // completed attempts let a student pre-create many pending attempt IDs,
-    // then submit them one by one after seeing per-question feedback. Keep
-    // the count + create in one SQLite transaction so concurrent starts are
-    // serialized by the database connection used by this deployment.
     attempt = await prisma.$transaction(async (tx) => {
-      if (classQuiz.maxAttempts && classQuiz.maxAttempts > 0) {
-        const allocatedAttempts = await tx.quizAttempt.count({
-          where: { studentId: student.id, classId, quizId },
-        });
-        if (allocatedAttempts >= classQuiz.maxAttempts) {
-          throw new AttemptLimitError();
-        }
-      }
-
-      const created = await tx.quizAttempt.create({
-        data: { studentId: student.id, classId, quizId },
+      // Resume before allocating. A student who closes the tab, drops off the
+      // network, or just reloads comes back to the SAME attempt instead of
+      // burning a slot — with maxAttempts: 1 that would otherwise be an
+      // unrecoverable lockout, and nothing here can tell "abandoned" apart
+      // from "still working on it".
+      //
+      // SECURITY: this is also what closes the stockpiling hole. Because an
+      // unfinished attempt is always reused, POST can never mint a second
+      // pending attempt, so a student cannot pre-create a pile of attempt IDs
+      // and then submit them one at a time against the correctness feedback
+      // the submit response returns.
+      let claimed = await tx.quizAttempt.findFirst({
+        where: { studentId: student.id, classId, quizId, completedAt: null },
+        orderBy: { startedAt: "desc" },
         select: { id: true },
       });
+
+      if (!claimed) {
+        if (classQuiz.maxAttempts && classQuiz.maxAttempts > 0) {
+          const usedAttempts = await tx.quizAttempt.count({
+            where: { studentId: student.id, classId, quizId, completedAt: { not: null } },
+          });
+          if (usedAttempts >= classQuiz.maxAttempts) {
+            throw new AttemptLimitError();
+          }
+        }
+        claimed = await tx.quizAttempt.create({
+          data: { studentId: student.id, classId, quizId },
+          select: { id: true },
+        });
+      }
+
       await tx.quizProgress.upsert({
         where: { studentId_classId_quizId: { studentId: student.id, classId, quizId } },
         update: { status: "IN_PROGRESS" },
         create: { studentId: student.id, classId, quizId, status: "IN_PROGRESS" },
       });
-      return created;
+      return claimed;
     });
   } catch (error) {
     if (error instanceof AttemptLimitError) {
@@ -109,8 +124,16 @@ export async function POST(req: NextRequest) {
     throw error;
   }
 
+  // Reorder each question's choices for this attempt. Seeded by attempt id, so
+  // resuming reproduces the same layout while a new attempt gets a new one.
+  // Done before presigning so each option's URL rides along with it.
+  const orderedRows = questionRows.map((question) => ({
+    ...question,
+    options: shuffleAnswerChoices(question.options, `${attempt.id}:${question.id}`),
+  }));
+
   // Replace figure + option-image storage keys with transient presigned URLs.
-  const questions = await attachFigureUrls(questionRows).then((rows) =>
+  const questions = await attachFigureUrls(orderedRows).then((rows) =>
     attachOptionImageUrls(rows)
   );
 
@@ -226,8 +249,20 @@ export async function PATCH(req: NextRequest) {
   });
   const completedAt = new Date();
 
+  // The attempt cap, read outside the transaction: it is static config, and
+  // every statement kept out of the transaction below is one less chance for
+  // two parallel submissions to interleave on SQLite's single write lock.
+  const cap = await prisma.classQuiz.findUnique({
+    where: { classId_quizId: { classId: attempt.classId, quizId } },
+    select: { maxAttempts: true },
+  });
+
   try {
     await prisma.$transaction(async (tx) => {
+      // The claim stays the FIRST statement in this transaction. Opening with a
+      // read instead takes only a shared lock, which lets a second submission
+      // interleave and roll back writes that were never part of it.
+      //
       // SECURITY: the completedAt read above is only a fast-path. This
       // conditional write is the real one-shot claim, so parallel PATCHes
       // cannot all grade the same attempt before any sees it completed.
@@ -236,6 +271,26 @@ export async function PATCH(req: NextRequest) {
         data: { score, completedAt },
       });
       if (claimed.count !== 1) throw new AttemptAlreadySubmittedError();
+
+      // SECURITY: the cap is enforced here as well as at start, because an
+      // attempt id is all PATCH needs. Databases written before starting a quiz
+      // began reusing the pending attempt can still hold several unfinished
+      // attempts per student; without this, someone holding those ids could
+      // grade every one and sail past maxAttempts. Checked after the claim (so
+      // the write lock is already held) and excluding this attempt, which the
+      // claim above has just marked completed — throwing rolls it back.
+      if (cap?.maxAttempts && cap.maxAttempts > 0) {
+        const usedAttempts = await tx.quizAttempt.count({
+          where: {
+            studentId: student.id,
+            classId: attempt.classId,
+            quizId,
+            completedAt: { not: null },
+            id: { not: attemptId },
+          },
+        });
+        if (usedAttempts >= cap.maxAttempts) throw new AttemptLimitError();
+      }
 
       const existing = await tx.quizProgress.findUnique({
         where: {
@@ -274,6 +329,12 @@ export async function PATCH(req: NextRequest) {
       });
     });
   } catch (error) {
+    if (error instanceof AttemptLimitError) {
+      return NextResponse.json(
+        { error: "You've used all your attempts for this quiz." },
+        { status: 403 }
+      );
+    }
     if (error instanceof AttemptAlreadySubmittedError) {
       return NextResponse.json(
         { error: "This attempt has already been submitted." },

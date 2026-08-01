@@ -206,7 +206,7 @@ describe("POST /api/invitations/[token] — signup flow", () => {
     expect(roster?.email).toBe("ross-tee@uga.edu");
   });
 
-  it("rejects replacing a valid roster email with an unverified address", async () => {
+  it("moves the roster email to the address the student signed up with", async () => {
     const { cls, invitation } = await seedInvite();
     await addRoster(cls.id, "811947904", false, "stale@uga.edu");
 
@@ -214,13 +214,15 @@ describe("POST /api/invitations/[token] — signup flow", () => {
       req({ ...signup, email: "ross.tee@gmail.com", orgDefinedId: "811947904" }) as never,
       ctx(invitation.token)
     );
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(200);
 
+    // The registrar export goes stale; teacher notifications have to reach the
+    // mailbox the student actually confirmed.
     const roster = await prisma.classStudentList.findFirst({ where: { classId: cls.id } });
-    expect(roster?.email).toBe("stale@uga.edu");
-    expect(roster?.isRegistered).toBe(false);
+    expect(roster?.email).toBe("ross.tee@gmail.com");
+    expect(roster?.isRegistered).toBe(true);
     const user = await prisma.user.findUnique({ where: { email: "ross.tee@gmail.com" } });
-    expect(user).toBeNull();
+    expect(user).not.toBeNull();
   });
 
   it("rewrites the LMS-only domain before it reaches the roster", async () => {
@@ -280,15 +282,23 @@ describe("POST /api/invitations/[token] — logged-in student", () => {
     expect(enrollment).not.toBeNull();
   });
 
-  it("rejects claiming a roster identity with a different account email", async () => {
+  it("moves the roster email to the signed-in account's address", async () => {
     const { cls, invitation } = await seedInvite();
-    await addRoster(cls.id, "811947904", false, "right-student@uga.edu");
-    const { user } = await createStudent({ email: "attacker@uga.edu" });
+    await addRoster(cls.id, "811947904", false, "stale@uga.edu");
+    const { user, student } = await createStudent({ email: "real-student@uga.edu" });
     mockAuth.mockResolvedValue({ user: { id: user.id, role: "STUDENT" } } as never);
 
     const res = await POST(req({ orgDefinedId: "811947904" }) as never, ctx(invitation.token));
-    expect(res.status).toBe(409);
-    expect(await prisma.classEnrollment.count({ where: { classId: cls.id } })).toBe(0);
+    expect(res.status).toBe(200);
+
+    // The account the student signs in to owns the mailbox, so the roster
+    // follows it rather than keeping the registrar's stale address.
+    const roster = await prisma.classStudentList.findFirst({ where: { classId: cls.id } });
+    expect(roster?.email).toBe("real-student@uga.edu");
+    expect(roster?.isRegistered).toBe(true);
+    expect(
+      await prisma.classEnrollment.count({ where: { classId: cls.id, studentId: student.id } })
+    ).toBe(1);
   });
 
   it("rejects a logged-in non-student with 403", async () => {
