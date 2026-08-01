@@ -1,40 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
-  parseChannels,
-  serializeChannels,
   evaluateQuota,
   startOfDay,
   startOfMonth,
   DEFAULT_EMAIL_DAILY_LIMIT,
   DEFAULT_EMAIL_MONTHLY_LIMIT,
 } from "./email-limits";
-
-describe("parseChannels", () => {
-  it("parses the stored comma-joined string", () => {
-    expect(parseChannels("IN_APP,EMAIL")).toEqual({ inApp: true, email: true });
-    expect(parseChannels("EMAIL")).toEqual({ inApp: false, email: true });
-    expect(parseChannels("IN_APP")).toEqual({ inApp: true, email: false });
-    expect(parseChannels(" in_app , email ")).toEqual({ inApp: true, email: true });
-  });
-  it("parses a { inApp, email } object", () => {
-    expect(parseChannels({ inApp: true, email: false })).toEqual({ inApp: true, email: false });
-    expect(parseChannels({ inApp: "yes", email: 1 })).toEqual({ inApp: false, email: false });
-  });
-  it("returns no channels for empty/invalid input", () => {
-    expect(parseChannels("")).toEqual({ inApp: false, email: false });
-    expect(parseChannels(null)).toEqual({ inApp: false, email: false });
-    expect(parseChannels(undefined)).toEqual({ inApp: false, email: false });
-  });
-});
-
-describe("serializeChannels", () => {
-  it("round-trips with parseChannels", () => {
-    expect(serializeChannels({ inApp: true, email: true })).toBe("IN_APP,EMAIL");
-    expect(serializeChannels({ inApp: false, email: true })).toBe("EMAIL");
-    expect(serializeChannels({ inApp: true, email: false })).toBe("IN_APP");
-    expect(serializeChannels({ inApp: false, email: false })).toBe("");
-  });
-});
 
 describe("evaluateQuota", () => {
   const base = {

@@ -719,7 +719,10 @@ model BackupConfig {
 // channels:  comma-joined of "IN_APP" | "EMAIL" (e.g. "IN_APP,EMAIL"). The
 //            recipientCount/sentCount/status/error fields below describe the
 //            EMAIL send only; inAppCount is the number of in-app recipients.
-// status:    "SENT" | "PARTIAL" | "FAILED" (email outcome; "SENT" when no email)
+// status:    "QUEUED" | "SENT" | "PARTIAL" | "FAILED" (email outcome; "SENT"
+//            when no email was queued). Teacher→student email is delivered by
+//            the worker off the request path, so a fresh broadcast starts
+//            "QUEUED" and settles once every MessageEmailDelivery finishes.
 model Message {
   id             String   @id @default(cuid())
   classId        String?
@@ -735,15 +738,54 @@ model Message {
   error          String?
   createdAt      DateTime @default(now())
 
-  class         Class?         @relation(fields: [classId], references: [id], onDelete: SetNull)
-  sender        User           @relation("MessageSender", fields: [senderUserId], references: [id], onDelete: Cascade)
+  class         Class?                 @relation(fields: [classId], references: [id], onDelete: SetNull)
+  sender        User                   @relation("MessageSender", fields: [senderUserId], references: [id], onDelete: Cascade)
   notifications Notification[]
+  emailDeliveries MessageEmailDelivery[]
 
   @@index([classId])
   @@index([senderUserId])
   @@index([direction])
   // Email quota: WHERE senderUserId AND channels LIKE '%EMAIL%' AND createdAt >= window
   @@index([senderUserId, createdAt])
+}
+
+// One outbound email for ONE recipient of a Message — the durable record the
+// `message-emails` Honker queue works from (see src/lib/message-email.ts).
+// Rows are written PENDING in the same request that creates the Message, so
+// the intent to email survives a crashed request, a restarted worker, a lost
+// job, or an SMTP outage: the worker retries with backoff, and a sweeper
+// re-enqueues anything still PENDING past its nextAttemptAt.
+//
+// status:        "PENDING" | "SENT" | "FAILED" (FAILED = permanently given up)
+// attempts:      delivery attempts made so far, capped by MESSAGE_EMAIL_MAX_ATTEMPTS
+// nextAttemptAt: earliest time the next attempt may run (backoff schedule)
+// claimedAt:     lease held by the worker currently attempting this row; a
+//                stale lease is reclaimable so a killed worker can't strand it.
+//                The lease is what makes duplicate jobs harmless — only one
+//                claimant can move a row, so a recipient is emailed once.
+model MessageEmailDelivery {
+  id            String    @id @default(cuid())
+  messageId     String
+  userId        String? // recipient's User; null when the address came from the roster only
+  email         String
+  status        String    @default("PENDING")
+  attempts      Int       @default(0)
+  lastError     String?
+  nextAttemptAt DateTime  @default(now())
+  claimedAt     DateTime?
+  sentAt        DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  // One row per recipient address per message — makes re-queueing idempotent.
+  @@unique([messageId, email])
+  // Per-message delivery summary shown in the teacher's message history.
+  @@index([messageId, status])
+  // Sweeper: WHERE status = 'PENDING' AND nextAttemptAt <= now
+  @@index([status, nextAttemptAt])
 }
 
 // One in-app notification delivered to a single student (their User). The
