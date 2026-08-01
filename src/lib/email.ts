@@ -83,12 +83,10 @@ interface SendOptions {
 }
 
 /**
- * Send an email to one or more recipients using the configured SMTP server.
- * Each recipient is sent an individual message (BCC-style privacy) so students
- * don't see each other's addresses. Throws SmtpNotConfiguredError when SMTP is
- * missing or inactive.
+ * Load the SMTP config and refuse unless it exists and is enabled. Shared by
+ * every send path so "not configured" always surfaces the same way.
  */
-export async function sendEmail(opts: SendOptions): Promise<SendResult> {
+async function requireActiveSmtpConfig(): Promise<ResolvedSmtpConfig> {
   const cfg = await getSmtpConfig();
   if (!cfg) {
     throw new SmtpNotConfiguredError(
@@ -100,6 +98,42 @@ export async function sendEmail(opts: SendOptions): Promise<SendResult> {
       "Email sending is currently disabled. An administrator must enable the SMTP server."
     );
   }
+  return cfg;
+}
+
+/**
+ * Send one email and let the transport's own error escape untouched.
+ *
+ * sendEmail() flattens per-recipient failures into strings, which is fine for
+ * a fire-and-forget broadcast but throws away the SMTP response code. The queue
+ * worker needs that code to tell "this mailbox does not exist" (never retry)
+ * from "the server is busy" (retry), so single-recipient delivery goes through
+ * here instead. See src/lib/message-email.ts.
+ */
+export async function sendEmailToRecipient(opts: {
+  to: string;
+  subject: string;
+  text: string;
+  replyTo?: string;
+}): Promise<void> {
+  const cfg = await requireActiveSmtpConfig();
+  await createTransport(cfg).sendMail({
+    from: formatFrom(cfg),
+    to: opts.to,
+    replyTo: opts.replyTo,
+    subject: opts.subject,
+    text: opts.text,
+  });
+}
+
+/**
+ * Send an email to one or more recipients using the configured SMTP server.
+ * Each recipient is sent an individual message (BCC-style privacy) so students
+ * don't see each other's addresses. Throws SmtpNotConfiguredError when SMTP is
+ * missing or inactive.
+ */
+export async function sendEmail(opts: SendOptions): Promise<SendResult> {
+  const cfg = await requireActiveSmtpConfig();
 
   const recipients = opts.to.map((e) => e.trim()).filter(Boolean);
   if (recipients.length === 0) {

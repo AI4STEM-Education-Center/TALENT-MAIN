@@ -10,12 +10,25 @@ export const EXAM_RESULTS_QUEUE = "exam-results";
 export const QUIZ_EXTRACTIONS_QUEUE = "quiz-extractions";
 export const BACKUPS_QUEUE = "backups";
 export const SIMULATIONS_QUEUE = "simulations";
+export const MESSAGE_EMAILS_QUEUE = "message-emails";
 
 export type ExamResultsJobPayload = { examResultId: string };
 export type QuizExtractionJobPayload = { extractionId: string };
 export type BackupJobPayload = { action: "backup" };
 // feedbackId present = a revision of an existing artifact; absent = first generation.
 export type SimulationJobPayload = { simulationId: string; feedbackId?: string };
+// One job per recipient (a MessageEmailDelivery row), so one bad address never
+// holds up the rest of a class broadcast and each recipient retries on its own.
+export type MessageEmailJobPayload = { deliveryId: string };
+
+/**
+ * Queue options for MESSAGE_EMAILS_QUEUE, shared by the producer and the worker
+ * so both agree on the visibility timeout. Attempt capping lives in the
+ * database (MessageEmailDelivery.attempts) rather than Honker's maxAttempts:
+ * the sweeper can re-enqueue a stranded row as a brand-new job, and only the
+ * persisted counter survives that.
+ */
+export const MESSAGE_EMAILS_QUEUE_OPTIONS = { visibilityTimeoutS: 120 } as const;
 
 /**
  * Map a main SQLite path to Honker's sibling queue path (`foo.db` ->
@@ -81,6 +94,24 @@ export function enqueueSimulation(simulationId: string, feedbackId?: string): vo
   const db = honker.open(resolveQueueDbPath());
   const payload: SimulationJobPayload = feedbackId ? { simulationId, feedbackId } : { simulationId };
   db.queue(SIMULATIONS_QUEUE).enqueue(payload);
+}
+
+/**
+ * Enqueue delivery jobs for a message's recipients — one job each, so a single
+ * unreachable address can't hold up the rest of the class. The queue file is
+ * opened once for the whole batch.
+ *
+ * Callers log failures rather than propagating them: the MessageEmailDelivery
+ * rows are already PENDING in the database, so a failed enqueue delays delivery
+ * until the worker's sweeper picks them up instead of losing the emails.
+ */
+export function enqueueMessageEmails(deliveryIds: string[]): void {
+  if (deliveryIds.length === 0) return;
+  const db = honker.open(resolveQueueDbPath());
+  const queue = db.queue(MESSAGE_EMAILS_QUEUE, MESSAGE_EMAILS_QUEUE_OPTIONS);
+  for (const deliveryId of deliveryIds) {
+    queue.enqueue({ deliveryId } satisfies MessageEmailJobPayload);
+  }
 }
 
 /**
