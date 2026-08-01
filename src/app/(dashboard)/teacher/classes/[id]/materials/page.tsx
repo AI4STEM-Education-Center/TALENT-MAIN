@@ -5,6 +5,7 @@ import MaterialUploadForm from "./material-upload";
 import Link from "next/link";
 import MaterialsList, { MaterialItem } from "./materials-list";
 import MaterialImportDialog from "./material-import-dialog";
+import MaterialPoolImportDialog from "./material-pool-import-dialog";
 import { listClassMaterials } from "@/lib/learning-material";
 
 export default async function ClassMaterialsPage(props: { params: Promise<{ id: string }> }) {
@@ -38,6 +39,7 @@ export default async function ClassMaterialsPage(props: { params: Promise<{ id: 
           <p className="text-gray-600">Upload and manage AI-processed documents for {cls.name}.</p>
         </div>
         <div className="flex items-center gap-x-6">
+          <MaterialPoolImportDialog classId={classId} />
           <MaterialImportDialog classId={classId} />
           <Link
             href={`/teacher/classes/${classId}`}

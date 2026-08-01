@@ -5,6 +5,7 @@ import {
   GetObjectCommand,
   DeleteObjectCommand,
   ListObjectsV2Command,
+  CopyObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -252,6 +253,18 @@ export async function putS3Object(
   const client = getS3Client();
   await client.send(
     new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: contentType })
+  );
+}
+
+/** Copy an immutable object inside a bucket without downloading it. */
+export async function copyS3Object(bucket: string, sourceKey: string, targetKey: string): Promise<void> {
+  const client = getS3Client();
+  const copySource = `${bucket}/${sourceKey}`
+    .split("/")
+    .map(encodeURIComponent)
+    .join("/");
+  await client.send(
+    new CopyObjectCommand({ Bucket: bucket, CopySource: copySource, Key: targetKey })
   );
 }
 

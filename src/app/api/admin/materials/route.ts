@@ -11,6 +11,7 @@ export async function GET(req: NextRequest) {
   }
 
   const items = await prisma.learningMaterial.findMany({
+    where: { teacherId: { not: null } },
     orderBy: { createdAt: "desc" },
     include: {
       teacher: { select: { user: { select: { username: true, firstName: true, lastName: true, email: true } } } },

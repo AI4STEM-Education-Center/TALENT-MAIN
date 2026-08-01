@@ -25,6 +25,7 @@ model User {
   sentMessages        Message[]            @relation("MessageSender")
   notifications       Notification[]       @relation("UserNotifications")
   passwordResetTokens PasswordResetToken[]
+  poolSubmissionReviews PoolSubmission[] @relation("PoolSubmissionReviewer")
 
   @@index([role])
 }
@@ -47,13 +48,17 @@ model Teacher {
   questionImports   QuestionImport[]
   learningMaterials LearningMaterial[]
   pdfExtractions    QuizPdfExtraction[]
+  poolSubmissions   PoolSubmission[]
 }
 
 // Uploaded learning materials (S3 only). uploadStatus: "PENDING" | "READY" | "FAILED"
 model LearningMaterial {
   id           String  @id @default(cuid())
-  teacherId    String
+  // NULL means this row is an administrator-managed global-pool snapshot.
+  teacherId    String?
   classId      String?
+  topicId      String?
+  sourceMaterialId String?
   title        String?
   originalName String
   mimeType     String
@@ -78,16 +83,20 @@ model LearningMaterial {
   aiTokens Int? // generated tokens summed across all page + batch calls
   aiTotalMs Int? // total wall-clock time summed across all page + batch calls (ms)
 
-  teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  teacher Teacher? @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   class   Class?  @relation(fields: [classId], references: [id], onDelete: SetNull)
+  topic   Topic?  @relation(fields: [topicId], references: [id], onDelete: SetNull)
   pages   MaterialPage[]
   classLinks MaterialClass[]
+  poolSubmissions PoolSubmission[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([teacherId])
   @@index([classId])
+  @@index([topicId])
+  @@index([sourceMaterialId])
 }
 
 // Junction: a material can be shared across multiple of a teacher's classes.
@@ -218,6 +227,8 @@ model Topic {
 
   teacher Teacher? @relation("TeacherTopics", fields: [teacherId], references: [id], onDelete: Cascade)
   quizzes Quiz[]
+  learningMaterials LearningMaterial[]
+  poolSubmissions PoolSubmission[]
 
   @@index([teacherId])
 }
@@ -243,10 +254,42 @@ model Quiz {
   imports        QuestionImport[]
   classQuizzes   ClassQuiz[]
   pdfExtractions QuizPdfExtraction[]
+  poolSubmissions PoolSubmission[]
 
   @@index([topicId])
   @@index([teacherId])
   @@map("Subtopic")
+}
+
+// Teacher-submitted requests to add a quiz or material snapshot to the global
+// pool. contentType: "QUIZ" | "MATERIAL". status: "PENDING" | "REVIEWING" |
+// "APPROVED" | "REJECTED". The chosen reviewer is always an ADMIN User.
+model PoolSubmission {
+  id           String   @id @default(cuid())
+  contentType  String
+  status       String   @default("PENDING")
+  teacherId    String
+  reviewerId   String
+  quizId       String?
+  materialId   String?
+  topicId      String?
+  decisionNote String?
+  emailStatus  String   @default("PENDING")
+  emailError   String?
+  decidedAt    DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  teacher  Teacher           @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  reviewer User              @relation("PoolSubmissionReviewer", fields: [reviewerId], references: [id], onDelete: Cascade)
+  quiz     Quiz?             @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  material LearningMaterial? @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  topic    Topic?            @relation(fields: [topicId], references: [id], onDelete: SetNull)
+
+  @@index([teacherId, status])
+  @@index([reviewerId, status])
+  @@index([quizId])
+  @@index([materialId])
 }
 
 // difficultyLevel: "BEGINNER" | "INTERMEDIATE" | "ADVANCED"
