@@ -427,6 +427,9 @@ model QuizProgress {
   quizId    String   @map("subtopicId")
   status    String   @default("NOT_STARTED")
   bestScore Float?
+  // Optional teacher-entered percentage (0-100). This overrides the best
+  // attempt when grades are exported, without rewriting attempt history.
+  manualGrade Float?
   updatedAt DateTime @updatedAt
 
   student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
