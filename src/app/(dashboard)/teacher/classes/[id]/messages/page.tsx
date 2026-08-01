@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ import {
   AlertTriangle,
   MessageSquare,
   Clock,
+  Search,
   Users,
 } from "lucide-react";
 
@@ -53,10 +54,16 @@ interface MessageRow {
   sentAtLabel: string;
 }
 
+interface RecipientStudent {
+  userId: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+}
+
 interface PageData {
   className: string;
-  enrolledCount: number;
-  emailableCount: number;
+  students: RecipientStudent[];
   quota: QuotaResult | null;
   messages: MessageRow[];
   loading: boolean;
@@ -65,19 +72,149 @@ interface PageData {
 // While anything is still queued, the worker is actively delivering — refresh
 // so the teacher watches the tally settle instead of wondering.
 const DELIVERY_POLL_MS = 8_000;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function RecipientSelector({
+  students,
+  mode,
+  onModeChange,
+  selectedUserIds,
+  onSelectionChange,
+}: {
+  students: RecipientStudent[];
+  mode: "all" | "selected";
+  onModeChange: (mode: "all" | "selected") => void;
+  selectedUserIds: string[];
+  onSelectionChange: (userIds: string[]) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const selectedSet = new Set(selectedUserIds);
+  const normalizedSearch = search.trim().toLowerCase();
+  const visibleStudents = normalizedSearch
+    ? students.filter((student) =>
+        `${student.firstName} ${student.lastName} ${student.email}`.toLowerCase().includes(normalizedSearch)
+      )
+    : students;
+
+  function toggleStudent(userId: string) {
+    onSelectionChange(
+      selectedSet.has(userId)
+        ? selectedUserIds.filter((id) => id !== userId)
+        : [...selectedUserIds, userId]
+    );
+  }
+
+  return (
+    <fieldset className="space-y-3">
+      <legend className="text-sm font-medium">Recipients</legend>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <label className="flex cursor-pointer items-start gap-3 rounded-md border p-3">
+          <input
+            type="radio"
+            name="recipientMode"
+            className="mt-0.5 size-4"
+            checked={mode === "all"}
+            onChange={() => onModeChange("all")}
+          />
+          <span className="text-sm">
+            <span className="block font-medium">Whole class</span>
+            <span className="mt-0.5 block text-muted-foreground">
+              All {students.length} enrolled student{students.length === 1 ? "" : "s"}
+            </span>
+          </span>
+        </label>
+
+        <label className="flex cursor-pointer items-start gap-3 rounded-md border p-3">
+          <input
+            type="radio"
+            name="recipientMode"
+            className="mt-0.5 size-4"
+            checked={mode === "selected"}
+            disabled={students.length === 0}
+            onChange={() => onModeChange("selected")}
+          />
+          <span className="text-sm">
+            <span className="block font-medium">Specific students</span>
+            <span className="mt-0.5 block text-muted-foreground">Choose one student or a group</span>
+          </span>
+        </label>
+      </div>
+
+      {mode === "selected" && (
+        <div className="overflow-hidden rounded-md border">
+          <div className="flex flex-wrap items-center gap-2 border-b bg-muted/30 p-2">
+            <div className="relative min-w-48 flex-1">
+              <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                className="h-9 pl-8"
+                placeholder="Search students"
+                aria-label="Search students"
+              />
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => onSelectionChange(students.map((student) => student.userId))}
+            >
+              Select all
+            </Button>
+            {selectedUserIds.length > 0 && (
+              <Button type="button" size="sm" variant="ghost" onClick={() => onSelectionChange([])}>
+                Clear
+              </Button>
+            )}
+          </div>
+          <div className="max-h-56 divide-y overflow-y-auto">
+            {visibleStudents.length === 0 ? (
+              <p className="p-4 text-center text-sm text-muted-foreground">No students match your search.</p>
+            ) : (
+              visibleStudents.map((student) => (
+                <label
+                  key={student.userId}
+                  className="flex cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-muted/40"
+                >
+                  <input
+                    type="checkbox"
+                    className="size-4"
+                    checked={selectedSet.has(student.userId)}
+                    onChange={() => toggleStudent(student.userId)}
+                  />
+                  <span className="min-w-0 text-sm">
+                    <span className="block font-medium">
+                      {student.firstName} {student.lastName}
+                    </span>
+                    <span className="block truncate text-xs text-muted-foreground">{student.email}</span>
+                  </span>
+                </label>
+              ))
+            )}
+          </div>
+          <p className="border-t bg-muted/20 px-3 py-2 text-xs text-muted-foreground" aria-live="polite">
+            {selectedUserIds.length} student{selectedUserIds.length === 1 ? "" : "s"} selected
+          </p>
+        </div>
+      )}
+    </fieldset>
+  );
+}
 
 export default function ClassMessagesPage() {
   const { id } = useParams<{ id: string }>();
   const [data, setData] = useState<PageData>({
     className: "",
-    enrolledCount: 0,
-    emailableCount: 0,
+    students: [],
     quota: null,
     messages: [],
     loading: true,
   });
   const [form, setForm] = useState({ subject: "", body: "" });
+  const [recipientMode, setRecipientMode] = useState<"all" | "selected">("all");
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
+  const sendLock = useRef(false);
   const [banner, setBanner] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const load = useCallback(async () => {
@@ -93,11 +230,13 @@ export default function ClassMessagesPage() {
           sentAtLabel: new Date(m.createdAt).toLocaleString(),
         }))
       : [];
+    const students: RecipientStudent[] = Array.isArray(payload.recipients)
+      ? payload.recipients
+      : [];
 
     setData({
       className: payload.className ?? "",
-      enrolledCount: payload.audience?.enrolled ?? 0,
-      emailableCount: payload.audience?.emailable ?? 0,
+      students,
       quota,
       messages,
       loading: false,
@@ -118,23 +257,35 @@ export default function ClassMessagesPage() {
   }, [hasQueuedDeliveries, load]);
 
   const remaining = data.quota?.remaining ?? 0;
-  const emailOverBudget = data.emailableCount > remaining;
-  const canSend = !!form.subject.trim() && !!form.body.trim() && data.enrolledCount > 0;
+  const selectedUserIdSet = new Set(selectedUserIds);
+  const selectedStudents = data.students.filter((student) => selectedUserIdSet.has(student.userId));
+  const targetStudents = recipientMode === "all" ? data.students : selectedStudents;
+  const targetInAppCount = targetStudents.length;
+  const targetEmailCount = targetStudents.filter((student) => EMAIL_RE.test(student.email)).length;
+  const emailOverBudget = targetEmailCount > remaining;
+  const canSend = !!form.subject.trim() && !!form.body.trim() && targetInAppCount > 0;
 
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
+    if (sendLock.current) return;
+    sendLock.current = true;
     setBanner(null);
     setSending(true);
     try {
       const res = await fetch(`/api/classes/${id}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subject: form.subject, body: form.body }),
+        body: JSON.stringify({
+          subject: form.subject,
+          body: form.body,
+          ...(recipientMode === "selected" ? { recipientUserIds: selectedUserIds } : {}),
+        }),
       });
-      const result = await res.json();
       if (!res.ok) {
+        const result = await res.json().catch(() => ({}));
         setBanner({ type: "error", text: result.error || "Failed to send message." });
       } else {
+        const result = await res.json();
         const notified = result.inApp?.count ?? 0;
         const queued = result.email?.queued ?? 0;
         const text = result.email?.skippedReason
@@ -150,6 +301,7 @@ export default function ClassMessagesPage() {
     } catch {
       setBanner({ type: "error", text: "An unexpected error occurred." });
     } finally {
+      sendLock.current = false;
       setSending(false);
     }
   }
@@ -175,8 +327,8 @@ export default function ClassMessagesPage() {
           <MessageSquare className="size-6" /> Messages
         </h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Message {data.className || "this class"}. Everyone gets an in-app notification, and students with an email
-          address on file are automatically emailed a link to it.
+          Send an in-app notification to one student, a group, or all of {data.className || "this class"}.
+          Students with an email address on file are also emailed a link to it.
         </p>
       </div>
 
@@ -203,6 +355,14 @@ export default function ClassMessagesPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSend} className="space-y-4">
+            <RecipientSelector
+              students={data.students}
+              mode={recipientMode}
+              onModeChange={setRecipientMode}
+              selectedUserIds={selectedUserIds}
+              onSelectionChange={setSelectedUserIds}
+            />
+
             <div className="space-y-2">
               <Label htmlFor="subject">Subject</Label>
               <Input
@@ -230,7 +390,7 @@ export default function ClassMessagesPage() {
                 <Bell className="size-4 shrink-0 mt-0.5 text-muted-foreground" />
                 <span>
                   <strong>
-                    {data.enrolledCount} student{data.enrolledCount === 1 ? "" : "s"}
+                    {targetInAppCount} student{targetInAppCount === 1 ? "" : "s"}
                   </strong>{" "}
                   will see this under Notifications the next time they open the app.
                 </span>
@@ -238,12 +398,12 @@ export default function ClassMessagesPage() {
               <p className="flex items-start gap-2">
                 <Mail className="size-4 shrink-0 mt-0.5 text-muted-foreground" />
                 <span>
-                  {data.emailableCount === 0 ? (
-                    "No enrolled students have an email address on file, so no email will be sent."
+                  {targetEmailCount === 0 ? (
+                    "No selected students have an email address on file, so no email will be sent."
                   ) : (
                     <>
                       <strong>
-                        {data.emailableCount} student{data.emailableCount === 1 ? "" : "s"}
+                        {targetEmailCount} student{targetEmailCount === 1 ? "" : "s"}
                       </strong>{" "}
                       will also be emailed a link to it, queued and retried until delivered.
                       {data.quota
@@ -253,7 +413,7 @@ export default function ClassMessagesPage() {
                   )}
                 </span>
               </p>
-              {data.emailableCount > 0 && emailOverBudget && (
+              {targetEmailCount > 0 && emailOverBudget && (
                 <p className="flex items-start gap-2 text-destructive">
                   <AlertTriangle className="size-4 shrink-0 mt-0.5" />
                   <span>
@@ -264,9 +424,11 @@ export default function ClassMessagesPage() {
               )}
             </div>
 
-            {data.enrolledCount === 0 && (
+            {targetInAppCount === 0 && (
               <p className="text-xs text-muted-foreground">
-                No students have joined this class yet. Share an invitation link first.
+                {recipientMode === "selected"
+                  ? "Select at least one student."
+                  : "No students have joined this class yet. Share an invitation link first."}
               </p>
             )}
 

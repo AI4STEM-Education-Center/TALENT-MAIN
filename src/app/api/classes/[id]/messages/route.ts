@@ -18,10 +18,11 @@ async function emailDeliveryCounts(messageIds: string[]) {
   });
 
   for (const row of rows) {
+    const count = row._count._all;
     const entry = byMessage.get(row.messageId) ?? { queued: 0, sent: 0, failed: 0 };
-    if (row.status === "SENT") entry.sent += row._count._all;
-    else if (row.status === "FAILED") entry.failed += row._count._all;
-    else entry.queued += row._count._all;
+    if (row.status === "SENT") entry.sent += count;
+    else if (row.status === "FAILED") entry.failed += count;
+    else entry.queued += count;
     byMessage.set(row.messageId, entry);
   }
   return byMessage;
@@ -55,7 +56,13 @@ export async function GET(
     }),
     prisma.classEnrollment.findMany({
       where: { classId: id },
-      include: { student: { select: { user: { select: { email: true } } } } },
+      include: {
+        student: {
+          select: {
+            user: { select: { id: true, firstName: true, lastName: true, email: true } },
+          },
+        },
+      },
     }),
   ]);
 
@@ -69,6 +76,16 @@ export async function GET(
         enrollments.map((e) => ({ email: e.student.user.email }))
       ).size,
     },
+    recipients: enrollments
+      .map((enrollment) => ({
+        userId: enrollment.student.user.id,
+        firstName: enrollment.student.user.firstName,
+        lastName: enrollment.student.user.lastName,
+        email: enrollment.student.user.email,
+      }))
+      .sort(
+        (a, b) => a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName)
+      ),
     messages: messages.map((m) => ({
       ...m,
       email: counts.get(m.id) ?? { queued: 0, sent: 0, failed: 0 },
@@ -76,11 +93,11 @@ export async function GET(
   });
 }
 
-// POST: teacher messages the class.
-// Body: { subject, body }
+// POST: teacher messages the class or selected enrolled students.
+// Body: { subject, body, recipientUserIds? }
 //
-// One channel decision, made for the teacher: every enrolled student gets an
-// in-app notification, and every one of those students who has a valid email
+// One channel decision, made for the teacher: every targeted student gets an
+// in-app notification, and every targeted student who has a valid email
 // address on file also gets an automated email telling them it arrived. The
 // email is not sent here — a MessageEmailDelivery row per recipient is written
 // and queued, and the worker delivers it with retries (src/lib/message-email.ts).
@@ -105,9 +122,30 @@ export async function POST(
   const cls = await prisma.class.findFirst({ where: { id, teacherId: teacher.id } });
   if (!cls) return NextResponse.json({ error: "Class not found" }, { status: 404 });
 
-  const { subject, body } = await req.json();
+  const { subject, body, recipientUserIds } = await req.json();
   if (!subject?.trim() || !body?.trim()) {
     return NextResponse.json({ error: "Subject and message body are required." }, { status: 400 });
+  }
+
+  const hasExplicitRecipients = recipientUserIds !== undefined;
+  if (hasExplicitRecipients && !Array.isArray(recipientUserIds)) {
+    return NextResponse.json({ error: "Recipients must be an array." }, { status: 400 });
+  }
+
+  const selectedUserIds = hasExplicitRecipients
+    ? [
+        ...new Set(
+          (recipientUserIds as unknown[]).filter(
+            (value): value is string => typeof value === "string" && value.length > 0
+          )
+        ),
+      ]
+    : [];
+  if (hasExplicitRecipients && selectedUserIds.length !== (recipientUserIds as unknown[]).length) {
+    return NextResponse.json({ error: "Recipients must be unique student IDs." }, { status: 400 });
+  }
+  if (hasExplicitRecipients && selectedUserIds.length === 0) {
+    return NextResponse.json({ error: "Select at least one student." }, { status: 400 });
   }
 
   // Recipients are the enrolled students — the people who will actually see the
@@ -118,17 +156,32 @@ export async function POST(
     include: { student: { select: { userId: true, user: { select: { email: true } } } } },
   });
 
-  if (enrollments.length === 0) {
+  const selectedUserIdSet = new Set(selectedUserIds);
+  const recipientEnrollments = hasExplicitRecipients
+    ? enrollments.filter((enrollment) => selectedUserIdSet.has(enrollment.student.userId))
+    : enrollments;
+
+  if (hasExplicitRecipients && recipientEnrollments.length !== selectedUserIds.length) {
+    return NextResponse.json(
+      { error: "One or more selected students are not enrolled in this class." },
+      { status: 400 }
+    );
+  }
+
+  if (recipientEnrollments.length === 0) {
     return NextResponse.json(
       { error: "No students have joined this class yet, so there is nobody to notify." },
       { status: 400 }
     );
   }
 
-  const inAppUserIds = enrollments.map((e) => e.student.userId);
+  const inAppUserIds = recipientEnrollments.map((enrollment) => enrollment.student.userId);
 
   const emailRecipients = selectEmailRecipients(
-    enrollments.map((e) => ({ userId: e.student.userId, email: e.student.user.email }))
+    recipientEnrollments.map((enrollment) => ({
+      userId: enrollment.student.userId,
+      email: enrollment.student.user.email,
+    }))
   );
 
   // Quota is checked before anything is queued. Emailing an arbitrary subset of
@@ -142,7 +195,7 @@ export async function POST(
     });
     if (emailRecipients.size > quota.remaining) {
       emailSkippedReason =
-        `Email skipped: this class needs ${emailRecipients.size} emails but only ${quota.remaining} are left ` +
+        `Email skipped: this message needs ${emailRecipients.size} emails but only ${quota.remaining} are left ` +
         `in your budget (${quota.dailyRemaining} today, ${quota.monthlyRemaining} this month). ` +
         `Students still got the in-app notification.`;
     }
