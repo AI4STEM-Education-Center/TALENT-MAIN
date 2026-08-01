@@ -24,6 +24,7 @@ export async function GET(req: NextRequest) {
       include: {
         message: {
           select: {
+            id: true,
             subject: true,
             body: true,
             createdAt: true,
@@ -38,6 +39,9 @@ export async function GET(req: NextRequest) {
 
   const notifications = items.map((n) => ({
     id: n.id,
+    // The notification email links by message id (the same message reaches many
+    // students), so the mailbox needs it to open the one that was linked.
+    messageId: n.message.id,
     subject: n.message.subject,
     body: n.message.body,
     senderName: `${n.message.sender.firstName} ${n.message.sender.lastName}`.trim(),

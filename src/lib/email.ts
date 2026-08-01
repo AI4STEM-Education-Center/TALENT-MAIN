@@ -143,6 +143,32 @@ async function requireSendableConfig(): Promise<ResolvedSmtpConfig> {
 }
 
 /**
+ * Send one email and let the transport's own error escape untouched.
+ *
+ * sendEmail() flattens per-recipient failures into strings, which is fine for
+ * a fire-and-forget broadcast but throws away the SMTP response code. The queue
+ * worker needs that code to tell "this mailbox does not exist" (never retry)
+ * from "the server is busy" (retry), so single-recipient delivery goes through
+ * here instead. See src/lib/message-email.ts.
+ */
+export async function sendEmailToRecipient(opts: {
+  to: string;
+  subject: string;
+  text: string;
+  replyTo?: string;
+}): Promise<void> {
+  const cfg = await requireSendableConfig();
+  const identity = await getSenderIdentity("NOTIFICATION", cfg);
+  await createTransport(cfg).sendMail({
+    from: formatFromHeader(identity),
+    to: opts.to,
+    replyTo: opts.replyTo ?? identity.replyTo ?? undefined,
+    subject: opts.subject,
+    text: opts.text,
+  });
+}
+
+/**
  * Send an email to one or more recipients using the configured SMTP server.
  * Each recipient is sent an individual message (BCC-style privacy) so students
  * don't see each other's addresses. Throws SmtpNotConfiguredError when SMTP is

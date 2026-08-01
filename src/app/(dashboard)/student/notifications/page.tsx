@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 
 interface NotificationItem {
   id: string;
+  messageId: string;
   subject: string;
   body: string;
   senderName: string;
@@ -42,15 +43,31 @@ export default function StudentNotificationsPage() {
     window.dispatchEvent(new Event("notifications:updated"));
   }
 
-  async function markRead(id: string) {
+  const markRead = useCallback(async (id: string) => {
     await fetch("/api/notifications/read", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
     }).catch(() => {});
     setItems((prev) => prev.map((n) => (n.id === id && !n.readAt ? { ...n, readAt: new Date().toISOString() } : n)));
-    signalUpdate();
-  }
+    window.dispatchEvent(new Event("notifications:updated"));
+  }, []);
+
+  // Arrived from a "you have a new message" email: `?message=<id>` names the
+  // message, so open that one and mark it read exactly as tapping it would.
+  // Read from location rather than useSearchParams so the page needs no
+  // Suspense boundary; the param is dropped afterwards so a refresh is clean.
+  useEffect(() => {
+    const linkedMessageId = new URLSearchParams(window.location.search).get("message");
+    if (!linkedMessageId || items.length === 0) return;
+
+    const linked = items.find((n) => n.messageId === linkedMessageId);
+    window.history.replaceState({}, "", window.location.pathname);
+    if (!linked) return;
+
+    setExpandedId(linked.id);
+    if (!linked.readAt) markRead(linked.id);
+  }, [items, markRead]);
 
   async function markAllRead() {
     await fetch("/api/notifications/read", {

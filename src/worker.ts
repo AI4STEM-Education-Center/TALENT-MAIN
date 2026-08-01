@@ -9,12 +9,21 @@ import {
   QUIZ_EXTRACTIONS_QUEUE,
   BACKUPS_QUEUE,
   SIMULATIONS_QUEUE,
+  MESSAGE_EMAILS_QUEUE,
+  MESSAGE_EMAILS_QUEUE_OPTIONS,
   enqueueBackup,
+  enqueueMessageEmails,
   resolveQueueDbPath,
   type ExamResultsJobPayload,
   type QuizExtractionJobPayload,
   type SimulationJobPayload,
+  type MessageEmailJobPayload,
 } from "./lib/queue";
+import {
+  deliverMessageEmail,
+  failExhaustedMessageEmails,
+  findStrandedMessageEmails,
+} from "./lib/message-email";
 import { runBackupJob, claimDueBackup } from "./lib/backup";
 import { runS3Gc } from "./lib/s3-gc";
 import { logSystemEvent } from "./lib/system-log";
@@ -31,6 +40,7 @@ const examResultsQueue = db.queue(EXAM_RESULTS_QUEUE);
 const quizExtractionsQueue = db.queue(QUIZ_EXTRACTIONS_QUEUE);
 const backupsQueue = db.queue(BACKUPS_QUEUE);
 const simulationsQueue = db.queue(SIMULATIONS_QUEUE);
+const messageEmailsQueue = db.queue(MESSAGE_EMAILS_QUEUE, MESSAGE_EMAILS_QUEUE_OPTIONS);
 
 async function consumeMaterials() {
   console.log("[Worker] Starting Honker queue consumer for 'materials'...");
@@ -145,6 +155,75 @@ async function consumeSimulations() {
     } finally {
       job.ack();
     }
+  }
+}
+
+async function consumeMessageEmails() {
+  console.log(`[Worker] Starting Honker queue consumer for '${MESSAGE_EMAILS_QUEUE}'...`);
+  for await (const job of messageEmailsQueue.claim("message-emails-worker")) {
+    const { deliveryId } = job.payload as MessageEmailJobPayload;
+    try {
+      const result = await deliverMessageEmail(deliveryId);
+      if (result.status === "RETRY") {
+        // Transient SMTP trouble — hand the job back with the engine's backoff
+        // so the same recipient is tried again instead of being dropped.
+        console.warn(
+          `[Worker] Message email ${deliveryId} failed (${result.error}); retrying in ${result.delaySeconds}s`
+        );
+        job.retry(result.delaySeconds, result.error);
+        continue;
+      }
+      if (result.status === "FAILED") {
+        console.error(`[Worker] Message email ${deliveryId} gave up: ${result.error}`);
+        await logSystemEvent({
+          category: "WORKER",
+          type: "MESSAGE_EMAIL_FAILED",
+          severity: "ERROR",
+          message: `Message notification email gave up: ${result.error}`,
+          metadata: { queue: MESSAGE_EMAILS_QUEUE, jobId: job.id, deliveryId },
+        });
+      }
+      job.ack();
+    } catch (err: any) {
+      // Only the engine's own bookkeeping can land here (the send path is
+      // already handled). Retry so a blip in the database doesn't drop the
+      // email; the delivery row's attempt cap still bounds it.
+      console.error(`[Worker] Error on message-email job ${job.id}:`, err?.message ?? err);
+      await logSystemEvent({
+        category: "WORKER",
+        type: "JOB_FAILED",
+        severity: "ERROR",
+        message: `Message-email job failed: ${err?.message ?? err}`,
+        metadata: { queue: MESSAGE_EMAILS_QUEUE, jobId: job.id, deliveryId },
+      });
+      job.retry(60, String(err?.message ?? err));
+    }
+  }
+}
+
+// How often to look for delivery rows whose job never ran (enqueue failed, job
+// lost, worker killed). This is the backstop that makes queued email delivery
+// survive anything short of losing the database itself.
+const MESSAGE_EMAIL_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
+
+async function runMessageEmailSweeper() {
+  console.log("[Worker] Message-email sweeper started (5m interval)...");
+  for (;;) {
+    try {
+      const stranded = await findStrandedMessageEmails();
+      if (stranded.length > 0) {
+        enqueueMessageEmails(stranded);
+        console.log(`[Worker] Re-enqueued ${stranded.length} stranded message email(s)`);
+      }
+
+      const exhausted = await failExhaustedMessageEmails();
+      if (exhausted > 0) {
+        console.log(`[Worker] Closed out ${exhausted} message email(s) that ran out of attempts`);
+      }
+    } catch (err: any) {
+      console.error("[Worker] Message-email sweep failed:", err?.message ?? err);
+    }
+    await new Promise((resolve) => setTimeout(resolve, MESSAGE_EMAIL_SWEEP_INTERVAL_MS));
   }
 }
 
@@ -271,6 +350,8 @@ async function startWorker() {
       consumeExamResults(),
       consumeQuizExtractions(),
       consumeSimulations(),
+      consumeMessageEmails(),
+      runMessageEmailSweeper(),
       consumeBackups(),
       runBackupScheduler(),
       runS3GcLoop(),

@@ -1,12 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { sendEmail, SmtpNotConfiguredError } from "@/lib/email";
-import { isValidEmail } from "@/lib/csv-roster";
-import { getTeacherEmailQuota, parseChannels, serializeChannels } from "@/lib/email-limits";
+import { getTeacherEmailQuota } from "@/lib/email-limits";
+import { selectEmailRecipients } from "@/lib/message-email";
+import { enqueueMessageEmails } from "@/lib/queue";
 import { logApiError } from "@/lib/system-log";
 
-// GET: list messages for this class (teacher only)
+/** Per-message delivery tallies, keyed by message id, for the history list. */
+async function emailDeliveryCounts(messageIds: string[]) {
+  const byMessage = new Map<string, { queued: number; sent: number; failed: number }>();
+  if (messageIds.length === 0) return byMessage;
+
+  const rows = await prisma.messageEmailDelivery.groupBy({
+    by: ["messageId", "status"],
+    where: { messageId: { in: messageIds } },
+    _count: { _all: true },
+  });
+
+  for (const row of rows) {
+    const entry = byMessage.get(row.messageId) ?? { queued: 0, sent: 0, failed: 0 };
+    if (row.status === "SENT") entry.sent += row._count._all;
+    else if (row.status === "FAILED") entry.failed += row._count._all;
+    else entry.queued += row._count._all;
+    byMessage.set(row.messageId, entry);
+  }
+  return byMessage;
+}
+
+// GET: this class's message history (teacher only) plus the audience a new
+// message would reach. Each row carries its live email delivery tally — sends
+// are queued, so those counts keep moving after the compose request returns.
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -23,20 +46,46 @@ export async function GET(
   const cls = await prisma.class.findFirst({ where: { id, teacherId: teacher.id } });
   if (!cls) return NextResponse.json({ error: "Class not found" }, { status: 404 });
 
-  const messages = await prisma.message.findMany({
-    where: { classId: id },
-    orderBy: { createdAt: "desc" },
-    take: 50,
-    include: { sender: { select: { firstName: true, lastName: true, role: true } } },
-  });
+  const [messages, enrollments] = await Promise.all([
+    prisma.message.findMany({
+      where: { classId: id },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      include: { sender: { select: { firstName: true, lastName: true, role: true } } },
+    }),
+    prisma.classEnrollment.findMany({
+      where: { classId: id },
+      include: { student: { select: { user: { select: { email: true } } } } },
+    }),
+  ]);
 
-  return NextResponse.json(messages);
+  const counts = await emailDeliveryCounts(messages.map((m) => m.id));
+
+  return NextResponse.json({
+    className: cls.name,
+    audience: {
+      enrolled: enrollments.length,
+      emailable: selectEmailRecipients(
+        enrollments.map((e) => ({ email: e.student.user.email }))
+      ).size,
+    },
+    messages: messages.map((m) => ({
+      ...m,
+      email: counts.get(m.id) ?? { queued: 0, sent: 0, failed: 0 },
+    })),
+  });
 }
 
-// POST: teacher broadcasts to a class via in-app notification and/or email.
-// Body: { subject, body, channels: { inApp, email }, recipientIds? }
-// In-app notifications are unlimited and go to every enrolled student; email is
-// capped per teacher (per-day and per-month, see src/lib/email-limits.ts).
+// POST: teacher messages the class.
+// Body: { subject, body }
+//
+// One channel decision, made for the teacher: every enrolled student gets an
+// in-app notification, and every one of those students who has a valid email
+// address on file also gets an automated email telling them it arrived. The
+// email is not sent here — a MessageEmailDelivery row per recipient is written
+// and queued, and the worker delivers it with retries (src/lib/message-email.ts).
+// That keeps the compose request fast and, more importantly, means a flaky SMTP
+// server delays the notification rather than losing it.
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -56,150 +105,109 @@ export async function POST(
   const cls = await prisma.class.findFirst({ where: { id, teacherId: teacher.id } });
   if (!cls) return NextResponse.json({ error: "Class not found" }, { status: 404 });
 
-  const { subject, body, channels: channelsInput, recipientIds } = await req.json();
+  const { subject, body } = await req.json();
   if (!subject?.trim() || !body?.trim()) {
     return NextResponse.json({ error: "Subject and message body are required." }, { status: 400 });
   }
 
-  const channels = parseChannels(channelsInput);
-  if (!channels.inApp && !channels.email) {
+  // Recipients are the enrolled students — the people who will actually see the
+  // message in their mailbox. Their account email is the address on file
+  // (validated at signup), so email follows the in-app audience exactly.
+  const enrollments = await prisma.classEnrollment.findMany({
+    where: { classId: id },
+    include: { student: { select: { userId: true, user: { select: { email: true } } } } },
+  });
+
+  if (enrollments.length === 0) {
     return NextResponse.json(
-      { error: "Select at least one channel: in-app notification or email." },
+      { error: "No students have joined this class yet, so there is nobody to notify." },
       { status: 400 }
     );
   }
 
-  // In-app recipients: every enrolled student (those with an account). Announcements
-  // always go to the whole class, so recipientIds only narrows the email channel.
-  let inAppUserIds: string[] = [];
-  if (channels.inApp) {
-    const enrollments = await prisma.classEnrollment.findMany({
-      where: { classId: id },
-      include: { student: { select: { userId: true } } },
-    });
-    inAppUserIds = enrollments.map((e) => e.student.userId);
-  }
+  const inAppUserIds = enrollments.map((e) => e.student.userId);
 
-  // Email recipients: roster entries with a valid email (optionally narrowed).
-  let emailRecipients: string[] = [];
-  if (channels.email) {
-    const roster = await prisma.classStudentList.findMany({
-      where: {
-        classId: id,
-        ...(Array.isArray(recipientIds) && recipientIds.length > 0
-          ? { id: { in: recipientIds } }
-          : {}),
-      },
-    });
-    emailRecipients = roster
-      .map((s) => s.email)
-      .filter((e): e is string => !!e && isValidEmail(e));
-  }
+  const emailRecipients = selectEmailRecipients(
+    enrollments.map((e) => ({ userId: e.student.userId, email: e.student.user.email }))
+  );
 
-  if (inAppUserIds.length === 0 && emailRecipients.length === 0) {
-    const msg = channels.email && !channels.inApp
-      ? "No roster students with a valid email address were found."
-      : "No students found to receive this message.";
-    return NextResponse.json({ error: msg }, { status: 400 });
-  }
-
-  // Enforce the email quota up front so nothing is sent when it would exceed the
-  // cap — the teacher can uncheck Email or reduce recipients and retry.
-  if (channels.email && emailRecipients.length > 0) {
+  // Quota is checked before anything is queued. Emailing an arbitrary subset of
+  // a class is worse than emailing none, so an over-budget send drops the email
+  // channel entirely and still delivers in-app — the teacher is told which.
+  let emailSkippedReason: string | null = null;
+  if (emailRecipients.size > 0) {
     const quota = await getTeacherEmailQuota(teacher.userId, {
       emailDailyLimit: teacher.emailDailyLimit,
       emailMonthlyLimit: teacher.emailMonthlyLimit,
     });
-    if (emailRecipients.length > quota.remaining) {
-      return NextResponse.json(
-        {
-          error:
-            `This would send ${emailRecipients.length} emails but you have ${quota.remaining} left ` +
-            `(${quota.dailyRemaining} today, ${quota.monthlyRemaining} this month). ` +
-            `Uncheck Email or reduce recipients — in-app notifications are unlimited.`,
-          quota,
-        },
-        { status: 429 }
-      );
+    if (emailRecipients.size > quota.remaining) {
+      emailSkippedReason =
+        `Email skipped: this class needs ${emailRecipients.size} emails but only ${quota.remaining} are left ` +
+        `in your budget (${quota.dailyRemaining} today, ${quota.monthlyRemaining} this month). ` +
+        `Students still got the in-app notification.`;
     }
   }
 
-  const teacherName = `${teacher.user.firstName} ${teacher.user.lastName}`.trim();
-
-  // Send email (if requested). In-app delivery still proceeds even if email
-  // fails, so a misconfigured SMTP server never blocks an announcement.
-  let emailAttempted = false;
-  let emailSent = 0;
-  let emailStatus = "SENT";
-  let emailError: string | null = null;
-
-  if (channels.email && emailRecipients.length > 0) {
-    const text = `${body.trim()}\n\n— ${teacherName} (${cls.name})`;
-    try {
-      emailAttempted = true;
-      const result = await sendEmail({
-        to: emailRecipients,
-        subject: subject.trim(),
-        text,
-        purpose: "NOTIFICATION",
-        replyTo: teacher.user.email,
-      });
-      emailSent = result.sent;
-      emailStatus = result.failed === 0 ? "SENT" : result.sent === 0 ? "FAILED" : "PARTIAL";
-      emailError = result.errors.length > 0 ? result.errors.slice(0, 5).join("; ") : null;
-    } catch (error) {
-      emailAttempted = false; // sendEmail threw before attempting — don't count it
-      if (error instanceof SmtpNotConfiguredError) {
-        if (!channels.inApp) {
-          return NextResponse.json({ error: error.message }, { status: 503 });
-        }
-        emailStatus = "FAILED";
-        emailError = error.message;
-      } else {
-        logApiError("CLASS_MESSAGES_POST", error);
-        if (!channels.inApp) {
-          return NextResponse.json({ error: "Failed to send email." }, { status: 500 });
-        }
-        emailStatus = "FAILED";
-        emailError = "Failed to send email.";
-      }
-    }
-  } else if (!channels.email) {
-    emailStatus = "SENT"; // email channel not used; status describes email only
-  }
+  const queueEmail = emailRecipients.size > 0 && !emailSkippedReason;
+  const emailCount = queueEmail ? emailRecipients.size : 0;
 
   const message = await prisma.message.create({
     data: {
       classId: id,
       direction: "TEACHER_TO_STUDENTS",
-      channels: serializeChannels(channels),
+      channels: queueEmail ? "IN_APP,EMAIL" : "IN_APP",
       senderUserId: teacher.userId,
       subject: subject.trim(),
       body: body.trim(),
-      // Count attempted email recipients (0 if the send was never attempted) so a
-      // failed-before-send never burns quota.
-      recipientCount: emailAttempted ? emailRecipients.length : 0,
-      sentCount: emailSent,
+      // recipientCount is what the quota counts, so it must reflect the emails
+      // we committed to sending — queued now, delivered by the worker.
+      recipientCount: emailCount,
+      sentCount: 0,
       inAppCount: inAppUserIds.length,
-      status: emailStatus,
-      error: emailError,
+      status: queueEmail ? "QUEUED" : "SENT",
+      error: emailSkippedReason,
     },
   });
 
-  if (inAppUserIds.length > 0) {
-    await prisma.notification.createMany({
-      data: inAppUserIds.map((userId) => ({ messageId: message.id, userId })),
+  await prisma.notification.createMany({
+    data: inAppUserIds.map((userId) => ({ messageId: message.id, userId })),
+  });
+
+  let queued = 0;
+  if (queueEmail) {
+    // Rows first, jobs second: the row is the durable record of intent, so an
+    // enqueue that fails here is picked up by the worker's sweeper rather than
+    // silently dropping that student's email.
+    await prisma.messageEmailDelivery.createMany({
+      data: [...emailRecipients.entries()].map(([email, userId]) => ({
+        messageId: message.id,
+        userId,
+        email,
+      })),
     });
+
+    const deliveries = await prisma.messageEmailDelivery.findMany({
+      where: { messageId: message.id },
+      select: { id: true },
+    });
+
+    try {
+      enqueueMessageEmails(deliveries.map((d) => d.id));
+      queued = deliveries.length;
+    } catch (error) {
+      logApiError("CLASS_MESSAGES_ENQUEUE", error);
+    }
   }
 
   return NextResponse.json(
     {
       message,
-      channels: serializeChannels(channels),
       inApp: { count: inAppUserIds.length },
-      email: channels.email
-        ? { sent: emailSent, attempted: emailAttempted ? emailRecipients.length : 0, status: emailStatus, error: emailError }
-        : null,
+      email: {
+        recipients: emailCount,
+        queued,
+        skippedReason: emailSkippedReason,
+      },
     },
     { status: 201 }
   );
