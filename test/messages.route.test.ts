@@ -57,14 +57,20 @@ async function seedClass(count: number, opts: { emails?: (string | null)[] } = {
   return { teacherUser, teacher, cls, students };
 }
 
+const ORIGINAL_APP_URL = process.env.APP_URL;
+
 beforeEach(async () => {
   await resetDb();
   mockAuth.mockReset();
   mockEnqueue.mockReset();
   mockSend.mockReset();
+  // Deployments configure this; pin it so the emailed link is deterministic.
+  process.env.APP_URL = "https://app.test";
 });
 
 afterAll(async () => {
+  if (ORIGINAL_APP_URL === undefined) delete process.env.APP_URL;
+  else process.env.APP_URL = ORIGINAL_APP_URL;
   await prisma.$disconnect();
 });
 
@@ -216,8 +222,13 @@ describe("deliverMessageEmail", () => {
     expect(outcome).toEqual({ status: "SENT" });
 
     expect(mockSend).toHaveBeenCalledTimes(1);
-    expect(mockSend.mock.calls[0][0]).toMatchObject({ to: "student@example.com" });
-    expect(mockSend.mock.calls[0][0].subject).toContain("Quiz moved");
+    const sent = mockSend.mock.calls[0][0];
+    expect(sent).toMatchObject({ to: "student@example.com" });
+    expect(sent.subject).toContain("Quiz moved");
+    // The email announces the message and links to it; the message itself
+    // stays on the platform.
+    expect(sent.text).toContain(`?message=${delivery.messageId}`);
+    expect(sent.text).not.toContain("Now due Friday.");
 
     const row = await prisma.messageEmailDelivery.findUniqueOrThrow({ where: { id: delivery.id } });
     expect(row.status).toBe("SENT");

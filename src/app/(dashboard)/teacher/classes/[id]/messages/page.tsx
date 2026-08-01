@@ -176,7 +176,7 @@ export default function ClassMessagesPage() {
         </h1>
         <p className="text-muted-foreground text-sm mt-1">
           Message {data.className || "this class"}. Everyone gets an in-app notification, and students with an email
-          address on file also get an automated email.
+          address on file are automatically emailed a link to it.
         </p>
       </div>
 
@@ -243,9 +243,9 @@ export default function ClassMessagesPage() {
                   ) : (
                     <>
                       <strong>
-                        {data.emailableCount} email{data.emailableCount === 1 ? "" : "s"}
+                        {data.emailableCount} student{data.emailableCount === 1 ? "" : "s"}
                       </strong>{" "}
-                      will be queued and retried until delivered.
+                      will also be emailed a link to it, queued and retried until delivered.
                       {data.quota
                         ? ` Email budget: ${data.quota.dailyRemaining} left today, ${data.quota.monthlyRemaining} this month.`
                         : ""}

@@ -7,6 +7,7 @@ import {
   buildMessageEmail,
   classifyDeliveryError,
   describeDeliveryError,
+  messageLink,
   resolveAppUrl,
   selectEmailRecipients,
   summarizeDeliveries,
@@ -128,43 +129,61 @@ describe("summarizeDeliveries", () => {
 describe("buildMessageEmail", () => {
   const base = {
     subject: "Quiz 3 moved",
-    body: "It is now due Friday.",
     senderName: "Tess Teacher",
     className: "Physics 101",
+    messageId: "msg-1",
   };
 
-  it("prefixes the subject with the class so students can triage", () => {
-    expect(buildMessageEmail(base).subject).toBe("[Physics 101] Quiz 3 moved");
+  it("says a message is waiting, and where", () => {
+    const { subject, text } = buildMessageEmail(base);
+    expect(subject).toBe("New message in Physics 101: Quiz 3 moved");
+    expect(text).toContain("Tess Teacher has sent you a new message in Physics 101.");
+    expect(text).toContain("Subject: Quiz 3 moved");
   });
 
-  it("leaves the subject alone when the message has no class", () => {
-    expect(buildMessageEmail({ ...base, className: null }).subject).toBe("Quiz 3 moved");
+  it("names the sender instead of the class when there is no class", () => {
+    expect(buildMessageEmail({ ...base, className: null }).subject).toBe(
+      "New message from Tess Teacher: Quiz 3 moved"
+    );
   });
 
-  it("includes the message body and signs off with the sender", () => {
-    const { text } = buildMessageEmail(base);
-    expect(text).toContain("Tess Teacher sent you a new message in Physics 101:");
-    expect(text).toContain("It is now due Friday.");
-    expect(text).toContain("— Tess Teacher (Physics 101)");
-  });
-
-  it("links to the mailbox when an app URL is configured", () => {
+  it("links straight to the message rather than the mailbox", () => {
     const { text } = buildMessageEmail({ ...base, appUrl: "https://app.example.com" });
-    expect(text).toContain("https://app.example.com/student/notifications");
+    expect(text).toContain("https://app.example.com/student/notifications?message=msg-1");
   });
 
-  it("degrades to plain guidance when no app URL is configured", () => {
+  it("tells the student where to look when no app URL is configured", () => {
     const { text } = buildMessageEmail({ ...base, appUrl: null });
     expect(text).not.toContain("http");
-    expect(text).toContain("Sign in to see all your messages under Notifications.");
+    expect(text).toContain("Sign in and open Notifications to read it.");
+  });
+
+  it("never carries the message itself — that stays on the platform", () => {
+    const { text } = buildMessageEmail({ ...base, appUrl: "https://app.example.com" });
+    expect(text).not.toContain("It is now due Friday.");
+    expect(text).toContain("waiting for you in the app");
+  });
+});
+
+describe("messageLink", () => {
+  it("escapes the id so an odd character can't break the URL", () => {
+    expect(messageLink("https://app.example.com", "a b&c")).toBe(
+      "https://app.example.com/student/notifications?message=a%20b%26c"
+    );
   });
 });
 
 describe("resolveAppUrl", () => {
-  const original = process.env.APP_URL;
+  const originals = {
+    APP_URL: process.env.APP_URL,
+    AUTH_URL: process.env.AUTH_URL,
+    NEXTAUTH_URL: process.env.NEXTAUTH_URL,
+  };
   afterEach(() => {
-    if (original === undefined) delete process.env.APP_URL;
-    else process.env.APP_URL = original;
+    for (const [key, value] of Object.entries(originals)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   });
 
   it("trims trailing slashes so links never double up", () => {
@@ -172,8 +191,20 @@ describe("resolveAppUrl", () => {
     expect(resolveAppUrl()).toBe("https://app.example.com");
   });
 
-  it("returns null when unset or blank", () => {
+  it("falls back to the auth URLs a deployment may already set", () => {
     delete process.env.APP_URL;
+    process.env.AUTH_URL = "https://auth.example.com";
+    expect(resolveAppUrl()).toBe("https://auth.example.com");
+
+    delete process.env.AUTH_URL;
+    process.env.NEXTAUTH_URL = "https://legacy.example.com";
+    expect(resolveAppUrl()).toBe("https://legacy.example.com");
+  });
+
+  it("returns null when nothing is configured", () => {
+    delete process.env.APP_URL;
+    delete process.env.AUTH_URL;
+    delete process.env.NEXTAUTH_URL;
     expect(resolveAppUrl()).toBeNull();
     process.env.APP_URL = "   ";
     expect(resolveAppUrl()).toBeNull();

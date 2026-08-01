@@ -114,48 +114,66 @@ export function selectEmailRecipients(
 }
 
 export interface MessageEmailInput {
+  /** The teacher's subject line — says what the waiting message is about. */
   subject: string;
-  body: string;
   senderName: string;
   className: string | null;
-  /** Public base URL of the app, when configured — used for the sign-in link. */
+  /** Message id, so the link opens this message rather than the mailbox. */
+  messageId: string;
+  /** Public base URL of the app, when configured. */
   appUrl?: string | null;
 }
 
-/** Base URL used in notification emails, or null when APP_URL isn't set. */
+/**
+ * Base URL for links in notification emails, or null when none is configured.
+ *
+ * The worker has no request to read a host from, so this must come from the
+ * environment. APP_URL is the documented setting; AUTH_URL / NEXTAUTH_URL are
+ * accepted as fallbacks because deployments often already set one of them.
+ */
 export function resolveAppUrl(): string | null {
-  const raw = process.env.APP_URL?.trim();
+  const raw =
+    process.env.APP_URL?.trim() ||
+    process.env.AUTH_URL?.trim() ||
+    process.env.NEXTAUTH_URL?.trim();
   if (!raw) return null;
   return raw.replace(/\/+$/, "");
 }
 
+/** Deep link that opens one message in the student's mailbox. */
+export function messageLink(appUrl: string, messageId: string): string {
+  return `${appUrl}/student/notifications?message=${encodeURIComponent(messageId)}`;
+}
+
 /**
  * Render the notification email for one message. Pure so the wording is unit
- * tested without SMTP. The full body is included (students shouldn't have to
- * sign in just to learn what was said) alongside a link back to the mailbox.
+ * tested without SMTP.
+ *
+ * This email announces the message; it does not carry it. The message lives on
+ * the platform — where read state, the class it belongs to, and the reply path
+ * all are — so the email says who wrote, what it is about, and links straight
+ * to it. Message content therefore never sits in an inbox or a mail relay log.
  */
 export function buildMessageEmail(input: MessageEmailInput): { subject: string; text: string } {
   const className = input.className?.trim() || null;
   const senderName = input.senderName.trim() || "your teacher";
+  const topic = input.subject.trim();
   const subject = className
-    ? `[${className}] ${input.subject.trim()}`
-    : input.subject.trim();
+    ? `New message in ${className}: ${topic}`
+    : `New message from ${senderName}: ${topic}`;
 
-  const signOff = className ? `— ${senderName} (${className})` : `— ${senderName}`;
   const link = input.appUrl
-    ? `See all your messages: ${input.appUrl}/student/notifications`
-    : "Sign in to see all your messages under Notifications.";
+    ? `Read it here: ${messageLink(input.appUrl, input.messageId)}`
+    : "Sign in and open Notifications to read it.";
 
   const text = [
-    `${senderName} sent you a new message${className ? ` in ${className}` : ""}:`,
+    `${senderName} has sent you a new message${className ? ` in ${className}` : ""}.`,
     "",
-    input.body.trim(),
-    "",
-    signOff,
+    `Subject: ${topic}`,
     "",
     link,
     "",
-    "This is an automated notification — replies go to your teacher.",
+    "This is an automated notification — the message itself is waiting for you in the app.",
   ].join("\n");
 
   return { subject, text };
@@ -277,9 +295,9 @@ export async function deliverMessageEmail(
   const { message } = delivery;
   const { subject, text } = buildMessageEmail({
     subject: message.subject,
-    body: message.body,
     senderName: `${message.sender.firstName} ${message.sender.lastName}`.trim(),
     className: message.class?.name ?? null,
+    messageId: message.id,
     appUrl: resolveAppUrl(),
   });
 

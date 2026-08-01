@@ -33,8 +33,8 @@ export default async function TeacherMessagesPage() {
           <MessageSquare className="size-6" /> Messages
         </h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Pick a class to message. Students get an in-app notification, plus an automated email if they have an
-          address on file.
+          Pick a class to message. Students get an in-app notification, plus an automated email linking to it if they
+          have an address on file.
         </p>
       </div>
 
