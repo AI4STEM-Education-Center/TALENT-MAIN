@@ -9,6 +9,7 @@ import {
   buildGradesCsv,
   calculateExportGrade,
   formatGrade,
+  parseMaxPointsFromGradeHeader,
 } from "@/lib/grades-csv";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -105,6 +106,16 @@ describe("grade calculation", () => {
     expect(buildGradeHeader("Quiz 3", 20)).toBe(
       "Quiz 3 Points Grade <Numeric MaxPoints:20>"
     );
+  });
+
+  it("reads max points from a complete eLC grade column", () => {
+    expect(
+      parseMaxPointsFromGradeHeader(
+        "Group Project Final Submission Points Grade <Numeric MaxPoints:106 Weight:50.961538462 Category:Group Project CategoryWeight:20>"
+      )
+    ).toBe(106);
+    expect(parseMaxPointsFromGradeHeader("Group Project Final Submission")).toBeNull();
+    expect(parseMaxPointsFromGradeHeader("Quiz Points Grade <Numeric MaxPoints:0>")).toBeNull();
   });
 
   it("scales the best-attempt percentage and supports completion grades", () => {
@@ -273,6 +284,32 @@ describe("GET /api/classes/[id]/quizzes/[quizId]/grades-export", () => {
       maxPoints: "10",
     });
     expect(await response.text()).toContain("#456,Hopper,Grace,9,#");
+  });
+
+  it("preserves a complete teacher-entered grade column and uses its selected maximum", async () => {
+    const { user, teacher } = await createTeacher();
+    const cls = await createClass(teacher.id);
+    const { quiz } = await createPublishedQuiz({ classId: cls.id });
+    const { user: studentUser, student } = await createStudent();
+    await prisma.user.update({
+      where: { id: studentUser.id },
+      data: { firstName: "Ada", lastName: "Lovelace" },
+    });
+    await addRoster(cls.id, "123", "Lovelace", "Ada");
+    await addCompletedAttempt(student.id, cls.id, quiz.id, 50);
+    asUser(user.id, "TEACHER");
+
+    const header =
+      "Group Project Final Submission Points Grade <Numeric MaxPoints:106 Weight:50.961538462 Category:Group Project CategoryWeight:20>";
+    const response = await callWithParams(cls.id, quiz.id, {
+      header,
+      mode: "best-attempt",
+      maxPoints: "106",
+    });
+
+    expect(await response.text()).toContain(
+      `${header},End-of-Line Indicator\r\n#123,Lovelace,Ada,53,#`
+    );
   });
 
   it("rejects invalid calculation options", async () => {
