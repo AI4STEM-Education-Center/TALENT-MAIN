@@ -388,7 +388,7 @@
         <div class="cell"><b>Concepts</b><span>Import and manage the concept catalog, concept mappings, and misconceptions via CSV.</span></div>
         <div class="cell"><b>Users</b><span>Search and manage every admin, teacher, and student account.</span></div>
         <div class="cell"><b>AI Config</b><span>Connect LLM providers and assign a model to each AI feature.</span></div>
-        <div class="cell"><b>Email</b><span>Configure SMTP so the platform can send mail, and set per-teacher email limits.</span></div>
+        <div class="cell"><b>Email</b><span>Configure SMTP so the platform can send mail, choose a sender address per kind of email, and set per-teacher email limits.</span></div>
         <div class="cell"><b>Backup &amp; Logs</b><span>Run and restore database backups; audit the searchable system operation log.</span></div>
       </div>
     </section>
@@ -473,6 +473,8 @@
       <h2><span class="kicker">System</span> Email, backups &amp; logs</h2>
       <h3>Email (SMTP)</h3>
       <p class="lead">On <a class="path" href="https://dev.ai4talent.org/admin/email"><code>Email</code></a>, enter your SMTP host, port, username, password, from-address, and from-name, then use <strong>send test email</strong> to verify delivery. You can also cap how many emails each teacher may send.</p>
+      <h3>Sender addresses</h3>
+      <p class="lead">Under <strong>Sender addresses</strong>, set one shared sender domain (e.g. <code>example.net</code>) and give each kind of email its own prefix on it — <code>password-reset@</code>, <code>notification@</code>, <code>no-contact@</code>, and so on — plus an optional display name and reply-to. For the two emails the platform writes itself (the password reset link and the password-changed notice) you can also rewrite the subject and body, using placeholders such as <code>{{firstName}}</code> and <code>{{resetUrl}}</code>; leave them blank to keep the built-in wording. Your SMTP server must be permitted to send as that domain (SPF/DKIM). Leave the domain blank to send everything from the single from-address above.</p>
       <h3>Database backup</h3>
       <p class="lead">On <a class="path" href="https://dev.ai4talent.org/admin/backup"><code>Backup</code></a>, run on-demand backups, list existing ones, test the storage connection (WebDAV / OneDrive / S3), and restore when needed.</p>
       <h3>System logs</h3>
@@ -497,10 +499,12 @@
           <p>The sidebar has <a class="path" href="https://dev.ai4talent.org/teacher"><code>Dashboard</code></a>,
             <a class="path" href="https://dev.ai4talent.org/teacher/classes"><code>My Classes</code></a>,
             <a class="path" href="https://dev.ai4talent.org/teacher/stats"><code>Stats</code></a>,
-            <a class="path" href="https://dev.ai4talent.org/teacher/quizzes"><code>Quizzes</code></a>, and
-            <a class="path" href="https://dev.ai4talent.org/teacher/messages"><code>Messages</code></a>.</p></li>
+            <a class="path" href="https://dev.ai4talent.org/teacher/quizzes"><code>Quizzes</code></a>,
+            <a class="path" href="https://dev.ai4talent.org/teacher/messages"><code>Messages</code></a>, and
+            <a class="path" href="https://dev.ai4talent.org/profile"><code>My Profile</code></a>.</p></li>
       </ol>
       <div class="callout tip"><span class="ic">✓</span><p>If your account was provisioned for you — as it often is for a pilot or evaluation — skip straight to signing in; your class and its roster may already be waiting under <a class="path" href="https://dev.ai4talent.org/teacher/classes"><code>My Classes</code></a>.</p></div>
+      <div class="callout note"><span class="ic">!</span><p><strong>Your profile.</strong> <a class="path" href="https://dev.ai4talent.org/profile"><code>My Profile</code></a> — in the sidebar for every role — is where you update your name and email address and change your password. Forgot it? Use <strong>Forgot password?</strong> on the sign-in page and the platform emails you a link that's good for one hour and one use.</p></div>
     </section>
 
     <section class="block" id="teacher-create-class">
