@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { triggerSimulations } from "@/lib/simulation-trigger";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -38,6 +39,9 @@ export async function POST(req: NextRequest) {
   if (!session?.user || session.user.role !== "ADMIN") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+
+  const limited = rateLimit(req, "admin-sim-generate", 20, 60_000, session.user.id);
+  if (limited) return limited;
 
   let body: Record<string, unknown>;
   try {

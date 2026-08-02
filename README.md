@@ -127,7 +127,7 @@ Step-by-step **EC2 + S3** setup (bucket, CORS, IAM) is in [docs/S3_EC2_SETUP.md]
 
 Teachers can upload files at `/teacher/materials`. Each upload creates a `LearningMaterial` row with `storageKey`, `bucket`, `uploadStatus`, and metadata. Files live in S3 only; the app never stores file bytes in the SQLite database.
 
-`POST /api/learning-materials` returns a short-lived presigned `PUT` URL; the client uploads directly to S3, then calls `POST /api/learning-materials`/`[id]`/`complete` so the server can verify the object with `HeadObject`. Configure CORS on the bucket to allow `PUT` from your web origin.
+Upload endpoints return short-lived, write-once presigned `PUT` URLs; the client uploads directly to S3, then calls the matching completion endpoint so the server can verify every object with `HeadObject`. Configure bucket CORS to allow `PUT` from your web origin and include `Content-Type` and `If-None-Match` in `AllowedHeaders`. The signed `If-None-Match: *` header prevents an upload URL from overwriting an object after it has been validated.
 
 For LLM or parsing pipelines, load the row by id and read bytes or location:
 

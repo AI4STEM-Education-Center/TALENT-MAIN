@@ -61,8 +61,8 @@ export async function triggerSimulations(
       continue;
     }
     if (RETRYABLE.has(sim.status) || force) {
-      await prisma.questionSimulation.update({
-        where: { id: sim.id },
+      const claimed = await prisma.questionSimulation.updateMany({
+        where: { id: sim.id, updatedAt: sim.updatedAt },
         data: {
           status: "PENDING",
           errorMessage: null,
@@ -76,6 +76,10 @@ export async function triggerSimulations(
           aiTokensEstimated: null,
         },
       });
+      if (claimed.count !== 1) {
+        skipped += 1;
+        continue;
+      }
       retried += 1;
       toEnqueue.push(sim.id);
       continue;

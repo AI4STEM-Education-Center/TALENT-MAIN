@@ -253,4 +253,15 @@ describe("validateParsedQuestionBank", () => {
       })
     ).toThrow(/at least one correct option/i);
   });
+
+  it("bounds question, option, and text counts before database work", () => {
+    expect(() => validateParsedQuestionBank({ questions: Array(5_001).fill(validPayload.questions[0]) }))
+      .toThrow(/5,000 questions/i);
+    expect(() => validateParsedQuestionBank({
+      questions: [{ ...validPayload.questions[0], options: Array(21).fill({ text: "x", isCorrect: true }) }],
+    })).toThrow(/20 options/i);
+    expect(() => validateParsedQuestionBank({
+      questions: [{ ...validPayload.questions[0], text: "x".repeat(10_001) }],
+    })).toThrow(/text is too long/i);
+  });
 });

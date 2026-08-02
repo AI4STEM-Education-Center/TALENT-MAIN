@@ -46,6 +46,32 @@ export function getMaxUploadBytes(): number {
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_MAX_BYTES;
 }
 
+/**
+ * Legacy flat allowance for a document's rendered page images: four times the
+ * single-file limit, whatever the page count. Retained only as a floor below,
+ * so nothing that used to upload starts failing.
+ */
+const DERIVED_BYTES_MULTIPLIER = 4;
+/** Per-page allowance once a document is long enough for the flat cap to bind. */
+const PER_PAGE_BUDGET_BYTES = 4 * 1024 * 1024;
+
+/**
+ * Total bytes allowed across a document's rendered page images.
+ *
+ * `getMaxUploadBytes()` bounds ONE object, so a flat multiple of it is the same
+ * budget for a 3-page handout and a 100-page scan. Scanned pages compress badly
+ * as PNG, so a long document blows the flat 4x allowance while every individual
+ * page is comfortably legal — and it only finds out at completion, after every
+ * page has already been uploaded. Scaling with the page count fixes that; the
+ * flat value stays as a floor so short documents keep the allowance they had.
+ */
+export function maxDerivedPageBytes(pageCount: number): number {
+  return Math.max(
+    getMaxUploadBytes() * DERIVED_BYTES_MULTIPLIER,
+    pageCount * PER_PAGE_BUDGET_BYTES
+  );
+}
+
 export function sanitizeFilename(name: string): string {
   const base = name.replace(/^.*[/\\]/, "").replace(/[^a-zA-Z0-9._-]/g, "_");
   return base.slice(0, 200) || "file";
@@ -194,6 +220,9 @@ export async function presignPutUpload(
     Bucket: bucket,
     Key: key,
     ContentType: mimeType,
+    // Upload keys are immutable. This prevents a still-valid presigned URL
+    // from replacing an object after the completion endpoint HEADs it.
+    IfNoneMatch: "*",
   });
   return getSignedUrl(client, cmd, { expiresIn: PRESIGN_EXPIRES_SEC });
 }

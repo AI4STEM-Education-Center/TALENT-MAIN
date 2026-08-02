@@ -89,12 +89,21 @@ export default auth((req) => {
 
   const role = session.user?.role;
 
-  // Role-based path guards
+  // Role-based path guards. Every dashboard area is listed: the admin pages are
+  // client components that fetch from /api/admin/* (which enforce ADMIN on their
+  // own), so a missing guard here did not leak data — but it did let any signed-in
+  // student or teacher load the admin UI and enumerate the admin surface.
+  // Matched exactly rather than by prefix so the public "/admin-register" page
+  // can never be swept up by it (that route returns above as a public route
+  // today — this keeps the guard correct regardless of that ordering).
+  if ((pathname === "/admin" || pathname.startsWith("/admin/")) && role !== "ADMIN") {
+    return NextResponse.redirect(new URL(role === "TEACHER" ? "/teacher" : "/student", req.url));
+  }
   if (pathname.startsWith("/teacher") && role !== "TEACHER") {
-    return NextResponse.redirect(new URL("/student", req.url));
+    return NextResponse.redirect(new URL(role === "ADMIN" ? "/admin" : "/student", req.url));
   }
   if (pathname.startsWith("/student") && role !== "STUDENT") {
-    return NextResponse.redirect(new URL("/teacher", req.url));
+    return NextResponse.redirect(new URL(role === "ADMIN" ? "/admin" : "/teacher", req.url));
   }
 
   return NextResponse.next();
