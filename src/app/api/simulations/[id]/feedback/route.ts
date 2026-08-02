@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { canManage, getContentActor } from "@/lib/quiz-access";
 import { enqueueSimulation } from "@/lib/queue";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
 const MAX_FEEDBACK_CHARS = 4000;
+
+class SimulationAlreadyClaimedError extends Error {}
 
 /**
  * POST /api/simulations/[id]/feedback
@@ -18,6 +21,9 @@ const MAX_FEEDBACK_CHARS = 4000;
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const [actor, { id }] = await Promise.all([getContentActor(), params]);
   if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const limited = rateLimit(req, "sim-feedback", 30, 60_000, actor.userId);
+  if (limited) return limited;
 
   const sim = await prisma.questionSimulation.findUnique({
     where: { id },
@@ -54,20 +60,30 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     select: { firstName: true, lastName: true },
   });
 
-  const [row] = await prisma.$transaction([
-    prisma.simulationFeedback.create({
-      data: {
-        simulationId: sim.id,
-        authorUserId: actor.userId,
-        authorName: user ? `${user.firstName} ${user.lastName}`.trim() : null,
-        feedback,
-      },
-    }),
-    prisma.questionSimulation.update({
-      where: { id: sim.id },
-      data: { status: "REVISING" },
-    }),
-  ]);
+  let row;
+  try {
+    row = await prisma.$transaction(async (tx) => {
+      const claimed = await tx.questionSimulation.updateMany({
+        where: { id: sim.id, status: "READY" },
+        data: { status: "REVISING" },
+      });
+      if (claimed.count !== 1) throw new SimulationAlreadyClaimedError();
+
+      return tx.simulationFeedback.create({
+        data: {
+          simulationId: sim.id,
+          authorUserId: actor.userId,
+          authorName: user ? `${user.firstName} ${user.lastName}`.trim() : null,
+          feedback,
+        },
+      });
+    });
+  } catch (error) {
+    if (error instanceof SimulationAlreadyClaimedError) {
+      return NextResponse.json({ error: "Simulation is already being revised" }, { status: 409 });
+    }
+    throw error;
+  }
 
   try {
     enqueueSimulation(sim.id, row.id);

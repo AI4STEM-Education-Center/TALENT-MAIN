@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { canManage, getContentActor } from "@/lib/quiz-access";
 import { QuestionImportError, validateParsedQuestionBank } from "@/lib/question-import/qti";
+import { rateLimit } from "@/lib/rate-limit";
+import { BODY_TOO_LARGE, readBoundedText } from "@/lib/request-body";
 
 export const runtime = "nodejs";
+const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 
 function cleanString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -23,9 +26,20 @@ export async function POST(req: NextRequest) {
   const actor = await getContentActor();
   if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const limited = rateLimit(req, "question-import", 30, 60_000, actor.userId);
+  if (limited) return limited;
+
+  // Bound the body as it streams in. Measuring after `req.text()` would be too
+  // late: a request without content-length (chunked encoding) buffers in full
+  // before any check runs, so the cap is enforced during the read instead.
+  const raw = await readBoundedText(req, MAX_IMPORT_BYTES);
+  if (raw === BODY_TOO_LARGE) {
+    return NextResponse.json({ error: "Import payload is too large." }, { status: 413 });
+  }
+
   let payload: unknown;
   try {
-    payload = await req.json();
+    payload = JSON.parse(raw);
   } catch {
     return NextResponse.json({ error: "Invalid JSON import payload." }, { status: 400 });
   }
@@ -34,6 +48,10 @@ export async function POST(req: NextRequest) {
   const quizId = cleanString(importPayload.quizId);
   const originalName = cleanString(importPayload.originalName);
   const sourcePath = cleanString(importPayload.sourcePath) || null;
+
+  if (originalName.length > 255 || (sourcePath?.length ?? 0) > 1000) {
+    return NextResponse.json({ error: "Import file metadata is too long." }, { status: 400 });
+  }
 
   if (!quizId) {
     return NextResponse.json({ error: "quizId is required." }, { status: 400 });

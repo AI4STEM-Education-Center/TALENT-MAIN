@@ -1,6 +1,18 @@
+import { randomBytes } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+
+/**
+ * A fresh invitation token: 32 crypto-random bytes, base64url so it is safe in
+ * the `/invite/<token>` path. Anyone holding this can join the class and query
+ * the roster-lookup endpoint (which returns student names and emails), so it is
+ * generated here rather than by a `cuid()` schema default — see the note on
+ * Invitation.token in prisma/schema.prisma.
+ */
+function newInvitationToken(): string {
+  return randomBytes(32).toString("base64url");
+}
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -23,6 +35,7 @@ export async function POST(req: NextRequest) {
   const invitation = await prisma.invitation.create({
     data: {
       classId,
+      token: newInvitationToken(),
       expiresAt,
       maxUses: maxUses ? Number(maxUses) : null,
     },

@@ -62,7 +62,11 @@ type ImportSummary = {
 type Phase = "idle" | "uploading" | "extracting" | "review" | "failed" | "committing";
 
 async function putBlob(url: string, contentType: string, body: Blob): Promise<void> {
-  const res = await fetch(url, { method: "PUT", headers: { "Content-Type": contentType }, body });
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: { "Content-Type": contentType, "If-None-Match": "*" },
+    body,
+  });
   if (!res.ok) throw new Error("Upload to storage failed");
 }
 

@@ -141,6 +141,7 @@ beforeEach(async () => {
   mockEnqueue.mockReset().mockReturnValue(undefined);
   process.env.AWS_S3_BUCKET = "test-bucket";
   process.env.AWS_REGION = "us-east-1";
+  delete process.env.LEARNING_MATERIAL_MAX_BYTES;
 });
 
 afterAll(async () => {
@@ -245,6 +246,17 @@ describe("POST /api/quizzes/[id]/pdf-extractions (init) — validation", () => {
     expect(res.status).toBe(400);
   });
 
+  it("rejects an individually oversized declared page", async () => {
+    const { quiz } = await ownerAndQuiz();
+    process.env.LEARNING_MATERIAL_MAX_BYTES = "100";
+    const res = await initPost(
+      jsonReq({ originalName: "quiz.pdf", sizeBytes: 100, pages: [{ pageNumber: 1, sizeBytes: 101 }] }),
+      quizCtx(quiz.id)
+    );
+    delete process.env.LEARNING_MATERIAL_MAX_BYTES;
+    expect(res.status).toBe(400);
+  });
+
   it("deletes the row and returns 500 when presigning throws", async () => {
     const { quiz } = await ownerAndQuiz();
     mockPresignPut.mockRejectedValueOnce(new Error("presign boom"));
@@ -324,6 +336,27 @@ describe("POST .../complete", () => {
     expect(updated?.status).toBe("EXTRACTING");
     expect(updated?.totalPages).toBe(2);
     expect(mockEnqueue).toHaveBeenCalledWith(ext.id);
+  });
+
+  it("rejects objects whose actual size exceeds the configured maximum", async () => {
+    const { quiz, ext, goodPages } = await setup();
+    process.env.LEARNING_MATERIAL_MAX_BYTES = "100";
+    mockHead.mockResolvedValueOnce({ contentLength: 101 });
+    const res = await completePost(jsonReq({ pages: goodPages }), extCtx(quiz.id, ext.id));
+    delete process.env.LEARNING_MATERIAL_MAX_BYTES;
+    expect(res.status).toBe(413);
+    expect(mockEnqueue).not.toHaveBeenCalled();
+  });
+
+  it("allows only one concurrent completion to claim an extraction", async () => {
+    const { quiz, ext, goodPages } = await setup();
+    const [a, b] = await Promise.all([
+      completePost(jsonReq({ pages: goodPages }), extCtx(quiz.id, ext.id)),
+      completePost(jsonReq({ pages: goodPages }), extCtx(quiz.id, ext.id)),
+    ]);
+    expect([a.status, b.status].sort()).toEqual([202, 409]);
+    expect(await prisma.quizPdfExtractionPage.count({ where: { extractionId: ext.id } })).toBe(2);
+    expect(mockEnqueue).toHaveBeenCalledTimes(1);
   });
 
   it("marks the row FAILED and returns 500 when enqueue throws", async () => {
@@ -461,23 +494,21 @@ describe("POST .../figures", () => {
     expect(res.status).toBe(400);
   });
 
-  it("returns presigned PUTs keyed by the real question-figure key builder (deduped)", async () => {
+  it("returns fresh write-once question-figure keys (deduped)", async () => {
     const { teacher, quiz, ext } = await setup("AWAITING_REVIEW");
     const res = await figuresPost(jsonReq({ questionFigures: [0, 2, 0] }), extCtx(quiz.id, ext.id));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.questionFigures).toHaveLength(2); // deduped
-    const keys = body.questionFigures.map((f: { storageKey: string }) => f.storageKey).sort();
-    expect(keys).toEqual(
-      [
-        buildQuizExtractionFigureKey(teacher.id, quiz.id, ext.id, 0),
-        buildQuizExtractionFigureKey(teacher.id, quiz.id, ext.id, 2),
-      ].sort()
-    );
+    for (const figure of body.questionFigures) {
+      const base = buildQuizExtractionFigureKey(teacher.id, quiz.id, ext.id, figure.questionIndex);
+      expect(figure.storageKey.startsWith(base.slice(0, -4))).toBe(true);
+      expect(figure.storageKey).toMatch(/-[0-9a-f-]{36}\.png$/);
+    }
     expect(body.questionFigures[0].presignedUrl).toBe("https://s3.example/put");
   });
 
-  it("returns presigned PUTs for per-option image crops keyed by the option-image builder", async () => {
+  it("returns fresh write-once keys for per-option image crops", async () => {
     const { teacher, quiz, ext } = await setup("AWAITING_REVIEW");
     const res = await figuresPost(
       jsonReq({ optionImages: [{ questionIndex: 1, optionIndex: 0 }, { questionIndex: 1, optionIndex: 2 }] }),
@@ -486,13 +517,13 @@ describe("POST .../figures", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.optionImages).toHaveLength(2);
-    const keys = body.optionImages.map((f: { storageKey: string }) => f.storageKey).sort();
-    expect(keys).toEqual(
-      [
-        buildQuizExtractionOptionImageKey(teacher.id, quiz.id, ext.id, 1, 0),
-        buildQuizExtractionOptionImageKey(teacher.id, quiz.id, ext.id, 1, 2),
-      ].sort()
-    );
+    for (const option of body.optionImages) {
+      const base = buildQuizExtractionOptionImageKey(
+        teacher.id, quiz.id, ext.id, option.questionIndex, option.optionIndex
+      );
+      expect(option.storageKey.startsWith(base.slice(0, -4))).toBe(true);
+      expect(option.storageKey).toMatch(/-[0-9a-f-]{36}\.png$/);
+    }
   });
 });
 
@@ -564,7 +595,61 @@ describe("POST .../commit", () => {
     };
     const res = await commitPost(jsonReq({ questions: [foreign] }), extCtx(quiz.id, ext.id));
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toContain("does not belong");
+    expect((await res.json()).error).toContain("was not uploaded for this extraction");
+  });
+
+  // The case a prefix test cannot catch: a key shaped exactly like one of this
+  // extraction's own crops, under its own figures/ folder, that the extraction
+  // never handed out a presigned PUT for.
+  it("400 for a never-issued key inside this extraction's own figures/ prefix", async () => {
+    const { teacher, quiz, ext } = await setup();
+    const unissued = `${buildQuizExtractionFigureKey(teacher.id, quiz.id, ext.id, 0).replace(
+      /\.png$/,
+      ""
+    )}-00000000-0000-4000-8000-000000000000.png`;
+
+    const res = await commitPost(
+      jsonReq({
+        questions: [
+          {
+            ...trueFalseQuestion,
+            hasFigure: true,
+            figurePage: 1,
+            figureCaption: "diagram",
+            figureStorageKey: unissued,
+          },
+        ],
+      }),
+      extCtx(quiz.id, ext.id)
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain("was not uploaded for this extraction");
+    expect(await prisma.question.count({ where: { quizId: quiz.id } })).toBe(0);
+  });
+
+  it("commits a figure key that /figures actually issued", async () => {
+    const { quiz, ext } = await setup("AWAITING_REVIEW");
+    const figRes = await figuresPost(jsonReq({ questionFigures: [0] }), extCtx(quiz.id, ext.id));
+    const { questionFigures } = await figRes.json();
+    const issuedKey: string = questionFigures[0].storageKey;
+
+    const res = await commitPost(
+      jsonReq({
+        questions: [
+          {
+            ...trueFalseQuestion,
+            hasFigure: true,
+            figurePage: 1,
+            figureCaption: "diagram",
+            figureStorageKey: issuedKey,
+          },
+        ],
+      }),
+      extCtx(quiz.id, ext.id)
+    );
+    expect(res.status).toBe(200);
+    const question = await prisma.question.findFirst({ where: { quizId: quiz.id } });
+    expect(question?.figureStorageKey).toBe(issuedKey);
   });
 
   it("400 for an option-image key outside this extraction's prefix", async () => {
@@ -587,7 +672,7 @@ describe("POST .../commit", () => {
     };
     const res = await commitPost(jsonReq({ questions: [foreign] }), extCtx(quiz.id, ext.id));
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toContain("does not belong");
+    expect((await res.json()).error).toContain("was not uploaded for this extraction");
   });
 
   it("commits: QuestionImport + Question/Option rows, NUMERIC + TRUE_FALSE mapping, COMMITTED + import linked", async () => {

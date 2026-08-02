@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { canManage, getContentActor } from "@/lib/quiz-access";
 import { triggerSimulations } from "@/lib/simulation-trigger";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -36,6 +37,9 @@ function parseScope(body: Record<string, unknown>): Scope | null {
 export async function POST(req: NextRequest) {
   const actor = await getContentActor();
   if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const limited = rateLimit(req, "sim-generate", 20, 60_000, actor.userId);
+  if (limited) return limited;
 
   let body: Record<string, unknown>;
   try {
