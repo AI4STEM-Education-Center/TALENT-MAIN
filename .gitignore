@@ -50,7 +50,12 @@ next-env.d.ts
 /test/test.queue.db-journal
 /test/test.queue.db-wal
 /test/test.queue.db-shm
+/test/benchmark-validation.db*
 /coverage
+
+# Performance benchmark artifacts and generated credentials
+/benchmark/fixture.json
+/benchmark/results/
 
 # Python legacy (keep .venv ignored)
 .venv/

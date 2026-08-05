@@ -19,6 +19,8 @@
     "deploy:full": "npm run db:push && npm run seed && npm run seed:demo && npm run seed:consent && next build && next start",
     "worker": "tsx src/worker.ts",
     "worker:build": "esbuild src/worker.ts --bundle --platform=node --target=node24 --outfile=dist/worker.js --external:@russellthehippo/honker-node --external:@prisma/client --external:@prisma/adapter-better-sqlite3 --external:better-sqlite3",
+    "benchmark:seed": "tsx benchmark/seed.ts",
+    "benchmark:verify": "tsx benchmark/verify.ts",
     "doctor": "npx react-doctor@latest",
     "test": "vitest run",
     "test:release": "vitest run --config vitest.release.config.ts",

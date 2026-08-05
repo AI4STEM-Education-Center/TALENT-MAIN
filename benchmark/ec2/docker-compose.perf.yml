@@ -1,0 +1,52 @@
+services:
+  seed:
+    build:
+      context: ../..
+      dockerfile: benchmark/Dockerfile.seed
+    env_file:
+      - ${PERF_ENV_FILE:?Set PERF_ENV_FILE to the target .env path}
+    environment:
+      APP_ENV: benchmark
+      BENCHMARK_ALLOW_MUTATION: "1"
+      DATABASE_URL: file:./data/perf.db
+      BENCHMARK_STUDENTS: ${BENCHMARK_STUDENTS:-60}
+      BENCHMARK_CLASSES: ${BENCHMARK_CLASSES:-2}
+      BENCHMARK_QUIZZES: ${BENCHMARK_QUIZZES:-6}
+      BENCHMARK_QUESTIONS: ${BENCHMARK_QUESTIONS:-12}
+      BENCHMARK_HISTORY: ${BENCHMARK_HISTORY:-2}
+    volumes:
+      - ${PERF_DATA_DIR:?Set PERF_DATA_DIR}:/workspace/prisma/data
+      - ${PERF_ARTIFACT_DIR:?Set PERF_ARTIFACT_DIR}:/artifacts
+
+  web-perf:
+    image: ${PERF_IMAGE:-ghcr.io/ai4stem-education-center/talent-main:dev-latest}
+    pull_policy: always
+    ports:
+      - "${PERF_PORT:-3002}:3000"
+    env_file:
+      - ${PERF_ENV_FILE}
+    environment:
+      NODE_ENV: production
+      APP_ENV: benchmark
+      DATABASE_URL: file:./data/perf.db
+      S3_KEY_PREFIX: perf/${PERF_RUN_ID:-gpt56}/
+    volumes:
+      - ${PERF_DATA_DIR}:/app/prisma/data
+    restart: unless-stopped
+
+  worker-perf:
+    image: ${PERF_IMAGE:-ghcr.io/ai4stem-education-center/talent-main:dev-latest}
+    command: ["worker"]
+    pull_policy: always
+    env_file:
+      - ${PERF_ENV_FILE}
+    environment:
+      NODE_ENV: production
+      APP_ENV: benchmark
+      DATABASE_URL: file:./data/perf.db
+      S3_KEY_PREFIX: perf/${PERF_RUN_ID:-gpt56}/
+    volumes:
+      - ${PERF_DATA_DIR}:/app/prisma/data
+    restart: unless-stopped
+    depends_on:
+      - web-perf
