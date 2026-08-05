@@ -1,0 +1,85 @@
+{
+  "_comment": [
+    "Tier definitions and SLO budgets — the single source of truth.",
+    "",
+    "Read by k6 (benchmark/k6/lib/config.js, via open()) and by the reporter",
+    "(benchmark/collect/summarize.ts, via fs). It lives in JSON rather than in the",
+    "k6 script because both need it: if the numbers were duplicated, a threshold",
+    "change would silently stop matching the verdict printed in summary.md.",
+    "",
+    "maxVus is a guard rail, not a suggestion. The scenarios enforce it, so",
+    "exam-day cannot be run at cohort scale against the local image and",
+    "edge-validation cannot be pointed at anything but the dev site."
+  ],
+
+  "steps": [
+    "quiz_start",
+    "quiz_submit",
+    "result_poll",
+    "page_student_dashboard",
+    "page_class_view",
+    "page_teacher_dashboard",
+    "page_teacher_class",
+    "quiz_stats",
+    "grades_export",
+    "questions_poll",
+    "notifications",
+    "admin_stats",
+    "admin_materials",
+    "admin_logs",
+    "login",
+    "login_csrf",
+    "s3_presigned_get",
+    "edge_login_page"
+  ],
+
+  "tiers": {
+    "local": {
+      "name": "local",
+      "defaultBaseUrl": "http://localhost:3100",
+      "maxVus": 25,
+      "purpose": "regression detection between commits",
+      "_slo_comment": "Generous, because a dev machine under Docker Desktop has a noisy floor. The signal for this tier is the delta computed by compare.ts, not these gates.",
+      "slo": {
+        "quizStartP95": 1500,
+        "quizSubmitP95": 2000,
+        "pageTtfbP95": 1200,
+        "statsP95": 4000,
+        "errorRate": 0.01,
+        "eventLoopP99": 500
+      }
+    },
+
+    "dev": {
+      "name": "dev",
+      "defaultBaseUrl": "https://dev.ai4talent.org",
+      "maxVus": 3,
+      "purpose": "edge, TLS, auth and S3 validation — never capacity",
+      "_slo_comment": "Includes CDN, TLS and tunnel overhead, so the budget is wider by design. The interesting output is the delta against tier 3's origin-direct numbers.",
+      "slo": {
+        "quizStartP95": 3000,
+        "quizSubmitP95": 4000,
+        "pageTtfbP95": 2500,
+        "statsP95": 6000,
+        "errorRate": 0.0,
+        "eventLoopP99": 0
+      }
+    },
+
+    "ec2": {
+      "name": "ec2",
+      "defaultBaseUrl": "http://127.0.0.1:3000",
+      "maxVus": 500,
+      "purpose": "capacity, breaking point, recovery, queue behaviour",
+      "_slo_comment": "The only tier whose absolute numbers mean anything, because it is the only one with production's CPU and EBS behaviour. Recalibrate after the first clone run — these are estimates, not measurements.",
+      "slo": {
+        "quizStartP95": 800,
+        "quizSubmitP95": 1200,
+        "pageTtfbP95": 600,
+        "statsP95": 2500,
+        "errorRate": 0.001,
+        "eventLoopP99": 200
+      }
+    }
+  }
+}

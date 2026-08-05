@@ -1,0 +1,92 @@
+# Tier 3 — the application stack on the production clone.
+#
+# Mirrors docker/docker-compose.yml as closely as a benchmark can: same image,
+# same NODE_ENV=production entrypoint (so `prisma db push` runs at boot the way
+# it does on a real deploy), same web + worker split against one shared SQLite
+# file on one EBS volume. That last detail is the point — the worker's ten
+# concurrent loops contend with the web tier for the same single write lock, and
+# a benchmark that ran the app without the worker would report a capacity the
+# real deployment can never reach.
+#
+# Three benchmark-only differences, all measurement:
+#   1. the probe is preloaded via NODE_OPTIONS (no application code changes)
+#   2. AI calls resolve to the local mock, for reproducible latency and no cost
+#   3. ports bind to 0.0.0.0 so the separate load generator can reach them —
+#      the security group restricts that to intra-group traffic only
+
+name: alw-bench-sut
+
+services:
+  bench-web:
+    container_name: alw-bench-web
+    image: ${BENCH_IMAGE}
+    pull_policy: missing
+    ports:
+      - "3000:3000"
+      - "9464:9464"
+    env_file:
+      - ./.env
+    environment:
+      NODE_OPTIONS: "--require /opt/bench/probe.cjs"
+      BENCH_PROBE_PORT: "9464"
+      BENCH_PROBE_ROLE: "web"
+      BENCH_DB_PATH: "/app/prisma/data/bench.db"
+    volumes:
+      - ./data:/app/prisma/data
+      - ./instrument:/opt/bench:ro
+    restart: unless-stopped
+    depends_on:
+      bench-mock-ai:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 30s
+
+  bench-worker:
+    container_name: alw-bench-worker
+    image: ${BENCH_IMAGE}
+    command: ["worker"]
+    pull_policy: missing
+    ports:
+      - "9465:9465"
+    env_file:
+      - ./.env
+    environment:
+      NODE_OPTIONS: "--require /opt/bench/probe.cjs"
+      BENCH_PROBE_PORT: "9465"
+      BENCH_PROBE_ROLE: "worker"
+      BENCH_DB_PATH: "/app/prisma/data/bench.db"
+    volumes:
+      - ./data:/app/prisma/data
+      - ./instrument:/opt/bench:ro
+    restart: unless-stopped
+    depends_on:
+      # Same ordering as production: the web service owns the schema push and any
+      # staged restore, so the worker must not open the database first.
+      bench-web:
+        condition: service_healthy
+
+  bench-mock-ai:
+    container_name: alw-bench-mock-ai
+    image: node:26-slim
+    command: ["node", "/opt/mock-ai/server.js"]
+    environment:
+      MOCK_AI_PORT: "8088"
+      # Roughly a real small-model streaming response. Raise TTFT to model a
+      # slower provider; the app's per-request timeout is set by the seeded
+      # AiProvider row (30s), so keep the total well under it.
+      MOCK_AI_TTFT_MS: "400"
+      MOCK_AI_TOKEN_DELAY_MS: "8"
+      MOCK_AI_TOKENS: "180"
+      MOCK_AI_FAILURE_RATE: "0"
+    volumes:
+      - ./mock-ai:/opt/mock-ai:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:8088/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 3s
+      timeout: 3s
+      retries: 20

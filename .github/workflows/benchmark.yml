@@ -1,0 +1,253 @@
+name: Benchmark
+
+# Tier 1 runs automatically; tier 3 is a button.
+#
+# Tier 1 (local production image) is cheap enough to gate PRs on, and its only
+# claim is "this commit is not slower than the baseline" — a claim that holds
+# because the delta is measured on one runner with one dataset.
+#
+# Tier 3 (isolated EC2 clone) is manual: it launches real instances, so it should
+# happen when someone asks, not on every push. It is also the only tier whose
+# absolute numbers mean anything.
+#
+# Tier 2 (the live dev site) is deliberately absent. It shares an EC2 host with
+# production and sits behind Cloudflare's WAF, so it must never be driven by
+# automation — run benchmark/run-dev-site.sh by hand.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: "Which tier to run"
+        type: choice
+        options: [local, ec2]
+        default: local
+      scenario:
+        description: "Scenario (local: smoke|regression · ec2: exam-day|ramp-capacity|spike-recovery|soak|login-storm)"
+        type: string
+        default: regression
+      scale:
+        description: "Dataset scale factor"
+        type: string
+        default: "0.25"
+      source_instance:
+        description: "ec2 only — instance ID to clone the configuration of"
+        type: string
+        default: ""
+      max_runtime_min:
+        description: "ec2 only — self-destruct deadline in minutes"
+        type: string
+        default: "180"
+  pull_request:
+    # Only when something that could plausibly move the numbers changed. Running
+    # on doc-only PRs would burn eight minutes to compare noise against noise.
+    paths:
+      - "src/**"
+      - "prisma/schema.prisma"
+      - "docker/**"
+      - "benchmark/**"
+      - "package-lock.json"
+
+concurrency:
+  # A benchmark shares the runner's CPU with anything else on it, so two
+  # concurrent runs would measure each other. Never cancel a tier-3 run
+  # mid-flight, though: that would strand EC2 instances (they self-destruct, but
+  # only after their deadline).
+  group: benchmark-${{ github.ref }}-${{ inputs.tier || 'local' }}
+  cancel-in-progress: ${{ (inputs.tier || 'local') == 'local' }}
+
+jobs:
+  local:
+    if: ${{ github.event_name == 'pull_request' || inputs.tier == 'local' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Install k6
+        env:
+          K6_VERSION: "2.1.0"
+          # Set the BENCH_K6_SHA256 repository variable to pin the exact digest.
+          # Without it the installer verifies against the release's published
+          # checksums, which still fails loudly on a mismatch.
+          K6_SHA256: ${{ vars.BENCH_K6_SHA256 }}
+        run: benchmark/tools/install-k6.sh
+
+      - name: Cache Docker layers
+        uses: actions/cache@v6
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-bench-buildx-${{ hashFiles('package-lock.json', 'docker/Dockerfile') }}
+          restore-keys: ${{ runner.os }}-bench-buildx-
+
+      - name: Run benchmark
+        id: bench
+        env:
+          BENCH_SCALE: ${{ inputs.scale || '0.25' }}
+        run: |
+          # A GitHub runner is 2 vCPU / 7 GiB, so the scale factor defaults low —
+          # the point is a stable comparison, not a big dataset.
+          benchmark/run-local.sh --scenario "${{ inputs.scenario || 'regression' }}"
+        continue-on-error: true
+
+      - name: Find the run directory
+        id: run_dir
+        run: echo "path=$(ls -dt benchmark/results/local-* | head -1)" >>"$GITHUB_OUTPUT"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: benchmark-${{ github.run_id }}
+          path: |
+            ${{ steps.run_dir.outputs.path }}/summary.md
+            ${{ steps.run_dir.outputs.path }}/summary.json
+            ${{ steps.run_dir.outputs.path }}/comparison.md
+            ${{ steps.run_dir.outputs.path }}/k6.log
+            ${{ steps.run_dir.outputs.path }}/container-logs.txt
+          retention-days: 30
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            cat "${{ steps.run_dir.outputs.path }}/summary.md" 2>/dev/null || echo "no summary produced"
+            echo
+            cat "${{ steps.run_dir.outputs.path }}/comparison.md" 2>/dev/null || true
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Comment on the PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const dir = '${{ steps.run_dir.outputs.path }}';
+            const read = (name) => {
+              try { return fs.readFileSync(`${dir}/${name}`, 'utf8'); } catch { return ''; }
+            };
+            const body = [
+              '## Benchmark — tier 1 (local production image)',
+              '',
+              read('comparison.md') || read('summary.md') || '_no results produced_',
+              '',
+              '<details><summary>Full summary</summary>',
+              '',
+              read('summary.md'),
+              '',
+              '</details>',
+              '',
+              '_Tier 1 detects regressions between commits. It does not measure capacity — ' +
+                'a 2-vCPU runner is not the EC2 host. Use the `ec2` tier for capacity._',
+            ].join('\n');
+
+            // One rolling comment rather than a new one per push, so the thread
+            // stays readable across a long-lived PR.
+            const marker = '## Benchmark — tier 1';
+            const { data: comments } = await github.rest.issues.listComments({
+              ...context.repo, issue_number: context.issue.number, per_page: 100,
+            });
+            const existing = comments.find(
+              (c) => c.user.type === 'Bot' && c.body.startsWith(marker)
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({
+                ...context.repo, issue_number: context.issue.number, body,
+              });
+            }
+
+      - name: Fail on regression
+        if: steps.bench.outcome == 'failure'
+        run: |
+          echo "Benchmark reported a regression or a breached threshold — see the summary above." >&2
+          exit 1
+
+  ec2:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.tier == 'ec2' }}
+    runs-on: ubuntu-latest
+    # Long enough for a 90-minute soak plus provisioning and collection.
+    timeout-minutes: 240
+    permissions:
+      # OIDC, so no long-lived AWS keys live in repository secrets.
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+      - run: npx prisma generate
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ secrets.BENCH_AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Run the EC2 benchmark
+        id: bench
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          benchmark/ec2/provision.sh \
+            --source-instance "${{ inputs.source_instance }}" \
+            --scenario "${{ inputs.scenario }}" \
+            --scale "${{ inputs.scale }}" \
+            --max-runtime-min "${{ inputs.max_runtime_min }}"
+        continue-on-error: true
+
+      - name: Reap any leaked resources
+        # Third line of defence. provision.sh tears down via an EXIT trap and both
+        # instances arm their own shutdown timer, but a cancelled or killed job
+        # skips the trap — and a forgotten instance bills indefinitely. Filtered
+        # on Purpose=alw-benchmark, so it cannot touch production.
+        if: always()
+        run: benchmark/ec2/teardown.sh --all
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: benchmark-ec2-${{ github.run_id }}
+          path: |
+            benchmark/results/**/summary.md
+            benchmark/results/**/summary.json
+            benchmark/results/**/run.json
+            benchmark/results/**/k6.log
+            benchmark/results/**/host.json
+            benchmark/results/**/container-logs.txt
+            benchmark/results/**/*.jsonl
+            benchmark/results/**/*.csv
+          retention-days: 90
+
+      - name: Job summary
+        if: always()
+        run: |
+          for summary in benchmark/results/*/summary.md; do
+            [[ -f "$summary" ]] && cat "$summary" >>"$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Surface the run's exit status
+        if: steps.bench.outcome == 'failure'
+        run: |
+          echo "The EC2 benchmark breached a threshold. For ramp-capacity that is the" >&2
+          echo "expected outcome — the step where it broke is the capacity number." >&2
+          exit 1

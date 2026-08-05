@@ -1,0 +1,117 @@
+# Tier 1 — local production Docker image.
+#
+# Purpose: detect regressions and compare commits. NOT for capacity numbers —
+# a dev machine's CPU count and NVMe fsync profile have nothing to do with a
+# t-class EC2 instance on EBS, so absolute latencies here are not transferable.
+# What *is* transferable is the delta between two commits on the same machine.
+#
+# Deliberate parity choices with docker/docker-compose.yml:
+#   - same image, built from the same docker/Dockerfile
+#   - NODE_ENV=production, so the entrypoint's non-destructive `prisma db push`
+#     path runs and Next serves the standalone production build
+#   - separate ports (3100/3101) and a separate data volume, so this can run
+#     alongside a normal `npm run dev` without colliding
+#
+# Deliberate differences, all measurement-related:
+#   - the benchmark probe is bind-mounted and preloaded via NODE_OPTIONS
+#   - AI calls resolve to the mock server instead of a real provider
+#
+# Usage: benchmark/run-local.sh (which wraps compose + seed + k6 + report)
+
+name: alw-bench
+
+services:
+  bench-web:
+    container_name: alw-bench-web
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile
+    image: alw-bench:local
+    ports:
+      - "127.0.0.1:3100:3000"
+      - "127.0.0.1:9464:9464" # probe
+    environment:
+      NODE_ENV: production
+      APP_ENV: dev
+      DATABASE_URL: "file:/app/prisma/data/bench.db"
+      APP_URL: "http://localhost:3100"
+      AUTH_SECRET: ${BENCH_AUTH_SECRET:?set BENCH_AUTH_SECRET (see benchmark/docker/bench.env.example)}
+      API_KEY_ENCRYPTION_SECRET: ${BENCH_API_KEY_ENCRYPTION_SECRET:?set BENCH_API_KEY_ENCRYPTION_SECRET}
+      TEACHER_SIGNUP_TOKEN: bench-teacher-token
+      ADMIN_SIGNUP_TOKEN: bench-admin-token
+      # S3 stays unset by default: presigning is local HMAC, but the *upload*
+      # journey needs a real bucket. Set these in benchmark/docker/bench.env to
+      # exercise the material pipeline.
+      AWS_REGION: ${AWS_REGION:-}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-}
+      S3_KEY_PREFIX: "bench/"
+      NODE_OPTIONS: "--require /opt/bench/probe.cjs"
+      BENCH_PROBE_PORT: "9464"
+      BENCH_PROBE_ROLE: "web"
+      BENCH_DB_PATH: "/app/prisma/data/bench.db"
+    volumes:
+      - ./data:/app/prisma/data
+      - ../instrument:/opt/bench:ro
+    restart: "no"
+    depends_on:
+      bench-mock-ai:
+        condition: service_healthy
+    healthcheck:
+      # /login is unauthenticated and server-rendered, so a 200 means Next is
+      # actually serving pages rather than merely holding the port open.
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  bench-worker:
+    container_name: alw-bench-worker
+    image: alw-bench:local
+    command: ["worker"]
+    ports:
+      - "127.0.0.1:9465:9465"
+    environment:
+      NODE_ENV: production
+      APP_ENV: dev
+      DATABASE_URL: "file:/app/prisma/data/bench.db"
+      AUTH_SECRET: ${BENCH_AUTH_SECRET:?set BENCH_AUTH_SECRET}
+      API_KEY_ENCRYPTION_SECRET: ${BENCH_API_KEY_ENCRYPTION_SECRET:?set BENCH_API_KEY_ENCRYPTION_SECRET}
+      AWS_REGION: ${AWS_REGION:-}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-}
+      S3_KEY_PREFIX: "bench/"
+      NODE_OPTIONS: "--require /opt/bench/probe.cjs"
+      BENCH_PROBE_PORT: "9465"
+      BENCH_PROBE_ROLE: "worker"
+      BENCH_DB_PATH: "/app/prisma/data/bench.db"
+    volumes:
+      - ./data:/app/prisma/data
+      - ../instrument:/opt/bench:ro
+    restart: "no"
+    depends_on:
+      bench-web:
+        condition: service_healthy
+
+  bench-mock-ai:
+    container_name: alw-bench-mock-ai
+    image: node:26-slim
+    working_dir: /app
+    # tsx is not in the runtime image, so the stub is compiled to plain JS by
+    # run-local.sh and mounted here as mock-ai.js.
+    command: ["node", "/opt/mock-ai/server.js"]
+    ports:
+      - "127.0.0.1:8088:8088"
+    environment:
+      MOCK_AI_PORT: "8088"
+      MOCK_AI_TTFT_MS: ${MOCK_AI_TTFT_MS:-400}
+      MOCK_AI_TOKEN_DELAY_MS: ${MOCK_AI_TOKEN_DELAY_MS:-8}
+      MOCK_AI_TOKENS: ${MOCK_AI_TOKENS:-180}
+      MOCK_AI_FAILURE_RATE: ${MOCK_AI_FAILURE_RATE:-0}
+    volumes:
+      - ../mock-ai/dist:/opt/mock-ai:ro
+    restart: "no"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:8088/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 3s
+      timeout: 3s
+      retries: 20
