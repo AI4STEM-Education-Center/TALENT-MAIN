@@ -41,10 +41,18 @@ if ! command -v docker >/dev/null 2>&1; then
   sudo usermod -aG docker "$USER"
 fi
 
+if command -v systemctl >/dev/null 2>&1; then
+  sudo systemctl enable --now docker >/dev/null 2>&1 || true
+fi
+
 if docker info >/dev/null 2>&1; then
   DOCKER=(docker)
 else
   DOCKER=(sudo docker)
+fi
+if ! "${DOCKER[@]}" compose version >/dev/null 2>&1; then
+  echo "Docker Compose v2 is required. Install the Docker Compose CLI plugin on this target." >&2
+  exit 2
 fi
 
 if [[ -n "${GHCR_TOKEN:-}" ]]; then
@@ -63,7 +71,11 @@ else
   if [[ -e "$PERF_SOURCE_DIR" ]]; then
     mv "$PERF_SOURCE_DIR" "$PERF_SOURCE_DIR.stale.$(date -u +%Y%m%dT%H%M%SZ)"
   fi
-  git clone --depth 1 --branch "$PERF_BRANCH" "$PERF_REPO_URL" "$PERF_SOURCE_DIR"
+  mkdir -p "$PERF_SOURCE_DIR"
+  git -C "$PERF_SOURCE_DIR" init
+  git -C "$PERF_SOURCE_DIR" remote add origin "$PERF_REPO_URL"
+  git -C "$PERF_SOURCE_DIR" fetch --depth 1 origin "$PERF_BRANCH"
+  git -C "$PERF_SOURCE_DIR" checkout --detach FETCH_HEAD
 fi
 
 cd "$PERF_SOURCE_DIR"

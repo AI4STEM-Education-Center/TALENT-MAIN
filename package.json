@@ -20,6 +20,7 @@
     "worker": "tsx src/worker.ts",
     "worker:build": "esbuild src/worker.ts --bundle --platform=node --target=node24 --outfile=dist/worker.js --external:@russellthehippo/honker-node --external:@prisma/client --external:@prisma/adapter-better-sqlite3 --external:better-sqlite3",
     "benchmark:seed": "tsx benchmark/seed.ts",
+    "benchmark:run": "bash benchmark/run.sh",
     "benchmark:verify": "tsx benchmark/verify.ts",
     "doctor": "npx react-doctor@latest",
     "test": "vitest run",

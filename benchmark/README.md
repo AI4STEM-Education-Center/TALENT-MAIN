@@ -9,8 +9,9 @@ This suite replaces the legacy endpoint blaster with repeatable user workflows f
 - `benchmark/fixture.json` contains passwords and signed sessions. It is gitignored and must be treated as a secret.
 - EC2 setup uses a dedicated `perf.db`, Docker project, port, and S3 prefix. It never mounts the production or dev database directory.
 - Fixture generation also rejects database URLs that look like the production `prod.db` path.
-- The EC2 load generator is a separate, temporary instance and is terminated automatically unless `-KeepInstance` is supplied.
-- Do not point a stress or soak profile at the shared dev/production EC2 host. Use the isolated performance stack on a dedicated target instance.
+- Local and dev entry points are Bash scripts supported on Linux and macOS. Windows and PowerShell wrappers are intentionally not maintained.
+- EC2 runs execute k6 on the isolated target instance. This is convenient for smoke and regression checks, but generator and application resource contention makes it unsuitable for a clean maximum-capacity measurement.
+- Do not point a stress or soak profile at the shared dev or production service. Use the isolated performance stack on a dedicated target instance.
 
 ## Workload model
 
@@ -27,25 +28,40 @@ Think time is modeled but scaled to keep local smoke tests short. Set `TIME_SCAL
 
 Run the application as a production build or Docker image, not with `next dev`.
 
-```powershell
-$env:DATABASE_URL = "file:./data/benchmark.db"
-$env:AUTH_SECRET = "benchmark-only-secret-with-at-least-32-characters"
-$env:APP_ENV = "benchmark"
-$env:BENCHMARK_ALLOW_MUTATION = "1"
+```bash
+export DATABASE_URL="file:./data/benchmark.db"
+export AUTH_SECRET="benchmark-only-secret-with-at-least-32-characters"
+export APP_ENV="benchmark"
+export BENCHMARK_ALLOW_MUTATION="1"
 npm run db:push
 npm run benchmark:seed
 ```
 
 Then run a profile. The wrapper uses a local k6 executable when present and otherwise uses the pinned `grafana/k6:2.0.0` Docker image.
 
-```powershell
-./benchmark/run.ps1 -Profile smoke -BaseUrl http://localhost:3000
-./benchmark/run.ps1 -Profile load -BaseUrl http://localhost:3000 -Rate 3 -Duration 15m
-./benchmark/run.ps1 -Profile burst -BaseUrl http://localhost:3000
-./benchmark/run.ps1 -Profile stress -BaseUrl http://localhost:3000 -Rate 5
-./benchmark/run.ps1 -Profile soak -BaseUrl http://localhost:3000 -Rate 3 -Duration 4h
-./benchmark/run.ps1 -Profile message -BaseUrl http://localhost:3000
+```bash
+./benchmark/run.sh --profile smoke --base-url http://localhost:3000
+./benchmark/run.sh --profile load --base-url http://localhost:3000 --rate 3 --duration 15m
+./benchmark/run.sh --profile burst --base-url http://localhost:3000
+./benchmark/run.sh --profile stress --base-url http://localhost:3000 --rate 5
+./benchmark/run.sh --profile soak --base-url http://localhost:3000 --rate 3 --duration 4h
+./benchmark/run.sh --profile message --base-url http://localhost:3000
 ```
+
+The runner supports native k6 and falls back to Docker. For Docker-based local runs it translates loopback URLs to `host.docker.internal` on macOS and adds the Docker host-gateway mapping on Linux.
+
+## Public dev endpoint
+
+Use the same Bash runner for a low-volume smoke pass through the public dev edge:
+
+```bash
+./benchmark/run.sh \
+  --profile smoke \
+  --base-url https://dev.example.com \
+  --fixture benchmark/fixture.json
+```
+
+The fixture must contain accounts and sessions valid for the target environment. Non-smoke profiles against any remote URL are blocked unless `--allow-remote-load` is supplied. That flag is an explicit operator acknowledgement; it does not make a shared target safe for load testing.
 
 Useful fixture scale variables are `BENCHMARK_STUDENTS`, `BENCHMARK_CLASSES`, `BENCHMARK_QUIZZES`, `BENCHMARK_QUESTIONS`, and `BENCHMARK_HISTORY`. `RATE` is workflow arrivals per second, not raw HTTP requests per second.
 
@@ -55,10 +71,10 @@ Capacity runs use per-user Auth.js sessions created by the fixture generator. Th
 
 Test the actual CSRF and password-login path separately:
 
-```powershell
-docker run --rm -v "${PWD}:/work" -w /work grafana/k6:2.0.0 run `
-  -e BASE_URL=http://host.docker.internal:3000 `
-  -e FIXTURE=./benchmark/fixture.json `
+```bash
+docker run --rm -v "$PWD:/work" -w /work grafana/k6:2.0.0 run \
+  -e BASE_URL=http://host.docker.internal:3000 \
+  -e FIXTURE=./benchmark/fixture.json \
   /work/benchmark/k6/login-storm.js
 ```
 
@@ -68,66 +84,57 @@ Run the browser script with a local k6 installation and Chromium:
 k6 run -e BASE_URL=http://localhost:3000 -e FIXTURE=./benchmark/fixture.json benchmark/k6/browser.js
 ```
 
-## Automated isolated EC2 run
+## Isolated EC2 options
 
-For the most automated path, use the combined wrapper. It resolves the target's private IP, prepares the isolated target stack, downloads its signed fixture, provisions a separate generator, runs k6, retrieves artifacts, collects target Docker/log and EC2 CloudWatch diagnostics, and terminates the generator:
+Both supported EC2 entry points run the same checked-in Bash scripts directly on the instance. They create a separate Docker Compose project, `perf.db`, port, artifact directory, and S3 prefix under `~/talent-performance`.
 
-```powershell
-./benchmark/ec2/run-full.ps1 `
-  -TargetInstanceId i-0123456789abcdef0 `
-  -TargetSshHost 203.0.113.10 `
-  -TargetKeyPath C:\keys\target.pem `
-  -SubnetId subnet-0123456789abcdef0 `
-  -GeneratorSecurityGroupId sg-0123456789abcdef0 `
-  -GeneratorKeyName talent-benchmark `
-  -GeneratorKeyPath C:\keys\talent-benchmark.pem `
-  -Branch codex/gpt-5-6-realistic-performance-benchmark `
-  -Profile load -Rate 5 -Duration 30m
+### Option A: run directly over SSH
+
+From a Linux or macOS operator machine, stream the trusted preparation script to the instance. It clones the selected ref, resets only the isolated performance database, creates the fixture, and starts the isolated web and worker containers:
+
+```bash
+ssh -i ~/.ssh/talent.pem admin@203.0.113.10 \
+  "PERF_ENV_FILE=/home/admin/app/.env \
+   PERF_BRANCH=dev \
+   BENCHMARK_STUDENTS=120 \
+   BENCHMARK_CLASSES=4 \
+   bash -s" \
+  < benchmark/ec2/prepare-target.sh
 ```
 
-The target security group must allow TCP 3002 from the generator security group. The detailed stages below are also independently runnable for troubleshooting.
+Then execute k6 on that instance:
 
-### 1. Prepare the target
-
-The wrapper connects to a target EC2 instance, clones the requested branch, builds the fixture container, resets only the isolated performance database, starts isolated web and worker containers, waits for readiness, and downloads the generated fixture.
-
-```powershell
-./benchmark/ec2/prepare-target.ps1 `
-  -HostName 203.0.113.10 `
-  -User admin `
-  -KeyPath C:\keys\talent.pem `
-  -EnvFile /home/admin/app/.env `
-  -Branch codex/gpt-5-6-realistic-performance-benchmark `
-  -Students 120 `
-  -Classes 4
+```bash
+ssh -i ~/.ssh/talent.pem admin@203.0.113.10 \
+  "PROFILE=load RATE=5 DURATION=30m \
+   bash ~/talent-performance/source/benchmark/ec2/run-on-instance.sh"
 ```
 
-The performance service listens on port 3002 by default. Keep that port private and reachable only from the load-generator security group. The target needs Docker, Git, curl, access to GHCR, and the existing application `.env`; `prepare-target.sh` performs the remaining setup.
+Copy the results back after the run:
 
-### 2. Launch an ephemeral generator and run k6
-
-The generator wrapper resolves the current Amazon Linux 2023 AMI, launches a tagged EC2 instance, installs Docker, transfers only the k6 suite and fixture, runs the selected profile, retrieves JSON/log artifacts, and terminates the instance in a `finally` block.
-
-```powershell
-./benchmark/ec2/run-generator.ps1 `
-  -TargetUrl http://10.0.1.25:3002 `
-  -RequestHost localhost `
-  -SubnetId subnet-0123456789abcdef0 `
-  -SecurityGroupId sg-0123456789abcdef0 `
-  -KeyName talent-benchmark `
-  -KeyPath C:\keys\talent-benchmark.pem `
-  -Profile load `
-  -Rate 5 `
-  -Duration 30m
+```bash
+scp -i ~/.ssh/talent.pem -r \
+  admin@203.0.113.10:talent-performance/results/ ./benchmark/results/ec2/
 ```
 
-Requirements on the operator machine are authenticated AWS CLI, `ssh`, and `scp`. The subnet must assign public IPv4 addresses for the automation’s SSH connection. For private-only subnets, run the same scripts from a bastion or adapt the transport to SSM.
+The performance service listens only for the duration of the retained Compose stack on port 3002 by default. Restrict that port at the security-group level even though a direct run uses instance loopback.
 
-Artifacts are written under `benchmark/results/<run-id>/`. AWS charges continue if `-KeepInstance` is used.
+### Option B: manual GitHub Actions trigger
 
-### 3. Verify data integrity
+The `EC2 Performance Benchmark` workflow exposes the same operation through `workflow_dispatch`. Configure these repository or `performance-benchmark` environment secrets:
 
-On the target, run the verifier through the seed image after the queues have had time to drain:
+- `EC2_HOST`: SSH hostname or address for the isolated target.
+- `EC2_USER`: target Linux user, such as `admin`.
+- `EC2_SSH_KEY`: private SSH key for that user.
+- `EC2_PERF_ENV_FILE`: optional absolute target `.env` path; defaults to `/home/<EC2_USER>/app/.env`.
+
+In GitHub Actions, select **EC2 Performance Benchmark**, choose **Run workflow**, select the profile, and confirm the isolated reset. The workflow deliberately benchmarks only the protected `dev` branch so an arbitrary ref cannot receive deployment credentials. Runs are serialized, capped at six hours, and upload k6, verification, Compose, and host diagnostics for 14 days. Put approval rules on the `performance-benchmark` GitHub environment if only designated operators should be able to start a run.
+
+The workflow appears in the Actions UI after the workflow file exists on the repository's default branch. Until then, use Option A from the PR branch.
+
+### Verify data integrity manually
+
+`run-on-instance.sh` runs this verifier automatically after k6. To rerun it manually after the queues have had time to drain:
 
 ```bash
 cd ~/talent-performance/source
@@ -140,11 +147,12 @@ docker compose --project-name talent-perf -f benchmark/ec2/docker-compose.perf.y
 
 The verification fails when completed attempts lack durable results or answers. Also inspect pending AI results, container restarts, SQLite busy/locked errors, queue drain time, and target CPU/memory/disk metrics before declaring the run successful.
 
-### 4. Stop the target stack
+### Stop the target stack
 
-```powershell
-Get-Content ./benchmark/ec2/cleanup-target.sh -Raw | ssh -i C:\keys\talent.pem admin@203.0.113.10 `
-  "PERF_ENV_FILE=/home/admin/app/.env bash -s"
+```bash
+ssh -i ~/.ssh/talent.pem admin@203.0.113.10 \
+  "PERF_ENV_FILE=/home/admin/app/.env bash -s" \
+  < benchmark/ec2/cleanup-target.sh
 ```
 
 Cleanup stops containers but deliberately retains the isolated database and artifacts under `~/talent-performance` for investigation and recovery.
@@ -160,4 +168,4 @@ The suite enforces these initial thresholds:
 - Zero dropped arrival-rate iterations.
 - Browser p75 LCP below 2.5 seconds, INP below 200 ms, and CLS below 0.1.
 
-Treat the highest 30-minute rate satisfying all thresholds, integrity checks, queue-drain expectations, and infrastructure limits as measured capacity. Production planning should retain at least 20% headroom below that rate.
+Because the supported EC2 paths run k6 on the application host, use them for regression comparisons and operational checks rather than a definitive saturation ceiling. A separate load-generator host is the better option when measuring maximum capacity. Production planning should retain at least 20% headroom below a capacity result measured from an external generator.

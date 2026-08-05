@@ -1,0 +1,149 @@
+name: EC2 Performance Benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: k6 workload profile
+        required: true
+        default: smoke
+        type: choice
+        options:
+          - smoke
+          - load
+          - burst
+          - stress
+          - soak
+          - message
+      rate:
+        description: Workflow arrivals per second
+        required: true
+        default: "3"
+        type: string
+      duration:
+        description: k6 duration, such as 5m or 4h
+        required: true
+        default: 5m
+        type: string
+      students:
+        description: Disposable benchmark students
+        required: true
+        default: "60"
+        type: string
+      classes:
+        description: Disposable benchmark classes
+        required: true
+        default: "2"
+        type: string
+      confirm_isolated_reset:
+        description: Confirm reset of the isolated ~/talent-performance data only
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ec2-performance-benchmark
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    name: Run directly on isolated EC2 target
+    if: inputs.confirm_isolated_reset
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    environment: performance-benchmark
+    env:
+      TARGET_HOST: ${{ secrets.EC2_HOST }}
+      TARGET_USER: ${{ secrets.EC2_USER }}
+      TARGET_ENV_FILE: ${{ secrets.EC2_PERF_ENV_FILE }}
+      PERF_RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
+
+    steps:
+      - name: Checkout trusted workflow revision
+        uses: actions/checkout@v7
+
+      - name: Validate inputs and target configuration
+        env:
+          PROFILE: ${{ inputs.profile }}
+          RATE: ${{ inputs.rate }}
+          DURATION: ${{ inputs.duration }}
+          STUDENTS: ${{ inputs.students }}
+          CLASSES: ${{ inputs.classes }}
+        run: |
+          set -euo pipefail
+          : "${TARGET_HOST:?Set the EC2_HOST repository or environment secret}"
+          : "${TARGET_USER:?Set the EC2_USER repository or environment secret}"
+          [[ "$RATE" =~ ^[1-9][0-9]*$ ]]
+          [[ "$DURATION" =~ ^[1-9][0-9]*(ms|s|m|h)$ ]]
+          [[ "$STUDENTS" =~ ^[1-9][0-9]*$ ]]
+          [[ "$CLASSES" =~ ^[1-9][0-9]*$ ]]
+          if (( RATE > 100 || STUDENTS > 5000 || CLASSES > 100 )); then
+            echo "Requested scale exceeds the workflow safety limits." >&2
+            exit 2
+          fi
+
+      - name: Configure SSH
+        env:
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          : "${EC2_SSH_KEY:?Set the EC2_SSH_KEY repository or environment secret}"
+          install -d -m 700 "$RUNNER_TEMP/ssh"
+          install -m 600 /dev/null "$RUNNER_TEMP/ssh/ec2_key"
+          printf '%s\n' "$EC2_SSH_KEY" > "$RUNNER_TEMP/ssh/ec2_key"
+
+      - name: Copy trusted bootstrap script
+        run: |
+          set -euo pipefail
+          ssh_args=(-o StrictHostKeyChecking=accept-new -i "$RUNNER_TEMP/ssh/ec2_key")
+          scp "${ssh_args[@]}" benchmark/ec2/prepare-target.sh \
+            "$TARGET_USER@$TARGET_HOST:/tmp/talent-prepare-${GITHUB_RUN_ID}.sh"
+
+      - name: Prepare target and run benchmark on EC2
+        env:
+          PROFILE: ${{ inputs.profile }}
+          RATE: ${{ inputs.rate }}
+          DURATION: ${{ inputs.duration }}
+          STUDENTS: ${{ inputs.students }}
+          CLASSES: ${{ inputs.classes }}
+        run: |
+          set -euo pipefail
+          ssh_args=(-o StrictHostKeyChecking=accept-new -i "$RUNNER_TEMP/ssh/ec2_key")
+          env_file="${TARGET_ENV_FILE:-/home/$TARGET_USER/app/.env}"
+          printf -v prepare_command \
+            'PERF_ENV_FILE=%q PERF_BRANCH=%q PERF_RUN_ID=%q BENCHMARK_STUDENTS=%q BENCHMARK_CLASSES=%q bash %q' \
+            "$env_file" "dev" "$PERF_RUN_ID" "$STUDENTS" "$CLASSES" \
+            "/tmp/talent-prepare-${GITHUB_RUN_ID}.sh"
+          printf -v run_command \
+            'PERF_RUN_ID=%q PROFILE=%q RATE=%q DURATION=%q bash %q' \
+            "$PERF_RUN_ID" "$PROFILE" "$RATE" "$DURATION" \
+            "/home/$TARGET_USER/talent-performance/source/benchmark/ec2/run-on-instance.sh"
+          ssh "${ssh_args[@]}" "$TARGET_USER@$TARGET_HOST" \
+            "$prepare_command && $run_command"
+
+      - name: Retrieve benchmark artifacts
+        if: always()
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          mkdir -p benchmark-artifacts
+          ssh_args=(-o StrictHostKeyChecking=accept-new -i "$RUNNER_TEMP/ssh/ec2_key")
+          scp "${ssh_args[@]}" -r \
+            "$TARGET_USER@$TARGET_HOST:talent-performance/results/$PERF_RUN_ID/." \
+            benchmark-artifacts/
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ec2-performance-${{ env.PERF_RUN_ID }}
+          path: benchmark-artifacts/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Remove temporary SSH material
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/ssh"
