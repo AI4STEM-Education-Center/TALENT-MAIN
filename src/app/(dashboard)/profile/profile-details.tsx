@@ -73,7 +73,13 @@ export function ProfileDetails() {
       } else {
         setProfile(data.profile);
         setBanner({ type: "success", text: "Profile updated." });
-        await update();
+        // Must pass an argument: next-auth's update() only POSTs (and so only
+        // fires the jwt callback's "update" trigger, which re-reads the row)
+        // when it is given data. update() with no arguments silently degrades
+        // to a plain GET of the existing cookie, refreshing nothing. The value
+        // itself is unused — src/lib/auth.ts re-reads from the database rather
+        // than trusting a client-supplied patch.
+        await update({});
       }
     } catch {
       setBanner({ type: "error", text: "An unexpected error occurred." });

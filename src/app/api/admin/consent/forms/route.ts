@@ -3,9 +3,17 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { isConsentRole } from "@/lib/consent";
 import { sanitizeConsentHtml } from "@/lib/consent-html";
+import { OFFICIAL_CONSENT_FORMS } from "@/lib/consent-form-templates";
 
 export const runtime = "nodejs";
 
+/**
+ * Returns every published version plus the IRB-approved text this build ships
+ * (src/lib/consent-form-templates.ts), so an admin can publish the official
+ * form from the UI without pasting HTML — the same text `npm run seed:consent`
+ * installs. Sent alongside the list rather than from its own endpoint: the
+ * publish screen needs both together and nothing else consumes it.
+ */
 export async function GET() {
   const session = await auth();
   if (!session?.user || session.user.role !== "ADMIN") {
@@ -15,7 +23,7 @@ export async function GET() {
     orderBy: [{ role: "asc" }, { createdAt: "desc" }],
     select: { id: true, role: true, version: true, title: true, isActive: true, createdAt: true },
   });
-  return NextResponse.json({ versions });
+  return NextResponse.json({ versions, official: OFFICIAL_CONSENT_FORMS });
 }
 
 /**
