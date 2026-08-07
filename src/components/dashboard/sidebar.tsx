@@ -28,6 +28,7 @@ import {
   Atom,
   ScrollText,
   UserRound,
+  ShieldCheck,
 } from "lucide-react";
 
 interface NavItem {
@@ -67,6 +68,8 @@ const adminNav: NavItem[] = [
   { href: "/admin/quizzes", label: "Quiz Pool", icon: <FileQuestion className="size-4" /> },
   { href: "/admin/material-pool", label: "Material Pool", icon: <FolderOpen className="size-4" /> },
   { href: "/admin/pool-submissions", label: "Pool Approvals", icon: <ClipboardCheck className="size-4" /> },
+  { href: "/admin/consent", label: "Consent Records", icon: <ShieldCheck className="size-4" /> },
+  { href: "/admin/consent-requests", label: "Consent Export Requests", icon: <ClipboardCheck className="size-4" /> },
   { href: "/admin/simulations", label: "Simulations", icon: <Atom className="size-4" /> },
   { href: "/admin/materials", label: "Materials Processing", icon: <FolderOpen className="size-4" /> },
   { href: "/admin/concepts", label: "Concepts", icon: <BookOpen className="size-4" /> },

@@ -6,6 +6,7 @@
 
 import type OpenAI from "openai";
 import { prisma } from "./prisma";
+import { hasResearchConsent } from "./consent";
 import { resolveProvider, createOpenAIClient, type ResolvedProvider } from "./ai-provider";
 import { streamChatCompletion, streamJsonCompletion, aggregateMetrics, type AiCallMetrics } from "./ai-streaming";
 import { retryWithExponentialBackoff } from "./retry";
@@ -80,6 +81,7 @@ type MaterialRow = {
 
 type ExamResultRow = {
   id: string;
+  studentId: string;
   classId: string;
   score: number;
   completedAt: Date;
@@ -584,6 +586,26 @@ export async function generateExamResult(examResultId: string): Promise<void> {
     where: { id: examResultId },
   })) as ExamResultRow | null;
   if (!examResult) return;
+
+  // These two sections are engagement/diagnostic telemetry layered on top of
+  // grading, not grading itself — the score/correctCount/reviewSnapshot were
+  // already computed and persisted before this job ever runs, independent of
+  // consent. Gated per docs/plans/consent-compliance-plan.md §9: a
+  // non-consenting student's attempt is graded exactly the same as anyone
+  // else's, it just never gets an AI summary, study recommendations, or
+  // misconception labels generated for it. "SKIPPED_NO_CONSENT" is distinct
+  // from "FAILED" so it's never mistaken for a bug or retried.
+  if (!(await hasResearchConsent(examResult.studentId))) {
+    await prisma.examResult.updateMany({
+      where: { id: examResult.id, summaryStatus: { not: RESULT_STATUS.READY } },
+      data: { summaryStatus: "SKIPPED_NO_CONSENT" },
+    });
+    await prisma.examResult.updateMany({
+      where: { id: examResult.id, recommendationsStatus: { not: RESULT_STATUS.READY } },
+      data: { recommendationsStatus: "SKIPPED_NO_CONSENT" },
+    });
+    return;
+  }
 
   const generateSummarySection = async () => {
     if (examResult.summaryStatus === RESULT_STATUS.READY) return;

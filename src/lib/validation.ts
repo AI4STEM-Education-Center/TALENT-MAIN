@@ -200,6 +200,20 @@ export const simulationSessionUpdateSchema = z.object({
   ended: z.boolean().default(false),
 });
 
+// ─── IRB research consent ───────────────────────────────────────────────────
+// Stroke data (drawn initials/signature) is only shape-checked as "present or
+// not" here — src/lib/consent.ts's normalizeStrokeData does the real
+// shape/size validation, since it needs to throw a specific oversized-payload
+// error rather than a generic 400.
+
+export const consentSubmitSchema = z.object({
+  decision: z.enum(["AGREE", "DECLINE"]),
+  interviewRecordingConsent: z.boolean().optional(),
+  initialsStrokeData: z.unknown().optional(),
+  signatureTypedName: z.string().trim().min(1).max(200),
+  signatureStrokeData: z.unknown().optional(),
+});
+
 export type ParseResult<T> =
   | { ok: true; data: T }
   | { ok: false; response: NextResponse };

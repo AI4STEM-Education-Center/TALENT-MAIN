@@ -180,6 +180,11 @@ export function buildSimulationKey(
   );
 }
 
+/** Key for one bulk admin consent-record export job's zip archive. */
+export function buildConsentExportKey(jobId: string): string {
+  return prefixedS3Key(`consent-exports/${jobId}/export.zip`);
+}
+
 export function getS3Config(): { bucket: string; region: string } {
   const bucket = process.env.AWS_S3_BUCKET;
   const region = process.env.AWS_REGION;
@@ -191,7 +196,13 @@ export function getS3Config(): { bucket: string; region: string } {
 
 let s3Client: S3Client | null = null;
 
-function getS3Client(): S3Client {
+/**
+ * Exported (unlike the rest of this module's private helpers) so
+ * src/lib/consent-export.ts can hand the same configured client to
+ * @aws-sdk/lib-storage's `Upload` for streaming the bulk consent-PDF zip
+ * directly to S3, without duplicating the endpoint/region setup here.
+ */
+export function getS3Client(): S3Client {
   if (!s3Client) {
     const endpoint = process.env.AWS_S3_ENDPOINT;
     s3Client = new S3Client({

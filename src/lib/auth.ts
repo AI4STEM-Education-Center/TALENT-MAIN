@@ -4,6 +4,26 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit, clientIp } from "@/lib/rate-limit";
 import { logSystemEvent } from "@/lib/system-log";
+import { getUserConsentClaim, isConsentRole } from "@/lib/consent";
+
+/**
+ * Stamp `consentVersion`/`consentDecision` onto a JWT from the database.
+ * ADMIN accounts (not a consent role) always get null — the platform-access
+ * gate in src/proxy.ts only ever checks TEACHER, and STUDENT never blocks
+ * navigation on this claim either way. Read once here rather than in
+ * src/proxy.ts on every request — see the rationale in getUserConsentClaim.
+ */
+async function stampConsentClaim(token: Record<string, unknown>): Promise<void> {
+  const role = token.role;
+  if (!isConsentRole(role) || typeof token.id !== "string") {
+    token.consentVersion = null;
+    token.consentDecision = null;
+    return;
+  }
+  const claim = await getUserConsentClaim(token.id, role);
+  token.consentVersion = claim?.version ?? null;
+  token.consentDecision = claim?.decision ?? null;
+}
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
@@ -105,11 +125,15 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.username = (user as { username: string }).username;
         token.firstName = (user as { firstName: string }).firstName;
         token.lastName = (user as { lastName: string }).lastName;
+        await stampConsentClaim(token);
       }
 
       // The profile page calls useSession().update() after saving so the
       // sidebar reflects a renamed account without a re-login. Re-read from the
-      // database rather than trusting the client-supplied patch.
+      // database rather than trusting the client-supplied patch. This is also
+      // the trigger the consent modal calls right after a successful submit,
+      // so the JWT's consent claim reflects the just-recorded decision without
+      // requiring a full re-login — see src/components/consent/ConsentGate.tsx.
       if (trigger === "update" && token.id) {
         const fresh = await prisma.user.findUnique({
           where: { id: token.id as string },
@@ -122,6 +146,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           token.email = fresh.email;
           token.role = fresh.role;
         }
+        await stampConsentClaim(token);
       }
 
       return token;
@@ -133,6 +158,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         session.user.username = token.username as string;
         session.user.firstName = token.firstName as string;
         session.user.lastName = token.lastName as string;
+        session.user.consentVersion = (token.consentVersion as string | null | undefined) ?? null;
+        session.user.consentDecision = (token.consentDecision as string | null | undefined) ?? null;
       }
       return session;
     },
