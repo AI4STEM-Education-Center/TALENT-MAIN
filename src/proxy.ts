@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { NextResponse } from "next/server";
 import { clientIp } from "@/lib/rate-limit";
 import { trackRequest } from "@/lib/usage-tracker";
+import { isTeacherConsentBlocked } from "@/lib/consent-claim";
 
 const ALLOWED_HOSTS = [
   "dev.ai4talent.org",
@@ -117,8 +118,12 @@ export default auth((req) => {
   // actually renders the form, so that staleness window is short in practice.
   // Students are never redirected here — declining is a complete, valid
   // answer for them, enforced only by the modal appearing until they decide.
+  //
+  // A deployment with no published TEACHER form gates nobody: the claim is
+  // stamped NOT_REQUIRED in that case precisely so this never redirects to a
+  // page that has no form to show (which looped — see consent-claim.ts).
   const isConsentRoute = pathname === "/teacher/consent-required" || pathname === "/api/consent";
-  if (role === "TEACHER" && !isConsentRoute && session.user?.consentDecision !== "AGREE") {
+  if (role === "TEACHER" && !isConsentRoute && isTeacherConsentBlocked(session.user?.consentDecision)) {
     if (pathname.startsWith("/api/")) {
       return NextResponse.json(
         { error: "You must respond to the research consent form before using this feature." },

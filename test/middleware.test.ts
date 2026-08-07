@@ -146,6 +146,33 @@ describe("middleware IRB consent hard-gate", () => {
     expect(res.headers.get("location")).toBeNull();
   });
 
+  it("lets a TEACHER through when no instructor form is published (no redirect loop)", () => {
+    // The claim is stamped NOT_REQUIRED when the role has no active form.
+    // Gating here would bounce them to /teacher/consent-required, which has
+    // no form to show and sends them straight back — ERR_TOO_MANY_REDIRECTS.
+    for (const path of ["/teacher", "/teacher/classes"]) {
+      const res = run(
+        makeReq({
+          host: "dev.ai4talent.org",
+          path,
+          session: { user: { role: "TEACHER", consentDecision: "NOT_REQUIRED" } },
+        })
+      );
+      expect(res.headers.get("location")).toBeNull();
+    }
+  });
+
+  it("does not 403 a TEACHER's API calls when no instructor form is published", () => {
+    const res = run(
+      makeReq({
+        host: "dev.ai4talent.org",
+        path: "/api/classes",
+        session: { user: { role: "TEACHER", consentDecision: "NOT_REQUIRED" } },
+      })
+    );
+    expect(res.status).not.toBe(403);
+  });
+
   it("never blocks /api/consent itself, even for an undecided teacher", () => {
     const res = run(
       makeReq({ host: "dev.ai4talent.org", path: "/api/consent", session: { user: { role: "TEACHER" } } })

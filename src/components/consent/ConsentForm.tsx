@@ -79,7 +79,16 @@ export function ConsentForm({
       }
       // Refresh the JWT's consent claim so proxy.ts's teacher gate and any
       // session-derived UI reflect this decision without a re-login.
-      await update();
+      //
+      // The `{}` argument is load-bearing: next-auth's update() only POSTs
+      // (firing the jwt callback's "update" trigger, which re-stamps the claim
+      // from the database) when it is passed data — with no arguments it
+      // quietly degrades to a GET that refreshes nothing. Without it a teacher
+      // who agreed still carried an undecided claim, so proxy.ts bounced them
+      // back to /teacher/consent-required, which sent them on to /teacher, and
+      // round again: ERR_TOO_MANY_REDIRECTS. The value is unused — src/lib/auth.ts
+      // re-reads from the database rather than trusting a client-supplied patch.
+      await update({});
       onSubmitted(decision);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not submit your response.");

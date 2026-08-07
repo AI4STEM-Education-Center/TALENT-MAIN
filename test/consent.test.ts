@@ -8,6 +8,7 @@ import {
   getUserConsentClaim,
   hasResearchConsent,
 } from "@/lib/consent";
+import { CONSENT_NOT_REQUIRED, isTeacherConsentBlocked } from "@/lib/consent-claim";
 import { prisma } from "@/lib/prisma";
 import { resetDb, createStudent } from "./db";
 
@@ -84,6 +85,21 @@ async function publishVersion(role: "STUDENT" | "TEACHER", version = "v1") {
 describe("getActiveConsentVersion / getUserConsentClaim", () => {
   it("returns null when no form is published for a role", async () => {
     expect(await getActiveConsentVersion("STUDENT")).toBeNull();
+  });
+
+  it("claims NOT_REQUIRED (not null) when the role has no published form", async () => {
+    // Distinct from "hasn't decided yet": src/proxy.ts gates a teacher on the
+    // latter and must not on the former, or it redirect-loops.
+    const { user } = await createStudent();
+    expect(await getUserConsentClaim(user.id, "TEACHER")).toEqual({
+      version: null,
+      decision: CONSENT_NOT_REQUIRED,
+    });
+    expect(isTeacherConsentBlocked(CONSENT_NOT_REQUIRED)).toBe(false);
+    expect(isTeacherConsentBlocked("AGREE")).toBe(false);
+    expect(isTeacherConsentBlocked("DECLINE")).toBe(true);
+    expect(isTeacherConsentBlocked(null)).toBe(true);
+    expect(isTeacherConsentBlocked(undefined)).toBe(true);
   });
 
   it("returns the active version and null claim before anyone has decided", async () => {
