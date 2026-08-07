@@ -230,6 +230,9 @@ model Topic {
   id        String   @id @default(cuid())
   name      String
   order     Int      @default(0)
+  // QUIZ and MATERIAL labels live in separate namespaces, even when they
+  // have the same owner (including the administrator-managed global pools).
+  contentType String  @default("QUIZ")
   teacherId String?  @map("createdById")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -240,6 +243,7 @@ model Topic {
   poolSubmissions PoolSubmission[]
 
   @@index([teacherId])
+  @@index([teacherId, contentType])
 }
 
 // A quiz (formerly "Subtopic" / "Module") is the unit students take: a named,

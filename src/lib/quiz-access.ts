@@ -65,14 +65,21 @@ export async function deepCopyQuiz(
 
   return prisma.$transaction(async (tx) => {
     let topicId: string | null = targetTopicId ?? null;
-    if (targetTopicId === undefined && source.topic) {
+    if (targetTopicId) {
+      const targetTopic = await tx.topic.findFirst({
+        where: { id: targetTopicId, teacherId: targetTeacherId, contentType: "QUIZ" },
+        select: { id: true },
+      });
+      if (!targetTopic) throw new Error("Quiz topic not found in the target scope.");
+    }
+    if (targetTopicId === undefined && source.topic?.contentType === "QUIZ") {
       const existing = await tx.topic.findFirst({
-        where: { teacherId: targetTeacherId, name: source.topic.name },
+        where: { teacherId: targetTeacherId, contentType: "QUIZ", name: source.topic.name },
       });
       const topic =
         existing ??
         (await tx.topic.create({
-          data: { name: source.topic.name, order: source.topic.order, teacherId: targetTeacherId },
+          data: { name: source.topic.name, order: source.topic.order, contentType: "QUIZ", teacherId: targetTeacherId },
         }));
       topicId = topic.id;
     }

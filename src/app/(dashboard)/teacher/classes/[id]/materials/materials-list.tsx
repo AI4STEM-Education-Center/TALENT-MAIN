@@ -2,12 +2,16 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { FileText, Clock, AlertTriangle, CheckCircle } from "lucide-react";
+import { FileText, Clock, AlertTriangle, CheckCircle, Plus, Tags } from "lucide-react";
 import MaterialDeleteButton from "./material-delete-button";
 import MaterialRetryButton from "./material-retry-button";
 import MaterialTitleEdit from "./material-title-edit";
 import { AiMetricsLine } from "@/components/ai-metrics-line";
 import { PoolSubmissionDialog } from "@/components/pool-submission-dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+
+interface MaterialTag { id: string; name: string }
 
 export interface MaterialItem {
   id: string;
@@ -20,6 +24,7 @@ export interface MaterialItem {
   processingStatus: string;
   errorMessage: string | null;
   createdAt: string | Date;
+  topic: MaterialTag | null;
   isImported?: boolean;
   // AI generation metrics from the VLM processing run (teacher/admin only).
   aiModel?: string | null;
@@ -33,6 +38,7 @@ export interface MaterialItem {
 interface MaterialsListProps {
   classId: string;
   initialMaterials: MaterialItem[];
+  initialTags: MaterialTag[];
 }
 
 const POLL_INTERVAL_MS = 2000;
@@ -45,8 +51,11 @@ function hasActiveProcessing(items: MaterialItem[]): boolean {
   );
 }
 
-export default function MaterialsList({ classId, initialMaterials }: MaterialsListProps) {
+export default function MaterialsList({ classId, initialMaterials, initialTags }: MaterialsListProps) {
   const [materials, setMaterials] = useState<MaterialItem[]>(initialMaterials);
+  const [tags, setTags] = useState<MaterialTag[]>(initialTags);
+  const [newTag, setNewTag] = useState("");
+  const [tagError, setTagError] = useState<string | null>(null);
   const lastInitialRef = useRef(initialMaterials);
 
   // Sync from server when parent re-renders with new data (after a mutation/refresh).
@@ -84,17 +93,64 @@ export default function MaterialsList({ classId, initialMaterials }: MaterialsLi
     };
   }, [materials, classId]);
 
-  if (materials.length === 0) {
-    return (
-      <div className="bg-white border rounded-lg p-10 text-center">
-        <p className="text-gray-500">No materials uploaded yet.</p>
-      </div>
-    );
+  async function createTag() {
+    if (!newTag.trim()) return;
+    setTagError(null);
+    const response = await fetch("/api/topics", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: newTag.trim(), contentType: "MATERIAL" }),
+    });
+    if (!response.ok) {
+      setTagError("Could not create the material tag.");
+      return;
+    }
+    const tag = await response.json();
+    setTags((current) => [...current, tag]);
+    setNewTag("");
+  }
+
+  async function assignTag(materialId: string, topicId: string) {
+    setTagError(null);
+    const response = await fetch(`/api/classes/${classId}/materials/${materialId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topicId: topicId || null }),
+    });
+    if (!response.ok) {
+      setTagError("Could not tag the material.");
+      return;
+    }
+    const { material } = await response.json();
+    setMaterials((current) => current.map((item) => item.id === materialId ? { ...item, topic: material.topic } : item));
   }
 
   return (
     <div className="space-y-4">
-      {materials.map((mat) => {
+      <div className="rounded-lg border bg-card p-4">
+        <div className="mb-3 flex items-center gap-2">
+          <Tags className="size-4" />
+          <h3 className="font-medium">Material tags</h3>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Input
+            value={newTag}
+            onChange={(event) => setNewTag(event.target.value)}
+            onKeyDown={(event) => event.key === "Enter" && createTag()}
+            placeholder="New material tag"
+          />
+          <Button variant="outline" onClick={createTag} disabled={!newTag.trim()}>
+            <Plus className="size-4" /> Create new tag
+          </Button>
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">Material tags are separate from your quiz tags.</p>
+        {tagError && <p className="mt-2 text-sm text-destructive">{tagError}</p>}
+      </div>
+      {materials.length === 0 ? (
+        <div className="bg-white border rounded-lg p-10 text-center">
+          <p className="text-gray-500">No materials uploaded yet.</p>
+        </div>
+      ) : materials.map((mat) => {
         const isProcessing =
           mat.processingStatus === "PROCESSING" || mat.processingStatus === "IDLE";
         const progress =
@@ -131,6 +187,18 @@ export default function MaterialsList({ classId, initialMaterials }: MaterialsLi
                   <span>•</span>
                   <span>{new Date(mat.createdAt).toLocaleDateString()}</span>
                 </div>
+                <label className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
+                  <Tags className="size-4" />
+                  <span>Tag existing material</span>
+                  <select
+                    className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground"
+                    value={mat.topic?.id ?? ""}
+                    onChange={(event) => assignTag(mat.id, event.target.value)}
+                  >
+                    <option value="">No tag</option>
+                    {tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
+                  </select>
+                </label>
               </div>
             </div>
 

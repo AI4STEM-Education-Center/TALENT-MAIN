@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
+import { NextRequest } from "next/server";
 
 vi.mock("@/lib/auth", () => ({ auth: vi.fn() }));
 
@@ -48,6 +49,20 @@ describe("GET /api/topics", () => {
     expect(body.map((t: { name: string }) => t.name)).toEqual(["Mine A", "Mine B"]);
     expect(body[0]).toHaveProperty("_count");
   });
+
+  it("keeps quiz and material tag namespaces separate", async () => {
+    const { user, teacher } = await createTeacher();
+    await prisma.topic.create({ data: { name: "Quiz tag", teacherId: teacher.id, contentType: "QUIZ" } });
+    await prisma.topic.create({ data: { name: "Material tag", teacherId: teacher.id, contentType: "MATERIAL" } });
+
+    asTeacher(user.id);
+    const quizTags = await (await GET()).json();
+    const materialTags = await (
+      await GET(new NextRequest("http://localhost/api/topics?contentType=MATERIAL"))
+    ).json();
+    expect(quizTags.map((tag: { name: string }) => tag.name)).toEqual(["Quiz tag"]);
+    expect(materialTags.map((tag: { name: string }) => tag.name)).toEqual(["Material tag"]);
+  });
 });
 
 describe("POST /api/topics", () => {
@@ -66,6 +81,15 @@ describe("POST /api/topics", () => {
     expect(body.name).toBe("Kinematics"); // trimmed
     expect(body.order).toBe(3);
     expect(body.teacherId).toBe(teacher.id);
+    expect(body.contentType).toBe("QUIZ");
+  });
+
+  it("creates a material-only tag when requested", async () => {
+    const { user } = await createTeacher();
+    asTeacher(user.id);
+    const res = await POST(jsonReq({ name: "Lab handouts", contentType: "MATERIAL" }));
+    expect(res.status).toBe(201);
+    expect((await res.json()).contentType).toBe("MATERIAL");
   });
 });
 
