@@ -64,27 +64,34 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     );
   }
 
-  const approved = await prisma.consentExportRequest.update({
-    where: { id },
-    data: {
-      status: "APPROVED",
-      courseEndedAttested: true,
-      decisionNote: note || null,
-      decidedAt: new Date(),
-    },
-  });
-
-  const teacher = await prisma.teacher.findUnique({
-    where: { id: request.teacherId },
-    select: { user: { select: { email: true } } },
-  });
+  const [approved, teacher] = await Promise.all([
+    prisma.consentExportRequest.update({
+      where: { id },
+      data: {
+        status: "APPROVED",
+        courseEndedAttested: true,
+        decisionNote: note || null,
+        decidedAt: new Date(),
+      },
+    }),
+    prisma.teacher.findUnique({
+      where: { id: request.teacherId },
+      select: { user: { select: { email: true } } },
+    }),
+  ]);
   if (teacher?.user.email) {
     try {
       const deliveryId = await enqueueConsentExportReadyEmail(request.id, teacher.user.email);
       enqueueConsentEmails([deliveryId]);
-      await prisma.consentExportRequest.update({ where: { id }, data: { deliveredAt: new Date() } });
     } catch (error) {
       console.error("[ConsentRequests] Failed to enqueue teacher delivery email:", error);
+      await prisma.consentExportRequest.update({
+        where: { id },
+        data: {
+          emailStatus: "FAILED",
+          emailError: error instanceof Error ? error.message.slice(0, 300) : "Could not queue delivery",
+        },
+      });
     }
   }
 

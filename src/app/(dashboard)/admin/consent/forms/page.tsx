@@ -36,20 +36,30 @@ export default function AdminConsentFormsPage() {
   const [bodyHtml, setBodyHtml] = useState("");
   const [publishing, setPublishing] = useState(false);
 
-  async function load() {
+  async function load(signal?: AbortSignal) {
     setLoading(true);
     try {
-      const res = await fetch("/api/admin/consent/forms", { cache: "no-store" });
+      const res = await fetch("/api/admin/consent/forms", { cache: "no-store", signal });
+      if (!res.ok) throw new Error("Could not load consent form versions.");
       const data = await res.json();
       setVersions(data.versions ?? []);
+    } catch (cause) {
+      if (!(cause instanceof DOMException && cause.name === "AbortError")) {
+        await alert({
+          title: "Couldn't load forms",
+          description: cause instanceof Error ? cause.message : "Unknown error.",
+        });
+      }
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }
 
   useEffect(() => {
-    load();
-  }, []);
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
+  }, [alert]);
 
   async function publish() {
     setPublishing(true);
@@ -59,8 +69,8 @@ export default function AdminConsentFormsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ role, version, title, bodyHtml }),
       });
-      const data = await res.json();
       if (!res.ok) {
+        const data = await res.json().catch(() => null);
         await alert({ title: "Couldn't publish", description: data?.error || "Unknown error." });
         return;
       }

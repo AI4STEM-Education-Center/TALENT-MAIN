@@ -6,6 +6,7 @@ import { parseBody, consentSubmitSchema } from "@/lib/validation";
 import { getActiveConsentVersion, isConsentRole, normalizeStrokeData, parseDeviceType } from "@/lib/consent";
 import { enqueueConsentConfirmationEmail } from "@/lib/consent-email";
 import { enqueueConsentEmails } from "@/lib/queue";
+import { sanitizeConsentHtml } from "@/lib/consent-html";
 
 export const runtime = "nodejs";
 
@@ -47,7 +48,7 @@ export async function GET() {
       id: activeForm.id,
       title: activeForm.title,
       version: activeForm.version,
-      bodyHtml: activeForm.bodyHtml,
+      bodyHtml: sanitizeConsentHtml(activeForm.bodyHtml),
     },
     priorDecision: priorDecision ?? null,
   });
@@ -132,6 +133,13 @@ export async function POST(req: NextRequest) {
     enqueueConsentEmails([deliveryId]);
   } catch (error) {
     console.error("[Consent] Failed to enqueue confirmation email:", error);
+    await prisma.consentRecord.update({
+      where: { id: record.id },
+      data: {
+        emailStatus: "FAILED",
+        emailError: error instanceof Error ? error.message.slice(0, 300) : "Could not queue delivery",
+      },
+    }).catch((auditError) => console.error("[Consent] Failed to update email audit status:", auditError));
   }
 
   return NextResponse.json({ ok: true, decision, formVersion: activeForm.version });

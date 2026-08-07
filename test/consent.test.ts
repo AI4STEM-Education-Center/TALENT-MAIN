@@ -191,4 +191,28 @@ describe("hasResearchConsent", () => {
     expect(await hasResearchConsent(agreedUser.id)).toBe(true);
     expect(await hasResearchConsent(declinedUser.id)).toBe(false);
   });
+
+  it("stops collection when the latest decision changes from AGREE to DECLINE", async () => {
+    const version = await publishVersion("STUDENT");
+    const { user } = await createStudent();
+    const base = {
+      userId: user.id,
+      role: "STUDENT",
+      formVersionId: version.id,
+      signatureTypedName: "Student",
+      ipAddress: "127.0.0.1",
+      userAgent: "test",
+      deviceType: "desktop",
+      signerNameSnapshot: "Student",
+      signerEmailSnapshot: user.email,
+    };
+    await prisma.consentRecord.create({
+      data: { ...base, decision: "AGREE", signedAt: new Date("2026-01-01T00:00:00Z") },
+    });
+    await prisma.consentRecord.create({
+      data: { ...base, decision: "DECLINE", signedAt: new Date("2026-01-02T00:00:00Z") },
+    });
+
+    expect(await hasResearchConsent(user.id)).toBe(false);
+  });
 });

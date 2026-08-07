@@ -4,6 +4,7 @@ import { APP_NAME, renderPurposeMessage, type EmailPurpose } from "@/lib/email-p
 import { renderConsentPdf } from "@/lib/consent-pdf";
 import { buildConsentExportCsv } from "@/lib/consent-csv";
 import { getConsentExportSettings } from "@/lib/consent-settings";
+import { latestConsentDecisionsByEmail, type ConsentDecision } from "@/lib/consent";
 
 /**
  * Queued delivery for consent-related emails (confirmation copy, export
@@ -46,14 +47,20 @@ export type ConsentEmailPayload =
   | { kind: "CONSENT_EXPORT_REQUEST"; subject: string; text: string; replyTo?: string };
 
 export async function enqueueConsentConfirmationEmail(consentRecordId: string, recipient: string): Promise<string> {
-  const row = await prisma.consentEmailDelivery.create({
-    data: {
-      kind: "CONSENT_CONFIRMATION",
-      recipient,
-      payload: JSON.stringify({ kind: "CONSENT_CONFIRMATION", consentRecordId } satisfies ConsentEmailPayload),
-    },
+  return prisma.$transaction(async (tx) => {
+    const row = await tx.consentEmailDelivery.create({
+      data: {
+        kind: "CONSENT_CONFIRMATION",
+        recipient,
+        payload: JSON.stringify({ kind: "CONSENT_CONFIRMATION", consentRecordId } satisfies ConsentEmailPayload),
+      },
+    });
+    await tx.consentRecord.update({
+      where: { id: consentRecordId },
+      data: { emailStatus: "PENDING", emailError: null, emailedAt: null },
+    });
+    return row.id;
   });
-  return row.id;
 }
 
 export async function enqueueConsentExportRequestEmail(opts: {
@@ -78,14 +85,47 @@ export async function enqueueConsentExportRequestEmail(opts: {
 }
 
 export async function enqueueConsentExportReadyEmail(exportRequestId: string, recipient: string): Promise<string> {
-  const row = await prisma.consentEmailDelivery.create({
-    data: {
-      kind: "CONSENT_EXPORT_READY",
-      recipient,
-      payload: JSON.stringify({ kind: "CONSENT_EXPORT_READY", exportRequestId } satisfies ConsentEmailPayload),
-    },
+  return prisma.$transaction(async (tx) => {
+    const row = await tx.consentEmailDelivery.create({
+      data: {
+        kind: "CONSENT_EXPORT_READY",
+        recipient,
+        payload: JSON.stringify({ kind: "CONSENT_EXPORT_READY", exportRequestId } satisfies ConsentEmailPayload),
+      },
+    });
+    await tx.consentExportRequest.update({
+      where: { id: exportRequestId },
+      data: { emailStatus: "PENDING", emailError: null, deliveredAt: null },
+    });
+    return row.id;
   });
-  return row.id;
+}
+
+async function updateReferencedEmailAudit(
+  payload: ConsentEmailPayload,
+  status: "PENDING" | "SENT" | "FAILED",
+  error: string | null,
+  now: Date
+): Promise<void> {
+  if (payload.kind === "CONSENT_CONFIRMATION") {
+    await prisma.consentRecord.updateMany({
+      where: { id: payload.consentRecordId },
+      data: {
+        emailStatus: status,
+        emailError: error,
+        emailedAt: status === "SENT" ? now : null,
+      },
+    });
+  } else if (payload.kind === "CONSENT_EXPORT_READY") {
+    await prisma.consentExportRequest.updateMany({
+      where: { id: payload.exportRequestId },
+      data: {
+        emailStatus: status,
+        emailError: error,
+        deliveredAt: status === "SENT" ? now : null,
+      },
+    });
+  }
 }
 
 /** Attach a file only when it fits the admin-configured ceiling; otherwise send without it. */
@@ -113,8 +153,10 @@ async function buildConsentConfirmationMessage(
   });
   if (!record) return null;
 
-  const pdf = await renderConsentPdf(record, record.formVersion);
-  const override = await getSenderOverride("CONSENT_CONFIRMATION");
+  const [pdf, override] = await Promise.all([
+    renderConsentPdf(record, record.formVersion),
+    getSenderOverride("CONSENT_CONFIRMATION"),
+  ]);
   const firstName = record.signerNameSnapshot.split(" ")[0] || record.signerNameSnapshot;
   const { subject, text } = renderPurposeMessage(
     "CONSENT_CONFIRMATION",
@@ -152,16 +194,15 @@ async function buildConsentExportReadyMessage(
     prisma.consentFormVersion.findFirst({ where: { role: "STUDENT", isActive: true } }),
   ]);
 
-  const signedUserIds = activeVersion
-    ? new Set(
-        (
-          await prisma.consentRecord.findMany({
-            where: { formVersionId: activeVersion.id, decision: "AGREE" },
-            select: { signerEmailSnapshot: true },
-          })
-        ).map((r) => r.signerEmailSnapshot.toLowerCase())
-      )
-    : new Set<string>();
+  let latestDecisionByEmail = new Map<string, ConsentDecision>();
+  if (activeVersion) {
+    const decisions = await prisma.consentRecord.findMany({
+      where: { formVersionId: activeVersion.id, role: "STUDENT" },
+      orderBy: [{ signedAt: "desc" }, { id: "desc" }],
+      select: { signerEmailSnapshot: true, decision: true },
+    });
+    latestDecisionByEmail = latestConsentDecisionsByEmail(decisions);
+  }
 
   const csv = buildConsentExportCsv(
     request.gradeColumnName,
@@ -170,7 +211,7 @@ async function buildConsentExportReadyMessage(
       orgDefinedId: r.orgDefinedId,
       lastName: r.lastName,
       firstName: r.firstName,
-      signed: r.email ? signedUserIds.has(r.email.toLowerCase()) : false,
+      signed: r.email ? latestDecisionByEmail.get(r.email.trim().toLowerCase()) === "AGREE" : false,
     }))
   );
 
@@ -258,6 +299,7 @@ export async function deliverConsentEmail(
       where: { id: delivery.id },
       data: { claimedAt: null, lastError: reason, nextAttemptAt: new Date(now.getTime() + delaySeconds * 1000) },
     });
+    await updateReferencedEmailAudit(payload, "PENDING", reason, now);
     return { status: "RETRY", delaySeconds, error: reason };
   }
 
@@ -287,6 +329,7 @@ export async function deliverConsentEmail(
         where: { id: delivery.id },
         data: { status: "FAILED", claimedAt: null, lastError: reason },
       });
+      await updateReferencedEmailAudit(payload, "FAILED", reason, now);
       return { status: "FAILED", error: reason };
     }
     const delaySeconds = backoffSecondsFor(delivery.attempts);
@@ -294,6 +337,7 @@ export async function deliverConsentEmail(
       where: { id: delivery.id },
       data: { claimedAt: null, lastError: reason, nextAttemptAt: new Date(now.getTime() + delaySeconds * 1000) },
     });
+    await updateReferencedEmailAudit(payload, "PENDING", reason, now);
     return { status: "RETRY", delaySeconds, error: reason };
   }
 
@@ -301,6 +345,7 @@ export async function deliverConsentEmail(
     where: { id: delivery.id },
     data: { status: "SENT", sentAt: now, claimedAt: null, lastError: null },
   });
+  await updateReferencedEmailAudit(payload, "SENT", null, now);
   return { status: "SENT" };
 }
 
@@ -331,7 +376,7 @@ export async function failExhaustedConsentEmails(now: Date = new Date()): Promis
       attempts: { gte: CONSENT_EMAIL_MAX_ATTEMPTS },
       OR: [{ claimedAt: null }, { claimedAt: { lt: leaseCutoff } }],
     },
-    select: { id: true },
+    select: { id: true, payload: true },
     take: 200,
   });
   if (stuck.length === 0) return 0;
@@ -343,5 +388,20 @@ export async function failExhaustedConsentEmails(now: Date = new Date()): Promis
     where: { id: { in: stuck.map((s) => s.id) }, lastError: null },
     data: { lastError: `Gave up after ${CONSENT_EMAIL_MAX_ATTEMPTS} delivery attempts` },
   });
+  await Promise.all(
+    stuck.map(async (delivery) => {
+      try {
+        const payload = JSON.parse(delivery.payload) as ConsentEmailPayload;
+        await updateReferencedEmailAudit(
+          payload,
+          "FAILED",
+          `Gave up after ${CONSENT_EMAIL_MAX_ATTEMPTS} delivery attempts`,
+          now
+        );
+      } catch {
+        // A malformed payload has no safely identifiable source row to update.
+      }
+    })
+  );
   return stuck.length;
 }
