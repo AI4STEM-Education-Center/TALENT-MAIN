@@ -39,7 +39,7 @@ export async function GET() {
     }),
     prisma.topic.findMany({
       where: { teacherId: null },
-      select: { id: true, name: true },
+      select: { id: true, name: true, contentType: true },
       orderBy: [{ order: "asc" }, { name: "asc" }],
     }),
     prisma.poolSubmission.findMany({
@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
 
   const [reviewer, topic, teacher] = await Promise.all([
     prisma.user.findFirst({ where: { id: reviewerId, role: "ADMIN" } }),
-    topicId ? prisma.topic.findFirst({ where: { id: topicId, teacherId: null } }) : null,
+    topicId ? prisma.topic.findFirst({ where: { id: topicId, teacherId: null, contentType } }) : null,
     prisma.teacher.findUnique({
       where: { id: actor.teacherId },
       include: { user: { select: { firstName: true, lastName: true, email: true } } },

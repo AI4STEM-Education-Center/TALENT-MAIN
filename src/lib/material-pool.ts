@@ -23,9 +23,16 @@ export async function deepCopyLearningMaterial(
   if (!source) return null;
 
   let topicId = target.topicId ?? null;
-  if (target.topicId === undefined && source.topic) {
+  if (target.topicId) {
+    const targetTopic = await prisma.topic.findFirst({
+      where: { id: target.topicId, teacherId: target.teacherId, contentType: "MATERIAL" },
+      select: { id: true },
+    });
+    if (!targetTopic) throw new Error("Material tag not found in the target scope.");
+  }
+  if (target.topicId === undefined && source.topic?.contentType === "MATERIAL") {
     const matchingTopic = await prisma.topic.findFirst({
-      where: { teacherId: target.teacherId, name: source.topic.name },
+      where: { teacherId: target.teacherId, contentType: "MATERIAL", name: source.topic.name },
     });
     topicId =
       matchingTopic?.id ??
@@ -35,6 +42,7 @@ export async function deepCopyLearningMaterial(
             teacherId: target.teacherId,
             name: source.topic.name,
             order: source.topic.order,
+            contentType: "MATERIAL",
           },
         })
       ).id;

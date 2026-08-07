@@ -9,7 +9,7 @@ export default async function AdminQuizPoolPage() {
 
   const [pool, teacherOwned, topics] = await Promise.all([
     prisma.quiz.findMany({
-      where: { teacherId: ownScope(actor) },
+      where: { teacherId: ownScope(actor), contentType: "QUIZ" },
       include: { topic: true, _count: { select: { questions: true } } },
       orderBy: [{ order: "asc" }, { createdAt: "asc" }],
     }),

@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
 
   if (topicId) {
     const topic = await prisma.topic.findUnique({ where: { id: topicId } });
-    if (!topic || topic.teacherId !== actor.teacherId) {
+    if (!topic || topic.teacherId !== actor.teacherId || topic.contentType !== "QUIZ") {
       return NextResponse.json({ error: "Topic not found." }, { status: 400 });
     }
   }

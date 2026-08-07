@@ -27,6 +27,7 @@ export async function GET() {
   return NextResponse.json({
     materials: materials.map((material) => ({
       ...material,
+      topic: material.topic?.contentType === "MATERIAL" ? material.topic : null,
       alreadyImported: importedIds.has(material.id),
     })),
   });
