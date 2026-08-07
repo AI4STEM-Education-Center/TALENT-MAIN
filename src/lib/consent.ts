@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { CONSENT_NOT_REQUIRED } from "@/lib/consent-claim";
 
 /**
  * Shared types + pure/impure helpers for the IRB research-consent feature.
@@ -95,16 +96,20 @@ export async function getActiveConsentVersion(role: ConsentRole) {
 }
 
 export interface ConsentClaim {
-  /** The ConsentFormVersion.version the user last decided on for this role. */
-  version: string;
-  decision: ConsentDecision;
+  /**
+   * The ConsentFormVersion.version the user last decided on for this role,
+   * or null alongside a NOT_REQUIRED decision (there is no version to name).
+   */
+  version: string | null;
+  decision: ConsentDecision | typeof CONSENT_NOT_REQUIRED;
 }
 
 /**
  * What to stamp on a session's JWT at sign-in and on an explicit
- * `update()` refresh (see src/lib/auth.ts). Null means "nothing to enforce
- * yet" — either the role has no published form (misconfiguration; treated as
- * open) or this user hasn't decided on the currently active version.
+ * `update()` refresh (see src/lib/auth.ts). Null means "this user still owes
+ * us an answer on the currently active form"; a NOT_REQUIRED decision means
+ * the role has no published form at all, which must NOT gate anyone (see
+ * src/lib/consent-claim.ts).
  *
  * Deliberately NOT called from src/proxy.ts on every request: proxy.ts only
  * ever reads the JWT claim it already carries (no Prisma/DB access there),
@@ -118,7 +123,7 @@ export async function getUserConsentClaim(
   role: ConsentRole
 ): Promise<ConsentClaim | null> {
   const active = await getActiveConsentVersion(role);
-  if (!active) return null;
+  if (!active) return { version: null, decision: CONSENT_NOT_REQUIRED };
 
   const record = await prisma.consentRecord.findFirst({
     where: { userId, formVersionId: active.id },

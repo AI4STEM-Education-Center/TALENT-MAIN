@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getActiveConsentVersion } from "@/lib/consent";
-import { ConsentRequiredClient } from "./consent-required-client";
+import { ConsentRequiredClient, ConsentClaimSync } from "./consent-required-client";
 import { sanitizeConsentHtml } from "@/lib/consent-html";
 
 /**
@@ -11,6 +11,13 @@ import { sanitizeConsentHtml } from "@/lib/consent-html";
  * src/proxy.ts redirects an unconsented teacher to. Self-contained so it
  * keeps working even for a teacher whose every other /api/* call is being
  * blocked by that same gate.
+ *
+ * This page never server-redirects back to /teacher on a condition the proxy
+ * cannot see for itself. The proxy decides from a JWT claim that only
+ * refreshes at sign-in/update(); bouncing on fresher database state than the
+ * claim has is exactly what produced ERR_TOO_MANY_REDIRECTS. Both such cases
+ * (nothing published, or already agreed under a stale claim) instead render
+ * ConsentClaimSync, which re-stamps the claim client-side and then leaves.
  */
 export default async function TeacherConsentRequiredPage() {
   const session = await auth();
@@ -21,8 +28,10 @@ export default async function TeacherConsentRequiredPage() {
 
   const activeForm = await getActiveConsentVersion("TEACHER");
   if (!activeForm) {
-    // Misconfigured deployment (no form published yet) — nothing to enforce.
-    redirect("/teacher");
+    // No instructor form published yet — there is nothing to enforce and
+    // nothing to render, so refresh the claim (it becomes NOT_REQUIRED) and
+    // hand them back to their dashboard.
+    return <ConsentClaimSync reason="no-form" />;
   }
 
   const priorDecision = await prisma.consentRecord.findFirst({
@@ -31,8 +40,9 @@ export default async function TeacherConsentRequiredPage() {
     select: { decision: true },
   });
 
-  // A stale JWT is the only way to land here already agreed — send them on.
-  if (priorDecision?.decision === "AGREE") redirect("/teacher");
+  // A stale JWT is the only way to land here already agreed — refresh it
+  // (a plain redirect would just bounce off the proxy again) and move on.
+  if (priorDecision?.decision === "AGREE") return <ConsentClaimSync reason="already-agreed" />;
 
   return (
     <ConsentRequiredClient
