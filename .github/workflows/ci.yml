@@ -146,6 +146,10 @@ jobs:
             set -e
             cd ~/app
             docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-latest
-            docker compose -f docker-compose.dev.yml up -d --force-recreate --no-build
+            docker compose -f docker-compose.dev.yml stop worker-dev
+            # The web container applies the schema before starting Next.js.
+            # --wait blocks until its health check passes; worker-dev is also
+            # gated on that health, so neither it nor this seed can race db push.
+            docker compose -f docker-compose.dev.yml up -d --wait --wait-timeout 150 --force-recreate --no-build
             docker exec adaptive-learning-webapp-dev node prisma/seed-prebuilt.js
             docker image prune -f
