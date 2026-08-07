@@ -151,20 +151,33 @@ async function requireSendableConfig(): Promise<ResolvedSmtpConfig> {
  * from "the server is busy" (retry), so single-recipient delivery goes through
  * here instead. See src/lib/message-email.ts.
  */
+export interface EmailAttachment {
+  filename: string;
+  content: Buffer;
+  contentType?: string;
+}
+
 export async function sendEmailToRecipient(opts: {
   to: string;
   subject: string;
   text: string;
   replyTo?: string;
+  purpose?: EmailPurpose;
+  attachments?: EmailAttachment[];
 }): Promise<void> {
   const cfg = await requireSendableConfig();
-  const identity = await getSenderIdentity("NOTIFICATION", cfg);
+  const identity = await getSenderIdentity(opts.purpose ?? "NOTIFICATION", cfg);
   await createTransport(cfg).sendMail({
     from: formatFromHeader(identity),
     to: opts.to,
     replyTo: opts.replyTo ?? identity.replyTo ?? undefined,
     subject: opts.subject,
     text: opts.text,
+    attachments: opts.attachments?.map((a) => ({
+      filename: a.filename,
+      content: a.content,
+      contentType: a.contentType,
+    })),
   });
 }
 
