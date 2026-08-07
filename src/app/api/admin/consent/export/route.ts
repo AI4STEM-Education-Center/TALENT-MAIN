@@ -30,8 +30,10 @@ export async function POST(req: NextRequest) {
   const filter = normalizeConsentExportFilter((raw as { filter?: unknown } | null)?.filter ?? {});
   if (!filter) return NextResponse.json({ error: "Invalid export filter." }, { status: 400 });
 
-  const settings = await getConsentExportSettings();
-  const matchCount = await prisma.consentRecord.count({ where: buildConsentRecordWhere(filter) });
+  const [settings, matchCount] = await Promise.all([
+    getConsentExportSettings(),
+    prisma.consentRecord.count({ where: buildConsentRecordWhere(filter) }),
+  ]);
   if (matchCount === 0) {
     return NextResponse.json({ error: "No consent records match that filter." }, { status: 400 });
   }

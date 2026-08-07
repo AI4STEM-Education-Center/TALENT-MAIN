@@ -48,12 +48,18 @@ export default function AdminConsentPage() {
     if (decision !== "ALL") params.set("decision", decision);
     try {
       const res = await fetch(`/api/admin/consent?${params}`, { cache: "no-store" });
+      if (!res.ok) throw new Error("Could not load consent records.");
       const data = await res.json();
       setRecords(data.records ?? []);
+    } catch (cause) {
+      await alert({
+        title: "Couldn't load consent records",
+        description: cause instanceof Error ? cause.message : "Unknown error.",
+      });
     } finally {
       setLoading(false);
     }
-  }, [role, decision]);
+  }, [role, decision, alert]);
 
   useEffect(() => {
     load();
@@ -89,11 +95,12 @@ export default function AdminConsentPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filter: { recordIds: Array.from(selected) } }),
       });
-      const data = await res.json();
       if (!res.ok) {
+        const data = await res.json().catch(() => null);
         await alert({ title: "Couldn't start export", description: data?.error || "Unknown error." });
         return;
       }
+      const data = await res.json();
       setJob({ jobId: data.jobId, status: "PENDING", processedRecords: 0, totalRecords: data.totalRecords, downloadUrl: null, error: null });
     } finally {
       setRequestingExport(false);
@@ -187,21 +194,26 @@ export default function AdminConsentPage() {
           <table className="w-full text-sm">
             <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
               <tr>
-                <th className="p-2"></th>
+                <th className="p-2"><span className="sr-only">Select</span></th>
                 <th className="p-2">Name</th>
                 <th className="p-2">Role</th>
                 <th className="p-2">Decision</th>
                 <th className="p-2">Form</th>
                 <th className="p-2">Signed at</th>
                 <th className="p-2">Device</th>
-                <th className="p-2"></th>
+                <th className="p-2"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody>
               {records.map((r) => (
                 <tr key={r.id} className="border-t">
                   <td className="p-2">
-                    <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggle(r.id)} />
+                    <input
+                      type="checkbox"
+                      aria-label={`Select consent record for ${r.signerNameSnapshot}`}
+                      checked={selected.has(r.id)}
+                      onChange={() => toggle(r.id)}
+                    />
                   </td>
                   <td className="p-2">
                     <div>{r.signerNameSnapshot}</div>
@@ -216,7 +228,12 @@ export default function AdminConsentPage() {
                   <td className="p-2 text-xs capitalize">{r.deviceType}</td>
                   <td className="p-2 text-right">
                     <Button variant="ghost" size="sm" asChild>
-                      <a href={`/api/admin/consent/${r.id}/pdf`} target="_blank" rel="noreferrer">
+                      <a
+                        href={`/api/admin/consent/${r.id}/pdf`}
+                        target="_blank"
+                        rel="noreferrer"
+                        aria-label={`Preview consent record for ${r.signerNameSnapshot}`}
+                      >
                         <Eye className="size-4" />
                       </a>
                     </Button>
