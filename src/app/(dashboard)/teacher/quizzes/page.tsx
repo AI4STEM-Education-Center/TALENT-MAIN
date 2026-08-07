@@ -9,7 +9,7 @@ export default async function TeacherQuizzesPage() {
 
   const [quizzes, poolQuizzes, topics] = await Promise.all([
     prisma.quiz.findMany({
-      where: { teacherId: ownScope(actor), contentType: "QUIZ" },
+      where: { teacherId: ownScope(actor) },
       include: { topic: true, _count: { select: { questions: true } } },
       orderBy: [{ order: "asc" }, { createdAt: "asc" }],
     }),
@@ -19,7 +19,7 @@ export default async function TeacherQuizzesPage() {
       orderBy: [{ order: "asc" }, { createdAt: "asc" }],
     }),
     prisma.topic.findMany({
-      where: { teacherId: ownScope(actor) },
+      where: { teacherId: ownScope(actor), contentType: "QUIZ" },
       include: { _count: { select: { quizzes: true } } },
       orderBy: [{ order: "asc" }, { createdAt: "asc" }],
     }),
