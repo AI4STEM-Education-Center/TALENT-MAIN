@@ -11,6 +11,8 @@ import {
   SIMULATIONS_QUEUE,
   MESSAGE_EMAILS_QUEUE,
   MESSAGE_EMAILS_QUEUE_OPTIONS,
+  CONSENT_EMAILS_QUEUE,
+  CONSENT_EXPORTS_QUEUE,
   enqueueBackup,
   enqueueMessageEmails,
   resolveQueueDbPath,
@@ -18,12 +20,20 @@ import {
   type QuizExtractionJobPayload,
   type SimulationJobPayload,
   type MessageEmailJobPayload,
+  type ConsentEmailJobPayload,
+  type ConsentExportJobPayload,
 } from "./lib/queue";
 import {
   deliverMessageEmail,
   failExhaustedMessageEmails,
   findStrandedMessageEmails,
 } from "./lib/message-email";
+import {
+  deliverConsentEmail,
+  failExhaustedConsentEmails,
+  findStrandedConsentEmails,
+} from "./lib/consent-email";
+import { runConsentExportJob, sweepExpiredConsentExports } from "./lib/consent-export";
 import { runBackupJob, claimDueBackup } from "./lib/backup";
 import { runS3Gc } from "./lib/s3-gc";
 import { logSystemEvent } from "./lib/system-log";
@@ -41,6 +51,8 @@ const quizExtractionsQueue = db.queue(QUIZ_EXTRACTIONS_QUEUE);
 const backupsQueue = db.queue(BACKUPS_QUEUE);
 const simulationsQueue = db.queue(SIMULATIONS_QUEUE);
 const messageEmailsQueue = db.queue(MESSAGE_EMAILS_QUEUE, MESSAGE_EMAILS_QUEUE_OPTIONS);
+const consentEmailsQueue = db.queue(CONSENT_EMAILS_QUEUE);
+const consentExportsQueue = db.queue(CONSENT_EXPORTS_QUEUE);
 
 async function consumeMaterials() {
   console.log("[Worker] Starting Honker queue consumer for 'materials'...");
@@ -227,6 +239,112 @@ async function runMessageEmailSweeper() {
   }
 }
 
+async function consumeConsentEmails() {
+  console.log(`[Worker] Starting Honker queue consumer for '${CONSENT_EMAILS_QUEUE}'...`);
+  for await (const job of consentEmailsQueue.claim("consent-emails-worker")) {
+    const { deliveryId } = job.payload as ConsentEmailJobPayload;
+    try {
+      const result = await deliverConsentEmail(deliveryId);
+      if (result.status === "RETRY") {
+        console.warn(
+          `[Worker] Consent email ${deliveryId} failed (${result.error}); retrying in ${result.delaySeconds}s`
+        );
+        job.retry(result.delaySeconds, result.error);
+        continue;
+      }
+      if (result.status === "FAILED") {
+        console.error(`[Worker] Consent email ${deliveryId} gave up: ${result.error}`);
+        await logSystemEvent({
+          category: "WORKER",
+          type: "CONSENT_EMAIL_FAILED",
+          severity: "ERROR",
+          message: `Consent email gave up: ${result.error}`,
+          metadata: { queue: CONSENT_EMAILS_QUEUE, jobId: job.id, deliveryId },
+        });
+      }
+      job.ack();
+    } catch (err: any) {
+      console.error(`[Worker] Error on consent-email job ${job.id}:`, err?.message ?? err);
+      await logSystemEvent({
+        category: "WORKER",
+        type: "JOB_FAILED",
+        severity: "ERROR",
+        message: `Consent-email job failed: ${err?.message ?? err}`,
+        metadata: { queue: CONSENT_EMAILS_QUEUE, jobId: job.id, deliveryId },
+      });
+      job.retry(60, String(err?.message ?? err));
+    }
+  }
+}
+
+const CONSENT_EMAIL_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
+
+async function runConsentEmailSweeper() {
+  console.log("[Worker] Consent-email sweeper started (5m interval)...");
+  for (;;) {
+    try {
+      const stranded = await findStrandedConsentEmails();
+      if (stranded.length > 0) {
+        const db2 = honker.open(resolveQueueDbPath());
+        const queue = db2.queue(CONSENT_EMAILS_QUEUE);
+        for (const deliveryId of stranded) queue.enqueue({ deliveryId } satisfies ConsentEmailJobPayload);
+        console.log(`[Worker] Re-enqueued ${stranded.length} stranded consent email(s)`);
+      }
+      const exhausted = await failExhaustedConsentEmails();
+      if (exhausted > 0) {
+        console.log(`[Worker] Closed out ${exhausted} consent email(s) that ran out of attempts`);
+      }
+    } catch (err: any) {
+      console.error("[Worker] Consent-email sweep failed:", err?.message ?? err);
+    }
+    await new Promise((resolve) => setTimeout(resolve, CONSENT_EMAIL_SWEEP_INTERVAL_MS));
+  }
+}
+
+/**
+ * Bulk admin consent-PDF export jobs — always run here in the worker process,
+ * never inline in a web request (see src/lib/consent-export.ts for why).
+ */
+async function consumeConsentExports() {
+  console.log(`[Worker] Starting Honker queue consumer for '${CONSENT_EXPORTS_QUEUE}'...`);
+  for await (const job of consentExportsQueue.claim("consent-exports-worker")) {
+    const { jobId } = job.payload as ConsentExportJobPayload;
+    console.log(`[Worker] Picked up consent-export job ${job.id} for export ${jobId}`);
+    try {
+      // runConsentExportJob records its own terminal COMPLETE/FAILED status
+      // internally and always returns, so ack unconditionally.
+      await runConsentExportJob(jobId);
+    } catch (err: any) {
+      console.error(`[Worker] Error on consent-export job ${job.id}:`, err?.message ?? err);
+      await logSystemEvent({
+        category: "WORKER",
+        type: "JOB_FAILED",
+        severity: "ERROR",
+        message: `Consent-export job failed: ${err?.message ?? err}`,
+        metadata: { queue: CONSENT_EXPORTS_QUEUE, jobId: job.id, exportJobId: jobId },
+      });
+    } finally {
+      job.ack();
+    }
+  }
+}
+
+const CONSENT_EXPORT_GC_INTERVAL_MS = 60 * 60 * 1000;
+
+/** Deletes expired bulk-export zips from S3 once their retention window passes. */
+async function runConsentExportGcLoop() {
+  console.log("[Worker] Consent-export GC loop started (1h interval)...");
+  for (;;) {
+    try {
+      const cleaned = await sweepExpiredConsentExports();
+      if (cleaned > 0) console.log(`[Worker] Cleaned up ${cleaned} expired consent export(s)`);
+    } catch (err: any) {
+      console.error("[Worker] Consent-export GC run failed:", err?.message ?? err);
+    }
+    await new Promise((resolve) => setTimeout(resolve, CONSENT_EXPORT_GC_INTERVAL_MS));
+  }
+}
+
 async function consumeBackups() {
   console.log(`[Worker] Starting Honker queue consumer for '${BACKUPS_QUEUE}'...`);
   for await (const job of backupsQueue.claim("backups-worker")) {
@@ -352,6 +470,10 @@ async function startWorker() {
       consumeSimulations(),
       consumeMessageEmails(),
       runMessageEmailSweeper(),
+      consumeConsentEmails(),
+      runConsentEmailSweeper(),
+      consumeConsentExports(),
+      runConsentExportGcLoop(),
       consumeBackups(),
       runBackupScheduler(),
       runS3GcLoop(),

@@ -26,6 +26,8 @@ model User {
   notifications       Notification[]       @relation("UserNotifications")
   passwordResetTokens PasswordResetToken[]
   poolSubmissionReviews PoolSubmission[] @relation("PoolSubmissionReviewer")
+  consentRecords        ConsentRecord[]
+  consentExportReviews  ConsentExportRequest[] @relation("ConsentExportReviewer")
 
   @@index([role])
 }
@@ -49,6 +51,7 @@ model Teacher {
   learningMaterials LearningMaterial[]
   pdfExtractions    QuizPdfExtraction[]
   poolSubmissions   PoolSubmission[]
+  consentExportRequests ConsentExportRequest[]
 }
 
 // Uploaded learning materials (S3 only). uploadStatus: "PENDING" | "READY" | "FAILED"
@@ -162,6 +165,7 @@ model Class {
   learningMaterials LearningMaterial[]
   materialLinks  MaterialClass[]
   messages       Message[]
+  consentExportRequests ConsentExportRequest[]
 }
 
 model ClassStudentList {
@@ -1095,4 +1099,148 @@ model SystemLog {
   @@index([category, createdAt])
   @@index([severity, createdAt])
   @@index([type, createdAt])
+}
+
+// ─── IRB research consent ──────────────────────────────────────────────────
+// Every account must record an explicit decision (AGREE or DECLINE) on the
+// form version active for their role before continuing to use the platform —
+// see src/lib/consent.ts and docs/plans/consent-compliance-plan.md. Storage is
+// deliberately minimal: a signature/initial is small vector stroke-path JSON
+// (not a rendered image), and the legal text itself lives once per version
+// rather than being copied onto every signature (see ConsentFormVersion
+// below). PDFs are generated on demand from these rows (src/lib/consent-pdf.ts)
+// and are never persisted for an individual signature.
+
+model ConsentFormVersion {
+  id          String   @id @default(cuid())
+  role        String   // "STUDENT" | "TEACHER"
+  version     String   // e.g. "2026-08-06"
+  title       String
+  bodyHtml    String   // canonical form text rendered into the modal + PDF
+  isActive    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  createdById String?  // admin who published it (plain id, no FK — survives account deletion)
+
+  records ConsentRecord[]
+
+  @@unique([role, version])
+  @@index([role, isActive])
+}
+
+// decision: "AGREE" | "DECLINE". deviceType: "desktop" | "mobile" | "tablet" | "unknown".
+// userId is nullable + SetNull (not Cascade): the legal record of a decision
+// must survive account deletion, so signerNameSnapshot/signerEmailSnapshot
+// freeze who signed independent of the live account.
+model ConsentRecord {
+  id                        String   @id @default(cuid())
+  userId                    String?
+  user                      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  role                      String   // snapshot of role at signing time
+  formVersionId             String
+  formVersion               ConsentFormVersion @relation(fields: [formVersionId], references: [id])
+  decision                  String
+  interviewRecordingConsent Boolean?
+  initialsStrokeData        String?  // vector path JSON; only set when interviewRecordingConsent is true
+  signatureTypedName        String   // "typing your name is equivalent to your legal signature"
+  signatureStrokeData       String?  // optional hand-drawn vector JSON, if drawn instead of / in addition to typed
+  signedAt                  DateTime @default(now())
+  ipAddress                 String
+  userAgent                 String
+  deviceType                String
+  signerNameSnapshot        String
+  signerEmailSnapshot       String
+  emailedAt                 DateTime?
+  emailStatus               String?
+  emailError                String?
+
+  @@index([userId])
+  @@index([role, decision])
+}
+
+// A teacher's request to export which students on a class roster have signed
+// the student consent form (for awarding participation credit), gated by
+// admin approval. status: "PENDING" | "APPROVED" | "REJECTED". Approval
+// requires courseEndedAttested — the admin's on-record confirmation that the
+// course has ended, per the signed consent form's promise that a student's
+// participation is never known to their instructor while enrolled.
+model ConsentExportRequest {
+  id                  String   @id @default(cuid())
+  teacherId           String
+  teacher             Teacher  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  classId             String
+  class               Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  gradeColumnName     String   // eLC header name, e.g. "Consent Credit"
+  pointsAwarded       Float
+  reviewerId          String   // admin the teacher chose
+  reviewer            User     @relation("ConsentExportReviewer", fields: [reviewerId], references: [id], onDelete: Cascade)
+  status              String   @default("PENDING")
+  courseEndedAttested Boolean  @default(false)
+  decisionNote        String?
+  decidedAt           DateTime?
+  requestedAt         DateTime @default(now())
+  deliveredAt         DateTime?
+  emailStatus         String?
+  emailError          String?
+
+  @@index([status])
+  @@index([reviewerId, status])
+  @@index([teacherId])
+}
+
+// Queued delivery for consent-related emails (confirmation copy, export
+// request/approval notices), mirroring MessageEmailDelivery's claim/backoff
+// shape rather than reusing that table, so the messaging system stays
+// untouched. kind: "CONSENT_CONFIRMATION" | "CONSENT_EXPORT_REQUEST" |
+// "CONSENT_EXPORT_READY". status: "PENDING" | "SENT" | "FAILED".
+model ConsentEmailDelivery {
+  id            String    @id @default(cuid())
+  kind          String
+  recipient     String
+  payload       String    // JSON: template vars + optional attachment source ids
+  status        String    @default("PENDING")
+  attempts      Int       @default(0)
+  lastError     String?
+  nextAttemptAt DateTime  @default(now())
+  claimedAt     DateTime?
+  sentAt        DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([status, nextAttemptAt])
+}
+
+// A bulk admin PDF export, run entirely in the background worker — never
+// inline in a web request, since generating/compressing many PDFs is
+// CPU-bound work that would otherwise stall every other request on the same
+// process (see docs/plans/consent-compliance-plan.md §8).
+// status: "PENDING" | "PROCESSING" | "COMPLETE" | "FAILED".
+model ConsentExportJob {
+  id               String    @id @default(cuid())
+  requestedById    String    // admin user id (plain id, no FK)
+  filter           String    // JSON: role / date-range / explicit record ids
+  status           String    @default("PENDING")
+  totalRecords     Int?
+  processedRecords Int       @default(0)
+  resultBucket     String?
+  resultKey        String?
+  resultBytes      Int?
+  expiresAt        DateTime?
+  error            String?
+  createdAt        DateTime  @default(now())
+  completedAt      DateTime?
+
+  @@index([status])
+  @@index([requestedById])
+}
+
+// Global, admin-editable resource limits for consent PDF/export generation —
+// singleton row, mirrors SmtpConfig/BackupConfig.
+model ConsentExportSettings {
+  id                        String   @id @default("singleton")
+  maxEmailAttachmentBytes   Int      @default(5000000)
+  bulkExportBatchSize       Int      @default(25)
+  bulkExportInlineThreshold Int      @default(10)
+  bulkExportMaxRecords      Int      @default(2000)
+  bulkExportRetentionHours  Int      @default(48)
+  updatedAt                 DateTime @updatedAt
+  updatedById               String?
 }

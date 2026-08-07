@@ -8,6 +8,7 @@ import { ArrowLeft, BookOpen, Users, ChevronRight, Atom } from "lucide-react";
 import { getClassStatsOverview, getClassSimulationInsights } from "@/lib/quiz-stats-server";
 import { StatCard, pct, ratePct } from "@/components/teacher/stats-ui";
 import { formatDurationMs } from "@/lib/simulation-stats";
+import { RequestConsentExportDialog } from "./request-consent-export-dialog";
 
 const fmtDate = (d: Date | null) =>
   d ? new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "—";
@@ -36,11 +37,14 @@ export default async function ClassStatsPage({ params }: { params: Promise<{ id:
         <Link href={`/teacher/classes/${id}`}><ArrowLeft className="size-4" /> Back to class</Link>
       </Button>
 
-      <div>
-        <h1 className="text-2xl font-bold">{cls.name} — Statistics</h1>
-        <p className="text-muted-foreground text-sm mt-1">
-          Per-quiz and per-student performance. Click any row for the full breakdown.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">{cls.name} — Statistics</h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            Per-quiz and per-student performance. Click any row for the full breakdown.
+          </p>
+        </div>
+        <RequestConsentExportDialog classId={id} />
       </div>
 
       {/* Simulation engagement summary — client-reported telemetry, so these

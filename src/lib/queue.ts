@@ -11,6 +11,8 @@ export const QUIZ_EXTRACTIONS_QUEUE = "quiz-extractions";
 export const BACKUPS_QUEUE = "backups";
 export const SIMULATIONS_QUEUE = "simulations";
 export const MESSAGE_EMAILS_QUEUE = "message-emails";
+export const CONSENT_EMAILS_QUEUE = "consent-emails";
+export const CONSENT_EXPORTS_QUEUE = "consent-exports";
 
 export type ExamResultsJobPayload = { examResultId: string };
 export type QuizExtractionJobPayload = { extractionId: string };
@@ -20,6 +22,11 @@ export type SimulationJobPayload = { simulationId: string; feedbackId?: string }
 // One job per recipient (a MessageEmailDelivery row), so one bad address never
 // holds up the rest of a class broadcast and each recipient retries on its own.
 export type MessageEmailJobPayload = { deliveryId: string };
+// One job per recipient (a ConsentEmailDelivery row) — see src/lib/consent-email.ts.
+export type ConsentEmailJobPayload = { deliveryId: string };
+// One job per bulk admin PDF export (a ConsentExportJob row) — always run in
+// the worker, never inline in a web request; see src/lib/consent-export.ts.
+export type ConsentExportJobPayload = { jobId: string };
 
 /**
  * Queue options for MESSAGE_EMAILS_QUEUE, shared by the producer and the worker
@@ -123,4 +130,34 @@ export function enqueueBackup(): void {
   const db = honker.open(resolveQueueDbPath());
   const payload: BackupJobPayload = { action: "backup" };
   db.queue(BACKUPS_QUEUE).enqueue(payload);
+}
+
+/**
+ * Enqueue delivery jobs for consent-related emails (confirmation copy, export
+ * request/ready notices) — one job per ConsentEmailDelivery row, mirroring
+ * enqueueMessageEmails. Callers log failures rather than propagating them: the
+ * delivery rows are already PENDING in the database, so a failed enqueue just
+ * delays delivery until the worker's sweeper picks it up.
+ */
+export function enqueueConsentEmails(deliveryIds: string[]): void {
+  if (deliveryIds.length === 0) return;
+  const db = honker.open(resolveQueueDbPath());
+  const queue = db.queue(CONSENT_EMAILS_QUEUE);
+  for (const deliveryId of deliveryIds) {
+    queue.enqueue({ deliveryId } satisfies ConsentEmailJobPayload);
+  }
+}
+
+/**
+ * Enqueue a bulk admin consent-PDF export job. The job itself (a
+ * ConsentExportJob row) is already PENDING in the database; this only wakes
+ * the worker to pick it up. Callers should not swallow failures — a lost
+ * enqueue leaves the admin's request sitting at PENDING with nothing driving
+ * it forward, so the export route surfaces the error rather than pretending
+ * the job was queued.
+ */
+export function enqueueConsentExport(jobId: string): void {
+  const db = honker.open(resolveQueueDbPath());
+  const payload: ConsentExportJobPayload = { jobId };
+  db.queue(CONSENT_EXPORTS_QUEUE).enqueue(payload);
 }

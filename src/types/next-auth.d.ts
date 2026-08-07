@@ -9,6 +9,13 @@ declare module "next-auth" {
       firstName: string;
       lastName: string;
       role: string;
+      /**
+       * The ConsentFormVersion.version this user last decided on for their
+       * role, and their decision — null when they haven't decided on the
+       * currently active version yet. See src/lib/consent.ts.
+       */
+      consentVersion: string | null;
+      consentDecision: string | null;
     };
   }
 
