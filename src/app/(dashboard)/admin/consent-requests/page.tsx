@@ -26,19 +26,26 @@ export default function AdminConsentRequestsPage() {
   const [attested, setAttested] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
 
-  async function load() {
+  async function load(signal?: AbortSignal) {
     setLoading(true);
+    setError(null);
     try {
-      const res = await fetch("/api/admin/consent-requests", { cache: "no-store" });
+      const res = await fetch("/api/admin/consent-requests", { cache: "no-store", signal });
+      if (!res.ok) throw new Error("Could not load consent export requests.");
       const data = await res.json();
       setRequests(data.requests ?? []);
+    } catch (cause) {
+      if (cause instanceof DOMException && cause.name === "AbortError") return;
+      setError(cause instanceof Error ? cause.message : "Could not load consent export requests.");
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }
 
   useEffect(() => {
-    load();
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
   }, []);
 
   async function decide(id: string, decision: "APPROVE" | "REJECT") {
@@ -55,8 +62,10 @@ export default function AdminConsentRequestsPage() {
           courseEndedAttested: decision === "APPROVE" ? attested[id] === true : undefined,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Could not save the decision.");
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || "Could not save the decision.");
+      }
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save the decision.");

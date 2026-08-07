@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getActiveConsentVersion } from "@/lib/consent";
 import { ConsentRequiredClient } from "./consent-required-client";
+import { sanitizeConsentHtml } from "@/lib/consent-html";
 
 /**
  * Standalone route (deliberately OUTSIDE the (dashboard) route group — no
@@ -39,7 +40,7 @@ export default async function TeacherConsentRequiredPage() {
         id: activeForm.id,
         title: activeForm.title,
         version: activeForm.version,
-        bodyHtml: activeForm.bodyHtml,
+        bodyHtml: sanitizeConsentHtml(activeForm.bodyHtml),
       }}
       priorDecision={(priorDecision?.decision as "DECLINE" | undefined) ?? null}
     />

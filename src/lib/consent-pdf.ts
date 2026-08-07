@@ -227,8 +227,10 @@ export async function renderConsentPdf(
   formVersion: ConsentFormVersionForPdf
 ): Promise<Buffer> {
   const doc = await PDFDocument.create();
-  const font = await doc.embedFont(StandardFonts.Helvetica);
-  const boldFont = await doc.embedFont(StandardFonts.HelveticaBold);
+  const [font, boldFont] = await Promise.all([
+    doc.embedFont(StandardFonts.Helvetica),
+    doc.embedFont(StandardFonts.HelveticaBold),
+  ]);
   const cursor: Cursor = { doc, font, boldFont, page: doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]), y: PAGE_HEIGHT - MARGIN };
 
   drawParagraph(cursor, sanitizeForPdf(formVersion.title), { size: HEADING_SIZE, bold: true });

@@ -50,10 +50,24 @@ export default function AdminConsentSettingsPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    fetch("/api/admin/consent/settings")
-      .then((res) => res.json())
-      .then(setSettings);
-  }, []);
+    const controller = new AbortController();
+    async function load() {
+      try {
+        const res = await fetch("/api/admin/consent/settings", { signal: controller.signal });
+        if (!res.ok) throw new Error("Could not load consent export settings.");
+        setSettings(await res.json());
+      } catch (cause) {
+        if (!(cause instanceof DOMException && cause.name === "AbortError")) {
+          await alert({
+            title: "Couldn't load settings",
+            description: cause instanceof Error ? cause.message : "Unknown error.",
+          });
+        }
+      }
+    }
+    void load();
+    return () => controller.abort();
+  }, [alert]);
 
   async function save() {
     if (!settings) return;
@@ -64,11 +78,12 @@ export default function AdminConsentSettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(settings),
       });
-      const data = await res.json();
       if (!res.ok) {
+        const data = await res.json().catch(() => null);
         await alert({ title: "Couldn't save", description: data?.error || "Unknown error." });
         return;
       }
+      const data = await res.json();
       setSettings(data);
       await alert("Settings saved.");
     } finally {

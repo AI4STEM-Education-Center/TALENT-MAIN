@@ -150,10 +150,25 @@ export async function hasResearchConsent(studentUserId: string): Promise<boolean
   if (!active) return false;
 
   const record = await prisma.consentRecord.findFirst({
-    where: { userId: studentUserId, formVersionId: active.id, decision: "AGREE" },
-    select: { id: true },
+    where: { userId: studentUserId, formVersionId: active.id },
+    orderBy: [{ signedAt: "desc" }, { id: "desc" }],
+    select: { decision: true },
   });
-  return record !== null;
+  return record?.decision === "AGREE";
+}
+
+/** Collapse newest-first consent rows to the current decision for each email. */
+export function latestConsentDecisionsByEmail(
+  records: ReadonlyArray<{ signerEmailSnapshot: string; decision: string }>
+): Map<string, ConsentDecision> {
+  const latest = new Map<string, ConsentDecision>();
+  for (const record of records) {
+    const email = record.signerEmailSnapshot.trim().toLowerCase();
+    if (email && !latest.has(email) && isConsentDecision(record.decision)) {
+      latest.set(email, record.decision);
+    }
+  }
+  return latest;
 }
 
 /** Display name for a device type, used in the admin browse/preview UI. */

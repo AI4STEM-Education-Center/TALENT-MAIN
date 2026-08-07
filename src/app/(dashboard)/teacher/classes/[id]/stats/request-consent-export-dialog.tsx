@@ -55,13 +55,28 @@ export function RequestConsentExportDialog({ classId }: { classId: string }) {
 
   useEffect(() => {
     if (!open) return;
-    fetch(`/api/classes/${classId}/consent-export-request`)
-      .then((res) => res.json())
-      .then((data) => {
+    const controller = new AbortController();
+    async function load() {
+      try {
+        const res = await fetch(`/api/classes/${classId}/consent-export-request`, {
+          signal: controller.signal,
+        });
+        if (!res.ok) throw new Error("Could not load consent export requests.");
+        const data = await res.json();
         setAdmins(data.admins ?? []);
         setRequests(data.requests ?? []);
-      });
-  }, [open, classId]);
+      } catch (cause) {
+        if (!(cause instanceof DOMException && cause.name === "AbortError")) {
+          await alert({
+            title: "Couldn't load requests",
+            description: cause instanceof Error ? cause.message : "Unknown error.",
+          });
+        }
+      }
+    }
+    void load();
+    return () => controller.abort();
+  }, [open, classId, alert]);
 
   const pending = requests.find((r) => r.status === "PENDING");
   const points = Number(pointsAwarded);
@@ -75,11 +90,12 @@ export function RequestConsentExportDialog({ classId }: { classId: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ gradeColumnName: gradeColumnName.trim(), pointsAwarded: points, reviewerId }),
       });
-      const data = await res.json();
       if (!res.ok) {
+        const data = await res.json().catch(() => null);
         await alert({ title: "Couldn't submit request", description: data?.error || "Unknown error." });
         return;
       }
+      const data = await res.json();
       setRequests((prev) => [data.request, ...prev]);
       setGradeColumnName("");
       await alert("Request sent. You'll get an email with the credit file once an administrator approves it.");
@@ -107,7 +123,7 @@ export function RequestConsentExportDialog({ classId }: { classId: string }) {
           {pending ? (
             <p className="rounded-md bg-muted/50 p-3 text-sm">
               A request for this class is already pending review ({pending.gradeColumnName}, {pending.pointsAwarded}{" "}
-              points, requested {new Date(pending.requestedAt).toLocaleDateString()}).
+              points, requested {new Date(pending.requestedAt).toLocaleDateString("en-US", { timeZone: "UTC" })}).
             </p>
           ) : (
             <div className="space-y-4">
