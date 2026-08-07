@@ -102,7 +102,11 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
+            set -e
             cd ~/app
             docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-            docker compose up -d --force-recreate --no-build
+            docker compose stop worker
+            # Wait for the web container to finish schema application and pass
+            # health checks before the worker is allowed to start.
+            docker compose up -d --wait --wait-timeout 150 --force-recreate --no-build
             docker image prune -f
