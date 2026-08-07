@@ -42,15 +42,17 @@ export async function listClassMaterials(classId: string) {
           aiTtftMs: true,
           aiTokens: true,
           aiTotalMs: true,
+          topic: { select: { id: true, name: true, contentType: true } },
         },
       },
     },
   });
 
   return links.map((link) => {
-    const { classId: originClassId, createdAt, ...material } = link.material;
+    const { classId: originClassId, createdAt, topic, ...material } = link.material;
     return {
       ...material,
+      topic: topic?.contentType === "MATERIAL" ? { id: topic.id, name: topic.name } : null,
       createdAt: createdAt.toISOString(),
       isImported: originClassId !== classId,
     };

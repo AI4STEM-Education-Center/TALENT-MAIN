@@ -34,14 +34,14 @@ export async function PATCH(
     return NextResponse.json({ error: "Material not found" }, { status: 404 });
   }
 
-  let body: { batchDescription?: unknown; title?: unknown };
+  let body: { batchDescription?: unknown; title?: unknown; topicId?: unknown };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const data: { batchDescription?: string | null; title?: string | null } = {};
+  const data: { batchDescription?: string | null; title?: string | null; topicId?: string | null } = {};
 
   if ("batchDescription" in body) {
     if (typeof body.batchDescription !== "string") {
@@ -62,6 +62,20 @@ export async function PATCH(
     data.title = trimmed.length > 0 ? trimmed : null;
   }
 
+  if ("topicId" in body) {
+    if (body.topicId !== null && typeof body.topicId !== "string") {
+      return NextResponse.json({ error: "topicId must be a string or null" }, { status: 400 });
+    }
+    const topicId = typeof body.topicId === "string" && body.topicId ? body.topicId : null;
+    if (topicId) {
+      const topic = await prisma.topic.findFirst({
+        where: { id: topicId, teacherId: teacher.id, contentType: "MATERIAL" },
+      });
+      if (!topic) return NextResponse.json({ error: "Material tag not found" }, { status: 400 });
+    }
+    data.topicId = topicId;
+  }
+
   if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: "No valid fields provided" }, { status: 400 });
   }
@@ -74,6 +88,7 @@ export async function PATCH(
       batchKeyConcepts: true,
       title: true,
       originalName: true,
+      topic: { select: { id: true, name: true } },
     },
   });
 

@@ -26,7 +26,9 @@ afterAll(async () => {
 describe("deepCopyLearningMaterial", () => {
   it("creates an independent pool snapshot with its topic, analysis, and S3 objects", async () => {
     const { teacher } = await createTeacher();
-    const topic = await prisma.topic.create({ data: { name: "Motion", teacherId: teacher.id } });
+    const topic = await prisma.topic.create({
+      data: { name: "Motion", teacherId: teacher.id, contentType: "MATERIAL" },
+    });
     const source = await prisma.learningMaterial.create({
       data: {
         teacherId: teacher.id,
@@ -63,7 +65,7 @@ describe("deepCopyLearningMaterial", () => {
       processingStatus: "SUCCESS",
     });
     expect(copy!.storageKey).not.toBe(source.storageKey);
-    expect(copy!.topic).toMatchObject({ name: "Motion", teacherId: null });
+    expect(copy!.topic).toMatchObject({ name: "Motion", teacherId: null, contentType: "MATERIAL" });
     const page = await prisma.materialPage.findFirstOrThrow({ where: { materialId: copy!.id } });
     expect(page).toMatchObject({ keyConcept: "Net force", description: "Newton's second law" });
     expect(page.storageKey).not.toContain("/source/");

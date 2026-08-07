@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { BookOpen, FileText, Plus, Trash2 } from "lucide-react";
+import { BookOpen, FileText, Plus, Tags, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,6 +17,8 @@ interface PoolMaterial {
   topic: { id: string; name: string } | null;
 }
 
+interface MaterialTag { id: string; name: string }
+
 function groupByTopic(materials: PoolMaterial[]) {
   const groups = new Map<string, { name: string; items: PoolMaterial[] }>();
   for (const material of materials) {
@@ -28,21 +30,48 @@ function groupByTopic(materials: PoolMaterial[]) {
   return Array.from(groups.values());
 }
 
-export function MaterialPoolClient({ initialMaterials }: { initialMaterials: PoolMaterial[] }) {
+export function MaterialPoolClient({
+  initialMaterials,
+  initialTags,
+}: {
+  initialMaterials: PoolMaterial[];
+  initialTags: MaterialTag[];
+}) {
   const confirm = useConfirm();
   const [materials, setMaterials] = useState<PoolMaterial[]>(initialMaterials);
-  const [newTopic, setNewTopic] = useState("");
+  const [tags, setTags] = useState<MaterialTag[]>(initialTags);
+  const [newTag, setNewTag] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  async function createTopic() {
-    if (!newTopic.trim()) return;
+  async function createTag() {
+    if (!newTag.trim()) return;
+    setError(null);
     const response = await fetch("/api/topics", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newTopic.trim() }),
+      body: JSON.stringify({ name: newTag.trim(), contentType: "MATERIAL" }),
     });
-    if (!response.ok) setError("Could not create the topic.");
-    else setNewTopic("");
+    if (!response.ok) setError("Could not create the material tag.");
+    else {
+      const tag = await response.json();
+      setTags((current) => [...current, tag]);
+      setNewTag("");
+    }
+  }
+
+  async function assignTag(materialId: string, topicId: string) {
+    setError(null);
+    const response = await fetch(`/api/admin/materials/${materialId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topicId: topicId || null }),
+    });
+    if (!response.ok) {
+      setError("Could not tag the material.");
+      return;
+    }
+    const { material } = await response.json();
+    setMaterials((current) => current.map((item) => item.id === materialId ? { ...item, topic: material.topic } : item));
   }
 
   async function remove(material: PoolMaterial) {
@@ -62,12 +91,12 @@ export function MaterialPoolClient({ initialMaterials }: { initialMaterials: Poo
     <div className="space-y-6 p-4 md:p-6">
       <div>
         <h1 className="text-3xl font-bold">Learning-material pool</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Shared, approved materials organized into global topics.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Shared, approved materials organized with material-only tags.</p>
       </div>
       <Card>
         <CardContent className="flex flex-col gap-3 p-4 sm:flex-row">
-          <Input value={newTopic} onChange={(event) => setNewTopic(event.target.value)} placeholder="New global topic" onKeyDown={(event) => event.key === "Enter" && createTopic()} />
-          <Button variant="outline" onClick={createTopic} disabled={!newTopic.trim()}><Plus className="size-4" /> Add topic</Button>
+          <Input value={newTag} onChange={(event) => setNewTag(event.target.value)} placeholder="New material tag" onKeyDown={(event) => event.key === "Enter" && createTag()} />
+          <Button variant="outline" onClick={createTag} disabled={!newTag.trim()}><Plus className="size-4" /> Create new tag</Button>
         </CardContent>
       </Card>
       {error && <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
@@ -85,7 +114,21 @@ export function MaterialPoolClient({ initialMaterials }: { initialMaterials: Poo
                       <Link className="font-semibold hover:underline" href={`/admin/materials/${material.id}`}>{material.title || material.originalName}</Link>
                       <p className="text-sm text-muted-foreground">{material.totalPages} pages</p>
                     </div>
-                    <Button variant="ghost" size="sm" onClick={() => remove(material)}><Trash2 className="size-4 text-destructive" /></Button>
+                    <div className="flex items-center gap-2">
+                      <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Tags className="size-4" />
+                        <span className="sr-only">Tag {material.title || material.originalName}</span>
+                        <select
+                          className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground"
+                          value={material.topic?.id ?? ""}
+                          onChange={(event) => assignTag(material.id, event.target.value)}
+                        >
+                          <option value="">No tag</option>
+                          {tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
+                        </select>
+                      </label>
+                      <Button aria-label={`Delete ${material.title || material.originalName}`} variant="ghost" size="sm" onClick={() => remove(material)}><Trash2 className="size-4 text-destructive" /></Button>
+                    </div>
                   </CardContent>
                 </Card>
               ))}

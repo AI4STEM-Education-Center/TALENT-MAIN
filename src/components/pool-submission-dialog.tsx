@@ -23,6 +23,7 @@ interface AdminOption {
 interface TopicOption {
   id: string;
   name: string;
+  contentType: "QUIZ" | "MATERIAL";
 }
 
 interface ExistingSubmission {
@@ -79,7 +80,7 @@ export function PoolSubmissionDialog({
       if (!response.ok) throw new Error("Could not load reviewers.");
       const data = await response.json();
       setAdmins(data.admins ?? []);
-      setTopics(data.topics ?? []);
+      setTopics((data.topics ?? []).filter((topic: TopicOption) => topic.contentType === contentType));
       setSubmissions(data.submissions ?? []);
       setReviewerId((current) => current || data.admins?.[0]?.id || "");
     } catch (cause) {
@@ -163,7 +164,7 @@ export function PoolSubmissionDialog({
               </select>
             </label>
             <label className="block space-y-1.5 text-sm font-medium">
-              Global topic
+              Global {contentType === "QUIZ" ? "quiz" : "material"} tag
               <select
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 value={topicId}
