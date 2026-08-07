@@ -44,10 +44,11 @@ if [ "${NODE_ENV:-}" = "production" ]; then
 else
   PUSH_FLAGS="--accept-data-loss"
 fi
+# A server running against an older schema is never healthy: generated Prisma
+# clients immediately query newly added columns. With `set -e`, a failed push
+# stops this container so Compose/CI can report the migration failure instead
+# of racing the worker or seed against a partially upgraded database.
 # shellcheck disable=SC2086
-node ./node_modules/prisma/build/index.js db push $PUSH_FLAGS 2>&1 || {
-  echo "WARNING: prisma db push failed — the app will start but may have schema issues." >&2
-  echo "         In production this can mean a destructive schema change needs manual review." >&2
-}
+node ./node_modules/prisma/build/index.js db push $PUSH_FLAGS
 
 exec node server.js
