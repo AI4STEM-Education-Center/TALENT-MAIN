@@ -12,6 +12,10 @@ import { getUserConsentClaim, isConsentRole } from "@/lib/consent";
  * gate in src/proxy.ts only ever checks TEACHER, and STUDENT never blocks
  * navigation on this claim either way. Read once here rather than in
  * src/proxy.ts on every request — see the rationale in getUserConsentClaim.
+ *
+ * `consentDecision` is AGREE/DECLINE, null when the user still owes an answer
+ * on the active form, or NOT_REQUIRED when the role has no published form at
+ * all — the proxy must treat those last two differently (consent-claim.ts).
  */
 async function stampConsentClaim(token: Record<string, unknown>): Promise<void> {
   const role = token.role;

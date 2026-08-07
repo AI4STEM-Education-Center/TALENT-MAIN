@@ -131,12 +131,15 @@ function SidebarContent({
       {/* Nav */}
       <nav className="flex-1 p-4 space-y-1">
         {navItems.map((item) => {
+          // Sub-pages light up their section, but only on a full path-segment
+          // boundary: a bare startsWith made /admin/consent-requests light up
+          // "Consent Records" (/admin/consent) as well as its own item.
           const isActive =
             pathname === item.href ||
             (item.href !== "/teacher" &&
               item.href !== "/student" &&
               item.href !== "/admin" &&
-              pathname.startsWith(item.href));
+              pathname.startsWith(`${item.href}/`));
           return (
             <Link
               key={item.href}
