@@ -22,6 +22,9 @@ RUN --mount=type=cache,target=/root/.npm npm ci
 # ── Stage 2: Build the application ────────────────────────────────────────────
 FROM base AS builder
 
+ARG APP_ENV=dev
+ENV APP_ENV=${APP_ENV}
+
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
