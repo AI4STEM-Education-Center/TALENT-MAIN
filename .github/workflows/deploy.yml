@@ -49,6 +49,7 @@ jobs:
           push: true
           provenance: false
           build-args: |
+            APP_ENV=prod
             APP_VERSION=${{ steps.version.outputs.version }}
             APP_RELEASE_DATE=${{ steps.version.outputs.release_date }}
           tags: |
