@@ -314,6 +314,9 @@ export type ClassQuizSummary = {
 export type ClassStudentSummary = {
   studentId: string;
   name: string;
+  email: string;
+  firstName: string;
+  lastName: string;
   quizzesCompleted: number;
   avgBestScore: number;
   totalAttempts: number;
@@ -339,7 +342,12 @@ export async function getClassStatsOverview(classId: string): Promise<ClassStats
     }),
     prisma.classEnrollment.findMany({
       where: { classId },
-      select: { studentId: true, student: { select: { user: { select: { firstName: true, lastName: true } } } } },
+      select: {
+        studentId: true,
+        student: {
+          select: { user: { select: { email: true, firstName: true, lastName: true } } },
+        },
+      },
     }),
     prisma.quizAttempt.findMany({
       where: { classId, completedAt: { not: null } },
@@ -386,6 +394,9 @@ export async function getClassStatsOverview(classId: string): Promise<ClassStats
     return {
       studentId: e.studentId,
       name: fullName(e.student.user),
+      email: e.student.user.email,
+      firstName: e.student.user.firstName,
+      lastName: e.student.user.lastName,
       quizzesCompleted: byQuiz.size,
       avgBestScore: mean(bestScores),
       totalAttempts: studentAttempts.length,
