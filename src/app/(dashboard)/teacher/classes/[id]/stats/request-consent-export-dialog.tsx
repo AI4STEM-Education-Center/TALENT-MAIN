@@ -107,16 +107,16 @@ export function RequestConsentExportDialog({ classId }: { classId: string }) {
   return (
     <>
       <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
-        <ShieldCheck className="size-4" /> Request signed-students export
+        <ShieldCheck className="size-4" /> Research participation credit (admin review)
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Request a signed-students credit export</DialogTitle>
+            <DialogTitle>Request research participation credit</DialogTitle>
             <DialogDescription>
-              An administrator reviews and approves every request. You&apos;ll receive an eLC-importable CSV with
-              credit points for students who signed — never a list of individual decisions.
+              Request an eLC-ready credit CSV for research participation. An administrator must review and approve
+              this export; you&apos;ll receive it by email without seeing a list of individual consent decisions.
             </DialogDescription>
           </DialogHeader>
 
