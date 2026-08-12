@@ -9,18 +9,21 @@ import {
 } from "@/lib/exam-results";
 
 /**
- * The student-facing study-material recommendations: up to 3 holistic cards
- * chosen across the whole attempt. Deliberately carries NO per-question framing
- * — it never says which questions were wrong, only what to study next.
+ * Study-material recommendations shared by student results and the authorized
+ * teacher attempt view: up to 3 holistic cards chosen across the whole attempt.
+ * Deliberately carries NO per-question framing — it never says which questions
+ * were wrong, only what to study next.
  */
 export function HolisticRecommendations({
   recommendations,
   status,
   metrics,
+  audience = "student",
 }: {
   recommendations: PresignedRecommendation[];
   status: ResultStatus;
   metrics: ResultComponentMetrics | null;
+  audience?: "student" | "teacher";
 }) {
   const pending = status === RESULT_STATUS.PENDING || status === RESULT_STATUS.GENERATING;
 
@@ -45,7 +48,8 @@ export function HolisticRecommendations({
         </div>
       ) : pending ? (
         <div className="flex items-center gap-2 rounded-xl border p-4 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin text-primary" /> Finding study material for you…
+          <Loader2 className="size-4 animate-spin text-primary" /> Finding study material
+          {audience === "student" ? " for you" : " for this student"}…
         </div>
       ) : (
         <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
