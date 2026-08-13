@@ -13,7 +13,7 @@ import {
 } from "@/lib/backup-core";
 import {
   backupS3ToWebdav,
-  hasS3WebdavBackup,
+  getS3WebdavBackupSummary,
   restoreS3FromWebdav,
   type S3BackupResult,
 } from "@/lib/s3-webdav-backup";
@@ -74,10 +74,15 @@ export async function listBackupsForCurrentEnv(): Promise<BackupListItem[]> {
   const env = resolveAppEnv();
   const backups = await listBackups(cfg, env);
   return Promise.all(
-    backups.map(async (backup) => ({
-      ...backup,
-      includesS3: await hasS3WebdavBackup(cfg, env, backup.name),
-    })),
+    backups.map(async (backup) => {
+      const s3 = await getS3WebdavBackupSummary(cfg, env, backup.name);
+      return {
+        ...backup,
+        includesS3: s3 !== null,
+        s3ObjectCount: s3?.objectCount ?? null,
+        s3TotalBytes: s3?.totalBytes ?? null,
+      };
+    }),
   );
 }
 

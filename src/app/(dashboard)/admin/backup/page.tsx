@@ -44,6 +44,8 @@ interface BackupItem {
   date: string;
   size: number;
   includesS3: boolean;
+  s3ObjectCount: number | null;
+  s3TotalBytes: number | null;
 }
 
 const EMPTY_FORM = {
@@ -62,9 +64,14 @@ const EMPTY_FORM = {
 };
 
 function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = n;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return unit === 0 ? `${value} ${units[unit]}` : `${value.toFixed(1)} ${units[unit]}`;
 }
 
 export default function AdminBackupPage() {
@@ -507,7 +514,9 @@ export default function AdminBackupPage() {
                       {b.name} · {formatBytes(b.size)}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {b.includesS3 ? "Database + S3 documents" : "Database only"}
+                      {b.includesS3 && b.s3TotalBytes !== null
+                        ? `Database + ${formatBytes(b.s3TotalBytes)} of S3 documents (${b.s3ObjectCount ?? 0} objects)`
+                        : "Database only"}
                     </p>
                   </div>
                   <Button

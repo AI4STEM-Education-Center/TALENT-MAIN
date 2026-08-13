@@ -193,6 +193,8 @@ export interface BackupListItem {
   date: Date;
   size: number;
   includesS3?: boolean;
+  s3ObjectCount?: number | null;
+  s3TotalBytes?: number | null;
 }
 
 export async function listBackups(
