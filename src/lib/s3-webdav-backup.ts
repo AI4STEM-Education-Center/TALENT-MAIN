@@ -160,12 +160,18 @@ export async function backupS3ToWebdav(
   }
 }
 
-export async function hasS3WebdavBackup(
+/** Read the completed companion manifest for display without downloading objects. */
+export async function getS3WebdavBackupSummary(
   cfg: ResolvedWebdavConfig,
   env: AppEnv,
   databaseBackupName: string,
-): Promise<boolean> {
-  return getClient(cfg).exists(manifestPath(cfg, env, databaseBackupName));
+): Promise<S3BackupResult | null> {
+  const client = getClient(cfg);
+  if (!(await client.exists(manifestPath(cfg, env, databaseBackupName)))) return null;
+  const manifest = await readManifest(client, cfg, env, databaseBackupName);
+  const totalBytes = manifest.objects.reduce((sum, item) => sum + item.size, 0);
+  if (!Number.isSafeInteger(totalBytes)) throw new Error("Invalid S3 backup total size");
+  return { objectCount: manifest.objects.length, totalBytes };
 }
 
 async function readManifest(

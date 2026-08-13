@@ -23,6 +23,8 @@ export async function GET() {
         date: b.date.toISOString(),
         size: b.size,
         includesS3: b.includesS3,
+        s3ObjectCount: b.s3ObjectCount,
+        s3TotalBytes: b.s3TotalBytes,
       })),
     });
   } catch (error) {

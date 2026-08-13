@@ -35,7 +35,7 @@ vi.mock("./webdav", async (importOriginal) => {
 
 import {
   backupS3ToWebdav,
-  hasS3WebdavBackup,
+  getS3WebdavBackupSummary,
   restoreS3FromWebdav,
 } from "./s3-webdav-backup";
 import type { ResolvedWebdavConfig } from "./webdav";
@@ -160,10 +160,46 @@ describe("restoreS3FromWebdav", () => {
   });
 });
 
-describe("hasS3WebdavBackup", () => {
-  it("uses the completed manifest as the presence marker", async () => {
+describe("getS3WebdavBackupSummary", () => {
+  it("returns null when no completed manifest exists", async () => {
+    mocks.exists.mockResolvedValue(false);
+    await expect(getS3WebdavBackupSummary(webdav, "dev", backupName)).resolves.toBeNull();
+    expect(mocks.getFile).not.toHaveBeenCalled();
+  });
+
+  it("totals the object count and bytes from the completed manifest", async () => {
     mocks.exists.mockResolvedValue(true);
-    await expect(hasS3WebdavBackup(webdav, "dev", backupName)).resolves.toBe(true);
+    mocks.getFile.mockResolvedValue(
+      Buffer.from(
+        JSON.stringify({
+          version: 1,
+          bucket: "documents",
+          prefix: "dev/",
+          createdAt: "2026-08-13T12:00:00.000Z",
+          objects: [
+            {
+              key: "dev/one.pdf",
+              file: "objects/00000001.bin",
+              size: 1024,
+              sha256: "a".repeat(64),
+              contentType: "application/pdf",
+            },
+            {
+              key: "dev/two.png",
+              file: "objects/00000002.bin",
+              size: 2048,
+              sha256: "b".repeat(64),
+              contentType: "image/png",
+            },
+          ],
+        }),
+      ),
+    );
+
+    await expect(getS3WebdavBackupSummary(webdav, "dev", backupName)).resolves.toEqual({
+      objectCount: 2,
+      totalBytes: 3072,
+    });
     expect(mocks.exists).toHaveBeenCalledWith(`/backups/dev/${backupName}.s3/manifest.json`);
   });
 });
