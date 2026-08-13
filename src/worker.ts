@@ -14,6 +14,7 @@ import {
   CONSENT_EMAILS_QUEUE,
   CONSENT_EXPORTS_QUEUE,
   enqueueBackup,
+  type BackupJobPayload,
   enqueueMessageEmails,
   resolveQueueDbPath,
   type ExamResultsJobPayload,
@@ -348,11 +349,13 @@ async function runConsentExportGcLoop() {
 async function consumeBackups() {
   console.log(`[Worker] Starting Honker queue consumer for '${BACKUPS_QUEUE}'...`);
   for await (const job of backupsQueue.claim("backups-worker")) {
-    console.log(`[Worker] Picked up backup job ${job.id}`);
+    const { includeS3 = false } = job.payload as BackupJobPayload;
+    console.log(`[Worker] Picked up backup job ${job.id}${includeS3 ? " (database + S3)" : ""}`);
     try {
-      const result = await runBackupJob();
+      const result = await runBackupJob({ includeS3 });
       console.log(
-        `[Worker] Backup complete: ${result.key} (pruned ${result.pruned.length})`,
+        `[Worker] Backup complete: ${result.key} (pruned ${result.pruned.length}` +
+          `${result.s3 ? `, copied ${result.s3.objectCount} S3 object(s)` : ""})`,
       );
     } catch (err: any) {
       console.error(`[Worker] Backup job ${job.id} failed:`, err?.message ?? err);

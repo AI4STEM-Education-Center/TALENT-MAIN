@@ -22,11 +22,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "A valid backup name is required." }, { status: 400 });
     }
 
-    await stageRestoreForCurrentEnv(name);
+    const { s3 } = await stageRestoreForCurrentEnv(name);
     return NextResponse.json({
       success: true,
-      message:
-        "Backup verified and staged. Restart the service to apply it (the staged DB is swapped in before the app connects).",
+      message: s3
+        ? `Backup verified, ${s3.objectCount} S3 object(s) restored, and database staged. Restart the service to apply the database.`
+        : "Backup verified and staged. Restart the service to apply it (the staged DB is swapped in before the app connects).",
     });
   } catch (error) {
     logApiError("BACKUP_RESTORE", error);

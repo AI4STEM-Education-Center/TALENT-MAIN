@@ -86,6 +86,11 @@ export async function removeFile(client: WebDAVClient, remotePath: string): Prom
   await client.deleteFile(remotePath);
 }
 
+/** Delete a WebDAV file or collection when it exists. */
+export async function removePath(client: WebDAVClient, remotePath: string): Promise<void> {
+  if (await client.exists(remotePath)) await client.deleteFile(remotePath);
+}
+
 /** Cheap reachability probe used by the admin "Test connection" button. */
 export async function testConnection(
   cfg: ResolvedWebdavConfig,

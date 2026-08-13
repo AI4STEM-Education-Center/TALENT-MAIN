@@ -16,7 +16,7 @@ export const CONSENT_EXPORTS_QUEUE = "consent-exports";
 
 export type ExamResultsJobPayload = { examResultId: string };
 export type QuizExtractionJobPayload = { extractionId: string };
-export type BackupJobPayload = { action: "backup" };
+export type BackupJobPayload = { action: "backup"; includeS3?: boolean };
 // feedbackId present = a revision of an existing artifact; absent = first generation.
 export type SimulationJobPayload = { simulationId: string; feedbackId?: string };
 // One job per recipient (a MessageEmailDelivery row), so one bad address never
@@ -122,13 +122,12 @@ export function enqueueMessageEmails(deliveryIds: string[]): void {
 }
 
 /**
- * Enqueue a database-backup job. Used by the admin "Backup now" button and by
- * the worker's scheduler tick. The worker performs the snapshot + WebDAV upload
- * off the request path so the live site is never blocked.
+ * Enqueue a backup job. Scheduled calls retain the database-only default; the
+ * admin's explicit manual action opts into the potentially large S3 snapshot.
  */
-export function enqueueBackup(): void {
+export function enqueueBackup(options: { includeS3?: boolean } = {}): void {
   const db = honker.open(resolveQueueDbPath());
-  const payload: BackupJobPayload = { action: "backup" };
+  const payload: BackupJobPayload = { action: "backup", includeS3: options.includeS3 === true };
   db.queue(BACKUPS_QUEUE).enqueue(payload);
 }
 
