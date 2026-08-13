@@ -13,6 +13,7 @@ import {
   getFile,
   listFiles,
   removeFile,
+  removePath,
   joinPath,
 } from "./webdav";
 
@@ -174,6 +175,9 @@ async function pruneRetention(
     if (keep.has(it.key)) continue;
     try {
       await removeFile(client, joinPath(folder, it.key));
+      // Manual backups may have a companion S3 snapshot. Keep its lifecycle
+      // tied to the database file selected by the same retention decision.
+      await removePath(client, joinPath(folder, `${it.key}.s3`));
       deleted.push(it.key);
     } catch {
       /* ignore individual delete failures; next run retries */
@@ -188,6 +192,7 @@ export interface BackupListItem {
   name: string;
   date: Date;
   size: number;
+  includesS3?: boolean;
 }
 
 export async function listBackups(
@@ -207,16 +212,47 @@ export async function performBackup(
   cfg: ResolvedWebdavConfig,
   env: AppEnv,
   retention: RetentionPolicy,
-): Promise<{ key: string; pruned: string[] }> {
+  hooks: {
+    /** Finish optional companion artifacts before the DB file becomes visible. */
+    beforePublish?: (name: string) => Promise<void>;
+    /** Best-effort rollback when companion creation or DB publication fails. */
+    onPublishFailure?: (name: string) => Promise<void>;
+  } = {},
+): Promise<{ key: string; name: string; pruned: string[] }> {
   const gz = createSnapshotGz();
   const client = getClient(cfg);
   const folder = backupFolder(cfg, env);
   await ensureDir(client, folder);
   const name = backupKeyName(new Date());
   const key = joinPath(folder, name);
-  await putFile(client, key, gz);
+  try {
+    await hooks.beforePublish?.(name);
+    // The DB file is the restore-list publication marker. For manual backups it
+    // appears only after the complete S3 companion manifest is available.
+    await putFile(client, key, gz);
+  } catch (error) {
+    try {
+      await hooks.onPublishFailure?.(name);
+    } catch {
+      // Preserve the original backup failure for status reporting.
+    }
+    throw error;
+  }
   const pruned = await pruneRetention(client, folder, retention);
-  return { key, pruned };
+  return { key, name, pruned };
+}
+
+/** Roll back a database backup and its optional S3 companion. */
+export async function removeBackup(
+  cfg: ResolvedWebdavConfig,
+  env: AppEnv,
+  name: string,
+): Promise<void> {
+  if (!parseBackupTimestamp(name)) throw new Error("Invalid backup name");
+  const client = getClient(cfg);
+  const folder = backupFolder(cfg, env);
+  await removePath(client, joinPath(folder, name));
+  await removePath(client, joinPath(folder, `${name}.s3`));
 }
 
 /**

@@ -316,6 +316,20 @@ export async function getS3ObjectAsString(bucket: string, key: string): Promise<
   return out.Body.transformToString("utf-8");
 }
 
+/** Download an S3 object for WebDAV backup while preserving its content type. */
+export async function getS3Object(
+  bucket: string,
+  key: string
+): Promise<{ body: Uint8Array; contentType: string }> {
+  const client = getS3Client();
+  const out = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+  if (!out.Body) throw new Error(`S3 object ${key} has no body`);
+  return {
+    body: await out.Body.transformToByteArray(),
+    contentType: out.ContentType || "application/octet-stream",
+  };
+}
+
 export async function headS3Object(bucket: string, key: string): Promise<{ contentLength: number }> {
   const client = getS3Client();
   const out = await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));

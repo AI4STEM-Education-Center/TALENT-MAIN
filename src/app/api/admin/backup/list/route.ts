@@ -22,6 +22,7 @@ export async function GET() {
         name: b.name,
         date: b.date.toISOString(),
         size: b.size,
+        includesS3: b.includesS3,
       })),
     });
   } catch (error) {

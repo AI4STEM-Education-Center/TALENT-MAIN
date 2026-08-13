@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { resolveWebdav } from "@/lib/backup";
 import { enqueueBackup } from "@/lib/queue";
+import { getS3Config } from "@/lib/storage";
 import { logApiError } from "@/lib/system-log";
 
 /**
  * POST /api/admin/backup/run
- * Manual "Backup now" — enqueue a backup job for the worker. Non-blocking: the
- * snapshot + upload happen off the request path so the site stays responsive.
+ * Manual "Backup now" — enqueue a database + S3 backup job for the worker.
+ * Scheduled jobs deliberately remain database-only.
  */
 export async function POST() {
   const session = await auth();
@@ -21,8 +22,17 @@ export async function POST() {
   }
 
   try {
-    enqueueBackup();
-    return NextResponse.json({ success: true, message: "Backup queued." });
+    getS3Config();
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "S3 is not configured." },
+      { status: 400 },
+    );
+  }
+
+  try {
+    enqueueBackup({ includeS3: true });
+    return NextResponse.json({ success: true, message: "Database and S3 backup queued." });
   } catch (error) {
     logApiError("BACKUP_RUN", error);
     return NextResponse.json({ error: "Failed to queue backup." }, { status: 500 });
