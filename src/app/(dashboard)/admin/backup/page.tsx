@@ -43,6 +43,9 @@ interface BackupItem {
   name: string;
   date: string;
   size: number;
+  includesS3: boolean;
+  s3ObjectCount: number | null;
+  s3TotalBytes: number | null;
 }
 
 const EMPTY_FORM = {
@@ -61,9 +64,14 @@ const EMPTY_FORM = {
 };
 
 function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = n;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return unit === 0 ? `${value} ${units[unit]}` : `${value.toFixed(1)} ${units[unit]}`;
 }
 
 export default function AdminBackupPage() {
@@ -208,7 +216,7 @@ export default function AdminBackupPage() {
       } else {
         setBanner({
           type: "success",
-          text: "Backup queued — it runs in the background. Refresh the list in a moment.",
+          text: "Database and S3 backup queued — it runs in the background. Refresh the list in a moment.",
         });
       }
     } catch {
@@ -221,7 +229,7 @@ export default function AdminBackupPage() {
   async function handleRestore(name: string) {
     if (
       !window.confirm(
-        `Restore "${name}"? It will be downloaded, verified, and staged. The current ${appEnv} database is replaced on the next service restart.`,
+        `Restore "${name}"? Its S3 snapshot (when included) will be restored now, and the current ${appEnv} database will be replaced on the next service restart.`,
       )
     ) {
       return;
@@ -259,12 +267,12 @@ export default function AdminBackupPage() {
     <div className="p-4 md:p-6 space-y-6 max-w-2xl">
       <div>
         <h1 className="text-2xl font-bold flex items-center gap-2">
-          <HardDrive className="size-6" /> Database Backup
+          <HardDrive className="size-6" /> Database &amp; S3 Backup
         </h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Snapshots this <strong>{appEnv}</strong> database to a WebDAV endpoint under{" "}
-          <span className="font-mono">{form.baseDir}/{appEnv}</span>. Backups run in the worker,
-          so the site is never blocked.
+          Snapshots this <strong>{appEnv}</strong> database to WebDAV under{" "}
+          <span className="font-mono">{form.baseDir}/{appEnv}</span>. Manual backups also copy the
+          deployment&apos;s S3 documents; scheduled backups remain database-only.
         </p>
       </div>
 
@@ -389,7 +397,7 @@ export default function AdminBackupPage() {
               </Button>
               <Button type="button" variant="outline" onClick={handleRun} disabled={running}>
                 {running ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
-                {running ? "Queuing..." : "Backup now"}
+                {running ? "Queuing..." : "Back up database + S3 now"}
               </Button>
             </div>
           </form>
@@ -445,7 +453,8 @@ export default function AdminBackupPage() {
               </div>
             </div>
             <p className="text-xs text-muted-foreground">
-              Default is daily at 02:00 America/New_York (handles EST/EDT).
+              Default is daily at 02:00 America/New_York (handles EST/EDT). Scheduled runs back up
+              only the database; S3 is included only when you use the manual button above.
             </p>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -504,6 +513,11 @@ export default function AdminBackupPage() {
                     <p className="text-xs text-muted-foreground truncate font-mono">
                       {b.name} · {formatBytes(b.size)}
                     </p>
+                    <p className="text-xs text-muted-foreground">
+                      {b.includesS3 && b.s3TotalBytes !== null
+                        ? `Database + ${formatBytes(b.s3TotalBytes)} of S3 documents (${b.s3ObjectCount ?? 0} objects)`
+                        : "Database only"}
+                    </p>
                   </div>
                   <Button
                     type="button"
@@ -525,7 +539,8 @@ export default function AdminBackupPage() {
             </ul>
           )}
           <p className="text-xs text-muted-foreground">
-            Restoring stages the backup; it replaces the live database on the next service restart.
+            Restore uses this same list for both artifacts: S3 documents are restored immediately
+            when present, and the database is staged for the next service restart.
           </p>
         </CardContent>
       </Card>

@@ -6,10 +6,17 @@ import {
   resolveAppEnv,
   listBackups,
   performBackup,
+  removeBackup,
   stageRestore,
   type RetentionPolicy,
   type BackupListItem,
 } from "@/lib/backup-core";
+import {
+  backupS3ToWebdav,
+  getS3WebdavBackupSummary,
+  restoreS3FromWebdav,
+  type S3BackupResult,
+} from "@/lib/s3-webdav-backup";
 
 // Prisma-aware backup orchestration: reads the singleton BackupConfig, resolves
 // WebDAV credentials (decrypting the stored password), runs the backup with
@@ -64,13 +71,32 @@ export async function resolveWebdav(
 export async function listBackupsForCurrentEnv(): Promise<BackupListItem[]> {
   const cfg = await resolveWebdav();
   if (!cfg) return [];
-  return listBackups(cfg, resolveAppEnv());
+  const env = resolveAppEnv();
+  const backups = await listBackups(cfg, env);
+  return Promise.all(
+    backups.map(async (backup) => {
+      const s3 = await getS3WebdavBackupSummary(cfg, env, backup.name);
+      return {
+        ...backup,
+        includesS3: s3 !== null,
+        s3ObjectCount: s3?.objectCount ?? null,
+        s3TotalBytes: s3?.totalBytes ?? null,
+      };
+    }),
+  );
 }
 
-export async function stageRestoreForCurrentEnv(name: string): Promise<void> {
+export async function stageRestoreForCurrentEnv(
+  name: string,
+): Promise<{ s3: S3BackupResult | null }> {
   const cfg = await resolveWebdav();
   if (!cfg) throw new Error("WebDAV is not configured");
-  await stageRestore(cfg, resolveAppEnv(), name);
+  const env = resolveAppEnv();
+  // Restore object bytes before arming the database swap. If S3 verification or
+  // upload fails, the running database remains authoritative and no restart is armed.
+  const s3 = await restoreS3FromWebdav(cfg, env, name);
+  await stageRestore(cfg, env, name);
+  return { s3 };
 }
 
 // ─── Scheduling ───────────────────────────────────────────────────────────────
@@ -179,7 +205,9 @@ async function updateStatus(data: Prisma.BackupConfigUpdateInput): Promise<void>
 }
 
 /** Run a backup now with full status bookkeeping. Called by the worker. */
-export async function runBackupJob(): Promise<{ key: string; pruned: string[] }> {
+export async function runBackupJob(
+  options: { includeS3?: boolean } = {},
+): Promise<{ key: string; pruned: string[]; s3: S3BackupResult | null }> {
   const row = await getConfigRow();
   const cfg = await resolveWebdav(row);
   if (!cfg) throw new Error("WebDAV is not configured");
@@ -187,7 +215,22 @@ export async function runBackupJob(): Promise<{ key: string; pruned: string[] }>
 
   await updateStatus({ lastStatus: "RUNNING", lastError: null });
   try {
-    const result = await performBackup(cfg, env, retentionFromRow(row));
+    let s3: S3BackupResult | null = null;
+    const result = await performBackup(
+      cfg,
+      env,
+      retentionFromRow(row),
+      options.includeS3 === true
+        ? {
+            beforePublish: async (name) => {
+              s3 = await backupS3ToWebdav(cfg, env, name);
+            },
+            onPublishFailure: async (name) => {
+              await removeBackup(cfg, env, name);
+            },
+          }
+        : undefined,
+    );
     await updateStatus({
       lastStatus: "SUCCESS",
       lastError: null,
@@ -195,7 +238,7 @@ export async function runBackupJob(): Promise<{ key: string; pruned: string[] }>
       lastBackupKey: result.key,
       ...(row ? { nextRunAt: computeNextRun(row) } : {}),
     });
-    return result;
+    return { key: result.key, pruned: result.pruned, s3 };
   } catch (e) {
     await updateStatus({
       lastStatus: "FAILED",
