@@ -19,6 +19,9 @@ export const EMAIL_PURPOSES = [
   "NOTIFICATION",
   "CONTACT_TEACHER",
   "SYSTEM_TEST",
+  "CONSENT_CONFIRMATION",
+  "CONSENT_EXPORT_REQUEST",
+  "CONSENT_EXPORT_READY",
 ] as const;
 
 export type EmailPurpose = (typeof EMAIL_PURPOSES)[number];
@@ -64,6 +67,17 @@ If this was you, nothing further is needed.
 If it wasn't, reset your password immediately at {{resetRequestUrl}} and contact your administrator.`,
 };
 
+const CONSENT_CONFIRMATION_TEMPLATE = {
+  subject: "Your {{appName}} research consent record",
+  body: `Hi {{firstName}},
+
+This confirms your response to the "{{formTitle}}" ({{formVersion}}): {{decisionText}}.
+
+A copy of your completed, signed form is attached as a PDF for your records.
+
+If you have questions about this research study, contact the study's Principal Investigator or your institution's IRB using the contact information in the attached form.`,
+};
+
 export const EMAIL_PURPOSE_DEFINITIONS: Record<EmailPurpose, EmailPurposeDefinition> = {
   PASSWORD_RESET: {
     key: "PASSWORD_RESET",
@@ -102,6 +116,30 @@ export const EMAIL_PURPOSE_DEFINITIONS: Record<EmailPurpose, EmailPurposeDefinit
     label: "SMTP test",
     description: "The test message sent from the “Test connection” box above.",
     defaultLocalPart: "no-reply",
+    template: null,
+    variables: [],
+  },
+  CONSENT_CONFIRMATION: {
+    key: "CONSENT_CONFIRMATION",
+    label: "Consent record confirmation",
+    description: "Sent to a student or teacher after they respond to a research consent form, with a signed PDF copy attached.",
+    defaultLocalPart: "consent",
+    template: CONSENT_CONFIRMATION_TEMPLATE,
+    variables: ["appName", "firstName", "lastName", "formTitle", "formVersion", "decisionText"],
+  },
+  CONSENT_EXPORT_REQUEST: {
+    key: "CONSENT_EXPORT_REQUEST",
+    label: "Consent export request (to admin)",
+    description: "Sent to the administrator a teacher selects when requesting a signed-students export.",
+    defaultLocalPart: "consent",
+    template: null,
+    variables: [],
+  },
+  CONSENT_EXPORT_READY: {
+    key: "CONSENT_EXPORT_READY",
+    label: "Consent export ready (to teacher)",
+    description: "Sent to a teacher once an admin approves their signed-students export request, with the CSV attached.",
+    defaultLocalPart: "consent",
     template: null,
     variables: [],
   },

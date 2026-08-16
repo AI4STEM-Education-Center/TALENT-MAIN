@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { parseBody, simulationSessionCreateSchema } from "@/lib/validation";
+import { hasResearchConsent } from "@/lib/consent";
 
 export const runtime = "nodejs";
 
@@ -14,6 +15,13 @@ export const runtime = "nodejs";
  * attempt whose results surfaced the simulation; it is verified to belong to
  * this student (and silently dropped otherwise) so sessions can't be attached
  * to someone else's attempt.
+ *
+ * This is engagement telemetry, not grading data, so it's gated by research
+ * consent (see docs/plans/consent-compliance-plan.md §9): a non-consenting
+ * student gets a 200 with `sessionId: null` — the client's SimulationViewer
+ * already treats a missing sessionId as "nothing to flush" and never calls
+ * the follow-up telemetry-update endpoint, so no row is ever created for
+ * this student going forward. The simulation itself is unaffected either way.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const [session, { id }] = await Promise.all([auth(), params]);
@@ -30,6 +38,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
   const parsed = parseBody(simulationSessionCreateSchema, raw);
   if (!parsed.ok) return parsed.response;
+
+  if (!(await hasResearchConsent(session.user.id))) {
+    return NextResponse.json({ sessionId: null });
+  }
 
   const [student, sim] = await Promise.all([
     prisma.student.findUnique({ where: { userId: session.user.id } }),

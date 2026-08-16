@@ -28,6 +28,7 @@ import {
   Atom,
   ScrollText,
   UserRound,
+  ShieldCheck,
 } from "lucide-react";
 
 interface NavItem {
@@ -67,6 +68,8 @@ const adminNav: NavItem[] = [
   { href: "/admin/quizzes", label: "Quiz Pool", icon: <FileQuestion className="size-4" /> },
   { href: "/admin/material-pool", label: "Material Pool", icon: <FolderOpen className="size-4" /> },
   { href: "/admin/pool-submissions", label: "Pool Approvals", icon: <ClipboardCheck className="size-4" /> },
+  { href: "/admin/consent", label: "Consent Records", icon: <ShieldCheck className="size-4" /> },
+  { href: "/admin/consent-requests", label: "Consent Export Requests", icon: <ClipboardCheck className="size-4" /> },
   { href: "/admin/simulations", label: "Simulations", icon: <Atom className="size-4" /> },
   { href: "/admin/materials", label: "Materials Processing", icon: <FolderOpen className="size-4" /> },
   { href: "/admin/concepts", label: "Concepts", icon: <BookOpen className="size-4" /> },
@@ -128,12 +131,15 @@ function SidebarContent({
       {/* Nav */}
       <nav className="flex-1 p-4 space-y-1">
         {navItems.map((item) => {
+          // Sub-pages light up their section, but only on a full path-segment
+          // boundary: a bare startsWith made /admin/consent-requests light up
+          // "Consent Records" (/admin/consent) as well as its own item.
           const isActive =
             pathname === item.href ||
             (item.href !== "/teacher" &&
               item.href !== "/student" &&
               item.href !== "/admin" &&
-              pathname.startsWith(item.href));
+              pathname.startsWith(`${item.href}/`));
           return (
             <Link
               key={item.href}

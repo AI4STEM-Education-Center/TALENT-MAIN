@@ -9,6 +9,12 @@ import { prisma } from "@/lib/prisma";
 export async function resetDb() {
   // Children first, parents last.
   await prisma.systemLog.deleteMany();
+  await prisma.consentExportJob.deleteMany();
+  await prisma.consentEmailDelivery.deleteMany();
+  await prisma.consentExportRequest.deleteMany();
+  await prisma.consentRecord.deleteMany();
+  await prisma.consentFormVersion.deleteMany();
+  await prisma.consentExportSettings.deleteMany();
   await prisma.messageEmailDelivery.deleteMany();
   await prisma.notification.deleteMany();
   await prisma.message.deleteMany();

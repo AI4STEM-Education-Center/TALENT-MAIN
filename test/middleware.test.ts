@@ -6,7 +6,7 @@ vi.mock("@/lib/auth", () => ({ auth: (handler: unknown) => handler }));
 
 import middleware from "@/proxy";
 
-type Session = { user?: { role?: string } } | null;
+type Session = { user?: { role?: string; consentDecision?: string | null } } | null;
 
 function makeReq({
   host,
@@ -95,9 +95,98 @@ describe("middleware auth + routing", () => {
     expect(res.headers.get("location")).toContain("/teacher");
   });
 
-  it("lets a TEACHER through to a teacher route", () => {
+  it("lets a consented TEACHER through to a teacher route", () => {
     const res = run(
-      makeReq({ host: "dev.ai4talent.org", path: "/teacher", session: { user: { role: "TEACHER" } } })
+      makeReq({
+        host: "dev.ai4talent.org",
+        path: "/teacher",
+        session: { user: { role: "TEACHER", consentDecision: "AGREE" } },
+      })
+    );
+    expect(res.headers.get("location")).toBeNull();
+  });
+});
+
+describe("middleware IRB consent hard-gate", () => {
+  it("redirects an undecided TEACHER's page load to /teacher/consent-required", () => {
+    const res = run(
+      makeReq({ host: "dev.ai4talent.org", path: "/teacher/classes", session: { user: { role: "TEACHER" } } })
+    );
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toContain("/teacher/consent-required");
+  });
+
+  it("redirects a TEACHER who explicitly declined the same way as one who never decided", () => {
+    const res = run(
+      makeReq({
+        host: "dev.ai4talent.org",
+        path: "/teacher",
+        session: { user: { role: "TEACHER", consentDecision: "DECLINE" } },
+      })
+    );
+    expect(res.headers.get("location")).toContain("/teacher/consent-required");
+  });
+
+  it("never redirects away from the consent-required page itself (no loop)", () => {
+    const res = run(
+      makeReq({ host: "dev.ai4talent.org", path: "/teacher/consent-required", session: { user: { role: "TEACHER" } } })
+    );
+    expect(res.headers.get("location")).toBeNull();
+  });
+
+  it("returns 403 JSON (not a redirect) for a blocked teacher's API calls", () => {
+    const res = run(
+      makeReq({
+        host: "dev.ai4talent.org",
+        path: "/api/classes",
+        session: { user: { role: "TEACHER" } },
+      })
+    );
+    expect(res.status).toBe(403);
+    expect(res.headers.get("location")).toBeNull();
+  });
+
+  it("lets a TEACHER through when no instructor form is published (no redirect loop)", () => {
+    // The claim is stamped NOT_REQUIRED when the role has no active form.
+    // Gating here would bounce them to /teacher/consent-required, which has
+    // no form to show and sends them straight back — ERR_TOO_MANY_REDIRECTS.
+    for (const path of ["/teacher", "/teacher/classes"]) {
+      const res = run(
+        makeReq({
+          host: "dev.ai4talent.org",
+          path,
+          session: { user: { role: "TEACHER", consentDecision: "NOT_REQUIRED" } },
+        })
+      );
+      expect(res.headers.get("location")).toBeNull();
+    }
+  });
+
+  it("does not 403 a TEACHER's API calls when no instructor form is published", () => {
+    const res = run(
+      makeReq({
+        host: "dev.ai4talent.org",
+        path: "/api/classes",
+        session: { user: { role: "TEACHER", consentDecision: "NOT_REQUIRED" } },
+      })
+    );
+    expect(res.status).not.toBe(403);
+  });
+
+  it("never blocks /api/consent itself, even for an undecided teacher", () => {
+    const res = run(
+      makeReq({ host: "dev.ai4talent.org", path: "/api/consent", session: { user: { role: "TEACHER" } } })
+    );
+    expect(res.status).not.toBe(403);
+  });
+
+  it("never gates a STUDENT — declining is a complete answer, not a block", () => {
+    const res = run(
+      makeReq({
+        host: "dev.ai4talent.org",
+        path: "/student",
+        session: { user: { role: "STUDENT", consentDecision: "DECLINE" } },
+      })
     );
     expect(res.headers.get("location")).toBeNull();
   });

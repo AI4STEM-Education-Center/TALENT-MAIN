@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { NextResponse } from "next/server";
 import { clientIp } from "@/lib/rate-limit";
 import { trackRequest } from "@/lib/usage-tracker";
+import { isTeacherConsentBlocked } from "@/lib/consent-claim";
 
 const ALLOWED_HOSTS = [
   "dev.ai4talent.org",
@@ -104,6 +105,34 @@ export default auth((req) => {
   }
   if (pathname.startsWith("/student") && role !== "STUDENT") {
     return NextResponse.redirect(new URL(role === "ADMIN" ? "/admin" : "/teacher", req.url));
+  }
+
+  // --- IRB consent hard-gate: a teacher must agree to the research consent
+  // form before using any instructor tool (see docs/plans/consent-compliance-plan.md
+  // §2). session.user.consentDecision is a JWT claim stamped at sign-in / on
+  // an explicit session refresh (src/lib/auth.ts) — it can lag a few minutes
+  // behind a brand-new form version being published, which is an accepted
+  // tradeoff so this check stays a cheap JWT read rather than a per-request
+  // database query. The client-side ConsentGate (mounted in the dashboard
+  // layout) does a fresh, un-cached check on every page load and is what
+  // actually renders the form, so that staleness window is short in practice.
+  // Students are never redirected here — declining is a complete, valid
+  // answer for them, enforced only by the modal appearing until they decide.
+  //
+  // A deployment with no published TEACHER form gates nobody: the claim is
+  // stamped NOT_REQUIRED in that case precisely so this never redirects to a
+  // page that has no form to show (which looped — see consent-claim.ts).
+  const isConsentRoute = pathname === "/teacher/consent-required" || pathname === "/api/consent";
+  if (role === "TEACHER" && !isConsentRoute && isTeacherConsentBlocked(session.user?.consentDecision)) {
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json(
+        { error: "You must respond to the research consent form before using this feature." },
+        { status: 403 }
+      );
+    }
+    if (pathname.startsWith("/teacher")) {
+      return NextResponse.redirect(new URL("/teacher/consent-required", req.url));
+    }
   }
 
   return NextResponse.next();

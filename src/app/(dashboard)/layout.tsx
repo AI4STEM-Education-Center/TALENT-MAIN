@@ -4,6 +4,7 @@ import { signOut, useSession } from "next-auth/react";
 import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { SetContentFullWidthContext } from "@/components/dashboard/content-width";
+import { ConsentGate } from "@/components/consent/ConsentGate";
 import { SessionProvider } from "next-auth/react";
 import { Menu, BookOpen, PanelLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -33,6 +34,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen bg-background">
+      <ConsentGate />
       <Sidebar
         role={role}
         firstName={session.user.firstName}
