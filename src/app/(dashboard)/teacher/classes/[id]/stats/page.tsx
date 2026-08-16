@@ -9,6 +9,10 @@ import { getClassStatsOverview, getClassSimulationInsights } from "@/lib/quiz-st
 import { StatCard, pct, ratePct } from "@/components/teacher/stats-ui";
 import { formatDurationMs } from "@/lib/simulation-stats";
 import { RequestConsentExportDialog } from "./request-consent-export-dialog";
+import { ExportParticipationCreditDialog } from "./export-participation-credit-dialog";
+
+const nameKey = (firstName: string, lastName: string) =>
+  `${firstName.trim().toLowerCase()}|${lastName.trim().toLowerCase()}`;
 
 const fmtDate = (d: Date | null) =>
   d ? new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "—";
@@ -19,7 +23,10 @@ export default async function ClassStatsPage({ params }: { params: Promise<{ id:
   const { id } = await params;
 
   const teacher = await prisma.teacher.findUnique({ where: { userId: session.user.id } });
-  const cls = await prisma.class.findFirst({ where: { id, teacherId: teacher?.id ?? "" } });
+  const cls = await prisma.class.findFirst({
+    where: { id, teacherId: teacher?.id ?? "" },
+    include: { studentList: { orderBy: [{ lastName: "asc" }, { firstName: "asc" }] } },
+  });
   if (!cls) notFound();
 
   const [{ quizzes, students }, sim] = await Promise.all([
@@ -30,6 +37,25 @@ export default async function ClassStatsPage({ params }: { params: Promise<{ id:
     sim.retake.withSim.students > 0 && sim.retake.withoutSim.students > 0
       ? sim.retake.withSim.meanDelta - sim.retake.withoutSim.meanDelta
       : null;
+  const activityByName = new Map(
+    students.map((student) => [nameKey(student.firstName, student.lastName), student])
+  );
+  const activityByEmail = new Map(
+    students.map((student) => [student.email.trim().toLowerCase(), student])
+  );
+  const participationRows = cls.studentList.map((student) => {
+    const rosterEmail = student.email.trim().toLowerCase();
+    const activity =
+      (rosterEmail ? activityByEmail.get(rosterEmail) : undefined) ??
+      activityByName.get(nameKey(student.firstName, student.lastName));
+    return {
+      orgDefinedId: student.orgDefinedId,
+      firstName: student.firstName,
+      lastName: student.lastName,
+      quizzesCompleted: activity?.quizzesCompleted ?? 0,
+      completedAttempts: activity?.totalAttempts ?? 0,
+    };
+  });
 
   return (
     <div className="p-4 md:p-6 space-y-6">
@@ -44,7 +70,10 @@ export default async function ClassStatsPage({ params }: { params: Promise<{ id:
             Per-quiz and per-student performance. Click any row for the full breakdown.
           </p>
         </div>
-        <RequestConsentExportDialog classId={id} />
+        <div className="flex flex-wrap gap-2">
+          <RequestConsentExportDialog classId={id} />
+          <ExportParticipationCreditDialog className={cls.name} rows={participationRows} />
+        </div>
       </div>
 
       {/* Simulation engagement summary — client-reported telemetry, so these

@@ -23,7 +23,7 @@ export default async function AdminQuizPoolPage() {
       orderBy: { createdAt: "desc" },
     }),
     prisma.topic.findMany({
-      where: { teacherId: ownScope(actor) },
+      where: { teacherId: ownScope(actor), contentType: "QUIZ" },
       include: { _count: { select: { quizzes: true } } },
       orderBy: [{ order: "asc" }, { createdAt: "asc" }],
     }),

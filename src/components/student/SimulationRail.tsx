@@ -81,11 +81,11 @@ function SimulationChips({
 }
 
 /**
- * Student-facing interactive simulations surfaced with the post-quiz
- * recommendations. Like the material cards, these carry NO per-question
- * framing — each simulation teaches a broad topic from the quiz (that
- * constraint is enforced when the simulation is generated), so nothing here
- * hints at which answers were right or wrong beyond the topics to revisit.
+ * Interactive simulations surfaced with post-quiz recommendations for the
+ * student and their authorized teacher. Like the material cards, these carry
+ * NO per-question framing — each simulation teaches a broad topic from the quiz
+ * (that constraint is enforced when the simulation is generated), so nothing
+ * here hints at which answers were right or wrong beyond the topics to revisit.
  *
  * All simulations start collapsed (no physics loop boots with the page). The
  * active-simulation state is owned by the results page, because activating a
@@ -152,7 +152,7 @@ export function SimulationRail({
             key={active.simulationId}
             simulationId={active.simulationId}
             title={displayTitle(active)}
-            telemetry={{ attemptId, surface: "rail" }}
+            telemetry={attemptId ? { attemptId, surface: "rail" } : undefined}
           />
         </Card>
       </section>
@@ -228,7 +228,7 @@ export function SimulationRail({
                 key={active.simulationId}
                 simulationId={active.simulationId}
                 title={displayTitle(active)}
-                telemetry={{ attemptId, surface: "mobile" }}
+                telemetry={attemptId ? { attemptId, surface: "mobile" } : undefined}
               />
             </div>
           </DialogContent>

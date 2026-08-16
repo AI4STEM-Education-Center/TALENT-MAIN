@@ -13,6 +13,7 @@ const changelogText = fs.existsSync(changelogFilePath)
   : "";
 
 const isProd = process.env.NODE_ENV === "production";
+const appEnv = process.env.APP_ENV?.toLowerCase() === "prod" ? "prod" : "dev";
 
 // Content-Security-Policy is shipped in Report-Only mode first: the app relies
 // on Next.js' inline bootstrap script, next-themes' inline theme script, KaTeX
@@ -62,6 +63,10 @@ const nextConfig = {
   // unsupported override. Revisit if a real next/image usage is ever added.
   images: { unoptimized: true },
   env: {
+    // APP_ENV distinguishes the public dev and production sites. NODE_ENV is
+    // "production" in both Docker deployments because both run optimized
+    // builds, so client UI must use this deployment-specific switch instead.
+    NEXT_PUBLIC_APP_ENV: appEnv,
     NEXT_PUBLIC_APP_VERSION: versionData.version,
     NEXT_PUBLIC_RELEASE_DATE: versionData.date,
     NEXT_PUBLIC_CHANGELOG: changelogText,

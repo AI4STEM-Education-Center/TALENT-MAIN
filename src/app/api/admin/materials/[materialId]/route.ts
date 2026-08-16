@@ -68,6 +68,45 @@ export async function GET(
   });
 }
 
+// Assign a material-only global tag to an existing pool material.
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ materialId: string }> }
+) {
+  const session = await auth();
+  if (!session?.user || session.user.role !== "ADMIN") {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { materialId } = await params;
+  let body: { topicId?: unknown };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+  if (!("topicId" in body) || (body.topicId !== null && typeof body.topicId !== "string")) {
+    return NextResponse.json({ error: "topicId must be a string or null" }, { status: 400 });
+  }
+
+  const topicId = typeof body.topicId === "string" && body.topicId ? body.topicId : null;
+  const [material, topic] = await Promise.all([
+    prisma.learningMaterial.findFirst({ where: { id: materialId, teacherId: null } }),
+    topicId
+      ? prisma.topic.findFirst({ where: { id: topicId, teacherId: null, contentType: "MATERIAL" } })
+      : null,
+  ]);
+  if (!material) return NextResponse.json({ error: "Pool material not found" }, { status: 404 });
+  if (topicId && !topic) return NextResponse.json({ error: "Material tag not found" }, { status: 400 });
+
+  const updated = await prisma.learningMaterial.update({
+    where: { id: materialId },
+    data: { topicId },
+    select: { id: true, topic: { select: { id: true, name: true } } },
+  });
+  return NextResponse.json({ material: updated });
+}
+
 export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ materialId: string }> }

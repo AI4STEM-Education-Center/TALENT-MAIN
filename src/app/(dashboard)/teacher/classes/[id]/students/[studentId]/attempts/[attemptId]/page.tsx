@@ -6,7 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ArrowLeft } from "lucide-react";
 import { ScoreBanner, QuizReviewList } from "@/components/student/QuizReviewResult";
-import { parseReviewSnapshot, parseStoredRecommendations } from "@/lib/exam-results";
+import { TeacherAttemptResources } from "@/components/teacher/TeacherAttemptResources";
+import { parseReviewSnapshot, type ResultStatus } from "@/lib/exam-results";
+import { presignStoredRecommendations } from "@/lib/exam-results-engine";
 import { presignQuestionFigure, presignOptionImage } from "@/lib/question-figures";
 
 const fmtDateTime = (d: Date) =>
@@ -37,7 +39,7 @@ export default async function TeacherAttemptDetailPage({
   if (!examResult || examResult.classId !== id || examResult.studentId !== studentId) notFound();
 
   const snapshot = parseReviewSnapshot(examResult.reviewSnapshot);
-  const recommendations = parseStoredRecommendations(examResult.recommendations);
+  const recommendations = await presignStoredRecommendations(examResult.recommendations);
 
   // Attach transient presigned URLs (never persisted) for figures + image
   // answer-choices, mirroring how the old student results page did it.
@@ -57,21 +59,21 @@ export default async function TeacherAttemptDetailPage({
   );
 
   return (
-    <div className="p-4 md:p-6 max-w-6xl space-y-6">
+    <div className="max-w-none space-y-6 p-4 md:p-6">
       <Button variant="ghost" size="sm" asChild>
         <Link href={`/teacher/classes/${id}/students/${studentId}/stats`}>
           <ArrowLeft className="size-4" /> Back to student
         </Link>
       </Button>
 
-      <div>
+      <div className="max-w-6xl">
         <h1 className="text-2xl font-bold">{examResult.studentName || "Attempt detail"}</h1>
         <p className="text-muted-foreground text-sm mt-1">
           {examResult.quizName} · completed {fmtDateTime(examResult.completedAt)}
         </p>
       </div>
 
-      <Card>
+      <Card className="max-w-6xl">
         <CardContent className="py-5">
           <ScoreBanner
             score={examResult.score}
@@ -81,10 +83,48 @@ export default async function TeacherAttemptDetailPage({
         </CardContent>
       </Card>
 
-      <QuizReviewList
-        questions={snapshot.questions}
-        errorMisconceptions={recommendations.errorMisconceptions}
+      <TeacherAttemptResources
+        summary={examResult.summary}
+        summaryStatus={examResult.summaryStatus as ResultStatus}
+        summaryMetrics={
+          examResult.summaryAiModel
+            ? {
+                model: examResult.summaryAiModel,
+                provider: examResult.summaryAiProvider,
+                serviceTier: examResult.summaryServiceTier,
+                ttftMs: examResult.summaryTtftMs,
+                generationMs: examResult.summaryGenerationMs,
+                totalMs: examResult.summaryTotalMs,
+                tokens: examResult.summaryTokens,
+                tokensEstimated: examResult.summaryTokensEstimated === true,
+              }
+            : null
+        }
+        recommendations={recommendations.items}
+        recommendationsStatus={examResult.recommendationsStatus as ResultStatus}
+        recommendationMetrics={
+          examResult.recsAiModel
+            ? {
+                model: examResult.recsAiModel,
+                provider: examResult.recsAiProvider,
+                serviceTier: examResult.recsServiceTier,
+                ttftMs: examResult.recsTtftMs,
+                generationMs: examResult.recsGenerationMs,
+                totalMs: examResult.recsTotalMs,
+                tokens: examResult.recsTokens,
+                tokensEstimated: examResult.recsTokensEstimated === true,
+              }
+            : null
+        }
+        simulations={recommendations.simulations ?? []}
       />
+
+      <div className="max-w-6xl">
+        <QuizReviewList
+          questions={snapshot.questions}
+          errorMisconceptions={recommendations.errorMisconceptions}
+        />
+      </div>
     </div>
   );
 }

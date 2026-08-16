@@ -29,7 +29,14 @@ export default async function ClassMaterialsPage(props: { params: Promise<{ id: 
 
   if (!cls) redirect("/teacher/classes");
 
-  const initialMaterials: MaterialItem[] = await listClassMaterials(classId);
+  const [initialMaterials, materialTags] = await Promise.all([
+    listClassMaterials(classId),
+    prisma.topic.findMany({
+      where: { teacherId: teacher.id, contentType: "MATERIAL" },
+      select: { id: true, name: true },
+      orderBy: [{ order: "asc" }, { name: "asc" }],
+    }),
+  ]);
 
   return (
     <div className="max-w-5xl p-6">
@@ -56,7 +63,7 @@ export default async function ClassMaterialsPage(props: { params: Promise<{ id: 
 
       <h2 className="text-xl font-semibold text-gray-800 mb-4">Uploaded Documents</h2>
 
-      <MaterialsList classId={classId} initialMaterials={initialMaterials} />
+      <MaterialsList classId={classId} initialMaterials={initialMaterials} initialTags={materialTags} />
     </div>
   );
 }
