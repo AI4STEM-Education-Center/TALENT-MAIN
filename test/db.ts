@@ -24,6 +24,7 @@ export async function resetDb() {
   await prisma.question.deleteMany();
   await prisma.questionImport.deleteMany();
   await prisma.classQuiz.deleteMany();
+  await prisma.poolSubmission.deleteMany();
   await prisma.quiz.deleteMany();
   await prisma.topic.deleteMany();
   await prisma.materialPage.deleteMany();
@@ -83,6 +84,20 @@ export async function createStudent(overrides: Partial<{ email: string; username
     include: { student: true },
   });
   return { user, student: user.student! };
+}
+
+export async function createAdmin(overrides: Partial<{ email: string; username: string }> = {}) {
+  const tag = uniq("admin");
+  return prisma.user.create({
+    data: {
+      email: overrides.email ?? `${tag}@example.com`,
+      username: overrides.username ?? tag,
+      hashedPassword: await bcrypt.hash("Password1!", 10),
+      firstName: "Ada",
+      lastName: "Admin",
+      role: "ADMIN",
+    },
+  });
 }
 
 export async function createClass(teacherId: string, name = "Physics 101") {

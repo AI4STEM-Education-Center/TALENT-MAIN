@@ -7,6 +7,7 @@ import MaterialDeleteButton from "./material-delete-button";
 import MaterialRetryButton from "./material-retry-button";
 import MaterialTitleEdit from "./material-title-edit";
 import { AiMetricsLine } from "@/components/ai-metrics-line";
+import { PoolSubmissionDialog } from "@/components/pool-submission-dialog";
 
 export interface MaterialItem {
   id: string;
@@ -189,6 +190,13 @@ export default function MaterialsList({ classId, initialMaterials }: MaterialsLi
                 </Link>
               )}
               <div className="mt-3 flex items-center">
+                {mat.processingStatus === "SUCCESS" && (
+                  <PoolSubmissionDialog
+                    contentType="MATERIAL"
+                    contentId={mat.id}
+                    contentName={mat.title || mat.originalName}
+                  />
+                )}
                 {mat.processingStatus === "FAILED" && (
                   <MaterialRetryButton classId={classId} materialId={mat.id} />
                 )}

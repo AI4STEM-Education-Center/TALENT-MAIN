@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { PoolSubmissionDialog } from "@/components/pool-submission-dialog";
 import { Plus, BookOpen, Pencil, Trash2, Check, X, FileQuestion, Globe, Download } from "lucide-react";
 
 interface Topic { id: string; name: string; order: number; _count: { quizzes: number } }
@@ -225,6 +226,11 @@ export function TeacherQuizzesClient({
                           </div>
                         </div>
                         <div className="flex gap-1 shrink-0">
+                          <PoolSubmissionDialog
+                            contentType="QUIZ"
+                            contentId={quiz.id}
+                            contentName={quiz.name}
+                          />
                           <Button size="sm" variant="ghost" asChild>
                             <Link href={`/teacher/quizzes/${quiz.id}`}><Pencil className="size-3" /> Edit</Link>
                           </Button>
