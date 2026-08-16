@@ -177,7 +177,8 @@ describe("PATCH /api/quiz (submit answers)", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.score).toBe(100);
-    // Blind results: the submit response must never leak grading data.
+    expect(body.incorrectQuestionIds).toEqual([]);
+    // Student-safe results identify misses but never leak answer-key data.
     expect(body.correct).toBeUndefined();
     expect(body.total).toBeUndefined();
     expect(body).not.toHaveProperty("questions");
@@ -207,6 +208,7 @@ describe("PATCH /api/quiz (submit answers)", () => {
     );
     const body = await res.json();
     expect(body.score).toBe(0);
+    expect(body.incorrectQuestionIds).toEqual([s.question.id]);
   });
 
   it("requires the exact correct set for multi-select", async () => {
@@ -218,14 +220,50 @@ describe("PATCH /api/quiz (submit answers)", () => {
     const exact = await PATCH(
       jsonReq({ attemptId: a1.id, answers: [{ questionId: s.question.id, selectedOptionIds: [s.optionId("4"), s.optionId("5")] }] })
     );
-    expect((await exact.json()).score).toBe(100);
+    expect(await exact.json()).toMatchObject({
+      score: 100,
+      incorrectQuestionIds: [],
+    });
 
     // Partial set -> wrong.
     const a2 = await startAttempt(s.student.id, s.cls.id, s.quiz.id);
     const partial = await PATCH(
       jsonReq({ attemptId: a2.id, answers: [{ questionId: s.question.id, selectedOptionIds: [s.optionId("4")] }] })
     );
-    expect((await partial.json()).score).toBe(0);
+    expect(await partial.json()).toMatchObject({
+      score: 0,
+      incorrectQuestionIds: [s.question.id],
+    });
+  });
+
+  it("returns an incorrect id for a wrong numeric response without the solution", async () => {
+    const s = await setup();
+    await prisma.question.update({
+      where: { id: s.question.id },
+      data: {
+        answerMode: "NUMERIC",
+        answerNumeric: 5,
+        answerTolerance: 0.1,
+        answerUnit: "m",
+      },
+    });
+    asStudent(s.studentUser.id);
+    const attempt = await startAttempt(s.student.id, s.cls.id, s.quiz.id);
+
+    const res = await PATCH(
+      jsonReq({
+        attemptId: attempt.id,
+        answers: [{ questionId: s.question.id, numericValue: 0 }],
+      })
+    );
+    const body = await res.json();
+
+    expect(body).toEqual({
+      score: 0,
+      incorrectQuestionIds: [s.question.id],
+    });
+    expect(body).not.toHaveProperty("answerNumeric");
+    expect(body).not.toHaveProperty("answerTolerance");
   });
 
   it("keeps the best score across attempts", async () => {

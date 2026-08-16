@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildReviewSnapshot,
   parseReviewSnapshot,
+  snapshotToStudentMistakes,
   snapshotToHolisticInput,
   snapshotToSummaryAttempt,
   parseStoredRecommendations,
@@ -181,6 +182,108 @@ describe("parseReviewSnapshot", () => {
       ],
     });
     expect(Object.keys(parsed.questions[0])).toEqual(["text", "isCorrect", "options"]);
+  });
+});
+
+describe("snapshotToStudentMistakes", () => {
+  it("keeps only missed prompts and submitted responses with original numbering", () => {
+    const snapshot: ReviewSnapshot = {
+      questions: [
+        {
+          questionId: "q1",
+          text: "Answered correctly",
+          isCorrect: true,
+          options: [
+            { text: "Wrong", isCorrect: false, selected: false },
+            { text: "Right", isCorrect: true, selected: true },
+          ],
+        },
+        {
+          questionId: "q2",
+          text: "Capital of France?",
+          isCorrect: false,
+          figureStorageKey: "figures/q2.png",
+          figureAlt: "A map",
+          options: [
+            { text: "Paris", isCorrect: true, selected: false },
+            {
+              text: "Rome",
+              isCorrect: false,
+              selected: true,
+              imageStorageKey: "choices/rome.png",
+              imageAlt: "Rome skyline",
+            },
+            { text: "Berlin", isCorrect: false, selected: false },
+          ],
+        },
+        {
+          questionId: "q3",
+          text: "Enter the displacement",
+          isCorrect: false,
+          options: [],
+          answerMode: "NUMERIC",
+          correctNumeric: 5,
+          tolerance: 0.1,
+          unit: "m",
+          submittedNumeric: 0,
+        },
+        {
+          // Legacy snapshots may not carry questionId.
+          text: "Legacy unanswered question",
+          isCorrect: false,
+          options: [],
+        },
+      ],
+    };
+
+    const mistakes = snapshotToStudentMistakes(snapshot);
+
+    expect(mistakes).toEqual([
+      {
+        questionNumber: 2,
+        text: "Capital of France?",
+        figureStorageKey: "figures/q2.png",
+        figureAlt: "A map",
+        response: {
+          kind: "choices",
+          choices: [
+            {
+              text: "Rome",
+              imageStorageKey: "choices/rome.png",
+              imageAlt: "Rome skyline",
+            },
+          ],
+        },
+      },
+      {
+        questionNumber: 3,
+        text: "Enter the displacement",
+        figureStorageKey: null,
+        figureAlt: null,
+        response: { kind: "numeric", value: 0, unit: "m" },
+      },
+      {
+        questionNumber: 4,
+        text: "Legacy unanswered question",
+        figureStorageKey: null,
+        figureAlt: null,
+        response: { kind: "choices", choices: [] },
+      },
+    ]);
+
+    const serialized = JSON.stringify(mistakes);
+    expect(serialized).not.toContain("Paris");
+    expect(serialized).not.toContain("Berlin");
+    expect(serialized).not.toContain("isCorrect");
+    expect(serialized).not.toContain("correctNumeric");
+    expect(serialized).not.toContain("tolerance");
+    expect(serialized).not.toContain("questionId");
+  });
+
+  it("fails closed for empty or malformed stored snapshots", () => {
+    expect(snapshotToStudentMistakes(parseReviewSnapshot(null))).toEqual([]);
+    expect(snapshotToStudentMistakes(parseReviewSnapshot("not json"))).toEqual([]);
+    expect(snapshotToStudentMistakes(parseReviewSnapshot("{}"))).toEqual([]);
   });
 });
 

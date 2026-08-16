@@ -10,6 +10,7 @@ import { resolveProvider, createOpenAIClient, type ResolvedProvider } from "./ai
 import { streamChatCompletion, streamJsonCompletion, aggregateMetrics, type AiCallMetrics } from "./ai-streaming";
 import { retryWithExponentialBackoff } from "./retry";
 import { presignGetUrl, getS3Config } from "./storage";
+import { presignOptionImage, presignQuestionFigure } from "./question-figures";
 import { buildQuizReviewPrompt, type ChatMessage } from "./chat-prompt";
 import {
   MATERIAL_SELECTION_SCHEMA,
@@ -50,6 +51,8 @@ import {
   type StoredMisconception,
   type StoredQuestionMisconceptions,
   type PresignedRecommendations,
+  type StudentMistakeSource,
+  type StudentMistakeView,
 } from "./exam-results";
 
 const SUMMARY_MAX_TOKENS = 500;
@@ -735,4 +738,51 @@ export async function presignStoredRecommendations(
   }
 
   return mapPresignedRecommendations(stored, (key) => presignGetUrl(bucket, key));
+}
+
+/**
+ * Convert server-only missed-question image keys into short-lived URLs. The
+ * returned shape is safe to serialize to a student client: neither question
+ * figures nor selected image responses retain their raw storage keys.
+ */
+export async function presignStudentMistakes(
+  mistakes: StudentMistakeSource[]
+): Promise<StudentMistakeView[]> {
+  return Promise.all(
+    mistakes.map(async (mistake) => {
+      const figureUrl = await presignQuestionFigure({
+        figureStorageKey: mistake.figureStorageKey,
+        figureBucket: null,
+      });
+
+      if (mistake.response.kind === "numeric") {
+        return {
+          questionNumber: mistake.questionNumber,
+          text: mistake.text,
+          figureUrl,
+          figureAlt: mistake.figureAlt,
+          response: mistake.response,
+        };
+      }
+
+      const choices = await Promise.all(
+        mistake.response.choices.map(async (choice) => ({
+          text: choice.text,
+          imageUrl: await presignOptionImage({
+            imageStorageKey: choice.imageStorageKey,
+            imageBucket: null,
+          }),
+          imageAlt: choice.imageAlt,
+        }))
+      );
+
+      return {
+        questionNumber: mistake.questionNumber,
+        text: mistake.text,
+        figureUrl,
+        figureAlt: mistake.figureAlt,
+        response: { kind: "choices", choices },
+      };
+    })
+  );
 }

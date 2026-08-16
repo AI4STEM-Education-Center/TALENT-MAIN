@@ -243,10 +243,12 @@ export async function PATCH(req: NextRequest) {
     logApiError("QUIZ_SUBMIT", err, "Failed to create ExamResult snapshot");
   }
 
-  // Blind results: the student must never receive the grading data. The inline
-  // results view shows only the score %, the AI summary, and holistic study
-  // recommendations — never the per-question correctness nor the correct
-  // answers — so the response deliberately returns ONLY the score. The durable
-  // per-question snapshot lives in the (teacher-only) ExamResult, never here.
-  return NextResponse.json({ score });
+  // Student-safe review: reveal only which submitted responses were incorrect.
+  // The client already owns those prompts and responses from the active quiz,
+  // so ids are enough to render them without returning answer keys, option
+  // correctness, numeric solutions/tolerances, questions, or answer records.
+  const incorrectQuestionIds = answerRecords.flatMap((record) =>
+    record.isCorrect ? [] : [record.questionId]
+  );
+  return NextResponse.json({ score, incorrectQuestionIds });
 }

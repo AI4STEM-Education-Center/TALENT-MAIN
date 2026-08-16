@@ -27,12 +27,23 @@ const VALID_HTML = `<!doctype html>
 <head><style>body { margin: 0; }</style></head>
 <body>
 <h1>Inclined plane</h1>
+<div><span class="sim-latex" data-display="block">a=g(\\sin\\theta-\\mu\\cos\\theta)</span></div>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="1" height="1"/></svg>
-<canvas id="c"></canvas>
+<label>Angle <input id="angle" type="range" min="0" max="90" value="30"></label>
+<label>Mass <input id="mass" type="range" min="1" max="20" value="5"></label>
+<label>Gravity <input id="gravity" type="range" min="1" max="20" value="9.8"></label>
+<label>Friction <input id="friction" type="range" min="0" max="1" value="0.2"></label>
 <script>
-const ctx = document.getElementById("c").getContext("2d");
-function frame() { requestAnimationFrame(frame); }
-frame();
+const angle = document.getElementById("angle");
+const mass = document.getElementById("mass");
+const gravity = document.getElementById("gravity");
+const friction = document.getElementById("friction");
+function draw() { [angle, mass, gravity, friction].map((input) => Number(input.value)); }
+angle.addEventListener("input", draw);
+mass.addEventListener("input", draw);
+gravity.addEventListener("input", draw);
+friction.addEventListener("input", draw);
+draw();
 </script>
 </body>
 </html>`;
@@ -53,6 +64,9 @@ describe("buildTriagePrompt", () => {
     expect(prompt).toContain("DECLINE (helpful=false)");
     expect(prompt).toContain("DUPLICATE (helpful=true, duplicate_of set)");
     expect(prompt).toContain("BUILD (helpful=true, duplicate_of=null)");
+    expect(prompt).toContain("4 or 5 meaningful parameters");
+    expect(prompt).toContain("exactly 4 or 5 meaningful adjustable parameters");
+    expect(prompt).toContain("every governing and derived formula");
   });
 
   it("lists sibling simulations with 1-based indices", () => {
@@ -176,29 +190,73 @@ describe("validateSimulationHtml", () => {
     expect(problems.join(" ")).toMatch(/script/);
   });
 
+  it("requires exactly one visual stage and four or five parameters", () => {
+    const noControls = VALID_HTML.replace(/<label>[\s\S]*?<\/label>/, "");
+    expect(validateSimulationHtml(noControls).join(" ")).toMatch(/4 or 5 adjustable parameter controls/);
+
+    const tooManyControls = VALID_HTML.replace(
+      "</label>",
+      '</label><input type="range"><select><option>one</option></select>'
+    );
+    expect(validateSimulationHtml(tooManyControls).join(" ")).toMatch(/found 6/);
+
+    const twoStages = VALID_HTML.replace("</svg>", '</svg><canvas id="extra"></canvas>');
+    expect(validateSimulationHtml(twoStages).join(" ")).toMatch(/exactly one visual stage/);
+  });
+
+  it("rejects JavaScript syntax errors and broken element references", () => {
+    const badSyntax = VALID_HTML.replace("function draw()", "function draw(");
+    expect(validateSimulationHtml(badSyntax).join(" ")).toMatch(/JavaScript does not parse/);
+
+    const missingElement = VALID_HTML.replace('getElementById("angle")', 'getElementById("missing")');
+    expect(validateSimulationHtml(missingElement).join(" ")).toMatch(/missing element id\(s\): missing/);
+
+    const unwiredControl = VALID_HTML.replace("</label>", '<input id="density" type="range"></label>');
+    expect(validateSimulationHtml(unwiredControl).join(" ")).toMatch(/look up every adjustable.*missing: density/);
+  });
+
+  it("rejects duplicate IDs and multiple scripts", () => {
+    const duplicateId = VALID_HTML.replace("</label>", '<span id="angle"></span></label>');
+    expect(validateSimulationHtml(duplicateId).join(" ")).toMatch(/duplicate element id\(s\): angle/);
+
+    const multipleScripts = VALID_HTML.replace("</body>", "<script>void 0;</script></body>");
+    expect(validateSimulationHtml(multipleScripts).join(" ")).toMatch(/exactly one inline <script>/);
+  });
+
+  it("requires valid LaTeX markers for displayed formulas", () => {
+    const missingFormula = VALID_HTML.replace(
+      '<span class="sim-latex" data-display="block">a=g(\\sin\\theta-\\mu\\cos\\theta)</span>',
+      "a = g(sin(theta) - mu cos(theta))"
+    );
+    expect(validateSimulationHtml(missingFormula).join(" ")).toMatch(/at least one sim-latex marker/);
+
+    const invalidFormula = VALID_HTML.replace("a=g(\\sin\\theta-\\mu\\cos\\theta)", "a=\\notACommand{x}");
+    expect(validateSimulationHtml(invalidFormula).join(" ")).toMatch(/invalid LaTeX formula/);
+  });
+
   it("rejects external src/href references", () => {
     const doc = VALID_HTML.replace(
-      "<canvas id=\"c\"></canvas>",
-      '<img src="https://evil.example/x.png"><canvas id="c"></canvas>'
+      "<svg",
+      '<img src="https://evil.example/x.png"><svg'
     );
     expect(validateSimulationHtml(doc).join(" ")).toMatch(/external URL/);
   });
 
   it("rejects protocol-relative references", () => {
     const doc = VALID_HTML.replace(
-      "<canvas id=\"c\"></canvas>",
-      '<script src="//cdn.example/lib.js"></script><canvas id="c"></canvas>'
+      "<svg",
+      '<script src="//cdn.example/lib.js"></script><svg'
     );
     expect(validateSimulationHtml(doc).join(" ")).toMatch(/external URL/);
   });
 
   it("rejects forbidden elements", () => {
-    const doc = VALID_HTML.replace("<canvas", '<iframe src="x"></iframe><canvas');
+    const doc = VALID_HTML.replace("<svg", '<iframe src="x"></iframe><svg');
     expect(validateSimulationHtml(doc).join(" ")).toMatch(/forbidden element <iframe>/);
   });
 
   it("rejects network APIs", () => {
-    const doc = VALID_HTML.replace("frame();", 'fetch("/api/steal");frame();');
+    const doc = VALID_HTML.replace("draw();", 'fetch("/api/steal");draw();');
     expect(validateSimulationHtml(doc).join(" ")).toMatch(/network API/);
   });
 
@@ -211,8 +269,8 @@ describe("validateSimulationHtml", () => {
 
   it("allows data: URIs", () => {
     const doc = VALID_HTML.replace(
-      "<canvas id=\"c\"></canvas>",
-      '<img src="data:image/png;base64,AAAA"><canvas id="c"></canvas>'
+      "<svg",
+      '<img src="data:image/png;base64,AAAA"><svg'
     );
     expect(validateSimulationHtml(doc)).toEqual([]);
   });
@@ -236,6 +294,11 @@ describe("build/revision/repair prompts", () => {
     expect(prompt).toContain(plan.spec);
     expect(prompt).toContain("HARD REQUIREMENTS");
     expect(prompt).toContain("sandboxed iframe");
+    expect(prompt).toContain("exactly 4 or 5 meaningful adjustable parameters");
+    expect(prompt).toContain("show EVERY governing, derived, and helper relationship");
+    expect(prompt).toContain('class="sim-latex"');
+    expect(prompt).toContain("one named updateAndDraw() path");
+    expect(prompt).toContain("working interaction first");
     expect(prompt).not.toContain(QUESTION.text);
   });
 
@@ -256,6 +319,9 @@ describe("build/revision/repair prompts", () => {
     const prompt = buildRepairPrompt(["document has no <script>", "forbidden element <iframe>"]);
     expect(prompt).toContain("- document has no <script>");
     expect(prompt).toContain("- forbidden element <iframe>");
+    expect(prompt).toContain("exactly 4 or 5 adjustable parameters");
+    expect(prompt).toContain("valid sim-latex marker");
+    expect(prompt).toContain("trace startup and each control event");
   });
 
 });
