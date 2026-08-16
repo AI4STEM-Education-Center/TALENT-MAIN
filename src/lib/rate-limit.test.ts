@@ -36,6 +36,16 @@ describe("clientIp", () => {
     expect(clientIp(req)).toBe("1.2.3.4");
   });
 
+  // cf-connecting-ip wins because Cloudflare rewrites it on every proxied
+  // request, while x-forwarded-for is merely appended to — so a client that
+  // reaches the origin directly can forge the latter but not the former.
+  it("prefers cf-connecting-ip over a spoofable x-forwarded-for", () => {
+    const req = new Request("http://x", {
+      headers: { "x-forwarded-for": "9.9.9.9", "cf-connecting-ip": "1.2.3.4" },
+    });
+    expect(clientIp(req)).toBe("1.2.3.4");
+  });
+
   it("falls back to a sentinel when no proxy header is present", () => {
     expect(clientIp(new Request("http://x"))).toBe("unknown");
   });

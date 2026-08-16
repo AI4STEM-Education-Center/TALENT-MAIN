@@ -6,6 +6,7 @@ import {
   buildQuizExtractionPdfKey,
   buildQuizExtractionPageKey,
   getMaxUploadBytes,
+  maxDerivedPageBytes,
   getS3Config,
   presignPutUpload,
   sanitizeFilename,
@@ -91,13 +92,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       );
     }
     const pageSize = typeof raw.sizeBytes === "number" ? raw.sizeBytes : 0;
-    if (pageSize < 1) {
+    if (pageSize < 1 || pageSize > maxBytes) {
       return NextResponse.json(
-        { error: `pages[${i}].sizeBytes must be positive` },
+        { error: `pages[${i}].sizeBytes must be between 1 and ${maxBytes}` },
         { status: 400 }
       );
     }
     pages.push({ pageNumber, sizeBytes: pageSize });
+  }
+  if (
+    pages.reduce((total, page) => total + page.sizeBytes, 0) >
+    maxDerivedPageBytes(pages.length)
+  ) {
+    return NextResponse.json(
+      { error: "Rendered pages exceed the aggregate upload limit" },
+      { status: 413 }
+    );
   }
 
   const extractionId = randomUUID();

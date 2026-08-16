@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 
 vi.mock("@/lib/auth", () => ({ auth: vi.fn() }));
+vi.mock("@/lib/queue", () => ({ enqueueExamResult: vi.fn() }));
 
 import { POST, PATCH } from "@/app/api/quiz/route";
 import { auth } from "@/lib/auth";
@@ -145,19 +146,56 @@ describe("POST /api/quiz (per-class settings enforcement)", () => {
     expect((await res.json()).error).toMatch(/all 1 attempts/i);
   });
 
-  it("does not count incomplete attempts toward the cap", async () => {
+  it("resumes an unfinished attempt instead of allocating a second slot", async () => {
     const { studentUser, student, cls, quiz } = await setup();
     await prisma.classQuiz.updateMany({
       where: { classId: cls.id, quizId: quiz.id },
       data: { maxAttempts: 1 },
     });
-    // An in-progress (not completed) attempt must not block a new one.
-    await prisma.quizAttempt.create({
+    // Left mid-quiz — closed the tab, lost the network, hit reload. Coming back
+    // must return the SAME attempt, not burn the student's only slot.
+    const pending = await prisma.quizAttempt.create({
       data: { studentId: student.id, classId: cls.id, quizId: quiz.id },
     });
     asStudent(studentUser.id);
     const res = await POST(jsonReq({ classId: cls.id, quizId: quiz.id }));
+
     expect(res.status).toBe(200);
+    expect((await res.json()).attemptId).toBe(pending.id);
+    // Reusing the pending attempt is also what stops a student stockpiling
+    // attempt IDs to submit one at a time against the correctness feedback.
+    expect(
+      await prisma.quizAttempt.count({ where: { studentId: student.id, quizId: quiz.id } })
+    ).toBe(1);
+  });
+
+  it("refuses to grade a stockpiled attempt once the cap is spent", async () => {
+    const { studentUser, student, cls, quiz } = await setup();
+    await prisma.classQuiz.updateMany({
+      where: { classId: cls.id, quizId: quiz.id },
+      data: { maxAttempts: 1 },
+    });
+    // Rows like these exist in databases written before starting a quiz reused
+    // the pending attempt: several unfinished attempts, whose ids the student
+    // still holds and can PATCH directly without going through POST.
+    const stockpiled = await prisma.quizAttempt.create({
+      data: { studentId: student.id, classId: cls.id, quizId: quiz.id },
+    });
+    await prisma.quizAttempt.create({
+      data: {
+        studentId: student.id,
+        classId: cls.id,
+        quizId: quiz.id,
+        completedAt: new Date(),
+        score: 50,
+      },
+    });
+    asStudent(studentUser.id);
+
+    const res = await PATCH(jsonReq({ attemptId: stockpiled.id, answers: [] }));
+    expect(res.status).toBe(403);
+    const stored = await prisma.quizAttempt.findUnique({ where: { id: stockpiled.id } });
+    expect(stored?.completedAt).toBeNull();
   });
 });
 
@@ -295,5 +333,120 @@ describe("PATCH /api/quiz (submit answers)", () => {
     const attempt = await startAttempt(s.student.id, s.cls.id, s.quiz.id);
     const res = await PATCH(jsonReq({ attemptId: attempt.id, answers: [{ questionId: "ghost", selectedOptionId: "x" }] }));
     expect(res.status).toBe(404);
+  });
+});
+
+// Regression tests for the submission-integrity fixes. Each of these was
+// exploitable by a student against their own attempt.
+describe("PATCH /api/quiz (submission integrity)", () => {
+  const startAttempt = (studentId: string, classId: string, quizId: string) =>
+    prisma.quizAttempt.create({ data: { studentId, classId, quizId } });
+
+  it("refuses to re-grade an already-submitted attempt", async () => {
+    const s = await setup();
+    asStudent(s.studentUser.id);
+    const attempt = await startAttempt(s.student.id, s.cls.id, s.quiz.id);
+
+    const first = await PATCH(
+      jsonReq({ attemptId: attempt.id, answers: [{ questionId: s.question.id, selectedOptionId: s.optionId("3") }] })
+    );
+    expect((await first.json()).score).toBe(0);
+
+    // Replaying the same attempt is what turned the response's
+    // incorrectQuestionIds into an answer-key oracle, and it sidestepped the
+    // per-class maxAttempts cap (which only counts completed attempts).
+    const replay = await PATCH(
+      jsonReq({ attemptId: attempt.id, answers: [{ questionId: s.question.id, selectedOptionId: s.optionId("4") }] })
+    );
+    expect(replay.status).toBe(409);
+
+    const stored = await prisma.quizAttempt.findUnique({ where: { id: attempt.id } });
+    expect(stored?.score).toBe(0); // the replay did not overwrite the real score
+  });
+
+  it("atomically accepts only one of two parallel submissions", async () => {
+    const s = await setup();
+    asStudent(s.studentUser.id);
+    const attempt = await startAttempt(s.student.id, s.cls.id, s.quiz.id);
+
+    const [one, two] = await Promise.all([
+      PATCH(
+        jsonReq({
+          attemptId: attempt.id,
+          answers: [{ questionId: s.question.id, selectedOptionId: s.optionId("3") }],
+        })
+      ),
+      PATCH(
+        jsonReq({
+          attemptId: attempt.id,
+          answers: [{ questionId: s.question.id, selectedOptionId: s.optionId("4") }],
+        })
+      ),
+    ]);
+
+    expect([one.status, two.status].sort()).toEqual([200, 409]);
+    expect(await prisma.quizAnswer.count({ where: { quizAttemptId: attempt.id } })).toBe(1);
+    expect(
+      await prisma.examResult.count({ where: { quizAttemptId: attempt.id } })
+    ).toBe(1);
+  });
+
+  it("scores against the quiz's question count, not the submitted subset", async () => {
+    const s = await setup();
+    // A second question the student simply won't answer.
+    const unanswered = await prisma.question.create({
+      data: {
+        text: "What is 3 + 3?",
+        quizId: s.quiz.id,
+        answerMode: "SINGLE_SELECT",
+        options: { create: [{ text: "6", isCorrect: true }, { text: "7", isCorrect: false }] },
+      },
+    });
+    asStudent(s.studentUser.id);
+    const attempt = await startAttempt(s.student.id, s.cls.id, s.quiz.id);
+
+    const res = await PATCH(
+      jsonReq({ attemptId: attempt.id, answers: [{ questionId: s.question.id, selectedOptionId: s.optionId("4") }] })
+    );
+    // 1 of the quiz's 2 questions correct. Deriving the denominator from the
+    // client's array would have scored this 100.
+    const body = await res.json();
+    expect(body.score).toBe(50);
+    expect(body.incorrectQuestionIds).toContain(unanswered.id);
+    expect(await prisma.quizAnswer.count({ where: { quizAttemptId: attempt.id } })).toBe(2);
+  });
+
+  it("rejects an answer for a question belonging to another quiz", async () => {
+    const s = await setup();
+    const other = await createPublishedQuiz({ classId: s.cls.id, teacherId: s.teacher.id });
+    asStudent(s.studentUser.id);
+    const attempt = await startAttempt(s.student.id, s.cls.id, s.quiz.id);
+
+    const res = await PATCH(
+      jsonReq({
+        attemptId: attempt.id,
+        answers: [{ questionId: other.question.id, selectedOptionId: other.question.options.find((o) => o.isCorrect)!.id }],
+      })
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("rejects the same question answered twice", async () => {
+    const s = await setup();
+    asStudent(s.studentUser.id);
+    const attempt = await startAttempt(s.student.id, s.cls.id, s.quiz.id);
+
+    // Repeating a known-correct answer would otherwise push `correct` past the
+    // question count and score above 100.
+    const res = await PATCH(
+      jsonReq({
+        attemptId: attempt.id,
+        answers: [
+          { questionId: s.question.id, selectedOptionId: s.optionId("4") },
+          { questionId: s.question.id, selectedOptionId: s.optionId("4") },
+        ],
+      })
+    );
+    expect(res.status).toBe(400);
   });
 });

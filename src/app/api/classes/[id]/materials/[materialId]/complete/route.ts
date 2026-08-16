@@ -1,10 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { headS3Object, getS3Config } from "@/lib/storage";
+import {
+  headS3Object,
+  getS3Config,
+  getMaxUploadBytes,
+  maxDerivedPageBytes,
+  materialPrefixFromStorageKey,
+  buildPageStorageKey,
+} from "@/lib/storage";
 import { materialLinkedToClass } from "@/lib/learning-material";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
+
+const MAX_MATERIAL_PAGES = 100;
+class MaterialAlreadyCompletedError extends Error {}
 
 export async function POST(
   req: NextRequest,
@@ -47,6 +58,51 @@ export async function POST(
   if (!Array.isArray(body.pages) || body.pages.length === 0) {
     return NextResponse.json({ error: "pages array is required" }, { status: 400 });
   }
+  const limited = rateLimit(req, "material-complete", 10, 60_000, session.user.id);
+  if (limited) return limited;
+  if (body.pages.length > MAX_MATERIAL_PAGES) {
+    return NextResponse.json(
+      { error: `A material may have at most ${MAX_MATERIAL_PAGES} pages.` },
+      { status: 400 }
+    );
+  }
+
+  // SECURITY: page storageKeys arrive from the client and are later handed
+  // straight to presignGetUrl by the page-image route, so an unchecked key
+  // would let a teacher attach ANY object in the bucket to their own material
+  // and read it back — other teachers' materials and page renders, quiz
+  // extraction PDFs, simulation artifacts, and (because deployments share one
+  // bucket behind S3_KEY_PREFIX) the other environment's objects too. Pin every
+  // key under this material's own pages/ prefix, derived from the server-built
+  // storageKey rather than from anything the caller sent. Same guard the quiz
+  // extraction commit route applies to figure keys.
+  const pagesPrefix = `${materialPrefixFromStorageKey(material.storageKey)}pages/`;
+  const storageClassId = material.classId ?? classId;
+  const pages: Array<{ pageNumber: number; storageKey: string }> = [];
+  for (let i = 0; i < body.pages.length; i++) {
+    const page = body.pages[i];
+    const expectedPageNumber = i + 1;
+    const expectedKey = buildPageStorageKey(
+      teacher.id,
+      storageClassId,
+      material.id,
+      expectedPageNumber
+    );
+    if (
+      !page ||
+      typeof page !== "object" ||
+      page.pageNumber !== expectedPageNumber ||
+      typeof page.storageKey !== "string" ||
+      !page.storageKey.startsWith(pagesPrefix) ||
+      page.storageKey !== expectedKey
+    ) {
+      return NextResponse.json(
+        { error: "Pages must be contiguous from 1 and use their exact upload keys." },
+        { status: 400 }
+      );
+    }
+    pages.push({ pageNumber: expectedPageNumber, storageKey: expectedKey });
+  }
 
   let bucket: string;
   try {
@@ -58,41 +114,96 @@ export async function POST(
     );
   }
 
+  // The presigned PUT can't bound the upload (S3 signs the key and content type,
+  // not the length), so the sizeBytes checked when the URL was issued is only a
+  // declaration. Verify what actually landed and refuse to finalize an object
+  // over the cap — otherwise the limit is advisory and a teacher can park
+  // arbitrarily large objects in the bucket. The orphaned object is left to the
+  // S3 garbage collector (src/lib/s3-gc.ts), which sweeps unreferenced keys.
+  let uploaded: { contentLength: number };
+  let uploadedPages: Array<{ contentLength: number }>;
   try {
-    await headS3Object(bucket, material.storageKey);
+    [uploaded, uploadedPages] = await Promise.all([
+      headS3Object(bucket, material.storageKey),
+      Promise.all(pages.map((page) => headS3Object(bucket, page.storageKey))),
+    ]);
   } catch {
-    return NextResponse.json({ error: "Original PDF not found in storage" }, { status: 404 });
+    return NextResponse.json({ error: "Upload is incomplete in storage" }, { status: 404 });
+  }
+
+  const maxBytes = getMaxUploadBytes();
+  if (uploaded.contentLength > maxBytes) {
+    // Stays PENDING (the one non-READY state the materials UI renders) so the
+    // teacher can re-upload; the reason goes in errorMessage.
+    await prisma.learningMaterial.update({
+      where: { id: material.id },
+      data: {
+        errorMessage: `Uploaded file is ${uploaded.contentLength} bytes, over the ${maxBytes}-byte limit.`,
+      },
+    });
+    return NextResponse.json(
+      { error: `Uploaded file exceeds the ${maxBytes}-byte limit.` },
+      { status: 413 }
+    );
+  }
+
+  const oversizedPage = uploadedPages.findIndex(
+    (page) => page.contentLength < 1 || page.contentLength > maxBytes
+  );
+  const totalPageBytes = uploadedPages.reduce(
+    (total, page) => total + page.contentLength,
+    0
+  );
+  // Scales with page count — see maxDerivedPageBytes. The /pages endpoint has
+  // already rejected an over-budget document from its declared sizes; this is
+  // the authoritative check against what actually landed in the bucket.
+  if (
+    oversizedPage !== -1 ||
+    totalPageBytes > maxDerivedPageBytes(uploadedPages.length)
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          oversizedPage !== -1
+            ? `Page ${oversizedPage + 1} exceeds the ${maxBytes}-byte limit.`
+            : "Rendered pages exceed the aggregate upload limit.",
+      },
+      { status: 413 }
+    );
   }
 
   try {
-    await prisma.$transaction(
-      body.pages.map((p) =>
-        prisma.materialPage.upsert({
+    const updated = await prisma.$transaction(async (tx) => {
+      const claimed = await tx.learningMaterial.updateMany({
+        where: { id: material.id, uploadStatus: "PENDING" },
+        data: {
+          uploadStatus: "READY",
+          processingStatus: "PROCESSING",
+          totalPages: pages.length,
+          sizeBytes: uploaded.contentLength,
+          errorMessage: null,
+        },
+      });
+      if (claimed.count !== 1) throw new MaterialAlreadyCompletedError();
+
+      for (const page of pages) {
+        await tx.materialPage.upsert({
           where: {
             materialId_pageNumber: {
               materialId: material.id,
-              pageNumber: p.pageNumber,
+              pageNumber: page.pageNumber,
             },
           },
           create: {
             materialId: material.id,
-            pageNumber: p.pageNumber,
-            storageKey: p.storageKey,
+            pageNumber: page.pageNumber,
+            storageKey: page.storageKey,
           },
-          update: {
-            storageKey: p.storageKey,
-          },
-        })
-      )
-    );
+          update: { storageKey: page.storageKey },
+        });
+      }
 
-    const updated = await prisma.learningMaterial.update({
-      where: { id: material.id },
-      data: {
-        uploadStatus: "READY",
-        processingStatus: "PROCESSING",
-        totalPages: body.pages.length,
-      },
+      return tx.learningMaterial.findUniqueOrThrow({ where: { id: material.id } });
     });
     
     // In a real app we'd trigger a background job here (e.g. SQS, Inngest, BullMQ).
@@ -103,6 +214,12 @@ export async function POST(
     });
     return NextResponse.json({ material: updated });
   } catch (e) {
+    if (e instanceof MaterialAlreadyCompletedError) {
+      return NextResponse.json(
+        { error: "Material upload has already been finalized." },
+        { status: 409 }
+      );
+    }
     console.error("Failed to complete upload:", e);
     return NextResponse.json(
       { error: "Failed to finalize material records" },

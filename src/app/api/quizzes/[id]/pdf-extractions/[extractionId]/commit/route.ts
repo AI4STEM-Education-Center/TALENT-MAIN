@@ -54,20 +54,33 @@ export async function POST(
     );
   }
 
-  // SECURITY: every figure / image-choice key must live under THIS extraction's
-  // figures/ prefix — otherwise a caller could attach an arbitrary S3 object
-  // (e.g. another teacher's upload) to a question or option. Then confirm each
-  // crop actually exists. Option images share the figures/ prefix on purpose, so
-  // this one check covers both.
+  // SECURITY: every figure / image-choice key must be one THIS extraction handed
+  // out a presigned PUT for. A "lives under the figures/ prefix" test is weaker
+  // than it looks — it accepts any object under the folder, so it cannot tell an
+  // issued crop from one the extraction never issued. Matching against the
+  // recorded set is exact. Option images share the figures/ prefix on purpose,
+  // so one lookup covers both.
+  //
+  // NOT bound to the question/option index the key was issued for, deliberately:
+  // the review UI lets a teacher delete a staged question, which reindexes every
+  // question after it, and a commit retried after a mid-flight failure reuses
+  // crops uploaded under the old indexes. Slot-binding would reject those
+  // legitimate flows while adding nothing — every key in this set is already
+  // confined to this extraction, and the teacher authors the payload anyway.
   const figurePrefix = `${quizExtractionPrefix(extraction.storageKey)}figures/`;
+  const issuedFigures = await prisma.quizPdfExtractionFigure.findMany({
+    where: { extractionId: extraction.id },
+    select: { storageKey: true },
+  });
+  const issuedKeys = new Set(issuedFigures.map((f) => f.storageKey));
   const figureKeys: string[] = [];
   for (let qi = 0; qi < questions.length; qi += 1) {
     const q = questions[qi];
     if (q.hasFigure) {
       const key = q.figureStorageKey ?? "";
-      if (!key.startsWith(figurePrefix)) {
+      if (!issuedKeys.has(key)) {
         return NextResponse.json(
-          { error: "figure storage key does not belong to this extraction" },
+          { error: `question ${qi + 1} figure was not uploaded for this extraction — re-crop it and try again` },
           { status: 400 }
         );
       }
@@ -77,9 +90,9 @@ export async function POST(
       const o = q.options[oi];
       if (o.isImage !== true) continue;
       const key = o.imageStorageKey ?? "";
-      if (!key.startsWith(figurePrefix)) {
+      if (!issuedKeys.has(key)) {
         return NextResponse.json(
-          { error: `question ${qi + 1} option ${oi + 1} image key does not belong to this extraction` },
+          { error: `question ${qi + 1} option ${oi + 1} image was not uploaded for this extraction — re-crop it and try again` },
           { status: 400 }
         );
       }
@@ -148,15 +161,27 @@ export async function POST(
 
   // The extraction is committed — the source PDF and page rasters have served
   // their purpose, so delete them (plus their page rows) rather than keep them
-  // forever. figures/ stays: the just-created Question/Option rows reference
-  // those objects in place. Best-effort — the worker's S3 GC sweeps leftovers.
+  // forever. Committed figures/ objects stay: the just-created Question/Option
+  // rows reference them in place. Issued-but-uncommitted crops do NOT — every
+  // re-crop mints a fresh UUID key, so without this each retry would strand an
+  // object under the one prefix the sweep otherwise preserves wholesale.
+  // Best-effort — the worker's S3 GC sweeps whatever is left.
+  const committedKeys = new Set(figureKeys);
+  const orphanFigureKeys = new Set(
+    issuedFigures.map((f) => f.storageKey).filter((key) => !committedKeys.has(key))
+  );
   try {
     const prefix = quizExtractionPrefix(extraction.storageKey);
     const keys = (await listS3Objects(extraction.bucket, prefix)).filter(
-      (key) => !key.startsWith(figurePrefix)
+      (key) => !key.startsWith(figurePrefix) || orphanFigureKeys.has(key)
     );
     if (keys.length > 0) await deleteS3Objects(extraction.bucket, keys);
     await prisma.quizPdfExtractionPage.deleteMany({ where: { extractionId: extraction.id } });
+    if (orphanFigureKeys.size > 0) {
+      await prisma.quizPdfExtractionFigure.deleteMany({
+        where: { extractionId: extraction.id, storageKey: { in: [...orphanFigureKeys] } },
+      });
+    }
   } catch (e) {
     console.error("Post-commit extraction cleanup failed:", e);
   }

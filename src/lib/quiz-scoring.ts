@@ -140,11 +140,20 @@ export function isAnswerCorrect(question: ScorableQuestion, selectedOptionIds: s
  * Grade a full set of submitted answers against their questions.
  * `questionsById` must contain every answered question (the caller is
  * responsible for 404-ing on a missing question before calling this).
+ *
+ * `totalQuestions` is the authoritative denominator for the percentage — the
+ * number of questions the quiz actually contains. It MUST be supplied by
+ * callers scoring a real attempt: the submitted `answers` array is
+ * client-controlled, so deriving the denominator from it would let a student
+ * submit only the questions they know and score 100%. It defaults to
+ * `answers.length` purely for unit tests that grade a self-contained set.
+ * Unanswered questions therefore count as incorrect, which is the intent.
  */
 export function scoreQuiz(params: {
   attemptId: string;
   questionsById: Map<string, ScorableQuestion>;
   answers: SubmittedAnswer[];
+  totalQuestions?: number;
 }): QuizScore {
   const { attemptId, questionsById, answers } = params;
 
@@ -188,7 +197,7 @@ export function scoreQuiz(params: {
     });
   }
 
-  const total = answers.length;
+  const total = params.totalQuestions ?? answers.length;
   const score = total > 0 ? (correct / total) * 100 : 0;
 
   return { correct, total, score, answerRecords };
