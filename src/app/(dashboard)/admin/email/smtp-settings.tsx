@@ -235,6 +235,12 @@ export function SmtpSettings() {
               </div>
             </div>
 
+            <p className="text-xs text-muted-foreground">
+              These are the fallback From details. Set a shared sender domain under{" "}
+              <strong>Sender addresses</strong> below to give each kind of email its own address
+              instead.
+            </p>
+
             <label className="flex items-center gap-2 text-sm font-medium">
               <input
                 type="checkbox"

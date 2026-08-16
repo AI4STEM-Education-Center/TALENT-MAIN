@@ -9,6 +9,9 @@ import { prisma } from "@/lib/prisma";
 export async function resetDb() {
   // Children first, parents last.
   await prisma.systemLog.deleteMany();
+  await prisma.messageEmailDelivery.deleteMany();
+  await prisma.notification.deleteMany();
+  await prisma.message.deleteMany();
   await prisma.quizAnswer.deleteMany();
   await prisma.quizAttempt.deleteMany();
   await prisma.quizProgress.deleteMany();
@@ -33,9 +36,13 @@ export async function resetDb() {
   await prisma.aiUseCaseAssignment.deleteMany();
   await prisma.aiModel.deleteMany();
   await prisma.aiProvider.deleteMany();
+  await prisma.passwordResetToken.deleteMany();
   await prisma.teacher.deleteMany();
   await prisma.student.deleteMany();
   await prisma.user.deleteMany();
+  // Config singletons/overrides are relation-free but leak across specs.
+  await prisma.emailSender.deleteMany();
+  await prisma.smtpConfig.deleteMany();
 }
 
 let seq = 0;

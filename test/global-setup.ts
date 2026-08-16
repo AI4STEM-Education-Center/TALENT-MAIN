@@ -29,10 +29,14 @@ export default function setup() {
   // `trace` is consumed internally (the CLI remains quiet) and makes startup
   // reliable; retries remain as a guard against genuinely transient failures.
   const env = { ...process.env, DATABASE_URL: testDbUrl(), RUST_LOG: "trace" };
+  // Invoke the installed CLI through node rather than `npx`: Node can't spawn
+  // `npx` on Windows (it resolves to npx.cmd, which needs a shell), and going
+  // direct skips npx's resolution step on CI too.
+  const prismaCli = path.resolve(process.cwd(), "node_modules", "prisma", "build", "index.js");
   let lastError: unknown;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      execFileSync("npx", ["prisma", "db", "push", "--accept-data-loss"], {
+      execFileSync(process.execPath, [prismaCli, "db", "push", "--accept-data-loss"], {
         stdio: "inherit",
         env,
       });

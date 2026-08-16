@@ -26,6 +26,7 @@ import {
   PanelLeftClose,
   Atom,
   ScrollText,
+  UserRound,
 } from "lucide-react";
 
 interface NavItem {
@@ -73,6 +74,13 @@ const adminNav: NavItem[] = [
   { href: "/admin/logs", label: "System Logs", icon: <ScrollText className="size-4" /> },
 ];
 
+// Shared by every role and rendered under the role's own items.
+const profileNav: NavItem = {
+  href: "/profile",
+  label: "My Profile",
+  icon: <UserRound className="size-4" />,
+};
+
 function SidebarContent({
   role,
   firstName,
@@ -90,7 +98,8 @@ function SidebarContent({
 }) {
   const pathname = usePathname();
 
-  const navItems = role === "ADMIN" ? adminNav : role === "TEACHER" ? teacherNav : studentNav;
+  const roleNav = role === "ADMIN" ? adminNav : role === "TEACHER" ? teacherNav : studentNav;
+  const navItems = [...roleNav, profileNav];
 
   return (
     <div className="flex flex-col min-h-full">

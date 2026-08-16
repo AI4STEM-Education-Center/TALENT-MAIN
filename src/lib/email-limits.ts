@@ -9,35 +9,6 @@ import { prisma } from "@/lib/prisma";
 export const DEFAULT_EMAIL_DAILY_LIMIT = 100;
 export const DEFAULT_EMAIL_MONTHLY_LIMIT = 3000;
 
-export interface Channels {
-  inApp: boolean;
-  email: boolean;
-}
-
-/**
- * Parse a channel selection from request input (a Message.channels string like
- * "IN_APP,EMAIL", or a { inApp, email } object) into a normalized Channels.
- */
-export function parseChannels(input: unknown): Channels {
-  if (typeof input === "string") {
-    const parts = input.split(",").map((p) => p.trim().toUpperCase());
-    return { inApp: parts.includes("IN_APP"), email: parts.includes("EMAIL") };
-  }
-  if (input && typeof input === "object") {
-    const obj = input as Record<string, unknown>;
-    return { inApp: obj.inApp === true, email: obj.email === true };
-  }
-  return { inApp: false, email: false };
-}
-
-/** Serialize channels to the comma-joined form stored in Message.channels. */
-export function serializeChannels(channels: Channels): string {
-  const parts: string[] = [];
-  if (channels.inApp) parts.push("IN_APP");
-  if (channels.email) parts.push("EMAIL");
-  return parts.join(",");
-}
-
 export interface QuotaInput {
   dailyLimit: number;
   dailyUsed: number;

@@ -33,7 +33,8 @@ export default async function TeacherMessagesPage() {
           <MessageSquare className="size-6" /> Messages
         </h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Pick a class to send an in-app notification or email to its students.
+          Pick a class to message. Students get an in-app notification, plus an automated email linking to it if they
+          have an address on file.
         </p>
       </div>
 
@@ -41,7 +42,8 @@ export default async function TeacherMessagesPage() {
         <Mail className="size-4 shrink-0 mt-0.5 text-muted-foreground" />
         <span>
           <strong>Email budget:</strong> {quota.dailyRemaining} left today (of {quota.dailyLimit}) ·{" "}
-          {quota.monthlyRemaining} left this month (of {quota.monthlyLimit}). In-app notifications are unlimited.
+          {quota.monthlyRemaining} left this month (of {quota.monthlyLimit}). In-app notifications are unlimited, and
+          a class over budget is still notified in-app.
         </span>
       </div>
 

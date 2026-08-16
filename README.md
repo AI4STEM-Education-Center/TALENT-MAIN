@@ -105,6 +105,7 @@ LEARNING_MATERIAL_MAX_BYTES="52428800"
 | `PROD_DATABASE_URL` | Production SQLite connection string read by Docker Compose (maps to `DATABASE_URL` in production container) |
 | `DEV_DATABASE_URL` | Dev SQLite connection string read by Docker Compose (maps to `DATABASE_URL` in dev container) |
 | `DB_PROVIDER` | Set to `sqlite` to run WAL mode optimizations on startup |
+| `APP_URL` | Public base URL of the deployment (e.g. `https://dev.ai4talent.org`). New-message notification emails use it to link students straight to the message; without it (or `AUTH_URL` / `NEXTAUTH_URL`) those emails fall back to "sign in and open Notifications" |
 | `AUTH_SECRET` | Secret key used by NextAuth to sign session tokens |
 | `TEACHER_SIGNUP_TOKEN` | Secret token teachers must enter when registering at `/register` |
 | `ADMIN_SIGNUP_TOKEN` | Secret token admins must enter when registering at `/admin-register` |
