@@ -623,10 +623,10 @@ function DiskBreakdownCard({
       {other > accounted * 4 && (
         <p className="mt-3 text-[11px] text-muted-foreground">
           Most of this disk is not application data. The containers cannot see inside
-          <code className="font-mono mx-1">/var/lib/docker</code>, so to break the grey band down
-          further run <code className="font-mono">docker/disk-report.sh</code> on the instance — it
-          reports image, container-log, journal and package-cache sizes, and prints the matching
-          cleanup commands.
+          <code className="font-mono mx-1">/var/lib/docker</code>, so breaking the grey band down
+          means an SSH session: start with <code className="font-mono">docker system df</code> and{" "}
+          <code className="font-mono">sudo du -h --max-depth=1 -x /</code>. The README&apos;s
+          &ldquo;Disk on the instance&rdquo; section has the full list.
         </p>
       )}
     </div>
