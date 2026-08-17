@@ -37,6 +37,11 @@ import {
 import { runConsentExportJob, sweepExpiredConsentExports } from "./lib/consent-export";
 import { runBackupJob, claimDueBackup } from "./lib/backup";
 import { runS3Gc } from "./lib/s3-gc";
+import {
+  pruneResourceSamples,
+  startResourceSampler,
+  RESOURCE_SAMPLE_RETENTION_DAYS,
+} from "./lib/resource-monitor";
 import { logSystemEvent } from "./lib/system-log";
 
 // Honker opens its own SQLite file (a sibling of the Prisma DB); see
@@ -463,8 +468,35 @@ async function runLogRetentionLoop() {
   }
 }
 
+const RESOURCE_PRUNE_INTERVAL_MS = 60 * 60 * 1000;
+
+/**
+ * Retention prune for the admin resource monitor. Every node writes a row a
+ * minute, so this runs hourly rather than daily — a day's worth of expired
+ * samples is thousands of rows to carry around for no reason.
+ */
+async function runResourceRetentionLoop() {
+  console.log(
+    `[Worker] Resource sample retention loop started (1h interval, keep ${RESOURCE_SAMPLE_RETENTION_DAYS} days)...`
+  );
+  for (;;) {
+    try {
+      const count = await pruneResourceSamples();
+      if (count > 0) console.log(`[Worker] Pruned ${count} expired resource sample(s)`);
+    } catch (err: any) {
+      console.error("[Worker] Resource sample prune failed:", err?.message ?? err);
+    }
+    await new Promise((resolve) => setTimeout(resolve, RESOURCE_PRUNE_INTERVAL_MS));
+  }
+}
+
 async function startWorker() {
   try {
+    // This node's own CPU/RAM/storage feed for the admin System Resources tab.
+    // Started before the consumers so a worker that dies mid-job still leaves a
+    // record of what it was doing to the box.
+    startResourceSampler("worker");
+
     // Run all consumers + the scheduler concurrently; each blocks on its own loop.
     await Promise.all([
       consumeMaterials(),
@@ -481,6 +513,7 @@ async function startWorker() {
       runBackupScheduler(),
       runS3GcLoop(),
       runLogRetentionLoop(),
+      runResourceRetentionLoop(),
     ]);
   } catch (err) {
     console.error("[Worker] Fatal error in worker loop:", err);

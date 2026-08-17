@@ -16,6 +16,13 @@ services:
       # namespace even when they share an S3 bucket.
       S3_KEY_PREFIX: "prod/"
       DATABASE_URL: ${PROD_DATABASE_URL}
+      # Admin System Resources tab: prod and dev keep their own samples in their
+      # own databases, so each web server asks the other for its two nodes. The
+      # peer URL must be the peer's PUBLIC url — proxy.ts validates the Host
+      # header, which an internal address would fail. Leave the token unset to
+      # turn the link off; each site then charts only its own nodes.
+      RESOURCE_MONITOR_PEER_URL: ${DEV_APP_URL:-https://dev.ai4talent.org}
+      RESOURCE_MONITOR_TOKEN: ${RESOURCE_MONITOR_TOKEN:-}
     volumes:
       - ./data/db/prod:/app/prisma/data
     healthcheck:

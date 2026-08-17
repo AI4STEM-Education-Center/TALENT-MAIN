@@ -76,8 +76,13 @@ export default auth((req) => {
   // Invitation API must be public: unauthenticated students need to validate
   // tokens and POST to enroll (signup flow) before they have a session.
   const isApiInvitation = pathname.startsWith("/api/invitations/");
+  // Deployment-to-deployment routes: the caller is the peer environment's
+  // server, which has no session to present. Each route under /api/internal/
+  // authenticates its own shared-secret bearer token instead (see
+  // src/lib/resource-peer.ts) — session-less here does not mean unauthenticated.
+  const isApiInternal = pathname.startsWith("/api/internal/");
 
-  if (isPublicRoute || isInviteRoute || isApiAuth || isApiInvitation) {
+  if (isPublicRoute || isInviteRoute || isApiAuth || isApiInvitation || isApiInternal) {
     return NextResponse.next();
   }
 
