@@ -1,3 +1,19 @@
+# Dev stack. Runs alongside the production stack (docker-compose.yml) on one
+# EC2 instance; see that file for why the log limits and the metrics spool are
+# mirrored here.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+# Same external volume the prod stack attaches — see docker-compose.yml for why
+# it is a named volume and not a bind mount.
+volumes:
+  resource-metrics:
+    name: talent-resource-metrics
+    external: true
+
 services:
   web-dev:
     container_name: adaptive-learning-webapp-dev
@@ -17,13 +33,13 @@ services:
       # its objects so either environment's GC can only see its own assets.
       S3_KEY_PREFIX: "dev/"
       DATABASE_URL: ${DEV_DATABASE_URL}
-      # Mirror of the prod stack's peer link — see docker-compose.yml. Both
-      # sides must carry the same RESOURCE_MONITOR_TOKEN for the admin System
-      # Resources tab to show all four nodes.
-      RESOURCE_MONITOR_PEER_URL: ${PROD_APP_URL:-https://ai4talent.org}
-      RESOURCE_MONITOR_TOKEN: ${RESOURCE_MONITOR_TOKEN:-}
+      # Same host directory the prod stack mounts — that shared mount is what
+      # lets each site's System Resources tab chart all four nodes.
+      RESOURCE_SPOOL_DIR: /app/metrics
     volumes:
       - ./data/db/dev:/app/prisma/data
+      - resource-metrics:/app/metrics
+    logging: *logging
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r => process.exit(r.status < 500 ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 5s
@@ -48,8 +64,11 @@ services:
       APP_ENV: dev
       S3_KEY_PREFIX: "dev/"
       DATABASE_URL: ${DEV_DATABASE_URL}
+      RESOURCE_SPOOL_DIR: /app/metrics
     volumes:
       - ./data/db/dev:/app/prisma/data
+      - resource-metrics:/app/metrics
+    logging: *logging
     restart: unless-stopped
     depends_on:
       web-dev:

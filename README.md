@@ -55,6 +55,17 @@ Our CI/CD pipeline in [.github/workflows/deploy.yml](file:///home/edward/data/ad
    ```bash
    docker compose up -d --force-recreate --no-build
    ```
+5. Prunes stopped containers and images nothing is running any more (anything older than a week and not in use by a live container). The instance has a 20 GB root volume shared by both stacks, so superseded images are not free to keep.
+
+### Disk on the instance
+
+Both compose stacks cap their container logs (`json-file`, 10 MiB × 3 per container). When the admin **System Resources** tab shows the disk filling up and the application's own data does not account for it, run [docker/disk-report.sh](docker/disk-report.sh) on the instance — the app containers are unprivileged and cannot see inside `/var/lib/docker`, so images, container logs, the journal and package caches can only be measured from the host:
+
+```bash
+scp docker/disk-report.sh <ec2>:~/ && ssh <ec2> 'bash ~/disk-report.sh'
+```
+
+It only measures and prints; the cleanup commands it suggests are for you to run.
 
 ## GitHub Deployment Secrets
 
@@ -114,10 +125,10 @@ LEARNING_MATERIAL_MAX_BYTES="52428800"
 | `AWS_REGION` | AWS S3 region for bucket operations (e.g., `us-east-1`) |
 | `AWS_S3_BUCKET` | AWS S3 bucket name (e.g., `talent4ai-101561168021-us-east-1-an`) |
 | `S3_KEY_PREFIX` | Optional namespace for deployments sharing one bucket. Compose fixes prod at `prod/` and dev at `dev/` so their independent garbage collectors cannot delete each other's objects. Existing full keys stored in the database remain readable. |
-| `RESOURCE_MONITOR_TOKEN` | Shared secret linking the two deployments' **System Resources** admin tabs. Both prod and dev must set the same value; each site then fetches the other's node metrics from `/api/internal/resource-samples`. Unset (the default) means each site charts only its own web node and worker. |
-| `RESOURCE_MONITOR_PEER_URL` | The other deployment's **public** base URL (compose defaults prod → `https://dev.ai4talent.org` and dev → `https://ai4talent.org`, overridable with `DEV_APP_URL` / `PROD_APP_URL`). It must be the public URL because the proxy validates the `Host` header. |
+| `RESOURCE_SPOOL_DIR` | Directory every node writes its **System Resources** samples to, and reads every other node's from. Both compose stacks set it to `/app/metrics` and mount the shared `talent-resource-metrics` volume there, which is how each site charts all four nodes (prod and dev are separate deployments but one EC2 instance). Unset — outside Docker — each deployment keeps a private spool beside its data directory and charts only its own two nodes. |
+| `HOST_PROC_DIR` | Where to read the host's CPU/memory counters for the whole-machine panel (default `/proc`, which inside a container is already the host's). Only needs setting if something namespaces `/proc`. |
 | `RESOURCE_SAMPLE_INTERVAL_MS` | How often each node records CPU/RAM/storage (default 60000, floor 10000) |
-| `RESOURCE_SAMPLE_RETENTION_DAYS` | How long resource samples are kept before the worker prunes them (default 7 — the admin tab charts one week) |
+| `RESOURCE_SAMPLE_RETENTION_DAYS` | How long resource samples are kept before each node compacts its spool file (default 7 — the admin tab charts one week) |
 | `AWS_S3_ENDPOINT` | Optional: Endpoint URL for S3 alternative providers (MinIO / LocalStack) |
 | `AWS_ACCESS_KEY_ID` | Optional: Static access key if not using an IAM role on EC2 |
 | `AWS_SECRET_ACCESS_KEY` | Optional: Static secret key if not using an IAM role on EC2 |
