@@ -86,7 +86,10 @@ docker volume ls -f dangling=true
 
 # 4. Container logs. Unbounded before the max-size limits were added, so
 #    anything created before that deploy is still whatever size it grew to.
-sudo du -ch /var/lib/docker/containers/*/*-json.log | sort -rh | head
+#    The glob has to be expanded BY root inside sh -c: /var/lib/docker is
+#    mode 0710 root:root, so your own shell cannot expand it and silently
+#    hands du a literal path that does not exist.
+sudo sh -c 'du -ch /var/lib/docker/containers/*/*-json.log | sort -rh | head'
 
 # 5. Everything else that grows quietly on a long-lived Ubuntu box
 journalctl --disk-usage
