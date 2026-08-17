@@ -17,6 +17,11 @@ services:
       # its objects so either environment's GC can only see its own assets.
       S3_KEY_PREFIX: "dev/"
       DATABASE_URL: ${DEV_DATABASE_URL}
+      # Mirror of the prod stack's peer link — see docker-compose.yml. Both
+      # sides must carry the same RESOURCE_MONITOR_TOKEN for the admin System
+      # Resources tab to show all four nodes.
+      RESOURCE_MONITOR_PEER_URL: ${PROD_APP_URL:-https://ai4talent.org}
+      RESOURCE_MONITOR_TOKEN: ${RESOURCE_MONITOR_TOKEN:-}
     volumes:
       - ./data/db/dev:/app/prisma/data
     healthcheck:

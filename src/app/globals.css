@@ -183,3 +183,29 @@
     animation-iteration-count: infinite !important;
   }
 }
+
+/*
+  Chart palette (admin System Resources tab).
+  Categorical hues assigned by slot, in a fixed order — a series keeps its hue
+  no matter how many other series are on screen. The dark column is the same
+  four hues re-stepped for a dark surface (not an automatic flip): both sets
+  were validated for colorblind separation and lightness against their own
+  surface, so they must be edited as a set, never individually.
+  Slots: 1 production node · 2 production worker · 3 dev node · 4 dev worker.
+*/
+.viz-root {
+  --viz-series-1: #2a78d6; /* blue */
+  --viz-series-2: #eb6834; /* orange */
+  --viz-series-3: #1baf7a; /* aqua */
+  --viz-series-4: #eda100; /* yellow */
+  /* Marks sit on the card, so dot rings and gaps are painted card-colored. */
+  --viz-surface: hsl(var(--card));
+  --viz-grid: hsl(var(--border));
+}
+
+.dark .viz-root {
+  --viz-series-1: #3987e5;
+  --viz-series-2: #d95926;
+  --viz-series-3: #199e70;
+  --viz-series-4: #c98500;
+}

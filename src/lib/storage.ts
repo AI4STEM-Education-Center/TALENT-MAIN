@@ -370,6 +370,47 @@ export async function listS3Objects(bucket: string, prefix: string): Promise<str
   return keys;
 }
 
+/**
+ * Total bytes stored under a key prefix, plus the object count.
+ *
+ * Used by the admin resource monitor to report an environment's S3 footprint.
+ * Because compose pins prod to `prod/` and dev to `dev/`, passing this
+ * deployment's own getS3KeyPrefix() yields that environment's usage alone even
+ * though both share one bucket. S3 has no cheap "size of prefix" API, so this
+ * is a full paginated listing — call it on a slow cadence (the worker refreshes
+ * hourly), never per request.
+ */
+export async function sumS3PrefixBytes(
+  bucket: string,
+  prefix: string
+): Promise<{ bytes: number; objects: number }> {
+  const client = getS3Client();
+  let isTruncated = true;
+  let continuationToken: string | undefined;
+  let bytes = 0;
+  let objects = 0;
+
+  while (isTruncated) {
+    const response = await client.send(
+      new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: prefix,
+        ContinuationToken: continuationToken,
+      })
+    );
+
+    for (const item of response.Contents ?? []) {
+      bytes += item.Size ?? 0;
+      objects += 1;
+    }
+
+    isTruncated = response.IsTruncated ?? false;
+    continuationToken = response.NextContinuationToken;
+  }
+
+  return { bytes, objects };
+}
+
 export type S3ObjectMeta = { key: string; lastModified: Date | null };
 
 /**

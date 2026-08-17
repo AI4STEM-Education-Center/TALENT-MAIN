@@ -114,6 +114,10 @@ LEARNING_MATERIAL_MAX_BYTES="52428800"
 | `AWS_REGION` | AWS S3 region for bucket operations (e.g., `us-east-1`) |
 | `AWS_S3_BUCKET` | AWS S3 bucket name (e.g., `talent4ai-101561168021-us-east-1-an`) |
 | `S3_KEY_PREFIX` | Optional namespace for deployments sharing one bucket. Compose fixes prod at `prod/` and dev at `dev/` so their independent garbage collectors cannot delete each other's objects. Existing full keys stored in the database remain readable. |
+| `RESOURCE_MONITOR_TOKEN` | Shared secret linking the two deployments' **System Resources** admin tabs. Both prod and dev must set the same value; each site then fetches the other's node metrics from `/api/internal/resource-samples`. Unset (the default) means each site charts only its own web node and worker. |
+| `RESOURCE_MONITOR_PEER_URL` | The other deployment's **public** base URL (compose defaults prod → `https://dev.ai4talent.org` and dev → `https://ai4talent.org`, overridable with `DEV_APP_URL` / `PROD_APP_URL`). It must be the public URL because the proxy validates the `Host` header. |
+| `RESOURCE_SAMPLE_INTERVAL_MS` | How often each node records CPU/RAM/storage (default 60000, floor 10000) |
+| `RESOURCE_SAMPLE_RETENTION_DAYS` | How long resource samples are kept before the worker prunes them (default 7 — the admin tab charts one week) |
 | `AWS_S3_ENDPOINT` | Optional: Endpoint URL for S3 alternative providers (MinIO / LocalStack) |
 | `AWS_ACCESS_KEY_ID` | Optional: Static access key if not using an IAM role on EC2 |
 | `AWS_SECRET_ACCESS_KEY` | Optional: Static secret key if not using an IAM role on EC2 |
