@@ -65,13 +65,24 @@ The admin **System Resources** tab shows how full the root volume is and how muc
 # 1. Which filesystem, and how much is actually gone
 df -h /
 
-# 2. Which top-level directory holds it (-x stays on the root volume)
+# 2. Which top-level directory holds it (-x stays on the root volume).
+#    Note that the children never sum to the total: large files sitting
+#    directly in / — /swapfile above all — are in the total but get no line.
 sudo du -h --max-depth=1 -x / | sort -rh | head -15
+ls -lh /swapfile 2>/dev/null
+
+# 2b. Drill into whichever directory won. /home is a frequent surprise:
+#     package-manager caches (~/.cache/uv, ~/.cache/pip, ~/.npm) and toolchain
+#     installs (~/.nvm) belong to nobody in particular and are never cleaned.
+sudo du -h --max-depth=2 -x /home | sort -rh | head -15
 
 # 3. Docker's own accounting: images, containers, volumes, build cache.
-#    RECLAIMABLE is the column that matters.
 docker system df
 docker system df -v | head -40
+
+# 3b. Volumes with LINKS 0 are orphans from containers that no longer exist.
+#     They are invisible to image and container pruning.
+docker volume ls -f dangling=true
 
 # 4. Container logs. Unbounded before the max-size limits were added, so
 #    anything created before that deploy is still whatever size it grew to.
@@ -95,6 +106,7 @@ Cleanup, once you know what is large. Run only what the numbers above justify:
 docker container prune -f                          # stopped containers
 docker image prune -af --filter "until=168h"       # images nothing is running
 docker builder prune -f                            # build cache
+docker volume prune -f                             # ANONYMOUS volumes only
 
 # Truncate oversized container logs in place. Safe while running — the daemon
 # holds the fd and keeps appending — but it discards history.
