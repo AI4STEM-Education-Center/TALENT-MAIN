@@ -59,13 +59,54 @@ Our CI/CD pipeline in [.github/workflows/deploy.yml](file:///home/edward/data/ad
 
 ### Disk on the instance
 
-Both compose stacks cap their container logs (`json-file`, 10 MiB × 3 per container). When the admin **System Resources** tab shows the disk filling up and the application's own data does not account for it, run [docker/disk-report.sh](docker/disk-report.sh) on the instance — the app containers are unprivileged and cannot see inside `/var/lib/docker`, so images, container logs, the journal and package caches can only be measured from the host:
+The admin **System Resources** tab shows how full the root volume is and how much of it is the application's own data. It cannot show the rest: the app containers run as an unprivileged user and `/var/lib/docker` is not readable from inside them. When the tab says the disk is filling up and the database volumes do not explain it, SSH to the instance and work down this list — each command is read-only.
 
 ```bash
-scp docker/disk-report.sh <ec2>:~/ && ssh <ec2> 'bash ~/disk-report.sh'
+# 1. Which filesystem, and how much is actually gone
+df -h /
+
+# 2. Which top-level directory holds it (-x stays on the root volume)
+sudo du -h --max-depth=1 -x / | sort -rh | head -15
+
+# 3. Docker's own accounting: images, containers, volumes, build cache.
+#    RECLAIMABLE is the column that matters.
+docker system df
+docker system df -v | head -40
+
+# 4. Container logs. Unbounded before the max-size limits were added, so
+#    anything created before that deploy is still whatever size it grew to.
+sudo du -ch /var/lib/docker/containers/*/*-json.log | sort -rh | head
+
+# 5. Everything else that grows quietly on a long-lived Ubuntu box
+journalctl --disk-usage
+sudo du -sh /var/log /var/cache/apt /snap /boot /usr/lib/modules 2>/dev/null
+ls -1 /boot/vmlinuz-* | wc -l   # old kernels, if apt autoremove has not run
+
+# 6. Our data, for comparison — expect this to be small
+du -sh ~/app/data/*
+
+# 7. Anything else over 100 MiB
+sudo find / -xdev -type f -size +100M -exec ls -lh {} + 2>/dev/null | sort -k5 -rh | head -20
 ```
 
-It only measures and prints; the cleanup commands it suggests are for you to run.
+Cleanup, once you know what is large. Run only what the numbers above justify:
+
+```bash
+docker container prune -f                          # stopped containers
+docker image prune -af --filter "until=168h"       # images nothing is running
+docker builder prune -f                            # build cache
+
+# Truncate oversized container logs in place. Safe while running — the daemon
+# holds the fd and keeps appending — but it discards history.
+sudo sh -c 'truncate -s 0 /var/lib/docker/containers/*/*-json.log'
+
+sudo journalctl --vacuum-size=200M                 # journald defaults to 10% of the FS
+sudo apt-get autoremove --purge -y && sudo apt-get clean
+```
+
+Avoid `docker system prune -a --volumes`: it also deletes unused volumes, which includes `talent-resource-metrics` whenever both stacks happen to be down.
+
+Going forward, both compose stacks cap their container logs (`json-file`, 10 MiB × 3 per container, so ≤120 MiB total) and both deploy workflows prune stopped containers and unused images rather than only dangling ones.
 
 ## GitHub Deployment Secrets
 
