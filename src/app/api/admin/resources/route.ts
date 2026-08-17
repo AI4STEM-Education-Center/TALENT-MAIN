@@ -7,21 +7,18 @@ import {
   NODE_STALE_AFTER_MS,
   RESOURCE_SAMPLE_INTERVAL_MS,
   RESOURCE_SAMPLE_RETENTION_DAYS,
-  type ResourceNodeSeries,
 } from "@/lib/resource-monitor";
-import { fetchPeerNodes } from "@/lib/resource-peer";
 
 export const runtime = "nodejs";
 
 /**
- * CPU / memory / storage history for every node of both deployments, feeding
- * the admin System Resources tab.
+ * CPU / memory / storage history for every node of both deployments plus the
+ * EC2 instance they share, feeding the admin System Resources tab.
  *
- * The local database only holds this environment's web node and worker (prod
- * and dev have separate databases), so the peer deployment's two nodes are
- * fetched over HTTP and merged in. Local rows win on a nodeId collision — a
- * misconfigured peer pointing at itself can then never overwrite the numbers we
- * measured directly.
+ * All four nodes come from one read: prod and dev write their samples into a
+ * directory bind-mounted into both compose stacks (see src/lib/resource-spool.ts),
+ * so this route no longer has to call the peer deployment over HTTPS to
+ * complete the picture — and there is nothing to configure before it does.
  */
 export async function GET(req: NextRequest) {
   try {
@@ -33,21 +30,22 @@ export async function GET(req: NextRequest) {
     const requested = req.nextUrl.searchParams.get("range");
     const range: ResourceRange = isResourceRange(requested) ? requested : "24h";
 
-    const [local, peer] = await Promise.all([buildResourceReport(range), fetchPeerNodes(range)]);
-
-    const byNode = new Map<string, ResourceNodeSeries>();
-    for (const node of [...peer.nodes, ...local.nodes]) byNode.set(node.nodeId, node);
+    const report = await buildResourceReport(range);
 
     return NextResponse.json({
       range,
-      generatedAt: local.generatedAt,
-      bucketMs: local.bucketMs,
+      generatedAt: report.generatedAt,
+      bucketMs: report.bucketMs,
       sampleIntervalMs: RESOURCE_SAMPLE_INTERVAL_MS,
       staleAfterMs: NODE_STALE_AFTER_MS,
       retentionDays: RESOURCE_SAMPLE_RETENTION_DAYS,
       localEnv: process.env.APP_ENV?.toLowerCase() === "prod" ? "prod" : "dev",
-      peer: peer.status,
-      nodes: [...byNode.values()].sort((a, b) => a.nodeId.localeCompare(b.nodeId)),
+      nodes: report.nodes,
+      host: report.host,
+      // The UI only needs to know whether the shared mount is in place; the
+      // directory and file list are there to make a misconfigured mount
+      // diagnosable from the page instead of from a shell on the box.
+      spool: report.spool,
     });
   } catch (error) {
     logApiError("ADMIN_RESOURCES", error, "Failed to build resource report");

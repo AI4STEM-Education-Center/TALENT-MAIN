@@ -192,12 +192,18 @@
   were validated for colorblind separation and lightness against their own
   surface, so they must be edited as a set, never individually.
   Slots: 1 production node · 2 production worker · 3 dev node · 4 dev worker.
+
+  --viz-total is deliberately NOT a fifth categorical hue. The whole-machine
+  series is a different kind of quantity from the four nodes — it contains them
+  — so it reads as a neutral dashed reference line rather than as a peer. Giving
+  it a hue would invite reading "the machine" as a fifth container.
 */
 .viz-root {
   --viz-series-1: #2a78d6; /* blue */
   --viz-series-2: #eb6834; /* orange */
   --viz-series-3: #1baf7a; /* aqua */
   --viz-series-4: #eda100; /* yellow */
+  --viz-total: #64748b; /* slate */
   /* Marks sit on the card, so dot rings and gaps are painted card-colored. */
   --viz-surface: hsl(var(--card));
   --viz-grid: hsl(var(--border));
@@ -208,4 +214,5 @@
   --viz-series-2: #d95926;
   --viz-series-3: #199e70;
   --viz-series-4: #c98500;
+  --viz-total: #94a3b8;
 }

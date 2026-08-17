@@ -86,6 +86,12 @@ RUN groupadd --system --gid 1001 nodejs && \
     useradd --system --uid 1001 --gid 1001 nextjs && \
     chown nextjs:nodejs /app
 
+# Mount point for the resource monitor's shared spool volume. It must exist in
+# the image and be owned by the runtime user: Docker seeds an empty named volume
+# from the image directory, ownership included, which is how all four containers
+# end up able to write here without any chown on the host.
+RUN mkdir -p /app/metrics && chown nextjs:nodejs /app/metrics
+
 COPY --chown=nextjs:nodejs --from=builder /app/public ./public
 COPY --chown=nextjs:nodejs --from=builder /app/.next/standalone ./
 COPY --chown=nextjs:nodejs --from=builder /app/.next/static ./.next/static
