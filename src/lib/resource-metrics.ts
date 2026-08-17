@@ -5,8 +5,9 @@ import { resolveAppEnv, resolveDbFilePath, type AppEnv } from "./backup-core";
 
 // CPU / memory / storage collection for the admin resource monitor,
 // deliberately free of any `@/lib/prisma` import so the parsing and arithmetic
-// stay unit-testable without a database. Persistence, the sampling loop and the
-// read model live in src/lib/resource-monitor.ts.
+// stay unit-testable without a database. The sampling loop and the read model
+// live in src/lib/resource-monitor.ts; the shared spool they persist through
+// lives in src/lib/resource-spool.ts.
 //
 // Every deployment runs two Node processes per environment (a web server and a
 // worker) in separate containers, so each process measures ITSELF: there is no
@@ -14,6 +15,12 @@ import { resolveAppEnv, resolveDbFilePath, type AppEnv } from "./backup-core";
 // numbers come from cgroups, which report that container's slice rather than
 // the whole host — that is what makes "the dev node" and "the dev worker"
 // separately meaningful even though they share a machine.
+//
+// Each node ALSO reads the host's /proc, which Docker does not namespace: a
+// container's /proc/stat and /proc/meminfo describe the whole EC2 box. That is
+// what feeds the "whole machine" panel, and it is the only way to see the
+// difference between "our four containers are busy" and "the machine is busy" —
+// the four container slices can be near-idle while the box is not.
 
 export type NodeRole = "web" | "worker";
 
@@ -124,6 +131,108 @@ export function readCpuCores(): number {
   const period = readNumberFile(CGROUP_V1.cpuPeriod);
   if (quota !== null && period !== null && quota > 0 && period > 0) return quota / period;
   return Math.max(1, os.cpus().length);
+}
+
+// ─── Host (whole-machine) readers ───────────────────────────────────────────
+// Docker does not namespace /proc, so these read the EC2 instance's own
+// counters from inside the container. Overridable for the (currently
+// hypothetical) case of lxcfs masking them, and every reader returns null when
+// the files are absent — macOS during local development, mainly — so the host
+// panel degrades to "unavailable" instead of inventing numbers.
+
+const PROC_DIR = process.env.HOST_PROC_DIR?.trim() || "/proc";
+
+export interface HostCpuTimes {
+  /** All jiffies across every state, i.e. cores × elapsed time. */
+  totalJiffies: number;
+  /** The subset spent idle or blocked on I/O — not doing work. */
+  idleJiffies: number;
+}
+
+/**
+ * The aggregate `cpu` line of /proc/stat, which sums every core.
+ *
+ * Fields are user, nice, system, idle, iowait, irq, softirq, steal, … — idle
+ * and iowait are positions 3 and 4. iowait counts as idle here: a core waiting
+ * on the EBS volume is not consuming CPU, and calling it busy would make disk
+ * pressure masquerade as compute pressure.
+ */
+export function parseProcStatCpu(text: string): HostCpuTimes | null {
+  const line = text.split("\n").find((l) => /^cpu\s/.test(l));
+  if (!line) return null;
+  const fields = line.trim().split(/\s+/).slice(1).map(Number);
+  if (fields.length < 5 || fields.some((n) => !Number.isFinite(n))) return null;
+  return {
+    totalJiffies: fields.reduce((sum, n) => sum + n, 0),
+    idleJiffies: fields[3] + fields[4],
+  };
+}
+
+export interface HostMemory {
+  usedBytes: number;
+  totalBytes: number;
+}
+
+/**
+ * MemTotal and MemAvailable out of /proc/meminfo, in bytes (the file is kB).
+ *
+ * "Used" is total minus AVAILABLE rather than total minus free: the kernel
+ * spends every spare page on cache, so MemFree on a healthy box is always near
+ * zero and would read as a machine permanently at 100%. MemAvailable is the
+ * kernel's own estimate of what a new allocation could actually get.
+ */
+export function parseMemInfoBytes(text: string): HostMemory | null {
+  const field = (name: string): number | null => {
+    const match = text.match(new RegExp(`^${name}:\\s+(\\d+)\\s*kB`, "m"));
+    return match ? Number(match[1]) * 1024 : null;
+  };
+  const total = field("MemTotal");
+  if (total === null || total <= 0) return null;
+  const available = field("MemAvailable") ?? field("MemFree");
+  if (available === null) return null;
+  return { usedBytes: Math.max(0, total - available), totalBytes: total };
+}
+
+export function readHostCpuTimes(): HostCpuTimes | null {
+  const raw = readFileOrNull(path.join(PROC_DIR, "stat"));
+  return raw ? parseProcStatCpu(raw) : null;
+}
+
+export function readHostMemory(): HostMemory | null {
+  const raw = readFileOrNull(path.join(PROC_DIR, "meminfo"));
+  return raw ? parseMemInfoBytes(raw) : null;
+}
+
+/** Busy share of the whole machine between two /proc/stat readings. */
+export function hostCpuPercentFromDelta(
+  deltaTotalJiffies: number,
+  deltaIdleJiffies: number
+): number | null {
+  if (deltaTotalJiffies <= 0 || deltaIdleJiffies < 0) return null;
+  const busy = Math.max(0, deltaTotalJiffies - deltaIdleJiffies);
+  return Math.min(100, Math.round((busy / deltaTotalJiffies) * 10000) / 100);
+}
+
+/**
+ * Stateful whole-machine CPU reader. Like createCpuSampler this needs a
+ * previous reading, but it reports null rather than 0 for "don't know yet":
+ * every node writes a host figure, and a freshly restarted node claiming the
+ * box was idle would drag the averaged host series down.
+ */
+export function createHostCpuSampler() {
+  let previous: HostCpuTimes | null = null;
+
+  return function sampleHostCpuPercent(): number | null {
+    const current = readHostCpuTimes();
+    if (!current) return null;
+    const last = previous;
+    previous = current;
+    if (!last) return null;
+    return hostCpuPercentFromDelta(
+      current.totalJiffies - last.totalJiffies,
+      current.idleJiffies - last.idleJiffies
+    );
+  };
 }
 
 export interface MemoryUsage {
@@ -258,21 +367,32 @@ export interface ResourceSampleInput {
   diskTotalBytes: number;
   diskFreeBytes: number;
   s3Bytes: number | null;
+  // Whole-machine figures. Every node reports them and they all describe the
+  // same EC2 box, so the read model can reconstruct the host series from
+  // whichever nodes happen to be alive.
+  hostCpuPercent: number | null;
+  hostCpuCores: number | null;
+  hostMemUsedBytes: number | null;
+  hostMemTotalBytes: number | null;
 }
 
 /**
- * One complete reading for this node. `cpuPercent` comes from the caller's
- * sampler (it needs the previous tick) and `s3Bytes` from the caller's cache
- * (only the worker scans the bucket, hourly).
+ * One complete reading for this node plus its view of the host.
+ *
+ * `cpuPercent` and `hostCpuPercent` come from the caller's samplers (both need
+ * the previous tick) and `s3Bytes` from the caller's cache (only the worker
+ * scans the bucket, hourly).
  */
 export function collectResourceSample(
   identity: NodeIdentity,
   cpuPercent: number,
+  hostCpuPercent: number | null,
   s3Bytes: number | null
 ): ResourceSampleInput {
   const dataDir = resolveDataDir();
   const memory = readMemoryUsage();
   const disk = readDiskUsage(dataDir);
+  const hostMemory = readHostMemory();
   return {
     ...identity,
     cpuPercent,
@@ -283,6 +403,12 @@ export function collectResourceSample(
     diskTotalBytes: disk.totalBytes,
     diskFreeBytes: disk.freeBytes,
     s3Bytes,
+    hostCpuPercent,
+    // os.cpus() reads the host's /proc/cpuinfo, so this is the machine's core
+    // count even when a cgroup quota gives this container fewer.
+    hostCpuCores: os.cpus().length || null,
+    hostMemUsedBytes: hostMemory?.usedBytes ?? null,
+    hostMemTotalBytes: hostMemory?.totalBytes ?? null,
   };
 }
 
@@ -324,6 +450,11 @@ export interface ResourcePoint {
   diskTotalBytes: number;
   diskFreeBytes: number;
   s3Bytes: number | null;
+  hostCpuPercent: number | null;
+  hostCpuPeakPercent: number | null;
+  hostCpuCores: number | null;
+  hostMemUsedBytes: number | null;
+  hostMemTotalBytes: number | null;
 }
 
 export interface BucketableSample {
@@ -335,10 +466,39 @@ export interface BucketableSample {
   diskTotalBytes: number;
   diskFreeBytes: number;
   s3Bytes: number | null;
+  hostCpuPercent?: number | null;
+  hostCpuCores?: number | null;
+  hostMemUsedBytes?: number | null;
+  hostMemTotalBytes?: number | null;
 }
 
 function average(values: number[]): number {
   return values.reduce((sum, v) => sum + v, 0) / values.length;
+}
+
+/** Newest non-null reading of a field in a time-ordered bucket, else null. */
+function latestDefined(
+  ordered: BucketableSample[],
+  pick: (sample: BucketableSample) => number | null | undefined
+): number | null {
+  for (let i = ordered.length - 1; i >= 0; i -= 1) {
+    const value = pick(ordered[i]);
+    if (value !== null && value !== undefined) return value;
+  }
+  return null;
+}
+
+/** Non-null readings of a field across a bucket. */
+function definedValues(
+  ordered: BucketableSample[],
+  pick: (sample: BucketableSample) => number | null | undefined
+): number[] {
+  const out: number[] = [];
+  for (const sample of ordered) {
+    const value = pick(sample);
+    if (value !== null && value !== undefined) out.push(value);
+  }
+  return out;
 }
 
 /**
@@ -349,7 +509,8 @@ function average(values: number[]): number {
  * the newest reading in the bucket rather than an average: "how full is the
  * disk" is a point-in-time fact, not something to smooth. s3Bytes is the newest
  * NON-NULL reading, because web nodes never scan the bucket and would otherwise
- * blank out an environment's line.
+ * blank out an environment's line; the host fields are treated the same way,
+ * since a node that has just restarted has no host CPU delta yet.
  */
 export function bucketSamples(samples: BucketableSample[], bucketMs: number): ResourcePoint[] {
   if (bucketMs <= 0) return [];
@@ -366,7 +527,7 @@ export function bucketSamples(samples: BucketableSample[], bucketMs: number): Re
     .map(([t, rows]) => {
       const ordered = [...rows].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
       const latest = ordered[ordered.length - 1];
-      const latestS3 = [...ordered].reverse().find((r) => r.s3Bytes !== null)?.s3Bytes ?? null;
+      const hostCpu = definedValues(ordered, (r) => r.hostCpuPercent);
       return {
         t,
         cpuPercent: Math.round(average(ordered.map((r) => r.cpuPercent)) * 100) / 100,
@@ -376,7 +537,12 @@ export function bucketSamples(samples: BucketableSample[], bucketMs: number): Re
         dbBytes: latest.dbBytes,
         diskTotalBytes: latest.diskTotalBytes,
         diskFreeBytes: latest.diskFreeBytes,
-        s3Bytes: latestS3,
+        s3Bytes: latestDefined(ordered, (r) => r.s3Bytes),
+        hostCpuPercent: hostCpu.length ? Math.round(average(hostCpu) * 100) / 100 : null,
+        hostCpuPeakPercent: hostCpu.length ? Math.max(...hostCpu) : null,
+        hostCpuCores: latestDefined(ordered, (r) => r.hostCpuCores),
+        hostMemUsedBytes: latestDefined(ordered, (r) => r.hostMemUsedBytes),
+        hostMemTotalBytes: latestDefined(ordered, (r) => r.hostMemTotalBytes),
       };
     });
 }
