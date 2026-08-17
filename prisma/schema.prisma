@@ -1122,6 +1122,16 @@ model SystemLog {
 // deletes. Rows are pruned by the worker after RESOURCE_SAMPLE_RETENTION_DAYS
 // (default 7) — the admin UI only charts back one week.
 // appEnv: "prod" | "dev" — role: "web" | "worker"
+// RETIRED — nothing writes here any more. The admin resource monitor moved its
+// samples to a spool directory bind-mounted into all four containers, so that
+// prod and dev can each chart the other's nodes without a cross-deployment HTTP
+// call (see src/lib/resource-spool.ts). The worker keeps pruning the leftover
+// rows until they age out.
+//
+// The model itself stays because docker-entrypoint.sh runs `prisma db push`
+// WITHOUT --accept-data-loss in production: dropping a table is a destructive
+// change, so removing this would make the container refuse to boot. Deleting it
+// needs a deliberate migration, not a schema edit.
 model ResourceSample {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())

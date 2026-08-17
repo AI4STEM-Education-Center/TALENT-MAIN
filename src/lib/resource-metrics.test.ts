@@ -3,10 +3,13 @@ import {
   bucketSamples,
   cpuPercentFromDelta,
   createCpuSampler,
+  hostCpuPercentFromDelta,
   isResourceRange,
   parseCgroupCpuMax,
   parseCgroupCpuStat,
   parseInactiveFileBytes,
+  parseMemInfoBytes,
+  parseProcStatCpu,
   rangeConfig,
   type BucketableSample,
 } from "./resource-metrics";
@@ -38,6 +41,63 @@ describe("cgroup parsing", () => {
     expect(parseInactiveFileBytes("anon 100\ninactive_file 4096\nslab 8")).toBe(4096);
     expect(parseInactiveFileBytes("total_inactive_file 8192")).toBe(8192);
     expect(parseInactiveFileBytes("anon 100")).toBe(0);
+  });
+});
+
+describe("host /proc parsing", () => {
+  // Docker does not namespace /proc, so a container reading these files is
+  // reading the EC2 instance's own counters.
+  const PROC_STAT = [
+    "cpu  100 20 30 800 50 0 10 0 0 0",
+    "cpu0 50 10 15 400 25 0 5 0 0 0",
+    "intr 12345",
+  ].join("\n");
+
+  it("sums the aggregate cpu line and counts iowait as idle", () => {
+    // A core blocked on the EBS volume is not consuming CPU; calling it busy
+    // would make disk pressure look like compute pressure.
+    expect(parseProcStatCpu(PROC_STAT)).toEqual({ totalJiffies: 1010, idleJiffies: 850 });
+  });
+
+  it("returns null when there is no aggregate line to read", () => {
+    expect(parseProcStatCpu("cpu0 1 2 3 4 5\nintr 1")).toBeNull();
+    expect(parseProcStatCpu("cpu  1 2\n")).toBeNull();
+    expect(parseProcStatCpu("")).toBeNull();
+  });
+
+  it("reads meminfo in bytes and treats available (not free) as usable", () => {
+    // A healthy Linux box spends every spare page on cache, so MemFree is
+    // always near zero — using it would report the machine permanently full.
+    const meminfo = ["MemTotal:        2028112 kB", "MemFree:           82340 kB", "MemAvailable:     996000 kB"].join("\n");
+    expect(parseMemInfoBytes(meminfo)).toEqual({
+      usedBytes: (2028112 - 996000) * 1024,
+      totalBytes: 2028112 * 1024,
+    });
+  });
+
+  it("falls back to MemFree on a kernel too old for MemAvailable", () => {
+    const meminfo = "MemTotal:        1000 kB\nMemFree:          400 kB";
+    expect(parseMemInfoBytes(meminfo)?.usedBytes).toBe(600 * 1024);
+  });
+
+  it("returns null for meminfo it cannot make sense of", () => {
+    expect(parseMemInfoBytes("")).toBeNull();
+    expect(parseMemInfoBytes("MemTotal:  0 kB\nMemFree: 0 kB")).toBeNull();
+    expect(parseMemInfoBytes("MemTotal: 1000 kB")).toBeNull();
+  });
+});
+
+describe("hostCpuPercentFromDelta", () => {
+  it("reports the busy share of all cores together", () => {
+    expect(hostCpuPercentFromDelta(1000, 750)).toBe(25);
+    expect(hostCpuPercentFromDelta(1000, 0)).toBe(100);
+  });
+
+  it("reports null rather than 0 when there is nothing to diff", () => {
+    // 0 would be a claim that the machine was idle; null says "unknown", which
+    // the read model then skips instead of averaging in.
+    expect(hostCpuPercentFromDelta(0, 0)).toBeNull();
+    expect(hostCpuPercentFromDelta(-10, 5)).toBeNull();
   });
 });
 
@@ -139,5 +199,29 @@ describe("bucketSamples", () => {
   it("handles an empty input and a zero bucket width", () => {
     expect(bucketSamples([], 60_000)).toEqual([]);
     expect(bucketSamples([sample(0)], 0)).toEqual([]);
+  });
+
+  it("averages the host readings it has and ignores the ones it does not", () => {
+    // Every node reports the same machine, so averaging returns that agreed
+    // figure — but a node that has just restarted has no host CPU delta yet and
+    // reports null, which must not be averaged in as zero.
+    const points = bucketSamples(
+      [
+        sample(0, { hostCpuPercent: 40, hostMemUsedBytes: 1000, hostCpuCores: 2 }),
+        sample(1000, { hostCpuPercent: null, hostMemUsedBytes: null, hostCpuCores: null }),
+        sample(2000, { hostCpuPercent: 60, hostMemUsedBytes: 1200, hostCpuCores: 2 }),
+      ],
+      60_000
+    );
+    expect(points[0].hostCpuPercent).toBe(50);
+    expect(points[0].hostCpuPeakPercent).toBe(60);
+    expect(points[0].hostMemUsedBytes).toBe(1200);
+    expect(points[0].hostCpuCores).toBe(2);
+  });
+
+  it("reports null host figures when no sample in the bucket had any", () => {
+    const points = bucketSamples([sample(0)], 60_000);
+    expect(points[0].hostCpuPercent).toBeNull();
+    expect(points[0].hostMemTotalBytes).toBeNull();
   });
 });

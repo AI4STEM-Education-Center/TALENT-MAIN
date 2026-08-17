@@ -1,7 +1,16 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Cpu, Database, HardDrive, MemoryStick, RefreshCw, ServerCog, TriangleAlert } from "lucide-react";
+import {
+  Cpu,
+  Database,
+  HardDrive,
+  MemoryStick,
+  RefreshCw,
+  Server,
+  ServerCog,
+  TriangleAlert,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ResourceChart, type ChartSeries } from "./resource-chart";
 
@@ -29,6 +38,25 @@ interface NodeSeries {
   points: ResourcePoint[];
 }
 
+interface HostPoint {
+  t: number;
+  cpuPercent: number | null;
+  cpuPeakPercent: number | null;
+  memUsedBytes: number | null;
+  memTotalBytes: number | null;
+  diskTotalBytes: number;
+  diskFreeBytes: number;
+}
+
+interface HostSeries {
+  cpuCores: number | null;
+  memTotalBytes: number | null;
+  diskTotalBytes: number;
+  diskFreeBytes: number;
+  lastSampleAt: number;
+  points: HostPoint[];
+}
+
 interface ResourceResponse {
   range: RangeKey;
   generatedAt: number;
@@ -37,8 +65,9 @@ interface ResourceResponse {
   staleAfterMs: number;
   retentionDays: number;
   localEnv: string;
-  peer: { configured: boolean; ok: boolean; url: string | null; error: string | null };
   nodes: NodeSeries[];
+  host: HostSeries | null;
+  spool: { dir: string; shared: boolean; files: string[]; error: string | null };
 }
 
 type RangeKey = "1h" | "24h" | "7d";
@@ -70,6 +99,9 @@ const ENVIRONMENTS = [
 
 const REFRESH_MS = 30_000;
 
+/** Above this the disk is worth flagging, well before writes start failing. */
+const DISK_WARN_PERCENT = 80;
+
 // ─── Formatting ─────────────────────────────────────────────────────────────
 
 function formatBytes(bytes: number): string {
@@ -96,7 +128,42 @@ function formatAge(ms: number): string {
   return `${Math.round(minutes / 60)}h ago`;
 }
 
+function percentOf(part: number, whole: number): number {
+  return whole > 0 ? (part / whole) * 100 : 0;
+}
+
 // ─── Derived series ─────────────────────────────────────────────────────────
+
+/**
+ * The four containers added together, per bucket.
+ *
+ * CPU is re-based before summing: each node's percentage is a share of ITS OWN
+ * allowance, so two nodes at 50% of one core each are 50% of a two-core box,
+ * not 100%. Multiplying back out by the node's cores and dividing by the
+ * machine's makes the total directly comparable to the host line above it.
+ */
+function buildContainerTotals(
+  nodes: NodeSeries[],
+  hostCores: number | null
+): { t: number; cpuPercent: number; memUsedBytes: number }[] {
+  const merged = new Map<number, { cpuPercent: number; memUsedBytes: number }>();
+  for (const node of nodes) {
+    const share = hostCores && hostCores > 0 ? node.cpuCores / hostCores : 1;
+    for (const point of node.points) {
+      const existing = merged.get(point.t) ?? { cpuPercent: 0, memUsedBytes: 0 };
+      existing.cpuPercent += point.cpuPercent * share;
+      existing.memUsedBytes += point.memUsedBytes;
+      merged.set(point.t, existing);
+    }
+  }
+  return [...merged.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([t, value]) => ({
+      t,
+      cpuPercent: Math.min(100, Math.round(value.cpuPercent * 100) / 100),
+      memUsedBytes: value.memUsedBytes,
+    }));
+}
 
 /**
  * One environment's storage over time: the SQLite data directory plus the
@@ -129,8 +196,6 @@ function buildStorageSeries(nodes: NodeSeries[]): { t: number; v: number }[] {
 interface EnvStorage {
   dbBytes: number;
   s3Bytes: number | null;
-  diskTotalBytes: number;
-  diskFreeBytes: number;
 }
 
 /** Latest storage reading for an environment, or null if it never reported. */
@@ -141,12 +206,238 @@ function latestStorage(nodes: NodeSeries[]): EnvStorage | null {
   return {
     dbBytes: last.dbBytes,
     s3Bytes: [...points].reverse().find((p) => p.s3Bytes !== null)?.s3Bytes ?? null,
-    diskTotalBytes: last.diskTotalBytes,
-    diskFreeBytes: last.diskFreeBytes,
   };
 }
 
-// ─── Cards ──────────────────────────────────────────────────────────────────
+// ─── Pieces ─────────────────────────────────────────────────────────────────
+
+/**
+ * Usage bar showing two nested quantities: how much of the whole is in use, and
+ * how much of that use is ours. Rendered as one track so the eye compares the
+ * two against the same baseline instead of across two bars.
+ */
+function StackedMeter({
+  usedPercent,
+  minePercent,
+  warn = false,
+  label,
+}: {
+  usedPercent: number;
+  minePercent: number;
+  warn?: boolean;
+  label: string;
+}) {
+  const used = Math.max(0, Math.min(100, usedPercent));
+  const mine = Math.max(0, Math.min(used, minePercent));
+  return (
+    <div
+      role="img"
+      aria-label={label}
+      className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted flex"
+    >
+      <div
+        className={cn("h-full", warn ? "bg-amber-500" : "bg-primary")}
+        style={{ width: `${mine}%` }}
+      />
+      <div
+        className={cn("h-full", warn ? "bg-amber-500/35" : "bg-primary/30")}
+        style={{ width: `${used - mine}%` }}
+      />
+    </div>
+  );
+}
+
+function TotalMetric({
+  icon: Icon,
+  label,
+  value,
+  caption,
+  meter,
+}: {
+  icon: typeof Cpu;
+  label: string;
+  value: string;
+  caption: string;
+  meter: React.ReactNode;
+}) {
+  return (
+    <div>
+      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Icon className="size-3.5" />
+        {label}
+      </p>
+      <p className="mt-1 text-3xl font-bold tabular-nums leading-none">{value}</p>
+      {meter}
+      <p className="mt-1.5 text-[11px] text-muted-foreground">{caption}</p>
+    </div>
+  );
+}
+
+/**
+ * The machine, above the containers that run on it.
+ *
+ * This panel exists because the per-node cards cannot answer "is the box in
+ * trouble?". Prod and dev are four containers on one EC2 instance, and the
+ * things most likely to fill its disk or its RAM — Docker images, container
+ * logs, the OS — are not any of them. Each metric therefore shows the machine
+ * first and our share of it second.
+ */
+function SystemTotalPanel({
+  host,
+  containerCpuPercent,
+  containerMemBytes,
+  appDiskBytes,
+  staleAfterMs,
+  now,
+}: {
+  host: HostSeries | null;
+  containerCpuPercent: number | null;
+  containerMemBytes: number | null;
+  appDiskBytes: number;
+  staleAfterMs: number;
+  now: number;
+}) {
+  const last = host?.points[host.points.length - 1];
+  const online = host ? now - host.lastSampleAt < staleAfterMs : false;
+
+  if (!host || !last) {
+    return (
+      <section className="viz-root border border-border rounded-lg bg-card p-5 mb-6">
+        <h2 className="text-base font-semibold flex items-center gap-2">
+          <Server className="size-4 text-muted-foreground" />
+          Whole machine
+        </h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          No host samples in the selected range. Every node reports the machine&apos;s own CPU,
+          memory and disk alongside its container figures, so this fills in as soon as any one of
+          them has reported twice.
+        </p>
+      </section>
+    );
+  }
+
+  // CPU and memory come from the newest bucket that actually HAS them, which is
+  // not always the newest bucket: a node with no host CPU delta yet (just
+  // restarted) or one on a platform without /proc contributes a bucket with
+  // null rates, and reading `last` blindly would blank a panel that has a
+  // perfectly good reading a minute earlier. Disk is a level every sample
+  // carries, so it does come from `last`.
+  const reversed = [...host.points].reverse();
+  const lastCpu = reversed.find((p) => p.cpuPercent !== null) ?? null;
+  const lastMem = reversed.find((p) => p.memUsedBytes !== null) ?? null;
+
+  const memTotal = lastMem?.memTotalBytes ?? host.memTotalBytes ?? 0;
+  const memUsed = lastMem?.memUsedBytes ?? 0;
+  const cpuPercent = lastCpu?.cpuPercent ?? null;
+
+  // The two sides of each comparison are measured differently — the machine
+  // from /proc (memory the kernel could not hand out), a container from its
+  // cgroup (resident pages minus reclaimable cache) — so the parts can round
+  // to slightly more than the whole. Capping keeps the caption from claiming
+  // the containers used more than the machine did, which is never true.
+  const containerCpu =
+    containerCpuPercent === null ? null : Math.min(containerCpuPercent, cpuPercent ?? 100);
+  const containerMem =
+    containerMemBytes === null ? null : Math.min(containerMemBytes, memUsed);
+
+  const diskUsed = Math.max(0, last.diskTotalBytes - last.diskFreeBytes);
+  const diskPercent = percentOf(diskUsed, last.diskTotalBytes);
+  const diskWarn = diskPercent >= DISK_WARN_PERCENT;
+
+  return (
+    <section
+      className={cn(
+        "viz-root border rounded-lg bg-card p-5 mb-6",
+        diskWarn ? "border-amber-500/40" : "border-border"
+      )}
+    >
+      <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-4">
+        <h2 className="text-base font-semibold flex items-center gap-2">
+          <Server className="size-4 text-muted-foreground" />
+          Whole machine
+        </h2>
+        <p className="text-xs text-muted-foreground">
+          The EC2 instance both deployments share
+          {host.cpuCores ? ` · ${formatCores(host.cpuCores)}` : ""}
+          {memTotal ? ` · ${formatBytes(memTotal)} RAM` : ""}
+          {last.diskTotalBytes ? ` · ${formatBytes(last.diskTotalBytes)} disk` : ""}
+        </p>
+        <span
+          className={cn(
+            "ml-auto inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium",
+            online
+              ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+              : "bg-muted text-muted-foreground"
+          )}
+        >
+          <span
+            aria-hidden
+            className={cn("size-1.5 rounded-full", online ? "bg-emerald-500" : "bg-muted-foreground")}
+          />
+          {online ? "Live" : `Last seen ${formatAge(now - host.lastSampleAt)}`}
+        </span>
+      </header>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+        <TotalMetric
+          icon={Cpu}
+          label="CPU"
+          value={cpuPercent === null ? "—" : formatPercent(cpuPercent)}
+          caption={
+            containerCpu === null
+              ? "our containers: not reported"
+              : `our containers ${formatPercent(containerCpu)} of the machine`
+          }
+          meter={
+            <StackedMeter
+              usedPercent={cpuPercent ?? 0}
+              minePercent={containerCpu ?? 0}
+              label={`Machine CPU ${formatPercent(cpuPercent ?? 0)} used`}
+            />
+          }
+        />
+        <TotalMetric
+          icon={MemoryStick}
+          label="Memory"
+          value={memTotal ? formatPercent(percentOf(memUsed, memTotal)) : "—"}
+          caption={`${formatBytes(memUsed)} of ${formatBytes(memTotal)}${
+            containerMem === null ? "" : ` · our containers ${formatBytes(containerMem)}`
+          }`}
+          meter={
+            <StackedMeter
+              usedPercent={percentOf(memUsed, memTotal)}
+              minePercent={percentOf(containerMem ?? 0, memTotal)}
+              label={`Machine memory ${formatBytes(memUsed)} of ${formatBytes(memTotal)} used`}
+            />
+          }
+        />
+        <TotalMetric
+          icon={HardDrive}
+          label="Disk"
+          value={formatPercent(diskPercent)}
+          caption={`${formatBytes(diskUsed)} of ${formatBytes(
+            last.diskTotalBytes
+          )} · our databases ${formatBytes(appDiskBytes)}`}
+          meter={
+            <StackedMeter
+              usedPercent={diskPercent}
+              minePercent={percentOf(appDiskBytes, last.diskTotalBytes)}
+              warn={diskWarn}
+              label={`Machine disk ${formatBytes(diskUsed)} of ${formatBytes(
+                last.diskTotalBytes
+              )} used`}
+            />
+          }
+        />
+      </div>
+
+      <p className="mt-4 text-[11px] text-muted-foreground">
+        The solid part of each bar is this application; the pale part is everything else on the
+        box.
+      </p>
+    </section>
+  );
+}
 
 function NodeCard({
   label,
@@ -225,6 +516,123 @@ function NodeCard({
   );
 }
 
+/**
+ * Where the disk actually went.
+ *
+ * The two database volumes are the only part of the root volume this app can
+ * measure: the containers run unprivileged and cannot read /var/lib/docker, so
+ * images, layers and container logs are visible only as the gap between "used"
+ * and what we can account for. Naming that gap — rather than leaving the reader
+ * to assume the app filled the disk — is the point of this card.
+ */
+function DiskBreakdownCard({
+  host,
+  envBytes,
+}: {
+  host: HostSeries | null;
+  envBytes: { env: string; label: string; colorVar: string; bytes: number }[];
+}) {
+  const last = host?.points[host.points.length - 1];
+  if (!last || last.diskTotalBytes <= 0) {
+    return (
+      <div className="border border-border rounded-lg bg-card p-4">
+        <p className="text-sm font-medium mb-1">Disk breakdown</p>
+        <p className="text-xs text-muted-foreground">
+          No disk samples in the selected range.
+        </p>
+      </div>
+    );
+  }
+
+  const total = last.diskTotalBytes;
+  const used = Math.max(0, total - last.diskFreeBytes);
+  const accounted = envBytes.reduce((sum, e) => sum + e.bytes, 0);
+  const other = Math.max(0, used - accounted);
+  const usedPercent = percentOf(used, total);
+
+  const segments = [
+    ...envBytes.map((e) => ({
+      key: e.env,
+      label: `${e.label} database volume`,
+      bytes: e.bytes,
+      color: `var(${e.colorVar})`,
+    })),
+    {
+      key: "other",
+      label: "Operating system, Docker images and logs",
+      bytes: other,
+      color: "var(--viz-total)",
+    },
+    {
+      key: "free",
+      label: "Free",
+      bytes: Math.max(0, total - used),
+      color: "hsl(var(--muted))",
+    },
+  ];
+
+  return (
+    <div
+      className={cn(
+        "viz-root border rounded-lg bg-card p-4",
+        usedPercent >= DISK_WARN_PERCENT ? "border-amber-500/40" : "border-border"
+      )}
+    >
+      <div className="flex flex-wrap items-baseline justify-between gap-2 mb-1">
+        <p className="text-sm font-medium">Disk breakdown</p>
+        <p className="text-xs tabular-nums text-muted-foreground">
+          {formatBytes(used)} of {formatBytes(total)} used ({formatPercent(usedPercent)})
+        </p>
+      </div>
+
+      <div
+        role="img"
+        aria-label={`Disk: ${segments
+          .map((s) => `${s.label} ${formatBytes(s.bytes)}`)
+          .join(", ")}`}
+        className="mt-3 flex h-3 w-full overflow-hidden rounded-full bg-muted"
+      >
+        {segments.map((segment) => (
+          <div
+            key={segment.key}
+            className="h-full"
+            style={{
+              width: `${percentOf(segment.bytes, total)}%`,
+              backgroundColor: segment.color,
+            }}
+          />
+        ))}
+      </div>
+
+      <dl className="mt-3 space-y-1.5 text-xs">
+        {segments.map((segment) => (
+          <div key={segment.key} className="flex items-center justify-between gap-2">
+            <dt className="flex items-center gap-2 text-muted-foreground min-w-0">
+              <span
+                aria-hidden
+                className="size-2 shrink-0 rounded-full"
+                style={{ backgroundColor: segment.color }}
+              />
+              <span className="truncate">{segment.label}</span>
+            </dt>
+            <dd className="tabular-nums font-medium shrink-0">{formatBytes(segment.bytes)}</dd>
+          </div>
+        ))}
+      </dl>
+
+      {other > accounted * 4 && (
+        <p className="mt-3 text-[11px] text-muted-foreground">
+          Most of this disk is not application data. The containers cannot see inside
+          <code className="font-mono mx-1">/var/lib/docker</code>, so to break the grey band down
+          further run <code className="font-mono">docker/disk-report.sh</code> on the instance — it
+          reports image, container-log, journal and package-cache sizes, and prints the matching
+          cleanup commands.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function StorageCard({
   label,
   colorVar,
@@ -237,8 +645,6 @@ function StorageCard({
   isLocal: boolean;
 }) {
   const total = storage ? storage.dbBytes + (storage.s3Bytes ?? 0) : 0;
-  const diskUsed = storage ? storage.diskTotalBytes - storage.diskFreeBytes : 0;
-  const diskPercent = storage && storage.diskTotalBytes > 0 ? (diskUsed / storage.diskTotalBytes) * 100 : 0;
 
   return (
     <div className="viz-root border border-border rounded-lg bg-card p-4">
@@ -271,21 +677,16 @@ function StorageCard({
             </div>
             <div className="flex justify-between gap-2">
               <dt className="text-muted-foreground flex items-center gap-1.5">
-                <HardDrive className="size-3.5" /> S3 objects
+                <ServerCog className="size-3.5" /> S3 objects
               </dt>
               <dd className="tabular-nums font-medium">
                 {storage.s3Bytes === null ? "Not scanned yet" : formatBytes(storage.s3Bytes)}
               </dd>
             </div>
-            <div className="flex justify-between gap-2">
-              <dt className="text-muted-foreground flex items-center gap-1.5">
-                <ServerCog className="size-3.5" /> Disk in use
-              </dt>
-              <dd className="tabular-nums font-medium">
-                {formatBytes(diskUsed)} / {formatBytes(storage.diskTotalBytes)} ({formatPercent(diskPercent)})
-              </dd>
-            </div>
           </dl>
+          <p className="mt-3 text-[11px] text-muted-foreground">
+            Only the database volume sits on the instance&apos;s disk; the S3 objects do not.
+          </p>
         </>
       ) : (
         <p className="text-xs text-muted-foreground">
@@ -328,34 +729,78 @@ export function ResourcesClient() {
     return () => clearInterval(timer);
   }, [load]);
 
+  const nodes = useMemo(() => data?.nodes ?? [], [data]);
+  const host = data?.host ?? null;
+
   const nodesById = useMemo(
-    () => new Map((data?.nodes ?? []).map((node) => [node.nodeId, node])),
-    [data]
+    () => new Map(nodes.map((node) => [node.nodeId, node])),
+    [nodes]
   );
 
-  const cpuSeries: ChartSeries[] = NODES.map((node) => ({
-    id: node.nodeId,
-    label: node.label,
-    colorVar: node.colorVar,
-    points: (nodesById.get(node.nodeId)?.points ?? []).map((p) => ({ t: p.t, v: p.cpuPercent })),
-  }));
+  const containerTotals = useMemo(
+    () => buildContainerTotals(nodes, host?.cpuCores ?? null),
+    [nodes, host]
+  );
+  const latestTotals = containerTotals[containerTotals.length - 1];
 
-  const memorySeries: ChartSeries[] = NODES.map((node) => ({
-    id: node.nodeId,
-    label: node.label,
-    colorVar: node.colorVar,
-    points: (nodesById.get(node.nodeId)?.points ?? []).map((p) => ({ t: p.t, v: p.memUsedBytes })),
+  // Only the database volumes live on the instance's disk. S3 is deliberately
+  // excluded here even though the storage cards below add it in: mixing the two
+  // is what made the old "disk in use" row read as if the bucket were filling
+  // the EC2 volume.
+  const envDiskBytes = ENVIRONMENTS.map((env) => ({
+    env: env.env,
+    label: env.label,
+    colorVar: env.colorVar,
+    bytes: latestStorage(nodes.filter((n) => n.appEnv === env.env))?.dbBytes ?? 0,
   }));
+  const appDiskBytes = envDiskBytes.reduce((sum, e) => sum + e.bytes, 0);
+
+  const hostCpuPoints = (host?.points ?? []).filter((p) => p.cpuPercent !== null);
+  const hostMemPoints = (host?.points ?? []).filter((p) => p.memUsedBytes !== null);
+
+  const cpuSeries: ChartSeries[] = [
+    {
+      id: "machine",
+      label: "Whole machine",
+      colorVar: "--viz-total",
+      dashed: true,
+      points: hostCpuPoints.map((p) => ({ t: p.t, v: p.cpuPercent as number })),
+    },
+    ...NODES.map((node) => ({
+      id: node.nodeId,
+      label: node.label,
+      colorVar: node.colorVar,
+      points: (nodesById.get(node.nodeId)?.points ?? []).map((p) => ({ t: p.t, v: p.cpuPercent })),
+    })),
+  ];
+
+  const memorySeries: ChartSeries[] = [
+    {
+      id: "machine",
+      label: "Whole machine",
+      colorVar: "--viz-total",
+      dashed: true,
+      points: hostMemPoints.map((p) => ({ t: p.t, v: p.memUsedBytes as number })),
+    },
+    ...NODES.map((node) => ({
+      id: node.nodeId,
+      label: node.label,
+      colorVar: node.colorVar,
+      points: (nodesById.get(node.nodeId)?.points ?? []).map((p) => ({ t: p.t, v: p.memUsedBytes })),
+    })),
+  ];
 
   const storageSeries: ChartSeries[] = ENVIRONMENTS.map((env) => ({
     id: env.env,
     label: `${env.label} storage`,
     colorVar: env.colorVar,
-    points: buildStorageSeries((data?.nodes ?? []).filter((n) => n.appEnv === env.env)),
+    points: buildStorageSeries(nodes.filter((n) => n.appEnv === env.env)),
   }));
 
   const bucketMs = data?.bucketMs ?? 60_000;
-  const peer = data?.peer;
+  const spool = data?.spool;
+  const reportingEnvs = new Set(nodes.map((n) => n.appEnv));
+  const missingEnv = data && !reportingEnvs.has(data.localEnv === "prod" ? "dev" : "prod");
 
   return (
     <div className="p-8">
@@ -363,7 +808,7 @@ export function ResourcesClient() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">System Resources</h1>
           <p className="text-muted-foreground mt-1">
-            CPU, memory, and storage for the production and dev nodes and their workers
+            The EC2 instance as a whole, then the production and dev nodes and their workers
             {data ? `, kept for ${data.retentionDays} days` : ""}.
           </p>
         </div>
@@ -411,24 +856,48 @@ export function ResourcesClient() {
       {/* The prose lives in its own <p>: making the banner itself the flex
           container would turn every text run and <code> into a flex item, which
           lays them out with gaps instead of wrapping them as a sentence. */}
-      {peer && !peer.ok && (
+      {spool?.error && (
         <div className="mb-6 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400">
           <TriangleAlert className="size-4 mt-0.5 shrink-0" />
-          {peer.configured ? (
-            <p>
-              The {data?.localEnv === "prod" ? "dev" : "production"} deployment could not be reached
-              ({peer.error ?? "unknown error"}), so only this deployment&apos;s nodes are shown.
-            </p>
-          ) : (
-            <p>
-              Only this deployment&apos;s nodes are shown. Set{" "}
-              <code className="font-mono break-all">RESOURCE_MONITOR_PEER_URL</code> and{" "}
-              <code className="font-mono break-all">RESOURCE_MONITOR_TOKEN</code> on both
-              deployments to chart all four nodes together.
-            </p>
-          )}
+          <p>
+            The metrics spool at <code className="font-mono break-all">{spool.dir}</code> could not
+            be read ({spool.error}).
+          </p>
         </div>
       )}
+
+      {spool && !spool.error && !spool.shared && (
+        <div className="mb-6 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400">
+          <TriangleAlert className="size-4 mt-0.5 shrink-0" />
+          <p>
+            <code className="font-mono break-all">RESOURCE_SPOOL_DIR</code> is not set, so this
+            deployment is writing to its own private spool and can only chart its own two nodes.
+            Both compose stacks set it to <code className="font-mono">/app/metrics</code> and attach
+            the shared <code className="font-mono break-all">talent-resource-metrics</code> volume —
+            redeploy to pick that up.
+          </p>
+        </div>
+      )}
+
+      {spool?.shared && missingEnv && !spool.error && (
+        <div className="mb-6 flex items-start gap-2 rounded-lg border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
+          <TriangleAlert className="size-4 mt-0.5 shrink-0" />
+          <p>
+            The {data?.localEnv === "prod" ? "dev" : "production"} stack has not written to the
+            shared spool in this range — either it is down, or it has not been redeployed since the
+            shared volume was introduced.
+          </p>
+        </div>
+      )}
+
+      <SystemTotalPanel
+        host={host}
+        containerCpuPercent={latestTotals?.cpuPercent ?? null}
+        containerMemBytes={latestTotals?.memUsedBytes ?? null}
+        appDiskBytes={appDiskBytes}
+        staleAfterMs={data?.staleAfterMs ?? 180_000}
+        now={now}
+      />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
         {NODES.map((node) => (
@@ -446,7 +915,7 @@ export function ResourcesClient() {
       <div className="grid grid-cols-1 2xl:grid-cols-2 gap-4 mb-6">
         <ResourceChart
           title="CPU usage"
-          description="Share of each node's available cores, averaged per bucket."
+          description="Each node against its own cores, dashed against the whole machine."
           series={cpuSeries}
           format={formatPercent}
           fixedMax={100}
@@ -455,7 +924,7 @@ export function ResourcesClient() {
         />
         <ResourceChart
           title="Memory usage"
-          description="Resident memory per node, excluding reclaimable page cache."
+          description="Resident memory per node, dashed against the whole machine."
           series={memorySeries}
           format={formatBytes}
           axisBase={1024}
@@ -471,8 +940,13 @@ export function ResourcesClient() {
       <p className="text-sm text-muted-foreground mb-4">
         Each environment is measured on its own: the dev figures cover the dev database volume and
         the <code className="font-mono text-xs">dev/</code> S3 prefix, production the production
-        volume and <code className="font-mono text-xs">prod/</code>.
+        volume and <code className="font-mono text-xs">prod/</code>. The breakdown below is the
+        instance&apos;s disk, which holds the database volumes but not the S3 objects.
       </p>
+
+      <div className="mb-4">
+        <DiskBreakdownCard host={host} envBytes={envDiskBytes} />
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
         {ENVIRONMENTS.map((env) => (
@@ -480,7 +954,7 @@ export function ResourcesClient() {
             key={env.env}
             label={env.label}
             colorVar={env.colorVar}
-            storage={latestStorage((data?.nodes ?? []).filter((n) => n.appEnv === env.env))}
+            storage={latestStorage(nodes.filter((n) => n.appEnv === env.env))}
             isLocal={data?.localEnv === env.env}
           />
         ))}

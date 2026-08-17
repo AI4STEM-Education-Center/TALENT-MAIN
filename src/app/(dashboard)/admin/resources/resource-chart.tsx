@@ -16,6 +16,12 @@ export interface ChartSeries {
   label: string;
   /** CSS custom property holding this series' hue, e.g. "--viz-series-1". */
   colorVar: string;
+  /**
+   * Draw dashed. Reserved for the whole-machine series, which is a different
+   * kind of quantity from the per-node ones (it contains them) — the dash is
+   * what stops it reading as one more node.
+   */
+  dashed?: boolean;
   points: { t: number; v: number }[];
 }
 
@@ -42,6 +48,18 @@ interface ResourceChartProps {
 
 const PADDING = { top: 14, right: 64, bottom: 26, left: 62 };
 const TICK_COUNT = 4;
+
+/**
+ * Legend/tooltip swatch. Dashed series get a dashed swatch — the key has to
+ * carry the same distinction the line does, or the dash is unexplained.
+ */
+function seriesSwatchStyle(series: ChartSeries): React.CSSProperties {
+  const color = `var(${series.colorVar})`;
+  if (!series.dashed) return { backgroundColor: color };
+  return {
+    backgroundImage: `repeating-linear-gradient(to right, ${color} 0 4px, transparent 4px 7px)`,
+  };
+}
 
 /** Axis top rounded up to a readable step (1 / 2 / 2.5 / 5 × a power of `base`). */
 function niceMax(value: number, base: number): number {
@@ -177,11 +195,7 @@ export function ResourceChart({
       <ul className="flex flex-wrap gap-x-4 gap-y-1 mb-2">
         {series.map((s) => (
           <li key={s.id} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span
-              aria-hidden
-              className="h-0.5 w-4 rounded-full"
-              style={{ backgroundColor: `var(${s.colorVar})` }}
-            />
+            <span aria-hidden className="h-0.5 w-4 rounded-full" style={seriesSwatchStyle(s)} />
             {s.label}
           </li>
         ))}
@@ -253,7 +267,8 @@ export function ResourceChart({
                 fill="none"
                 stroke={`var(${s.colorVar})`}
                 strokeWidth={2}
-                strokeLinecap="round"
+                strokeDasharray={s.dashed ? "5 4" : undefined}
+                strokeLinecap={s.dashed ? "butt" : "round"}
                 strokeLinejoin="round"
               />
             );
@@ -327,7 +342,7 @@ export function ResourceChart({
                   <span
                     aria-hidden
                     className="h-0.5 w-3 shrink-0 rounded-full"
-                    style={{ backgroundColor: `var(${s.colorVar})` }}
+                    style={seriesSwatchStyle(s)}
                   />
                   {/* Value leads, series name follows — the reader already
                       knows which series they are pointing at. */}

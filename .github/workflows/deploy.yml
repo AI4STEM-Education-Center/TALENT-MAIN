@@ -105,9 +105,21 @@ jobs:
           script: |
             set -e
             cd ~/app
+            # Shared spool for the admin resource monitor, attached by both the
+            # prod and dev stacks (docker-compose.yml declares it external).
+            # Idempotent: a no-op once the volume exists.
+            docker volume create talent-resource-metrics >/dev/null
             docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             docker compose stop worker
             # Wait for the web container to finish schema application and pass
             # health checks before the worker is allowed to start.
             docker compose up -d --wait --wait-timeout 150 --force-recreate --no-build
-            docker image prune -f
+            # Reclaim disk. `docker image prune -f` only drops DANGLING images,
+            # which left every superseded tagged image and every stopped
+            # container's layers on a 20 GB root volume. -a plus an age filter
+            # also clears images nothing is running any more, while keeping the
+            # last week's so a rollback does not need a re-pull; images in use by
+            # a running container (including the dev stack's) are never touched.
+            docker container prune -f
+            docker image prune -af --filter "until=168h"
+            docker builder prune -f --filter "until=168h"
