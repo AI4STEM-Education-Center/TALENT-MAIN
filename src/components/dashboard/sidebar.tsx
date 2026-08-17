@@ -23,6 +23,7 @@ import {
   MessageSquare,
   Inbox,
   ClipboardCheck,
+  Gauge,
   HardDrive,
   PanelLeftClose,
   Atom,
@@ -77,6 +78,7 @@ const adminNav: NavItem[] = [
   { href: "/admin/ai-config", label: "AI Config", icon: <Settings className="size-4" /> },
   { href: "/admin/email", label: "Email / SMTP", icon: <Mail className="size-4" /> },
   { href: "/admin/backup", label: "Database Backup", icon: <HardDrive className="size-4" /> },
+  { href: "/admin/resources", label: "System Resources", icon: <Gauge className="size-4" /> },
   { href: "/admin/logs", label: "System Logs", icon: <ScrollText className="size-4" /> },
 ];
 
