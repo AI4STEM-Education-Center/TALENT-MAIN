@@ -5,9 +5,10 @@
 # WHERE: on the box, as $EC2_USER (not root).
 # TIME:  ~4 minutes, mostly apt.
 #
-#   scp -i ~/.ssh/talent-admin.pem -r scripts admin@<ip>:~/setup
+#   scp -i ~/.ssh/talent-admin.pem scripts/lib.sh \
+#     scripts/02-bootstrap-box.sh scripts/config.box.env admin@<ip>:~/setup/
 #   ssh -i ~/.ssh/talent-admin.pem admin@<ip>
-#   cd ~/setup && ./02-bootstrap-box.sh
+#   cd ~/setup && CONFIG_FILE=~/setup/config.box.env ./02-bootstrap-box.sh
 #
 # Installs Docker, creates the directory layout, creates the shared `edge`
 # network, logs in to GHCR, generates the deploy key GitHub Actions will use,
