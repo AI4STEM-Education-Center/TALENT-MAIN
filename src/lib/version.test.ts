@@ -47,45 +47,26 @@ describe("getVersionInfo", () => {
     });
   });
 
-  it("groups a catch-up release by Friday cutoff while preserving flat notes", () => {
+  it("keeps weekly patch releases as independent flat entries", () => {
     process.env.NEXT_PUBLIC_CHANGELOG = [
-      "## v0.0.15 - 2026-08-21",
-      "",
-      "### Week ending 2026-08-21",
+      "## v0.0.16 - 2026-08-21",
       "- Added signed media delivery",
       "- Improved simulation revisions",
       "",
-      "### Week ending 2026-08-14",
+      "## v0.0.15 - 2026-08-14",
       "- Added consent exports",
-      "",
-      "## v0.0.14 - 2026-08-07",
-      "- Existing flat release",
     ].join("\n");
 
     const { changelogEntries } = getVersionInfo();
     expect(changelogEntries[0]).toEqual({
-      version: "0.0.15",
+      version: "0.0.16",
       date: "2026-08-21",
-      notes: [
-        "Added signed media delivery",
-        "Improved simulation revisions",
-        "Added consent exports",
-      ],
-      weeks: [
-        {
-          endDate: "2026-08-21",
-          notes: ["Added signed media delivery", "Improved simulation revisions"],
-        },
-        {
-          endDate: "2026-08-14",
-          notes: ["Added consent exports"],
-        },
-      ],
+      notes: ["Added signed media delivery", "Improved simulation revisions"],
     });
     expect(changelogEntries[1]).toEqual({
-      version: "0.0.14",
-      date: "2026-08-07",
-      notes: ["Existing flat release"],
+      version: "0.0.15",
+      date: "2026-08-14",
+      notes: ["Added consent exports"],
     });
   });
 
