@@ -124,9 +124,8 @@ cat <<EOF
 
 ${c_green}Application environment installed.${c_reset}
 
-Share with whoever needs to register:
-  teacher signup token   ${TEACHER_SIGNUP_TOKEN}
-  admin signup token     ${ADMIN_SIGNUP_TOKEN}
+The signup tokens remain in scripts/config.env (mode 600). Retrieve and share
+them only through your normal secrets channel; this script does not print them.
 
 Next: ./05-cloudflare-dns.sh
 EOF
