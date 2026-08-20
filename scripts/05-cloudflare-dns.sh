@@ -6,13 +6,14 @@
 # WHERE: your laptop.
 # TIME:  ~1 minute.
 #
-#   ./scripts/05-cloudflare-dns.sh
+#   ./scripts/05-cloudflare-dns.sh dev
+#   ./scripts/05-cloudflare-dns.sh prod
+#   ./scripts/05-cloudflare-dns.sh both
 #
-# Creates proxied A records for $PROD_HOST and $DEV_HOST, then installs a
-# systemd timer on the box that re-points them whenever the instance's public
-# address changes. That is what replaces the Elastic IP: a stop/start, or an
-# instance replacement, self-heals within five minutes instead of needing a
-# console visit.
+# Creates the selected proxied A record(s), then installs a systemd timer on
+# the box that re-points exactly those records whenever the instance's public
+# address changes. Start with dev during recovery; rerun with both only after
+# production is ready for cutover.
 #
 # Both records stay proxied (orange cloud). That is load-bearing, not cosmetic:
 #   - the origin address never appears in public DNS, so scanners have nothing
@@ -30,6 +31,14 @@ need_cmd curl jq ssh scp
 require_box
 refresh_public_ip
 require_vars CF_ZONE CF_API_TOKEN PROD_HOST DEV_HOST
+
+TARGET="${1:-both}"
+case "$TARGET" in
+  dev)  TARGET_HOSTS=("$DEV_HOST") ;;
+  prod) TARGET_HOSTS=("$PROD_HOST") ;;
+  both) TARGET_HOSTS=("$PROD_HOST" "$DEV_HOST") ;;
+  *) die "usage: $0 <dev|prod|both>" ;;
+esac
 
 step "Cloudflare zone"
 ZONE_ID=$(cf_zone_id)
@@ -64,8 +73,9 @@ upsert_a_record() {
 }
 
 step "DNS records"
-upsert_a_record "$PROD_HOST"
-upsert_a_record "$DEV_HOST"
+for target_host in "${TARGET_HOSTS[@]}"; do
+  upsert_a_record "$target_host"
+done
 
 # ---------------------------------------------------------------------------
 step "Installing the DDNS updater on the box"
@@ -149,7 +159,7 @@ DDNS_EOF
 cat > "$ENVF" <<EOF
 CF_API_TOKEN="${CF_API_TOKEN}"
 CF_ZONE_ID="${ZONE_ID}"
-HOSTS="${PROD_HOST} ${DEV_HOST}"
+HOSTS="${TARGET_HOSTS[*]}"
 EOF
 
 cat > "$UNIT" <<'EOF'
@@ -203,8 +213,7 @@ cat <<EOF
 
 ${c_green}DNS ready.${c_reset}
 
-  ${PROD_HOST} -> ${PUBLIC_IP}  (proxied)
-  ${DEV_HOST}  -> ${PUBLIC_IP}  (proxied)
+  target ${TARGET}: ${TARGET_HOSTS[*]} -> ${PUBLIC_IP}  (proxied)
 
 ${c_yellow}One manual step in the Cloudflare dashboard${c_reset} — the API token deliberately
 lacks Zone Settings permission, so these cannot be scripted with it:
