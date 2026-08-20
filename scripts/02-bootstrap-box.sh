@@ -181,11 +181,8 @@ Set these three GitHub repository secrets
 
   EC2_HOST     $(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || echo '<this box public IP>')
   EC2_USER     ${USER}
-  EC2_SSH_KEY  the private key printed below, including both BEGIN/END lines
-
-${c_yellow}---------- EC2_SSH_KEY (private — paste into GitHub, then clear your scrollback) ----------${c_reset}
-$(cat "$KEY")
-${c_yellow}------------------------------------------------------------------------------------------${c_reset}
+  EC2_SSH_KEY  ${KEY} (private; pipe it directly into gh secret set from the
+               laptop instead of printing or copying it through a clipboard)
 
 Next: return to your laptop and run ./scripts/03-provision-storage.sh,
 then ./scripts/04-app-env.sh.
