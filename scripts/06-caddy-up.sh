@@ -68,8 +68,8 @@ step "Validating the Caddyfile before it goes live"
 # A syntax error found here costs a rebuild; found after `up -d` it costs an
 # outage, because the running container exits and takes both sites with it.
 box_ssh "cd '${CADDY_DIR}' && docker compose -f docker-compose.caddy.yml build --quiet" || die "image build failed"
-if box_ssh "cd '${CADDY_DIR}' && set -a && . ./.env && set +a && docker run --rm -v '${CADDY_DIR}/Caddyfile:/etc/caddy/Caddyfile:ro' \
-      -e PROD_HOST -e DEV_HOST -e ACME_EMAIL -e CF_API_TOKEN -e CF_TRUSTED_RANGES \
+if box_ssh "cd '${CADDY_DIR}' && docker run --rm --env-file '${CADDY_DIR}/.env' \
+      -v '${CADDY_DIR}/Caddyfile:/etc/caddy/Caddyfile:ro' \
       talent-caddy:local caddy validate --config /etc/caddy/Caddyfile >/dev/null 2>&1"; then
   ok "config valid"
 else
