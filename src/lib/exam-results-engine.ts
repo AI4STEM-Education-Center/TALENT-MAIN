@@ -709,22 +709,27 @@ export async function generateExamResult(examResultId: string): Promise<void> {
 }
 
 /**
- * Mark stored simulation refs whose backing row no longer exists (deleted by
- * staff after the result snapshot was written) or no longer has an artifact to
- * serve. The student UI shows those as "no longer available" instead of
- * mounting an iframe whose content request would 404.
+ * Resolve stored simulation refs against their live rows. Result snapshots keep
+ * only the stable simulation id, so a teacher revision is immediately reflected
+ * by the current version returned here while deleted/artifact-less rows become
+ * unavailable instead of mounting an iframe that would 404.
  */
 async function annotateSimulationAvailability(
   simulations: StoredSimulationRecommendation[]
 ): Promise<SimulationRecommendationView[]> {
   const rows = await prisma.questionSimulation.findMany({
     where: { id: { in: simulations.map((s) => s.simulationId) } },
-    select: { id: true, storageKey: true },
+    select: { id: true, storageKey: true, version: true },
   });
-  const serveable = new Set(rows.filter((r) => r.storageKey !== null).map((r) => r.id));
-  return simulations.map((s) =>
-    serveable.has(s.simulationId) ? s : { ...s, unavailable: true }
+  const liveVersions = new Map(
+    rows.filter((row) => row.storageKey !== null).map((row) => [row.id, row.version])
   );
+  return simulations.map((simulation) => {
+    const version = liveVersions.get(simulation.simulationId);
+    return version === undefined
+      ? { ...simulation, unavailable: true }
+      : { ...simulation, version };
+  });
 }
 
 /**
@@ -759,7 +764,12 @@ export async function presignStoredRecommendations(
     return { items: [], truncated: stored.truncated, ...passthrough };
   }
 
-  return mapPresignedRecommendations(stored, (key) => signObjectReadUrl(bucket, key));
+  const mapped = await mapPresignedRecommendations(stored, (key) =>
+    signObjectReadUrl(bucket, key)
+  );
+  // mapPresignedRecommendations operates on the durable snapshot. Override its
+  // raw simulation refs with the live availability/version data resolved above.
+  return { ...mapped, ...passthrough };
 }
 
 /**
