@@ -43,7 +43,6 @@ coverage
 scripts
 dist
 vitest.config.ts
-vitest.setup.ts
 tsconfig.tsbuildinfo
 package.tmp.json
 .claude
