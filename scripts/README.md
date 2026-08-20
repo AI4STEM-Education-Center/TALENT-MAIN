@@ -1,0 +1,89 @@
+# Deployment scripts
+
+Numbered, idempotent, and meant to be run in order once. After that you use 07
+when Cloudflare changes its ranges, 09 to verify, 10 after staging a database
+restore, and 11 only for a deleted-bucket recovery from a WebDAV S3 companion.
+
+Each script begins with its prerequisites, where it runs, and what it changes.
+The table below is the recovery runbook index.
+
+## Before you start
+
+```bash
+cp scripts/config.env.example scripts/config.env
+chmod 600 scripts/config.env
+$EDITOR scripts/config.env      # everything configurable lives here
+```
+
+Nothing is hardcoded in a script body. A second environment — different
+domain, different region, a rebuild after an instance is lost — is a new
+`config.env`, not an edit sweep.
+
+## Order
+
+| # | Script | Runs on | What it does |
+|---|--------|---------|--------------|
+| 01 | `01-provision-ec2.sh` | laptop | Key pair, Cloudflare-only HTTPS rules, security group, the instance |
+| 02 | `02-bootstrap-box.sh` | **the box** | Key-only SSH, Docker, directories, swap, `edge` network, deploy key |
+| 03 | `03-provision-storage.sh` | laptop | S3 bucket, IAM user, CloudFront distribution + signing keys |
+| 04 | `04-app-env.sh` | laptop | Generates secrets, writes `~/app/.env` on the box |
+| 05 | `05-cloudflare-dns.sh` | laptop | Proxied A records + the DDNS timer |
+| 06 | `06-caddy-up.sh` | laptop | Builds and starts the reverse proxy |
+| 07 | `07-refresh-cf-ips.sh` | laptop | Safely re-syncs Cloudflare's 443 rules and Caddy allowlist |
+| 08 | `08-backups.sh` | laptop | Nightly off-box SQLite snapshots |
+| 09 | `09-verify.sh` | laptop | Checks the lot, exits non-zero on failure |
+| 10 | `10-apply-webdav-restore.sh` | laptop | Safely applies a staged prod or dev restore |
+| 11 | `11-recover-s3-snapshot.sh` | laptop | Restores a WebDAV S3 companion into a replacement bucket |
+
+Only 02 runs on the box. Everything else drives it over SSH, which keeps the
+AWS admin credentials and the CloudFront private key on your machine rather
+than on an internet-facing host.
+
+Port 22 is reachable by GitHub-hosted Actions runners, whose addresses are not
+stable enough for a small allowlist. Step 02 therefore enforces public-key-only
+SSH, disables root/password login, and authorizes the deploy key exactly once.
+
+For replacement-instance recovery, keep the original `config.env` in secure
+storage. In particular, the restored database's provider, SMTP, and WebDAV
+passwords require its original `API_KEY_ENCRYPTION_SECRET`. After the new app is
+deployed, create a temporary admin, connect the current WebDAV account, queue a
+production restore, wait for the page to report that it is staged, then run
+step 10. A backup marked “Database + S3 documents” restores those object bytes
+into the replacement deployment's configured bucket before arming the database.
+The restored database replaces the temporary account with the accounts in the
+backup.
+
+## Generated files
+
+- `config.env` — yours, secret, gitignored.
+- `.state.env` — written by the scripts (instance id, IP, CloudFront ids, the
+  app's AWS keys). Mode 600. The AWS secret cannot be looked up again.
+
+Back up both files, `EC2_KEY_FILE`, and `CLOUDFRONT_KEY_DIR` in a secrets
+manager or encrypted vault. A WebDAV database backup does not contain these
+host/bootstrap secrets. If `.state.env` is lost but the app IAM key is still
+known, put its id and secret in the recovery `config.env`; otherwise deliberately
+delete the lost IAM key before step 03 creates a replacement.
+
+## If the box's IP changes
+
+Nothing to do. There is no Elastic IP by design; the DDNS timer re-points the
+Cloudflare records within five minutes. The scripts also re-read the current
+address from AWS on every run, so a stale `.state.env` corrects itself.
+
+## Notes on what these replaced
+
+The previous `ec2-setup.sh` and `check-s3.sh` are gone. Three things about them
+are worth not repeating:
+
+- It carried a live GitHub PAT, an `AUTH_SECRET` and an
+  `API_KEY_ENCRYPTION_SECRET` as literals in the file. **Revoke that PAT if you
+  have not already.** Secrets here are either generated at run time or read
+  from `config.env`.
+- It ran `chmod 777` on the directory holding the production database. The data
+  directories are now owned by container uid 1001, grouped read-only to the EC2
+  user for backups, and inaccessible to everyone else.
+- It assumed the app could fall back to an EC2 instance role for AWS access.
+  It cannot any more — `getAwsCredentials()` requires explicit keys, and the
+  instance is launched with an IMDS hop limit of 1 so a container cannot reach
+  the metadata service at all.
