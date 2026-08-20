@@ -83,8 +83,10 @@ export async function GET(
       "Content-Type": "text/html; charset=utf-8",
       "Content-Security-Policy": SIMULATION_CSP,
       "X-Content-Type-Options": "nosniff",
-      // The artifact key changes on every revision, so short private caching is safe.
-      "Cache-Control": "private, max-age=300",
+      // The URL is authenticated and stable by simulation id while teachers can
+      // publish a new artifact version. Never reuse an older response: immutable
+      // raw vN objects may be CDN-cached, but this role-specific wrapper may not.
+      "Cache-Control": "private, no-store",
     },
   });
 }

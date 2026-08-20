@@ -34,6 +34,7 @@ interface QuizDetail { quiz: { id: string; name: string }; questions: QuestionRo
 
 interface PreviewState {
   simulationId: string;
+  version: number;
   title: string;
   topic: string | null;
   learningGoal: string | null;
@@ -341,6 +342,7 @@ export function AdminSimulationsClient() {
                                     onClick={() =>
                                       setPreview({
                                         simulationId: sim.id,
+                                        version: sim.version,
                                         title: sim.title ?? "Simulation preview",
                                         topic: sim.topic,
                                         learningGoal: sim.learningGoal,
@@ -414,7 +416,14 @@ export function AdminSimulationsClient() {
             )}
           </DialogHeader>
           <div className="min-h-0 flex-1">
-            {preview && <SimulationViewer simulationId={preview.simulationId} title={preview.title} />}
+            {preview && (
+              <SimulationViewer
+                key={`${preview.simulationId}:${preview.version}`}
+                simulationId={preview.simulationId}
+                title={preview.title}
+                version={preview.version}
+              />
+            )}
           </div>
         </DialogContent>
       </Dialog>
