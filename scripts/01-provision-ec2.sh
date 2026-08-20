@@ -25,7 +25,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 load_config
 need_cmd aws jq curl
 require_vars PROJECT AWS_REGION EC2_INSTANCE_NAME EC2_INSTANCE_TYPE \
-             EC2_KEY_NAME EC2_KEY_FILE EC2_AMI_SSM_PARAM EC2_VOLUME_GB
+             EC2_KEY_NAME EC2_KEY_FILE EC2_AMI_SSM_PARAM EC2_VOLUME_GB \
+             EC2_USER APP_DIR CADDY_DIR GHCR_IMAGE
 
 SG_NAME="${PROJECT}-edge"
 
@@ -154,6 +155,22 @@ state_set PUBLIC_IP   "$PUBLIC_IP"
 state_set SG_ID       "$SG_ID"
 state_unset PL4_ID PL6_ID
 
+# Script 02 needs only non-secret host layout values. Generate a deliberately
+# minimal config so the recovery .env, Cloudflare token, and AWS state are
+# never copied to the public server as part of bootstrapping it.
+BOX_CONFIG="${SCRIPT_DIR}/config.box.env"
+cat > "$BOX_CONFIG" <<EOF
+PROJECT=$(printf '%q' "$PROJECT")
+EC2_USER=$(printf '%q' "$EC2_USER")
+APP_DIR=$(printf '%q' "$APP_DIR")
+CADDY_DIR=$(printf '%q' "$CADDY_DIR")
+GHCR_IMAGE=$(printf '%q' "$GHCR_IMAGE")
+GHCR_USER=""
+GHCR_TOKEN=""
+EOF
+chmod 600 "$BOX_CONFIG"
+ok "generated secret-free bootstrap config ${BOX_CONFIG}"
+
 cat <<EOF
 
 ${c_green}Instance ready.${c_reset}
@@ -162,8 +179,11 @@ ${c_green}Instance ready.${c_reset}
 
 Next: copy the scripts to the box and run 02.
 
-  scp -i ${EC2_KEY_FILE} -r scripts ${EC2_USER}@${PUBLIC_IP}:~/setup
-  ssh -i ${EC2_KEY_FILE} ${EC2_USER}@${PUBLIC_IP} 'cd ~/setup && ./02-bootstrap-box.sh'
+  ssh -i ${EC2_KEY_FILE} ${EC2_USER}@${PUBLIC_IP} 'mkdir -p ~/setup'
+  scp -i ${EC2_KEY_FILE} scripts/lib.sh scripts/02-bootstrap-box.sh \
+    scripts/config.box.env ${EC2_USER}@${PUBLIC_IP}:~/setup/
+  ssh -i ${EC2_KEY_FILE} ${EC2_USER}@${PUBLIC_IP} \
+    'cd ~/setup && CONFIG_FILE=~/setup/config.box.env ./02-bootstrap-box.sh'
 
 SSH may refuse for the first ~30s while cloud-init installs the key.
 EOF
