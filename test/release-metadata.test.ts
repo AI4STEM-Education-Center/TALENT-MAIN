@@ -48,38 +48,45 @@ describe("weekly release metadata", () => {
     expect(firstRelease?.[2]).toBe(version.date);
   });
 
-  it("lists non-empty feature groups under descending Friday cutoffs", () => {
+  it("assigns each active week a consecutive patch version and Friday cutoff", () => {
     const { version, changelog } = readReleaseFiles();
-    const releaseStart = changelog.search(/^##\s+v[^\s]+\s+-\s+\d{4}-\d{2}-\d{2}\s*$/m);
-    expect(releaseStart).toBeGreaterThanOrEqual(0);
-
-    const afterHeading = changelog.indexOf("\n", releaseStart);
-    const nextRelease = changelog.indexOf("\n## ", afterHeading + 1);
-    const currentSection = changelog.slice(
-      afterHeading + 1,
-      nextRelease === -1 ? changelog.length : nextRelease
-    );
-    const weekMatches = [
-      ...currentSection.matchAll(/^###\s+Week ending\s+(\d{4}-\d{2}-\d{2})\s*$/gm),
-    ];
-    const weekDates = weekMatches.map((match) => match[1] ?? "");
-
-    expect(weekDates.length).toBeGreaterThan(0);
-    expect(new Set(weekDates).size).toBe(weekDates.length);
-    expect(weekDates).toEqual([...weekDates].sort((a, b) => b.localeCompare(a)));
-
-    weekMatches.forEach((match, index) => {
-      const endDate = match[1] ?? "";
-      expectFriday(endDate);
-      expect(endDate.localeCompare(version.date)).toBeLessThanOrEqual(0);
-
+    const releases = [
+      ...changelog.matchAll(/^##\s+v(0\.0\.(\d+))\s+-\s+(\d{4}-\d{2}-\d{2})\s*$/gm),
+    ].map((match, index, matches) => {
       const notesStart = (match.index ?? 0) + match[0].length;
-      const notesEnd = weekMatches[index + 1]?.index ?? currentSection.length;
-      const notes = currentSection
+      const notesEnd = matches[index + 1]?.index ?? changelog.length;
+      const notes = changelog
         .slice(notesStart, notesEnd)
         .split("\n")
         .filter((line) => line.trim().startsWith("- "));
-      expect(notes.length, `Week ending ${endDate} must list at least one feature`).toBeGreaterThan(0);
+
+      return {
+        version: match[1] ?? "",
+        patch: Number(match[2]),
+        date: match[3] ?? "",
+        notes,
+      };
+    });
+    const weeklyReleases = releases.filter((release) => release.patch >= 15);
+
+    expect(weeklyReleases.map((release) => release.patch)).toEqual([19, 18, 17, 16, 15]);
+    expect(weeklyReleases[0]?.version).toBe(version.version);
+    expect(weeklyReleases[0]?.date).toBe(version.date);
+    expect(new Set(weeklyReleases.map((release) => release.date)).size).toBe(
+      weeklyReleases.length
+    );
+
+    weeklyReleases.forEach((release, index) => {
+      expectFriday(release.date);
+      expect(
+        release.notes.length,
+        `${release.version} must list at least one feature`
+      ).toBeGreaterThan(0);
+      if (index > 0) {
+        expect(
+          release.date.localeCompare(weeklyReleases[index - 1]?.date ?? "")
+        ).toBeLessThan(0);
+      }
     });
   });
 });

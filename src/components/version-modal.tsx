@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { getVersionInfo } from "@/lib/version";
-import { BookText, CalendarDays, X } from "lucide-react";
+import { BookText, X } from "lucide-react";
 
 function ReleaseNotesList({ notes }: { notes: string[] }) {
   if (notes.length === 0) {
@@ -89,25 +89,7 @@ export function VersionModal() {
                     )}
                   </div>
 
-                  {entry.weeks && entry.weeks.length > 0 ? (
-                    <div className="mt-3 space-y-3">
-                      {entry.weeks.map((week) => (
-                        <div
-                          key={week.endDate}
-                          className="rounded-md border border-border/60 bg-muted/25 p-3"
-                        >
-                          <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                            <CalendarDays aria-hidden="true" className="size-3.5" />
-                            <span>Week ending Friday</span>
-                            <time dateTime={week.endDate}>{week.endDate}</time>
-                          </div>
-                          <ReleaseNotesList notes={week.notes} />
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <ReleaseNotesList notes={entry.notes} />
-                  )}
+                  <ReleaseNotesList notes={entry.notes} />
                 </section>
               ))}
             </div>
