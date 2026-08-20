@@ -67,4 +67,10 @@ ec2-setup.sh
 # Ignore ad-hoc docs, but track the published user guide (GitHub Pages).
 docs/*
 !docs/site/
-scripts/
+
+# Deployment automation is tracked; generated state and credentials are not.
+scripts/config.env
+scripts/config.box.env
+scripts/.state.env
+scripts/.state.env.tmp
+scripts/*.bak

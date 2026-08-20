@@ -1,0 +1,57 @@
+# Reverse proxy for production and development on one EC2 instance.
+
+{
+	email {$ACME_EMAIL}
+
+	servers {
+		trusted_proxies static {$CF_TRUSTED_RANGES}
+		client_ip_headers CF-Connecting-IP X-Forwarded-For
+	}
+}
+
+(cloudflare_only) {
+	@not_cloudflare not remote_ip {$CF_TRUSTED_RANGES}
+	abort @not_cloudflare
+}
+
+(tls_cloudflare) {
+	tls {
+		dns cloudflare {env.CF_API_TOKEN}
+		resolvers 1.1.1.1 1.0.0.1
+	}
+}
+
+(app_common) {
+	import cloudflare_only
+	import tls_cloudflare
+	encode zstd gzip
+
+	request_body {
+		max_size 10MB
+	}
+}
+
+{$PROD_HOST} {
+	import app_common
+	reverse_proxy talent-web:3000
+
+	log {
+		output file /var/log/caddy/prod.access.log {
+			roll_size 20MB
+			roll_keep 5
+		}
+	}
+}
+
+{$DEV_HOST} {
+	import app_common
+	reverse_proxy talent-web-dev:3000
+	header X-Robots-Tag "noindex, nofollow"
+
+	log {
+		output file /var/log/caddy/dev.access.log {
+			roll_size 20MB
+			roll_keep 5
+		}
+	}
+}

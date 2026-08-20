@@ -1,0 +1,32 @@
+services:
+  caddy:
+    container_name: talent-caddy
+    image: talent-caddy:local
+    build:
+      context: .
+      dockerfile: caddy.Dockerfile
+    restart: unless-stopped
+    ports:
+      - "443:443"
+    env_file:
+      - ./.env
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - ./logs:/var/log/caddy
+    networks:
+      - edge
+    healthcheck:
+      test: ["CMD", "caddy", "version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  edge:
+    external: true
+
+volumes:
+  caddy_data:
+  caddy_config:
