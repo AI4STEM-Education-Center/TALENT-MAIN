@@ -145,6 +145,8 @@ jobs:
           script: |
             set -e
             cd ~/app
+            printf '%s' '${{ secrets.GITHUB_TOKEN }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
+            docker network inspect edge >/dev/null 2>&1 || docker network create edge >/dev/null
             # Shared spool for the admin resource monitor — the prod stack
             # attaches the same external volume. Idempotent.
             docker volume create talent-resource-metrics >/dev/null
@@ -154,7 +156,7 @@ jobs:
             # --wait blocks until its health check passes; worker-dev is also
             # gated on that health, so neither it nor this seed can race db push.
             docker compose -f docker-compose.dev.yml up -d --wait --wait-timeout 150 --force-recreate --no-build
-            docker exec adaptive-learning-webapp-dev node prisma/seed-prebuilt.js
+            docker exec talent-web-dev node prisma/seed-prebuilt.js
             # See deploy.yml for why this is more than `docker image prune -f`:
             # dev deploys on every push to dev, so this is the busiest producer
             # of superseded images on the box.

@@ -14,21 +14,27 @@ volumes:
     name: talent-resource-metrics
     external: true
 
+networks:
+  edge:
+    external: true
+
 services:
   web-dev:
-    container_name: adaptive-learning-webapp-dev
+    container_name: talent-web-dev
     image: ghcr.io/ai4stem-education-center/talent-main:dev-latest
     build:
       context: ..
       dockerfile: docker/Dockerfile
     pull_policy: always
-    ports:
-      - "3001:3000"
+    networks:
+      - edge
     env_file:
       - ./.env
     environment:
       NODE_ENV: production
       APP_ENV: dev
+      APP_URL: ${DEV_APP_URL}
+      APP_BASE_URL: ${DEV_APP_URL}
       # Dev shares the bucket with prod but has a separate database. Namespace
       # its objects so either environment's GC can only see its own assets.
       S3_KEY_PREFIX: "dev/"
@@ -50,7 +56,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
   worker-dev:
-    container_name: adaptive-learning-webapp-worker-dev
+    container_name: talent-worker-dev
     image: ghcr.io/ai4stem-education-center/talent-main:dev-latest
     build:
       context: ..
@@ -62,12 +68,16 @@ services:
     environment:
       NODE_ENV: production
       APP_ENV: dev
+      APP_URL: ${DEV_APP_URL}
+      APP_BASE_URL: ${DEV_APP_URL}
       S3_KEY_PREFIX: "dev/"
       DATABASE_URL: ${DEV_DATABASE_URL}
       RESOURCE_SPOOL_DIR: /app/metrics
     volumes:
       - ./data/db/dev:/app/prisma/data
       - resource-metrics:/app/metrics
+    networks:
+      - edge
     logging: *logging
     restart: unless-stopped
     depends_on:
