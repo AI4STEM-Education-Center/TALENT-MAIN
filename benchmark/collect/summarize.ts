@@ -142,7 +142,13 @@ function main() {
     `- \`sqlite_busy\`: **${fmtCount(busy)}** — a non-zero value means a write waited longer than ` +
       `better-sqlite3's 5s timeout, i.e. a graded submission was LOST, not merely slow`
   );
-  push(`- designed refusals: ${fmtCount(designed)} (401/403/409/410/429 — the app behaving correctly, never a failure)`);
+  // designed_refusals carries no threshold, so k6 omits it entirely when it was
+  // never incremented. Absent therefore means zero here — unlike the two
+  // counters above, which always materialise because they are thresholded, so
+  // their absence really does mean the reader failed.
+  push(
+    `- designed refusals: ${fmtCount(designed ?? 0)} (401/403/409/410/429 — the app behaving correctly, never a failure)`
+  );
 
   // A run where nearly EVERY request was refused is a broken harness, not a
   // healthy system — but each individual refusal is legitimately "designed", so

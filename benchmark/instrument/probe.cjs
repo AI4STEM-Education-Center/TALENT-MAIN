@@ -87,7 +87,15 @@ function snapshot() {
     // and a snapshot with no provenance is unattributable in a report.
     node: {
       appEnv: process.env.APP_ENV || null,
-      role: process.env.BENCH_PROBE_ROLE || (process.argv[1] || "").includes("worker") ? "worker" : "web",
+      // Parenthesised deliberately: `a || b ? c : d` groups as `(a || b) ? c : d`,
+      // so the unparenthesised version reported EVERY process as "worker" the
+      // moment BENCH_PROBE_ROLE was set at all — which made the report attribute
+      // the web tier's event-loop delay to the worker. The env var is the
+      // authoritative answer; the argv sniff is only a fallback for a process
+      // started without it.
+      role:
+        process.env.BENCH_PROBE_ROLE ||
+        ((process.argv[1] || "").includes("worker") ? "worker" : "web"),
       pid: process.pid,
       nodeVersion: process.version,
     },
