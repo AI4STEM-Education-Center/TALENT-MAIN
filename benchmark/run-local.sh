@@ -18,6 +18,15 @@ COMPOSE_FILE="${BENCH_DIR}/docker/docker-compose.bench.yml"
 ENV_FILE="${BENCH_DIR}/docker/bench.env"
 WORK_DIR="${BENCH_DIR}/.tmp/local"
 BASE_URL="http://127.0.0.1:3100"
+# src/proxy.ts validates the host on EVERY request against a fixed allowlist and
+# returns a bare 403 for anything else. Port 3100 is used so a benchmark never
+# collides with `next dev`, but `127.0.0.1:3100` is NOT on that allowlist — so
+# without this every single request is refused before reaching a route, and
+# because 403 is a legitimately "designed" status here, the run reports a clean
+# PASS having exercised nothing. This is what production's Caddy sends, and
+# src/proxy.ts prefers X-Forwarded-Host over Host, so it is faithful rather than
+# a workaround.
+FORWARDED_HOST="localhost:3000"
 
 SCENARIO="regression"
 LABEL=""
@@ -185,6 +194,7 @@ log "running scenario '${SCENARIO}' (label ${LABEL})..."
 set +e
 BENCH_TIER=local \
 BENCH_BASE_URL="$BASE_URL" \
+BENCH_FORWARDED_HOST="$FORWARDED_HOST" \
 BENCH_SESSION_FILE="$SESSION_FILE" \
 BENCH_COOKIE_NAME="__Secure-authjs.session-token" \
 BENCH_RUN_LABEL="$LABEL" \

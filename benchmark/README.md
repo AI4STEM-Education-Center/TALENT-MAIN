@@ -271,6 +271,33 @@ does not, and a production root-volume snapshot bills monthly, forever.
 | `soak` | ec2 | Hours. Rate-limiter map growth, WAL growth, and admin-latency **drift** as the spool grows. |
 | `edge-validation` | dev-site | Config assertions that only the real edge can answer. |
 
+## The host allowlist will bite you
+
+`src/proxy.ts` validates the host on **every** request against a fixed allowlist
+(`ai4talent.org`, `*.ai4talent.org`, `localhost`, `localhost:3000`) and returns a
+bare **403** for anything else — before any route runs.
+
+The local tier publishes on 3100 so a benchmark never collides with `next dev`,
+so `127.0.0.1:3100` is *not* on that list. The runners therefore send
+`X-Forwarded-Host: localhost:3000`, which is exactly what production's Caddy
+sends and which `src/proxy.ts` prefers over `Host`. Faithful, not a workaround.
+
+Why this is called out so prominently: without it **every request is refused**,
+and because 403 is a legitimately *designed* status for this app (CSRF origin
+mismatch, consent gate, attempt cap), the taxonomy counted all of it as correct
+behaviour and the run reported a clean **PASS having exercised nothing**. The
+first CI run of this harness did exactly that. Three things now make it
+impossible to miss:
+
+- `smoke` and `regression` assert their steps actually ran (`requireSteps`), so
+  a journey that stops early fails instead of reporting 0.0ms rows.
+- The first designed refusal per step+status is logged, with this as the prime
+  suspect.
+- The report flags any run where refusals dominate the request count.
+
+If you target the app on a different host or port, set `BENCH_FORWARDED_HOST` to
+something the allowlist accepts.
+
 ## Reading a report
 
 Correctness first, latency second:
@@ -283,6 +310,10 @@ Correctness first, latency second:
 - **Threshold polarity:** in k6's export, a threshold boolean means *"was this
   crossed?"* — `true` is a **failure**. `summarize.ts` handles both shapes and
   reports anything it cannot interpret as unknown rather than assuming it passed.
+- **A step with count 0 ran zero times.** Latency thresholds pass trivially on an
+  empty step, which is why the deterministic scenarios assert their steps ran.
+- **Refusals dominating the request count** means suspect the harness, not the
+  app — see the section above.
 
 ## Calibration
 

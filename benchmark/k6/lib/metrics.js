@@ -19,6 +19,16 @@ export const designedRefusals = new Counter("designed_refusals");
 export const unexpectedErrors = new Counter("unexpected_errors");
 export const sqliteBusy = new Counter("sqlite_busy");
 export const stepDuration = new Trend("step_duration", true);
+/**
+ * How many times each step ran at all.
+ *
+ * Needed because k6 rejects `count` as a threshold aggregation on a Trend
+ * ("unsupported aggregation method count on metric of type trend" — supported
+ * are avg/min/max/med/p). `count` IS available as a summaryTrendStat, so the
+ * report can show it, but it cannot be ASSERTED on a Trend. A Counter can, so
+ * requireSteps() thresholds this instead.
+ */
+export const stepAttempts = new Counter("step_attempts");
 export const stepFailRate = new Rate("step_failed");
 
 /**
@@ -31,6 +41,9 @@ export const stepFailRate = new Rate("step_failed");
  * left to the default, because the failure is silent: the table still draws.
  */
 export const TREND_STATS = ["avg", "min", "med", "max", "p(90)", "p(95)", "p(99)", "count"];
+
+/** First-occurrence log throttle for designed refusals, keyed by step+status. */
+const loggedRefusals = {};
 
 /** Statuses this app returns on purpose, per route. */
 const DESIGNED = {
@@ -74,6 +87,8 @@ export function record(step, res, expected) {
   // step rather than reporting one meaningless aggregate over everything.
   stepDuration.add(res.timings.duration, { step: step });
   stepFailRate.add(!ok, { step: step });
+  // Counted separately from the Trend so requireSteps() can assert the step ran.
+  stepAttempts.add(1, { step: step });
 
   if (ok) return true;
 
@@ -85,6 +100,19 @@ export function record(step, res, expected) {
 
   if (DESIGNED[res.status]) {
     designedRefusals.add(1, { step: step, status: String(res.status) });
+    // Log the first few. A designed refusal is not a failure, but a run where
+    // EVERY request is one is a broken harness, not a healthy system — and
+    // logging nothing made that indistinguishable from success. Throttled per
+    // step+status so a legitimately refusal-heavy soak cannot flood the log.
+    const key = `${step}:${res.status}`;
+    if (!loggedRefusals[key]) {
+      loggedRefusals[key] = true;
+      console.warn(
+        `[${step}] designed ${res.status} (${DESIGNED[res.status]}) — first occurrence. ` +
+          `If a whole run is these, suspect the harness: a 403 on every request usually means ` +
+          `src/proxy.ts refused the host (see BENCH_FORWARDED_HOST in k6/lib/config.js).`
+      );
+    }
     return false;
   }
 
@@ -116,6 +144,27 @@ function trim(body) {
  * machine-readable summary via `--summary-export <run-dir>/summary.json`, so
  * scenarios return stdout ONLY.
  */
+/**
+ * Assert that a step actually RAN, not merely that it was fast when it did.
+ *
+ * The gap this closes: k6's latency thresholds pass trivially on a step with
+ * zero samples, so a journey that bails out early reports every remaining step
+ * as a clean 0.0ms row and the run PASSES. Combined with 403s counting as
+ * designed refusals, the first CI run of this harness reported PASS having never
+ * started a quiz.
+ *
+ * Deterministic scenarios (smoke, regression) declare their required steps, so
+ * "the journey stopped early" fails the run instead of decorating it.
+ */
+export function requireSteps(steps) {
+  const out = {};
+  for (const step of steps) {
+    // step_attempts, not step_duration: k6 refuses `count` on a Trend.
+    out[`step_attempts{step:${step}}`] = ["count>0"];
+  }
+  return out;
+}
+
 export function thresholds(steps, slo) {
   const out = {
     // Only genuinely unexpected results fail a run.

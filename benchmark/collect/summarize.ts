@@ -143,6 +143,25 @@ function main() {
       `better-sqlite3's 5s timeout, i.e. a graded submission was LOST, not merely slow`
   );
   push(`- designed refusals: ${fmtCount(designed)} (401/403/409/410/429 — the app behaving correctly, never a failure)`);
+
+  // A run where nearly EVERY request was refused is a broken harness, not a
+  // healthy system — but each individual refusal is legitimately "designed", so
+  // nothing else here would say so. The first CI run of this harness reported
+  // PASS with 6 designed refusals out of 6 requests, because src/proxy.ts was
+  // rejecting the host on every request.
+  const totalRequests = stats(metrics.http_reqs).count ?? 0;
+  if (designed !== undefined && totalRequests > 0 && designed / totalRequests > 0.5) {
+    push();
+    push(
+      // Clamped: a journey can record more steps than http_reqs counts (batched
+      // media fetches, redirects), and a ">100%" figure reads as a broken report.
+      `> ⚠️ **${Math.min(100, Math.round((designed / totalRequests) * 100))}% of requests were refused.** Individually ` +
+        `these are correct responses, but at this proportion suspect the HARNESS rather than the app. ` +
+        `The usual cause is a 403 from src/proxy.ts's host allowlist — check \`BENCH_FORWARDED_HOST\`. ` +
+        `A 401 on every request instead means the minted sessions are not being accepted (wrong ` +
+        `AUTH_SECRET, or the wrong cookie name for the target's NODE_ENV).`
+    );
+  }
   if (breached.length > 0) {
     push();
     push(`Thresholds breached:`);

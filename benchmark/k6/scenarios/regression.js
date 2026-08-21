@@ -10,7 +10,7 @@
 // Deltas mean everything. collect/compare.ts is what reads two of these.
 
 import { requireTier, identityFor, RUN_LABEL, SLO } from "../lib/config.js";
-import { thresholds, TREND_STATS } from "../lib/metrics.js";
+import { thresholds, requireSteps, TREND_STATS } from "../lib/metrics.js";
 import { studentQuizJourney, teacherMonitorJourney, adminObservabilityJourney, publicLanding } from "../lib/journeys.js";
 
 requireTier("regression", ["local"]);
@@ -31,7 +31,12 @@ export const options = {
     admin: { executor: "constant-vus", exec: "admin", vus: 1, duration: "3m" },
     anonymous: { executor: "constant-arrival-rate", exec: "anon", rate: 1, timeUnit: "1s", duration: "3m", preAllocatedVUs: 2, maxVUs: 10 },
   },
-  thresholds: thresholds(STEPS, SLO),
+  // A baseline built from a run that silently stopped reaching the write path is
+  // worse than no baseline: every later comparison would look clean.
+  thresholds: Object.assign(
+    thresholds(STEPS, SLO),
+    requireSteps(["static_page", "student_quiz_start", "student_quiz_submit", "admin_resources"])
+  ),
 };
 
 export function student() {
