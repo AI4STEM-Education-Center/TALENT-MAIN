@@ -1,3 +1,30 @@
+# Production stack. It shares an EC2 instance with the dev stack
+# (docker-compose.dev.yml) — same host, same disk, sibling directories under
+# ~/app/data — which is why the resource monitor's spool and the log limits
+# below are defined identically in both files.
+#
+# Container logs are capped explicitly: Docker's json-file driver keeps them
+# forever by default, and four always-on containers writing unbounded logs to a
+# 20 GB root volume is the single easiest way to fill this box. 10 MiB × 3 files
+# × 4 containers bounds the whole deployment at 120 MiB.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+# The resource-monitor spool, shared with the dev stack. A named volume rather
+# than a bind mount under ~/app/data because the containers run as uid 1001:
+# Docker creates a missing bind-mount directory owned by root, which the app
+# then cannot write to, whereas an empty named volume inherits the ownership of
+# /app/metrics in the image. Declared external so both stacks attach to the same
+# volume instead of each creating a project-scoped one — the deploy workflows
+# run `docker volume create` for it, which is a no-op once it exists.
+volumes:
+  resource-metrics:
+    name: talent-resource-metrics
+    external: true
+
 services:
   web:
     image: ghcr.io/ai4stem-education-center/talent-main:latest
@@ -16,8 +43,16 @@ services:
       # namespace even when they share an S3 bucket.
       S3_KEY_PREFIX: "prod/"
       DATABASE_URL: ${PROD_DATABASE_URL}
+      # Admin System Resources tab. Prod and dev have separate databases but one
+      # machine, so all four nodes write their samples into this one directory
+      # (the shared volume mounted below) and either site reads all of them.
+      # Both compose files point at the same volume; that is the whole
+      # configuration — there is no peer URL or shared token any more.
+      RESOURCE_SPOOL_DIR: /app/metrics
     volumes:
       - ./data/db/prod:/app/prisma/data
+      - resource-metrics:/app/metrics
+    logging: *logging
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r => process.exit(r.status < 500 ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 5s
@@ -41,8 +76,11 @@ services:
       APP_ENV: prod
       S3_KEY_PREFIX: "prod/"
       DATABASE_URL: ${PROD_DATABASE_URL}
+      RESOURCE_SPOOL_DIR: /app/metrics
     volumes:
       - ./data/db/prod:/app/prisma/data
+      - resource-metrics:/app/metrics
+    logging: *logging
     restart: unless-stopped
     depends_on:
       web:

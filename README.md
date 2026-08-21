@@ -55,6 +55,73 @@ Our CI/CD pipeline in [.github/workflows/deploy.yml](file:///home/edward/data/ad
    ```bash
    docker compose up -d --force-recreate --no-build
    ```
+5. Prunes stopped containers and images nothing is running any more (anything older than a week and not in use by a live container). The instance has a 20 GB root volume shared by both stacks, so superseded images are not free to keep.
+
+### Disk on the instance
+
+The admin **System Resources** tab shows how full the root volume is and how much of it is the application's own data. It cannot show the rest: the app containers run as an unprivileged user and `/var/lib/docker` is not readable from inside them. When the tab says the disk is filling up and the database volumes do not explain it, SSH to the instance and work down this list — each command is read-only.
+
+```bash
+# 1. Which filesystem, and how much is actually gone
+df -h /
+
+# 2. Which top-level directory holds it (-x stays on the root volume).
+#    Note that the children never sum to the total: large files sitting
+#    directly in / — /swapfile above all — are in the total but get no line.
+sudo du -h --max-depth=1 -x / | sort -rh | head -15
+ls -lh /swapfile 2>/dev/null
+
+# 2b. Drill into whichever directory won. /home is a frequent surprise:
+#     package-manager caches (~/.cache/uv, ~/.cache/pip, ~/.npm) and toolchain
+#     installs (~/.nvm) belong to nobody in particular and are never cleaned.
+sudo du -h --max-depth=2 -x /home | sort -rh | head -15
+
+# 3. Docker's own accounting: images, containers, volumes, build cache.
+docker system df
+docker system df -v | head -40
+
+# 3b. Volumes with LINKS 0 are orphans from containers that no longer exist.
+#     They are invisible to image and container pruning.
+docker volume ls -f dangling=true
+
+# 4. Container logs. Unbounded before the max-size limits were added, so
+#    anything created before that deploy is still whatever size it grew to.
+#    The glob has to be expanded BY root inside sh -c: /var/lib/docker is
+#    mode 0710 root:root, so your own shell cannot expand it and silently
+#    hands du a literal path that does not exist.
+sudo sh -c 'du -ch /var/lib/docker/containers/*/*-json.log | sort -rh | head'
+
+# 5. Everything else that grows quietly on a long-lived Ubuntu box
+journalctl --disk-usage
+sudo du -sh /var/log /var/cache/apt /snap /boot /usr/lib/modules 2>/dev/null
+ls -1 /boot/vmlinuz-* | wc -l   # old kernels, if apt autoremove has not run
+
+# 6. Our data, for comparison — expect this to be small
+du -sh ~/app/data/*
+
+# 7. Anything else over 100 MiB
+sudo find / -xdev -type f -size +100M -exec ls -lh {} + 2>/dev/null | sort -k5 -rh | head -20
+```
+
+Cleanup, once you know what is large. Run only what the numbers above justify:
+
+```bash
+docker container prune -f                          # stopped containers
+docker image prune -af --filter "until=168h"       # images nothing is running
+docker builder prune -f                            # build cache
+docker volume prune -f                             # ANONYMOUS volumes only
+
+# Truncate oversized container logs in place. Safe while running — the daemon
+# holds the fd and keeps appending — but it discards history.
+sudo sh -c 'truncate -s 0 /var/lib/docker/containers/*/*-json.log'
+
+sudo journalctl --vacuum-size=200M                 # journald defaults to 10% of the FS
+sudo apt-get autoremove --purge -y && sudo apt-get clean
+```
+
+Avoid `docker system prune -a --volumes`: it also deletes unused volumes, which includes `talent-resource-metrics` whenever both stacks happen to be down.
+
+Going forward, both compose stacks cap their container logs (`json-file`, 10 MiB × 3 per container, so ≤120 MiB total) and both deploy workflows prune stopped containers and unused images rather than only dangling ones.
 
 ## GitHub Deployment Secrets
 
@@ -114,6 +181,10 @@ LEARNING_MATERIAL_MAX_BYTES="52428800"
 | `AWS_REGION` | AWS S3 region for bucket operations (e.g., `us-east-1`) |
 | `AWS_S3_BUCKET` | AWS S3 bucket name (e.g., `talent4ai-101561168021-us-east-1-an`) |
 | `S3_KEY_PREFIX` | Optional namespace for deployments sharing one bucket. Compose fixes prod at `prod/` and dev at `dev/` so their independent garbage collectors cannot delete each other's objects. Existing full keys stored in the database remain readable. |
+| `RESOURCE_SPOOL_DIR` | Directory every node writes its **System Resources** samples to, and reads every other node's from. Both compose stacks set it to `/app/metrics` and mount the shared `talent-resource-metrics` volume there, which is how each site charts all four nodes (prod and dev are separate deployments but one EC2 instance). Unset — outside Docker — each deployment keeps a private spool beside its data directory and charts only its own two nodes. |
+| `HOST_PROC_DIR` | Where to read the host's CPU/memory counters for the whole-machine panel (default `/proc`, which inside a container is already the host's). Only needs setting if something namespaces `/proc`. |
+| `RESOURCE_SAMPLE_INTERVAL_MS` | How often each node records CPU/RAM/storage (default 60000, floor 10000) |
+| `RESOURCE_SAMPLE_RETENTION_DAYS` | How long resource samples are kept before each node compacts its spool file (default 7 — the admin tab charts one week) |
 | `AWS_S3_ENDPOINT` | Optional: Endpoint URL for S3 alternative providers (MinIO / LocalStack) |
 | `AWS_ACCESS_KEY_ID` | Optional: Static access key if not using an IAM role on EC2 |
 | `AWS_SECRET_ACCESS_KEY` | Optional: Static secret key if not using an IAM role on EC2 |
