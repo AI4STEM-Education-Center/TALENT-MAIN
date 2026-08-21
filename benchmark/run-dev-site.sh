@@ -52,6 +52,10 @@ esac
 command -v k6 >/dev/null 2>&1 || die "k6 is not installed — run benchmark/tools/install-k6.sh"
 
 mkdir -p "$RUN_DIR"
+# NOTE: no BENCH_FORWARDED_HOST for this tier, deliberately. The real
+# Cloudflare -> Caddy chain sets X-Forwarded-Host itself, and exercising that
+# chain is the entire point here; spoofing it would defeat the host-guard
+# assertion edge-validation makes.
 log "validating the real edge path at ${TARGET} (1 VU, 1 iteration)"
 
 set +e

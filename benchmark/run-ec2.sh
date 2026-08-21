@@ -223,6 +223,7 @@ lg "cd /opt/bench/harness && \
     BENCH_RUN_LABEL='${RUN_ID}' \
     BENCH_SCALE='${SCALE}' \
     BENCH_EXPECT_CLOUDFRONT=1 \
+    BENCH_FORWARDED_HOST='localhost:3000' \
     ${EXTRA_ENV} \
     k6 run --summary-export ${RUN_DIR_REMOTE}/summary.json \
       benchmark/k6/scenarios/${SCENARIO}.js 2>&1 | tee ${RUN_DIR_REMOTE}/k6.log"

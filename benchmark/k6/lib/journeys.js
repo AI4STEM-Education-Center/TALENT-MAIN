@@ -10,7 +10,7 @@
 
 import http from "k6/http";
 import { sleep } from "k6";
-import { BASE_URL, authHeaders } from "./config.js";
+import { BASE_URL, authHeaders, baseHeaders } from "./config.js";
 import { record } from "./metrics.js";
 
 /** Per-question think time. Uniform RPS is not how a quiz is taken. */
@@ -227,9 +227,15 @@ export function adminObservabilityJourney(identity, range) {
   record("admin_logs", logsRes, [200]);
 }
 
-/** Unauthenticated landing page — also what the container health check hits. */
+/**
+ * Unauthenticated landing page — also what the container health check hits.
+ *
+ * Still needs baseHeaders(): src/proxy.ts validates the host BEFORE it decides
+ * whether a route is public, so an unauthenticated request to `/` is refused
+ * with 403 just as readily as an API call.
+ */
 export function publicLanding() {
-  const res = http.get(`${BASE_URL}/`, { tags: { step: "static_page" } });
+  const res = http.get(`${BASE_URL}/`, { headers: baseHeaders(), tags: { step: "static_page" } });
   record("static_page", res, [200]);
 }
 

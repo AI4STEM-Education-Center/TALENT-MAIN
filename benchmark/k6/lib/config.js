@@ -150,15 +150,54 @@ export function identityFor(pool, n) {
   return list[(n - 1) % list.length];
 }
 
+/**
+ * Host the application should believe it is serving.
+ *
+ * THIS IS NOT COSMETIC. src/proxy.ts validates the host on EVERY request against
+ * a fixed allowlist (`ai4talent.org`, `*.ai4talent.org`, `localhost`,
+ * `localhost:3000`, …) and returns a bare 403 for anything else. The local tier
+ * publishes on 3100 to avoid colliding with `next dev`, so a request to
+ * `http://127.0.0.1:3100` arrives with `Host: 127.0.0.1:3100` — not on the list —
+ * and EVERY request is refused before it reaches a route.
+ *
+ * That failure is nastier than it sounds: 403 is a legitimately "designed"
+ * status for this app (CSRF origin mismatch, the consent gate, the attempt cap),
+ * so the taxonomy counted all of it as correct behaviour and the run reported a
+ * clean PASS having exercised nothing. The first CI run of this harness did
+ * exactly that.
+ *
+ * The fix mirrors production rather than working around it: Caddy forwards
+ * `X-Forwarded-Host`, and src/proxy.ts prefers that header over `Host`. So the
+ * harness sends the same thing the real proxy chain does. The CSRF check
+ * compares the request's Origin against that same resolved host, so Origin is
+ * derived from it and the two can never drift.
+ */
+export const FORWARDED_HOST = __ENV.BENCH_FORWARDED_HOST || "";
+
+/** Origin the app will accept, consistent with FORWARDED_HOST. */
+const EFFECTIVE_ORIGIN = FORWARDED_HOST
+  ? `${BASE_URL.indexOf("https://") === 0 ? "https" : "http"}://${FORWARDED_HOST}`
+  : BASE_URL;
+
+/**
+ * Headers every request needs, authenticated or not. Unauthenticated requests
+ * need them too — the host check runs before any route, so `GET /` is refused
+ * just as readily as an API call.
+ */
+export function baseHeaders() {
+  const headers = { Origin: EFFECTIVE_ORIGIN };
+  if (FORWARDED_HOST) headers["X-Forwarded-Host"] = FORWARDED_HOST;
+  return headers;
+}
+
 export function authHeaders(identity) {
-  return {
-    Cookie: `${COOKIE_NAME}=${identity.token}`,
-    // The proxy's CSRF check (src/proxy.ts) rejects a mutating /api/ request
-    // whose Origin does not match the Host. Browsers always send it, so the
-    // harness must too or every POST/PATCH is a 403 that looks like a bug.
-    Origin: BASE_URL,
-    "Content-Type": "application/json",
-  };
+  const headers = baseHeaders();
+  headers.Cookie = `${COOKIE_NAME}=${identity.token}`;
+  // The proxy's CSRF check (src/proxy.ts) rejects a mutating /api/ request whose
+  // Origin does not match the resolved host. Browsers always send Origin, so the
+  // harness must too or every POST/PATCH is a 403 that looks like an app bug.
+  headers["Content-Type"] = "application/json";
+  return headers;
 }
 
 /** `true` when the target has CloudFront configured, so signing cost is in play. */

@@ -5,7 +5,7 @@
 // runs on a pull request.
 
 import { requireTier, SESSIONS, identityFor, RUN_LABEL, SLO } from "../lib/config.js";
-import { thresholds, TREND_STATS } from "../lib/metrics.js";
+import { thresholds, requireSteps, TREND_STATS } from "../lib/metrics.js";
 import {
   studentQuizJourney,
   teacherMonitorJourney,
@@ -36,7 +36,23 @@ export const options = {
   scenarios: {
     smoke: { executor: "shared-iterations", vus: 1, iterations: 1, maxDuration: "3m" },
   },
-  thresholds: thresholds(STEPS, SLO),
+  // Latency thresholds pass trivially on a step with ZERO samples, so a journey
+  // that bailed out early reports every remaining step as a clean 0.0ms row and
+  // the run PASSES. smoke exists to prove the plumbing, so it asserts that the
+  // whole journey actually ran — this is the check that would have caught the
+  // host-allowlist 403s on the first CI run instead of reporting them as health.
+  thresholds: Object.assign(
+    thresholds(STEPS, SLO),
+    requireSteps([
+      "static_page",
+      "student_dashboard",
+      "class_quizzes",
+      "student_quiz_start",
+      "student_quiz_submit",
+      "teacher_dashboard",
+      "admin_resources",
+    ])
+  ),
 };
 
 export default function () {
