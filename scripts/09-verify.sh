@@ -116,7 +116,10 @@ step "Sites"
 # ---------------------------------------------------------------------------
 for host in "$PROD_HOST" "$DEV_HOST"; do
   headers=$(curl -sS --max-time 15 -D - -o /dev/null "https://${host}/" 2>/dev/null || true)
-  code=$(awk 'NR==1{print $2}' <<<"$headers")
+  # Cloudflare may send a 103 Early Hints block before the final response.
+  # Use the last HTTP status line so a healthy 200/redirect is not reported as
+  # a failure merely because Early Hints is enabled.
+  code=$(awk '/^HTTP\//{code=$2} END{print code}' <<<"$headers")
   if [[ -z "$code" ]]; then
     fail "${host} did not respond"
     continue
@@ -227,9 +230,13 @@ if [[ -n "${CLOUDFRONT_DIST_ID:-}" ]]; then
 
   DIST_CONFIG=$(aws_ cloudfront get-distribution-config --id "$CLOUDFRONT_DIST_ID" \
     --query 'DistributionConfig' --output json 2>/dev/null || true)
-  rhp=$(jq -r '.DefaultCacheBehavior.ResponseHeadersPolicyId // empty' <<<"${DIST_CONFIG:-{}}")
-  key_group=$(jq -r '.DefaultCacheBehavior.TrustedKeyGroups.Items[0] // empty' <<<"${DIST_CONFIG:-{}}")
-  oac=$(jq -r '.Origins.Items[0].OriginAccessControlId // empty' <<<"${DIST_CONFIG:-{}}")
+  # Do not use ${DIST_CONFIG:-{}} here: the literal brace in that parameter
+  # expansion leaves an extra `}` when DIST_CONFIG is set, corrupting valid
+  # AWS JSON. Empty input already gives us empty IDs and the checks below emit
+  # useful failures.
+  rhp=$(jq -r '.DefaultCacheBehavior.ResponseHeadersPolicyId // empty' <<<"$DIST_CONFIG")
+  key_group=$(jq -r '.DefaultCacheBehavior.TrustedKeyGroups.Items[0] // empty' <<<"$DIST_CONFIG")
+  oac=$(jq -r '.Origins.Items[0].OriginAccessControlId // empty' <<<"$DIST_CONFIG")
   if [[ -n "${CLOUDFRONT_RHP_ID:-}" && "$rhp" == "$CLOUDFRONT_RHP_ID" ]]; then
     pass "expected CORS response-headers policy attached (${rhp})"
   else
