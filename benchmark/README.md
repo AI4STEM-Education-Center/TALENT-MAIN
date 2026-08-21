@@ -368,12 +368,17 @@ collect/              metrics sampling, report, regression compare, PII scrub
 
 ## Known limitations
 
-- **Docker was not available on the workstation** where this was built, so tier 1
-  has not been exercised against a real built image end to end. Every component
-  it composes was verified independently — see the PR description.
+- **Tier 1 is exercised on every pull request** and passes end to end: the
+  production image builds, the stack comes up, the dataset seeds, sessions mint,
+  and the full student + teacher + admin journey runs with 0 unexpected errors
+  and 10 signed media URLs. It has *not* been run on a developer workstation with
+  Docker Desktop, so macOS-specific wrinkles are unproven.
 - **Tier 3 has never been run.** It needs a real production instance id and AWS
   credentials. Treat the first run as a shakedown of the harness, not as a
   capacity measurement.
+- **The smoke numbers are not capacity numbers.** A GitHub runner with one VU
+  says the plumbing works; nothing more. `p95 ≈ 100ms` there implies nothing
+  about a cohort on the real box.
 - **`login-storm` cannot measure hash throughput** from a single generator: the
   10/min/IP throttle caps it at ten real hashes a minute. It measures hash
   *latency* under concurrency and the throttle's correctness. Real throughput
