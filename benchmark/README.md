@@ -298,6 +298,25 @@ impossible to miss:
 If you target the app on a different host or port, set `BENCH_FORWARDED_HOST` to
 something the allowlist accepts.
 
+## Signed media is verified, not always fetched
+
+Two halves to the CloudFront change, verifiable on different tiers:
+
+- **Always:** the harness counts every media URL the app produced and asserts it
+  actually carries a signature (`Key-Pair-Id`/`Signature`, or `X-Amz-Signature`
+  on the S3 path). `media_unsigned` must be **0** — a URL with no signature means
+  the browser was handed unauthenticated access to a private object. This half
+  needs no network.
+- **`ec2-clone` / `dev-site` only:** a bounded sample is actually fetched, because
+  there the distribution and objects are real, so a 403 means the trusted key
+  group is misattached and a 404 means the object is missing.
+
+On **`local`** the distribution is necessarily a throwaway — you cannot stand up
+a real private distribution in CI and the seeded objects exist in no bucket — so
+fetching would contribute one DNS failure per URL and say nothing about the app.
+Signing cost and signature validity are both fully exercised without it. Override
+with `BENCH_FETCH_MEDIA=1` if your local run does have a real CDN.
+
 ## Reading a report
 
 Correctness first, latency second:
