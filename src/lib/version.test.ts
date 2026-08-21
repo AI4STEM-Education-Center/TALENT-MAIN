@@ -47,6 +47,29 @@ describe("getVersionInfo", () => {
     });
   });
 
+  it("keeps weekly patch releases as independent flat entries", () => {
+    process.env.NEXT_PUBLIC_CHANGELOG = [
+      "## v0.0.16 - 2026-08-21",
+      "- Added signed media delivery",
+      "- Improved simulation revisions",
+      "",
+      "## v0.0.15 - 2026-08-14",
+      "- Added consent exports",
+    ].join("\n");
+
+    const { changelogEntries } = getVersionInfo();
+    expect(changelogEntries[0]).toEqual({
+      version: "0.0.16",
+      date: "2026-08-21",
+      notes: ["Added signed media delivery", "Improved simulation revisions"],
+    });
+    expect(changelogEntries[1]).toEqual({
+      version: "0.0.15",
+      date: "2026-08-14",
+      notes: ["Added consent exports"],
+    });
+  });
+
   it("swallows the first bullet as the date when a header omits its date (known limitation)", () => {
     // The header regex greedily matches ` - <text>` across the newline. Real
     // changelog headers always carry an inline date (e.g. "## v2.0.0 - 2026-01-01"),

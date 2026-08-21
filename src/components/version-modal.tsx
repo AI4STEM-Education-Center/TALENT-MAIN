@@ -7,6 +7,25 @@ import { Card } from "@/components/ui/card";
 import { getVersionInfo } from "@/lib/version";
 import { BookText, X } from "lucide-react";
 
+function ReleaseNotesList({ notes }: { notes: string[] }) {
+  if (notes.length === 0) {
+    return <p className="text-sm text-muted-foreground">No notes recorded for this release.</p>;
+  }
+
+  return (
+    <ul className="space-y-1.5 text-sm text-foreground/90">
+      {notes.map((note) => (
+        <li key={note} className="flex gap-2 leading-relaxed">
+          <span aria-hidden="true" className="text-muted-foreground">
+            •
+          </span>
+          <span>{note}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function VersionModal() {
   const versionInfo = getVersionInfo();
 
@@ -37,6 +56,7 @@ export function VersionModal() {
                 <Dialog.Description className="text-sm text-muted-foreground">
                   Current version v{versionInfo.version}
                   {versionInfo.date ? ` (${versionInfo.date})` : ""}
+                  <span className="mt-1 block">Weekly releases close Friday.</span>
                 </Dialog.Description>
               </div>
               <Dialog.Close asChild>
@@ -54,22 +74,22 @@ export function VersionModal() {
               {versionInfo.changelogEntries.map((entry) => (
                 <section key={`${entry.version}-${entry.date}`} className="rounded-md border border-border/80 p-4">
                   <div className="mb-2 flex items-center justify-between gap-2">
-                    <h3 className="text-sm font-semibold text-foreground">v{entry.version}</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-semibold text-foreground">v{entry.version}</h3>
+                      {entry.version === versionInfo.version && (
+                        <Badge variant="secondary" className="text-[10px] uppercase tracking-wide">
+                          Current
+                        </Badge>
+                      )}
+                    </div>
                     {entry.date && (
-                      <span className="text-xs text-muted-foreground">{entry.date}</span>
+                      <time dateTime={entry.date} className="text-xs text-muted-foreground">
+                        {entry.date}
+                      </time>
                     )}
                   </div>
-                  {entry.notes.length > 0 ? (
-                    <ul className="space-y-1 text-sm text-foreground/90">
-                      {entry.notes.map((note) => (
-                        <li key={note} className="leading-relaxed">
-                          - {note}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No notes recorded for this release.</p>
-                  )}
+
+                  <ReleaseNotesList notes={entry.notes} />
                 </section>
               ))}
             </div>

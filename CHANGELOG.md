@@ -1,5 +1,42 @@
 # Changelog
 
+## v0.0.19 - 2026-08-21
+
+- Added signed CloudFront delivery for PDFs and images, with isolated development and production storage paths and browser-safe CORS for PDF figure cropping.
+- Expanded simulations with learner feedback, revision workflows, interaction telemetry, and live-version refreshes so students receive the latest available revision.
+- Added research-consent workflows, consent exports, database document-backup management, and whole-machine resource monitoring for administrators.
+- Expanded grading, learning-material, content-organization, teacher-insight, account, and messaging workflows.
+- Improved Safari login persistence and added remembered sessions.
+- Hardened quiz, upload, storage, and dependency security, including safer recovery and deployment tooling for the replacement server.
+
+## v0.0.18 - 2026-07-31
+
+- Improved roster emails, invitation workflows, student class discovery, and the default visual theme.
+- Expanded teacher-managed simulations and exposed more AI generation timing and token metrics.
+- Isolated object-storage paths and added administrator quiz deletion safeguards.
+- Personalized and clarified the hosted user guide.
+
+## v0.0.17 - 2026-07-24
+
+- Added the interactive simulation platform, versioned artifact lifecycle, student interaction telemetry, and teacher simulation analytics.
+- Expanded administrator operations with reporting, batch quiz import, AI configuration, and richer quiz-authoring workflows.
+- Added end-to-end AI generation metrics across supported providers and model configurations.
+- Upgraded the application runtime and database tooling while making CI and container builds faster and more reliable.
+
+## v0.0.16 - 2026-07-03
+
+- Added roster CSV workflows, student record editing, clearer statistics navigation, and dark-mode refinements.
+- Added per-error misconception tagging and stronger safety checks for the concept catalog.
+- Separated background job queues into their own database for safer, more reliable processing.
+- Hardened application security and expanded operational documentation.
+
+## v0.0.15 - 2026-06-19
+
+- Added streamed AI responses plus first-token timing, token usage, and local-model image support.
+- Added WebDAV database backups, per-request AI timeouts, and refinements to administrator email and PDF review workflows.
+- Added per-class quiz settings, expanded teacher statistics, and more holistic learning recommendations.
+- Added question-figure support and refreshed the quiz and recommendation interfaces.
+
 ## v0.0.14 - 2026-06-14
 
 - Teachers and students can now message each other directly, with email notifications when a new message arrives.
