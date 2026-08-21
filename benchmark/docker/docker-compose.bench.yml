@@ -1,0 +1,111 @@
+# Tier 1: the real production image, locally, for commit-to-commit comparison.
+#
+# WHY THE PRODUCTION IMAGE AND NOT `next dev`. Almost everything that governs
+# performance differs between them: dev runs an unoptimized build with HMR and
+# per-request compilation, standalone output is absent, and NODE_ENV is not
+# "production" — which changes the session cookie name (src/lib/auth.ts pins
+# `__Secure-` on production only) and the Prisma log level. A regression measured
+# against `next dev` says nothing about the deployed artifact.
+#
+# WHY THE WORKER IS HERE. It contends with the web tier for the same SQLite file
+# (both mount the same data directory) and runs fifteen concurrent loops. A
+# single-service benchmark reports a capacity the real deployment never reaches.
+#
+# Absolute numbers from this tier are NOT comparable to EC2 — the container's CPU
+# allocation, not the app, is often the limit. Only local-vs-local deltas mean
+# anything, which is why config/tiers.json caps this tier at 25 VUs and
+# k6/lib/config.js refuses to run exam-day or ramp-capacity here at all.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+volumes:
+  bench-resource-metrics:
+  bench-db:
+
+services:
+  web:
+    container_name: bench-web
+    image: ${BENCH_IMAGE:-talent-main:bench}
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile
+      args:
+        APP_ENV: bench
+    # 3100, so a benchmark run can never collide with a `next dev` on 3000.
+    ports:
+      - "3100:3000"
+      - "9099:9099"
+    env_file:
+      - ./bench.env
+    environment:
+      NODE_ENV: production
+      APP_ENV: bench
+      DATABASE_URL: "file:/app/prisma/data/bench.db"
+      RESOURCE_SPOOL_DIR: /app/metrics
+      NODE_OPTIONS: "--require /app/benchmark-probe.cjs"
+      BENCH_PROBE_PORT: "9099"
+      BENCH_PROBE_HOST: "0.0.0.0"
+      BENCH_PROBE_ROLE: "web"
+    volumes:
+      - bench-db:/app/prisma/data
+      - bench-resource-metrics:/app/metrics
+      - ../instrument/probe.cjs:/app/benchmark-probe.cjs:ro
+    logging: *logging
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r => process.exit(r.status < 500 ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 36
+      start_period: 15s
+    # `no`: a crash under load must stay visible, not be silently restarted into
+    # a latency dip. Production's `unless-stopped` is right for production.
+    restart: "no"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  worker:
+    container_name: bench-worker
+    image: ${BENCH_IMAGE:-talent-main:bench}
+    command: ["worker"]
+    env_file:
+      - ./bench.env
+    environment:
+      NODE_ENV: production
+      APP_ENV: bench
+      DATABASE_URL: "file:/app/prisma/data/bench.db"
+      RESOURCE_SPOOL_DIR: /app/metrics
+      NODE_OPTIONS: "--require /app/benchmark-probe.cjs"
+      BENCH_PROBE_PORT: "9098"
+      BENCH_PROBE_HOST: "0.0.0.0"
+      BENCH_PROBE_ROLE: "worker"
+    ports:
+      - "9098:9098"
+    volumes:
+      - bench-db:/app/prisma/data
+      - bench-resource-metrics:/app/metrics
+      - ../instrument/probe.cjs:/app/benchmark-probe.cjs:ro
+    logging: *logging
+    restart: "no"
+    depends_on:
+      web:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # The AI stub. Runs in the stack rather than on the host so the worker can
+  # always reach it by service name, on Linux and macOS alike (host.docker.internal
+  # is not available everywhere).
+  mock-ai:
+    container_name: bench-mock-ai
+    image: node:26-slim
+    working_dir: /work
+    command: ["sh", "-c", "npx --yes tsx benchmark/mock-ai/server.ts --port 8099 --latency-ms ${BENCH_AI_LATENCY_MS:-400}"]
+    volumes:
+      - ../..:/work:ro
+    ports:
+      - "8099:8099"
+    logging: *logging
+    restart: "no"
