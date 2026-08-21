@@ -114,12 +114,14 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const glob = require('path');
+            // NOT `glob`: actions/github-script already injects a binding by that
+            // name, and re-declaring it is a SyntaxError that fails the step.
+            const nodePath = require('path');
             let report = '';
             const dir = 'benchmark/.tmp/local';
             try {
               for (const label of fs.readdirSync(dir)) {
-                const file = glob.join(dir, label, 'report.md');
+                const file = nodePath.join(dir, label, 'report.md');
                 if (fs.existsSync(file)) report = fs.readFileSync(file, 'utf8');
               }
             } catch (e) { /* no report produced */ }

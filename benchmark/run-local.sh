@@ -116,8 +116,11 @@ if [ "${BENCH_DISABLE_CLOUDFRONT:-}" = "1" ]; then
 fi
 
 log "starting web + worker + AI stub..."
-docker compose -f "$COMPOSE_FILE" --env-file "$RUN_ENV_FILE" up -d --wait --wait-timeout 240 \
-  || { docker compose -f "$COMPOSE_FILE" --env-file "$RUN_ENV_FILE" logs --tail 60 web; die "the stack did not become healthy"; }
+# Services are named explicitly: `--wait` otherwise waits on db-init too, which
+# is a one-shot that exits 0 by design. Compose still runs it first, because web
+# declares depends_on: service_completed_successfully.
+docker compose -f "$COMPOSE_FILE" --env-file "$RUN_ENV_FILE" up -d --wait --wait-timeout 240 web worker mock-ai \
+  || { docker compose -f "$COMPOSE_FILE" --env-file "$RUN_ENV_FILE" logs --tail 80 db-init web; die "the stack did not become healthy"; }
 
 # ── Seed + mint ───────────────────────────────────────────────────────────────
 # The schema push runs in the container (it owns the Prisma CLI and the mounted
@@ -147,7 +150,7 @@ docker cp "$DB_HOST_COPY" bench-web:/app/prisma/data/bench.db >/dev/null
 # The app opened the database at boot; restart both services so they pick up the
 # seeded file rather than an empty one held open by the adapter.
 docker compose -f "$COMPOSE_FILE" --env-file "$RUN_ENV_FILE" restart web worker >/dev/null
-docker compose -f "$COMPOSE_FILE" --env-file "$RUN_ENV_FILE" up -d --wait --wait-timeout 180 >/dev/null
+docker compose -f "$COMPOSE_FILE" --env-file "$RUN_ENV_FILE" up -d --wait --wait-timeout 180 web worker >/dev/null
 
 SESSION_FILE="${RUN_DIR}/sessions.json"
 ( cd "$REPO_DIR" && \
