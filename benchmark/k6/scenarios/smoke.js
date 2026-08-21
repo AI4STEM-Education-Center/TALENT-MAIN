@@ -4,7 +4,7 @@
 // This is the scenario to run first after changing anything, and the one CI
 // runs on a pull request.
 
-import { requireTier, SESSIONS, identityFor, RUN_LABEL, SLO } from "../lib/config.js";
+import { requireTier, SESSIONS, identityFor, RUN_LABEL, SLO, MEDIA_TARGET } from "../lib/config.js";
 import { thresholds, requireSteps, TREND_STATS } from "../lib/metrics.js";
 import {
   studentQuizJourney,
@@ -59,6 +59,11 @@ export default function () {
   publicLanding();
   studentQuizJourney(identityFor("students", 1), {
     fetchMedia: true,
+    // Pinned to the media-heavy quiz. Random discovery hits it only about a
+    // quarter of the time, so smoke's coverage of the RSA signing path — one of
+    // the main things this harness exists to measure — would otherwise be a coin
+    // flip, and the report's "no signed media" warning would fire at random.
+    target: MEDIA_TARGET,
     // No think time: this is a functional pass, not a shape.
     thinkPerQuestion: [0, 0],
   });

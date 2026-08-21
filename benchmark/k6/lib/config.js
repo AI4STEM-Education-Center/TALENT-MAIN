@@ -200,6 +200,28 @@ export function authHeaders(identity) {
   return headers;
 }
 
+/**
+ * The specific class+quiz that carries figures and image answer choices.
+ *
+ * Written to the seed manifest by seed/seed-bench.ts and passed through by the
+ * runners. Scenarios that care about signing must target it EXPLICITLY rather
+ * than discovering a quiz at random: only one quiz per class is media-heavy, so a
+ * random pick exercises the signing path roughly a quarter of the time, and the
+ * smoke run's media coverage becomes a coin flip. Two consecutive CI runs of this
+ * harness reported 10 signed URLs and then none, for exactly that reason.
+ *
+ * `{}` when unset — callers fall back to random discovery.
+ */
+export const MEDIA_TARGET = (function () {
+  const raw = __ENV.BENCH_MEDIA_TARGET;
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    fail(`[config] BENCH_MEDIA_TARGET is not valid JSON: ${raw}`);
+  }
+})();
+
 /** `true` when the target has CloudFront configured, so signing cost is in play. */
 export const CLOUDFRONT_EXPECTED = __ENV.BENCH_EXPECT_CLOUDFRONT === "1";
 
