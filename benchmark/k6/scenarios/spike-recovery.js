@@ -19,7 +19,7 @@
 // latency means it recovered. Worse means something is still draining.
 
 import { requireTier, identityFor, scaled, RUN_LABEL, SLO } from "../lib/config.js";
-import { thresholds } from "../lib/metrics.js";
+import { thresholds, TREND_STATS } from "../lib/metrics.js";
 import { studentQuizJourney, publicLanding } from "../lib/journeys.js";
 
 requireTier("spike-recovery", ["ec2-clone"]);
@@ -30,6 +30,7 @@ const SPIKE = scaled(Number(__ENV.BENCH_SPIKE || 400));
 const STEPS = ["static_page", "student_dashboard", "class_quizzes", "student_quiz_start", "student_quiz_submit", "student_results"];
 
 export const options = {
+  summaryTrendStats: TREND_STATS,
   scenarios: {
     profile: {
       executor: "ramping-vus",

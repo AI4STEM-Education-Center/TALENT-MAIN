@@ -22,13 +22,14 @@
 
 import http from "k6/http";
 import { requireTier, BASE_URL, SESSIONS, RUN_LABEL, SLO } from "../lib/config.js";
-import { thresholds, record } from "../lib/metrics.js";
+import { thresholds, record, TREND_STATS } from "../lib/metrics.js";
 
 requireTier("login-storm", ["local", "ec2-clone"]);
 
 const VUS = Number(__ENV.BENCH_LOGIN_VUS || 10);
 
 export const options = {
+  summaryTrendStats: TREND_STATS,
   scenarios: {
     logins: { executor: "constant-vus", exec: "login", vus: VUS, duration: __ENV.BENCH_LOGIN_DURATION || "2m" },
   },

@@ -30,7 +30,7 @@
 // a slow-endpoint problem.
 
 import { requireTier, identityFor, RUN_LABEL, SLO } from "../lib/config.js";
-import { thresholds } from "../lib/metrics.js";
+import { thresholds, TREND_STATS } from "../lib/metrics.js";
 import { adminObservabilityJourney, studentQuizJourney, publicLanding } from "../lib/journeys.js";
 import { sleep } from "k6";
 
@@ -48,6 +48,7 @@ const STEPS = [
 ];
 
 export const options = {
+  summaryTrendStats: TREND_STATS,
   scenarios: {
     // One admin. Not a fleet — the point is that ONE is enough to matter.
     admin: {

@@ -21,6 +21,17 @@ export const sqliteBusy = new Counter("sqlite_busy");
 export const stepDuration = new Trend("step_duration", true);
 export const stepFailRate = new Rate("step_failed");
 
+/**
+ * Trend statistics every scenario must request.
+ *
+ * k6's DEFAULT set is avg/min/med/max/p(90)/p(95) — it contains neither `count`
+ * nor `p(99)`. The SLOs in config/tiers.json are written in p95 AND p99, and the
+ * report shows a per-step count, so without this the report renders those cells
+ * empty and a p99 SLO can never be evaluated. Requested explicitly rather than
+ * left to the default, because the failure is silent: the table still draws.
+ */
+export const TREND_STATS = ["avg", "min", "med", "max", "p(90)", "p(95)", "p(99)", "count"];
+
 /** Statuses this app returns on purpose, per route. */
 const DESIGNED = {
   401: "unauthenticated",

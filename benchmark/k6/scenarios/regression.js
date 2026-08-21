@@ -10,7 +10,7 @@
 // Deltas mean everything. collect/compare.ts is what reads two of these.
 
 import { requireTier, identityFor, RUN_LABEL, SLO } from "../lib/config.js";
-import { thresholds } from "../lib/metrics.js";
+import { thresholds, TREND_STATS } from "../lib/metrics.js";
 import { studentQuizJourney, teacherMonitorJourney, adminObservabilityJourney, publicLanding } from "../lib/journeys.js";
 
 requireTier("regression", ["local"]);
@@ -22,6 +22,7 @@ const STEPS = [
 ];
 
 export const options = {
+  summaryTrendStats: TREND_STATS,
   // Pinned deliberately. Do not "tune" these — changing them invalidates every
   // stored baseline, which is why they are literals and not env-driven.
   scenarios: {

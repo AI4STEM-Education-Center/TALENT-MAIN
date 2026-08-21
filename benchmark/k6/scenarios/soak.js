@@ -20,7 +20,7 @@
 // discovered later in production.
 
 import { requireTier, identityFor, scaled, RUN_LABEL, SLO } from "../lib/config.js";
-import { thresholds } from "../lib/metrics.js";
+import { thresholds, TREND_STATS } from "../lib/metrics.js";
 import { studentQuizJourney, teacherMonitorJourney, adminObservabilityJourney } from "../lib/journeys.js";
 
 requireTier("soak", ["ec2-clone"]);
@@ -35,6 +35,7 @@ const STEPS = [
 ];
 
 export const options = {
+  summaryTrendStats: TREND_STATS,
   scenarios: {
     students: { executor: "constant-vus", exec: "student", vus: VUS, duration: DURATION },
     teachers: { executor: "constant-vus", exec: "teacher", vus: Math.max(1, Math.round(VUS / 20)), duration: DURATION },

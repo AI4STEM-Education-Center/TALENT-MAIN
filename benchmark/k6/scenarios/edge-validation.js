@@ -25,7 +25,7 @@
 import http from "k6/http";
 import { check, fail } from "k6";
 import { requireTier, BASE_URL, identityFor, authHeaders, SESSIONS, RUN_LABEL } from "../lib/config.js";
-import { record } from "../lib/metrics.js";
+import { record, TREND_STATS } from "../lib/metrics.js";
 
 requireTier("edge-validation", ["dev-site"]);
 
@@ -39,6 +39,7 @@ if (BASE_URL.indexOf("dev.ai4talent.org") === -1) {
 }
 
 export const options = {
+  summaryTrendStats: TREND_STATS,
   // ONE virtual user, ONE iteration. This is an assertion suite, not a load test.
   scenarios: { validate: { executor: "shared-iterations", vus: 1, iterations: 1, maxDuration: "2m" } },
   thresholds: { unexpected_errors: ["count==0"] },

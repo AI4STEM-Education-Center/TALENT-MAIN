@@ -14,7 +14,7 @@
 // cannot reach.
 
 import { requireTier, identityFor, scaled, SESSIONS, RUN_LABEL, SLO } from "../lib/config.js";
-import { thresholds } from "../lib/metrics.js";
+import { thresholds, TREND_STATS } from "../lib/metrics.js";
 import { studentQuizJourney, teacherMonitorJourney } from "../lib/journeys.js";
 
 // ec2-clone ONLY. On `local` this would report the Docker VM's CPU share as the
@@ -37,6 +37,7 @@ const STEPS = [
 ];
 
 export const options = {
+  summaryTrendStats: TREND_STATS,
   scenarios: {
     // Arrival: the cohort trickles in over two minutes, as a class settling.
     cohort: {

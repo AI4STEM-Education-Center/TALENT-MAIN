@@ -22,17 +22,35 @@ import { parseArgs, str, num } from "../tools/args";
 
 type Values = Record<string, number>;
 
+/**
+ * Read a metric's statistics from either k6 summary shape.
+ *
+ * --summary-export puts them FLAT on the metric; handleSummary nests them under
+ * `.values`. Understanding only the nested shape made every number `undefined`,
+ * which here would mean "no regression detected" on every comparison — a
+ * silently useless tool. See the longer note in collect/summarize.ts.
+ */
+function stats(metric: any): Values {
+  if (!metric) return {};
+  if (metric.values && typeof metric.values === "object") return metric.values;
+  const out: Values = {};
+  for (const [key, value] of Object.entries(metric)) {
+    if (typeof value === "number") out[key] = value as number;
+  }
+  return out;
+}
+
 function stepMetrics(summary: any): Record<string, Values> {
   const out: Record<string, Values> = {};
   for (const [name, metric] of Object.entries<any>(summary.metrics ?? {})) {
     if (!name.startsWith("step_duration{step:")) continue;
-    out[name.slice("step_duration{step:".length, -1)] = metric.values ?? {};
+    out[name.slice("step_duration{step:".length, -1)] = stats(metric);
   }
   return out;
 }
 
 function counter(summary: any, name: string): number {
-  return summary?.metrics?.[name]?.values?.count ?? 0;
+  return stats(summary?.metrics?.[name]).count ?? 0;
 }
 
 function main() {
