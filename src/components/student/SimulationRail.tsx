@@ -149,9 +149,10 @@ export function SimulationRail({
         <Card className="min-h-0 flex-1 overflow-hidden p-2">
           {/* Remount per simulation so switching restarts cleanly. */}
           <SimulationViewer
-            key={active.simulationId}
+            key={`${active.simulationId}:${active.version ?? 0}`}
             simulationId={active.simulationId}
             title={displayTitle(active)}
+            version={active.version}
             telemetry={attemptId ? { attemptId, surface: "rail" } : undefined}
           />
         </Card>
@@ -225,9 +226,10 @@ export function SimulationRail({
             <div className="min-h-0 p-2">
               {/* Remount per simulation so switching restarts cleanly. */}
               <SimulationViewer
-                key={active.simulationId}
+                key={`${active.simulationId}:${active.version ?? 0}`}
                 simulationId={active.simulationId}
                 title={displayTitle(active)}
+                version={active.version}
                 telemetry={attemptId ? { attemptId, surface: "mobile" } : undefined}
               />
             </div>

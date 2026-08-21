@@ -1,15 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Isolate the presigning logic from real S3 by mocking the storage module.
+// Isolate the URL-signing logic from real storage by mocking the module.
 vi.mock("@/lib/storage", () => ({
-  presignGetUrl: vi.fn(),
+  signObjectReadUrl: vi.fn(),
   getS3Config: vi.fn(),
 }));
 
 import { presignQuestionFigure, attachFigureUrls } from "./question-figures";
-import { presignGetUrl, getS3Config } from "@/lib/storage";
+import { signObjectReadUrl, getS3Config } from "@/lib/storage";
 
-const mockPresign = vi.mocked(presignGetUrl);
+const mockPresign = vi.mocked(signObjectReadUrl);
 const mockConfig = vi.mocked(getS3Config);
 
 beforeEach(() => {

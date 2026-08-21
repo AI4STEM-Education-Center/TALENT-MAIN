@@ -73,8 +73,9 @@ async function putBlob(url: string, contentType: string, body: Blob): Promise<vo
 /**
  * Draw the normalized crop of an already-loaded page image into a canvas and
  * return a PNG blob. Uses crossOrigin="anonymous" so the canvas is not tainted.
- * NOTE: S3 CORS must allow GET from this origin (mirroring the PUT CORS the
- * uploads already require) or the canvas taints and toBlob throws SecurityError.
+ * NOTE: The read response must allow this origin via the CloudFront response
+ * headers policy (or S3 CORS on the fallback path), otherwise the canvas taints
+ * and toBlob throws SecurityError.
  */
 async function cropToPngBlob(pageUrl: string, bbox: FigureBbox): Promise<Blob> {
   const img = new Image();
@@ -105,7 +106,7 @@ async function cropToPngBlob(pageUrl: string, bbox: FigureBbox): Promise<Blob> {
         else reject(new Error("Failed to encode figure crop"));
       }, "image/png");
     } catch {
-      reject(new Error("S3 CORS GET required: the page image could not be read into a canvas for cropping."));
+      reject(new Error("Storage CORS GET required: configure the CloudFront response headers policy (or S3 CORS on the fallback path)."));
     }
   });
 }

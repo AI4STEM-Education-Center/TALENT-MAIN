@@ -11,7 +11,7 @@ vi.mock("@/lib/storage", async (importOriginal) => {
   return {
     ...actual,
     presignPutUpload: vi.fn(async () => "https://s3.example/put"),
-    presignGetUrl: vi.fn(async () => "https://s3.example/get"),
+    signObjectReadUrl: vi.fn(async () => "https://s3.example/get"),
     headS3Object: vi.fn(async () => ({ contentLength: 1 })),
     listS3Objects: vi.fn(async () => [] as string[]),
     deleteS3Objects: vi.fn(async () => {}),
@@ -134,7 +134,7 @@ beforeEach(async () => {
   await resetDb();
   mockAuth.mockReset();
   mockPresignPut.mockReset().mockResolvedValue("https://s3.example/put");
-  vi.mocked(storage.presignGetUrl).mockReset().mockResolvedValue("https://s3.example/get");
+  vi.mocked(storage.signObjectReadUrl).mockReset().mockResolvedValue("https://s3.example/get");
   mockHead.mockReset().mockResolvedValue({ contentLength: 1 });
   mockList.mockReset().mockResolvedValue([]);
   mockDelete.mockReset().mockResolvedValue(undefined);

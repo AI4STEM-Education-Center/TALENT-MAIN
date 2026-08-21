@@ -17,9 +17,12 @@ const appEnv = process.env.APP_ENV?.toLowerCase() === "prod" ? "prod" : "dev";
 
 // Content-Security-Policy is shipped in Report-Only mode first: the app relies
 // on Next.js' inline bootstrap script, next-themes' inline theme script, KaTeX
-// inline styles, and cross-origin S3 image URLs, so a strict enforced policy
-// would break rendering until each source is enumerated. Observe violations
-// (wire up a report endpoint), then promote this to `Content-Security-Policy`.
+// inline styles, and cross-origin CloudFront-signed image URLs, so a strict
+// enforced policy would break rendering until each source is enumerated.
+// Observe violations (wire up a report endpoint), then promote this to
+// `Content-Security-Policy`. Note that enforcing it will need `connect-src`
+// widened to BOTH the CloudFront domain and the S3 host, since uploads `fetch`
+// a presigned PUT straight to the bucket.
 const cspReportOnly = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline'",

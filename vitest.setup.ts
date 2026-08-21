@@ -18,3 +18,20 @@ process.env.DATABASE_URL = `file:${path.resolve(process.cwd(), "test", "test.db"
 // A fixed, valid 32-byte (64 hex char) key so crypto round-trips are deterministic.
 process.env.API_KEY_ENCRYPTION_SECRET =
   "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+// storage.ts now requires static AWS credentials — getS3Client() throws without
+// them rather than falling through to the SDK's instance-role provider chain —
+// so any spec that reaches a signing helper needs these present. Dummy values
+// are enough: every spec that touches the SDK stubs it. Exported so specs which
+// mutate the S3 environment can restore this baseline instead of unsetting it
+// and leaking a broken environment into later files (vitest runs them serially
+// in one worker). CLOUDFRONT_* is deliberately left unset so the default test
+// path is the presigned-S3 fallback.
+export const TEST_AWS_ENV = {
+  AWS_ACCESS_KEY_ID: "AKIAIOSFODNN7EXAMPLE",
+  AWS_SECRET_ACCESS_KEY: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+  AWS_REGION: "us-east-1",
+  AWS_S3_BUCKET: "test-bucket",
+} as const;
+
+Object.assign(process.env, TEST_AWS_ENV);

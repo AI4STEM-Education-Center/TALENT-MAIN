@@ -416,6 +416,8 @@ export type StoredSimulationRecommendation = {
  */
 export type SimulationRecommendationView = StoredSimulationRecommendation & {
   unavailable?: boolean;
+  /** Current live version, resolved from QuestionSimulation when results are read. */
+  version?: number;
 };
 
 /**

@@ -158,10 +158,21 @@ ADMIN_SIGNUP_TOKEN="your-secret-admin-code"
 # Generate with: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 API_KEY_ENCRYPTION_SECRET="your-hex-32-byte-secret"
 
+# --- AWS credentials (required; no IAM instance role) ---
+AWS_ACCESS_KEY_ID="your-access-key-id"
+AWS_SECRET_ACCESS_KEY="your-secret-access-key"
+
 # --- AWS S3 (Learning Materials) ---
 AWS_REGION="us-east-1"
-AWS_S3_BUCKET="talent4ai-101561168021-us-east-1-an"
+AWS_S3_BUCKET="your-bucket-name"
 LEARNING_MATERIAL_MAX_BYTES="52428800"
+
+# --- CloudFront (image + PDF delivery) ---
+# Leave all three empty to serve reads from S3 with presigned URLs instead.
+CLOUDFRONT_DOMAIN="d111111abcdef8.cloudfront.net"
+CLOUDFRONT_KEY_PAIR_ID="K2JCJMDEHXQW5F"
+# base64 -w0 private_key.pem
+CLOUDFRONT_PRIVATE_KEY="LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQo..."
 ```
 
 ## Environment Variables
@@ -178,27 +189,35 @@ LEARNING_MATERIAL_MAX_BYTES="52428800"
 | `ADMIN_SIGNUP_TOKEN` | Secret token admins must enter when registering at `/admin-register` |
 | `API_KEY_ENCRYPTION_SECRET` | Hex-encoded 32-byte secret key used to encrypt AI Provider API keys stored in the database |
 | `LEARNING_MATERIAL_MAX_BYTES` | Max upload size for learning materials in bytes (default 52428800 = 50 MiB) |
+| `AWS_ACCESS_KEY_ID` | **Required.** Static access key for the app's IAM user. IAM instance roles are not used — the app throws rather than falling back to instance metadata |
+| `AWS_SECRET_ACCESS_KEY` | **Required.** Static secret key paired with the above |
+| `AWS_SESSION_TOKEN` | Optional: only when using temporary STS credentials |
 | `AWS_REGION` | AWS S3 region for bucket operations (e.g., `us-east-1`) |
-| `AWS_S3_BUCKET` | AWS S3 bucket name (e.g., `talent4ai-101561168021-us-east-1-an`) |
+| `AWS_S3_BUCKET` | AWS S3 bucket name |
 | `S3_KEY_PREFIX` | Optional namespace for deployments sharing one bucket. Compose fixes prod at `prod/` and dev at `dev/` so their independent garbage collectors cannot delete each other's objects. Existing full keys stored in the database remain readable. |
 | `RESOURCE_SPOOL_DIR` | Directory every node writes its **System Resources** samples to, and reads every other node's from. Both compose stacks set it to `/app/metrics` and mount the shared `talent-resource-metrics` volume there, which is how each site charts all four nodes (prod and dev are separate deployments but one EC2 instance). Unset — outside Docker — each deployment keeps a private spool beside its data directory and charts only its own two nodes. |
 | `HOST_PROC_DIR` | Where to read the host's CPU/memory counters for the whole-machine panel (default `/proc`, which inside a container is already the host's). Only needs setting if something namespaces `/proc`. |
 | `RESOURCE_SAMPLE_INTERVAL_MS` | How often each node records CPU/RAM/storage (default 60000, floor 10000) |
 | `RESOURCE_SAMPLE_RETENTION_DAYS` | How long resource samples are kept before each node compacts its spool file (default 7 — the admin tab charts one week) |
 | `AWS_S3_ENDPOINT` | Optional: Endpoint URL for S3 alternative providers (MinIO / LocalStack) |
-| `AWS_ACCESS_KEY_ID` | Optional: Static access key if not using an IAM role on EC2 |
-| `AWS_SECRET_ACCESS_KEY` | Optional: Static secret key if not using an IAM role on EC2 |
+| `CLOUDFRONT_DOMAIN` | CloudFront distribution domain serving images and PDFs (e.g. `d111111abcdef8.cloudfront.net`, or a custom CNAME). A `https://` prefix and trailing slash are tolerated |
+| `CLOUDFRONT_KEY_PAIR_ID` | Public key ID from the distribution's trusted key group, used to sign read URLs |
+| `CLOUDFRONT_PRIVATE_KEY` | Base64-encoded private key PEM for that key group (`base64 -w0 private_key.pem`); a PEM with literal `\n` escapes also works. **Secret** |
 
 > [!NOTE]
 > AI configuration (such as API keys, base URLs, and model selection) is now fully database-backed and managed dynamically via the Admin Dashboard. No `OPENAI_API_KEY` environment variables are required!
 
 ## Learning materials
 
-Step-by-step **EC2 + S3** setup (bucket, CORS, IAM) is in [docs/S3_EC2_SETUP.md](docs/S3_EC2_SETUP.md). On the server, `ec2-setup.sh` installs `~/app/scripts/check-s3.sh` to verify credentials and bucket access.
+Step-by-step **S3 + CloudFront** setup (bucket, CORS, IAM user, distribution, signing key group) is in [docs/SETUP.md](docs/SETUP.md).
 
 Teachers can upload files at `/teacher/materials`. Each upload creates a `LearningMaterial` row with `storageKey`, `bucket`, `uploadStatus`, and metadata. Files live in S3 only; the app never stores file bytes in the SQLite database.
 
-Upload endpoints return short-lived, write-once presigned `PUT` URLs; the client uploads directly to S3, then calls the matching completion endpoint so the server can verify every object with `HeadObject`. Configure bucket CORS to allow `PUT` from your web origin and include `Content-Type` and `If-None-Match` in `AllowedHeaders`. The signed `If-None-Match: *` header prevents an upload URL from overwriting an object after it has been validated.
+**Uploads** go straight to S3 through short-lived, write-once presigned `PUT` URLs. The client uploads directly to the bucket, then calls the matching completion endpoint so the server can verify every object with `HeadObject`. Configure bucket CORS to allow `PUT` from your web origin and include `Content-Type` and `If-None-Match` in `AllowedHeaders`. The signed `If-None-Match: *` header prevents an upload URL from overwriting an object after it has been validated.
+
+**Reads** go through CloudFront. `signObjectReadUrl()` in `src/lib/storage.ts` is the single entry point for every image and PDF URL the app hands out; it returns a CloudFront signed URL when `CLOUDFRONT_*` is configured and the object sits in the distribution's origin bucket, and otherwise falls back to a presigned S3 GET. The bucket itself stays private (Origin Access Control), so objects are reachable only via a signed CDN URL. Clearing the three `CLOUDFRONT_*` variables reverts delivery to S3 with no code change.
+
+Simulation HTML is the deliberate exception: `/api/simulations/[id]/content` proxies it through the server because the response must carry a restrictive CSP and is rewritten per viewer role, so it is never CDN-cacheable.
 
 For LLM or parsing pipelines, load the row by id and read bytes or location:
 
