@@ -39,10 +39,10 @@
     "esbuild": "$esbuild"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1110.0",
+    "@aws-sdk/client-s3": "^3.1112.0",
     "@aws-sdk/cloudfront-signer": "^3.1110.0",
-    "@aws-sdk/lib-storage": "^3.1110.0",
-    "@aws-sdk/s3-request-presigner": "^3.1110.0",
+    "@aws-sdk/lib-storage": "^3.1112.0",
+    "@aws-sdk/s3-request-presigner": "^3.1112.0",
     "@hyzyla/pdfium": "^2.1.13",
     "@prisma/adapter-better-sqlite3": "^7.9.1",
     "@prisma/client": "^7.9.1",
@@ -64,7 +64,7 @@
     "next-auth": "^5.0.0-beta.32",
     "next-themes": "^0.4.6",
     "nodemailer": "^9.0.5",
-    "openai": "^7.4.0",
+    "openai": "^7.5.0",
     "pdf-lib": "^1.17.1",
     "react": "^19",
     "react-dom": "^19",
