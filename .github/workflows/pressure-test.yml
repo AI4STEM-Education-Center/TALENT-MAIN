@@ -1,0 +1,279 @@
+name: Pressure Test
+
+# Two triggers, deliberately asymmetric.
+#
+#   pull_request  -> a short LOCAL smoke run. Reports numbers as a comment and is
+#                    NEVER a required check. Load timings on shared GitHub runners
+#                    are noisy, and a flaky performance gate is one people learn
+#                    to re-run until it passes — which is worse than no gate.
+#
+#   workflow_dispatch -> the expensive tiers, only when a human presses the
+#                    button. The EC2 path clones production's volume and costs
+#                    real money, so it can never be reachable by a push.
+on:
+  pull_request:
+    paths:
+      # Only when something that could affect the measurement changes. A docs-only
+      # PR does not need to build an image.
+      - "src/**"
+      - "prisma/**"
+      - "benchmark/**"
+      - "docker/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/pressure-test.yml"
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: "Which tier to run"
+        required: true
+        default: "local"
+        type: choice
+        options: [local, ec2-clone]
+      scenario:
+        description: "Scenario name (see benchmark/k6/scenarios/)"
+        required: true
+        default: "regression"
+        type: string
+      scale:
+        description: "VU multiplier"
+        required: false
+        default: "1"
+        type: string
+      source_instance:
+        description: "ec2-clone ONLY: the production instance id to clone"
+        required: false
+        type: string
+      ack_real_data:
+        description: "ec2-clone ONLY: type CLONE-PRODUCTION-DATA to confirm you understand the clone holds real student and IRB consent data"
+        required: false
+        type: string
+
+# One run at a time. Two concurrent EC2 provisions would race on tag-based
+# teardown and could delete each other's instances mid-run.
+concurrency:
+  group: pressure-test-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # ───────────────────────────────────────────────────────────────────────────
+  # PR smoke: fast, cheap, advisory.
+  # ───────────────────────────────────────────────────────────────────────────
+  smoke:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # React Doctor's workflow needed this too: a shallow checkout has no
+          # merge base, so a changed-file comparison silently degrades to a full scan.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+      - run: npx prisma generate
+
+      - name: Install pinned k6
+        run: benchmark/tools/install-k6.sh
+
+      - name: Prepare bench environment
+        run: |
+          cp benchmark/docker/bench.env.example benchmark/docker/bench.env
+          # A throwaway CloudFront key pair, so the smoke run exercises the RSA
+          # signing path rather than the cheaper S3 presign path. Signing never
+          # contacts AWS, so the key does not need to match a real distribution.
+          openssl genrsa -out /tmp/bench-cf.pem 2048 2>/dev/null
+          {
+            echo "CLOUDFRONT_DOMAIN=\"d111111abcdef8.cloudfront.net\""
+            echo "CLOUDFRONT_KEY_PAIR_ID=\"KBENCHSMOKE0001\""
+            echo "CLOUDFRONT_PRIVATE_KEY=\"$(base64 -w0 /tmp/bench-cf.pem)\""
+          } >> benchmark/docker/bench.env
+
+      - name: Run local smoke
+        id: run
+        run: |
+          set +e
+          benchmark/run-local.sh --scenario smoke --label "pr-${{ github.event.pull_request.number }}" --seed-scale 0.2 2>&1 | tee /tmp/smoke.log
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Comment the report
+        if: always()
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const glob = require('path');
+            let report = '';
+            const dir = 'benchmark/.tmp/local';
+            try {
+              for (const label of fs.readdirSync(dir)) {
+                const file = glob.join(dir, label, 'report.md');
+                if (fs.existsSync(file)) report = fs.readFileSync(file, 'utf8');
+              }
+            } catch (e) { /* no report produced */ }
+
+            const body = report
+              ? `<!-- pressure-test -->\n## Pressure test (local smoke)\n\n${report}\n\n<sub>Advisory only — this check never blocks merging. Absolute numbers from a shared GitHub runner are not capacity numbers; see \`benchmark/README.md\`.</sub>`
+              : `<!-- pressure-test -->\n## Pressure test (local smoke)\n\nThe smoke run did not produce a report. See the job log.`;
+
+            // Update the existing comment instead of adding one per push.
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find((c) => c.body.includes('<!-- pressure-test -->'));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                comment_id: existing.id, body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: context.issue.number, body,
+              });
+            }
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: pressure-test-smoke
+          path: |
+            benchmark/.tmp/local/**/report.md
+            benchmark/.tmp/local/**/summary.json
+            benchmark/.tmp/local/**/probes.json
+            benchmark/.tmp/local/**/k6.log
+          # Deliberately NOT sessions.json: every entry is a live session cookie.
+          if-no-files-found: warn
+          retention-days: 14
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Button-only: the heavy local tiers.
+  # ───────────────────────────────────────────────────────────────────────────
+  local:
+    if: github.event_name == 'workflow_dispatch' && inputs.tier == 'local'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - run: benchmark/tools/install-k6.sh
+      - name: Prepare bench environment
+        run: cp benchmark/docker/bench.env.example benchmark/docker/bench.env
+      - name: Run ${{ inputs.scenario }}
+        run: benchmark/run-local.sh --scenario "${{ inputs.scenario }}" --scale "${{ inputs.scale }}" --label "dispatch-${{ github.run_id }}"
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: pressure-test-${{ inputs.scenario }}
+          path: |
+            benchmark/.tmp/local/**/report.md
+            benchmark/.tmp/local/**/summary.json
+            benchmark/.tmp/local/**/probes.json
+            benchmark/.tmp/local/**/metrics.ndjson
+          if-no-files-found: warn
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Button-only, and gated twice: the EC2 clone.
+  # ───────────────────────────────────────────────────────────────────────────
+  ec2:
+    if: github.event_name == 'workflow_dispatch' && inputs.tier == 'ec2-clone'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    # A GitHub environment with required reviewers is the second gate: the typed
+    # confirmation below proves intent, and the environment approval proves
+    # someone else agreed. Create the `benchmark-ec2` environment and add
+    # reviewers, or this job cannot start.
+    environment: benchmark-ec2
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Require the typed confirmation
+        # Checked before anything is provisioned. Cloning production's volume puts
+        # real student and IRB consent data on a temporary instance; that decision
+        # is made explicitly, every time, by a human typing it out.
+        run: |
+          if [ "${{ inputs.ack_real_data }}" != "CLONE-PRODUCTION-DATA" ]; then
+            echo "::error::ack_real_data must be exactly CLONE-PRODUCTION-DATA. This run clones production's volume, which means real student records and real IRB consent data on a temporary instance. See benchmark/ec2/sanitize-sut.sh."
+            exit 1
+          fi
+          if [ -z "${{ inputs.source_instance }}" ]; then
+            echo "::error::source_instance is required for the ec2-clone tier."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ secrets.BENCH_AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Provision the clone and load generator
+        id: provision
+        run: |
+          benchmark/ec2/provision.sh \
+            --source-instance "${{ inputs.source_instance }}" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --ack-real-data \
+            --deadman-minutes 180 | tee /tmp/provision.log
+          RUN_ID="$(grep -oE 'run bench-[0-9]{8}-[0-9]{6}' /tmp/provision.log | head -1 | awk '{print $2}')"
+          echo "run_id=${RUN_ID}" >> "$GITHUB_OUTPUT"
+
+      - name: Run ${{ inputs.scenario }}
+        run: |
+          benchmark/run-ec2.sh \
+            --run-id "${{ steps.provision.outputs.run_id }}" \
+            --scenario "${{ inputs.scenario }}" \
+            --scale "${{ inputs.scale }}" \
+            --region "${{ secrets.AWS_REGION }}"
+
+      - name: Tear down
+        # `always()`: a cancelled or failed run must still destroy the instances,
+        # the AMI and — the one people forget — its backing snapshots. This is the
+        # first of the three leak guards; the cloud-init deadman and
+        # `teardown.sh --all` are the other two.
+        if: always()
+        run: |
+          benchmark/ec2/teardown.sh \
+            --run-id "${{ steps.provision.outputs.run_id }}" \
+            --region "${{ secrets.AWS_REGION }}" || \
+          benchmark/ec2/teardown.sh --all --region "${{ secrets.AWS_REGION }}"
+
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: pressure-test-ec2-${{ inputs.scenario }}
+          # Only the SCRUBBED directory is ever uploaded: run-ec2.sh runs
+          # collect/scrub.ts on the load generator before download, which redacts
+          # emails and signed-URL credentials and drops the session bundle
+          # outright. Uploading raw clone logs would publish real names.
+          path: benchmark/.tmp/ec2-runs/**
+          if-no-files-found: warn
+          retention-days: 14

@@ -1,0 +1,16 @@
+# Scratch space for every tier: seeded databases, minted sessions, run artifacts,
+# EC2 state files. All regenerable, none of it belongs in git.
+.tmp/
+
+# Holds AUTH_SECRET and (optionally) a CloudFront private key. Only the
+# .example is tracked.
+docker/bench.env
+
+# Belt and braces. Session bundles are LIVE session cookies for real accounts in
+# the target database, and a stray *.db is either a seeded fixture or, worse, a
+# copy of a production database pulled off a clone. Neither is ever committed.
+sessions*.json
+*.db
+*.db-wal
+*.db-shm
+*.pem

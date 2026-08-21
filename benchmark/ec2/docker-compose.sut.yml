@@ -1,0 +1,101 @@
+# The system-under-test stack for a tier-3 clone.
+#
+# Mirrors docker/docker-compose.yml deliberately closely — same image, same web
+# plus worker pair, same shared resource spool, same log limits — because a
+# benchmark of a different topology measures a system nobody runs. The
+# differences are all either safety or instrumentation, and each is called out.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+volumes:
+  resource-metrics:
+    name: talent-resource-metrics
+    # NOT external here. The production compose declares it external because the
+    # deploy workflow creates it; on a fresh clone boot nothing has, and an
+    # external volume that does not exist makes compose refuse to start.
+    external: false
+
+services:
+  web:
+    container_name: talent-web
+    # The exact image production is running. Pulling :latest would silently
+    # benchmark a different build than the one deployed.
+    image: ${BENCH_IMAGE:-ghcr.io/ai4stem-education-center/talent-main:latest}
+    pull_policy: missing
+    # Published on the PRIVATE interface only. Production publishes nothing and
+    # sits behind Caddy; Caddy is neutralized on the clone, so the load
+    # generator needs a port. Binding to 0.0.0.0 is acceptable because the
+    # clone's security group only admits the load generator's security group,
+    # and the instance has no public IP.
+    ports:
+      - "3000:3000"
+      - "9099:9099"
+    env_file:
+      - ./.env
+    environment:
+      NODE_ENV: production
+      APP_ENV: bench
+      DATABASE_URL: ${BENCH_DATABASE_URL:-file:/app/prisma/data/prod.db}
+      RESOURCE_SPOOL_DIR: /app/metrics
+      # The event-loop probe. Loaded via --require from a bind-mounted file, so
+      # nothing here ships in the production image or widens its attack surface;
+      # see benchmark/instrument/probe.cjs for why this is a preload rather than
+      # an /api/_perf route.
+      NODE_OPTIONS: "--require /app/benchmark-probe.cjs"
+      BENCH_PROBE_PORT: "9099"
+      BENCH_PROBE_HOST: "0.0.0.0"
+      BENCH_PROBE_ROLE: "web"
+    volumes:
+      - ./data/db/prod:/app/prisma/data
+      - resource-metrics:/app/metrics
+      - /opt/bench/probe.cjs:/app/benchmark-probe.cjs:ro
+    logging: *logging
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r => process.exit(r.status < 500 ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 36
+      start_period: 20s
+    restart: "no"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  worker:
+    container_name: talent-worker
+    image: ${BENCH_IMAGE:-ghcr.io/ai4stem-education-center/talent-main:latest}
+    command: ["worker"]
+    pull_policy: missing
+    env_file:
+      - ./.env
+    environment:
+      NODE_ENV: production
+      APP_ENV: bench
+      DATABASE_URL: ${BENCH_DATABASE_URL:-file:/app/prisma/data/prod.db}
+      RESOURCE_SPOOL_DIR: /app/metrics
+      NODE_OPTIONS: "--require /app/benchmark-probe.cjs"
+      # A different port: the worker is a separate process, so it needs its own
+      # probe endpoint. Both are sampled — the worker competing with the web tier
+      # for the same database file is a first-class part of what is being measured.
+      BENCH_PROBE_PORT: "9098"
+      BENCH_PROBE_HOST: "0.0.0.0"
+      BENCH_PROBE_ROLE: "worker"
+    ports:
+      - "9098:9098"
+    volumes:
+      - ./data/db/prod:/app/prisma/data
+      - resource-metrics:/app/metrics
+      - /opt/bench/probe.cjs:/app/benchmark-probe.cjs:ro
+    logging: *logging
+    # `no`, not `unless-stopped`: a crash under overload must stay crashed and be
+    # visible in the report. Production restarting itself is correct for
+    # production and would silently turn "it fell over at 400 VUs" into a dip in
+    # a latency chart.
+    restart: "no"
+    depends_on:
+      web:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
