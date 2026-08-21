@@ -5,7 +5,7 @@
 // runs on a pull request.
 
 import { requireTier, SESSIONS, identityFor, RUN_LABEL, SLO } from "../lib/config.js";
-import { thresholds } from "../lib/metrics.js";
+import { thresholds, TREND_STATS } from "../lib/metrics.js";
 import {
   studentQuizJourney,
   teacherMonitorJourney,
@@ -32,6 +32,7 @@ const STEPS = [
 ];
 
 export const options = {
+  summaryTrendStats: TREND_STATS,
   scenarios: {
     smoke: { executor: "shared-iterations", vus: 1, iterations: 1, maxDuration: "3m" },
   },

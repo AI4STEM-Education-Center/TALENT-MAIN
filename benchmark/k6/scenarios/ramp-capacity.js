@@ -11,7 +11,7 @@
 // the report records where. Read the report, not the exit code.
 
 import { requireTier, identityFor, scaled, RUN_LABEL, SLO } from "../lib/config.js";
-import { thresholds } from "../lib/metrics.js";
+import { thresholds, TREND_STATS } from "../lib/metrics.js";
 import { studentQuizJourney, teacherMonitorJourney, adminObservabilityJourney, publicLanding } from "../lib/journeys.js";
 
 requireTier("ramp-capacity", ["ec2-clone"]);
@@ -46,6 +46,7 @@ const STEPS = [
 ];
 
 export const options = {
+  summaryTrendStats: TREND_STATS,
   scenarios: {
     students: { executor: "ramping-vus", exec: "student", startVUs: 0, stages: ladder(PEAK), gracefulRampDown: "60s" },
     // A fixed background mix so the request profile stays realistic at every

@@ -12,9 +12,40 @@ import { parseArgs, str } from "../tools/args";
 
 type Metric = {
   type?: string;
+  /** Present in handleSummary's `data` object. */
   values?: Record<string, number>;
   thresholds?: Record<string, boolean | { ok?: boolean }>;
+  /** --summary-export puts the statistics FLAT on the metric (see `stats`). */
+  [key: string]: unknown;
 };
+
+/**
+ * Read a metric's statistics, whichever shape they arrived in.
+ *
+ * k6 has TWO summary shapes and they differ in exactly the way that produces a
+ * silently empty report:
+ *
+ *   --summary-export <file>   statistics are FLAT on the metric object
+ *                             { "p(95)": 420, count: 300, thresholds: {...} }
+ *   handleSummary(data)       statistics are nested under `.values`
+ *                             { values: { "p(95)": 420, count: 300 }, ... }
+ *
+ * The runners use --summary-export, so a reader that only understood `.values`
+ * saw `undefined` for every number — and because the verdict counters were read
+ * with `?? 0`, a run with real failures reported "0 unexpected errors" and
+ * PASSED. The table still drew, with every cell showing an em dash, which reads
+ * as "nothing ran" rather than "the reader is broken". Both shapes are handled
+ * now, flat first.
+ */
+function stats(metric: Metric | undefined): Record<string, number> {
+  if (!metric) return {};
+  if (metric.values && typeof metric.values === "object") return metric.values;
+  const out: Record<string, number> = {};
+  for (const [key, value] of Object.entries(metric)) {
+    if (typeof value === "number") out[key] = value;
+  }
+  return out;
+}
 
 type K6Summary = {
   metrics?: Record<string, Metric>;
@@ -77,9 +108,12 @@ function main() {
   // ─── Verdict ───────────────────────────────────────────────────────────────
   // Correctness counters first, because a run can sit comfortably inside every
   // latency SLO while silently dropping graded submissions.
-  const unexpected = metrics.unexpected_errors?.values?.count ?? 0;
-  const busy = metrics.sqlite_busy?.values?.count ?? 0;
-  const designed = metrics.designed_refusals?.values?.count ?? 0;
+  // Missing (not zero) must be distinguishable from genuinely zero: a reader
+  // that cannot find the counter has to say so, not silently report a pass.
+  const unexpected = stats(metrics.unexpected_errors).count;
+  const busy = stats(metrics.sqlite_busy).count;
+  const designed = stats(metrics.designed_refusals).count;
+  const countersMissing = unexpected === undefined || busy === undefined;
 
   const breached: string[] = [];
   const unknownPolarity: string[] = [];
@@ -91,9 +125,18 @@ function main() {
     }
   }
 
-  const verdict = unexpected > 0 || busy > 0 || breached.length > 0 ? "FAIL" : "PASS";
+  const verdict =
+    countersMissing || (unexpected ?? 0) > 0 || (busy ?? 0) > 0 || breached.length > 0 ? "FAIL" : "PASS";
   push(`## Verdict: ${verdict}`);
   push();
+  if (countersMissing) {
+    push(
+      `> **The correctness counters were not found in this summary.** That is a reporting failure, ` +
+        `not a clean run — reported as FAIL rather than assumed to be zero. Check that the scenario ` +
+        `imports \`thresholds()\` from k6/lib/metrics.js.`
+    );
+    push();
+  }
   push(`- unexpected errors: **${fmtCount(unexpected)}** (any non-zero fails the run)`);
   push(
     `- \`sqlite_busy\`: **${fmtCount(busy)}** — a non-zero value means a write waited longer than ` +
@@ -125,7 +168,7 @@ function main() {
     .filter(([name]) => name.startsWith("step_duration{step:"))
     .map(([name, metric]) => {
       const step = name.slice("step_duration{step:".length, -1);
-      return { step, values: metric.values ?? {} };
+      return { step, values: stats(metric) };
     })
     .sort((a, b) => (b.values["p(95)"] ?? 0) - (a.values["p(95)"] ?? 0));
 
@@ -142,19 +185,21 @@ function main() {
   if (stepRows.length === 0) {
     push(
       `> k6 only materialises a tagged submetric when a threshold references it. An empty table ` +
-        `usually means the scenario's STEPS list is missing entries — not that those steps never ran.`
+        `usually means the scenario's STEPS list is missing entries — not that those steps never ran. ` +
+        `Rows present but every cell empty means the opposite: the metrics are there and this reader ` +
+        `could not decode them.`
     );
     push();
   }
 
   // ─── HTTP + throughput ─────────────────────────────────────────────────────
-  const reqs = metrics.http_reqs?.values;
-  const duration = metrics.http_req_duration?.values;
+  const reqs = stats(metrics.http_reqs);
+  const duration = stats(metrics.http_req_duration);
   push(`## HTTP`);
   push();
-  push(`- requests: ${fmtCount(reqs?.count)} (${(reqs?.rate ?? 0).toFixed(1)}/s)`);
-  push(`- duration p95: ${fmtMs(duration?.["p(95)"])}, p99: ${fmtMs(duration?.["p(99)"])}, max: ${fmtMs(duration?.max)}`);
-  const failed = metrics.http_req_failed?.values?.rate;
+  push(`- requests: ${fmtCount(reqs.count)} (${(reqs.rate ?? 0).toFixed(1)}/s)`);
+  push(`- duration p95: ${fmtMs(duration["p(95)"])}, p99: ${fmtMs(duration["p(99)"])}, max: ${fmtMs(duration.max)}`);
+  const failed = stats(metrics.http_req_failed).rate;
   if (failed !== undefined) push(`- k6 http_req_failed rate: ${(failed * 100).toFixed(2)}% (includes designed refusals — use the counters above instead)`);
   push();
 

@@ -26,7 +26,7 @@
 // benchmark/run-local.sh --compare-signing does both halves and prints it.
 
 import { requireTier, identityFor, BASE_URL, authHeaders, CLOUDFRONT_EXPECTED, RUN_LABEL, SLO } from "../lib/config.js";
-import { thresholds, record } from "../lib/metrics.js";
+import { thresholds, record, TREND_STATS } from "../lib/metrics.js";
 import { fetchQuizMedia } from "../lib/journeys.js";
 import http from "k6/http";
 import { check } from "k6";
@@ -37,6 +37,7 @@ const VUS = Number(__ENV.BENCH_SIGNING_VUS || 8);
 const STEPS = ["student_quiz_start", "quiz_media"];
 
 export const options = {
+  summaryTrendStats: TREND_STATS,
   scenarios: {
     signing: { executor: "constant-vus", exec: "startMediaQuiz", vus: VUS, duration: __ENV.BENCH_SIGNING_DURATION || "2m" },
   },
