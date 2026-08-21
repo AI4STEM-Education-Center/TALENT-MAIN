@@ -20,6 +20,7 @@ function LoginForm() {
   const callbackUrl = safeRelativeCallbackUrl(searchParams.get("callbackUrl"));
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -31,6 +32,7 @@ function LoginForm() {
       const result = await signIn("credentials", {
         identifier,
         password,
+        remember: remember ? "true" : "false",
         redirect: false,
       });
 
@@ -39,6 +41,10 @@ function LoginForm() {
       } else {
         // Get fresh session to determine role
         const res = await fetch("/api/auth/session");
+        if (!res.ok) {
+          setError("Signed in, but we couldn't load your account. Please try again.");
+          return;
+        }
         const session = await res.json();
         const role = session?.user?.role;
         if (callbackUrl) {
@@ -103,6 +109,23 @@ function LoginForm() {
                 required
                 autoComplete="current-password"
               />
+            </div>
+            <div className="flex items-start gap-3">
+              <input
+                id="remember"
+                type="checkbox"
+                checked={remember}
+                onChange={(e) => setRemember(e.target.checked)}
+                className="mt-0.5 size-4 rounded border-input accent-primary"
+              />
+              <div className="grid gap-0.5">
+                <Label htmlFor="remember" className="font-normal">
+                  Remember this computer
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Stay signed in for 30 days. Otherwise, your sign-in expires after 1 day.
+                </p>
+              </div>
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? "Signing in..." : "Sign in"}

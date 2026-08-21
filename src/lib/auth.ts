@@ -1,10 +1,21 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
+import { decode, encode } from "next-auth/jwt";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit, clientIp } from "@/lib/rate-limit";
 import { logSystemEvent } from "@/lib/system-log";
 import { getUserConsentClaim, isConsentRole } from "@/lib/consent";
+import {
+  isSessionExpired,
+  remainingSessionSeconds,
+  sessionExpiresAt,
+  shouldRememberComputer,
+  THIRTY_DAYS_SECONDS,
+} from "@/lib/auth-session";
+
+const useSecureCookies = process.env.NODE_ENV === "production";
+const sessionCookieName = `${useSecureCookies ? "__Secure-" : ""}authjs.session-token`;
 
 /**
  * Stamp `consentVersion`/`consentDecision` onto a JWT from the database.
@@ -36,6 +47,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       credentials: {
         identifier: { label: "Email or Username", type: "text" },
         password: { label: "Password", type: "password" },
+        remember: { label: "Remember this computer", type: "checkbox" },
       },
       async authorize(credentials, request) {
         const identifier = credentials?.identifier as string | undefined;
@@ -117,6 +129,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           firstName: user.firstName,
           lastName: user.lastName,
           role: user.role,
+          sessionExpiresAt: sessionExpiresAt(shouldRememberComputer(credentials?.remember)),
         };
       },
     }),
@@ -129,8 +142,15 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.username = (user as { username: string }).username;
         token.firstName = (user as { firstName: string }).firstName;
         token.lastName = (user as { lastName: string }).lastName;
+        token.sessionExpiresAt =
+          (user as { sessionExpiresAt?: number }).sessionExpiresAt ?? sessionExpiresAt(false);
         await stampConsentClaim(token);
       }
+
+      // The deadline is absolute: polling /api/auth/session or navigating to a
+      // new page must never turn a one-day login into a rolling 30-day login.
+      // Tokens issued before this policy intentionally fail closed.
+      if (!user && isSessionExpired(token.sessionExpiresAt)) return null;
 
       // The profile page calls useSession().update() after saving so the
       // sidebar reflects a renamed account without a re-login. Re-read from the
@@ -165,7 +185,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         session.user.consentVersion = (token.consentVersion as string | null | undefined) ?? null;
         session.user.consentDecision = (token.consentDecision as string | null | undefined) ?? null;
       }
-      return session;
+      return {
+        ...session,
+        expires: new Date(token.sessionExpiresAt as number * 1000).toISOString(),
+      };
     },
   },
   pages: {
@@ -173,6 +196,35 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   },
   session: {
     strategy: "jwt",
+    // The cookie must be able to survive the longest opt-in lifetime. The JWT
+    // callback and custom encoder enforce each login's shorter absolute limit.
+    maxAge: THIRTY_DAYS_SECONDS,
+  },
+  jwt: {
+    encode(params) {
+      return encode({
+        ...params,
+        maxAge:
+          typeof params.token?.sessionExpiresAt === "number"
+            ? remainingSessionSeconds(params.token.sessionExpiresAt)
+            : params.maxAge,
+      });
+    },
+    decode,
+  },
+  // Pin cookie security instead of inferring it from each reverse-proxied
+  // request. This keeps Safari on one cookie name across page navigations.
+  useSecureCookies,
+  cookies: {
+    sessionToken: {
+      name: sessionCookieName,
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: useSecureCookies,
+      },
+    },
   },
   trustHost: true,
 });
