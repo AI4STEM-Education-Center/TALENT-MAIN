@@ -175,6 +175,13 @@ MEDIA_TARGET="$(node -e '
   process.stdout.write(t ? JSON.stringify({classId: t.classId, quizId: t.quizId}) : "{}");
 ' "${RUN_DIR}/seed-manifest.json" 2>/dev/null || echo '{}')"
 
+# smoke and media-signing both PIN this target so the signing path is exercised
+# deterministically. An empty value silently degrades them to random quiz
+# discovery, which hits a media-bearing quiz only about a quarter of the time.
+if [ "$MEDIA_TARGET" = "{}" ] || [ -z "$MEDIA_TARGET" ]; then
+  log "WARNING: no media target in the seed manifest — media-bearing scenarios will fall back to random quiz discovery and may measure no signing at all"
+fi
+
 EXPECT_CF=0
 grep -qE '^CLOUDFRONT_DOMAIN="?.+' "$ENV_FILE" && [ "${BENCH_DISABLE_CLOUDFRONT:-}" != "1" ] && EXPECT_CF=1
 

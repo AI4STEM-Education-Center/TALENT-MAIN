@@ -127,8 +127,11 @@ function isSignedUrl(url) {
  * The headline student journey: open the class, start a quiz, answer with think
  * time, submit, read results.
  *
- * `opts.fetchMedia` pulls the signed media too. `opts.thinkPerQuestion` is the
- * per-question pause range in seconds — set it to [0, 0] for a submit clump.
+ * `opts.fetchMedia` accounts for the signed media too. `opts.thinkPerQuestion` is
+ * the per-question pause range in seconds — set it to [0, 0] for a submit clump.
+ * `opts.target` pins the class+quiz instead of discovering one at random, which
+ * is required whenever the run needs to guarantee it hits media-bearing questions
+ * (only one quiz per class has them).
  */
 export function studentQuizJourney(identity, opts) {
   const options = opts || {};
@@ -146,7 +149,13 @@ export function studentQuizJourney(identity, opts) {
     return null;
   }
   if (!Array.isArray(classes) || classes.length === 0) return null;
-  const klass = classes[Math.floor(Math.random() * classes.length)];
+
+  // An explicit target still reads the class's quiz list, so the class_quizzes
+  // step is measured either way and the two modes stay comparable.
+  const pinned = options.target && options.target.classId && options.target.quizId ? options.target : null;
+  const klass = pinned
+    ? { id: pinned.classId }
+    : classes[Math.floor(Math.random() * classes.length)];
 
   const quizzesRes = http.get(`${BASE_URL}/api/classes/${klass.id}/quizzes`, {
     headers,
@@ -156,7 +165,13 @@ export function studentQuizJourney(identity, opts) {
 
   const classQuizzes = (quizzesRes.json() || []).filter((cq) => cq.published);
   if (classQuizzes.length === 0) return null;
-  const target = classQuizzes[Math.floor(Math.random() * classQuizzes.length)];
+
+  let target;
+  if (pinned) {
+    target = { quizId: pinned.quizId };
+  } else {
+    target = classQuizzes[Math.floor(Math.random() * classQuizzes.length)];
+  }
 
   const startRes = http.post(
     `${BASE_URL}/api/quiz`,

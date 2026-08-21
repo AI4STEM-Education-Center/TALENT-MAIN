@@ -311,6 +311,14 @@ Two halves to the CloudFront change, verifiable on different tiers:
   there the distribution and objects are real, so a 403 means the trusted key
   group is misattached and a 404 means the object is missing.
 
+`smoke` and `media-signing` **pin** the media-heavy quiz (recorded in the seed
+manifest and passed as `BENCH_MEDIA_TARGET`), because only one quiz per class
+carries figures and image options — random discovery finds it about a quarter of
+the time, which made smoke's coverage of the signing path a coin flip. On
+`ec2-clone` there is no synthetic manifest, so those scenarios fall back to
+random discovery against production's real content; check the Signed media
+section of the report to see whether that run actually exercised signing.
+
 On **`local`** the distribution is necessarily a throwaway — you cannot stand up
 a real private distribution in CI and the seeded objects exist in no bucket — so
 fetching would contribute one DNS failure per URL and say nothing about the app.

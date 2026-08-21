@@ -25,7 +25,7 @@
 // switch in .env.example). The delta in student_quiz_start IS the signing cost.
 // benchmark/run-local.sh --compare-signing does both halves and prints it.
 
-import { requireTier, identityFor, BASE_URL, authHeaders, CLOUDFRONT_EXPECTED, RUN_LABEL, SLO } from "../lib/config.js";
+import { requireTier, identityFor, BASE_URL, authHeaders, CLOUDFRONT_EXPECTED, RUN_LABEL, SLO, MEDIA_TARGET } from "../lib/config.js";
 import { thresholds, record, TREND_STATS } from "../lib/metrics.js";
 import { fetchQuizMedia } from "../lib/journeys.js";
 import http from "k6/http";
@@ -56,7 +56,7 @@ export function startMediaQuiz() {
   const identity = identityFor("students", __VU);
   const headers = authHeaders(identity);
 
-  const target = JSON.parse(__ENV.BENCH_MEDIA_TARGET || "{}");
+  const target = MEDIA_TARGET;
   if (!target.classId || !target.quizId) {
     console.error("[media-signing] BENCH_MEDIA_TARGET must be {\"classId\":…,\"quizId\":…} — the runner sets this from the seed manifest");
     return;
