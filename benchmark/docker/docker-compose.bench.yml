@@ -26,6 +26,28 @@ volumes:
   bench-db:
 
 services:
+  # Fix the ownership of the database volume before anything tries to use it.
+  #
+  # WHY THIS IS NEEDED. The runtime image has no /app/prisma/data directory (the
+  # Dockerfile copies prisma/, which contains no `data/`), so Docker CREATES the
+  # mountpoint for the named volume — owned by ROOT. The app runs as uid 1001,
+  # which then cannot create the database file, and `prisma db push` in the
+  # entrypoint dies with "unable to open database file". An empty named volume
+  # only inherits ownership from a directory that already EXISTS in the image,
+  # which is exactly why docker/docker-compose.yml's comments call this out for
+  # the metrics volume — /app/metrics is chowned in the Dockerfile, /app/prisma/data
+  # is not.
+  #
+  # Production does not hit this because it bind-mounts a host directory the
+  # deploy workflow already created.
+  db-init:
+    image: busybox:1.37
+    user: root
+    command: ["sh", "-c", "mkdir -p /data && chown -R 1001:1001 /data"]
+    volumes:
+      - bench-db:/data
+    restart: "no"
+
   web:
     container_name: bench-web
     image: ${BENCH_IMAGE:-talent-main:bench}
@@ -63,6 +85,9 @@ services:
     # `no`: a crash under load must stay visible, not be silently restarted into
     # a latency dip. Production's `unless-stopped` is right for production.
     restart: "no"
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
