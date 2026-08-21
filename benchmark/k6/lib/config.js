@@ -202,3 +202,30 @@ export function authHeaders(identity) {
 
 /** `true` when the target has CloudFront configured, so signing cost is in play. */
 export const CLOUDFRONT_EXPECTED = __ENV.BENCH_EXPECT_CLOUDFRONT === "1";
+
+/**
+ * Whether to actually FETCH signed media, as opposed to only verifying that the
+ * app signed it.
+ *
+ * Tier-dependent, because the two tiers are asking different questions:
+ *
+ *   local      The CloudFront distribution is necessarily a throwaway — you
+ *              cannot stand up a real private distribution in CI, and the seeded
+ *              objects do not exist in any bucket. So the domain does not
+ *              resolve, and every fetch is a DNS failure that the taxonomy
+ *              correctly reports as an unexpected error. Six per iteration, from
+ *              a fixture, describing nothing about the app.
+ *              What matters locally is the SIGNING cost and that a signed URL was
+ *              produced at all — both fully exercised without any fetch.
+ *
+ *   ec2-clone  The distribution and the objects are real, so a 403 means the
+ *   dev-site   trusted key group is misattached or the clock has skewed, and a
+ *              404 means the object is missing. Both are genuine findings that
+ *              only a real fetch can surface, so these tiers fetch.
+ *
+ * Override with BENCH_FETCH_MEDIA=1 / =0 when a local run does have a real CDN.
+ */
+export const FETCH_MEDIA =
+  __ENV.BENCH_FETCH_MEDIA !== undefined && __ENV.BENCH_FETCH_MEDIA !== ""
+    ? __ENV.BENCH_FETCH_MEDIA === "1"
+    : TIER !== "local";

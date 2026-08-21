@@ -222,6 +222,32 @@ function main() {
   if (failed !== undefined) push(`- k6 http_req_failed rate: ${(failed * 100).toFixed(2)}% (includes designed refusals — use the counters above instead)`);
   push();
 
+  // ─── Signed media ──────────────────────────────────────────────────────────
+  // Reported separately because on the local tier this is the ONLY media signal:
+  // there is no reachable CDN, so the harness verifies that the app SIGNED each
+  // URL rather than fetching it (see FETCH_MEDIA in k6/lib/config.js). Zero
+  // signed URLs against a media-bearing dataset means the CloudFront/S3 signing
+  // path never executed — which is the whole thing media-signing.js exists for.
+  const signed = stats(metrics.media_signed).count;
+  const unsigned = stats(metrics.media_unsigned).count;
+  if (signed !== undefined || unsigned !== undefined) {
+    push(`## Signed media`);
+    push();
+    push(`- signed URLs produced: ${fmtCount(signed)}`);
+    push(
+      `- **unsigned** URLs produced: ${fmtCount(unsigned)} — must be 0; a URL with no signature ` +
+        `means the browser was handed unauthenticated access to a private object`
+    );
+    if ((signed ?? 0) === 0) {
+      push();
+      push(
+        `> No signed media was produced. If the dataset has figures or image answer choices, the ` +
+          `signing path did not run and any conclusion about its cost is unfounded.`
+      );
+    }
+    push();
+  }
+
   // ─── Event loop ────────────────────────────────────────────────────────────
   if (probes) {
     push(`## Event-loop delay (from inside the process)`);

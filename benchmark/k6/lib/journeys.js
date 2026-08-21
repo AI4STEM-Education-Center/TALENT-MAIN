@@ -10,8 +10,8 @@
 
 import http from "k6/http";
 import { sleep } from "k6";
-import { BASE_URL, authHeaders, baseHeaders } from "./config.js";
-import { record } from "./metrics.js";
+import { BASE_URL, authHeaders, baseHeaders, FETCH_MEDIA } from "./config.js";
+import { record, mediaSigned, mediaUnsigned } from "./metrics.js";
 
 /** Per-question think time. Uniform RPS is not how a quiz is taken. */
 function think(minS, maxS) {
@@ -55,13 +55,23 @@ function answerFor(question) {
 }
 
 /**
- * Fetch the signed media a real quiz page would load.
+ * Account for the signed media a real quiz page would load — and fetch it where
+ * fetching means something.
  *
- * The browser requests every figure and image answer choice from CloudFront as
- * soon as the quiz renders. Skipping that would hide the second half of the
- * CloudFront change: the app pays RSA signing cost per URL, and the CDN then
- * has to serve them. Only a bounded sample is fetched — the point is to keep
- * the edge in the picture, not to benchmark CloudFront's own throughput.
+ * The browser requests every figure and image answer choice as soon as the quiz
+ * renders, so the app pays an RSA signature per URL and the CDN then has to serve
+ * them. Both halves matter, but they are verifiable on different tiers:
+ *
+ *   ALWAYS   Count what the app signed, and assert the URL actually carries a
+ *            signature. This is the half that proves signObjectReadUrl ran, and
+ *            it works with no network at all.
+ *   FETCH_MEDIA  Additionally GET a bounded sample. Only meaningful where the
+ *            distribution and the objects are real (ec2-clone, dev-site); on
+ *            `local` the CDN is a throwaway that does not resolve, so every fetch
+ *            would be a DNS failure describing nothing about the app.
+ *
+ * Bounded either way — the point is keeping the edge in the picture, not
+ * benchmarking CloudFront's own throughput.
  */
 export function fetchQuizMedia(questions, limit) {
   const urls = [];
@@ -73,6 +83,19 @@ export function fetchQuizMedia(questions, limit) {
     if (urls.length >= limit) break;
   }
   if (urls.length === 0) return 0;
+
+  // Every URL the app handed us is counted as signed work it actually did —
+  // this is the signal that survives on a tier with no reachable CDN.
+  for (const url of urls) {
+    if (isSignedUrl(url)) mediaSigned.add(1);
+    else mediaUnsigned.add(1);
+  }
+
+  // On `local` the CDN is a throwaway that does not resolve, so fetching would
+  // add one DNS failure per URL and describe nothing about the app. The signing
+  // path has already been exercised and counted above.
+  if (!FETCH_MEDIA) return urls.length;
+
   const batch = urls.slice(0, limit).map((u) => ({ method: "GET", url: u }));
   const responses = http.batch(batch);
   for (const res of responses) {
@@ -82,6 +105,22 @@ export function fetchQuizMedia(questions, limit) {
     record("quiz_media", res, [200, 304]);
   }
   return batch.length;
+}
+
+/**
+ * Does this URL carry a signature at all?
+ *
+ * Accepts both delivery paths, because which one is in play is configuration:
+ * CloudFront signs with Key-Pair-Id + Signature, an S3 presign with
+ * X-Amz-Signature. A URL with neither means signObjectReadUrl returned something
+ * unsigned, which would be a genuine security defect rather than a fetch problem.
+ */
+function isSignedUrl(url) {
+  return (
+    url.indexOf("Key-Pair-Id=") !== -1 ||
+    url.indexOf("Signature=") !== -1 ||
+    url.indexOf("X-Amz-Signature=") !== -1
+  );
 }
 
 /**

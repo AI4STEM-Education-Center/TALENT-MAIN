@@ -29,6 +29,15 @@ export const stepDuration = new Trend("step_duration", true);
  * requireSteps() thresholds this instead.
  */
 export const stepAttempts = new Counter("step_attempts");
+/**
+ * Signed media URLs the app produced. Counted on every tier; on `local` it is
+ * the ONLY media signal, because there is no real CDN to fetch from (see
+ * FETCH_MEDIA in config.js). A run that reports zero here against a
+ * media-bearing dataset means the signing path did not execute.
+ */
+export const mediaSigned = new Counter("media_signed");
+/** Signed URLs whose shape was wrong — a real signing defect, not a fetch problem. */
+export const mediaUnsigned = new Counter("media_unsigned");
 export const stepFailRate = new Rate("step_failed");
 
 /**
@@ -171,6 +180,10 @@ export function thresholds(steps, slo) {
     unexpected_errors: ["count==0"],
     // A lost write is never acceptable at any load level.
     sqlite_busy: ["count==0"],
+    // An unsigned media URL means signObjectReadUrl handed the browser a URL
+    // with no signature on it — a security defect, not a performance one, and
+    // it would otherwise be invisible on a tier that does not fetch media.
+    media_unsigned: ["count==0"],
   };
   for (const step of steps) {
     const limits = slo[step];
