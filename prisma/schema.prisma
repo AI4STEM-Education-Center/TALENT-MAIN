@@ -676,7 +676,9 @@ model AiModel {
   @@index([providerId])
 }
 
-// useCase: "pdf_description" | "description_generation" | "recommendation" | "quiz_extraction" | "simulation_generation"
+// useCase: "pdf_description" | "description_generation" | "recommendation" |
+//          "quiz_extraction" | "simulation_generation" | "student_assistant" |
+//          "teacher_assistant"
 model AiUseCaseAssignment {
   id         String   @id @default(cuid())
   useCase    String   @unique       // only one assignment per use case
@@ -687,6 +689,49 @@ model AiUseCaseAssignment {
 
   provider AiProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
   model    AiModel    @relation(fields: [modelId], references: [id], onDelete: Cascade)
+}
+
+// ─── Assistant (chat bot) configuration ───────────────────────────────────────
+// One row per audience: "student" and "teacher". The id IS the audience so the
+// row is addressable without a lookup (mirroring SmtpConfig's "singleton" id).
+//
+// The provider/model each assistant talks to is NOT stored here — it comes from
+// AiUseCaseAssignment under the "student_assistant" / "teacher_assistant" use
+// cases, so assistants share the same provider plumbing (OpenAI / local /
+// Cloudflare AI Gateway) and connection tester as every other AI feature. This
+// row holds only the *behavior* knobs an admin tunes per audience.
+model AssistantConfig {
+  id       String @id // "student" | "teacher" — see ASSISTANT_AUDIENCES
+  audience String @unique
+
+  enabled Boolean @default(false)
+
+  // Appended to the built-in system prompt (never replaces it — the built-in
+  // half carries the safety rules). Empty/null = built-in prompt only.
+  extraInstructions String?
+
+  // JSON array of skill ids (see src/lib/assistant/skills). Only skills
+  // registered for this audience are loaded; unknown ids are ignored, so
+  // removing a skill from the code can never break a saved config.
+  enabledSkills String @default("[]")
+
+  // Multimodal input limits. attachmentKinds is a JSON array drawn from the
+  // registry in src/lib/assistant/attachments.ts ("image" | "text" | "csv");
+  // adding a kind there (pdf, …) makes it selectable here without a migration.
+  attachmentKinds    String @default("[\"image\"]")
+  maxAttachments     Int    @default(4)
+  maxAttachmentBytes Int    @default(5242880) // 5 MiB per attachment
+
+  // Agent loop bounds. maxToolCalls caps tool-calling rounds per turn;
+  // maxHistoryMessages caps how much client-supplied transcript is replayed.
+  maxToolCalls       Int @default(6)
+  maxHistoryMessages Int @default(20)
+
+  // Per-user turn budget, enforced in-process like src/lib/rate-limit.ts.
+  turnsPerHour Int @default(60)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // ─── Email / Notifications ─────────────────────────────────────────────────────
