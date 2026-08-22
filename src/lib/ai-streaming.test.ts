@@ -8,8 +8,17 @@ import {
   type AiCallMetrics,
 } from "./ai-streaming";
 
+type ToolCallDelta = {
+  index: number;
+  id?: string;
+  function?: { name?: string; arguments?: string };
+};
+
 type Chunk = {
-  choices?: { delta?: { content?: string } }[];
+  choices?: {
+    delta?: { content?: string; tool_calls?: ToolCallDelta[] };
+    finish_reason?: string;
+  }[];
   usage?: { completion_tokens?: number } | null;
 };
 
@@ -150,6 +159,85 @@ describe("streamChatCompletion", () => {
     expect(text).toBe("");
     expect(metrics.ttftMs).toBeNull();
     expect(metrics.tokensPerSec).toBeNull();
+  });
+});
+
+describe("streamChatCompletion — tool calls", () => {
+  const clientFor = (chunks: Chunk[]) =>
+    ({
+      chat: { completions: { create: vi.fn(async () => streamOf(chunks)) } },
+    }) as unknown as OpenAI;
+
+  it("returns no tool calls for an ordinary completion", async () => {
+    const result = await streamChatCompletion(clientFor([contentChunk("hi")]), {
+      model: "gpt-x",
+      messages: [],
+    });
+    expect(result.toolCalls).toEqual([]);
+  });
+
+  it("reassembles a name and arguments fragmented across chunks", async () => {
+    // Providers stream the name in one delta and the JSON arguments in pieces.
+    const result = await streamChatCompletion(
+      clientFor([
+        { choices: [{ delta: { tool_calls: [{ index: 0, id: "c1", function: { name: "search" } }] } }] },
+        { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{"a"' } }] } }] },
+        { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: ":1}" } }] } }] },
+        { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
+      ]),
+      { model: "gpt-x", messages: [] }
+    );
+    expect(result.toolCalls).toEqual([{ id: "c1", name: "search", arguments: '{"a":1}' }]);
+    expect(result.finishReason).toBe("tool_calls");
+  });
+
+  it("keeps parallel calls separate and orders them by index", async () => {
+    const result = await streamChatCompletion(
+      clientFor([
+        { choices: [{ delta: { tool_calls: [{ index: 1, id: "b", function: { name: "second" } }] } }] },
+        { choices: [{ delta: { tool_calls: [{ index: 0, id: "a", function: { name: "first" } }] } }] },
+        { choices: [{ delta: { tool_calls: [{ index: 1, function: { arguments: "{}" } }] } }] },
+        { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: "{}" } }] } }] },
+      ]),
+      { model: "gpt-x", messages: [] }
+    );
+    expect(result.toolCalls.map((call) => call.name)).toEqual(["first", "second"]);
+  });
+
+  it("drops a slot that never received a name", async () => {
+    // A trailing empty delta must not become a nameless call the dispatcher
+    // would then look up and fail on.
+    const result = await streamChatCompletion(
+      clientFor([
+        { choices: [{ delta: { tool_calls: [{ index: 0, id: "c1", function: { name: "search" } }] } }] },
+        { choices: [{ delta: { tool_calls: [{ index: 1, function: { arguments: "" } }] } }] },
+      ]),
+      { model: "gpt-x", messages: [] }
+    );
+    expect(result.toolCalls).toHaveLength(1);
+    expect(result.toolCalls[0].name).toBe("search");
+  });
+
+  it("carries text and tool calls together when a model narrates before calling", async () => {
+    const result = await streamChatCompletion(
+      clientFor([
+        contentChunk("Let me check. "),
+        { choices: [{ delta: { tool_calls: [{ index: 0, id: "c1", function: { name: "search", arguments: "{}" } }] } }] },
+      ]),
+      { model: "gpt-x", messages: [] }
+    );
+    expect(result.text).toBe("Let me check. ");
+    expect(result.toolCalls).toHaveLength(1);
+  });
+
+  it("tolerates a provider that omits the tool-call id", async () => {
+    const result = await streamChatCompletion(
+      clientFor([
+        { choices: [{ delta: { tool_calls: [{ index: 0, function: { name: "search", arguments: "{}" } }] } }] },
+      ]),
+      { model: "gpt-x", messages: [] }
+    );
+    expect(result.toolCalls[0]).toEqual({ id: "", name: "search", arguments: "{}" });
   });
 });
 
