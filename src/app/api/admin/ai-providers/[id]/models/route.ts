@@ -256,7 +256,7 @@ export async function PATCH(
   } catch (error: any) {
     if (error?.code === "P2002") {
       return NextResponse.json(
-        { error: "A model with this ID, service tier, and thinking level already exists for this provider" },
+        { error: "A model with this ID and service tier already exists for this provider" },
         { status: 409 }
       );
     }
