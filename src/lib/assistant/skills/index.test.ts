@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { listSkills, resolveSkills, skillInfo } from "./index";
+import { allToolNames, listSkills, resolveSkills, skillInfo } from "./index";
 
 describe("skill registry", () => {
   it("registers at least one skill per audience", () => {
@@ -56,6 +56,45 @@ describe("resolveSkills", () => {
     expect(skills).toEqual([]);
     expect(tools.size).toBe(0);
   });
+
+  it("omits an individually disabled tool but keeps the rest of its skill", () => {
+    const ids = listSkills("student").map((skill) => skill.id);
+    const { skills, tools } = resolveSkills("student", ids, ["get_quiz_result_detail"]);
+    expect(tools.has("get_quiz_result_detail")).toBe(false);
+    expect(tools.has("search_quiz_results")).toBe(true);
+    expect(skills.map((s) => s.id)).toEqual(ids);
+  });
+
+  it("drops a skill whose every tool is disabled, so its prose can't overclaim", () => {
+    const skill = listSkills("student")[0];
+    const { skills, tools } = resolveSkills(
+      "student",
+      [skill.id],
+      skill.tools.map((tool) => tool.name)
+    );
+    expect(skills).toEqual([]);
+    expect(tools.size).toBe(0);
+  });
+
+  it("ignores an unknown tool name in the disabled list", () => {
+    const ids = listSkills("student").map((skill) => skill.id);
+    const before = resolveSkills("student", ids).tools.size;
+    expect(resolveSkills("student", ids, ["no_such_tool"]).tools.size).toBe(before);
+  });
+});
+
+describe("allToolNames", () => {
+  it("lists every tool of every skill for the audience", () => {
+    const expected = listSkills("teacher").flatMap((skill) =>
+      skill.tools.map((tool) => tool.name)
+    );
+    expect(allToolNames("teacher")).toEqual(expected);
+  });
+
+  it("never leaks a tool across audiences", () => {
+    const studentNames = new Set(allToolNames("student"));
+    for (const name of allToolNames("teacher")) expect(studentNames.has(name)).toBe(false);
+  });
 });
 
 describe("skillInfo", () => {
@@ -63,5 +102,12 @@ describe("skillInfo", () => {
     const info = skillInfo("teacher");
     expect(info.length).toBeGreaterThan(0);
     expect(info[0].toolNames.length).toBeGreaterThan(0);
+  });
+
+  it("exposes a label per tool so each one can be toggled by name", () => {
+    for (const skill of skillInfo("student")) {
+      expect(skill.tools.map((tool) => tool.name)).toEqual(skill.toolNames);
+      for (const tool of skill.tools) expect(tool.label.length).toBeGreaterThan(0);
+    }
   });
 });

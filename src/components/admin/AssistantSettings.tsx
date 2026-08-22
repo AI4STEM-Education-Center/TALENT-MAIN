@@ -8,7 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
-type SkillInfo = { id: string; name: string; description: string; toolNames: string[] };
+type ToolInfo = { name: string; label: string };
+type SkillInfo = {
+  id: string;
+  name: string;
+  description: string;
+  toolNames: string[];
+  tools: ToolInfo[];
+};
 type KindInfo = { kind: string; label: string; accept: string; maxBytes: number };
 type Bound = { min: number; max: number };
 
@@ -18,9 +25,11 @@ type Assistant = {
   enabled: boolean;
   extraInstructions: string;
   enabledSkills: string[];
+  disabledTools: string[];
   attachmentKinds: string[];
   maxAttachments: number;
   maxAttachmentBytes: number;
+  attachmentRetentionDays: number;
   maxToolCalls: number;
   maxHistoryMessages: number;
   turnsPerHour: number;
@@ -102,9 +111,11 @@ export function AssistantSettings() {
             enabled: draft.enabled,
             extraInstructions: draft.extraInstructions,
             enabledSkills: draft.enabledSkills,
+            disabledTools: draft.disabledTools,
             attachmentKinds: draft.attachmentKinds,
             maxAttachments: draft.maxAttachments,
             maxAttachmentBytes: draft.maxAttachmentBytes,
+            attachmentRetentionDays: draft.attachmentRetentionDays,
             maxToolCalls: draft.maxToolCalls,
             maxHistoryMessages: draft.maxHistoryMessages,
             turnsPerHour: draft.turnsPerHour,
@@ -143,6 +154,11 @@ export function AssistantSettings() {
       {payload.assistants.map((assistant) => {
         const draft = drafts[assistant.audience] ?? assistant;
         const Icon = assistant.audience === "teacher" ? GraduationCap : Bot;
+        // Membership sets rather than repeated `includes` — the skill list, the
+        // tool list, and the kind chips each test against these on every render.
+        const enabledSkills = new Set(draft.enabledSkills);
+        const disabledTools = new Set(draft.disabledTools);
+        const attachmentKinds = new Set(draft.attachmentKinds);
 
         return (
           <Card key={assistant.audience}>
@@ -170,6 +186,10 @@ export function AssistantSettings() {
                 <span className="font-medium text-foreground">{assistant.useCase}</span> use-case
                 assignment above. A vision-capable model is required for image input.
               </p>
+              <p className="text-xs text-muted-foreground">
+                Uploaded files are stored for the retention window below, so a later message in the
+                same conversation can refer back to them, then deleted automatically.
+              </p>
             </CardHeader>
 
             <CardContent className="space-y-4">
@@ -184,30 +204,22 @@ export function AssistantSettings() {
                     </p>
                   )}
                   {assistant.availableSkills.map((skill) => (
-                    <label
+                    <SkillRow
                       key={skill.id}
-                      className="flex cursor-pointer items-start gap-2 rounded-md border border-border p-2"
-                    >
-                      <input
-                        type="checkbox"
-                        className="mt-0.5 size-4 accent-primary"
-                        checked={draft.enabledSkills.includes(skill.id)}
-                        onChange={() =>
-                          update(assistant.audience, {
-                            enabledSkills: toggle(draft.enabledSkills, skill.id),
-                          })
-                        }
-                      />
-                      <span className="min-w-0">
-                        <span className="block text-sm font-medium">{skill.name}</span>
-                        <span className="block text-xs text-muted-foreground">
-                          {skill.description}
-                        </span>
-                        <span className="mt-1 block font-mono text-[11px] text-muted-foreground">
-                          {skill.toolNames.join(" · ")}
-                        </span>
-                      </span>
-                    </label>
+                      skill={skill}
+                      enabled={enabledSkills.has(skill.id)}
+                      disabledTools={disabledTools}
+                      onToggleSkill={() =>
+                        update(assistant.audience, {
+                          enabledSkills: toggle(draft.enabledSkills, skill.id),
+                        })
+                      }
+                      onToggleTool={(name) =>
+                        update(assistant.audience, {
+                          disabledTools: toggle(draft.disabledTools, name),
+                        })
+                      }
+                    />
                   ))}
                 </div>
               </fieldset>
@@ -222,7 +234,7 @@ export function AssistantSettings() {
                       key={kind.kind}
                       className={cn(
                         "flex cursor-pointer items-center gap-1.5 rounded-md border px-2 py-1 text-sm",
-                        draft.attachmentKinds.includes(kind.kind)
+                        attachmentKinds.has(kind.kind)
                           ? "border-primary bg-primary/5"
                           : "border-border"
                       )}
@@ -230,7 +242,7 @@ export function AssistantSettings() {
                       <input
                         type="checkbox"
                         className="size-3.5 accent-primary"
-                        checked={draft.attachmentKinds.includes(kind.kind)}
+                        checked={attachmentKinds.has(kind.kind)}
                         onChange={() =>
                           update(assistant.audience, {
                             attachmentKinds: toggle(draft.attachmentKinds, kind.kind),
@@ -265,6 +277,14 @@ export function AssistantSettings() {
                     update(assistant.audience, {
                       maxAttachmentBytes: Math.round(value * MIB),
                     })
+                  }
+                />
+                <NumberField
+                  label="Keep attachments for (days)"
+                  value={draft.attachmentRetentionDays}
+                  bound={bounds.attachmentRetentionDays}
+                  onChange={(value) =>
+                    update(assistant.audience, { attachmentRetentionDays: value })
                   }
                 />
                 <NumberField
@@ -329,6 +349,77 @@ export function AssistantSettings() {
           </Card>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * One skill row: the skill's own checkbox plus a checkbox per tool inside it.
+ *
+ * The tool checkboxes stay rendered while the skill is off, only disabled, so an
+ * admin toggling a skill off and back on finds their tool selection intact
+ * instead of silently reset.
+ */
+function SkillRow({
+  skill,
+  enabled,
+  disabledTools,
+  onToggleSkill,
+  onToggleTool,
+}: {
+  skill: SkillInfo;
+  enabled: boolean;
+  disabledTools: Set<string>;
+  onToggleSkill: () => void;
+  onToggleTool: (toolName: string) => void;
+}) {
+  const liveTools = skill.tools.filter((tool) => !disabledTools.has(tool.name)).length;
+
+  return (
+    <div className="rounded-md border border-border p-2">
+      <label className="flex cursor-pointer items-start gap-2">
+        <input
+          type="checkbox"
+          className="mt-0.5 size-4 accent-primary"
+          checked={enabled}
+          onChange={onToggleSkill}
+        />
+        <span className="min-w-0">
+          <span className="block text-sm font-medium">{skill.name}</span>
+          <span className="block text-xs text-muted-foreground">{skill.description}</span>
+        </span>
+      </label>
+
+      <div className="mt-2 space-y-1 border-t border-border/60 pt-2 pl-6">
+        {skill.tools.map((tool) => (
+          <label
+            key={tool.name}
+            className={cn(
+              "flex items-start gap-2 text-xs",
+              enabled ? "cursor-pointer" : "cursor-not-allowed opacity-50"
+            )}
+          >
+            <input
+              type="checkbox"
+              className="mt-0.5 size-3.5 accent-primary"
+              disabled={!enabled}
+              checked={!disabledTools.has(tool.name)}
+              onChange={() => onToggleTool(tool.name)}
+            />
+            <span className="min-w-0">
+              <span className="block">{tool.label}</span>
+              <span className="block font-mono text-[11px] text-muted-foreground">
+                {tool.name}
+              </span>
+            </span>
+          </label>
+        ))}
+        {enabled && liveTools === 0 && (
+          <p className="text-[11px] text-muted-foreground">
+            Every tool is switched off, so this skill will not load at all.
+          </p>
+        )}
+      </div>
     </div>
   );
 }

@@ -16,7 +16,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { readNdjson } from "@/lib/assistant/ndjson";
-import type { AssistantStreamEvent, AssistantTurn } from "@/lib/assistant/types";
+import type {
+  AssistantStreamEvent,
+  AssistantTurn,
+  StoredAttachmentRef,
+} from "@/lib/assistant/types";
 import type { AttachmentKindInfo } from "@/lib/assistant/attachments";
 import {
   formatBytes,
@@ -37,7 +41,15 @@ type WidgetConfig = {
 };
 
 /** One rendered bubble. `pending` marks the assistant turn currently streaming. */
-type Bubble = AssistantTurn & { pending?: boolean; error?: string | null };
+type Bubble = AssistantTurn & {
+  pending?: boolean;
+  error?: string | null;
+  /**
+   * User turns: the stored attachments that can be re-rendered inline, kept
+   * pre-filtered so the render pass doesn't re-scan every turn's list.
+   */
+  storedImages?: StoredAttachmentRef[];
+};
 
 /** A tool the assistant is running (or just ran) during the pending turn. */
 type ToolActivity = { name: string; label: string; status: "running" | "done" | "error" };
@@ -146,6 +158,9 @@ export function AssistantWidget() {
       role: bubble.role,
       content: bubble.content,
       attachmentNames: bubble.attachmentNames,
+      // Sending the ids back is what lets the server re-read those files, so an
+      // image stays discussable for as long as it is retained.
+      attachmentIds: bubble.attachmentIds,
     }));
 
     setBubbles((prev) => [...prev, userBubble, { role: "assistant", content: "", pending: true }]);
@@ -202,6 +217,20 @@ export function AssistantWidget() {
             if (existing === -1) return [...prev, { ...event }];
             const next = [...prev];
             next[existing] = { ...next[existing], status: event.status };
+            return next;
+          });
+        } else if (event.type === "attachments") {
+          // Attach the ids to the user turn they belong to — the last user
+          // bubble, since the pending assistant bubble sits after it.
+          setBubbles((prev) => {
+            const index = prev.findLastIndex((bubble) => bubble.role === "user");
+            if (index === -1) return prev;
+            const next = [...prev];
+            next[index] = {
+              ...next[index],
+              attachmentIds: event.stored.map((item) => item.id),
+              storedImages: event.stored.filter((item) => item.kind === "image"),
+            };
             return next;
           });
         } else if (event.type === "error") {
@@ -305,6 +334,21 @@ export function AssistantWidget() {
                   ) : (
                     <div className={MARKDOWN_CLASS} aria-live="polite">
                       <ReactMarkdown remarkPlugins={[remarkGfm]}>{bubble.content}</ReactMarkdown>
+                    </div>
+                  )}
+
+                  {bubble.storedImages && bubble.storedImages.length > 0 && (
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {bubble.storedImages.map((item) => (
+                        // eslint-disable-next-line @next/next/no-img-element -- authorized redirect to a signed URL, not a static asset
+                        <img
+                          key={item.id}
+                          src={`/api/assistant/attachments/${item.id}`}
+                          alt={item.name}
+                          title={item.name}
+                          className="size-14 rounded border border-black/10 object-cover"
+                        />
+                      ))}
                     </div>
                   )}
 

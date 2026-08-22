@@ -22,7 +22,11 @@ export async function GET() {
     }
 
     const { settings, ctx } = session;
-    const { tools } = resolveSkills(ctx.audience, settings.enabledSkills);
+    const { tools } = resolveSkills(
+      ctx.audience,
+      settings.enabledSkills,
+      settings.disabledTools
+    );
 
     return NextResponse.json({
       available: true,
@@ -31,6 +35,7 @@ export async function GET() {
       attachmentKinds: attachmentKindInfo(settings.attachmentKinds),
       maxAttachments: settings.maxAttachments,
       maxAttachmentBytes: settings.maxAttachmentBytes,
+      attachmentRetentionDays: settings.attachmentRetentionDays,
       // Surfaced so the widget can tell the user what it can look up rather
       // than promising abilities the admin disabled.
       toolCount: tools.size,

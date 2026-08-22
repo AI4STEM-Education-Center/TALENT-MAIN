@@ -242,6 +242,123 @@ describe("runAssistantTurn — loop bounds", () => {
     const { calls } = await run([{ text: "hi" }], { enabledSkills: [] });
     expect(calls[0].tools).toBeUndefined();
   });
+
+  it("never advertises a tool the admin switched off", async () => {
+    const { calls } = await run([{ text: "hi" }], {
+      disabledTools: ["get_quiz_result_detail"],
+    });
+    const advertised = (calls[0].tools as Array<{ function: { name: string } }>).map(
+      (tool) => tool.function.name
+    );
+    expect(advertised).toContain("search_quiz_results");
+    expect(advertised).not.toContain("get_quiz_result_detail");
+  });
+
+  it("refuses to run a disabled tool even if the model asks for it by name", async () => {
+    const { calls } = await run(
+      [
+        { toolCalls: [{ name: "get_quiz_result_detail", args: '{"resultId":"x"}' }] },
+        { text: "I can't look that up." },
+      ],
+      { disabledTools: ["get_quiz_result_detail"] }
+    );
+    const second = calls[1].messages as Array<{ role: string; content: string }>;
+    expect(second.at(-1)?.content).toContain("Unknown tool");
+  });
+});
+
+describe("runAssistantTurn — replaying stored attachments", () => {
+  /** Run one turn with a given history and attachment loader, returning the messages sent. */
+  async function runWithHistory(
+    history: Parameters<typeof runAssistantTurn>[0]["history"],
+    load: Parameters<typeof runAssistantTurn>[0]["loadHistoryAttachments"],
+    overrides: Partial<ReturnType<typeof defaultSettings>> = {}
+  ) {
+    const { client } = fakeClient([{ text: "ok" }]);
+    mockResolve.mockResolvedValue(provider);
+    mockClient.mockResolvedValue(client as never);
+    await runAssistantTurn({
+      settings: { ...defaultSettings("student"), ...overrides },
+      ctx: studentCtx,
+      history,
+      message: "and this one?",
+      attachments: [],
+      notices: [],
+      loadHistoryAttachments: load,
+      emit: () => {},
+    });
+    return client.chat.completions.create.mock.calls[0][0].messages as Array<{
+      role: string;
+      content: unknown;
+    }>;
+  }
+
+  const stored = (id: string) => ({
+    id,
+    name: `${id}.png`,
+    mimeType: "image/png",
+    dataBase64: "AAAA",
+    kind: "image" as const,
+    bytes: 3,
+  });
+
+  it("re-attaches a prior turn's image as content parts", async () => {
+    const messages = await runWithHistory(
+      [
+        { role: "user", content: "what is this?", attachmentNames: ["a.png"], attachmentIds: ["a"] },
+        { role: "assistant", content: "a graph" },
+      ],
+      async (ids) => ids.map(stored)
+    );
+    const replayed = messages[1].content as Array<{ type: string }>;
+    expect(Array.isArray(replayed)).toBe(true);
+    expect(replayed.some((part) => part.type === "image_url")).toBe(true);
+  });
+
+  it("falls back to filenames when the file is gone", async () => {
+    const messages = await runWithHistory(
+      [{ role: "user", content: "what is this?", attachmentNames: ["a.png"], attachmentIds: ["a"] }],
+      async () => []
+    );
+    expect(typeof messages[1].content).toBe("string");
+    expect(messages[1].content).toContain("[attached: a.png]");
+  });
+
+  it("caps the whole replay at the per-message attachment limit, newest first", async () => {
+    const requested: string[][] = [];
+    await runWithHistory(
+      [
+        { role: "user", content: "one", attachmentIds: ["old-1", "old-2"] },
+        { role: "user", content: "two", attachmentIds: ["new-1", "new-2"] },
+      ],
+      async (ids) => {
+        requested.push(ids);
+        return ids.map(stored);
+      },
+      { maxAttachments: 2 }
+    );
+    // Only two ids are even asked for, and they are the newest turn's.
+    expect(requested).toEqual([["new-1", "new-2"]]);
+  });
+
+  it("does not load anything when attachments are switched off for the audience", async () => {
+    const load = vi.fn(async () => []);
+    await runWithHistory(
+      [{ role: "user", content: "one", attachmentIds: ["a"] }],
+      load,
+      { maxAttachments: 0 }
+    );
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  it("ignores attachment ids on an assistant turn", async () => {
+    const load = vi.fn(async () => []);
+    await runWithHistory(
+      [{ role: "assistant", content: "here", attachmentIds: ["a"] }],
+      load
+    );
+    expect(load).not.toHaveBeenCalled();
+  });
 });
 
 describe("runAssistantTurn — prompt assembly", () => {

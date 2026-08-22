@@ -396,8 +396,10 @@ describe("student quiz-result tools", () => {
     expect(out.results).toHaveLength(2);
   });
 
-  it("returns the per-question breakdown for the student's own result", async () => {
+  it("returns the per-question breakdown for a result whose quiz is gone", async () => {
     const { user, student } = await createStudent();
+    // No ClassQuiz row exists for this result's class/quiz, so nothing further
+    // can ever be submitted and the attempt counts as final.
     const result = await createResult({ studentId: student.id, correct: false, score: 0 });
 
     const out = await callTool(
@@ -407,6 +409,7 @@ describe("student quiz-result tools", () => {
       studentCtx(user.id, student.id)
     );
     expect(out.found).toBe(true);
+    expect(out.attemptState).toBe("final");
     expect(out.questions).toEqual([
       expect.objectContaining({ number: 1, isCorrect: false, yourAnswer: ["3"], correctAnswer: ["4"] }),
     ]);
@@ -479,6 +482,152 @@ describe("student quiz-result tools", () => {
         teacherId: null,
       })
     ).rejects.toThrow(/only available to students/);
+  });
+});
+
+// ─── Answer-key gating ───────────────────────────────────────────────────────
+// get_quiz_result_detail is the only tool that can reach an answer key, and it
+// may only do so once the attempt is beyond retaking. Each case below is one way
+// "beyond retaking" can be true or false; the withholding cases matter most,
+// because a leak there hands a student the answers to a live quiz.
+
+describe("get_quiz_result_detail — answer-key gating", () => {
+  /**
+   * A real class + quiz + ClassQuiz row, plus an archived result for the student,
+   * so the gate has actual rows to read (unlike createResult's synthetic ids).
+   */
+  async function gatedResult(opts: {
+    availableUntil?: Date | null;
+    availableFrom?: Date | null;
+    maxAttempts?: number | null;
+    published?: boolean;
+    completedAttempts?: number;
+    inProgressAttempts?: number;
+    offered?: boolean;
+  }) {
+    const teacher = await createTeacher();
+    const { user, student } = await createStudent();
+    const klass = await createClass(teacher.teacher.id);
+    const quiz = await prisma.quiz.create({
+      data: { name: "Live Quiz", teacherId: teacher.teacher.id },
+    });
+    if (opts.offered !== false) {
+      await prisma.classQuiz.create({
+        data: {
+          classId: klass.id,
+          quizId: quiz.id,
+          published: opts.published ?? true,
+          availableFrom: opts.availableFrom ?? null,
+          availableUntil: opts.availableUntil ?? null,
+          maxAttempts: opts.maxAttempts ?? null,
+        },
+      });
+    }
+    for (let i = 0; i < (opts.completedAttempts ?? 1); i += 1) {
+      await prisma.quizAttempt.create({
+        data: {
+          studentId: student.id,
+          classId: klass.id,
+          quizId: quiz.id,
+          completedAt: new Date("2026-03-01T00:00:00Z"),
+        },
+      });
+    }
+    for (let i = 0; i < (opts.inProgressAttempts ?? 0); i += 1) {
+      await prisma.quizAttempt.create({
+        data: { studentId: student.id, classId: klass.id, quizId: quiz.id },
+      });
+    }
+    const result = await createResult({
+      studentId: student.id,
+      classId: klass.id,
+      quizId: quiz.id,
+      correct: false,
+      score: 0,
+    });
+    return {
+      detail: () =>
+        callTool(
+          "student",
+          "get_quiz_result_detail",
+          { resultId: result.quizAttemptId },
+          studentCtx(user.id, student.id)
+        ),
+    };
+  }
+
+  const past = new Date("2020-01-01T00:00:00Z");
+  const future = new Date("2099-01-01T00:00:00Z");
+
+  it("withholds the key while the quiz is open with attempts left", async () => {
+    const { detail } = await gatedResult({ maxAttempts: 3, completedAttempts: 1 });
+    const out = await detail();
+    expect(out.attemptState).toBe("retake_possible");
+    expect(out.answerKeyWithheld).toBe(true);
+    const questions = out.questions as Array<Record<string, unknown>>;
+    expect(questions[0]).toEqual({ number: 1, text: "What is 2 + 2?", yourAnswer: ["3"] });
+    // isCorrect leaks the key on a short option list, so it goes too.
+    expect(questions[0]).not.toHaveProperty("isCorrect");
+    expect(questions[0]).not.toHaveProperty("correctAnswer");
+  });
+
+  it("withholds the key on an uncapped, never-closing quiz", async () => {
+    const { detail } = await gatedResult({});
+    expect((await detail()).answerKeyWithheld).toBe(true);
+  });
+
+  it("reveals the key once every attempt is used up", async () => {
+    const { detail } = await gatedResult({ maxAttempts: 2, completedAttempts: 2 });
+    const out = await detail();
+    expect(out.attemptState).toBe("final");
+    expect(out).not.toHaveProperty("answerKeyWithheld");
+    expect((out.questions as Array<Record<string, unknown>>)[0]).toMatchObject({
+      isCorrect: false,
+      correctAnswer: ["4"],
+    });
+  });
+
+  it("reveals the key after the quiz closes", async () => {
+    const { detail } = await gatedResult({ availableUntil: past });
+    expect((await detail()).attemptState).toBe("final");
+  });
+
+  it("reveals the key when the quiz is no longer offered to the class", async () => {
+    const { detail } = await gatedResult({ offered: false });
+    expect((await detail()).attemptState).toBe("final");
+  });
+
+  it("withholds the key while an attempt is still in progress, cap reached or not", async () => {
+    const { detail } = await gatedResult({
+      maxAttempts: 1,
+      completedAttempts: 1,
+      inProgressAttempts: 1,
+    });
+    expect((await detail()).answerKeyWithheld).toBe(true);
+  });
+
+  it("withholds the key past the cap when the window has not opened yet", async () => {
+    // A future window means the quiz is coming back; treating it as final would
+    // publish an answer key ahead of the reopening.
+    const { detail } = await gatedResult({
+      availableFrom: future,
+      maxAttempts: 1,
+      completedAttempts: 1,
+    });
+    expect((await detail()).answerKeyWithheld).toBe(true);
+  });
+
+  it("withholds the key for an unpublished quiz — a teacher can republish it", async () => {
+    const { detail } = await gatedResult({ published: false, maxAttempts: 1, completedAttempts: 1 });
+    expect((await detail()).answerKeyWithheld).toBe(true);
+  });
+
+  it("still reports the score and summary while withholding the key", async () => {
+    const { detail } = await gatedResult({});
+    const out = await detail();
+    // Aggregates say how many were right, never which — that is what their own
+    // results page already shows them.
+    expect(out).toMatchObject({ found: true, score: 0, correctCount: 0, totalCount: 1 });
   });
 });
 
@@ -750,6 +899,36 @@ describe("assistant settings", () => {
     expect(resolveSkills("student", settings.enabledSkills).tools.size).toBe(0);
   });
 
+  it("round-trips disabled tool names and drops unknown ones", async () => {
+    const settings = await saveAssistantSettings("student", {
+      disabledTools: ["get_quiz_result_detail", "no_such_tool"],
+    });
+    expect(settings.disabledTools).toEqual(["get_quiz_result_detail"]);
+    expect(
+      resolveSkills("student", settings.enabledSkills, settings.disabledTools).tools.has(
+        "get_quiz_result_detail"
+      )
+    ).toBe(false);
+  });
+
+  it("drops a tool name that belongs to the other audience", async () => {
+    const teacherTool = listSkills("teacher")[0].tools[0].name;
+    const settings = await saveAssistantSettings("student", { disabledTools: [teacherTool] });
+    expect(settings.disabledTools).toEqual([]);
+  });
+
+  it("defaults attachment retention to 30 days and clamps it on save", async () => {
+    expect((await getAssistantSettings("student")).attachmentRetentionDays).toBe(30);
+    expect(
+      (await saveAssistantSettings("student", { attachmentRetentionDays: 9999 }))
+        .attachmentRetentionDays
+    ).toBe(365);
+    expect(
+      (await saveAssistantSettings("student", { attachmentRetentionDays: 0 }))
+        .attachmentRetentionDays
+    ).toBe(1);
+  });
+
   it("falls back to defaults when the JSON columns are corrupt", async () => {
     await prisma.assistantConfig.create({
       data: {
@@ -791,6 +970,29 @@ describe("admin assistants API", () => {
     expect(body.assistants[0].availableSkills.length).toBeGreaterThan(0);
     expect(body.attachmentKinds.length).toBeGreaterThan(0);
     expect(body.bounds.maxToolCalls).toEqual({ min: 1, max: 12 });
+    expect(body.bounds.attachmentRetentionDays).toEqual({ min: 1, max: 365 });
+    // Per-tool entries are what the admin form renders its tool checkboxes from.
+    expect(body.assistants[0].availableSkills[0].tools[0]).toMatchObject({
+      name: expect.any(String),
+      label: expect.any(String),
+    });
+  });
+
+  it("saves per-tool toggles through the admin route", async () => {
+    const admin = await createAdmin();
+    asAdmin(admin.id);
+    const res = await PUT_ADMIN(
+      jsonRequest(
+        {
+          audience: "student",
+          settings: { disabledTools: ["summarize_performance", "bogus"] },
+        },
+        "http://localhost/api/admin/assistants"
+      )
+    );
+    expect(res.status).toBe(200);
+    const { settings } = await res.json();
+    expect(settings.disabledTools).toEqual(["summarize_performance"]);
   });
 
   it("saves a patch and echoes back the clamped values", async () => {

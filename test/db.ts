@@ -54,6 +54,9 @@ export async function resetDb() {
   await prisma.emailSender.deleteMany();
   await prisma.smtpConfig.deleteMany();
   await prisma.assistantConfig.deleteMany();
+  // Relation-free (see schema): nothing cascades it, so clear it explicitly or
+  // stored chat attachments bleed into the next spec file.
+  await prisma.assistantAttachment.deleteMany();
 }
 
 let seq = 0;

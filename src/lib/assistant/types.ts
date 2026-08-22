@@ -101,8 +101,24 @@ export type AssistantSkill = {
 export type AssistantStreamEvent =
   | { type: "tool"; name: string; label: string; status: "running" | "done" | "error" }
   | { type: "delta"; text: string }
+  /**
+   * Emitted once, before the model runs, for the attachments on this turn that
+   * were stored. The client keeps the ids on its transcript so a later turn can
+   * refer back to the same files (see `AssistantTurn.attachmentIds`). An
+   * attachment that failed to store simply doesn't appear here.
+   */
+  | { type: "attachments"; stored: StoredAttachmentRef[] }
   | { type: "done"; model: string; ttftMs: number | null; tokens: number; tokensEstimated: boolean }
   | { type: "error"; message: string };
+
+/** A persisted attachment as the client sees it: enough to label and re-render it. */
+export type StoredAttachmentRef = {
+  id: string;
+  name: string;
+  kind: AttachmentKind;
+  /** ISO-8601. When the retention sweep will delete it. */
+  expiresAt: string;
+};
 
 /** A transcript turn as the client stores and replays it. */
 export type AssistantTurn = {
@@ -110,4 +126,11 @@ export type AssistantTurn = {
   content: string;
   /** User turns only: names of the files that were attached (labels, no payload). */
   attachmentNames?: string[];
+  /**
+   * User turns only: ids of the stored attachments from that turn. The server
+   * re-reads the payloads from storage when replaying history, so an image can
+   * still be discussed several turns later — bounded by the audience's
+   * per-message attachment limit so the context can't grow without end.
+   */
+  attachmentIds?: string[];
 };
