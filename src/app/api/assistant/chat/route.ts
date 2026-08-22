@@ -5,6 +5,10 @@ import { rateLimit } from "@/lib/rate-limit";
 import { logApiError, logSystemEvent } from "@/lib/system-log";
 import { resolveAssistantSession } from "@/lib/assistant/session";
 import { validateAttachments } from "@/lib/assistant/attachments";
+import {
+  loadStoredAttachments,
+  persistAttachments,
+} from "@/lib/assistant/attachment-store";
 import { runAssistantTurn, MAX_MESSAGE_CHARS } from "@/lib/assistant/agent";
 import type { AssistantStreamEvent } from "@/lib/assistant/types";
 
@@ -19,6 +23,10 @@ const turnSchema = z.object({
   role: z.enum(["user", "assistant"]),
   content: z.string().max(MAX_MESSAGE_CHARS + 200),
   attachmentNames: z.array(z.string().max(200)).max(8).optional(),
+  // Ids the server minted on an earlier turn. Safe to take from the client
+  // because every read is re-scoped to the caller's own userId — an id that
+  // isn't theirs (or has expired) simply loads nothing.
+  attachmentIds: z.array(z.string().max(64)).max(8).optional(),
 });
 
 const bodySchema = z.object({
@@ -110,6 +118,18 @@ export async function POST(req: Request) {
 
       void (async () => {
         try {
+          // Keep the turn's files before answering, so the ids can go out ahead
+          // of the reply and the client can reference them next turn. Best
+          // effort by design: persistAttachments swallows storage failures, and
+          // a turn whose attachments could not be kept still gets answered from
+          // the inline copies below.
+          const stored = await persistAttachments(
+            { userId: ctx.userId, audience: ctx.audience },
+            accepted,
+            settings.attachmentRetentionDays
+          );
+          if (stored.length > 0) emit({ type: "attachments", stored });
+
           await runAssistantTurn({
             settings,
             ctx,
@@ -117,6 +137,8 @@ export async function POST(req: Request) {
             message: parsed.data.message,
             attachments: accepted,
             notices,
+            loadHistoryAttachments: (ids, limit) =>
+              loadStoredAttachments(ctx.userId, ids, limit),
             emit,
             signal: req.signal,
           });

@@ -238,9 +238,16 @@ Admins get neither — they configure the assistants rather than use one.
    Cloudflare-AI-Gateway plumbing, encrypted-key storage, and connection tester as every other AI
    feature. Pick a **vision-capable** model — the assistants take image input.
 2. The **Chat Assistants** section, backed by `AssistantConfig` (one row per audience): enabled
-   on/off, which skills load, which attachment types are accepted, per-message attachment and
-   tool-call caps, how much transcript is replayed, per-user hourly message budget, and extra
-   prompt instructions.
+   on/off, which skills load, **which individual tools inside those skills are on**, which attachment
+   types are accepted, per-message attachment and tool-call caps, how long attachments are kept, how
+   much transcript is replayed, per-user hourly message budget, and extra prompt instructions.
+
+   Tool toggles are stored as an opt-*out* list (`disabledTools`), so a tool added to a skill in a
+   later release is available to existing installs instead of staying dark until an admin re-saves.
+   Disabling every tool in a skill drops the skill entirely — its prompt instructions describe
+   abilities by tool name, and keeping them would have the model announce a tool it cannot call. The
+   system prompt also ends with the definitive list of callable tools, so a partially disabled skill
+   can't overclaim.
 
 Both assistants start **disabled** and stay that way until an admin assigns a model and turns them on.
 
@@ -252,12 +259,37 @@ images become a base64 `image_url` part, text-ish files become a fenced text blo
 `pdf` (or anything else) later is one entry there plus one in `ATTACHMENT_KINDS`; the agent, the API
 route, the admin picker, and the widget all read the registry and need no change.
 
-Attachments are inlined into the request, never persisted: a chat attachment is scratch input, and
-not storing it keeps student-uploaded imagery out of the bucket and out of backups. The browser
-downscales images to 1568px on the long edge before upload (`src/components/assistant/attachment-input.ts`),
-so the admin byte limit is a backstop rather than the normal constraint. A file that is rejected —
-wrong type, disabled kind, oversize, over count — is reported to the model as a system note so the
-assistant says it couldn't read the file instead of answering as if it had.
+The browser downscales images to 1568px on the long edge before upload
+(`src/components/assistant/attachment-input.ts`), so the admin byte limit is a backstop rather than
+the normal constraint. A file that is rejected — wrong type, disabled kind, oversize, over count — is
+reported to the model as a system note so the assistant says it couldn't read the file instead of
+answering as if it had.
+
+#### Attachment retention
+
+Uploads are kept for `attachmentRetentionDays` (30 by default, per audience) so a later message can
+refer back to them. `src/lib/assistant/attachment-store.ts` owns this, on two invariants:
+
+- **Row before object.** The `AssistantAttachment` index row is written first and the S3 upload
+  follows, so an object can never exist that no row points at — which makes the retention sweep the
+  only deleter the bucket needs. A failed upload rolls the row back.
+- **Never fatal.** Unconfigured or unreachable storage costs the conversation its memory of the file,
+  not the answer: the attachment still reaches the model inline and the turn completes.
+
+Bytes live in S3 under `assistant-attachments/{userId}/{id}/`, never in the row — a few 5 MiB
+payloads per turn would bloat both the SQLite file and every nightly backup of it. The chat route
+streams an `attachments` event with the new ids; the client keeps them on its transcript and sends
+them back, and the server re-reads those files on later turns, capped at the audience's per-message
+attachment limit so replaying a long conversation never costs more than sending the files once.
+
+`GET /api/assistant/attachments/:id` serves one back (a 302 to a short-lived signed URL) for the
+panel's thumbnails. Authorization *is* the lookup: the query filters on the session's user id and on
+the expiry, so someone else's id and an expired one are both indistinguishable from a nonexistent one.
+That matters because these ids live in a client-held transcript the user can edit freely.
+
+The worker sweeps expired rows hourly (`purgeExpiredAssistantAttachments`), deleting object and row
+together. A deleted user's attachments go the same way — the row is relation-free precisely so no
+cascade can orphan bytes in the bucket that nothing could then find.
 
 ### Loadable skills
 
@@ -295,6 +327,17 @@ registry are the entire capability surface, and every one of them is scoped to t
 - Student tools anchor on `ctx.studentId`. No student tool accepts a student id, so there is no
   argument the model (or a prompt-injected attachment) could set to read someone else's results.
   A fabricated or another student's `resultId` reads as "not found".
+- `get_quiz_result_detail` releases the answer key only for a **final** attempt — one with nothing in
+  progress and no retake left (attempts used up, quiz closed, or the quiz no longer offered to the
+  class; see `src/lib/quiz-availability.ts`, shared with the student class page). While a retake is
+  possible the response omits the correct answers *and* the per-question correct/incorrect flags,
+  because on a short option list "you got it wrong" is the answer. It sets `answerKeyWithheld` so the
+  assistant explains rather than guesses. Every ambiguous case withholds: an unpublished quiz (one
+  click republishes it) and a window that hasn't opened yet both count as retakeable.
+- The student prompt carries explicit academic-honesty rules: never hand over a direct answer, a
+  rewritten one, or a hint narrow enough to be one, whatever the student claims about having already
+  submitted or about what a teacher said. Enforcement is split on purpose — the tool controls what the
+  model can *see*, the prompt governs what it does with what it sees, and neither does the other's job.
 - Teacher tools resolve every class through an owner-filtered lookup, and `get_student_breakdown`
   additionally checks enrollment — owning a class doesn't imply a given student is in it.
 - Teacher payloads drop student emails: the teacher sees them in the UI, but there's no reason to put

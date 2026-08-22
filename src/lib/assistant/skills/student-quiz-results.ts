@@ -12,6 +12,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { parseReviewSnapshot } from "@/lib/exam-results";
 import { mean, max as maxOf, min as minOf, PASS_THRESHOLD } from "@/lib/quiz-stats";
+import { canAttemptAgain } from "@/lib/quiz-availability";
 import type { AssistantSkill, AssistantTool, AssistantToolContext } from "../types";
 
 /** Hard ceiling on rows any single search returns, whatever the model asks for. */
@@ -149,12 +150,54 @@ const detailInput = z.object({
   resultId: z.string().min(1).max(64).describe("The resultId returned by search_quiz_results."),
 });
 
+/**
+ * Can this student still submit another graded answer for the quiz an archived
+ * result belongs to? This is what decides whether the tool may show the answer
+ * key, so it errs toward "yes" (withhold) in every ambiguous case.
+ */
+async function retakeStillPossible(
+  studentId: string,
+  classId: string,
+  quizId: string
+): Promise<boolean> {
+  const [classQuiz, completedAttempts, inProgress] = await Promise.all([
+    prisma.classQuiz.findUnique({
+      where: { classId_quizId: { classId, quizId } },
+      select: { published: true, availableFrom: true, availableUntil: true, maxAttempts: true },
+    }),
+    prisma.quizAttempt.count({
+      where: { studentId, classId, quizId, completedAt: { not: null } },
+    }),
+    prisma.quizAttempt.count({ where: { studentId, classId, quizId, completedAt: null } }),
+  ]);
+
+  // No ClassQuiz row: the quiz was removed from the class (or deleted outright),
+  // so nothing further can be submitted and the attempt is final.
+  if (!classQuiz) return false;
+  // Unpublished is a teacher hiding a quiz, not retiring it — one click brings it
+  // back, so treat the attempt as still open.
+  if (!classQuiz.published) return true;
+
+  return canAttemptAgain(
+    {
+      availableFrom: classQuiz.availableFrom,
+      availableUntil: classQuiz.availableUntil,
+      maxAttempts: classQuiz.maxAttempts,
+    },
+    { completedAttempts, hasAttemptInProgress: inProgress > 0 }
+  );
+}
+
 const getQuizResultDetail: AssistantTool<typeof detailInput> = {
   name: "get_quiz_result_detail",
   description:
-    "Full detail for ONE of the student's own completed attempts: score, the AI summary that was " +
-    "generated for it, and every question with whether the student answered it correctly. Call " +
-    "search_quiz_results first to get a resultId.",
+    "Detail for ONE of the student's own completed attempts: score, the AI summary generated for " +
+    "it, and every question with the answer the student gave. Call search_quiz_results first to " +
+    "get a resultId. The answer key is included ONLY when the attempt is final — no attempt is " +
+    "in progress and the student can no longer retake the quiz. While a retake is still possible " +
+    "the response sets answerKeyWithheld and omits both the correct answers and the per-question " +
+    "correct/incorrect flags, because revealing them would hand the student the answers to a " +
+    "quiz they can still submit.",
   activityLabel: "Reading a past result",
   input: detailInput,
   handler: async (args, ctx) => {
@@ -169,6 +212,7 @@ const getQuizResultDetail: AssistantTool<typeof detailInput> = {
     }
 
     const snapshot = parseReviewSnapshot(row.reviewSnapshot);
+    const retakeable = await retakeStillPossible(studentId, row.classId, row.quizId);
 
     return {
       found: true,
@@ -181,22 +225,48 @@ const getQuizResultDetail: AssistantTool<typeof detailInput> = {
       totalCount: row.totalCount,
       completedAt: row.completedAt.toISOString(),
       summary: row.summary,
-      questions: snapshot.questions.map((question, index) => ({
-        number: index + 1,
-        text: question.text,
-        isCorrect: question.isCorrect,
-        // Choice questions expose their own answer key here on purpose: this is
-        // the student's own graded attempt, exactly what /student/results shows.
-        yourAnswer:
+      attemptState: retakeable ? "retake_possible" : "final",
+      // Present and true only in the withholding case, so the model reads it as
+      // a fact about this response rather than a flag it has to interpret.
+      ...(retakeable
+        ? {
+            answerKeyWithheld: true,
+            answerKeyWithheldReason:
+              "The student can still attempt this quiz again, so the correct answers and the " +
+              "per-question correct/incorrect marks are not available to you. Help them reason " +
+              "about the questions instead, and do not guess or state which answer is right.",
+          }
+        : {}),
+      questions: snapshot.questions.map((question, index) => {
+        const yourAnswer =
           question.answerMode === "NUMERIC"
             ? question.submittedNumeric ?? null
-            : question.options.filter((o) => o.selected).map((o) => o.text),
-        correctAnswer:
-          question.answerMode === "NUMERIC"
-            ? question.correctNumeric ?? null
-            : question.options.filter((o) => o.isCorrect).map((o) => o.text),
-        ...(question.unit ? { unit: question.unit } : {}),
-      })),
+            : question.options.filter((o) => o.selected).map((o) => o.text);
+
+        // While a retake is possible the student gets back only what they
+        // themselves submitted. `isCorrect` is withheld along with the key: on a
+        // two-option or short-list question, "you were wrong" IS the answer.
+        if (retakeable) {
+          return {
+            number: index + 1,
+            text: question.text,
+            yourAnswer,
+            ...(question.unit ? { unit: question.unit } : {}),
+          };
+        }
+
+        return {
+          number: index + 1,
+          text: question.text,
+          isCorrect: question.isCorrect,
+          yourAnswer,
+          correctAnswer:
+            question.answerMode === "NUMERIC"
+              ? question.correctNumeric ?? null
+              : question.options.filter((o) => o.isCorrect).map((o) => o.text),
+          ...(question.unit ? { unit: question.unit } : {}),
+        };
+      }),
     };
   },
 };
@@ -289,6 +359,11 @@ export const studentQuizResultsSkill: AssistantSkill = {
     "These tools only ever return this student's own data. If the student asks about another " +
       "student, a class average, or anyone else's scores, tell them you can only see their own " +
       "results and suggest they ask their teacher.",
+    "get_quiz_result_detail reports attemptState. When it is \"retake_possible\" the response " +
+      "carries answerKeyWithheld: you have NOT been given the correct answers or the per-question " +
+      "correct/incorrect marks, so you must not state, guess, or narrow down which answer is " +
+      "right. Say the quiz is still open to them, then work through the underlying idea. When it " +
+      "is \"final\" the attempt is closed and you may go over the correct answers as review.",
     "When you reference a result, name the quiz and the score so the student can find it in their " +
       "Exam History. Never invent a score, a quiz name, or a date that a tool did not return.",
   ].join("\n"),

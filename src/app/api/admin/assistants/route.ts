@@ -52,9 +52,11 @@ const patchSchema = z.object({
   enabled: z.boolean().optional(),
   extraInstructions: z.string().max(MAX_EXTRA_INSTRUCTIONS_CHARS).optional(),
   enabledSkills: z.array(z.string().max(100)).max(50).optional(),
+  disabledTools: z.array(z.string().max(100)).max(200).optional(),
   attachmentKinds: z.array(z.string().max(40)).max(20).optional(),
   maxAttachments: z.number().int().optional(),
   maxAttachmentBytes: z.number().int().optional(),
+  attachmentRetentionDays: z.number().int().optional(),
   maxToolCalls: z.number().int().optional(),
   maxHistoryMessages: z.number().int().optional(),
   turnsPerHour: z.number().int().optional(),
@@ -87,7 +89,8 @@ export async function PUT(req: Request) {
     }
 
     // Loose strings are fine here: saveAssistantSettings reconciles the skill
-    // ids and attachment kinds against the code registries and clamps the numbers.
+    // ids, tool names and attachment kinds against the code registries and
+    // clamps the numbers.
     const settings = await saveAssistantSettings(body.audience, parsed.data);
 
     return NextResponse.json({ settings });

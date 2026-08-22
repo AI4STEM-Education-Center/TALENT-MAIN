@@ -188,6 +188,21 @@ export function buildConsentExportKey(jobId: string): string {
   return prefixedS3Key(`consent-exports/${jobId}/export.zip`);
 }
 
+/**
+ * Key for one chat-assistant attachment. Scoped by user so a bucket listing is
+ * readable, and by attachment id so the original filename can never collide
+ * with another upload of the same name.
+ */
+export function buildAssistantAttachmentKey(
+  userId: string,
+  attachmentId: string,
+  originalName: string
+): string {
+  return prefixedS3Key(
+    `assistant-attachments/${userId}/${attachmentId}/${sanitizeFilename(originalName)}`
+  );
+}
+
 export function getS3Config(): { bucket: string; region: string } {
   const bucket = process.env.AWS_S3_BUCKET;
   const region = process.env.AWS_REGION;

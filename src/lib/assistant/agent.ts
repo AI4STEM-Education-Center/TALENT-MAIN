@@ -20,6 +20,7 @@ import {
 } from "@/lib/ai-streaming";
 import { logSystemEvent } from "@/lib/system-log";
 import { buildUserContent, type DecodedAttachment } from "./attachments";
+import type { ReplayedAttachment } from "./attachment-store";
 import { buildSystemPrompt } from "./prompt";
 import { resolveSkills } from "./skills";
 import type { AssistantSettings } from "./config";
@@ -53,6 +54,16 @@ export type AssistantTurnInput = {
    * silently answering as if the file had been read.
    */
   notices: string[];
+  /**
+   * Re-reads the attachments a prior turn referenced by id, so an image can
+   * still be discussed several turns later. Injected rather than imported so the
+   * loop stays storage-free (and testable without a bucket); omitted, history
+   * replays as text plus filenames.
+   */
+  loadHistoryAttachments?: (
+    ids: string[],
+    limit: number
+  ) => Promise<ReplayedAttachment[]>;
   emit: (event: AssistantStreamEvent) => void | Promise<void>;
   /** Aborted when the client disconnects; stops the loop between rounds. */
   signal?: AbortSignal;
@@ -171,18 +182,58 @@ async function runToolCall(
   }
 }
 
-/** Map the client-supplied transcript into API messages, newest `limit` turns only. */
-function historyMessages(history: AssistantTurn[], limit: number): ChatMessages {
-  return history.slice(-limit).map((turn) => {
-    // Attachments are NOT replayed: their payloads are not persisted, so a
-    // reference by filename is all a prior turn can carry.
+/**
+ * Map the client-supplied transcript into API messages, newest `limit` turns
+ * only, re-attaching stored files where the loader can find them.
+ *
+ * `attachmentBudget` caps how many files the WHOLE replay may carry, and the
+ * newest turns claim it first. Without that ceiling every turn in a long
+ * conversation would re-send every image it ever contained, so the cost of the
+ * next question would climb with the length of the chat; with it, replaying
+ * history never costs more than sending those files once.
+ */
+async function historyMessages(
+  history: AssistantTurn[],
+  limit: number,
+  attachmentBudget: number,
+  load?: (ids: string[], limit: number) => Promise<ReplayedAttachment[]>
+): Promise<ChatMessages> {
+  const turns = history.slice(-limit);
+
+  const replayIds: string[] = [];
+  if (load && attachmentBudget > 0) {
+    // Newest first, so the budget goes to the files most likely being discussed.
+    for (let i = turns.length - 1; i >= 0 && replayIds.length < attachmentBudget; i -= 1) {
+      const turn = turns[i];
+      if (turn.role !== "user") continue;
+      for (const id of turn.attachmentIds ?? []) {
+        if (replayIds.length >= attachmentBudget) break;
+        replayIds.push(id);
+      }
+    }
+  }
+
+  const replayed =
+    replayIds.length > 0 && load ? await load(replayIds, attachmentBudget) : [];
+  const byId = new Map(replayed.map((attachment) => [attachment.id, attachment]));
+
+  return turns.map((turn) => {
+    // Filenames are listed even for files that came back, so the model can tell
+    // which image belongs to which turn — and so a file that expired or failed
+    // to load still reads as "they attached something" rather than vanishing.
     const labels = turn.attachmentNames?.length
       ? `\n[attached: ${turn.attachmentNames.join(", ")}]`
       : "";
-    return {
-      role: turn.role,
-      content: `${turn.content}${labels}`.slice(0, MAX_MESSAGE_CHARS + 200),
-    };
+    const text = `${turn.content}${labels}`.slice(0, MAX_MESSAGE_CHARS + 200);
+
+    const attachments = (turn.attachmentIds ?? [])
+      .map((id) => byId.get(id))
+      .filter((attachment): attachment is ReplayedAttachment => attachment !== undefined);
+
+    if (turn.role === "user" && attachments.length > 0) {
+      return { role: "user", content: buildUserContent(text, attachments) as never };
+    }
+    return { role: turn.role, content: text };
   });
 }
 
@@ -207,7 +258,11 @@ export async function runAssistantTurn(
     return { text: "", metrics: null, toolCallCount: 0 };
   }
 
-  const { skills, tools } = resolveSkills(ctx.audience, settings.enabledSkills);
+  const { skills, tools } = resolveSkills(
+    ctx.audience,
+    settings.enabledSkills,
+    settings.disabledTools
+  );
   const client = await createOpenAIClient(provider);
   const isLocal = provider.providerType === "local";
 
@@ -221,9 +276,19 @@ export async function runAssistantTurn(
   const messages: ChatMessages = [
     {
       role: "system",
-      content: buildSystemPrompt(ctx.audience, skills, settings.extraInstructions),
+      content: buildSystemPrompt(
+        ctx.audience,
+        skills,
+        [...tools.keys()],
+        settings.extraInstructions
+      ),
     },
-    ...historyMessages(input.history, settings.maxHistoryMessages),
+    ...(await historyMessages(
+      input.history,
+      settings.maxHistoryMessages,
+      settings.maxAttachments,
+      input.loadHistoryAttachments
+    )),
     { role: "user", content: buildUserContent(userText, input.attachments) as never },
   ];
 

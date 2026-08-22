@@ -8,7 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
-type SkillInfo = { id: string; name: string; description: string; toolNames: string[] };
+type ToolInfo = { name: string; label: string };
+type SkillInfo = {
+  id: string;
+  name: string;
+  description: string;
+  toolNames: string[];
+  tools: ToolInfo[];
+};
 type KindInfo = { kind: string; label: string; accept: string; maxBytes: number };
 type Bound = { min: number; max: number };
 
@@ -18,9 +25,11 @@ type Assistant = {
   enabled: boolean;
   extraInstructions: string;
   enabledSkills: string[];
+  disabledTools: string[];
   attachmentKinds: string[];
   maxAttachments: number;
   maxAttachmentBytes: number;
+  attachmentRetentionDays: number;
   maxToolCalls: number;
   maxHistoryMessages: number;
   turnsPerHour: number;
@@ -102,9 +111,11 @@ export function AssistantSettings() {
             enabled: draft.enabled,
             extraInstructions: draft.extraInstructions,
             enabledSkills: draft.enabledSkills,
+            disabledTools: draft.disabledTools,
             attachmentKinds: draft.attachmentKinds,
             maxAttachments: draft.maxAttachments,
             maxAttachmentBytes: draft.maxAttachmentBytes,
+            attachmentRetentionDays: draft.attachmentRetentionDays,
             maxToolCalls: draft.maxToolCalls,
             maxHistoryMessages: draft.maxHistoryMessages,
             turnsPerHour: draft.turnsPerHour,
@@ -170,6 +181,10 @@ export function AssistantSettings() {
                 <span className="font-medium text-foreground">{assistant.useCase}</span> use-case
                 assignment above. A vision-capable model is required for image input.
               </p>
+              <p className="text-xs text-muted-foreground">
+                Uploaded files are stored for the retention window below, so a later message in the
+                same conversation can refer back to them, then deleted automatically.
+              </p>
             </CardHeader>
 
             <CardContent className="space-y-4">
@@ -183,32 +198,81 @@ export function AssistantSettings() {
                       No skills are registered for this audience.
                     </p>
                   )}
-                  {assistant.availableSkills.map((skill) => (
-                    <label
-                      key={skill.id}
-                      className="flex cursor-pointer items-start gap-2 rounded-md border border-border p-2"
-                    >
-                      <input
-                        type="checkbox"
-                        className="mt-0.5 size-4 accent-primary"
-                        checked={draft.enabledSkills.includes(skill.id)}
-                        onChange={() =>
-                          update(assistant.audience, {
-                            enabledSkills: toggle(draft.enabledSkills, skill.id),
-                          })
-                        }
-                      />
-                      <span className="min-w-0">
-                        <span className="block text-sm font-medium">{skill.name}</span>
-                        <span className="block text-xs text-muted-foreground">
-                          {skill.description}
-                        </span>
-                        <span className="mt-1 block font-mono text-[11px] text-muted-foreground">
-                          {skill.toolNames.join(" · ")}
-                        </span>
-                      </span>
-                    </label>
-                  ))}
+                  {assistant.availableSkills.map((skill) => {
+                    const skillOn = draft.enabledSkills.includes(skill.id);
+                    const liveTools = skill.tools.filter(
+                      (t) => !draft.disabledTools.includes(t.name)
+                    ).length;
+                    return (
+                      <div
+                        key={skill.id}
+                        className="rounded-md border border-border p-2"
+                      >
+                        <label className="flex cursor-pointer items-start gap-2">
+                          <input
+                            type="checkbox"
+                            className="mt-0.5 size-4 accent-primary"
+                            checked={skillOn}
+                            onChange={() =>
+                              update(assistant.audience, {
+                                enabledSkills: toggle(draft.enabledSkills, skill.id),
+                              })
+                            }
+                          />
+                          <span className="min-w-0">
+                            <span className="block text-sm font-medium">{skill.name}</span>
+                            <span className="block text-xs text-muted-foreground">
+                              {skill.description}
+                            </span>
+                          </span>
+                        </label>
+
+                        {/* Individual tools. Kept visible while the skill is off
+                            so the choice is remembered rather than reset, but
+                            disabled — nothing in here has any effect until the
+                            skill itself is on. */}
+                        <div className="mt-2 space-y-1 border-t border-border/60 pt-2 pl-6">
+                          {skill.tools.map((toolInfo) => (
+                            <label
+                              key={toolInfo.name}
+                              className={cn(
+                                "flex items-start gap-2 text-xs",
+                                skillOn
+                                  ? "cursor-pointer"
+                                  : "cursor-not-allowed opacity-50"
+                              )}
+                            >
+                              <input
+                                type="checkbox"
+                                className="mt-0.5 size-3.5 accent-primary"
+                                disabled={!skillOn}
+                                checked={!draft.disabledTools.includes(toolInfo.name)}
+                                onChange={() =>
+                                  update(assistant.audience, {
+                                    disabledTools: toggle(
+                                      draft.disabledTools,
+                                      toolInfo.name
+                                    ),
+                                  })
+                                }
+                              />
+                              <span className="min-w-0">
+                                <span className="block">{toolInfo.label}</span>
+                                <span className="block font-mono text-[11px] text-muted-foreground">
+                                  {toolInfo.name}
+                                </span>
+                              </span>
+                            </label>
+                          ))}
+                          {skillOn && liveTools === 0 && (
+                            <p className="text-[11px] text-muted-foreground">
+                              Every tool is switched off, so this skill will not load at all.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </fieldset>
 
@@ -265,6 +329,14 @@ export function AssistantSettings() {
                     update(assistant.audience, {
                       maxAttachmentBytes: Math.round(value * MIB),
                     })
+                  }
+                />
+                <NumberField
+                  label="Keep attachments for (days)"
+                  value={draft.attachmentRetentionDays}
+                  bound={bounds.attachmentRetentionDays}
+                  onChange={(value) =>
+                    update(assistant.audience, { attachmentRetentionDays: value })
                   }
                 />
                 <NumberField

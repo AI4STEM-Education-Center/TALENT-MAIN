@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { quizAvailability } from "@/lib/quiz-availability";
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -126,17 +127,20 @@ export default async function StudentClassPage({ params }: { params: Promise<{ i
                       const status = progress?.status || "NOT_STARTED";
                       const score = progress?.bestScore;
 
-                      // Per-class availability + attempt gating. Server-side
+                      // Per-class availability + attempt gating, via the shared
+                      // helper so this page, POST /api/quiz, and the assistant's
+                      // answer-key gate can't drift apart. Server-side
                       // enforcement in POST /api/quiz remains the source of truth.
                       const settings = settingsByQuiz.get(quiz.id);
                       const opensAt = settings?.availableFrom ? new Date(settings.availableFrom) : null;
                       const closesAt = settings?.availableUntil ? new Date(settings.availableUntil) : null;
                       const maxAttempts = settings?.maxAttempts ?? null;
                       const attemptsUsed = attemptsByQuiz.get(quiz.id) ?? 0;
-                      const notOpenYet = opensAt != null && now < opensAt;
-                      const closed = closesAt != null && now > closesAt;
-                      const attemptsExhausted = maxAttempts != null && maxAttempts > 0 && attemptsUsed >= maxAttempts;
-                      const locked = notOpenYet || closed || attemptsExhausted;
+                      const { notOpenYet, closed, locked } = quizAvailability(
+                        { availableFrom: opensAt, availableUntil: closesAt, maxAttempts },
+                        attemptsUsed,
+                        now
+                      );
 
                       const dateFmt: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
 

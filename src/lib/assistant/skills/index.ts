@@ -25,12 +25,19 @@ export function listSkills(audience: AssistantAudience): AssistantSkill[] {
   return REGISTRY.filter((skill) => skill.audience === audience);
 }
 
+/** Every tool name registered for an audience, across all of its skills. */
+export function allToolNames(audience: AssistantAudience): string[] {
+  return listSkills(audience).flatMap((skill) => skill.tools.map((tool) => tool.name));
+}
+
 /** UI-safe descriptor for the admin skill picker. */
 export type SkillInfo = {
   id: string;
   name: string;
   description: string;
   toolNames: string[];
+  /** Per-tool entries so the admin can switch individual tools off. */
+  tools: { name: string; label: string }[];
 };
 
 export function skillInfo(audience: AssistantAudience): SkillInfo[] {
@@ -39,6 +46,7 @@ export function skillInfo(audience: AssistantAudience): SkillInfo[] {
     name: skill.name,
     description: skill.description,
     toolNames: skill.tools.map((tool) => tool.name),
+    tools: skill.tools.map((tool) => ({ name: tool.name, label: tool.activityLabel })),
   }));
 }
 
@@ -49,9 +57,14 @@ export type ResolvedSkills = {
 };
 
 /**
- * Load the skills an audience has enabled. Ids are filtered against the
- * registry for the audience, so a stale id in the DB — or a teacher skill id
- * saved under the student row — loads nothing rather than crossing audiences.
+ * Load the skills an audience has enabled, minus any individually disabled
+ * tools. Ids are filtered against the registry for the audience, so a stale id
+ * in the DB — or a teacher skill id saved under the student row — loads nothing
+ * rather than crossing audiences.
+ *
+ * A skill left with no tools is dropped entirely: its instructions describe
+ * abilities by tool name, and keeping them would have the model announce and
+ * then fail to use a tool the admin switched off.
  *
  * A duplicate tool name across two skills would make dispatch ambiguous, so the
  * first registered skill wins and the collision is logged; this is a
@@ -59,13 +72,19 @@ export type ResolvedSkills = {
  */
 export function resolveSkills(
   audience: AssistantAudience,
-  enabledIds: string[]
+  enabledIds: string[],
+  disabledTools: string[] = []
 ): ResolvedSkills {
   const wanted = new Set(enabledIds);
-  const skills = listSkills(audience).filter((skill) => wanted.has(skill.id));
+  const off = new Set(disabledTools);
+  const skills: AssistantSkill[] = [];
   const tools = new Map<string, AssistantTool>();
-  for (const skill of skills) {
+
+  for (const skill of listSkills(audience)) {
+    if (!wanted.has(skill.id)) continue;
+    let loaded = 0;
     for (const tool of skill.tools) {
+      if (off.has(tool.name)) continue;
       if (tools.has(tool.name)) {
         console.error(
           `[Assistant] Duplicate tool name "${tool.name}" from skill "${skill.id}"; keeping the first.`
@@ -73,7 +92,10 @@ export function resolveSkills(
         continue;
       }
       tools.set(tool.name, tool);
+      loaded += 1;
     }
+    if (loaded > 0) skills.push(skill);
   }
+
   return { skills, tools };
 }

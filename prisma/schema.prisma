@@ -715,12 +715,22 @@ model AssistantConfig {
   // removing a skill from the code can never break a saved config.
   enabledSkills String @default("[]")
 
+  // JSON array of tool names switched OFF inside the enabled skills. Stored as
+  // an opt-OUT list rather than an allow-list on purpose: a tool added to a
+  // skill in a later release is then available to every existing row instead of
+  // silently staying dark until an admin re-saves the form.
+  disabledTools String @default("[]")
+
   // Multimodal input limits. attachmentKinds is a JSON array drawn from the
   // registry in src/lib/assistant/attachments.ts ("image" | "text" | "csv");
   // adding a kind there (pdf, …) makes it selectable here without a migration.
   attachmentKinds    String @default("[\"image\"]")
   maxAttachments     Int    @default(4)
   maxAttachmentBytes Int    @default(5242880) // 5 MiB per attachment
+
+  // How long an uploaded chat attachment is kept before the worker's retention
+  // sweep deletes the row and its S3 object. See AssistantAttachment.
+  attachmentRetentionDays Int @default(30)
 
   // Agent loop bounds. maxToolCalls caps tool-calling rounds per turn;
   // maxHistoryMessages caps how much client-supplied transcript is replayed.
@@ -732,6 +742,42 @@ model AssistantConfig {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// One file a user attached to a chat-assistant turn. The bytes live in S3 under
+// `assistant-attachments/{userId}/{id}/`; this row is the index the app reads
+// them back through, plus the expiry the worker sweeps on
+// (AssistantConfig.attachmentRetentionDays, 30 days by default). Keeping the
+// payload out of the row matters: a handful of 5 MiB base64 blobs per chat turn
+// would bloat both the SQLite file and every nightly backup of it.
+//
+// Deliberately RELATION-FREE, like ExamResult: the row is what authorizes and
+// locates the object, so a cascade delete would silently orphan bytes in the
+// bucket that nothing could ever find again. Deleting a user therefore leaves
+// their attachments to the retention sweep, which removes object and row
+// together — the one place that deletion is complete.
+//
+// The write order is row-first, then upload: an object can never exist without a
+// row pointing at it, so the sweep is the only deleter it needs.
+model AssistantAttachment {
+  id       String @id @default(cuid())
+  userId   String
+  audience String // "student" | "teacher" — the assistant it was sent to
+
+  name     String // original filename, for display
+  mimeType String
+  kind     String // AttachmentKind: "image" | "text" | "csv" | …
+  bytes    Int
+
+  storageKey String
+  bucket     String
+
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  // Retention sweep (expiresAt < now) and per-user reads of a known id.
+  @@index([expiresAt])
+  @@index([userId, createdAt])
 }
 
 // ─── Email / Notifications ─────────────────────────────────────────────────────
