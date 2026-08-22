@@ -219,9 +219,11 @@ reject unknown fields) are unaffected — a pinned level only ever changes a cal
 opted in. Which levels a given model accepts varies by model; picking an unsupported one surfaces as
 a provider error on **Test**, which sends the same request the real use case will.
 
-Because thinking level is part of a model row (like service tier), the same model id can be
-registered more than once at different levels and assigned per use case — a cheap `low` extraction
-model and a `high` recommendation model on one provider.
+Thinking level is part of a model row (like service tier), so each registered model carries its own
+level and use cases pick it up through their assignment. It is deliberately **not** part of
+`AiModel`'s unique key: widening that key is a change `prisma db push` classifies as potentially
+destructive, and the container entrypoint refuses those in production by design. To run one model id
+at two levels, register it twice under different service tiers (or under a second provider row).
 
 The level a run was made with is persisted alongside the other per-run AI metrics — on
 `LearningMaterial`, `QuizPdfExtraction`, `QuestionSimulation`, and both `ExamResult` sections — and

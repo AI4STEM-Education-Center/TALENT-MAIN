@@ -682,7 +682,12 @@ model AiModel {
   provider    AiProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
   assignments AiUseCaseAssignment[]
 
-  @@unique([providerId, modelId, serviceTier, thinkingLevel])
+  // NOT part of this key: adding a column to a unique constraint is a
+  // potential-data-loss change, and the container entrypoint runs `db push`
+  // without --accept-data-loss in production on purpose. A model id can still
+  // be registered more than once per provider under different service tiers;
+  // each of those rows carries its own thinking level.
+  @@unique([providerId, modelId, serviceTier])
   @@index([providerId])
 }
 
