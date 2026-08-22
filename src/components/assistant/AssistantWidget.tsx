@@ -44,8 +44,11 @@ type WidgetConfig = {
 type Bubble = AssistantTurn & {
   pending?: boolean;
   error?: string | null;
-  /** User turns: the attachments the server kept, once it says which ones. */
-  stored?: StoredAttachmentRef[];
+  /**
+   * User turns: the stored attachments that can be re-rendered inline, kept
+   * pre-filtered so the render pass doesn't re-scan every turn's list.
+   */
+  storedImages?: StoredAttachmentRef[];
 };
 
 /** A tool the assistant is running (or just ran) during the pending turn. */
@@ -226,7 +229,7 @@ export function AssistantWidget() {
             next[index] = {
               ...next[index],
               attachmentIds: event.stored.map((item) => item.id),
-              stored: event.stored,
+              storedImages: event.stored.filter((item) => item.kind === "image"),
             };
             return next;
           });
@@ -334,20 +337,18 @@ export function AssistantWidget() {
                     </div>
                   )}
 
-                  {bubble.stored && bubble.stored.some((item) => item.kind === "image") && (
+                  {bubble.storedImages && bubble.storedImages.length > 0 && (
                     <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {bubble.stored
-                        .filter((item) => item.kind === "image")
-                        .map((item) => (
-                          // eslint-disable-next-line @next/next/no-img-element -- authorized redirect to a signed URL, not a static asset
-                          <img
-                            key={item.id}
-                            src={`/api/assistant/attachments/${item.id}`}
-                            alt={item.name}
-                            title={item.name}
-                            className="size-14 rounded border border-black/10 object-cover"
-                          />
-                        ))}
+                      {bubble.storedImages.map((item) => (
+                        // eslint-disable-next-line @next/next/no-img-element -- authorized redirect to a signed URL, not a static asset
+                        <img
+                          key={item.id}
+                          src={`/api/assistant/attachments/${item.id}`}
+                          alt={item.name}
+                          title={item.name}
+                          className="size-14 rounded border border-black/10 object-cover"
+                        />
+                      ))}
                     </div>
                   )}
 
