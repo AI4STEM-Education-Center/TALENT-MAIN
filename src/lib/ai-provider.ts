@@ -14,12 +14,43 @@ export type UseCase =
   | "teacher_assistant";
 export type ProviderType = "openai" | "local" | "cloudflare";
 
+/**
+ * Reasoning ("thinking") levels an admin can pin a model to, sent as the
+ * OpenAI-compatible `reasoning_effort` request field. Every provider type we
+ * support speaks this field on its /chat/completions endpoint — OpenAI for the
+ * GPT-5 family, Cloudflare AI Gateway (which forwards it upstream in
+ * compat mode), and local servers such as llama.cpp / vLLM / LM Studio for
+ * reasoning checkpoints like gpt-oss.
+ *
+ * The list mirrors the OpenAI SDK's `ReasoningEffort` union (minus null) —
+ * which levels a given model actually accepts differs per model, and we
+ * deliberately do NOT validate the level against the model id. A level is only
+ * ever sent when an admin sets one, so a non-reasoning model simply never
+ * receives the field (see `thinkingParams`).
+ */
+export const THINKING_LEVELS = [
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+] as const;
+export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
+
+export function isThinkingLevel(value: unknown): value is ThinkingLevel {
+  return typeof value === "string" && (THINKING_LEVELS as readonly string[]).includes(value);
+}
+
 export interface ResolvedProvider {
   providerType: ProviderType;
   baseUrl: string | null;
   apiKey: string | null;          // for cloudflare, this holds CF_AIG_TOKEN
   model: string;
   serviceTier: string | null;
+  /** Reasoning effort for this model, or null to leave the request field off. */
+  thinkingLevel: ThinkingLevel | null;
   cfAigByokAlias: string | null;  // null unless providerType === "cloudflare"
   timeoutMs: number;              // per-request timeout, always resolved (provider override or default)
 }
@@ -63,6 +94,25 @@ export function buildProviderHeaders(
     headers["cf-aig-byok-alias"] = provider.cfAigByokAlias;
   }
   return headers;
+}
+
+/** The spreadable request fragment produced by `thinkingParams`. */
+export type ThinkingParams = { reasoning_effort?: ThinkingLevel };
+
+/**
+ * The thinking-level fragment to spread into a chat-completion request.
+ *
+ * Returns `{}` unless the admin pinned a level on the assigned model, so the
+ * `reasoning_effort` key is absent from the request body rather than sent as
+ * null — providers that don't understand it (non-reasoning OpenAI models, most
+ * local servers) reject an unknown field, so "unset" has to mean "not there".
+ * That is what keeps this safe to call on every request for every provider
+ * type: it only ever changes a call an admin explicitly opted in.
+ */
+export function thinkingParams(
+  provider: Pick<ResolvedProvider, "thinkingLevel">
+): ThinkingParams {
+  return provider.thinkingLevel ? { reasoning_effort: provider.thinkingLevel } : {};
 }
 
 /**
@@ -127,6 +177,9 @@ export async function resolveProvider(
     apiKey,
     model: assignment.model.modelId,
     serviceTier: assignment.model.serviceTier,
+    thinkingLevel: isThinkingLevel(assignment.model.thinkingLevel)
+      ? assignment.model.thinkingLevel
+      : null,
     cfAigByokAlias: assignment.provider.cfAigByokAlias,
     timeoutMs: assignment.provider.timeoutMs ?? DEFAULT_AI_TIMEOUT_MS,
   };

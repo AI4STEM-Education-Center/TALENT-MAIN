@@ -108,7 +108,25 @@ export type AssistantStreamEvent =
    * attachment that failed to store simply doesn't appear here.
    */
   | { type: "attachments"; stored: StoredAttachmentRef[] }
-  | { type: "done"; model: string; ttftMs: number | null; tokens: number; tokensEstimated: boolean }
+  /**
+   * Closes a successful turn and carries that turn's generation stats. The
+   * model and its provider are kept apart (a gateway's model id already carries
+   * a vendor prefix), matching `DisplayAiMetrics` so the chat box can hand the
+   * whole thing to the shared metrics line — which renders it on the dev site
+   * and nothing at all in production.
+   */
+  | {
+      type: "done";
+      model: string;
+      provider: string;
+      serviceTier: string | null;
+      thinkingLevel: string | null;
+      ttftMs: number | null;
+      generationMs: number | null;
+      totalMs: number | null;
+      tokens: number;
+      tokensEstimated: boolean;
+    }
   | { type: "error"; message: string };
 
 /** A persisted attachment as the client sees it: enough to label and re-render it. */

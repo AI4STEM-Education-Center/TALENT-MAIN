@@ -13,7 +13,13 @@
 import type OpenAI from "openai";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
-import { resolveProvider, createOpenAIClient, type ResolvedProvider } from "./ai-provider";
+import {
+  resolveProvider,
+  createOpenAIClient,
+  thinkingParams,
+  type ResolvedProvider,
+  type ThinkingParams,
+} from "./ai-provider";
 import { getS3Config, putS3Object, getS3ObjectAsString, buildSimulationKey } from "./storage";
 import { retryWithExponentialBackoff } from "./retry";
 import {
@@ -53,6 +59,10 @@ type CallContext = {
   providerType: ResolvedProvider["providerType"];
   serviceTier: string | null;
   tierActive: boolean;
+  /** Reasoning effort pinned on the model, or null. Persisted with the metrics. */
+  thinkingLevel: string | null;
+  /** `reasoning_effort` fragment; empty unless the model has a level pinned. */
+  thinking: ThinkingParams;
   isLocal: boolean;
 };
 
@@ -68,6 +78,8 @@ async function buildCallContext(provider: ResolvedProvider): Promise<CallContext
     providerType: provider.providerType,
     serviceTier,
     tierActive,
+    thinkingLevel: provider.thinkingLevel,
+    thinking: thinkingParams(provider),
     isLocal,
   };
 }
@@ -88,7 +100,7 @@ async function callTextModel(
   const result = await retryWithExponentialBackoff(() =>
     streamChatCompletion(
       ctx.client,
-      { model: ctx.model, messages, service_tier: tierParam(ctx) },
+      { model: ctx.model, messages, service_tier: tierParam(ctx), ...ctx.thinking },
       { includeUsage: !ctx.isLocal, requestOptions: { maxRetries: ctx.isLocal ? 0 : 3 } }
     )
   );
@@ -235,6 +247,7 @@ async function runFirstGeneration(sim: LoadedSimulation): Promise<void> {
           model: ctx.model,
           messages: [{ role: "user", content: buildTriagePrompt(questionInput(sim), siblings) }],
           service_tier: tierParam(ctx),
+          ...ctx.thinking,
         },
         SIMULATION_TRIAGE_SCHEMA,
         { includeUsage: !ctx.isLocal, requestOptions: { maxRetries: ctx.isLocal ? 0 : 3 } }

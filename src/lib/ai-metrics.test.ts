@@ -52,6 +52,25 @@ describe("formatAiMetrics", () => {
     );
   });
 
+  it("names the thinking level after the service tier", () => {
+    expect(
+      formatAiMetrics({
+        model: "gpt-5.1",
+        provider: "openai",
+        serviceTier: "flex",
+        thinkingLevel: "high",
+        ttftMs: 240,
+        tokens: 512,
+      })
+    ).toBe("gpt-5.1 · via openai · tier flex · think high · TTFT 240ms · 512 tokens");
+  });
+
+  it("omits the thinking level for a model that has none pinned", () => {
+    expect(
+      formatAiMetrics({ model: "gpt-5.1", thinkingLevel: null, ttftMs: 240, tokens: 512 })
+    ).toBe("gpt-5.1 · TTFT 240ms · 512 tokens");
+  });
+
   it("leaves rows written before provider/tier were stored exactly as they were", () => {
     expect(
       formatAiMetrics({ model: "cloudflare/openai/gpt-5.5", ttftMs: 19438, totalMs: 25123, tokens: 3077 })

@@ -39,6 +39,7 @@ export async function listClassMaterials(classId: string) {
           aiModel: true,
           aiProvider: true,
           aiServiceTier: true,
+          aiThinkingLevel: true,
           aiTtftMs: true,
           aiTokens: true,
           aiTotalMs: true,

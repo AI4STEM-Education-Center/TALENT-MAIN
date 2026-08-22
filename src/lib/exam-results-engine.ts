@@ -7,7 +7,13 @@
 import type OpenAI from "openai";
 import { prisma } from "./prisma";
 import { hasResearchConsent } from "./consent";
-import { resolveProvider, createOpenAIClient, type ResolvedProvider } from "./ai-provider";
+import {
+  resolveProvider,
+  createOpenAIClient,
+  thinkingParams,
+  type ResolvedProvider,
+  type ThinkingParams,
+} from "./ai-provider";
 import { streamChatCompletion, streamJsonCompletion, aggregateMetrics, type AiCallMetrics } from "./ai-streaming";
 import { retryWithExponentialBackoff } from "./retry";
 import { signObjectReadUrl, getS3Config } from "./storage";
@@ -113,9 +119,9 @@ function providerUsable(provider: ResolvedProvider | null): provider is Resolved
 
 /**
  * Streaming chat completion. Mirrors the chat route's token-cap
- * (`max_completion_tokens` for cloud vs `max_tokens` for local) and service_tier
- * gating so stored summaries match the chatbot's output characteristics. Returns
- * the text plus its TTFT/token metrics.
+ * (`max_completion_tokens` for cloud vs `max_tokens` for local), service_tier
+ * gating, and thinking level so stored summaries match the chatbot's output
+ * characteristics. Returns the text plus its TTFT/token metrics.
  */
 async function runChatCompletionText(
   provider: ResolvedProvider,
@@ -137,6 +143,8 @@ async function runChatCompletionText(
       max_completion_tokens: !isLocal ? maxTokens : undefined,
       max_tokens: isLocal ? maxTokens : undefined,
       service_tier: tierActive ? (serviceTier as never) : undefined,
+      // Empty unless an admin pinned a thinking level on the assigned model.
+      ...thinkingParams(provider),
     },
     {
       includeUsage: !isLocal,
@@ -154,6 +162,7 @@ async function runChatCompletionText(
 const providerLabels = (provider: ResolvedProvider) => ({
   providerType: provider.providerType,
   serviceTier: provider.serviceTier,
+  thinkingLevel: provider.thinkingLevel,
 });
 
 /** Run one streamed structured (strict JSON schema) step, returning value + metrics. */
@@ -163,11 +172,12 @@ async function runStructuredStep<T>(
   prompt: string,
   schemaName: string,
   schema: object,
+  thinking: ThinkingParams,
   isLocal: boolean
 ): Promise<{ value: T; metrics: AiCallMetrics }> {
   return streamJsonCompletion<T>(
     client,
-    { model, messages: [{ role: "user", content: prompt }] },
+    { model, messages: [{ role: "user", content: prompt }], ...thinking },
     { name: schemaName, schema: schema as Record<string, unknown>, strict: true },
     { includeUsage: !isLocal, requestOptions: { maxRetries: isLocal ? 0 : 3 } }
   );
@@ -187,6 +197,7 @@ async function selectPagesForMaterial(
   chosen: CatalogMaterial,
   material: MaterialRow,
   materialReason: string,
+  thinking: ThinkingParams,
   isLocal: boolean
 ): Promise<{ recommendation: StoredRecommendation | null; metrics: AiCallMetrics[] }> {
   const metrics: AiCallMetrics[] = [];
@@ -207,6 +218,7 @@ async function selectPagesForMaterial(
     buildPageSelectionPrompt(attempt, chosen.title, catalogPages),
     "page_selection",
     PAGE_SELECTION_SCHEMA,
+    thinking,
     isLocal
   );
   metrics.push(m);
@@ -249,6 +261,7 @@ async function selectPagesForMaterial(
 async function labelMisconceptions(
   client: OpenAI,
   model: string,
+  thinking: ThinkingParams,
   isLocal: boolean,
   snapshot: ReviewSnapshot
 ): Promise<{ errorMisconceptions: StoredQuestionMisconceptions[]; metrics: AiCallMetrics[] }> {
@@ -271,6 +284,7 @@ async function labelMisconceptions(
             messages: [
               { role: "user", content: buildMisconceptionLabelingPrompt([error], catalog) },
             ],
+            ...thinking,
           },
           { name: "misconception_labeling", schema: buildMisconceptionSchema(ids), strict: true },
           { includeUsage: !isLocal, requestOptions: { maxRetries: isLocal ? 0 : 3 } }
@@ -354,6 +368,7 @@ async function generateSummary(
   metrics: AiCallMetrics;
   providerType: string;
   serviceTier: string | null;
+  thinkingLevel: string | null;
 }> {
   const provider = await resolveProvider("description_generation");
   if (!providerUsable(provider)) {
@@ -417,6 +432,7 @@ async function generateRecommendations(
   metrics: AiCallMetrics | null;
   providerType: string | null;
   serviceTier: string | null;
+  thinkingLevel: string | null;
   generationMs: number | null;
 }> {
   const snapshot = parseReviewSnapshot(examResult.reviewSnapshot);
@@ -428,6 +444,7 @@ async function generateRecommendations(
       metrics: null,
       providerType: null,
       serviceTier: null,
+      thinkingLevel: null,
       generationMs: null,
     };
   }
@@ -447,12 +464,16 @@ async function generateRecommendations(
       metrics: null,
       providerType: null,
       serviceTier: null,
+      thinkingLevel: null,
       generationMs: null,
     };
   }
 
   const isLocal = provider.providerType === "local";
   const client = await createOpenAIClient(provider);
+  // Threaded through every step below; empty unless the assigned model has a
+  // thinking level pinned in AI config.
+  const thinking = thinkingParams(provider);
   const allMetrics: AiCallMetrics[] = [];
 
   // Misconception labels are independent of study-material availability: run
@@ -462,6 +483,7 @@ async function generateRecommendations(
   const { errorMisconceptions, metrics: labelMetrics } = await labelMisconceptions(
     client,
     provider.model,
+    thinking,
     isLocal,
     snapshot
   );
@@ -522,6 +544,7 @@ async function generateRecommendations(
         buildMaterialSelectionPrompt(holistic, catalog),
         "material_selection",
         MATERIAL_SELECTION_SCHEMA,
+        thinking,
         isLocal
       );
       allMetrics.push(mSel);
@@ -544,6 +567,7 @@ async function generateRecommendations(
               chosen,
               material,
               sel.reasoning,
+              thinking,
               isLocal
             );
           } catch (err) {
@@ -569,6 +593,7 @@ async function generateRecommendations(
     metrics,
     providerType: metrics ? provider.providerType : null,
     serviceTier: metrics ? provider.serviceTier : null,
+    thinkingLevel: metrics ? provider.thinkingLevel : null,
     // Null unless every call that produced content actually streamed, so a
     // buffering gateway's flush time never gets shown as generation time.
     generationMs: metrics?.generationMs ?? null,
@@ -617,6 +642,7 @@ export async function generateExamResult(examResultId: string): Promise<void> {
         summaryAiModel: null,
         summaryAiProvider: null,
         summaryServiceTier: null,
+        summaryThinkingLevel: null,
         summaryTtftMs: null,
         summaryGenerationMs: null,
         summaryTotalMs: null,
@@ -625,7 +651,8 @@ export async function generateExamResult(examResultId: string): Promise<void> {
       },
     });
     try {
-      const { summary, metrics, providerType, serviceTier } = await generateSummary(examResult);
+      const { summary, metrics, providerType, serviceTier, thinkingLevel } =
+        await generateSummary(examResult);
       await prisma.examResult.update({
         where: { id: examResult.id },
         data: {
@@ -635,6 +662,7 @@ export async function generateExamResult(examResultId: string): Promise<void> {
           summaryAiModel: metrics.model,
           summaryAiProvider: providerType,
           summaryServiceTier: serviceTier,
+          summaryThinkingLevel: thinkingLevel,
           summaryTtftMs: metrics.ttftMs,
           summaryGenerationMs: metrics.generationMs,
           summaryTotalMs: metrics.totalMs,
@@ -660,6 +688,7 @@ export async function generateExamResult(examResultId: string): Promise<void> {
         recsAiModel: null,
         recsAiProvider: null,
         recsServiceTier: null,
+        recsThinkingLevel: null,
         recsTtftMs: null,
         recsGenerationMs: null,
         recsTotalMs: null,
@@ -673,6 +702,7 @@ export async function generateExamResult(examResultId: string): Promise<void> {
         metrics,
         providerType,
         serviceTier,
+        thinkingLevel,
         generationMs: recsGenerationMs,
       } = await generateRecommendations(examResult);
       await prisma.examResult.update({
@@ -686,6 +716,7 @@ export async function generateExamResult(examResultId: string): Promise<void> {
           recsAiModel: metrics?.model ?? null,
           recsAiProvider: providerType,
           recsServiceTier: serviceTier,
+          recsThinkingLevel: thinkingLevel,
           recsTtftMs: metrics?.ttftMs ?? null,
           recsGenerationMs,
           recsTotalMs: metrics?.totalMs ?? null,

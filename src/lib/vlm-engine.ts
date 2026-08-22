@@ -1,7 +1,14 @@
 import { OpenAI } from "openai";
 import { prisma } from "@/lib/prisma";
 import { getS3Config, resolveModelImageUrl } from "@/lib/storage";
-import { resolveProvider, createOpenAIClient, type ResolvedProvider } from "@/lib/ai-provider";
+import {
+  resolveProvider,
+  createOpenAIClient,
+  thinkingParams,
+  type ResolvedProvider,
+  type ThinkingLevel,
+  type ThinkingParams,
+} from "@/lib/ai-provider";
 import { retryWithExponentialBackoff } from "./retry";
 import { streamJsonCompletion, aggregateMetrics, type AiCallMetrics } from "./ai-streaming";
 import { getActiveConceptLabels } from "./concept-catalog";
@@ -157,6 +164,8 @@ async function getConfiguredOpenAI(): Promise<{
   model: string;
   providerType: ResolvedProvider["providerType"];
   serviceTier: string | null;
+  /** Reasoning effort pinned on the model, or null. Sent on calls and persisted. */
+  thinkingLevel: ThinkingLevel | null;
   isLocal: boolean;
 }> {
   const provider = await resolveProvider("pdf_description");
@@ -180,6 +189,7 @@ async function getConfiguredOpenAI(): Promise<{
     model: provider.model,
     providerType: provider.providerType,
     serviceTier: provider.serviceTier,
+    thinkingLevel: provider.thinkingLevel,
     isLocal,
   };
 }
@@ -192,6 +202,7 @@ async function processPage(
   openai: OpenAI,
   model: string,
   serviceTier: string | null,
+  thinking: ThinkingParams,
   isLocal: boolean,
   allowedConcepts: string[]
 ): Promise<AiCallMetrics> {
@@ -216,6 +227,8 @@ async function processPage(
           },
         ],
         service_tier: serviceTier === "flex" ? "flex" : undefined,
+        // Empty unless an admin pinned a thinking level on this model.
+        ...thinking,
       },
       buildTier1Schema(allowedConcepts),
       { includeUsage: !isLocal, requestOptions: { maxRetries: isLocal ? 0 : 3 } }
@@ -264,7 +277,10 @@ export async function processMaterial(materialId: string) {
   requireActiveConcepts(allowedConcepts);
 
   // Resolve provider from DB config
-  const { client: openai, model, providerType, serviceTier, isLocal } = await getConfiguredOpenAI();
+  const { client: openai, model, providerType, serviceTier, thinkingLevel, isLocal } =
+    await getConfiguredOpenAI();
+  // Derived once and passed to every call below; empty unless a level is pinned.
+  const thinking = thinkingParams({ thinkingLevel });
 
   // Per-call AI metrics (TTFT + generated tokens) collected across every page
   // and the batch-summary call, aggregated onto the material when it succeeds.
@@ -283,7 +299,7 @@ export async function processMaterial(materialId: string) {
     const batch = pagesToProcess.slice(i, i + CONCURRENCY);
     await Promise.all(
       batch.map((page) =>
-        processPage(materialId, page.pageNumber, page.storageKey, bucket, openai, model, serviceTier, isLocal, allowedConcepts)
+        processPage(materialId, page.pageNumber, page.storageKey, bucket, openai, model, serviceTier, thinking, isLocal, allowedConcepts)
           .then((m) => { callMetrics.push(m); })
           .catch((err) => {
             console.error(`[VLM Engine] Failed to process page ${page.pageNumber}:`, err);
@@ -326,7 +342,7 @@ export async function processMaterial(materialId: string) {
       const batch = failedPages.slice(i, i + CONCURRENCY);
       await Promise.all(
         batch.map((page) =>
-          processPage(materialId, page.pageNumber, page.storageKey, bucket, openai, model, serviceTier, isLocal, allowedConcepts)
+          processPage(materialId, page.pageNumber, page.storageKey, bucket, openai, model, serviceTier, thinking, isLocal, allowedConcepts)
             .then((m) => { callMetrics.push(m); })
             .catch((err) => {
               console.error(`[VLM Engine] Retry ${retryAttempt} failed for page ${page.pageNumber}:`, err);
@@ -382,6 +398,7 @@ export async function processMaterial(materialId: string) {
         aiModel: agg?.model ?? null,
         aiProvider: agg ? providerType : null,
         aiServiceTier: agg ? serviceTier : null,
+        aiThinkingLevel: agg ? thinkingLevel : null,
         aiTtftMs: agg?.ttftMs ?? null,
         aiTokens: agg?.completionTokens ?? null,
         aiTotalMs: agg?.totalMs ?? null,
@@ -415,6 +432,7 @@ export async function processMaterial(materialId: string) {
           model,
           messages: [{ role: "user", content: contentArray }],
           service_tier: serviceTier === "flex" ? "flex" : undefined,
+          ...thinking,
         },
         buildTier2Schema(allowedConcepts),
         { includeUsage: !isLocal, requestOptions: { maxRetries: isLocal ? 0 : 3 } }
@@ -432,6 +450,7 @@ export async function processMaterial(materialId: string) {
         aiModel: agg?.model ?? null,
         aiProvider: agg ? providerType : null,
         aiServiceTier: agg ? serviceTier : null,
+        aiThinkingLevel: agg ? thinkingLevel : null,
         aiTtftMs: agg?.ttftMs ?? null,
         aiTokens: agg?.completionTokens ?? null,
         aiTotalMs: agg?.totalMs ?? null,

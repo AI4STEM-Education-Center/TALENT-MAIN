@@ -91,6 +91,7 @@ export async function deepCopyLearningMaterial(
         aiModel: source.aiModel,
         aiProvider: source.aiProvider,
         aiServiceTier: source.aiServiceTier,
+        aiThinkingLevel: source.aiThinkingLevel,
         aiTtftMs: source.aiTtftMs,
         aiTokens: source.aiTokens,
         aiTotalMs: source.aiTotalMs,

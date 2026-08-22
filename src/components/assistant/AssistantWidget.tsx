@@ -13,6 +13,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
+import { AiMetricsLine } from "@/components/ai-metrics-line";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { readNdjson } from "@/lib/assistant/ndjson";
@@ -22,6 +23,7 @@ import type {
   StoredAttachmentRef,
 } from "@/lib/assistant/types";
 import type { AttachmentKindInfo } from "@/lib/assistant/attachments";
+import type { DisplayAiMetrics } from "@/lib/ai-metrics";
 import {
   formatBytes,
   prepareAttachment,
@@ -49,6 +51,12 @@ type Bubble = AssistantTurn & {
    * pre-filtered so the render pass doesn't re-scan every turn's list.
    */
   storedImages?: StoredAttachmentRef[];
+  /**
+   * Assistant turns: the model/timing stats from the turn's `done` event.
+   * Rendered by AiMetricsLine, which draws nothing on the production site — the
+   * numbers are a dev-site aid for checking which model answered and how fast.
+   */
+  stats?: DisplayAiMetrics;
 };
 
 /** A tool the assistant is running (or just ran) during the pending turn. */
@@ -233,6 +241,23 @@ export function AssistantWidget() {
             };
             return next;
           });
+        } else if (event.type === "done") {
+          const stats: DisplayAiMetrics = {
+            model: event.model,
+            provider: event.provider,
+            serviceTier: event.serviceTier,
+            thinkingLevel: event.thinkingLevel,
+            ttftMs: event.ttftMs,
+            generationMs: event.generationMs,
+            totalMs: event.totalMs,
+            tokens: event.tokens,
+            tokensEstimated: event.tokensEstimated,
+          };
+          setBubbles((prev) =>
+            prev.map((bubble, index) =>
+              index === prev.length - 1 ? { ...bubble, stats } : bubble
+            )
+          );
         } else if (event.type === "error") {
           fail(event.message);
         }
@@ -357,6 +382,14 @@ export function AssistantWidget() {
                       <Paperclip className="mr-1 inline size-3" />
                       {bubble.attachmentNames.join(", ")}
                     </p>
+                  )}
+
+                  {bubble.stats && (
+                    <AiMetricsLine
+                      metrics={bubble.stats}
+                      prefix="Answered by "
+                      className="mt-1 block whitespace-normal text-xs text-muted-foreground"
+                    />
                   )}
 
                   {bubble.error && (

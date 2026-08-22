@@ -82,6 +82,7 @@ model LearningMaterial {
   aiModel  String?
   aiProvider String? // "openai" | "local" | "cloudflare"; null on runs from before it was recorded
   aiServiceTier String? // "flex" | "auto" | "default"; null when the model has no tier set
+  aiThinkingLevel String? // reasoning effort the run was made with; null when the model has none pinned
   aiTtftMs Int? // time to first token (ms)
   aiTokens Int? // generated tokens summed across all page + batch calls
   aiTotalMs Int? // total wall-clock time summed across all page + batch calls (ms)
@@ -403,6 +404,7 @@ model QuizPdfExtraction {
   aiModel  String?
   aiProvider String? // "openai" | "local" | "cloudflare"; null on runs from before it was recorded
   aiServiceTier String? // "flex" | "auto" | "default"; null when the model has no tier set
+  aiThinkingLevel String? // reasoning effort the run was made with; null when the model has none pinned
   aiTtftMs Int?
   aiTokens Int?
   aiTotalMs Int? // total wall-clock time summed across all passes (ms)
@@ -606,12 +608,14 @@ model ExamResult {
   // AI generation metrics for each student-visible generated section.
   // `aiModel` remains as a legacy last-used value; the per-section labels are
   // provider-qualified (for example "openai/gpt-5.5").
-  // Provider + service tier are recorded per section from this run's resolved
-  // assignment; both stay null on sections generated before they were stored.
+  // Provider, service tier, and thinking level are recorded per section from
+  // this run's resolved assignment; all stay null on sections generated before
+  // they were stored.
   aiModel                String?
   summaryAiModel         String?
   summaryAiProvider      String? // "openai" | "local" | "cloudflare"
   summaryServiceTier     String? // "flex" | "auto" | "default"
+  summaryThinkingLevel   String? // reasoning effort; null when the model has none pinned
   summaryTtftMs          Int?
   summaryGenerationMs    Int?
   summaryTotalMs         Int?
@@ -620,6 +624,7 @@ model ExamResult {
   recsAiModel            String?
   recsAiProvider         String?
   recsServiceTier        String?
+  recsThinkingLevel      String?
   recsTtftMs             Int?
   recsGenerationMs       Int?
   recsTotalMs            Int?
@@ -666,13 +671,18 @@ model AiModel {
   modelId     String                // e.g. "gpt-5.1", "llama-3.3-70b"
   displayName String?               // optional friendly name
   serviceTier String?               // "flex" | "auto" | "default" | null
+  // Reasoning/thinking effort sent as `reasoning_effort` on every call made
+  // with this model: "none" | "minimal" | "low" | "medium" | "high" | null.
+  // null (the default) omits the parameter entirely, so models that don't
+  // support thinking are unaffected — see src/lib/ai-provider.ts.
+  thinkingLevel String?
   isDefault   Boolean  @default(false)
   createdAt   DateTime @default(now())
 
   provider    AiProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
   assignments AiUseCaseAssignment[]
 
-  @@unique([providerId, modelId, serviceTier])
+  @@unique([providerId, modelId, serviceTier, thinkingLevel])
   @@index([providerId])
 }
 
@@ -1097,6 +1107,7 @@ model QuestionSimulation {
   aiModel           String?
   aiProvider        String? // "openai" | "local" | "cloudflare"
   aiServiceTier     String? // "flex" | "auto" | "default"
+  aiThinkingLevel   String? // reasoning effort the run was made with; null when none pinned
   aiTtftMs          Int?
   aiGenerationMs    Int?
   aiTotalMs         Int?
