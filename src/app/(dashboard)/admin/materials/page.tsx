@@ -28,6 +28,7 @@ interface Material {
   aiModel: string | null;
   aiProvider: string | null;
   aiServiceTier: string | null;
+  aiThinkingLevel: string | null;
   aiTtftMs: number | null;
   aiTokens: number | null;
   aiTotalMs: number | null;
@@ -312,6 +313,7 @@ export default function AdminMaterialsPage() {
                               model: mat.aiModel,
                               provider: mat.aiProvider,
                               serviceTier: mat.aiServiceTier,
+                              thinkingLevel: mat.aiThinkingLevel,
                               ttftMs: mat.aiTtftMs,
                               totalMs: mat.aiTotalMs,
                               tokens: mat.aiTokens,

@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   AlertTriangle,
+  Brain,
   Check,
   ChevronDown,
   ChevronUp,
@@ -46,6 +47,7 @@ interface AiModel {
   modelId: string;
   displayName: string | null;
   serviceTier: string | null;
+  thinkingLevel: string | null;
   isDefault: boolean;
 }
 
@@ -75,6 +77,7 @@ interface Assignment {
   modelIdentifier: string;
   modelDisplayName: string | null;
   serviceTier: string | null;
+  thinkingLevel: string | null;
 }
 
 type Assignments = Record<string, Assignment | null>;
@@ -93,8 +96,24 @@ interface ModelForm {
   modelId: string;
   displayName: string;
   serviceTier: string;
+  /** Empty string → no `reasoning_effort` is sent for this model. */
+  thinkingLevel: string;
   isDefault: boolean;
 }
+
+// Thinking (reasoning-effort) options offered per model. Mirrors THINKING_LEVELS
+// in src/lib/ai-provider.ts. Only sent when set, so a model that doesn't support
+// reasoning is left alone — which levels a model accepts varies by model, and
+// picking an unsupported one surfaces as a provider error on Test.
+const THINKING_LEVEL_OPTIONS = [
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+] as const;
 
 // ─── Constants ──────────────────────────────────────────────────────────────────
 
@@ -128,6 +147,7 @@ const EMPTY_MODEL_FORM: ModelForm = {
   modelId: "",
   displayName: "",
   serviceTier: "",
+  thinkingLevel: "",
   isDefault: false,
 };
 
@@ -426,6 +446,7 @@ export default function AiConfigPage() {
       modelId: m.modelId,
       displayName: m.displayName || "",
       serviceTier: m.serviceTier || "",
+      thinkingLevel: m.thinkingLevel || "",
       isDefault: m.isDefault,
     });
     setEditingModel({ providerId, id: m.id });
@@ -534,6 +555,7 @@ export default function AiConfigPage() {
         model: data.model,
         provider: data.providerType,
         serviceTier: data.serviceTier,
+        thinkingLevel: data.thinkingLevel,
         ttftMs: data.ttftMs,
         generationMs: data.generationMs,
         totalMs: data.latencyMs,
@@ -968,7 +990,7 @@ export default function AiConfigPage() {
                     {/* Model add form */}
                     {showModelForm === p.id && (
                       <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50/50 p-3 dark:border-blue-900 dark:bg-blue-950/20">
-                        <div className="grid gap-3 sm:grid-cols-3">
+                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                           <input
                             type="text"
                             placeholder="Model ID (e.g. gpt-5.1)"
@@ -1012,6 +1034,27 @@ export default function AiConfigPage() {
                               <SelectItem value="flex">Flex</SelectItem>
                               <SelectItem value="auto">Auto</SelectItem>
                               <SelectItem value="default">Default</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Select
+                            value={modelForm.thinkingLevel || "unset"}
+                            onValueChange={(v) =>
+                              setModelForm((f) => ({
+                                ...f,
+                                thinkingLevel: v === "unset" ? "" : v,
+                              }))
+                            }
+                          >
+                            <SelectTrigger className="h-8 text-sm">
+                              <SelectValue placeholder="Thinking Level" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="unset">No Thinking Level</SelectItem>
+                              {THINKING_LEVEL_OPTIONS.map((level) => (
+                                <SelectItem key={level} value={level}>
+                                  {level}
+                                </SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
                         </div>
@@ -1078,6 +1121,11 @@ export default function AiConfigPage() {
                               {m.serviceTier && (
                                 <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-xs text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
                                   <Zap className="size-3" /> {m.serviceTier}
+                                </span>
+                              )}
+                              {m.thinkingLevel && (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-1.5 py-0.5 text-xs text-violet-700 dark:bg-violet-900/30 dark:text-violet-400">
+                                  <Brain className="size-3" /> {m.thinkingLevel}
                                 </span>
                               )}
                               {m.isDefault && (
@@ -1253,6 +1301,9 @@ export default function AiConfigPage() {
                               {m.serviceTier
                                 ? ` [${m.serviceTier}]`
                                 : ""}
+                              {m.thinkingLevel
+                                ? ` {think: ${m.thinkingLevel}}`
+                                : ""}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -1402,7 +1453,8 @@ export default function AiConfigPage() {
           <DialogHeader>
             <DialogTitle>Edit Model</DialogTitle>
             <DialogDescription>
-              Update the model identifier, display name, and service tier.
+              Update the model identifier, display name, service tier, and thinking
+              level.
             </DialogDescription>
           </DialogHeader>
 
@@ -1461,6 +1513,36 @@ export default function AiConfigPage() {
                   <SelectItem value="flex">Flex</SelectItem>
                   <SelectItem value="auto">Auto</SelectItem>
                   <SelectItem value="default">Default</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label id="edit-model-thinking-label" className="block text-sm font-medium mb-1">
+                Thinking Level{" "}
+                <span className="text-muted-foreground font-normal">
+                  (reasoning effort, only sent when set)
+                </span>
+              </label>
+              <Select
+                aria-labelledby="edit-model-thinking-label"
+                value={editModelForm.thinkingLevel || "unset"}
+                onValueChange={(v) =>
+                  setEditModelForm((f) => ({
+                    ...f,
+                    thinkingLevel: v === "unset" ? "" : v,
+                  }))
+                }
+              >
+                <SelectTrigger className="h-10">
+                  <SelectValue placeholder="Thinking Level" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="unset">No Thinking Level</SelectItem>
+                  {THINKING_LEVEL_OPTIONS.map((level) => (
+                    <SelectItem key={level} value={level}>
+                      {level}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

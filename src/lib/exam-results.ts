@@ -26,6 +26,7 @@ export type ResultComponentMetrics = {
   model: string | null;
   provider: string | null;
   serviceTier: string | null;
+  thinkingLevel: string | null;
   ttftMs: number | null;
   generationMs: number | null;
   totalMs: number | null;

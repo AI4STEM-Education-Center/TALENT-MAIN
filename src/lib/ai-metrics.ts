@@ -14,6 +14,11 @@ export interface DisplayAiMetrics {
   provider?: string | null;
   /** Service tier this model is assigned in AI config ("flex" | "auto" | "default"). */
   serviceTier?: string | null;
+  /**
+   * Reasoning effort the call was made with, when the model has one pinned in
+   * AI config. null/absent means no `reasoning_effort` was sent at all.
+   */
+  thinkingLevel?: string | null;
   /** Time to first token, ms. */
   ttftMs?: number | null;
   /** Generation window, ms. Takes precedence over total - TTFT when present. */
@@ -77,6 +82,7 @@ export function formatAiMetrics({
   model,
   provider,
   serviceTier,
+  thinkingLevel,
   ttftMs,
   generationMs,
   totalMs,
@@ -107,6 +113,7 @@ export function formatAiMetrics({
     model || null,
     provider ? `via ${provider}` : null,
     serviceTier ? `tier ${serviceTier}` : null,
+    thinkingLevel ? `think ${thinkingLevel}` : null,
     ttftMs != null ? `TTFT ${formatMs(ttftMs)}` : null,
     genMs != null ? `gen ${formatMs(genMs)}` : null,
     totalMs != null ? `total ${formatMs(totalMs)}` : null,

@@ -10,6 +10,7 @@ async function seedAssignment(
     isActive?: boolean;
     apiKey?: string | null;
     serviceTier?: string | null;
+    thinkingLevel?: string | null;
     providerType?: string;
     baseUrl?: string | null;
     cfAigByokAlias?: string | null;
@@ -31,7 +32,12 @@ async function seedAssignment(
     },
   });
   const model = await prisma.aiModel.create({
-    data: { providerId: provider.id, modelId: "gpt-5.1", serviceTier: opts.serviceTier ?? null },
+    data: {
+      providerId: provider.id,
+      modelId: "gpt-5.1",
+      serviceTier: opts.serviceTier ?? null,
+      thinkingLevel: opts.thinkingLevel ?? null,
+    },
   });
   await prisma.aiUseCaseAssignment.create({
     data: { useCase: opts.useCase ?? "pdf_description", providerId: provider.id, modelId: model.id },
@@ -66,6 +72,21 @@ describe("resolveProvider", () => {
       serviceTier: "flex",
       apiKey: "sk-secret-123",
     });
+  });
+
+  it("resolves the model's thinking level when one is set", async () => {
+    await seedAssignment({ apiKey: "sk-x", thinkingLevel: "high" });
+    expect((await resolveProvider("pdf_description"))?.thinkingLevel).toBe("high");
+  });
+
+  it("leaves the thinking level null when the model has none", async () => {
+    await seedAssignment({ apiKey: "sk-x" });
+    expect((await resolveProvider("pdf_description"))?.thinkingLevel).toBeNull();
+  });
+
+  it("drops an unrecognized stored thinking level rather than sending it", async () => {
+    await seedAssignment({ apiKey: "sk-x", thinkingLevel: "ludicrous" });
+    expect((await resolveProvider("pdf_description"))?.thinkingLevel).toBeNull();
   });
 
   it("falls back to DEFAULT_AI_TIMEOUT_MS when the provider has no override", async () => {

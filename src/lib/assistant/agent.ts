@@ -11,7 +11,7 @@
 
 import type OpenAI from "openai";
 import { z } from "zod";
-import { resolveProvider, createOpenAIClient } from "@/lib/ai-provider";
+import { resolveProvider, createOpenAIClient, thinkingParams } from "@/lib/ai-provider";
 import {
   streamChatCompletion,
   aggregateMetrics,
@@ -316,6 +316,9 @@ export async function runAssistantTurn(
           !isLocal && provider.serviceTier && ["auto", "default", "flex"].includes(provider.serviceTier)
             ? (provider.serviceTier as "auto" | "default" | "flex")
             : undefined,
+        // No-op unless the assigned model has a thinking level pinned in AI
+        // config; applies to hosted and local assistants alike.
+        ...thinkingParams(provider),
       },
       {
         includeUsage: !isLocal,
@@ -375,8 +378,13 @@ export async function runAssistantTurn(
   } else {
     await emit({
       type: "done",
-      model: `${provider.providerType}/${provider.model}`,
+      model: provider.model,
+      provider: provider.providerType,
+      serviceTier: provider.serviceTier,
+      thinkingLevel: provider.thinkingLevel,
       ttftMs: metrics?.ttftMs ?? null,
+      generationMs: metrics?.generationMs ?? null,
+      totalMs: metrics?.totalMs ?? null,
       tokens: metrics?.completionTokens ?? 0,
       tokensEstimated: metrics?.tokensEstimated ?? true,
     });

@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { resolveProvider, createOpenAIClient, type UseCase } from "@/lib/ai-provider";
+import {
+  resolveProvider,
+  createOpenAIClient,
+  thinkingParams,
+  type UseCase,
+} from "@/lib/ai-provider";
 import { streamChatCompletion } from "@/lib/ai-streaming";
 import { logApiError } from "@/lib/system-log";
 
@@ -73,6 +78,9 @@ export async function POST(req: Request) {
             ["auto", "default", "flex"].includes(provider.serviceTier)
             ? (provider.serviceTier as any)
             : undefined,
+        // Absent unless the assigned model has a level pinned, so the test call
+        // exercises exactly the request the real use case will send.
+        ...thinkingParams(provider),
       },
       { includeUsage: !isLocal }
     );
@@ -91,6 +99,7 @@ export async function POST(req: Request) {
       model: provider.model,
       providerType: provider.providerType,
       serviceTier: provider.serviceTier,
+      thinkingLevel: provider.thinkingLevel,
     });
   } catch (error: any) {
     logApiError("AI_ASSIGNMENT_TEST", error);

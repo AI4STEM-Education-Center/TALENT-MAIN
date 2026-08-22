@@ -52,6 +52,7 @@ export async function GET(
     aiModel: extraction.aiModel,
     aiProvider: extraction.aiProvider,
     aiServiceTier: extraction.aiServiceTier,
+    aiThinkingLevel: extraction.aiThinkingLevel,
     aiTtftMs: extraction.aiTtftMs,
     aiTokens: extraction.aiTokens,
     aiTotalMs: extraction.aiTotalMs,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildProviderHeaders, type ResolvedProvider } from "./ai-provider";
+import { buildProviderHeaders, thinkingParams, type ResolvedProvider } from "./ai-provider";
 
 // resolveProvider() (DB + cache TTL) is covered in test/ai-provider.resolve.test.ts.
 // These cover the pure helpers.
@@ -11,6 +11,7 @@ function provider(overrides: Partial<ResolvedProvider>): ResolvedProvider {
     apiKey: "sk-x",
     model: "gpt-5.1",
     serviceTier: null,
+    thinkingLevel: null,
     cfAigByokAlias: null,
     timeoutMs: 600_000,
     ...overrides,
@@ -36,5 +37,27 @@ describe("buildProviderHeaders", () => {
     expect(
       buildProviderHeaders(provider({ providerType: "local", cfAigByokAlias: "ignored" }))
     ).toEqual({});
+  });
+});
+
+describe("thinkingParams", () => {
+  it("omits the key entirely when no level is set", () => {
+    const params = thinkingParams(provider({ thinkingLevel: null }));
+    expect(params).toEqual({});
+    expect("reasoning_effort" in params).toBe(false);
+  });
+
+  it("sends the pinned level as reasoning_effort", () => {
+    expect(thinkingParams(provider({ thinkingLevel: "high" }))).toEqual({
+      reasoning_effort: "high",
+    });
+  });
+
+  it("applies to every provider type, not just OpenAI", () => {
+    for (const providerType of ["openai", "local", "cloudflare"] as const) {
+      expect(thinkingParams(provider({ providerType, thinkingLevel: "low" }))).toEqual({
+        reasoning_effort: "low",
+      });
+    }
   });
 });
