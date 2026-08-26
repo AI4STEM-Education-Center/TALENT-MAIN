@@ -34,6 +34,13 @@ function ResetPasswordForm() {
     }
     try {
       const res = await fetch(`/api/auth/reset-password?token=${encodeURIComponent(token)}`);
+      // Status before body: fetch resolves on 4xx/5xx, so an HTTP error payload
+      // must not be mistaken for a token verdict.
+      if (!res.ok) {
+        setTokenValid(false);
+        setTokenError("We couldn't check this link. Please request a new one.");
+        return;
+      }
       const data = await res.json();
       setTokenValid(!!data.valid);
       if (!data.valid) setTokenError(data.error || "This reset link is no longer valid.");

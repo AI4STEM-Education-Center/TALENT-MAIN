@@ -454,6 +454,7 @@ function QuestionCard({
  */
 export function QuizPdfReview({
   questions,
+  questionKeys,
   hasAnswerKey,
   warnings,
   pageImages,
@@ -461,6 +462,8 @@ export function QuizPdfReview({
   onRemoveQuestion,
 }: {
   questions: StagedQuestion[];
+  /** Stable per-question render keys owned by the caller; parallel to `questions`. */
+  questionKeys: string[];
   hasAnswerKey: boolean;
   warnings: string[];
   pageImages: PageImage[];
@@ -484,7 +487,7 @@ export function QuizPdfReview({
       )}
       {questions.map((q, i) => (
         <QuestionCard
-          key={i}
+          key={questionKeys[i]}
           q={q}
           index={i}
           pageImages={pageImages}

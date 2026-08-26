@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, Copy, Check, Link2, Plus } from "lucide-react";
+import { formatDate } from "@/lib/format-date";
 
 interface Invitation {
   id: string;
@@ -44,13 +45,18 @@ export function InviteClient({
           maxUses: maxUses ? Number(maxUses) : undefined,
         }),
       });
-      const data = await res.json();
-      if (res.ok) {
-        setInvitations((prev) => [data, ...prev]);
-        setMsg("Invitation link created!");
-        setExpiresInDays("");
-        setMaxUses("");
+      // Status before body: a silent failure here left the teacher staring at an
+      // unchanged list with no message at all.
+      if (!res.ok) {
+        const errorBody = await res.json().catch(() => null);
+        setMsg(errorBody?.error ?? `Could not create the invitation (HTTP ${res.status}).`);
+        return;
       }
+      const data = await res.json();
+      setInvitations((prev) => [data, ...prev]);
+      setMsg("Invitation link created!");
+      setExpiresInDays("");
+      setMaxUses("");
     } finally {
       setLoading(false);
     }
@@ -112,7 +118,7 @@ export function InviteClient({
                 </div>
                 <div className="flex gap-4 text-xs text-muted-foreground">
                   <span>{inv.usedCount}{inv.maxUses ? `/${inv.maxUses}` : ""} uses</span>
-                  {inv.expiresAt && <span>Expires {new Date(inv.expiresAt).toLocaleDateString()}</span>}
+                  {inv.expiresAt && <span>Expires {formatDate(inv.expiresAt)}</span>}
                   {!inv.expiresAt && !inv.maxUses && <span>No expiry or use limit</span>}
                 </div>
               </div>

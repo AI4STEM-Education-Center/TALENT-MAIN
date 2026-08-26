@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
@@ -204,6 +204,8 @@ export default function AiConfigPage() {
   } | null>(null);
   const [selectedDiscover, setSelectedDiscover] = useState<Set<string>>(new Set());
   const [discoverAdding, setDiscoverAdding] = useState(false);
+  // Synchronous re-entry guard for the bulk "add selected models" action.
+  const addSelectedInFlight = useRef(false);
 
   // Edit-model modal state
   const [editingModel, setEditingModel] = useState<{
@@ -440,6 +442,10 @@ export default function AiConfigPage() {
 
   const handleAddSelectedModels = async () => {
     if (!discoverModal) return;
+    // `discoverAdding` is state, so it does not disable the button until the
+    // next render; the ref closes the double-submit window synchronously.
+    if (addSelectedInFlight.current) return;
+    addSelectedInFlight.current = true;
     setDiscoverAdding(true);
     try {
       for (const modelId of selectedDiscover) {
@@ -462,6 +468,7 @@ export default function AiConfigPage() {
     } catch (err: any) {
       setError(err.message);
     } finally {
+      addSelectedInFlight.current = false;
       setDiscoverAdding(false);
     }
   };
@@ -579,6 +586,21 @@ export default function AiConfigPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ useCase }),
       });
+
+      // Status before body: on a non-2xx the body carries no metrics, so the
+      // line below would render a row of "undefined" as if the test had run.
+      if (!res.ok) {
+        const errorBody = await res.json().catch(() => null);
+        setTestResults((prev) => ({
+          ...prev,
+          [useCase]: {
+            success: false,
+            message: errorBody?.error || `Test failed (HTTP ${res.status}).`,
+            loading: false,
+          },
+        }));
+        return;
+      }
 
       const data = await res.json();
 

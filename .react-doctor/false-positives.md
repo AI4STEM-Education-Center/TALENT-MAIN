@@ -34,8 +34,14 @@ Predicate: the flagged `setLoading(false)` is lexically inside a `finally`.
 **Upstream bug — report to <https://github.com/millionco/react-doctor/issues>.**
 Remove these suppressions once the detector is fixed.
 
-The fourth hit of this rule (`teacher/.../quizzes/quizzes-client.tsx`) was a
-**real** defect and was fixed, not suppressed.
+Two more sites acquired the same misfire while fixing real bugs, because the
+canonical fix for a *different* rule is a guarded reset inside `finally`:
+`(auth)/invite/[token]/invite-client.tsx` (guarded by request ownership) and
+`teacher/.../students/page.tsx` (guarded by `signal.aborted`). Both are inside a
+`finally`; the guard is what the detector cannot see.
+
+The fourth original hit of this rule (`teacher/.../quizzes/quizzes-client.tsx`)
+was a **real** defect and was fixed, not suppressed.
 
 ## `no-create-object-url-without-revoke` (3) — revoked, sometimes cross-module
 
@@ -58,7 +64,14 @@ Predicate: each effect still constructs an `AbortController`, passes `signal` to
 `fetch`, and calls `controller.abort()` in its cleanup, so an out-of-order
 response cannot land.
 
-The other two hits of this rule were **real** and were fixed.
+Two further sites are suppressed for the equivalent reason after being fixed:
+`teacher/.../materials/[materialId]/page-viewer.tsx` and
+`teacher/.../students/page.tsx` now guard **every** post-await write with
+`signal.aborted` — including the `loading` reset, so an aborted request cannot
+clear the spinner owned by its successor — but the rule only recognises an
+early-return ignore flag.
+
+The other two original hits of this rule were **real** and were fixed.
 
 ## `no-locale-format-in-render` (5) — nothing renders during SSR
 
@@ -104,3 +117,14 @@ bug the rule elsewhere warns about.
 panel that coexists with the page. `<dialog>` (even `show()`) changes stacking
 and focus semantics; `role="dialog"` + `aria-label` already gives it a name and
 a role. Predicate: the panel is still non-modal and does not trap focus.
+
+## `no-unowned-async-error-clear` (1) — ownership is present
+
+`(auth)/invite/[token]/invite-client.tsx`. Re-verifying an 81 number leaves two
+lookups in flight, and the older one used to win. Each lookup now takes a
+monotonic `lookupRequestId` and every post-await write — result, email-step
+reset, and the loading flag — is gated on `isCurrent()`.
+
+Predicate: `lookupRequestId` is still incremented per call and every write in
+`handleVerify` is still behind `isCurrent()`. That gate *is* the request-ownership
+check the rule asks for; it fires on the guarded line regardless.

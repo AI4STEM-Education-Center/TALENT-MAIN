@@ -16,6 +16,7 @@ export default function PageViewer({
   const [error, setError] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
 
+  // react-doctor-disable-next-line react-doctor/no-set-state-after-await-in-effect -- every post-await write is guarded by `signal.aborted`, and the effect aborts on cleanup
   useEffect(() => {
     const controller = new AbortController();
     const { signal } = controller;

@@ -15,6 +15,12 @@ export const MAX_IMAGE_EDGE = 1568;
 const JPEG_QUALITY = 0.85;
 
 export type PreparedAttachment = IncomingAttachment & {
+  /**
+   * Stable identity for the chip list, minted here at creation rather than
+   * derived from filename+index during render: removing a chip shifted every
+   * later index, so React reused the wrong preview for the wrong file.
+   */
+  id: string;
   /** Object URL for the local preview thumbnail. Revoke it when the chip is removed. */
   previewUrl: string | null;
   bytes: number;
@@ -92,6 +98,7 @@ export async function prepareAttachment(file: File): Promise<PreparedAttachment>
     const shrunk = await downscaleImage(file);
     if (shrunk) {
       return {
+        id: crypto.randomUUID(),
         name: file.name || "image.jpg",
         mimeType: shrunk.mimeType,
         dataBase64: shrunk.dataBase64,
@@ -104,6 +111,7 @@ export async function prepareAttachment(file: File): Promise<PreparedAttachment>
 
   const dataBase64 = base64FromArrayBuffer(await file.arrayBuffer());
   return {
+    id: crypto.randomUUID(),
     name: file.name || "attachment",
     mimeType: file.type || "application/octet-stream",
     dataBase64,

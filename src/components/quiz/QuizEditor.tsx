@@ -154,8 +154,14 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
   }, [showForm, editingQuestion]);
 
   const refreshQuestions = useCallback(async () => {
-    const q = await fetch(`/api/quizzes/${quizId}`).then((r) => r.json());
-    setQuiz(q);
+    // Status before body, for the same reason as the initial load: an error
+    // payload written into `quiz` breaks every field the render dereferences.
+    const res = await fetch(`/api/quizzes/${quizId}`);
+    if (!res.ok) {
+      setMsg(`Could not refresh the question list (HTTP ${res.status}).`);
+      return;
+    }
+    setQuiz(await res.json());
   }, [quizId]);
 
   // While the worker is generating or revising a simulation for this quiz,
@@ -359,11 +365,13 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setMsg(data.error ?? "Failed to start simulation generation.");
+        // Status before body; the error payload is read only in this branch.
+        const errorBody = await res.json().catch(() => ({}) as { error?: string });
+        setMsg(errorBody.error ?? "Failed to start simulation generation.");
         return;
       }
+      const data = await res.json().catch(() => ({}));
       const parts = [
         data.created > 0 ? `${data.created} queued` : null,
         data.retried > 0 ? `${data.retried} re-queued` : null,
@@ -514,7 +522,7 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
           <div className="space-y-2">
             <Label>Options <span className="text-muted-foreground text-xs">({form.answerMode === "MULTI_SELECT" ? "click boxes to mark all correct answers" : "click radio to mark correct"})</span></Label>
             {form.options.map((opt, i) => (
-              <div key={opt.id ?? i} className="flex items-center gap-2">
+              <div key={opt.id} className="flex items-center gap-2">
                 <button type="button" aria-label={opt.isCorrect ? "Mark as incorrect" : "Mark as correct"} onClick={() => markCorrect(i)} className={`size-4 border-2 shrink-0 ${form.answerMode === "MULTI_SELECT" ? "rounded" : "rounded-full"} ${opt.isCorrect ? "bg-green-500 border-green-500" : "border-muted-foreground"}`} />
                 {opt.imageUrl ? (
                   // Image choice from the PDF pipeline: shown, not editable here.

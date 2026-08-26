@@ -394,7 +394,7 @@ export function AssistantWidget() {
             <ul className="flex flex-wrap gap-2 border-t border-border px-3 py-2">
               {attachments.map((attachment, index) => (
                 <li
-                  key={`${attachment.name}-${index}`}
+                  key={attachment.id}
                   className="flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-1.5 py-1 text-xs"
                 >
                   {attachment.previewUrl ? (

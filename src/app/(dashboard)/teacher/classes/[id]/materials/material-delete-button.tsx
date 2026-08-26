@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2, Loader2 } from "lucide-react";
 import { useConfirm, useAlert } from "@/components/ui/confirm-dialog";
@@ -16,8 +16,15 @@ export default function MaterialDeleteButton({ classId, materialId, isImported }
   const confirm = useConfirm();
   const alert = useAlert();
   const [isDeleting, setIsDeleting] = useState(false);
+  // `isDeleting` only disables the button on the next render, and the confirm
+  // dialog is awaited before it is even set — so two quick clicks could both
+  // reach the DELETE. The ref closes that window synchronously.
+  const inFlight = useRef(false);
 
   const handleDelete = async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    try {
     const description = isImported
       ? "It stays in your other classes; the file is permanently deleted only if no other class uses it."
       : "The file is permanently deleted only if no other class uses it.";
@@ -40,11 +47,14 @@ export default function MaterialDeleteButton({ classId, materialId, isImported }
       }
 
       refresh();
-    } catch (err) {
-      console.error(err);
-      await alert("An error occurred while deleting the material.");
+      } catch (err) {
+        console.error(err);
+        await alert("An error occurred while deleting the material.");
+      } finally {
+        setIsDeleting(false);
+      }
     } finally {
-      setIsDeleting(false);
+      inFlight.current = false;
     }
   };
 

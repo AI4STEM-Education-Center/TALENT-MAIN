@@ -135,6 +135,12 @@ export function QuizPdfImport({
   const [extractionId, setExtractionId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ExtractionDetail | null>(null);
   const [questions, setQuestions] = useState<StagedQuestion[]>([]);
+  // Stable render keys for the staged questions, minted once at ingestion and
+  // kept parallel to `questions`. They deliberately live outside StagedQuestion
+  // so they are never sent in the commit payload — an index key let a removal
+  // shift each card's local state (selected crop box, enlarged preview) onto the
+  // wrong question.
+  const [questionKeys, setQuestionKeys] = useState<string[]>([]);
   const [statusText, setStatusText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<ImportSummary | null>(null);
@@ -163,7 +169,11 @@ export function QuizPdfImport({
           setPhase("extracting");
           pollTimer.current = setTimeout(() => poll(eid), POLL_MS);
         } else if (data.status === "AWAITING_REVIEW") {
-          setQuestions(data.questions ?? []);
+          {
+            const loaded = data.questions ?? [];
+            setQuestions(loaded);
+            setQuestionKeys(loaded.map(() => crypto.randomUUID()));
+          }
           setPhase("review");
         } else if (data.status === "FAILED") {
           setPhase("failed");
@@ -222,6 +232,7 @@ export function QuizPdfImport({
     setExtractionId(null);
     setDetail(null);
     setQuestions([]);
+    setQuestionKeys([]);
     setStatusText("");
     setError(null);
     setSummary(null);
@@ -504,8 +515,12 @@ export function QuizPdfImport({
               hasAnswerKey={detail.hasAnswerKey}
               warnings={detail.warnings}
               pageImages={detail.pageImages ?? []}
+              questionKeys={questionKeys}
               onChangeQuestion={(i, next) => setQuestions((prev) => prev.map((q, idx) => (idx === i ? next : q)))}
-              onRemoveQuestion={(i) => setQuestions((prev) => prev.filter((_, idx) => idx !== i))}
+              onRemoveQuestion={(i) => {
+                setQuestions((prev) => prev.filter((_, idx) => idx !== i));
+                setQuestionKeys((prev) => prev.filter((_, idx) => idx !== i));
+              }}
             />
             <div className="flex flex-wrap items-center gap-3">
               <Button

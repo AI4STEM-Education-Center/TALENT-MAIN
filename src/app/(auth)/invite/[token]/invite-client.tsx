@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { signIn, useSession } from "next-auth/react";
 import Link from "next/link";
@@ -64,6 +64,15 @@ function InviteContent({
   const [changingEmail, setChangingEmail] = useState(false);
   const [confirmEmail, setConfirmEmail] = useState("");
 
+  // One owner per lookup: typing a new number and re-verifying leaves two
+  // requests in flight, and the older one used to win — overwriting the result,
+  // resetting the email field from stale roster data, and clearing the spinner
+  // that belonged to the newer request.
+  const lookupRequestId = useRef(0);
+  // `joining` is state, so it cannot close the re-entry window on a fast double
+  // submit; the ref flips synchronously and is shared by both join paths.
+  const joinInFlight = useRef(false);
+
   const emailMismatch =
     changingEmail &&
     confirmEmail.trim() !== "" &&
@@ -100,24 +109,46 @@ function InviteContent({
       return;
     }
 
+    const requestId = ++lookupRequestId.current;
+    const isCurrent = () => lookupRequestId.current === requestId;
+
     setLookupLoading(true);
     setLookupResult(null);
     try {
       const res = await fetch(
         `/api/invitations/${token}/lookup?orgDefinedId=${encodeURIComponent(cleanId)}`
       );
+      if (!res.ok) {
+        // Deliberate error-payload handling: the route explains a bad number in
+        // `error`, so prefer it and fall back to the status when unusable.
+        const body = await res.json().catch(() => null);
+        if (!isCurrent()) return;
+        const message =
+          typeof body?.error === "string"
+            ? body.error
+            : `Could not verify that number (HTTP ${res.status}).`;
+        setLookupResult({ found: false, error: message });
+        resetEmailStep(null);
+        return;
+      }
       const data: LookupResult = await res.json();
+      if (!isCurrent()) return;
       setLookupResult(data);
       resetEmailStep(data);
     } catch {
+      if (!isCurrent()) return;
       setLookupResult({ found: false, error: "Failed to verify. Please try again." });
       resetEmailStep(null);
     } finally {
-      setLookupLoading(false);
+      // react-doctor-disable-next-line react-doctor/no-loading-flag-reset-outside-finally -- the reset is already inside this finally; detector misfire
+      // react-doctor-disable-next-line react-doctor/no-unowned-async-error-clear -- `isCurrent()` is exactly the request-ownership check the rule asks for
+      if (isCurrent()) setLookupLoading(false);
     }
   }
 
   async function handleJoinLoggedIn() {
+    if (joinInFlight.current) return;
+    joinInFlight.current = true;
     setJoining(true);
     setError("");
     try {
@@ -126,15 +157,17 @@ function InviteContent({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ orgDefinedId: orgDefinedId.replace(/^#/, "").trim() }),
       });
-      const data = await res.json();
-      if (res.ok) {
-        setSuccessName({ firstName: data.firstName, lastName: data.lastName });
-        setSuccess(true);
-        setTimeout(() => push(`/student/classes/${data.classId}`), 2000);
-      } else {
-        setError(data.error);
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        setError(typeof body?.error === "string" ? body.error : `Could not join this class (HTTP ${res.status}).`);
+        return;
       }
+      const data = await res.json();
+      setSuccessName({ firstName: data.firstName, lastName: data.lastName });
+      setSuccess(true);
+      setTimeout(() => push(`/student/classes/${data.classId}`), 2000);
     } finally {
+      joinInFlight.current = false;
       setJoining(false);
     }
   }
@@ -159,6 +192,10 @@ function InviteContent({
       return;
     }
 
+    // A double-submit here would create the account twice; the ref closes the
+    // window that `joining` (state) leaves open before the next render.
+    if (joinInFlight.current) return;
+    joinInFlight.current = true;
     setJoining(true);
     try {
       const res = await fetch(`/api/invitations/${token}`, {
@@ -169,21 +206,23 @@ function InviteContent({
           ...form,
         }),
       });
-      const data = await res.json();
-      if (res.ok) {
-        // Auto sign in
-        await signIn("credentials", {
-          identifier: form.email,
-          password: form.password,
-          redirect: false,
-        });
-        setSuccessName({ firstName: data.firstName, lastName: data.lastName });
-        setSuccess(true);
-        setTimeout(() => push(`/student/classes/${data.classId}`), 2000);
-      } else {
-        setError(data.error);
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        setError(typeof body?.error === "string" ? body.error : `Could not join this class (HTTP ${res.status}).`);
+        return;
       }
+      const data = await res.json();
+      // Auto sign in
+      await signIn("credentials", {
+        identifier: form.email,
+        password: form.password,
+        redirect: false,
+      });
+      setSuccessName({ firstName: data.firstName, lastName: data.lastName });
+      setSuccess(true);
+      setTimeout(() => push(`/student/classes/${data.classId}`), 2000);
     } finally {
+      joinInFlight.current = false;
       setJoining(false);
     }
   }
