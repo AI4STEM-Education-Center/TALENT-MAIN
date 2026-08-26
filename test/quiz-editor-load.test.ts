@@ -83,12 +83,31 @@ describe("loadQuizEditorData", () => {
     expect(result).toEqual({ kind: "aborted" });
   });
 
-  it("reports a rejected fetch as an error when it was not aborted", async () => {
+  it("reports a rejected fetch as an error without leaking the raw cause", async () => {
     const failing = vi.fn(async () => {
       throw new TypeError("Failed to fetch");
     }) as unknown as typeof fetch;
+    vi.spyOn(console, "error").mockImplementation(() => {});
 
     const result = await load(failing);
-    expect(result).toMatchObject({ kind: "error", message: "Failed to fetch" });
+    expect(result.kind).toBe("error");
+    expect(result).toMatchObject({ message: expect.stringContaining("Check your connection") });
+    expect(result).not.toMatchObject({ message: "Failed to fetch" });
+  });
+
+  // An expired session is answered with a 307 to /login, which fetch follows,
+  // so the body is the login page's HTML under a 200 status.
+  it("reports an expired session when the request was redirected", async () => {
+    const redirected = vi.fn(async () => ({
+      ok: true,
+      redirected: true,
+      status: 200,
+      json: async () => {
+        throw new SyntaxError("Unexpected token '<'");
+      },
+    })) as unknown as typeof fetch;
+
+    const result = await load(redirected);
+    expect(result).toEqual({ kind: "error", message: "Your session has expired. Please sign in again." });
   });
 });

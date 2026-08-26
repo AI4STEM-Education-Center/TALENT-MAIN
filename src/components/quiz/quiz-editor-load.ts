@@ -38,6 +38,14 @@ export async function loadQuizEditorData<Quiz, Topic>(
       fetchImpl("/api/topics", { signal }),
     ]);
 
+    // The proxy answers an expired session with a 307 to /login, which fetch
+    // follows — yielding the login page's HTML under a 200. Detect that here so
+    // the teacher is told to sign in, rather than being shown the JSON parse
+    // error that reading an HTML body would otherwise produce.
+    if (quizRes.redirected || topicsRes.redirected) {
+      return { kind: "error", message: "Your session has expired. Please sign in again." };
+    }
+
     if (quizRes.status === 404) return { kind: "notFound" };
     if (!quizRes.ok) {
       return { kind: "error", message: `Could not load this quiz (HTTP ${quizRes.status}).` };
@@ -63,9 +71,13 @@ export async function loadQuizEditorData<Quiz, Topic>(
     // rejected body read on an aborted request looks the same. Either way the
     // caller owns no state here.
     if (signal.aborted) return { kind: "aborted" };
+    // Covers network failures and unparseable bodies. The underlying error is
+    // logged rather than rendered: "Unexpected token '<'" means nothing to a
+    // teacher, and the raw text can carry response content.
+    console.error("Quiz editor load failed", cause);
     return {
       kind: "error",
-      message: cause instanceof Error ? cause.message : "Could not load this quiz.",
+      message: "Could not load this quiz. Check your connection and try again.",
     };
   }
 }
