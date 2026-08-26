@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { POST } from "@/app/api/auth/register/route";
 import { prisma } from "@/lib/prisma";
+import { createTeacherCode } from "@/lib/teacher-registration-codes";
+import { formatTeacherCode } from "@/lib/teacher-codes";
 import { resetDb, createTeacher } from "./db";
 
 const TOKEN = "secret-teacher-code";
@@ -96,5 +98,109 @@ describe("POST /api/auth/register", () => {
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.error).toMatch(/username/i);
+  });
+});
+
+/**
+ * Admin-issued codes (TeacherRegistrationCode). The env var is cleared in every
+ * spec below so only the code decides the outcome.
+ */
+describe("POST /api/auth/register — admin-issued codes", () => {
+  beforeEach(() => {
+    delete process.env.TEACHER_SIGNUP_TOKEN;
+  });
+
+  it("registers with a code and consumes exactly one use", async () => {
+    const code = await createTeacherCode({ maxUses: 2 });
+
+    const res = await postRegister({ ...validBody, teacherToken: code.code });
+    expect(res.status).toBe(201);
+
+    const after = await prisma.teacherRegistrationCode.findUnique({ where: { id: code.id } });
+    expect(after?.usedCount).toBe(1);
+    expect(after?.lastUsedAt).not.toBeNull();
+  });
+
+  it("accepts the code in the dash-separated form the admin panel displays", async () => {
+    const code = await createTeacherCode({});
+    const res = await postRegister({
+      ...validBody,
+      teacherToken: ` ${formatTeacherCode(code.code).toLowerCase()} `,
+    });
+    expect(res.status).toBe(201);
+  });
+
+  it("returns 503 when no code exists and no env token is set", async () => {
+    const res = await postRegister(validBody);
+    expect(res.status).toBe(503);
+  });
+
+  it("does not report 503 once a usable code exists — a wrong code is a 403", async () => {
+    await createTeacherCode({});
+    const res = await postRegister({ ...validBody, teacherToken: "WRONGWRONGWRONG1" });
+    expect(res.status).toBe(403);
+  });
+
+  it("refuses an expired code", async () => {
+    const code = await createTeacherCode({});
+    await prisma.teacherRegistrationCode.update({
+      where: { id: code.id },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+    // Another code keeps signup "configured", so this is a 403 and not a 503.
+    await createTeacherCode({});
+
+    const res = await postRegister({ ...validBody, teacherToken: code.code });
+    expect(res.status).toBe(403);
+    expect(await prisma.user.count()).toBe(0);
+  });
+
+  it("refuses a revoked code", async () => {
+    const code = await createTeacherCode({});
+    await prisma.teacherRegistrationCode.update({
+      where: { id: code.id },
+      data: { active: false },
+    });
+    await createTeacherCode({});
+
+    const res = await postRegister({ ...validBody, teacherToken: code.code });
+    expect(res.status).toBe(403);
+    expect(await prisma.user.count()).toBe(0);
+  });
+
+  it("refuses a code that has hit its use limit", async () => {
+    const code = await createTeacherCode({ maxUses: 1 });
+
+    expect((await postRegister({ ...validBody, teacherToken: code.code })).status).toBe(201);
+
+    const second = await postRegister({
+      ...validBody,
+      teacherToken: code.code,
+      email: "second@example.com",
+      username: "secondteacher",
+    });
+    expect(second.status).toBe(403);
+    expect(await prisma.user.count()).toBe(1);
+  });
+
+  it("does not burn a use when the signup itself fails", async () => {
+    const code = await createTeacherCode({ maxUses: 1 });
+    await createTeacher({ email: "new@example.com", username: "someoneelse" });
+
+    const res = await postRegister({ ...validBody, teacherToken: code.code });
+    expect(res.status).toBe(409);
+
+    const after = await prisma.teacherRegistrationCode.findUnique({ where: { id: code.id } });
+    expect(after?.usedCount).toBe(0);
+  });
+
+  it("still honours the env token alongside codes, without consuming one", async () => {
+    process.env.TEACHER_SIGNUP_TOKEN = TOKEN;
+    const code = await createTeacherCode({ maxUses: 1 });
+
+    expect((await postRegister(validBody)).status).toBe(201);
+
+    const after = await prisma.teacherRegistrationCode.findUnique({ where: { id: code.id } });
+    expect(after?.usedCount).toBe(0);
   });
 });

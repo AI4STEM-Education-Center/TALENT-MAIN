@@ -1,6 +1,6 @@
 "use client";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,9 +8,13 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { GraduationCap, Info } from "lucide-react";
 import { PASSWORD_REQUIREMENTS, validatePassword } from "@/lib/account-validation";
+import { formatTeacherCode, normalizeTeacherCode } from "@/lib/teacher-codes";
 
-export default function RegisterPage() {
+function RegisterForm() {
   const { push } = useRouter();
+  // Codes issued in the admin panel are shared as /register?code=… links, so
+  // the invitee only fills in their own details. A hand-typed code still works.
+  const codeFromLink = normalizeTeacherCode(useSearchParams().get("code") ?? "");
   const [form, setForm] = useState({
     firstName: "",
     lastName: "",
@@ -18,7 +22,7 @@ export default function RegisterPage() {
     email: "",
     password: "",
     confirmPassword: "",
-    teacherToken: "",
+    teacherToken: codeFromLink,
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -171,17 +175,23 @@ export default function RegisterPage() {
                 <Label htmlFor="teacherToken">
                   Teacher registration code
                 </Label>
+                {/* A code that arrived in the link is already on screen in the
+                    URL bar, so masking it would only stop the invitee checking
+                    it against what they were sent. */}
                 <Input
                   id="teacherToken"
                   name="teacherToken"
-                  type="password"
+                  type={codeFromLink ? "text" : "password"}
                   value={form.teacherToken}
                   onChange={updateFormField}
                   required
                   placeholder="Enter the code provided by your administrator"
+                  className={codeFromLink ? "font-mono tracking-wider" : undefined}
                 />
                 <p className="text-xs text-muted-foreground">
-                  This code is provided by the platform administrator.
+                  {codeFromLink
+                    ? `Filled in from your invitation link (${formatTeacherCode(codeFromLink)}).`
+                    : "This code is provided by the platform administrator."}
                 </p>
               </div>
 
@@ -200,5 +210,15 @@ export default function RegisterPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  // useSearchParams needs a Suspense boundary in the App Router; same shape as
+  // the login page's ?callbackUrl handling.
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-linear-to-br from-slate-900 via-blue-950 to-slate-900" />}>
+      <RegisterForm />
+    </Suspense>
   );
 }

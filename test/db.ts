@@ -47,6 +47,9 @@ export async function resetDb() {
   await prisma.aiModel.deleteMany();
   await prisma.aiProvider.deleteMany();
   await prisma.passwordResetToken.deleteMany();
+  // Relation-free (see schema): admin-issued teacher signup codes outlive the
+  // admin who made them, so nothing cascades them away.
+  await prisma.teacherRegistrationCode.deleteMany();
   await prisma.teacher.deleteMany();
   await prisma.student.deleteMany();
   await prisma.user.deleteMany();
