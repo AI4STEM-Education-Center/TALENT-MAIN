@@ -16,6 +16,12 @@ interface NotificationItem {
   readAt: string | null;
 }
 
+// Let the sidebar badge know the unread count changed. Module scope: it closes
+// over no component state, so rebuilding it every render was pure waste.
+function signalUpdate() {
+  window.dispatchEvent(new Event("notifications:updated"));
+}
+
 export default function StudentNotificationsPage() {
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,11 +43,6 @@ export default function StudentNotificationsPage() {
   useEffect(() => {
     load();
   }, [load]);
-
-  // Let the sidebar badge know the unread count changed.
-  function signalUpdate() {
-    window.dispatchEvent(new Event("notifications:updated"));
-  }
 
   const markRead = useCallback(async (id: string) => {
     await fetch("/api/notifications/read", {
