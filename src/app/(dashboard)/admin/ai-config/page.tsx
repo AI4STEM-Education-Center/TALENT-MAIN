@@ -658,6 +658,7 @@ export default function AiConfigPage() {
           <AlertTriangle className="size-4 shrink-0" />
           <span>{error}</span>
           <button type="button"
+            aria-label="Dismiss error"
             onClick={() => setError("")}
             className="ml-auto text-red-500 hover:text-red-700"
           >

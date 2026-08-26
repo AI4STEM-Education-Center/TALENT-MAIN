@@ -344,8 +344,14 @@ function LogRow({
   onToggle: () => void;
 }) {
   const hasDetail = !!(detail || log.userId);
+  const detailId = `log-detail-${log.id}`;
   return (
     <>
+      {/* Clicking the row is a mouse-only shortcut. The real toggle is the button
+          in the last cell, which carries the accessible name and the expanded
+          state, so keyboard users are not routed through the <tr> — turning a
+          table row into a pseudo-button would cost table semantics. */}
+      {/* react-doctor-disable-next-line react-doctor/click-events-have-key-events -- keyboard parity is provided by the button in the final cell, not by this row */}
       <tr
         className={cn(
           "hover:bg-muted/50 transition-colors",
@@ -366,17 +372,31 @@ function LogRow({
         </td>
         <td className="px-4 py-3 text-right">
           {hasDetail && (
-            <ChevronDown
-              className={cn(
-                "size-4 text-muted-foreground transition-transform",
-                expanded && "rotate-180"
-              )}
-            />
+            <button
+              type="button"
+              aria-expanded={expanded}
+              aria-controls={detailId}
+              aria-label={expanded ? "Hide log detail" : "Show log detail"}
+              // The row also toggles, so stop the click here from bubbling into
+              // it and immediately toggling back.
+              onClick={(event) => {
+                event.stopPropagation();
+                onToggle();
+              }}
+              className="inline-flex items-center justify-center rounded p-1 hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            >
+              <ChevronDown
+                className={cn(
+                  "size-4 text-muted-foreground transition-transform",
+                  expanded && "rotate-180"
+                )}
+              />
+            </button>
           )}
         </td>
       </tr>
       {expanded && (
-        <tr className="bg-muted/30">
+        <tr id={detailId} className="bg-muted/30">
           <td colSpan={7} className="px-6 py-4">
             {log.userId && (
               <p className="text-xs mb-2">

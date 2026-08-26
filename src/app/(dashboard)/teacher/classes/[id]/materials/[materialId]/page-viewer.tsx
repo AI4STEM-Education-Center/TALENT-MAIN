@@ -17,19 +17,38 @@ export default function PageViewer({
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    async function loadUrl() {
+    const controller = new AbortController();
+    const { signal } = controller;
+
+    // Flipping pages quickly used to race: two requests were in flight and
+    // whichever landed last won, so the viewer could show the wrong page. Reset
+    // the previous page's result up front, and let only the request that still
+    // owns this controller write state — including the `loading` reset, or an
+    // aborted request would clear the spinner belonging to its successor.
+    setImageUrl(null);
+    setError(false);
+    setLoading(true);
+
+    void (async () => {
       try {
-        const res = await fetch(`/api/classes/${classId}/materials/${materialId}/pages/${pageId}/image`);
-        if (!res.ok) throw new Error();
+        const res = await fetch(
+          `/api/classes/${classId}/materials/${materialId}/pages/${pageId}/image`,
+          { signal }
+        );
+        if (!res.ok) throw new Error(`Page image request failed (HTTP ${res.status})`);
         const data = await res.json();
-        setImageUrl(data.url);
+        if (signal.aborted) return;
+        setImageUrl(typeof data?.url === "string" ? data.url : null);
       } catch {
+        // An abort is the expected path when pageId changes mid-flight.
+        if (signal.aborted) return;
         setError(true);
       } finally {
-        setLoading(false);
+        if (!signal.aborted) setLoading(false);
       }
-    }
-    loadUrl();
+    })();
+
+    return () => controller.abort();
   }, [classId, materialId, pageId]);
 
   if (loading) {

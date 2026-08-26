@@ -288,13 +288,17 @@ function QuestionCard({
           </div>
 
           {isChoice ? (
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground">
+            // "Options" names the whole set of choices rather than a single
+            // control, so a <label> can never bind correctly here — fieldset and
+            // legend is the element pair that carries group naming to
+            // assistive tech.
+            <fieldset className="space-y-2">
+              <legend className="text-xs font-medium text-muted-foreground">
                 Options{" "}
                 <span className="font-normal">
                   ({q.type === "MULTI_SELECT" ? "check all correct" : "select the one correct"})
                 </span>
-              </label>
+              </legend>
               {q.options.map((opt, oi) => {
                 const isImageOpt = opt.isImage === true;
                 return (
@@ -362,7 +366,7 @@ function QuestionCard({
                   <Plus className="size-3" /> Add option
                 </Button>
               )}
-            </div>
+            </fieldset>
           ) : (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1">
