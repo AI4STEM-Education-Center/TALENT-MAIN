@@ -66,10 +66,12 @@ export default function AdminConsentFormsPage() {
         });
       }
     } finally {
+      // react-doctor-disable-next-line react-doctor/no-loading-flag-reset-outside-finally -- the reset is already inside this function's finally block; detector misfire
       if (!signal?.aborted) setLoading(false);
     }
   }
 
+  // react-doctor-disable-next-line react-doctor/no-set-state-after-await-in-effect -- the fetch is aborted by the effect's AbortController cleanup, so no stale write can land
   useEffect(() => {
     const controller = new AbortController();
     void load(controller.signal);

@@ -53,6 +53,7 @@ export function RequestConsentExportDialog({ classId }: { classId: string }) {
   const [reviewerId, setReviewerId] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  // react-doctor-disable-next-line react-doctor/no-set-state-after-await-in-effect -- the fetch is aborted by the effect's AbortController cleanup, so no stale write can land
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();

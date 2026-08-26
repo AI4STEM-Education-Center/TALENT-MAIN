@@ -59,11 +59,15 @@ const nextConfig = {
   // Nothing in this app imports next/image — every picture is a presigned S3
   // URL rendered through a plain <img> (see QuizReviewResult / QuizEditor),
   // because a presigned URL expires and would need remote-pattern config to be
-  // optimizable. Turning the optimizer off makes that explicit and drops the
-  // /_next/image endpoint, which is the only thing that would ever hand bytes
-  // to sharp -> libvips (GHSA-f88m-g3jw-g9cj). next pins sharp ^0.34.5, so the
-  // patched 0.35.x is outside its range; removing the consumer beats forcing an
-  // unsupported override. Revisit if a real next/image usage is ever added.
+  // optimizable. That, on its own, is why the optimizer is off.
+  //
+  // Turning it off also drops the /_next/image endpoint, the only route that
+  // would hand bytes to sharp -> libvips. Note the advisory that originally
+  // motivated this (GHSA-f88m-g3jw-g9cj) no longer applies: next@16.3.1 now
+  // resolves sharp 0.35.3 / libvips 1.3.2, i.e. the patched line, so the old
+  // "next pins sharp ^0.34.5 and the fix is outside its range" reasoning is
+  // stale. Keeping the optimizer off is now a presigned-URL decision, not a
+  // vulnerability workaround. Revisit if real next/image usage is ever added.
   images: { unoptimized: true },
   env: {
     // APP_ENV distinguishes the public dev and production sites. NODE_ENV is

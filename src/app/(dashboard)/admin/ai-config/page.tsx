@@ -1566,6 +1566,7 @@ export default function AiConfigPage() {
               />
             </div>
             <div>
+              {/* react-doctor-disable-next-line react-doctor/label-has-associated-control -- Radix Select is not a native form control, so it is named via aria-labelledby pointing at this label's id */}
               <label id="edit-model-tier-label" className="block text-sm font-medium mb-1">
                 Service Tier{" "}
                 <span className="text-muted-foreground font-normal">(service level)</span>

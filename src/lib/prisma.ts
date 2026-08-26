@@ -41,6 +41,7 @@ const sqlitePragmas = [
   "PRAGMA mmap_size = 268435456;", // 256 MiB memory-mapped reads
 ];
 for (const pragma of sqlitePragmas) {
+  // react-doctor-disable-next-line react-doctor/raw-sql-injection-risk -- sqlitePragmas is a module-scope literal allowlist with no user input; PRAGMA statements cannot be parameter-bound
   prisma.$queryRawUnsafe(pragma).catch(console.error);
 }
 

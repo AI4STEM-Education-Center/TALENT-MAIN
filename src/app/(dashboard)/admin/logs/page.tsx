@@ -193,6 +193,7 @@ export default function AdminLogsPage() {
           }
           detail={
             summary?.lastUsage
+              // react-doctor-disable-next-line react-doctor/no-locale-format-in-render -- summary arrives from a client fetch, so this branch renders nothing during SSR and cannot mismatch
               ? new Date(summary.lastUsage.createdAt).toLocaleString()
               : "No samples yet"
           }
@@ -353,6 +354,7 @@ function LogRow({
         onClick={hasDetail ? onToggle : undefined}
       >
         <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
+          {/* react-doctor-disable-next-line react-doctor/no-locale-format-in-render -- logs arrive from a client fetch, so no rows render during SSR and cannot mismatch */}
           {new Date(log.createdAt).toLocaleString()}
         </td>
         <td className="px-4 py-3">{severityBadge(log.severity)}</td>

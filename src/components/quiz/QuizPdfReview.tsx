@@ -473,6 +473,7 @@ export function QuizPdfReview({
       {warnings.length > 0 && (
         <ul className="list-disc space-y-0.5 pl-5 text-xs text-muted-foreground">
           {warnings.map((w, i) => (
+            // react-doctor-disable-next-line react-doctor/no-array-index-as-key -- warnings is a static list of strings with no per-item state; index identity is stable enough
             <li key={i}>{w}</li>
           ))}
         </ul>

@@ -38,6 +38,7 @@ function stripDataUrl(dataUrl: string): { mimeType: string; dataBase64: string }
 }
 
 async function loadImage(file: File): Promise<HTMLImageElement | null> {
+  // react-doctor-disable-next-line react-doctor/no-create-object-url-without-revoke -- revoked in this function's own finally block below
   const url = URL.createObjectURL(file);
   try {
     return await new Promise<HTMLImageElement | null>((resolve) => {
@@ -94,6 +95,7 @@ export async function prepareAttachment(file: File): Promise<PreparedAttachment>
         name: file.name || "image.jpg",
         mimeType: shrunk.mimeType,
         dataBase64: shrunk.dataBase64,
+        // react-doctor-disable-next-line react-doctor/no-create-object-url-without-revoke -- previewUrl ownership transfers to the caller; AssistantWidget revokes it on send, clear, and remove
         previewUrl: URL.createObjectURL(file),
         bytes: Math.floor((shrunk.dataBase64.length * 3) / 4),
       };
@@ -105,6 +107,7 @@ export async function prepareAttachment(file: File): Promise<PreparedAttachment>
     name: file.name || "attachment",
     mimeType: file.type || "application/octet-stream",
     dataBase64,
+    // react-doctor-disable-next-line react-doctor/no-create-object-url-without-revoke -- previewUrl ownership transfers to the caller; AssistantWidget revokes it on send, clear, and remove
     previewUrl: isImage ? URL.createObjectURL(file) : null,
     bytes: file.size,
   };

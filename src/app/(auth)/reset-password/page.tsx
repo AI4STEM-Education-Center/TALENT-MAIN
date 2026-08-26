@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { PASSWORD_REQUIREMENTS, validatePassword } from "@/lib/account-validation";
 import { CheckCircle2, Loader2 } from "lucide-react";
 
+// react-doctor-disable-next-line react-doctor/no-secrets-in-client-code -- AUTH_BACKDROP is a Tailwind class list, not a credential
 const AUTH_BACKDROP =
   "min-h-screen bg-linear-to-br from-slate-900 via-blue-950 to-slate-900 flex items-center justify-center px-4";
 

@@ -71,6 +71,7 @@ export function StudentMistakesReview({
                   <div className="space-y-1">
                     {mistake.response.choices.map((choice, index) => (
                       <div
+                        // react-doctor-disable-next-line react-doctor/no-array-index-as-key -- key is content-composite and this list is read-only and never reordered
                         key={`${choice.text}-${choice.imageAlt ?? ""}-${index}`}
                         className="flex items-center gap-2 rounded bg-destructive/10 px-2 py-1 text-sm text-destructive"
                       >
