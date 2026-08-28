@@ -30,6 +30,7 @@ type Assistant = {
   maxAttachments: number;
   maxAttachmentBytes: number;
   attachmentRetentionDays: number;
+  historyRetentionDays: number;
   maxToolCalls: number;
   maxHistoryMessages: number;
   turnsPerHour: number;
@@ -116,6 +117,7 @@ export function AssistantSettings() {
             maxAttachments: draft.maxAttachments,
             maxAttachmentBytes: draft.maxAttachmentBytes,
             attachmentRetentionDays: draft.attachmentRetentionDays,
+            historyRetentionDays: draft.historyRetentionDays,
             maxToolCalls: draft.maxToolCalls,
             maxHistoryMessages: draft.maxHistoryMessages,
             turnsPerHour: draft.turnsPerHour,
@@ -288,6 +290,15 @@ export function AssistantSettings() {
                   }
                 />
                 <NumberField
+                  label="Users can browse history for (days)"
+                  value={draft.historyRetentionDays}
+                  bound={bounds.historyRetentionDays}
+                  onChange={(value) =>
+                    update(assistant.audience, { historyRetentionDays: value })
+                  }
+                  hint="How far back this audience can reopen its own conversations. Older transcripts are archived, not deleted — admins keep reading them under Chat Transcripts."
+                />
+                <NumberField
                   label="Max tool calls per message"
                   value={draft.maxToolCalls}
                   bound={bounds.maxToolCalls}
@@ -429,12 +440,15 @@ function NumberField({
   value,
   bound,
   step,
+  hint,
   onChange,
 }: {
   label: string;
   value: number;
   bound: Bound | undefined;
   step?: number;
+  /** Optional sentence under the input, for a setting whose effect isn't obvious. */
+  hint?: string;
   onChange: (value: number) => void;
 }) {
   return (
@@ -461,6 +475,7 @@ function NumberField({
           if (Number.isFinite(next)) onChange(next);
         }}
       />
+      {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
     </div>
   );
 }

@@ -109,6 +109,13 @@ export type AssistantStreamEvent =
    */
   | { type: "attachments"; stored: StoredAttachmentRef[] }
   /**
+   * Emitted once, first, with the conversation this turn was written to. The
+   * client echoes the id back on the next turn so the exchange keeps landing in
+   * the same transcript; a turn that could not be persisted emits no such event
+   * and simply starts a fresh conversation next time.
+   */
+  | { type: "conversation"; id: string }
+  /**
    * Closes a successful turn and carries that turn's generation stats. The
    * model and its provider are kept apart (a gateway's model id already carries
    * a vendor prefix), matching `DisplayAiMetrics` so the chat box can hand the
@@ -151,4 +158,16 @@ export type AssistantTurn = {
    * per-message attachment limit so the context can't grow without end.
    */
   attachmentIds?: string[];
+};
+
+/** One stored conversation as a history list renders it — metadata, no turns. */
+export type ConversationSummary = {
+  id: string;
+  /** Derived from the opening message. */
+  title: string;
+  messageCount: number;
+  /** ISO-8601. */
+  createdAt: string;
+  /** ISO-8601. */
+  lastMessageAt: string;
 };

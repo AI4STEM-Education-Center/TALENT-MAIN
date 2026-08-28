@@ -278,7 +278,10 @@ describe("POST /api/assistant/chat", () => {
     expect(res.headers.get("Content-Type")).toContain("application/x-ndjson");
     const text = await res.text();
     const events = text.trim().split("\n").map((line) => JSON.parse(line));
+    // The transcript is opened before the model is resolved, so even a turn that
+    // cannot be answered names the conversation it would have been written to.
     expect(events).toEqual([
+      { type: "conversation", id: expect.any(String) },
       { type: "error", message: expect.stringContaining("no AI model assigned") },
     ]);
   });

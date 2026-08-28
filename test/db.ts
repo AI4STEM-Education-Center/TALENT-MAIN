@@ -60,6 +60,10 @@ export async function resetDb() {
   // Relation-free (see schema): nothing cascades it, so clear it explicitly or
   // stored chat attachments bleed into the next spec file.
   await prisma.assistantAttachment.deleteMany();
+  // Same for transcripts — the conversation is relation-free on userId so that
+  // deleting a user can't destroy the record an admin is meant to keep. Its
+  // messages DO cascade from the conversation.
+  await prisma.assistantConversation.deleteMany();
 }
 
 let seq = 0;
