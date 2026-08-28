@@ -3,7 +3,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Loader2, Paperclip, Send, Sparkles, Trash2, Wrench, X } from "lucide-react";
+import {
+  History,
+  Loader2,
+  Paperclip,
+  Send,
+  Sparkles,
+  SquarePen,
+  Wrench,
+  X,
+} from "lucide-react";
 import { AiMetricsLine } from "@/components/ai-metrics-line";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -11,6 +20,7 @@ import { readNdjson } from "@/lib/assistant/ndjson";
 import type {
   AssistantStreamEvent,
   AssistantTurn,
+  ConversationSummary,
   StoredAttachmentRef,
 } from "@/lib/assistant/types";
 import type { DisplayAiMetrics } from "@/lib/ai-metrics";
@@ -23,6 +33,23 @@ import { useAssistant } from "./assistant-context";
 
 const MARKDOWN_CLASS =
   "text-sm [&_p]:mb-2 [&_p:last-child]:mb-0 [&_h1]:text-base [&_h1]:font-semibold [&_h2]:text-sm [&_h2]:font-semibold [&_h3]:font-semibold [&_h2]:mt-3 [&_h3]:mt-3 [&_ul]:mb-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:mb-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:mb-1 [&_strong]:font-semibold [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-xs [&_table]:w-full [&_table]:text-xs [&_th]:border-b [&_th]:border-border [&_th]:px-1 [&_th]:py-1 [&_th]:text-left [&_td]:border-b [&_td]:border-border/50 [&_td]:px-1 [&_td]:py-1";
+
+/**
+ * Short timestamp for a history row: a time for today, a weekday inside the last
+ * week, a date beyond that. The list is capped at the retention window, so the
+ * date form never has to disambiguate a year.
+ */
+function formatWhen(iso: string): string {
+  const when = new Date(iso);
+  const elapsedMs = Date.now() - when.getTime();
+  if (elapsedMs < 24 * 60 * 60 * 1000) {
+    return when.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  }
+  if (elapsedMs < 7 * 24 * 60 * 60 * 1000) {
+    return when.toLocaleDateString(undefined, { weekday: "short" });
+  }
+  return when.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
 
 /** One rendered bubble. `pending` marks the assistant turn currently streaming. */
 type Bubble = AssistantTurn & {
@@ -52,6 +79,15 @@ export function AssistantWidget() {
   const [activity, setActivity] = useState<ToolActivity[]>([]);
   const [sending, setSending] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+
+  // The transcript this panel is writing to. Minted by the server on the first
+  // turn and echoed back on every later one, which is what keeps an exchange
+  // landing in one conversation instead of starting a new one per message.
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [history, setHistory] = useState<ConversationSummary[] | null>(null);
+  const [historyDays, setHistoryDays] = useState<number | null>(null);
+  const [loadingConversation, setLoadingConversation] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -114,6 +150,69 @@ export function AssistantWidget() {
     });
   };
 
+  /** Start a fresh transcript. The previous one stays readable under History. */
+  const startNewConversation = () => {
+    setBubbles([]);
+    setActivity([]);
+    setNotice(null);
+    setConversationId(null);
+    setHistoryOpen(false);
+  };
+
+  const openHistory = useCallback(async () => {
+    setHistoryOpen(true);
+    setLoadingConversation(false);
+    // Refetched every time rather than cached: the list changes as the user
+    // chats, and it is a handful of rows.
+    setHistory(null);
+    try {
+      const res = await fetch("/api/assistant/conversations");
+      if (!res.ok) {
+        setHistory([]);
+        return;
+      }
+      const data = (await res.json()) as {
+        conversations: ConversationSummary[];
+        retentionDays: number;
+      };
+      setHistory(data.conversations);
+      setHistoryDays(data.retentionDays);
+    } catch {
+      setHistory([]);
+    }
+  }, []);
+
+  const openConversation = useCallback(async (id: string) => {
+    setLoadingConversation(true);
+    try {
+      const res = await fetch(`/api/assistant/conversations/${id}`);
+      if (!res.ok) {
+        // Aged out between listing and clicking, or signed out. Say so rather
+        // than opening a blank panel.
+        setNotice("That conversation is no longer available.");
+        setHistoryOpen(false);
+        return;
+      }
+      const data = (await res.json()) as { turns: AssistantTurn[] };
+      setBubbles(
+        data.turns.map((turn) => ({
+          role: turn.role,
+          content: turn.content,
+          attachmentNames: turn.attachmentNames,
+          attachmentIds: turn.attachmentIds,
+        }))
+      );
+      setConversationId(id);
+      setActivity([]);
+      setNotice(null);
+      setHistoryOpen(false);
+    } catch {
+      setNotice("That conversation could not be loaded.");
+    } finally {
+      setLoadingConversation(false);
+    }
+  }, []);
+
   const send = async () => {
     const message = draft.trim();
     if (!message || sending) return;
@@ -124,9 +223,11 @@ export function AssistantWidget() {
       content: message,
       attachmentNames: outgoing.map((file) => file.name),
     };
-    // The transcript sent up is the history BEFORE this turn; the server appends
-    // the new message itself (with the attachment payloads).
-    const history: AssistantTurn[] = bubbles.map((bubble) => ({
+    // A fallback copy of the transcript BEFORE this turn. The server replays its
+    // own stored history when it has one and only falls back to this, so it is
+    // sent for the case where persistence is unavailable — not as the source of
+    // truth it used to be.
+    const fallbackHistory: AssistantTurn[] = bubbles.map((bubble) => ({
       role: bubble.role,
       content: bubble.content,
       attachmentNames: bubble.attachmentNames,
@@ -159,7 +260,8 @@ export function AssistantWidget() {
         signal: controller.signal,
         body: JSON.stringify({
           message,
-          history,
+          conversationId,
+          history: fallbackHistory,
           attachments: outgoing.map(({ name, mimeType, dataBase64 }) => ({
             name,
             mimeType,
@@ -191,6 +293,8 @@ export function AssistantWidget() {
             next[existing] = { ...next[existing], status: event.status };
             return next;
           });
+        } else if (event.type === "conversation") {
+          setConversationId(event.id);
         } else if (event.type === "attachments") {
           // Attach the ids to the user turn they belong to — the last user
           // bubble, since the pending assistant bubble sits after it.
@@ -263,18 +367,26 @@ export function AssistantWidget() {
                 {isTeacher ? "Teaching assistant" : "Study assistant"}
               </p>
             </div>
+            <button
+              type="button"
+              onClick={() => void (historyOpen ? setHistoryOpen(false) : openHistory())}
+              aria-label="Conversation history"
+              aria-pressed={historyOpen}
+              className={cn(
+                "rounded-md p-1.5 transition-colors hover:bg-accent hover:text-foreground",
+                historyOpen ? "bg-accent text-foreground" : "text-muted-foreground"
+              )}
+            >
+              <History className="size-4" />
+            </button>
             {bubbles.length > 0 && (
               <button
                 type="button"
-                onClick={() => {
-                  setBubbles([]);
-                  setActivity([]);
-                  setNotice(null);
-                }}
-                aria-label="Clear conversation"
+                onClick={startNewConversation}
+                aria-label="New conversation"
                 className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
               >
-                <Trash2 className="size-4" />
+                <SquarePen className="size-4" />
               </button>
             )}
             <button
@@ -287,7 +399,59 @@ export function AssistantWidget() {
             </button>
           </header>
 
-          <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
+          {historyOpen && (
+            <div className="flex-1 overflow-y-auto px-3 py-3">
+              {history === null || loadingConversation ? (
+                <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="size-3.5 animate-spin text-primary" /> Loading…
+                </p>
+              ) : history.length === 0 ? (
+                <p className="rounded-lg bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+                  No past conversations yet.
+                </p>
+              ) : (
+                <ul className="space-y-1">
+                  {history.map((item) => (
+                    <li key={item.id}>
+                      <button
+                        type="button"
+                        onClick={() => void openConversation(item.id)}
+                        className={cn(
+                          "w-full rounded-lg px-3 py-2 text-left transition-colors hover:bg-accent",
+                          item.id === conversationId && "bg-accent"
+                        )}
+                      >
+                        <span className="block truncate text-sm">{item.title}</span>
+                        <span className="mt-0.5 block text-xs text-muted-foreground">
+                          {formatWhen(item.lastMessageAt)} · {item.messageCount} message
+                          {item.messageCount === 1 ? "" : "s"}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {historyDays !== null && history !== null && history.length > 0 && (
+                <p className="mt-3 px-3 text-xs text-muted-foreground">
+                  Conversations are shown for {historyDays} day
+                  {historyDays === 1 ? "" : "s"}.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/*
+            Kept mounted while the history list is up rather than swapped out, so
+            returning to the conversation returns to the same scroll position.
+          */}
+          <div
+            ref={scrollRef}
+            className={cn(
+              "flex-1 space-y-3 overflow-y-auto px-3 py-3",
+              historyOpen && "hidden"
+            )}
+          >
             {bubbles.length === 0 && (
               <div className="rounded-lg bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
                 {config.greeting}
@@ -390,7 +554,7 @@ export function AssistantWidget() {
             </p>
           )}
 
-          {attachments.length > 0 && (
+          {attachments.length > 0 && !historyOpen && (
             <ul className="flex flex-wrap gap-2 border-t border-border px-3 py-2">
               {attachments.map((attachment, index) => (
                 <li
@@ -423,7 +587,13 @@ export function AssistantWidget() {
           )}
 
           <form
-            className="flex items-end gap-2 border-t border-border p-2"
+            className={cn(
+              "flex items-end gap-2 border-t border-border p-2",
+              // The composer belongs to the transcript, not to the history list:
+              // hiding it keeps "which conversation would this send to?" from
+              // being a question the user has to answer.
+              historyOpen && "hidden"
+            )}
             onSubmit={(event) => {
               event.preventDefault();
               void send();

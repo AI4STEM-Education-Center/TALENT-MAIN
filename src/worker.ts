@@ -39,6 +39,13 @@ import { runBackupJob, claimDueBackup } from "./lib/backup";
 import { runS3Gc } from "./lib/s3-gc";
 import { purgeExpiredAssistantAttachments } from "./lib/assistant/attachment-store";
 import {
+  archiveAgedConversations,
+  historyCutoff,
+  purgeEmptyConversations,
+} from "./lib/assistant/conversation-store";
+import { getAssistantSettings } from "./lib/assistant/config";
+import { ASSISTANT_AUDIENCES } from "./lib/assistant/types";
+import {
   pruneResourceSamples,
   startResourceSampler,
   RESOURCE_SAMPLE_RETENTION_DAYS,
@@ -521,6 +528,52 @@ async function runAssistantAttachmentRetentionLoop() {
   }
 }
 
+const ASSISTANT_TRANSCRIPT_ARCHIVE_INTERVAL_MS = 60 * 60 * 1000;
+
+/**
+ * Tiering sweep for chat transcripts: moves a conversation out of the hot
+ * message rows and into one S3 object once it ages past its audience's history
+ * window (AssistantConfig.historyRetentionDays, 30 days by default).
+ *
+ * Nothing is deleted — the point is to keep the SQLite file, and therefore every
+ * nightly backup of it, bounded by retention rather than by total chat volume
+ * while the transcripts themselves are kept for admins indefinitely. The one
+ * exception is conversations that never recorded a turn (a model failure opened
+ * the row and nothing was ever written to it), which are dropped instead.
+ *
+ * The cutoff is read per-audience every pass, so lowering the window in the
+ * admin panel takes effect on the next sweep without a restart. Both halves are
+ * idempotent, so a missed or repeated run is harmless.
+ */
+async function runAssistantTranscriptArchiveLoop() {
+  console.log("[Worker] Assistant transcript archive loop started (1h interval)...");
+  for (;;) {
+    try {
+      const cutoffs = await Promise.all(
+        ASSISTANT_AUDIENCES.map(async (audience) => ({
+          audience,
+          cutoff: historyCutoff((await getAssistantSettings(audience)).historyRetentionDays),
+        }))
+      );
+
+      const dropped = await purgeEmptyConversations(cutoffs);
+      if (dropped > 0) console.log(`[Worker] Dropped ${dropped} empty chat conversation(s)`);
+
+      const archived = await archiveAgedConversations(cutoffs);
+      if (archived > 0) console.log(`[Worker] Archived ${archived} chat transcript(s) to S3`);
+    } catch (err: any) {
+      console.error("[Worker] Assistant transcript archive failed:", err?.message ?? err);
+      await logSystemEvent({
+        category: "WORKER",
+        type: "ASSISTANT_TRANSCRIPT_ARCHIVE_FAILED",
+        severity: "ERROR",
+        message: `Assistant transcript archive failed: ${err?.message ?? err}`,
+      });
+    }
+    await new Promise((resolve) => setTimeout(resolve, ASSISTANT_TRANSCRIPT_ARCHIVE_INTERVAL_MS));
+  }
+}
+
 async function startWorker() {
   try {
     // This node's own CPU/RAM/storage feed for the admin System Resources tab.
@@ -546,6 +599,7 @@ async function startWorker() {
       runLogRetentionLoop(),
       runResourceRetentionLoop(),
       runAssistantAttachmentRetentionLoop(),
+      runAssistantTranscriptArchiveLoop(),
     ]);
   } catch (err) {
     console.error("[Worker] Fatal error in worker loop:", err);
