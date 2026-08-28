@@ -11,6 +11,8 @@ async function seedAssignment(
     apiKey?: string | null;
     serviceTier?: string | null;
     thinkingLevel?: string | null;
+    /** Pre-move per-model level, to exercise the legacy carry-over path. */
+    legacyModelThinkingLevel?: string | null;
     providerType?: string;
     baseUrl?: string | null;
     cfAigByokAlias?: string | null;
@@ -36,11 +38,16 @@ async function seedAssignment(
       providerId: provider.id,
       modelId: "gpt-5.1",
       serviceTier: opts.serviceTier ?? null,
-      thinkingLevel: opts.thinkingLevel ?? null,
+      thinkingLevel: opts.legacyModelThinkingLevel ?? null,
     },
   });
   await prisma.aiUseCaseAssignment.create({
-    data: { useCase: opts.useCase ?? "pdf_description", providerId: provider.id, modelId: model.id },
+    data: {
+      useCase: opts.useCase ?? "pdf_description",
+      providerId: provider.id,
+      modelId: model.id,
+      thinkingLevel: opts.thinkingLevel ?? null,
+    },
   });
   return { provider, model };
 }
@@ -74,12 +81,12 @@ describe("resolveProvider", () => {
     });
   });
 
-  it("resolves the model's thinking level when one is set", async () => {
+  it("resolves the use case's thinking level when one is set", async () => {
     await seedAssignment({ apiKey: "sk-x", thinkingLevel: "high" });
     expect((await resolveProvider("pdf_description"))?.thinkingLevel).toBe("high");
   });
 
-  it("leaves the thinking level null when the model has none", async () => {
+  it("leaves the thinking level null when the use case has none", async () => {
     await seedAssignment({ apiKey: "sk-x" });
     expect((await resolveProvider("pdf_description"))?.thinkingLevel).toBeNull();
   });
@@ -87,6 +94,20 @@ describe("resolveProvider", () => {
   it("drops an unrecognized stored thinking level rather than sending it", async () => {
     await seedAssignment({ apiKey: "sk-x", thinkingLevel: "ludicrous" });
     expect((await resolveProvider("pdf_description"))?.thinkingLevel).toBeNull();
+  });
+
+  it("falls back to a pre-move per-model level so old configs keep working", async () => {
+    await seedAssignment({ apiKey: "sk-x", legacyModelThinkingLevel: "medium" });
+    expect((await resolveProvider("pdf_description"))?.thinkingLevel).toBe("medium");
+  });
+
+  it("lets the use case's level override a leftover per-model one", async () => {
+    await seedAssignment({
+      apiKey: "sk-x",
+      thinkingLevel: "low",
+      legacyModelThinkingLevel: "high",
+    });
+    expect((await resolveProvider("pdf_description"))?.thinkingLevel).toBe("low");
   });
 
   it("falls back to DEFAULT_AI_TIMEOUT_MS when the provider has no override", async () => {
