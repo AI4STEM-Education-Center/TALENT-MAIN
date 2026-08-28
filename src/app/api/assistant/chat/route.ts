@@ -40,7 +40,11 @@ const bodySchema = z.object({
   // same reason the attachment ids are: it is re-scoped to the caller's own
   // conversations, so an id that isn't theirs (or has aged out of their history
   // window) starts a new conversation instead of reaching anything.
-  conversationId: z.string().max(64).optional(),
+  //
+  // Nullable, not merely optional: the panel holds "no conversation yet" as
+  // null and serialises it, so an `.optional()` field would reject the very
+  // first message of every chat.
+  conversationId: z.string().max(64).nullish(),
   // Client-held transcript, used ONLY as a fallback for when the server has no
   // stored conversation to replay (persistence unavailable). It is context and
   // nothing else — nothing security-relevant is read from it, and the agent
