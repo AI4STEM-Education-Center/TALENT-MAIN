@@ -13,6 +13,7 @@ import { runAssistantTurn, toolParameterSchema } from "./agent";
 import { defaultSettings } from "./config";
 import { listSkills } from "./skills";
 import { resolveProvider, createOpenAIClient } from "@/lib/ai-provider";
+import { resetSurfaceMemo } from "@/lib/ai-streaming";
 import type { ResolvedProvider } from "@/lib/ai-provider";
 import type { AssistantStreamEvent, AssistantToolContext } from "./types";
 
@@ -120,6 +121,38 @@ async function run(
 beforeEach(() => {
   mockResolve.mockReset();
   mockClient.mockReset();
+  // The Responses fallback is memoised per base URL across calls.
+  resetSurfaceMemo();
+});
+
+describe("runAssistantTurn — API surface", () => {
+  it("streams through the endpoint the provider is set to, not always /chat/completions", async () => {
+    // Reasoning models refuse function tools on /chat/completions, so an
+    // assistant hard-wired to that surface cannot answer at all once a thinking
+    // level is pinned — which is why the surface has to come from the provider.
+    const create = vi.fn(async () => ({
+      async *[Symbol.asyncIterator]() {
+        yield { type: "response.output_text.delta", delta: "hello" };
+        yield { type: "response.completed", response: { usage: { output_tokens: 3 } } };
+      },
+    }));
+    mockResolve.mockResolvedValue({ ...provider, apiSurface: "responses" });
+    // A Responses-only client: no `chat` at all, so falling back would throw.
+    mockClient.mockResolvedValue({ responses: { create } } as never);
+
+    const result = await runAssistantTurn({
+      settings: defaultSettings("student"),
+      ctx: studentCtx,
+      history: [],
+      message: "how did I do?",
+      attachments: [],
+      notices: [],
+      emit: () => {},
+    });
+
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(result.text).toBe("hello");
+  });
 });
 
 describe("runAssistantTurn — provider resolution", () => {

@@ -239,6 +239,16 @@ describe("POST /api/assistant/chat", () => {
     expect((await POST_CHAT(jsonRequest({ message: "" }))).status).toBe(400);
   });
 
+  it("accepts the null conversationId the panel sends on a first turn", async () => {
+    // The widget holds "no conversation yet" as null and serialises it, so a
+    // schema that only allowed the key to be absent 400'd every opening message.
+    await saveAssistantSettings("student", { enabled: true });
+    const { user } = await createStudent();
+    asStudent(user.id);
+    const res = await POST_CHAT(jsonRequest({ message: "hi", conversationId: null }));
+    expect(res.status).toBe(200);
+  });
+
   it("400s a non-JSON body", async () => {
     await saveAssistantSettings("student", { enabled: true });
     const { user } = await createStudent();
