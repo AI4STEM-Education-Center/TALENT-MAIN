@@ -334,6 +334,36 @@ describe("isResponsesUnsupported", () => {
   it("matches proxies that spell a missing route as a 400", () => {
     expect(isResponsesUnsupported(apiError(400, "unknown path /v1/responses"))).toBe(true);
   });
+
+  it("matches Cloudflare AI Gateway's compat endpoint verbatim", () => {
+    // Checked against the live gateway: the compat endpoint routes before it
+    // authenticates, so an unserved path comes back 400, not 404. Every use
+    // case on this deployment goes through that endpoint, so getting this
+    // wrong takes down all AI, not just the assistant.
+    expect(
+      isResponsesUnsupported(
+        apiError(400, "400 Compatibility endpoint: responses is not supported.")
+      )
+    ).toBe(true);
+  });
+
+  it("still surfaces a 400 about the request rather than the endpoint", () => {
+    // The phrases overlap ("not supported"), so these are the cases that prove
+    // the endpoint-noun half of the test is doing real work.
+    expect(
+      isResponsesUnsupported(
+        apiError(400, "Unsupported parameter: 'max_tokens' is not supported with this model.")
+      )
+    ).toBe(false);
+    expect(
+      isResponsesUnsupported(apiError(400, "Invalid schema for function 'search'."))
+    ).toBe(false);
+    expect(
+      isResponsesUnsupported(
+        apiError(400, "Provider 'openai' has no BYOK credential named 'default'.")
+      )
+    ).toBe(false);
+  });
 });
 
 describe("streamChatCompletion — transport selection", () => {
