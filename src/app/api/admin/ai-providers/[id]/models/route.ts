@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { invalidateProviderCache, THINKING_LEVELS, isThinkingLevel } from "@/lib/ai-provider";
+import { invalidateProviderCache } from "@/lib/ai-provider";
 import { logApiError } from "@/lib/system-log";
 
 /**
@@ -36,7 +36,6 @@ export async function GET(
         modelId: m.modelId,
         displayName: m.displayName,
         serviceTier: m.serviceTier,
-        thinkingLevel: m.thinkingLevel,
         isDefault: m.isDefault,
       })),
     });
@@ -71,8 +70,6 @@ export async function POST(
     const modelId = typeof body.modelId === "string" ? body.modelId.trim() : "";
     const displayName = typeof body.displayName === "string" ? body.displayName.trim() || null : null;
     const serviceTier = typeof body.serviceTier === "string" ? body.serviceTier.trim() || null : null;
-    const thinkingLevel =
-      typeof body.thinkingLevel === "string" ? body.thinkingLevel.trim() || null : null;
     const isDefault = body.isDefault === true;
 
     if (!modelId) {
@@ -83,16 +80,6 @@ export async function POST(
     if (serviceTier && !["flex", "auto", "default"].includes(serviceTier)) {
       return NextResponse.json(
         { error: "Service tier must be 'flex', 'auto', 'default', or empty" },
-        { status: 400 }
-      );
-    }
-
-    // Thinking level is optional and never inferred from the model id: an unset
-    // level means the request omits `reasoning_effort` entirely, which is what
-    // keeps non-reasoning models working.
-    if (thinkingLevel && !isThinkingLevel(thinkingLevel)) {
-      return NextResponse.json(
-        { error: `Thinking level must be one of: ${THINKING_LEVELS.join(", ")}, or empty` },
         { status: 400 }
       );
     }
@@ -111,7 +98,6 @@ export async function POST(
         modelId,
         displayName,
         serviceTier,
-        thinkingLevel,
         isDefault,
       },
     });
@@ -124,7 +110,6 @@ export async function POST(
         modelId: model.modelId,
         displayName: model.displayName,
         serviceTier: model.serviceTier,
-        thinkingLevel: model.thinkingLevel,
         isDefault: model.isDefault,
       },
     }, { status: 201 });
@@ -145,7 +130,7 @@ export async function POST(
 /**
  * PATCH /api/admin/ai-providers/[id]/models
  * Update an existing model's editable fields.
- * Body: { id: <model record ID>, modelId?, displayName?, serviceTier?, thinkingLevel?, isDefault? }
+ * Body: { id: <model record ID>, modelId?, displayName?, serviceTier?, isDefault? }
  */
 export async function PATCH(
   req: Request,
@@ -177,7 +162,6 @@ export async function PATCH(
       modelId?: string;
       displayName?: string | null;
       serviceTier?: string | null;
-      thinkingLevel?: string | null;
       isDefault?: boolean;
     } = {};
 
@@ -210,20 +194,6 @@ export async function PATCH(
       data.serviceTier = serviceTier;
     }
 
-    if (body.thinkingLevel !== undefined) {
-      const thinkingLevel =
-        typeof body.thinkingLevel === "string" && body.thinkingLevel.trim()
-          ? body.thinkingLevel.trim()
-          : null;
-      if (thinkingLevel && !isThinkingLevel(thinkingLevel)) {
-        return NextResponse.json(
-          { error: `Thinking level must be one of: ${THINKING_LEVELS.join(", ")}, or empty` },
-          { status: 400 }
-        );
-      }
-      data.thinkingLevel = thinkingLevel;
-    }
-
     if (body.isDefault !== undefined) {
       data.isDefault = body.isDefault === true;
     }
@@ -249,7 +219,6 @@ export async function PATCH(
         modelId: model.modelId,
         displayName: model.displayName,
         serviceTier: model.serviceTier,
-        thinkingLevel: model.thinkingLevel,
         isDefault: model.isDefault,
       },
     });
