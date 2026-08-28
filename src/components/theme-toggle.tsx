@@ -16,6 +16,7 @@ export function ThemeToggle({
   const [mounted, setMounted] = useState(false);
 
   // Avoid a hydration mismatch — the resolved theme is only known client-side.
+  // react-doctor-disable-next-line react-doctor/no-initialize-state -- the mounted flag is the canonical next-themes guard: resolvedTheme is only known client-side
   useEffect(() => setMounted(true), []);
 
   const isDark = mounted && resolvedTheme === "dark";

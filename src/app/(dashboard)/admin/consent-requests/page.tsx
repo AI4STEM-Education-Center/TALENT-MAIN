@@ -38,6 +38,7 @@ export default function AdminConsentRequestsPage() {
       if (cause instanceof DOMException && cause.name === "AbortError") return;
       setError(cause instanceof Error ? cause.message : "Could not load consent export requests.");
     } finally {
+      // react-doctor-disable-next-line react-doctor/no-loading-flag-reset-outside-finally -- the reset is already inside this function's finally block; detector misfire
       if (!signal?.aborted) setLoading(false);
     }
   }

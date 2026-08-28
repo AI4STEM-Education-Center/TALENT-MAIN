@@ -210,6 +210,7 @@ export function QuizReviewList({
       <div className="grid gap-3 xl:grid-cols-2">
         {questions.map((q, i) => (
           <QuestionCard
+            // react-doctor-disable-next-line react-doctor/no-array-index-as-key -- key falls back to a content-composite string and this review list is read-only and never reordered
             key={q.questionId ?? `${q.text}-${i}`}
             question={q}
             index={i}

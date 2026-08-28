@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -81,7 +81,7 @@ export default function AdminMaterialsPage() {
   const [selectedTeacher, setSelectedTeacher] = useState<string | null>(null);
   const [selectedClass, setSelectedClass] = useState<string | null>(null);
 
-  const fetchMaterials = async () => {
+  const fetchMaterials = useCallback(async () => {
     try {
       const res = await fetch("/api/admin/materials", { cache: "no-store" });
       if (res.ok) {
@@ -91,26 +91,35 @@ export default function AdminMaterialsPage() {
     } catch (err) {
       console.error("Failed to fetch materials", err);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchMaterials().then(() => setLoading(false));
-  }, []);
+  }, [fetchMaterials]);
 
-  const currentClassMaterials =
-    selectedTeacher && selectedClass
-      ? (groupMaterials(materials)[selectedTeacher]?.classes[selectedClass] ?? [])
-      : [];
+  const groups = useMemo(() => groupMaterials(materials), [materials]);
+
+  const currentClassMaterials = useMemo(
+    () =>
+      selectedTeacher && selectedClass
+        ? (groups[selectedTeacher]?.classes[selectedClass] ?? [])
+        : [],
+    [groups, selectedTeacher, selectedClass]
+  );
+
+  // Depend on the boolean, not on `currentClassMaterials`. The array was rebuilt
+  // on every render, so this effect tore down and recreated the 2s interval each
+  // time — including on every poll response, which reset the polling clock — and
+  // captured a fresh `fetchMaterials` closure each pass.
+  const hasActiveMaterial = currentClassMaterials.some(
+    (m) => m.processingStatus === "PROCESSING" || m.processingStatus === "IDLE"
+  );
 
   useEffect(() => {
-    if (!selectedTeacher || !selectedClass) return;
-    const hasActive = currentClassMaterials.some(
-      (m) => m.processingStatus === "PROCESSING" || m.processingStatus === "IDLE"
-    );
-    if (!hasActive) return;
+    if (!selectedTeacher || !selectedClass || !hasActiveMaterial) return;
     const interval = setInterval(fetchMaterials, 2000);
     return () => clearInterval(interval);
-  }, [selectedTeacher, selectedClass, currentClassMaterials]);
+  }, [selectedTeacher, selectedClass, hasActiveMaterial, fetchMaterials]);
 
   const handleRetry = async (materialId: string) => {
     try {
@@ -152,7 +161,6 @@ export default function AdminMaterialsPage() {
     }
   };
 
-  const groups = groupMaterials(materials);
 
   const teacherDisplayName = selectedTeacher ? (groups[selectedTeacher]?.displayName ?? selectedTeacher) : null;
 

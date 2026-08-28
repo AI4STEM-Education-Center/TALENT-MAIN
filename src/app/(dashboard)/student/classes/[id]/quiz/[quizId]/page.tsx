@@ -274,7 +274,7 @@ export default function QuizPage() {
       </div>
       <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
         <div
-          className="h-full bg-primary transition-all"
+          className="h-full bg-primary transition-[width]"
           style={{ width: `${((currentIndex + 1) / questions.length) * 100}%` }}
         />
       </div>

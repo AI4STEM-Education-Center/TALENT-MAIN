@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FolderInput, Loader2 } from "lucide-react";
 import {
@@ -36,6 +36,8 @@ export default function MaterialImportDialog({ classId }: MaterialImportDialogPr
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
+  // Synchronous re-entry guard; see material-delete-button.
+  const inFlight = useRef(false);
   const [classes, setClasses] = useState<ImportableClass[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
@@ -76,6 +78,10 @@ export default function MaterialImportDialog({ classId }: MaterialImportDialogPr
 
   const handleImport = async () => {
     if (selected.size === 0) return;
+    // `importing` is state and does not disable the button until the next
+    // render, so a fast double click could import the same materials twice.
+    if (inFlight.current) return;
+    inFlight.current = true;
     setImporting(true);
     try {
       const res = await fetch(`/api/classes/${classId}/materials/import`, {
@@ -90,6 +96,7 @@ export default function MaterialImportDialog({ classId }: MaterialImportDialogPr
       console.error(err);
       setError("An error occurred while importing.");
     } finally {
+      inFlight.current = false;
       setImporting(false);
     }
   };

@@ -164,7 +164,7 @@ export default function MaterialUploadForm({ classId }: MaterialUploadProps) {
             <div className="text-sm font-medium text-gray-700">{statusText}</div>
             <div className="w-full max-w-xs bg-gray-200 rounded-full h-2.5">
               <div
-                className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
+                className="bg-blue-600 h-2.5 rounded-full transition-[width] duration-300"
                 style={{ width: `${progress}%` }}
               ></div>
             </div>

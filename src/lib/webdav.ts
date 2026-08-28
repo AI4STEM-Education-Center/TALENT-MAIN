@@ -29,8 +29,10 @@ function normalizeDir(dir: string): string {
 /** Join WebDAV path segments into a single normalized absolute path. */
 export function joinPath(...segments: string[]): string {
   const joined = segments
-    .map((s) => s.replace(/^\/+|\/+$/g, ""))
-    .filter(Boolean)
+    .flatMap((s) => {
+      const trimmed = s.replace(/^\/+|\/+$/g, "");
+      return trimmed ? [trimmed] : [];
+    })
     .join("/");
   return `/${joined}`;
 }

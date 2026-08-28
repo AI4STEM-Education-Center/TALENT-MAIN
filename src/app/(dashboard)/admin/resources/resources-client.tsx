@@ -719,6 +719,7 @@ export function ResourcesClient() {
       setError(err instanceof Error ? err.message : "Failed to load resource metrics");
     } finally {
       setNow(Date.now());
+      // react-doctor-disable-next-line react-doctor/no-loading-flag-reset-outside-finally -- the reset is already inside this function's finally block; detector misfire
       setLoading(false);
     }
   }, [range]);

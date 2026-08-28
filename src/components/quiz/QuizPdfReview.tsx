@@ -11,6 +11,7 @@ import { MathText } from "@/components/ui/math-text";
 import { normalizeNumericValue } from "@/lib/quiz-scoring";
 import type { FigureBbox, StagedOption, StagedQuestion } from "@/lib/quiz-extraction";
 import { MultiBoxCropper, type CropBox } from "./MultiBoxCropper";
+import { isQuestionComplete } from "@/lib/staged-question-complete";
 
 export type PageImage = { pageNumber: number; url: string };
 
@@ -33,23 +34,6 @@ function defaultOptionBbox(order: number): FigureBbox {
   return { x: 0.1, y: Math.min(0.05 + order * 0.16, 0.8), w: 0.35, h: 0.14 };
 }
 
-/**
- * Local mirror of the server's commit-completeness rules. A figure or image
- * option with a still-pending crop (a bbox but no storage key) counts as
- * complete here, because the crop is drawn + uploaded during the commit step.
- * An image option with NO crop box yet is incomplete — there is nothing to crop.
- */
-export function isQuestionComplete(q: StagedQuestion): boolean {
-  if (q.type === "NUMERIC") {
-    return normalizeNumericValue(q.numericAnswer) !== null;
-  }
-  if (q.options.length < 2) return false;
-  if (q.options.some((o) => o.isCorrect === null)) return false;
-  if (q.options.some((o) => o.isImage === true && !(o.imageBbox ?? o.imageStorageKey))) return false;
-  const correct = q.options.filter((o) => o.isCorrect === true).length;
-  if (q.type === "MULTI_SELECT") return correct >= 1;
-  return correct === 1; // MULTIPLE_CHOICE / TRUE_FALSE
-}
 
 function pageImageFor(pages: PageImage[], pageNumber: number | null): string | null {
   if (pageNumber === null) return null;
@@ -288,13 +272,17 @@ function QuestionCard({
           </div>
 
           {isChoice ? (
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground">
+            // "Options" names the whole set of choices rather than a single
+            // control, so a <label> can never bind correctly here — fieldset and
+            // legend is the element pair that carries group naming to
+            // assistive tech.
+            <fieldset className="space-y-2">
+              <legend className="text-xs font-medium text-muted-foreground">
                 Options{" "}
                 <span className="font-normal">
                   ({q.type === "MULTI_SELECT" ? "check all correct" : "select the one correct"})
                 </span>
-              </label>
+              </legend>
               {q.options.map((opt, oi) => {
                 const isImageOpt = opt.isImage === true;
                 return (
@@ -362,7 +350,7 @@ function QuestionCard({
                   <Plus className="size-3" /> Add option
                 </Button>
               )}
-            </div>
+            </fieldset>
           ) : (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1">
@@ -450,6 +438,7 @@ function QuestionCard({
  */
 export function QuizPdfReview({
   questions,
+  questionKeys,
   hasAnswerKey,
   warnings,
   pageImages,
@@ -457,6 +446,8 @@ export function QuizPdfReview({
   onRemoveQuestion,
 }: {
   questions: StagedQuestion[];
+  /** Stable per-question render keys owned by the caller; parallel to `questions`. */
+  questionKeys: string[];
   hasAnswerKey: boolean;
   warnings: string[];
   pageImages: PageImage[];
@@ -473,13 +464,14 @@ export function QuizPdfReview({
       {warnings.length > 0 && (
         <ul className="list-disc space-y-0.5 pl-5 text-xs text-muted-foreground">
           {warnings.map((w, i) => (
+            // react-doctor-disable-next-line react-doctor/no-array-index-as-key -- warnings is a static list of strings with no per-item state; index identity is stable enough
             <li key={i}>{w}</li>
           ))}
         </ul>
       )}
       {questions.map((q, i) => (
         <QuestionCard
-          key={i}
+          key={questionKeys[i]}
           q={q}
           index={i}
           pageImages={pageImages}

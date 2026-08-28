@@ -159,8 +159,13 @@ export function AdminQuizPoolClient({
     setPromoteBusyId(id);
     try {
       const res = await fetch(`/api/admin/quizzes/${id}/promote`, { method: "POST" });
+      if (!res.ok) {
+        // Status before body; the error payload is read only in this branch.
+        const errorBody = await res.json().catch(() => null);
+        setMsg(errorBody?.error ?? "Promotion failed.");
+        return;
+      }
       const data = await res.json();
-      if (!res.ok) { setMsg(data.error ?? "Promotion failed."); return; }
       setPool((prev) => [...prev, data]);
       if (data.topic && !topics.some((t) => t.id === data.topic.id)) {
         setTopics((prev) => [...prev, { ...data.topic, _count: { quizzes: 1 } }]);

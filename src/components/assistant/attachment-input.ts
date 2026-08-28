@@ -15,6 +15,12 @@ export const MAX_IMAGE_EDGE = 1568;
 const JPEG_QUALITY = 0.85;
 
 export type PreparedAttachment = IncomingAttachment & {
+  /**
+   * Stable identity for the chip list, minted here at creation rather than
+   * derived from filename+index during render: removing a chip shifted every
+   * later index, so React reused the wrong preview for the wrong file.
+   */
+  id: string;
   /** Object URL for the local preview thumbnail. Revoke it when the chip is removed. */
   previewUrl: string | null;
   bytes: number;
@@ -38,6 +44,7 @@ function stripDataUrl(dataUrl: string): { mimeType: string; dataBase64: string }
 }
 
 async function loadImage(file: File): Promise<HTMLImageElement | null> {
+  // react-doctor-disable-next-line react-doctor/no-create-object-url-without-revoke -- revoked in this function's own finally block below
   const url = URL.createObjectURL(file);
   try {
     return await new Promise<HTMLImageElement | null>((resolve) => {
@@ -91,9 +98,11 @@ export async function prepareAttachment(file: File): Promise<PreparedAttachment>
     const shrunk = await downscaleImage(file);
     if (shrunk) {
       return {
+        id: crypto.randomUUID(),
         name: file.name || "image.jpg",
         mimeType: shrunk.mimeType,
         dataBase64: shrunk.dataBase64,
+        // react-doctor-disable-next-line react-doctor/no-create-object-url-without-revoke -- previewUrl ownership transfers to the caller; AssistantWidget revokes it on send, clear, and remove
         previewUrl: URL.createObjectURL(file),
         bytes: Math.floor((shrunk.dataBase64.length * 3) / 4),
       };
@@ -102,9 +111,11 @@ export async function prepareAttachment(file: File): Promise<PreparedAttachment>
 
   const dataBase64 = base64FromArrayBuffer(await file.arrayBuffer());
   return {
+    id: crypto.randomUUID(),
     name: file.name || "attachment",
     mimeType: file.type || "application/octet-stream",
     dataBase64,
+    // react-doctor-disable-next-line react-doctor/no-create-object-url-without-revoke -- previewUrl ownership transfers to the caller; AssistantWidget revokes it on send, clear, and remove
     previewUrl: isImage ? URL.createObjectURL(file) : null,
     bytes: file.size,
   };

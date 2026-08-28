@@ -7,7 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { rasterizePdfToPngBlobs } from "@/lib/pdf-rasterize-client";
 import type { FigureBbox, StagedQuestion } from "@/lib/quiz-extraction";
-import { isQuestionComplete, QuizPdfReview, type PageImage } from "./QuizPdfReview";
+import { QuizPdfReview, type PageImage } from "./QuizPdfReview";
+import { isQuestionComplete } from "@/lib/staged-question-complete";
 import { AiMetricsLine } from "@/components/ai-metrics-line";
 
 const MAX_PAGES = 20;
@@ -131,10 +132,26 @@ export function QuizPdfImport({
   const confirm = useConfirm();
   const base = `/api/quizzes/${quizId}/pdf-extractions`;
 
-  const [phase, setPhase] = useState<Phase>("idle");
-  const [extractionId, setExtractionId] = useState<string | null>(null);
+  const [phase, setPhaseState] = useState<Phase>("idle");
+  // Keep the latest callback without making `setPhase` change identity (which
+  // would churn `poll` and re-run the mount-resume effect). Assigned in an
+  // effect, never during render: React may replay or discard a render.
+  const onActiveChangeRef = useRef(onActiveChange);
+  useEffect(() => {
+    onActiveChangeRef.current = onActiveChange;
+  }, [onActiveChange]);
+  // Read only inside handlers, never in JSX, so state here bought a re-render
+  // for nothing. Every write is paired with a `phase`/`questions` update that
+  // still triggers the render those handlers actually need.
+  const extractionIdRef = useRef<string | null>(null);
   const [detail, setDetail] = useState<ExtractionDetail | null>(null);
   const [questions, setQuestions] = useState<StagedQuestion[]>([]);
+  // Stable render keys for the staged questions, minted once at ingestion and
+  // kept parallel to `questions`. They deliberately live outside StagedQuestion
+  // so they are never sent in the commit payload — an index key let a removal
+  // shift each card's local state (selected crop box, enlarged preview) onto the
+  // wrong question.
+  const [questionKeys, setQuestionKeys] = useState<string[]>([]);
   const [statusText, setStatusText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<ImportSummary | null>(null);
@@ -150,6 +167,16 @@ export function QuizPdfImport({
   }, []);
 
   // Fetch one status snapshot; advance the phase. Reschedules itself while EXTRACTING.
+  // Single funnel for every phase change. Notifying the parent here rather than
+  // from an effect means the parent is not re-rendered a second time just to
+  // stay in sync, and a future transition cannot forget to report itself.
+  const setPhase = useCallback((next: Phase) => {
+    setPhaseState(next);
+    // Any phase past idle means the teacher is mid-flow, so the parent can
+    // reclaim the space used by the QTI import card.
+    onActiveChangeRef.current?.(next !== "idle");
+  }, []);
+
   const poll = useCallback(
     async (eid: string) => {
       try {
@@ -163,7 +190,11 @@ export function QuizPdfImport({
           setPhase("extracting");
           pollTimer.current = setTimeout(() => poll(eid), POLL_MS);
         } else if (data.status === "AWAITING_REVIEW") {
-          setQuestions(data.questions ?? []);
+          {
+            const loaded = data.questions ?? [];
+            setQuestions(loaded);
+            setQuestionKeys(loaded.map(() => crypto.randomUUID()));
+          }
           setPhase("review");
         } else if (data.status === "FAILED") {
           setPhase("failed");
@@ -177,14 +208,14 @@ export function QuizPdfImport({
           if (age > PENDING_UPLOAD_STALL_MS) setPhase("failed");
         } else if (data.status === "COMMITTED") {
           setPhase("idle");
-          setExtractionId(null);
+          extractionIdRef.current = null;
         }
       } catch (e) {
         if (!mounted.current) return;
         setError(e instanceof Error ? e.message : "Failed to load extraction status");
       }
     },
-    [base]
+    [base, setPhase]
   );
 
   // On mount: resume the newest non-committed extraction, if any.
@@ -197,7 +228,7 @@ export function QuizPdfImport({
         const { extractions }: { extractions: ListItem[] } = await res.json();
         const resumable = extractions.find((e) => e.status !== "COMMITTED");
         if (resumable && mounted.current) {
-          setExtractionId(resumable.id);
+          extractionIdRef.current = resumable.id;
           poll(resumable.id);
         }
       } catch {
@@ -210,18 +241,13 @@ export function QuizPdfImport({
     };
   }, [base, poll, stopPolling]);
 
-  // Let the parent reclaim space (e.g. hide the QTI import card) while a PDF
-  // import is in progress — any phase past idle means the teacher is mid-flow.
-  useEffect(() => {
-    onActiveChange?.(phase !== "idle");
-  }, [phase, onActiveChange]);
-
   const resetFlow = useCallback(() => {
     stopPolling();
     setPhase("idle");
-    setExtractionId(null);
+    extractionIdRef.current = null;
     setDetail(null);
     setQuestions([]);
+    setQuestionKeys([]);
     setStatusText("");
     setError(null);
     setSummary(null);
@@ -276,7 +302,7 @@ export function QuizPdfImport({
       if (!completeRes.ok) throw new Error((await completeRes.json()).error || "Failed to finalize upload");
 
       if (!mounted.current) return;
-      setExtractionId(init.id);
+      extractionIdRef.current = init.id;
       setPhase("extracting");
       poll(init.id);
     } catch (err) {
@@ -287,6 +313,7 @@ export function QuizPdfImport({
   }
 
   async function retry() {
+    const extractionId = extractionIdRef.current;
     if (!extractionId) return;
     setError(null);
     const res = await fetch(`${base}/${extractionId}/retry`, { method: "POST" });
@@ -299,6 +326,7 @@ export function QuizPdfImport({
   }
 
   async function discard() {
+    const extractionId = extractionIdRef.current;
     if (!extractionId) return;
     const ok = await confirm({
       title: "Discard this extraction?",
@@ -337,7 +365,7 @@ export function QuizPdfImport({
 
     if (pendingFigures.length === 0 && pendingOptions.length === 0) return questions;
 
-    const figRes = await fetch(`${base}/${extractionId}/figures`, {
+    const figRes = await fetch(`${base}/${extractionIdRef.current}/figures`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -386,6 +414,7 @@ export function QuizPdfImport({
   }
 
   async function commit() {
+    const extractionId = extractionIdRef.current;
     if (!extractionId) return;
     setError(null);
     setPhase("committing");
@@ -504,8 +533,12 @@ export function QuizPdfImport({
               hasAnswerKey={detail.hasAnswerKey}
               warnings={detail.warnings}
               pageImages={detail.pageImages ?? []}
+              questionKeys={questionKeys}
               onChangeQuestion={(i, next) => setQuestions((prev) => prev.map((q, idx) => (idx === i ? next : q)))}
-              onRemoveQuestion={(i) => setQuestions((prev) => prev.filter((_, idx) => idx !== i))}
+              onRemoveQuestion={(i) => {
+                setQuestions((prev) => prev.filter((_, idx) => idx !== i));
+                setQuestionKeys((prev) => prev.filter((_, idx) => idx !== i));
+              }}
             />
             <div className="flex flex-wrap items-center gap-3">
               <Button

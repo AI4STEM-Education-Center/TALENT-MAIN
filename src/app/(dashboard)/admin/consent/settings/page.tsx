@@ -49,6 +49,7 @@ export default function AdminConsentSettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // react-doctor-disable-next-line react-doctor/no-set-state-after-await-in-effect -- the fetch is aborted by the effect's AbortController cleanup, so no stale write can land
   useEffect(() => {
     const controller = new AbortController();
     async function load() {
