@@ -15,6 +15,39 @@ export type UseCase =
 export type ProviderType = "openai" | "local" | "cloudflare";
 
 /**
+ * Which OpenAI-compatible endpoint a provider is called on.
+ *
+ * "responses" is `/v1/responses` — OpenAI's item-based API, where a reasoning
+ * model's thinking survives across tool rounds and `reasoning` is legal
+ * alongside function tools. "chat_completions" is `/v1/chat/completions`, the
+ * older transcript API that every OpenAI-compatible server implements.
+ *
+ * Both are streamed and both report usage, so the choice does not change what
+ * we measure (see `src/lib/ai-streaming.ts`) — only how the request is shaped
+ * and how the stream is read.
+ */
+export const API_SURFACES = ["responses", "chat_completions"] as const;
+export type ApiSurface = (typeof API_SURFACES)[number];
+
+export function isApiSurface(value: unknown): value is ApiSurface {
+  return typeof value === "string" && (API_SURFACES as readonly string[]).includes(value);
+}
+
+/**
+ * The endpoint to call for a provider, given the admin's stored preference.
+ *
+ * Every provider type defaults to "responses": OpenAI serves it natively, and
+ * Cloudflare AI Gateway exposes a Responses-compatible endpoint. Local servers
+ * (llama.cpp, Ollama, LM Studio) mostly do not — but rather than guess from the
+ * base URL, the call itself falls back to /chat/completions the first time the
+ * endpoint answers "not found", and remembers. An admin who wants to skip that
+ * one-time probe can pin "chat_completions" here.
+ */
+export function resolveApiSurface(stored: string | null | undefined): ApiSurface {
+  return isApiSurface(stored) ? stored : "responses";
+}
+
+/**
  * Reasoning ("thinking") levels an admin can pin a use case to, sent as the
  * OpenAI-compatible `reasoning_effort` request field. Every provider type we
  * support speaks this field on its /chat/completions endpoint — OpenAI for the
@@ -72,6 +105,8 @@ export interface ResolvedProvider {
   thinkingLevel: ThinkingLevel | null;
   cfAigByokAlias: string | null;  // null unless providerType === "cloudflare"
   timeoutMs: number;              // per-request timeout, always resolved (provider override or default)
+  /** Endpoint to call, always resolved (admin preference or the default). */
+  apiSurface: ApiSurface;
 }
 
 /**
@@ -204,6 +239,7 @@ export async function resolveProvider(
       resolveThinkingLevel(assignment.thinkingLevel, assignment.model.thinkingLevel),
     cfAigByokAlias: assignment.provider.cfAigByokAlias,
     timeoutMs: assignment.provider.timeoutMs ?? DEFAULT_AI_TIMEOUT_MS,
+    apiSurface: resolveApiSurface(assignment.provider.apiSurface),
   };
 
   // Cache the result

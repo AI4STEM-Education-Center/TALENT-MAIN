@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { encryptApiKey, maskApiKey } from "@/lib/crypto";
-import { invalidateProviderCache } from "@/lib/ai-provider";
+import { invalidateProviderCache, isApiSurface } from "@/lib/ai-provider";
 import { logApiError } from "@/lib/system-log";
 
 const VALID_TYPES = new Set(["openai", "local", "cloudflare"]);
@@ -75,6 +75,22 @@ export async function PATCH(
       }
     }
 
+    // Which endpoint to call. null/empty clears the pin so the per-type default
+    // applies again (see resolveApiSurface).
+    if (body.apiSurface !== undefined) {
+      const raw = body.apiSurface;
+      if (raw === null || raw === "") {
+        data.apiSurface = null;
+      } else if (isApiSurface(raw)) {
+        data.apiSurface = raw;
+      } else {
+        return NextResponse.json(
+          { error: "apiSurface must be 'responses', 'chat_completions', or null" },
+          { status: 400 }
+        );
+      }
+    }
+
     // Handle API key / CF_AIG_TOKEN update
     if (typeof body.apiKey === "string") {
       const rawKey = body.apiKey.trim();
@@ -119,6 +135,7 @@ export async function PATCH(
             : null,
         cfAigByokAlias: updated.cfAigByokAlias,
         timeoutMs: updated.timeoutMs,
+        apiSurface: updated.apiSurface,
         isActive: updated.isActive,
       },
     });

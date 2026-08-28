@@ -1,40 +1,66 @@
 // Shared streaming-completion helper. Every AI call in the app routes through
 // here so we (a) always stream the response and (b) capture the same two
 // metrics everywhere: time-to-first-token (TTFT) and the number of generated
-// tokens. Cloud providers report `usage.completion_tokens` on the final chunk
-// (when `stream_options.include_usage` is set); local OpenAI-compatible servers
-// usually don't, so we fall back to counting streamed content deltas and flag
-// the count as estimated.
+// tokens. Cloud providers report their usage on the final chunk (for chat
+// completions, when `stream_options.include_usage` is set); local
+// OpenAI-compatible servers usually don't, so we fall back to counting streamed
+// content deltas and flag the count as estimated.
+//
+// Two transports sit behind this module — /v1/responses and
+// /v1/chat/completions — chosen per provider by `options.surface`. Callers build
+// chat-completion-shaped params either way; `ai-responses.ts` translates them
+// when the Responses path is taken. Both produce `AiCallMetrics` through the
+// same `computeCallMetrics`, so the numbers mean the same thing on both.
 
 import type OpenAI from "openai";
-import { isStreamedGenerationWindow } from "./ai-metrics";
+import { computeCallMetrics, type AiCallMetrics } from "./ai-metrics";
+import { isResponsesUnsupported, streamResponsesCompletion } from "./ai-responses";
+import type { ApiSurface, ResolvedProvider } from "./ai-provider";
 
-export interface AiCallMetrics {
-  /** The model id that produced the response. */
-  model: string;
-  /** Time from request start to the first content token, in ms. null if no content arrived. */
-  ttftMs: number | null;
-  /**
-   * Completion tokens generated. Taken from the provider's `usage` when
-   * available; otherwise an estimate from the count of streamed content deltas.
-   */
-  completionTokens: number;
-  /** true when `completionTokens` is a streamed-delta estimate (provider gave no usage). */
-  tokensEstimated: boolean;
-  /** Total wall-clock time for the call, in ms. */
-  totalMs: number;
-  /**
-   * The window the content streamed over, in ms — null when the response wasn't
-   * delivered incrementally (a buffering gateway flushes every delta at once,
-   * making that window a transport artifact rather than generation time). See
-   * `isStreamedGenerationWindow`.
-   */
-  generationMs: number | null;
-  /**
-   * Mean generation rate, over `generationMs` when we observed one and over the
-   * whole call when we didn't. null when no tokens were generated.
-   */
-  tokensPerSec: number | null;
+// Defined in ai-metrics so both transports (and client components) can share
+// it; re-exported here because every caller imports it from this module.
+export type { AiCallMetrics };
+
+/**
+ * What the streaming layer needs to know about the provider behind a call.
+ *
+ * The three settings are always derived from the same provider and always
+ * applied to the same request, so they travel together — callers that thread
+ * transport details down to a helper pass one value instead of three.
+ */
+export interface AiTransport {
+  /** Local servers get no usage opt-in and no SDK-level retries. */
+  isLocal: boolean;
+  surface: ApiSurface;
+  /** Base URL, used to scope what the Responses fallback has learned. */
+  surfaceKey: string | null;
+}
+
+export function transportFor(
+  provider: Pick<ResolvedProvider, "providerType" | "apiSurface" | "baseUrl">
+): AiTransport {
+  return {
+    isLocal: provider.providerType === "local",
+    surface: provider.apiSurface,
+    surfaceKey: provider.baseUrl,
+  };
+}
+
+/**
+ * The stream options implied by a transport. `extra` overrides them, which is
+ * how the admin connection test opts out of retries.
+ */
+export function streamOptionsFor(
+  transport: AiTransport,
+  extra: StreamOptions = {}
+): StreamOptions {
+  return {
+    includeUsage: !transport.isLocal,
+    requestOptions: { maxRetries: transport.isLocal ? 0 : 3 },
+    surface: transport.surface,
+    ...(transport.surfaceKey ? { surfaceKey: transport.surfaceKey } : {}),
+    ...extra,
+  };
 }
 
 /** One tool call the model asked for, reassembled from its streamed deltas. */
@@ -68,6 +94,19 @@ export interface StreamOptions {
   /** Forwarded to the SDK call (e.g. `{ maxRetries: 0 }` for local providers). */
   requestOptions?: { maxRetries?: number };
   /**
+   * Which endpoint to call. Defaults to "chat_completions" so an unannotated
+   * call keeps its old behaviour; every real caller passes the resolved
+   * provider's `apiSurface`. A "responses" call that the endpoint does not
+   * implement falls back automatically — see `streamChatCompletion`.
+   */
+  surface?: ApiSurface;
+  /**
+   * Identifies the endpoint for the fallback memo, so one provider learning
+   * that /v1/responses is absent doesn't teach every other provider the same.
+   * Defaults to the client's own base URL.
+   */
+  surfaceKey?: string;
+  /**
    * Ask for `stream_options.include_usage` so the provider reports token usage
    * on the final chunk. Safe for hosted OpenAI/Cloudflare; omit for local
    * servers that reject the unknown field.
@@ -85,10 +124,10 @@ export interface StreamOptions {
 }
 
 /**
- * Run one streaming chat completion, accumulating the full text while measuring
- * TTFT and the generated-token count. Returns the assembled text + metrics.
+ * Run one streaming call over /v1/chat/completions, accumulating the full text
+ * while measuring TTFT and the generated-token count.
  */
-export async function streamChatCompletion(
+async function streamViaChatCompletions(
   client: OpenAI,
   params: BaseParams,
   options: StreamOptions = {}
@@ -143,18 +182,6 @@ export async function streamChatCompletion(
     }
   }
 
-  const totalMs = now() - start;
-  const tokensEstimated = usageTokens === null;
-  const completionTokens = usageTokens ?? deltaCount;
-  // The post-TTFT window is only the generation window if the content really
-  // arrived across it; a gateway that buffered the upstream stream flushes it
-  // in a few ms, and dividing the token count by that yields nonsense rates.
-  const streamedMs = ttftMs !== null ? Math.max(0, totalMs - ttftMs) : 0;
-  const generationMs = isStreamedGenerationWindow(streamedMs, totalMs) ? streamedMs : null;
-  const rateWindowMs = generationMs ?? totalMs;
-  const tokensPerSec =
-    completionTokens > 0 && rateWindowMs > 0 ? completionTokens / (rateWindowMs / 1000) : null;
-
   const toolCalls: StreamedToolCall[] = [...toolCallParts.entries()]
     .sort(([a], [b]) => a - b)
     .map(([, call]) => call)
@@ -164,16 +191,71 @@ export async function streamChatCompletion(
     text,
     toolCalls,
     finishReason,
-    metrics: {
+    metrics: computeCallMetrics({
       model: params.model,
       ttftMs,
-      completionTokens,
-      tokensEstimated,
-      totalMs,
-      generationMs,
-      tokensPerSec,
-    },
+      totalMs: now() - start,
+      usageTokens,
+      deltaCount,
+    }),
   };
+}
+
+/**
+ * Endpoints already known not to serve /v1/responses, keyed by base URL.
+ *
+ * Local servers answer 404 there, and paying that round trip before every call
+ * would tax each page of a PDF extraction. The memo is per process, so a server
+ * that gains Responses support is picked up on the next restart rather than
+ * being written off permanently.
+ */
+const noResponsesSupport = new Set<string>();
+
+/** Exported for tests — clears what the fallback has learned this process. */
+export function resetSurfaceMemo(): void {
+  noResponsesSupport.clear();
+}
+
+/**
+ * Run one streaming model call on whichever endpoint the provider is set to,
+ * accumulating the full text while measuring TTFT and the generated-token
+ * count. Returns the assembled text + metrics, identically shaped either way.
+ *
+ * A provider set to "responses" whose endpoint doesn't implement it falls back
+ * to /chat/completions and is remembered. The fallback is only safe because the
+ * "not found" answer arrives before any event does: once content has streamed,
+ * re-running the call would duplicate it in the caller's UI, so a failure after
+ * that point is rethrown rather than retried.
+ */
+export async function streamChatCompletion(
+  client: OpenAI,
+  params: BaseParams,
+  options: StreamOptions = {}
+): Promise<StreamedCompletion> {
+  const surface = options.surface ?? "chat_completions";
+  const key = options.surfaceKey ?? client.baseURL ?? "default";
+
+  if (surface !== "responses" || noResponsesSupport.has(key)) {
+    return streamViaChatCompletions(client, params, options);
+  }
+
+  let streamed = false;
+  try {
+    return await streamResponsesCompletion(client, params, {
+      ...options,
+      onContent: async (text, delta) => {
+        streamed = true;
+        await options.onContent?.(text, delta);
+      },
+    });
+  } catch (error) {
+    if (streamed || !isResponsesUnsupported(error)) throw error;
+    console.warn(
+      `[AI] ${key} does not serve /v1/responses; using /chat/completions for the rest of this process.`
+    );
+    noResponsesSupport.add(key);
+    return streamViaChatCompletions(client, params, options);
+  }
 }
 
 /** Extract the first balanced-looking JSON object from a free-text response. */

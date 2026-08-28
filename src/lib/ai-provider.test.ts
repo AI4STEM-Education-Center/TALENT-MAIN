@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { buildProviderHeaders, thinkingParams, type ResolvedProvider } from "./ai-provider";
+import {
+  buildProviderHeaders,
+  resolveApiSurface,
+  thinkingParams,
+  type ResolvedProvider,
+} from "./ai-provider";
 
 // resolveProvider() (DB + cache TTL) is covered in test/ai-provider.resolve.test.ts.
 // These cover the pure helpers.
@@ -14,6 +19,7 @@ function provider(overrides: Partial<ResolvedProvider>): ResolvedProvider {
     thinkingLevel: null,
     cfAigByokAlias: null,
     timeoutMs: 600_000,
+    apiSurface: "responses",
     ...overrides,
   };
 }
@@ -59,5 +65,23 @@ describe("thinkingParams", () => {
         reasoning_effort: "low",
       });
     }
+  });
+});
+
+describe("resolveApiSurface", () => {
+  it("defaults to the Responses API when nothing is pinned", () => {
+    expect(resolveApiSurface(null)).toBe("responses");
+    expect(resolveApiSurface(undefined)).toBe("responses");
+    expect(resolveApiSurface("")).toBe("responses");
+  });
+
+  it("honours an explicit pin", () => {
+    expect(resolveApiSurface("chat_completions")).toBe("chat_completions");
+    expect(resolveApiSurface("responses")).toBe("responses");
+  });
+
+  it("degrades an unrecognised value to the default rather than sending it", () => {
+    // Hand-edited data, or a surface removed from API_SURFACES later.
+    expect(resolveApiSurface("v1_completions")).toBe("responses");
   });
 });

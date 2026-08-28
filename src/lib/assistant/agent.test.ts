@@ -28,6 +28,7 @@ const provider: ResolvedProvider = {
   thinkingLevel: null,
   cfAigByokAlias: null,
   timeoutMs: 1000,
+  apiSurface: "chat_completions",
 };
 
 const studentCtx: AssistantToolContext = {
@@ -448,6 +449,109 @@ describe("runAssistantTurn — prompt assembly", () => {
     // system + 2 history turns + the new user turn.
     expect(messages).toHaveLength(4);
     expect(messages.map((m) => m.content)).not.toContain("oldest");
+  });
+});
+
+describe("runAssistantTurn — thinking level vs tools", () => {
+  /** A client whose first `create` rejects the way the provider does. */
+  function clientRejectingOnce(error: unknown, round: Round) {
+    const calls: Array<Record<string, unknown>> = [];
+    let first = true;
+    const client = {
+      chat: {
+        completions: {
+          create: vi.fn(async (params: Record<string, unknown>) => {
+            calls.push(params);
+            if (first) {
+              first = false;
+              throw error;
+            }
+            return {
+              async *[Symbol.asyncIterator]() {
+                for (const chunk of chunksFor(round)) yield chunk;
+              },
+            };
+          }),
+        },
+      },
+    };
+    return { client, calls };
+  }
+
+  async function runWith(client: unknown) {
+    mockResolve.mockResolvedValue({ ...provider, thinkingLevel: "high" });
+    mockClient.mockResolvedValue(client as never);
+    const events: AssistantStreamEvent[] = [];
+    const result = await runAssistantTurn({
+      settings: defaultSettings("student"),
+      ctx: studentCtx,
+      history: [],
+      message: "how did I do?",
+      attachments: [],
+      notices: [],
+      emit: (event) => {
+        events.push(event);
+      },
+    });
+    return { result, events };
+  }
+
+  const rejection = Object.assign(
+    new Error(
+      "400 Function tools with reasoning_effort are not supported for gpt-test in " +
+        "/v1/chat/completions. To use function tools, use /v1/responses or set " +
+        "reasoning_effort to 'none'."
+    ),
+    { status: 400 }
+  );
+
+  it("retries without reasoning_effort when the provider refuses it alongside tools", async () => {
+    // The real symptom this covers: every assistant turn 400'd because the
+    // admin pinned a thinking level on a model that only takes one of the two.
+    const { client, calls } = clientRejectingOnce(rejection, { text: "you did well" });
+    const { result, events } = await runWith(client);
+
+    expect(calls).toHaveLength(2);
+    expect(calls[0].reasoning_effort).toBe("high");
+    expect(calls[0]).toHaveProperty("tools");
+    expect(calls[1]).not.toHaveProperty("reasoning_effort");
+    expect(calls[1]).toHaveProperty("tools");
+    expect(result.text).toBe("you did well");
+    expect(events.some((event) => event.type === "error")).toBe(false);
+  });
+
+  it("reports the level the turn actually ran with, not the configured one", async () => {
+    const { client } = clientRejectingOnce(rejection, { text: "ok" });
+    const { events } = await runWith(client);
+    const done = events.find((event) => event.type === "done");
+    expect(done).toMatchObject({ thinkingLevel: null });
+  });
+
+  it("does not swallow unrelated provider failures", async () => {
+    const { client, calls } = clientRejectingOnce(
+      Object.assign(new Error("400 context_length_exceeded"), { status: 400 }),
+      { text: "unreachable" }
+    );
+    await expect(runWith(client)).rejects.toThrow("context_length_exceeded");
+    expect(calls).toHaveLength(1);
+  });
+
+  it("does not retry when no thinking level is pinned", async () => {
+    const { client, calls } = clientRejectingOnce(rejection, { text: "unreachable" });
+    mockResolve.mockResolvedValue({ ...provider, thinkingLevel: null });
+    mockClient.mockResolvedValue(client as never);
+    await expect(
+      runAssistantTurn({
+        settings: defaultSettings("student"),
+        ctx: studentCtx,
+        history: [],
+        message: "how did I do?",
+        attachments: [],
+        notices: [],
+        emit: () => {},
+      })
+    ).rejects.toThrow();
+    expect(calls).toHaveLength(1);
   });
 });
 

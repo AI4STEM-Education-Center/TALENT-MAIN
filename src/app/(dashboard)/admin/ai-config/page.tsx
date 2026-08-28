@@ -51,6 +51,7 @@ interface AiModel {
 }
 
 type ProviderType = "openai" | "local" | "cloudflare";
+type ApiSurface = "responses" | "chat_completions";
 
 interface AiProvider {
   id: string;
@@ -61,6 +62,8 @@ interface AiProvider {
   maskedApiKey: string | null;
   cfAigByokAlias: string | null;
   timeoutMs: number | null;
+  /** null = unset, i.e. this provider uses DEFAULT_API_SURFACE. */
+  apiSurface: ApiSurface | null;
   isActive: boolean;
   models: AiModel[];
   assignmentCount: number;
@@ -90,6 +93,8 @@ interface ProviderForm {
   cfAigByokAlias: string;
   /** Per-request timeout in seconds. Empty string → use the server default. */
   timeoutSec: string;
+  /** Empty string → unset, i.e. fall back to DEFAULT_API_SURFACE. */
+  apiSurface: ApiSurface | "";
 }
 
 interface ModelForm {
@@ -143,11 +148,21 @@ const EMPTY_PROVIDER_FORM: ProviderForm = {
   apiKey: "",
   cfAigByokAlias: "",
   timeoutSec: "",
+  apiSurface: "",
 };
 
 // Default per-request timeout (seconds) — mirrors DEFAULT_AI_TIMEOUT_MS in
 // src/lib/ai-provider.ts; shown as the placeholder when no override is set.
 const DEFAULT_TIMEOUT_SEC = 600;
+
+// Mirrors resolveApiSurface() in src/lib/ai-provider.ts — what a provider with
+// no explicit pin resolves to.
+const DEFAULT_API_SURFACE: ApiSurface = "responses";
+
+const API_SURFACE_LABELS: Record<ApiSurface, string> = {
+  responses: "Responses (/v1/responses)",
+  chat_completions: "Chat Completions (/v1/chat/completions)",
+};
 
 const EMPTY_MODEL_FORM: ModelForm = {
   modelId: "",
@@ -260,7 +275,11 @@ export default function AiConfigPage() {
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...providerForm, timeoutMs }),
+        body: JSON.stringify({
+          ...providerForm,
+          timeoutMs,
+          apiSurface: providerForm.apiSurface || null,
+        }),
       });
 
       if (!res.ok) {
@@ -287,6 +306,7 @@ export default function AiConfigPage() {
       apiKey: p.maskedApiKey || "",
       cfAigByokAlias: p.cfAigByokAlias || "",
       timeoutSec: p.timeoutMs != null ? String(p.timeoutMs / 1000) : "",
+      apiSurface: p.apiSurface ?? "",
     });
     setEditingProviderId(p.id);
     setShowProviderForm(true);
@@ -792,6 +812,38 @@ export default function AiConfigPage() {
                   </div>
                 )}
                 <div>
+                  <label htmlFor="provider-surface" className="block text-sm font-medium mb-1">
+                    API endpoint{" "}
+                    <span className="text-muted-foreground font-normal">
+                      (leave on the default unless this endpoint misbehaves)
+                    </span>
+                  </label>
+                  <select
+                    id="provider-surface"
+                    value={providerForm.apiSurface}
+                    onChange={(e) =>
+                      setProviderForm((f) => ({
+                        ...f,
+                        apiSurface: e.target.value as ApiSurface | "",
+                      }))
+                    }
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-hidden focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
+                  >
+                    <option value="">
+                      Default — {API_SURFACE_LABELS[DEFAULT_API_SURFACE]}
+                    </option>
+                    <option value="responses">{API_SURFACE_LABELS.responses}</option>
+                    <option value="chat_completions">
+                      {API_SURFACE_LABELS.chat_completions}
+                    </option>
+                  </select>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {providerForm.providerType === "openai"
+                      ? "OpenAI serves both. Responses keeps a reasoning model's thinking across tool rounds, and accepts a thinking level alongside tools."
+                      : "Responses is tried first and falls back to Chat Completions on its own if this endpoint does not serve it — pin Chat Completions to skip that one-time probe."}
+                  </p>
+                </div>
+                <div>
                   <label htmlFor="provider-timeout" className="block text-sm font-medium mb-1">
                     Request timeout (seconds){" "}
                     <span className="text-muted-foreground font-normal">
@@ -907,6 +959,16 @@ export default function AiConfigPage() {
                           title="Per-request timeout override"
                         >
                           timeout: {p.timeoutMs / 1000}s
+                        </span>
+                      )}
+                      {/* Only shown when pinned; an unset provider is on the
+                          default and does not need a badge to say so. */}
+                      {p.apiSurface != null && (
+                        <span
+                          className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-1.5 py-0.5 text-xs text-muted-foreground dark:bg-gray-800"
+                          title="API endpoint override"
+                        >
+                          {p.apiSurface === "responses" ? "responses" : "chat completions"}
                         </span>
                       )}
                     </div>
