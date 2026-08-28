@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { VersionModal } from "@/components/version-modal";
 import { NotificationsBadge } from "@/components/dashboard/notifications-badge";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { AssistantLauncher } from "@/components/assistant/AssistantLauncher";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import {
   BookOpen,
@@ -169,6 +170,9 @@ function SidebarContent({
 
       {/* User */}
       <div className="p-4 border-t border-sidebar-border">
+        {/* Sits above the signed-in user; renders nothing when this role has no
+            assistant, so the rail keeps its previous shape for everyone else. */}
+        <AssistantLauncher onOpen={onNavigate} />
         <div className="flex items-center gap-3 px-3 py-2 mb-2">
           <div className="size-8 rounded-full bg-sidebar-primary/15 flex items-center justify-center text-xs font-bold text-sidebar-primary shrink-0">
             {firstName[0]}{lastName[0]}

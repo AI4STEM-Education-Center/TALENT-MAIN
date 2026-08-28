@@ -3,16 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import {
-  Bot,
-  Loader2,
-  Paperclip,
-  Send,
-  Sparkles,
-  Trash2,
-  Wrench,
-  X,
-} from "lucide-react";
+import { Loader2, Paperclip, Send, Sparkles, Trash2, Wrench, X } from "lucide-react";
 import { AiMetricsLine } from "@/components/ai-metrics-line";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -22,25 +13,16 @@ import type {
   AssistantTurn,
   StoredAttachmentRef,
 } from "@/lib/assistant/types";
-import type { AttachmentKindInfo } from "@/lib/assistant/attachments";
 import type { DisplayAiMetrics } from "@/lib/ai-metrics";
 import {
   formatBytes,
   prepareAttachment,
   type PreparedAttachment,
 } from "./attachment-input";
+import { useAssistant } from "./assistant-context";
 
 const MARKDOWN_CLASS =
   "text-sm [&_p]:mb-2 [&_p:last-child]:mb-0 [&_h1]:text-base [&_h1]:font-semibold [&_h2]:text-sm [&_h2]:font-semibold [&_h3]:font-semibold [&_h2]:mt-3 [&_h3]:mt-3 [&_ul]:mb-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:mb-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:mb-1 [&_strong]:font-semibold [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-xs [&_table]:w-full [&_table]:text-xs [&_th]:border-b [&_th]:border-border [&_th]:px-1 [&_th]:py-1 [&_th]:text-left [&_td]:border-b [&_td]:border-border/50 [&_td]:px-1 [&_td]:py-1";
-
-type WidgetConfig = {
-  available: boolean;
-  audience?: "student" | "teacher";
-  greeting?: string;
-  attachmentKinds?: AttachmentKindInfo[];
-  maxAttachments?: number;
-  maxAttachmentBytes?: number;
-};
 
 /** One rendered bubble. `pending` marks the assistant turn currently streaming. */
 type Bubble = AssistantTurn & {
@@ -63,8 +45,7 @@ type Bubble = AssistantTurn & {
 type ToolActivity = { name: string; label: string; status: "running" | "done" | "error" };
 
 export function AssistantWidget() {
-  const [config, setConfig] = useState<WidgetConfig | null>(null);
-  const [open, setOpen] = useState(false);
+  const { config, open, setOpen } = useAssistant();
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<PreparedAttachment[]>([]);
@@ -75,23 +56,6 @@ export function AssistantWidget() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await fetch("/api/assistant/config");
-        if (!res.ok) return;
-        const data = (await res.json()) as WidgetConfig;
-        if (!cancelled) setConfig(data);
-      } catch {
-        // Offline or signed out mid-load — the widget simply stays hidden.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   // Abort an in-flight turn if the widget unmounts (navigation, sign-out).
   useEffect(() => () => abortRef.current?.abort(), []);
@@ -283,18 +247,6 @@ export function AssistantWidget() {
 
   return (
     <>
-      {/* Launcher — hidden while the panel is open so it never overlaps it. */}
-      {!open && (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          aria-label={isTeacher ? "Open teaching assistant" : "Open study assistant"}
-          className="fixed bottom-4 right-4 z-50 flex size-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-        >
-          <Bot className="size-6" />
-        </button>
-      )}
-
       {open && (
         <div
           role="dialog"

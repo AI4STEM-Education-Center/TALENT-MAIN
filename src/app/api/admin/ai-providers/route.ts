@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { encryptApiKey, maskApiKey, decryptApiKey } from "@/lib/crypto";
 import { logApiError } from "@/lib/system-log";
+import { isApiSurface } from "@/lib/ai-provider";
 
 const VALID_TYPES = new Set(["openai", "local", "cloudflare"]);
 
@@ -69,6 +70,8 @@ export async function GET() {
         maskedApiKey: maskedKey,
         cfAigByokAlias: p.cfAigByokAlias,
         timeoutMs: p.timeoutMs,
+        // null means "unset" — the client renders the resolved default.
+        apiSurface: p.apiSurface,
         isActive: p.isActive,
         createdAt: p.createdAt,
         updatedAt: p.updatedAt,
@@ -117,6 +120,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: timeout.error }, { status: 400 });
     }
 
+    // Unset (null) is legal and means "use the per-type default".
+    const apiSurface = body.apiSurface == null || body.apiSurface === "" ? null : body.apiSurface;
+    if (apiSurface !== null && !isApiSurface(apiSurface)) {
+      return NextResponse.json(
+        { error: "apiSurface must be 'responses', 'chat_completions', or null" },
+        { status: 400 }
+      );
+    }
+
     if (!name) {
       return NextResponse.json({ error: "Provider name is required" }, { status: 400 });
     }
@@ -162,6 +174,7 @@ export async function POST(req: Request) {
         apiKeyTag: encryptedKey?.tag ?? null,
         cfAigByokAlias: providerType === "cloudflare" ? cfAigByokAlias : null,
         timeoutMs: timeout.value,
+        apiSurface,
       },
     });
 
@@ -175,6 +188,7 @@ export async function POST(req: Request) {
         maskedApiKey: apiKey ? maskApiKey(apiKey) : null,
         cfAigByokAlias: provider.cfAigByokAlias,
         timeoutMs: provider.timeoutMs,
+        apiSurface: provider.apiSurface,
         isActive: provider.isActive,
       },
     }, { status: 201 });

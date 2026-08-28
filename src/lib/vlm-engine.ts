@@ -10,7 +10,14 @@ import {
   type ThinkingParams,
 } from "@/lib/ai-provider";
 import { retryWithExponentialBackoff } from "./retry";
-import { streamJsonCompletion, aggregateMetrics, type AiCallMetrics } from "./ai-streaming";
+import {
+  streamJsonCompletion,
+  aggregateMetrics,
+  streamOptionsFor,
+  transportFor,
+  type AiCallMetrics,
+  type AiTransport,
+} from "./ai-streaming";
 import { getActiveConceptLabels } from "./concept-catalog";
 
 // In-memory set of material IDs whose processing should be aborted.
@@ -167,6 +174,7 @@ async function getConfiguredOpenAI(): Promise<{
   /** Reasoning effort pinned on the model, or null. Sent on calls and persisted. */
   thinkingLevel: ThinkingLevel | null;
   isLocal: boolean;
+  transport: AiTransport;
 }> {
   const provider = await resolveProvider("pdf_description");
 
@@ -178,6 +186,7 @@ async function getConfiguredOpenAI(): Promise<{
   }
 
   const isLocal = provider.providerType === "local";
+  const transport = transportFor(provider);
   if (!isLocal && !provider.apiKey) {
     throw new Error("PDF description provider has no API key configured.");
   }
@@ -191,6 +200,7 @@ async function getConfiguredOpenAI(): Promise<{
     serviceTier: provider.serviceTier,
     thinkingLevel: provider.thinkingLevel,
     isLocal,
+    transport,
   };
 }
 
@@ -203,12 +213,15 @@ async function processPage(
   model: string,
   serviceTier: string | null,
   thinking: ThinkingParams,
-  isLocal: boolean,
+  transport: AiTransport,
   allowedConcepts: string[]
 ): Promise<AiCallMetrics> {
   // Resolve a model-ready URL for this page: a JIT presigned link for hosted
   // providers, or an inline base64 data URL for local ones that can't reach S3.
-  const imageUrl = await resolveModelImageUrl(bucket, storageKey, { inlineBase64: isLocal, expiresIn: 3600 });
+  const imageUrl = await resolveModelImageUrl(bucket, storageKey, {
+    inlineBase64: transport.isLocal,
+    expiresIn: 3600,
+  });
 
   const prompt = buildTier1Prompt(allowedConcepts);
 
@@ -231,7 +244,7 @@ async function processPage(
         ...thinking,
       },
       buildTier1Schema(allowedConcepts),
-      { includeUsage: !isLocal, requestOptions: { maxRetries: isLocal ? 0 : 3 } }
+      streamOptionsFor(transport)
     )
   );
 
@@ -277,7 +290,7 @@ export async function processMaterial(materialId: string) {
   requireActiveConcepts(allowedConcepts);
 
   // Resolve provider from DB config
-  const { client: openai, model, providerType, serviceTier, thinkingLevel, isLocal } =
+  const { client: openai, model, providerType, serviceTier, thinkingLevel, isLocal, transport } =
     await getConfiguredOpenAI();
   // Derived once and passed to every call below; empty unless a level is pinned.
   const thinking = thinkingParams({ thinkingLevel });
@@ -299,7 +312,7 @@ export async function processMaterial(materialId: string) {
     const batch = pagesToProcess.slice(i, i + CONCURRENCY);
     await Promise.all(
       batch.map((page) =>
-        processPage(materialId, page.pageNumber, page.storageKey, bucket, openai, model, serviceTier, thinking, isLocal, allowedConcepts)
+        processPage(materialId, page.pageNumber, page.storageKey, bucket, openai, model, serviceTier, thinking, transport, allowedConcepts)
           .then((m) => { callMetrics.push(m); })
           .catch((err) => {
             console.error(`[VLM Engine] Failed to process page ${page.pageNumber}:`, err);
@@ -342,7 +355,7 @@ export async function processMaterial(materialId: string) {
       const batch = failedPages.slice(i, i + CONCURRENCY);
       await Promise.all(
         batch.map((page) =>
-          processPage(materialId, page.pageNumber, page.storageKey, bucket, openai, model, serviceTier, thinking, isLocal, allowedConcepts)
+          processPage(materialId, page.pageNumber, page.storageKey, bucket, openai, model, serviceTier, thinking, transport, allowedConcepts)
             .then((m) => { callMetrics.push(m); })
             .catch((err) => {
               console.error(`[VLM Engine] Retry ${retryAttempt} failed for page ${page.pageNumber}:`, err);
@@ -435,7 +448,7 @@ export async function processMaterial(materialId: string) {
           ...thinking,
         },
         buildTier2Schema(allowedConcepts),
-        { includeUsage: !isLocal, requestOptions: { maxRetries: isLocal ? 0 : 3 } }
+        streamOptionsFor(transport)
       )
     );
     callMetrics.push(metrics);

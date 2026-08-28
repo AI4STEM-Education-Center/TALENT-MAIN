@@ -694,6 +694,13 @@ model AiProvider {
   // null → fall back to DEFAULT_AI_TIMEOUT_MS (see src/lib/ai-provider.ts).
   timeoutMs    Int?
 
+  // Which OpenAI-compatible endpoint to call: "responses" or "chat_completions".
+  // null → the per-type default from `resolveApiSurface` (currently "responses"
+  // everywhere). A "responses" call that the endpoint does not implement falls
+  // back to /chat/completions on its own, so this is a preference, not a
+  // promise — see src/lib/ai-streaming.ts.
+  apiSurface   String?
+
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
