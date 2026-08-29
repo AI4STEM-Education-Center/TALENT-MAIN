@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { canManage, getContentActor } from "@/lib/quiz-access";
 import { enqueueSimulation } from "@/lib/queue";
-import { checkContentSafety, moderateText } from "@/lib/guardrails";
+import { guardText } from "@/lib/guardrail-runner";
 import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
@@ -59,16 +59,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // Teacher feedback goes straight into the revision prompt next to the current
   // document, so it is checked before the job is queued. Both guardrails fail
   // open; only a BLOCK-mode trip stops the round.
-  const subject = { surface: "simulation_feedback", id: sim.id, userId: actor.userId };
-  const [moderation, safety] = await Promise.all([
-    moderateText(feedback, subject),
-    checkContentSafety(feedback, subject),
-  ]);
-  if (moderation.flagged || safety.blocked) {
-    return NextResponse.json(
-      { error: "This feedback was blocked by the site's safety checks. Please rephrase it." },
-      { status: 422 }
-    );
+  const guard = await guardText(
+    feedback,
+    { surface: "simulation_feedback", id: sim.id, userId: actor.userId },
+    { requestPath: true }
+  );
+  if (guard.blocked) {
+    return NextResponse.json({ error: guard.message }, { status: 422 });
   }
 
   const user = await prisma.user.findUnique({

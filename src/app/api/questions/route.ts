@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { checkContentSafety, moderateText } from "@/lib/guardrails";
+import { guardText } from "@/lib/guardrail-runner";
 import { prisma } from "@/lib/prisma";
 import { canManage, canRead, getContentActor } from "@/lib/quiz-access";
 import { normalizeNumericValue } from "@/lib/quiz-scoring";
@@ -96,16 +96,13 @@ export async function POST(req: NextRequest) {
   const authored = [text, ...(options ?? []).map((o: { text?: string }) => o?.text ?? "")]
     .filter(Boolean)
     .join("\n");
-  const subject = { surface: "question_authoring", id: quizId, userId: actor.userId };
-  const [moderation, safety] = await Promise.all([
-    moderateText(authored, subject),
-    checkContentSafety(authored, subject),
-  ]);
-  if (moderation.flagged || safety.blocked) {
-    return NextResponse.json(
-      { error: "This question was blocked by the site's safety checks. Please review the text." },
-      { status: 422 }
-    );
+  const guard = await guardText(
+    authored,
+    { surface: "question_authoring", id: quizId, userId: actor.userId },
+    { requestPath: true }
+  );
+  if (guard.blocked) {
+    return NextResponse.json({ error: guard.message }, { status: 422 });
   }
 
   const question = await prisma.question.create({

@@ -26,7 +26,9 @@ import {
   type ThinkingParams,
 } from "./ai-provider";
 import { resolveModelImageUrl } from "./storage";
-import { checkContentSafety, moderateImages } from "./guardrails";
+import { moderateImages } from "./guardrails";
+import { auditText } from "./guardrail-runner";
+import { getGuardrailSettings, moderationEnabledFor } from "./guardrail-settings";
 import { retryWithExponentialBackoff } from "./retry";
 import {
   streamJsonCompletion,
@@ -192,7 +194,10 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
     // One moderation call for the whole document (the endpoint takes an array),
     // not one per page. Audit only: a flagged page is a signal for an admin,
     // not a reason to abandon an extraction the teacher is waiting on.
-    void moderateImages(imageUrls, { surface: "quiz_extraction_page", id: extraction.id });
+    const guardrailSettings = await getGuardrailSettings();
+    if (moderationEnabledFor(guardrailSettings, "quiz_extraction_page")) {
+      void moderateImages(imageUrls, { surface: "quiz_extraction_page", id: extraction.id });
+    }
 
     // TTFT + generated-token metrics, collected across pass 1 and every
     // localization call, aggregated onto the row on completion.
@@ -261,7 +266,7 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
     const extractedText = quiz.questions
       .map((q, i) => [`${i + 1}. ${q.text}`, ...q.options.map((o) => `   - ${o.text}`)].join("\n"))
       .join("\n");
-    const safety = await checkContentSafety(extractedText, {
+    const safety = await auditText(extractedText, {
       surface: "quiz_extraction",
       id: extraction.id,
     });

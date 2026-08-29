@@ -769,6 +769,53 @@ model AiUseCaseAssignment {
 // cases, so assistants share the same provider plumbing (OpenAI / local /
 // Cloudflare AI Gateway) and connection tester as every other AI feature. This
 // row holds only the *behavior* knobs an admin tunes per audience.
+// ─── Guardrails ────────────────────────────────────────────────────────────────
+// Singleton row holding the safety policy applied across every AI path. Which
+// MODEL runs the checks lives in AiUseCaseAssignment ("moderation" and
+// "guardrail"); this row is the behaviour around them — on/off, report vs
+// block, thresholds, and what counts as on-topic.
+//
+// A missing row behaves exactly like the shipped defaults (see
+// src/lib/guardrail-settings.ts), so a fresh install and an upgraded one act
+// the same without a seed step.
+model GuardrailConfig {
+  id String @id @default("singleton") // enforce a single row
+
+  // Free /v1/moderations pass. Independent of the LLM checks below: it costs
+  // nothing, so it stays on unless an admin deliberately turns it off.
+  moderationEnabled Boolean @default(true)
+
+  // "OFF" | "FLAG" | "BLOCK" — see GuardrailMode in src/lib/guardrail-check.ts.
+  // Both ship in report-only mode: enforcing a threshold nobody has calibrated
+  // against this site's own uploads is guesswork, and FLAG writes the same log
+  // rows so an admin can read real traffic before switching to BLOCK.
+  jailbreakMode String @default("FLAG")
+  offTopicMode  String @default("OFF")
+
+  // Minimum confidence (0-1) at which a detection counts.
+  jailbreakThreshold Float @default(0.7)
+  offTopicThreshold  Float @default(0.7)
+
+  // What counts as on-topic, in the admin's own words. Empty = the built-in
+  // STEM-education description in src/lib/guardrail-check.ts.
+  topicDescription String @default("")
+
+  // What happens when a check CANNOT run (no provider, timeout, upstream 5xx).
+  // true  -> allow, and log. A guardrail outage must not stop a class working.
+  // false -> reject request-path submissions. Worker jobs (PDF processing) stay
+  //          fail-open regardless: failing them would strand an upload the
+  //          teacher is waiting on, with no way for them to retry the check.
+  failOpen Boolean @default(true)
+
+  // JSON array of surface keys switched off entirely (see GUARDRAIL_SURFACES in
+  // src/lib/guardrail-settings.ts). An opt-OUT list, matching AssistantConfig's
+  // disabledTools: a surface added in a later release is guarded by default
+  // rather than staying dark until an admin re-saves.
+  disabledSurfaces String @default("[]")
+
+  updatedAt DateTime @updatedAt
+}
+
 model AssistantConfig {
   id       String @id // "student" | "teacher" — see ASSISTANT_AUDIENCES
   audience String @unique
