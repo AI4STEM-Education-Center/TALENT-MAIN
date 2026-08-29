@@ -69,7 +69,16 @@ describe("weekly release metadata", () => {
     });
     const weeklyReleases = releases.filter((release) => release.patch >= 15);
 
-    expect(weeklyReleases.map((release) => release.patch)).toEqual([19, 18, 17, 16, 15]);
+    // Weekly releases run contiguously from 0.0.15 up to whatever version.json
+    // currently declares, so derive the expectation instead of restating it every
+    // Friday. Contiguity and descending order are still asserted.
+    const latestPatch = Number(version.version.split(".")[2]);
+    const expectedPatches = Array.from(
+      { length: latestPatch - 15 + 1 },
+      (_, index) => latestPatch - index
+    );
+
+    expect(weeklyReleases.map((release) => release.patch)).toEqual(expectedPatches);
     expect(weeklyReleases[0]?.version).toBe(version.version);
     expect(weeklyReleases[0]?.date).toBe(version.date);
     expect(new Set(weeklyReleases.map((release) => release.date)).size).toBe(
