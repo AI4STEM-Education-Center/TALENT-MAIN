@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.0.20 - 2026-08-28
+
+- Added student and teacher AI chat assistants with streaming replies, file attachments, per-tool administrator configuration, and an answer key gated behind quiz availability.
+- Added persistent chat transcripts with a per-user history window and an administrator conversation browser.
+- Moved the assistant into the dashboard sidebar as a movable, resizable panel and unblocked stalled conversations.
+- Added configurable AI thinking levels, now selected per use case, and an OpenAI Responses transport that falls back automatically when a gateway refuses it.
+- Added administrator-issued teacher registration codes with usage limits and expiry, validated during teacher self-registration.
+- Improved dashboard accessibility, hook correctness, and build configuration through a React Doctor remediation pass.
+- Refreshed the validated production and development dependency sets.
+
 ## v0.0.19 - 2026-08-21
 
 - Added signed CloudFront delivery for PDFs and images, with isolated development and production storage paths and browser-safe CORS for PDF figure cropping.

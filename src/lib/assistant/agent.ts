@@ -19,6 +19,8 @@ import {
 } from "@/lib/ai-provider";
 import {
   streamChatCompletion,
+  streamOptionsFor,
+  transportFor,
   aggregateMetrics,
   type AiCallMetrics,
   type StreamedToolCall,
@@ -284,7 +286,12 @@ export async function runAssistantTurn(
     settings.disabledTools
   );
   const client = await createOpenAIClient(provider);
-  const isLocal = provider.providerType === "local";
+  // The endpoint the admin picked for this provider, plus the local-server
+  // exceptions — the same value every other engine streams through. Building it
+  // by hand here is what used to pin the assistant to /chat/completions, where a
+  // reasoning model refuses to take function tools at all.
+  const transport = transportFor(provider);
+  const isLocal = transport.isLocal;
 
   const userText = [
     ...input.notices.map((notice) => `[system note: ${notice}]`),
@@ -344,12 +351,11 @@ export async function runAssistantTurn(
               : undefined,
           ...effort,
         },
-        {
-          includeUsage: !isLocal,
+        streamOptionsFor(transport, {
           onContent: async (_text, delta) => {
             await emit({ type: "delta", text: delta });
           },
-        }
+        })
       );
 
     let result;

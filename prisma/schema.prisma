@@ -801,6 +801,13 @@ model AssistantConfig {
   // sweep deletes the row and its S3 object. See AssistantAttachment.
   attachmentRetentionDays Int @default(30)
 
+  // How far back a user may browse their own chat history, in days. This is a
+  // VISIBILITY window, not a deletion one: past the cutoff the conversation
+  // stops being listed or readable by the user who had it, and the worker moves
+  // it out of the hot tables into S3, where it stays for admins indefinitely.
+  // See AssistantConversation.
+  historyRetentionDays Int @default(30)
+
   // Agent loop bounds. maxToolCalls caps tool-calling rounds per turn;
   // maxHistoryMessages caps how much client-supplied transcript is replayed.
   maxToolCalls       Int @default(6)
@@ -847,6 +854,91 @@ model AssistantAttachment {
   // Retention sweep (expiresAt < now) and per-user reads of a known id.
   @@index([expiresAt])
   @@index([userId, createdAt])
+}
+
+// ─── Chat transcripts ─────────────────────────────────────────────────────────
+// One chat-assistant conversation. Transcripts are stored in TWO TIERS, and
+// `archivedAt` is the single flag that says which one holds the turns:
+//
+//   HOT  (archivedAt == null): turns are AssistantMessage rows. This is the
+//        window the user can still browse, so listing and reading it is a plain
+//        indexed query and an admin can search the text with SQL.
+//   COLD (archivedAt != null): turns were written to ONE newline-delimited JSON
+//        object at `storageKey` and the rows were dropped. Admin-only, kept
+//        indefinitely.
+//
+// The tier boundary IS the user's visibility window
+// (AssistantConfig.historyRetentionDays): the worker archives a conversation
+// exactly when it ages out of what its owner may see. That alignment is what
+// keeps the hot tables — and therefore every nightly backup of the SQLite file —
+// bounded by retention rather than by total chat volume, while nothing is ever
+// actually deleted.
+//
+// Access is enforced on `lastMessageAt`, NOT on `archivedAt`: a user is outside
+// their window the moment the cutoff passes, whether or not the sweep has run.
+// The archive state is a storage detail and must never be the thing a permission
+// check depends on.
+//
+// Deliberately relation-free on `userId`, like AssistantAttachment: deleting a
+// user must not silently drop the transcripts an admin is expected to retain,
+// nor orphan the S3 objects that nothing would then be able to find.
+model AssistantConversation {
+  id       String @id @default(cuid())
+  userId   String
+  audience String // "student" | "teacher" — the assistant that answered
+
+  // First user message, truncated. Denormalized so the history list renders
+  // without reading a single turn (and still works once the turns are in S3).
+  title String
+
+  messageCount  Int      @default(0)
+  createdAt     DateTime @default(now())
+  lastMessageAt DateTime @default(now())
+
+  // Cold-tier location. All three are set together, and only by the archiver.
+  archivedAt DateTime?
+  storageKey String?
+  bucket     String?
+
+  messages AssistantMessage[]
+
+  // User's own history list, newest first, cut off at the retention window.
+  @@index([userId, lastMessageAt])
+  // Admin browsing, filtered by audience.
+  @@index([audience, lastMessageAt])
+  // Archive sweep: hot rows whose window has closed.
+  @@index([archivedAt, lastMessageAt])
+}
+
+// One turn of a HOT conversation. Rows exist only while the conversation is in
+// the hot tier — the archiver writes them to S3 and deletes them, which is why
+// every read path has to go through the conversation row rather than querying
+// here directly.
+model AssistantMessage {
+  id             String @id @default(cuid())
+  conversationId String
+
+  // Position within the conversation, 0-based and gap-free. Ordering is by THIS
+  // and never by `createdAt`: two turns can share a millisecond, and a
+  // transcript that renders its answer above its question is worse than one that
+  // renders a millisecond out of order. The append transaction derives it from
+  // the conversation's own message count, so concurrent writers can't collide.
+  seq Int
+
+  role    String // "user" | "assistant"
+  content String
+
+  // JSON arrays mirroring AssistantTurn on the wire: the attachment ids let a
+  // resumed conversation replay its files, the names survive the attachment's
+  // own (shorter) retention so an expired file still reads as "they sent one".
+  attachmentIds   String @default("[]")
+  attachmentNames String @default("[]")
+
+  createdAt DateTime @default(now())
+
+  conversation AssistantConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, seq])
 }
 
 // ─── Email / Notifications ─────────────────────────────────────────────────────

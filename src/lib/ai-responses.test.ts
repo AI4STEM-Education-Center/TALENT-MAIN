@@ -338,11 +338,20 @@ describe("isResponsesUnsupported", () => {
   it("matches Cloudflare AI Gateway's compat endpoint verbatim", () => {
     // Checked against the live gateway: the compat endpoint routes before it
     // authenticates, so an unserved path comes back 400, not 404. Every use
-    // case on this deployment goes through that endpoint, so getting this
-    // wrong takes down all AI, not just the assistant.
+    // case on that deployment goes through this endpoint, so getting it wrong
+    // takes down all AI, not just the assistant.
+    //
+    // This is the string the SDK actually builds, not a paraphrase of the
+    // gateway's prose. Cloudflare puts `error` in the body as an ARRAY, so it
+    // has no `.message` for APIError.makeMessage to read and the whole array
+    // gets JSON-stringified instead. Asserting the tidier sentence would let a
+    // tightening of the regex pass here and still break in production.
     expect(
       isResponsesUnsupported(
-        apiError(400, "400 Compatibility endpoint: responses is not supported.")
+        apiError(
+          400,
+          '400 [{"code":2019,"message":"Compatibility endpoint: responses is not supported."}]'
+        )
       )
     ).toBe(true);
   });
