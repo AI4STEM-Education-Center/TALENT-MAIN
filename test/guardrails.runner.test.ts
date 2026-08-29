@@ -23,11 +23,16 @@ const checkContentSafety = vi.fn(async (..._a: unknown[]) => ({
   result: null,
 }));
 const getGuardrailSettings = vi.fn(async () => defaultGuardrailSettings());
+const recordGuardrailEvent = vi.fn(async (..._a: unknown[]): Promise<string | null> => "evt-1");
 
 vi.mock("@/lib/guardrails", () => ({
   moderateText: (...a: unknown[]) => moderateText(...a),
   moderateContent: (...a: unknown[]) => moderateContent(...a),
   checkContentSafety: (...a: unknown[]) => checkContentSafety(...a),
+}));
+
+vi.mock("@/lib/guardrail-events", () => ({
+  recordGuardrailEvent: (...a: unknown[]) => recordGuardrailEvent(...a),
 }));
 
 vi.mock("@/lib/guardrail-settings", async () => {
@@ -48,6 +53,7 @@ beforeEach(() => {
   moderateContent.mockResolvedValue({ checked: true, flagged: false, categories: [] });
   checkContentSafety.mockResolvedValue({ checked: true, blocked: false, reasons: [], result: null });
   getGuardrailSettings.mockResolvedValue(defaultGuardrailSettings());
+  recordGuardrailEvent.mockResolvedValue("evt-1");
 });
 
 describe("guardText", () => {
@@ -56,6 +62,7 @@ describe("guardText", () => {
       blocked: false,
       message: null,
       reasons: [],
+      eventId: null,
     });
   });
 
@@ -206,5 +213,63 @@ describe("auditText", () => {
     await auditText("x", { surface: "material_description" });
     expect(moderateText).not.toHaveBeenCalled();
     expect(checkContentSafety).not.toHaveBeenCalled();
+  });
+});
+
+describe("event ids", () => {
+  it("records a finding the user will see and returns its id", async () => {
+    moderateText.mockResolvedValue({ checked: true, flagged: true, categories: ["violence"] });
+
+    const decision = await guardText("...", { surface: "question_authoring", userId: "u1" });
+    expect(decision.eventId).toBe("evt-1");
+    expect(recordGuardrailEvent).toHaveBeenCalledWith({
+      surface: "question_authoring",
+      subjectId: null,
+      userId: "u1",
+      blocked: true,
+      reasons: ["moderation:violence"],
+    });
+  });
+
+  it("records a FLAG-only trip too — the audit path shows it as a warning", async () => {
+    checkContentSafety.mockResolvedValue({
+      checked: true,
+      blocked: false,
+      reasons: ["jailbreak (0.91)"],
+      result: null,
+    });
+
+    const decision = await auditText("...", { surface: "quiz_extraction", id: "x1" });
+    expect(decision.blocked).toBe(false);
+    expect(decision.eventId).toBe("evt-1");
+    expect(recordGuardrailEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ blocked: false, reasons: ["jailbreak (0.91)"] })
+    );
+  });
+
+  it("writes NOTHING for content that passed", async () => {
+    await guardText("hello", { surface: "question_authoring" });
+    expect(recordGuardrailEvent).not.toHaveBeenCalled();
+  });
+
+  it("writes no event for an unavailable check — an outage is not a false positive", async () => {
+    withSettings({ failOpen: false });
+    checkContentSafety.mockResolvedValue({ checked: false, blocked: false, reasons: [], result: null });
+
+    const decision = await guardText("x", { surface: "question_authoring" }, { requestPath: true });
+    expect(decision.blocked).toBe(true);
+    expect(decision.eventId).toBeNull();
+    expect(recordGuardrailEvent).not.toHaveBeenCalled();
+  });
+
+  it("still blocks when the event could not be recorded", async () => {
+    // The block already happened and is already in the audit log; losing the
+    // record costs the user their report button and nothing else.
+    recordGuardrailEvent.mockResolvedValue(null);
+    moderateText.mockResolvedValue({ checked: true, flagged: true, categories: ["violence"] });
+
+    const decision = await guardText("...", { surface: "question_authoring" });
+    expect(decision.blocked).toBe(true);
+    expect(decision.eventId).toBeNull();
   });
 });

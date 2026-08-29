@@ -434,6 +434,10 @@ model QuizPdfExtraction {
   hasAnswerKey       Boolean? // detected by the model; null until extracted
   extractedQuestions String? // JSON: StagedQuestion[]
   warnings           String   @default("[]") // JSON string[]
+  // Set when the post-extraction guardrail audit flagged this document. Gives
+  // the warning on the review screen an id the teacher can attach a "this is
+  // wrong" report to; null whenever nothing tripped, which is the normal case.
+  guardrailEventId   String?
   questionImportId   String?  @unique // set on commit
 
   // AI generation metrics from the extraction run (all passes aggregated).
@@ -814,6 +818,66 @@ model GuardrailConfig {
   disabledSurfaces String @default("[]")
 
   updatedAt DateTime @updatedAt
+}
+
+// ─── Guardrail findings a user was shown, and their feedback on them ──────────
+// One row per guardrail finding that reached a USER: a submission that was
+// refused, or a warning attached to work they are about to review. This is NOT
+// the audit trail — every check writes that to SystemLog under the GUARDRAIL
+// category whether anyone saw it or not. These rows exist so the notice a user
+// reads can carry an id, which is the only way a false positive travels back to
+// an admin instead of dying as a shrug at the screen.
+//
+// Written only when something actually tripped, so the table stays small.
+
+model GuardrailEvent {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  // Surface key, e.g. "assistant_chat" (see GUARDRAIL_SURFACES).
+  surface   String
+  // Row the content belonged to, when there is one. No FK: the content is
+  // frequently never stored, because the check is what stopped it.
+  subjectId String?
+  // Who saw the notice. No FK, matching SystemLog — an event outlives the
+  // account, and a guardrail record that vanishes on user deletion is worth
+  // less than one that keeps the surface and the reason.
+  userId    String?
+
+  // true  -> the submission was refused.
+  // false -> it went through with a warning the user can read.
+  blocked Boolean @default(true)
+  // JSON array of trip descriptions, e.g. ["jailbreak (0.92)"]. Admin-only:
+  // the user-facing message never names the check that fired.
+  reasons String  @default("[]")
+
+  feedback GuardrailFeedback?
+
+  @@index([createdAt])
+  @@index([userId, createdAt])
+}
+
+model GuardrailFeedback {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  // One report per event: a second submission edits the first rather than
+  // stacking, so a frustrated user cannot flood the review queue.
+  eventId String         @unique
+  event   GuardrailEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  // Who reported it. No FK, for the same reason as GuardrailEvent.userId.
+  userId  String?
+  message String
+
+  // "NEW" | "REVIEWED" | "DISMISSED" — see GUARDRAIL_FEEDBACK_STATUSES in
+  // src/lib/guardrail-events.ts.
+  status     String    @default("NEW")
+  reviewedAt DateTime?
+  reviewedBy String?
+
+  @@index([status, createdAt])
+  @@index([createdAt])
 }
 
 model AssistantConfig {

@@ -10,6 +10,7 @@ import type { FigureBbox, StagedQuestion } from "@/lib/quiz-extraction";
 import { QuizPdfReview, type PageImage } from "./QuizPdfReview";
 import { isQuestionComplete } from "@/lib/staged-question-complete";
 import { AiMetricsLine } from "@/components/ai-metrics-line";
+import { GuardrailFeedbackButton } from "@/components/guardrails/GuardrailFeedbackButton";
 
 const MAX_PAGES = 20;
 const POLL_MS = 2500;
@@ -31,6 +32,8 @@ type ListItem = {
 type ExtractionDetail = ListItem & {
   hasAnswerKey: boolean;
   warnings: string[];
+  /** Set when the extraction's safety check flagged the document. */
+  guardrailEventId: string | null;
   questions?: StagedQuestion[];
   pageImages?: PageImage[];
   // AI generation metrics for the extraction run (teacher-facing).
@@ -154,6 +157,10 @@ export function QuizPdfImport({
   const [questionKeys, setQuestionKeys] = useState<string[]>([]);
   const [statusText, setStatusText] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Set when a COMMIT was refused by a safety check (as opposed to the
+  // extraction being flagged, which arrives on the detail row). Either way the
+  // teacher is looking at the same review screen, so one button serves both.
+  const [commitEventId, setCommitEventId] = useState<string | null>(null);
   const [summary, setSummary] = useState<ImportSummary | null>(null);
 
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -417,6 +424,7 @@ export function QuizPdfImport({
     const extractionId = extractionIdRef.current;
     if (!extractionId) return;
     setError(null);
+    setCommitEventId(null);
     setPhase("committing");
     try {
       const withFigures = await uploadFigureCrops();
@@ -426,7 +434,10 @@ export function QuizPdfImport({
         body: JSON.stringify({ questions: withFigures }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Commit failed");
+      if (!res.ok) {
+        setCommitEventId(data.guardrailEventId ?? null);
+        throw new Error(data.error || "Commit failed");
+      }
       if (!mounted.current) return;
       onCommitted();
       // Reset the flow back to idle, then surface the summary on the idle screen.
@@ -447,7 +458,12 @@ export function QuizPdfImport({
         <CardTitle className="flex items-center gap-2"><FileUp className="size-5" /> Import from PDF</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {error && <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
+        {error && (
+          <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+            {error}
+            <GuardrailFeedbackButton eventId={commitEventId} className="ml-2" />
+          </div>
+        )}
 
         {phase === "idle" && (
           <>
@@ -532,6 +548,7 @@ export function QuizPdfImport({
               questions={questions}
               hasAnswerKey={detail.hasAnswerKey}
               warnings={detail.warnings}
+              guardrailEventId={detail.guardrailEventId}
               pageImages={detail.pageImages ?? []}
               questionKeys={questionKeys}
               onChangeQuestion={(i, next) => setQuestions((prev) => prev.map((q, idx) => (idx === i ? next : q)))}

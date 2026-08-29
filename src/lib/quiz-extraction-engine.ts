@@ -270,6 +270,10 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
       surface: "quiz_extraction",
       id: extraction.id,
     });
+    // Kept on the row so the warning the teacher reads carries an id they can
+    // argue with — a check that fires on a legitimate document is exactly the
+    // case where the reviewer knows better than the classifier.
+    const guardrailEventId = safety.reasons.length > 0 ? safety.eventId : null;
     if (safety.reasons.length > 0) {
       quiz = {
         ...quiz,
@@ -334,6 +338,7 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
         extractedQuestions: JSON.stringify(quiz.questions),
         hasAnswerKey: quiz.hasAnswerKey,
         warnings: JSON.stringify(quiz.warnings),
+        guardrailEventId,
         status: "AWAITING_REVIEW",
         errorMessage: null,
         aiModel: agg?.model ?? null,

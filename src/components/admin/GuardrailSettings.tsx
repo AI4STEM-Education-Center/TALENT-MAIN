@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Loader2, Save, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -357,9 +358,9 @@ export function GuardrailSettings({ refreshKey = 0 }: { refreshKey?: number }) {
 
         <p className="text-sm text-muted-foreground">
           Findings are recorded under the <strong>GUARDRAIL</strong> category in{" "}
-          <a href="/admin/logs" className="underline">
+          <Link href="/admin/logs" className="underline">
             System Logs
-          </a>
+          </Link>
           . Run a new check in <em>Report</em> for a week and read those rows before switching it
           to <em>Block</em>.
         </p>

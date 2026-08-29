@@ -42,6 +42,7 @@ import {
   type ResizeEdge,
 } from "./panel-geometry";
 import { useAssistant } from "./assistant-context";
+import { GuardrailFeedbackButton } from "@/components/guardrails/GuardrailFeedbackButton";
 
 const MARKDOWN_CLASS =
   "text-sm [&_p]:mb-2 [&_p:last-child]:mb-0 [&_h1]:text-base [&_h1]:font-semibold [&_h2]:text-sm [&_h2]:font-semibold [&_h3]:font-semibold [&_h2]:mt-3 [&_h3]:mt-3 [&_ul]:mb-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:mb-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:mb-1 [&_strong]:font-semibold [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-xs [&_table]:w-full [&_table]:text-xs [&_th]:border-b [&_th]:border-border [&_th]:px-1 [&_th]:py-1 [&_th]:text-left [&_td]:border-b [&_td]:border-border/50 [&_td]:px-1 [&_td]:py-1";
@@ -67,6 +68,12 @@ function formatWhen(iso: string): string {
 type Bubble = AssistantTurn & {
   pending?: boolean;
   error?: string | null;
+  /**
+   * Set only when a guardrail refused the turn: lets the error line offer a way
+   * to report it as a false positive, which is otherwise a dead end for the
+   * user — the message never says which check fired.
+   */
+  guardrailEventId?: string | null;
   /**
    * User turns: the stored attachments that can be re-rendered inline, kept
    * pre-filtered so the render pass doesn't re-scan every turn's list.
@@ -393,10 +400,12 @@ export function AssistantWidget() {
     const controller = new AbortController();
     abortRef.current = controller;
 
-    const fail = (text: string) =>
+    const fail = (text: string, guardrailEventId?: string | null) =>
       setBubbles((prev) =>
         prev.map((bubble, index) =>
-          index === prev.length - 1 ? { ...bubble, pending: false, error: text } : bubble
+          index === prev.length - 1
+            ? { ...bubble, pending: false, error: text, guardrailEventId: guardrailEventId ?? null }
+            : bubble
         )
       );
 
@@ -476,7 +485,7 @@ export function AssistantWidget() {
             )
           );
         } else if (event.type === "error") {
-          fail(event.message);
+          fail(event.message, event.guardrailEventId);
         }
       }
     } catch (error) {
@@ -700,7 +709,13 @@ export function AssistantWidget() {
                   )}
 
                   {bubble.error && (
-                    <p className="mt-1 text-xs text-destructive">{bubble.error}</p>
+                    <div className="mt-1 space-y-1">
+                      <p className="text-xs text-destructive">{bubble.error}</p>
+                      <GuardrailFeedbackButton
+                        eventId={bubble.guardrailEventId}
+                        className="text-destructive"
+                      />
+                    </div>
                   )}
 
                   {bubble.pending && !bubble.content && !bubble.error && (

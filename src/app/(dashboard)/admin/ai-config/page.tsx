@@ -40,6 +40,7 @@ import {
 import { formatAiMetrics } from "@/lib/ai-metrics";
 import { AssistantSettings } from "@/components/admin/AssistantSettings";
 import { GuardrailSettings } from "@/components/admin/GuardrailSettings";
+import { GuardrailFeedbackList } from "@/components/admin/GuardrailFeedbackList";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -1461,6 +1462,8 @@ export default function AiConfigPage() {
         <AssistantSettings />
 
         <GuardrailSettings refreshKey={assignmentsSavedAt} />
+
+        <GuardrailFeedbackList />
       </section>
 
       {/* ─── Discover Models Modal ────────────────────────────────────────── */}
