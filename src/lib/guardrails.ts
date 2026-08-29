@@ -27,6 +27,7 @@ import {
   DEFAULT_TOPIC_DESCRIPTION,
   activeChecks,
   buildGuardrailCheckPrompt,
+  guardrailCheckResponseIsComplete,
   decideAction,
   emptyCheckResult,
   guardrailCheckSchema,
@@ -99,11 +100,14 @@ async function runModeration(
   subject: GuardrailSubject,
   describe: string
 ): Promise<ModerationVerdict> {
-  const provider = await resolveProvider("moderation");
-  if (!provider) return NOT_CHECKED;
-  if (provider.providerType !== "local" && !provider.apiKey) return NOT_CHECKED;
-
   try {
+    // Provider resolution touches the database and decrypts credentials, so it
+    // belongs inside the same fail-safe boundary as the network call. A lookup
+    // failure is an unavailable check, not an exception for callers to handle.
+    const provider = await resolveProvider("moderation");
+    if (!provider) return NOT_CHECKED;
+    if (provider.providerType !== "local" && !provider.apiKey) return NOT_CHECKED;
+
     const client = await createOpenAIClient(provider);
     const response = await client.moderations.create({ model: provider.model, input });
     const categories = flaggedCategories(response.results ?? []);
@@ -157,13 +161,35 @@ export async function moderateImages(
   imageUrls: string[],
   subject: GuardrailSubject
 ): Promise<ModerationVerdict> {
-  const urls = imageUrls.filter((url) => url.trim()).slice(0, MAX_INPUT_ITEMS);
+  const urls = imageUrls.filter((url) => url.trim());
   if (urls.length === 0) return NOT_CHECKED;
-  return runModeration(
-    urls.map((url) => ({ type: "image_url" as const, image_url: { url } })),
-    subject,
-    urls.length === 1 ? "an image" : `${urls.length} images`
+
+  // The endpoint caps one request at MAX_INPUT_ITEMS. Split a long PDF into
+  // bounded requests instead of silently leaving every page after the cap
+  // unchecked.
+  const verdicts = await Promise.all(
+    Array.from({ length: Math.ceil(urls.length / MAX_INPUT_ITEMS) }, (_, batchIndex) => {
+      const batch = urls.slice(
+        batchIndex * MAX_INPUT_ITEMS,
+        (batchIndex + 1) * MAX_INPUT_ITEMS
+      );
+      return runModeration(
+        batch.map((url) => ({ type: "image_url" as const, image_url: { url } })),
+        subject,
+        batch.length === 1 ? "an image" : `${batch.length} images`
+      );
+    })
   );
+  return combineModerationVerdicts(verdicts);
+}
+
+/** Combine bounded moderation calls without mistaking partial coverage for clean. */
+function combineModerationVerdicts(verdicts: ModerationVerdict[]): ModerationVerdict {
+  return {
+    checked: verdicts.length > 0 && verdicts.every((verdict) => verdict.checked),
+    flagged: verdicts.some((verdict) => verdict.flagged),
+    categories: [...new Set(verdicts.flatMap((verdict) => verdict.categories))],
+  };
 }
 
 /**
@@ -179,8 +205,8 @@ export type ModerationContentPart =
  * Moderate mixed text/image content in one call.
  *
  * Text parts are joined and chunked; image parts are passed straight through.
- * The combined item list is capped at MAX_INPUT_ITEMS with text first, so a
- * turn carrying eight images still gets its message checked.
+ * Text stays first, then the complete item list is split into bounded calls so
+ * neither a long attachment nor an image-heavy turn loses its tail.
  */
 export async function moderateContent(
   content: string | ModerationContentPart[],
@@ -201,10 +227,20 @@ export async function moderateContent(
   const items = [
     ...chunkForModeration(text).map((chunk) => ({ type: "text" as const, text: chunk })),
     ...images.map((part) => ({ type: "image_url" as const, image_url: { url: part.image_url.url } })),
-  ].slice(0, MAX_INPUT_ITEMS);
+  ];
 
   if (items.length === 0) return NOT_CHECKED;
-  return runModeration(items, subject, images.length > 0 ? "a message with attachments" : "text");
+  const verdicts: ModerationVerdict[] = [];
+  for (let i = 0; i < items.length; i += MAX_INPUT_ITEMS) {
+    verdicts.push(
+      await runModeration(
+        items.slice(i, i + MAX_INPUT_ITEMS),
+        subject,
+        images.length > 0 ? "a message with attachments" : "text"
+      )
+    );
+  }
+  return combineModerationVerdicts(verdicts);
 }
 
 // ─── Jailbreak + off-topic check ─────────────────────────────────────────────
@@ -252,6 +288,48 @@ export interface SafetyCheckOptions {
  * bounds cost without meaningfully bounding detection.
  */
 const MAX_CHECK_CHARS = 12_000;
+const MAX_CHECK_CALLS = 16;
+
+/**
+ * Cover ordinary inputs completely. Pathological inputs are sampled evenly
+ * from beginning to end and reported as partial (`checked: false`) so a
+ * fail-closed caller never mistakes sampling for complete coverage.
+ */
+function checkChunks(text: string): { chunks: string[]; complete: boolean } {
+  if (text.length <= MAX_CHECK_CHARS) return { chunks: [text], complete: true };
+
+  const totalChunks = Math.ceil(text.length / MAX_CHECK_CHARS);
+  if (totalChunks <= MAX_CHECK_CALLS) {
+    return {
+      chunks: Array.from({ length: totalChunks }, (_, index) =>
+        text.slice(index * MAX_CHECK_CHARS, (index + 1) * MAX_CHECK_CHARS)
+      ),
+      complete: true,
+    };
+  }
+
+  const lastStart = text.length - MAX_CHECK_CHARS;
+  return {
+    chunks: Array.from({ length: MAX_CHECK_CALLS }, (_, index) => {
+      const start = Math.round((lastStart * index) / (MAX_CHECK_CALLS - 1));
+      return text.slice(start, start + MAX_CHECK_CHARS);
+    }),
+    complete: false,
+  };
+}
+
+function mergeCheckResults(results: GuardrailCheckResult[]): GuardrailCheckResult {
+  const strongest = (key: "jailbreak" | "offTopic") =>
+    results.reduce(
+      (best, result) => {
+        const candidate = result[key];
+        if (candidate.detected !== best.detected) return candidate.detected ? candidate : best;
+        return candidate.confidence > best.confidence ? candidate : best;
+      },
+      results[0][key]
+    );
+  return { jailbreak: strongest("jailbreak"), offTopic: strongest("offTopic") };
+}
 
 // Same text checked twice — a worker redelivery, a teacher resubmitting an
 // unchanged import — reuses the FINDINGS instead of re-billing. Thresholds and
@@ -272,6 +350,8 @@ function providerKey(provider: ResolvedProvider): string {
   return JSON.stringify([
     provider.providerType,
     provider.baseUrl,
+    provider.apiKey,
+    provider.cfAigByokAlias,
     provider.model,
     provider.apiSurface,
     provider.thinkingLevel,
@@ -360,30 +440,57 @@ async function runCheckCall(
   text: string,
   topic: string,
   subject: GuardrailSubject
-): Promise<GuardrailCheckResult | null> {
-  const key = cacheKey(text, topic, call.checks, providerKey(call.provider));
-  const cached = readCache(key);
-  if (cached) return cached;
-
+): Promise<{ result: GuardrailCheckResult; complete: boolean } | null> {
   try {
     const client = await createOpenAIClient(call.provider);
     const transport = transportFor(call.provider);
-    const { value } = await streamJsonCompletion(
-      client,
-      {
-        model: call.provider.model,
-        messages: [
-          { role: "user", content: buildGuardrailCheckPrompt(text, topic, call.checks) },
-        ],
-        ...thinkingParams(call.provider),
-      },
-      guardrailCheckSchema(call.checks),
-      streamOptionsFor(transport)
+    const planned = checkChunks(text);
+    const results = await Promise.all(
+      planned.chunks.map(async (chunk) => {
+        const key = cacheKey(chunk, topic, call.checks, providerKey(call.provider));
+        const cached = readCache(key);
+        if (cached) return cached;
+
+        const { value } = await streamJsonCompletion(
+          client,
+          {
+            model: call.provider.model,
+            messages: [
+              { role: "user", content: buildGuardrailCheckPrompt(chunk, topic, call.checks) },
+            ],
+            ...thinkingParams(call.provider),
+          },
+          guardrailCheckSchema(call.checks),
+          streamOptionsFor(transport)
+        );
+        if (!guardrailCheckResponseIsComplete(value, call.checks)) {
+          throw new Error("Guardrail classifier returned an incomplete response.");
+        }
+
+        const result = validateGuardrailCheck(value, call.checks);
+        writeCache(key, result);
+        return result;
+      })
     );
 
-    const result = validateGuardrailCheck(value, call.checks);
-    writeCache(key, result);
-    return result;
+    if (!planned.complete) {
+      void logSystemEvent({
+        category: "GUARDRAIL",
+        type: "SAFETY_CHECK_PARTIAL",
+        severity: "INFO",
+        message: `Safety check sampled oversized content on ${subject.surface}; complete coverage was not possible.`,
+        userId: subject.userId ?? null,
+        metadata: {
+          surface: subject.surface,
+          subjectId: subject.id ?? null,
+          length: text.length,
+          model: call.provider.model,
+          checks: call.checks,
+        },
+      });
+    }
+
+    return { result: mergeCheckResults(results), complete: planned.complete };
   } catch (error) {
     void logSystemEvent({
       category: "GUARDRAIL",
@@ -420,65 +527,86 @@ export async function checkContentSafety(
   const policy = options.policy ?? DEFAULT_GUARDRAIL_POLICY;
   if (policyIsInert(policy)) return NOT_RUN;
 
-  const trimmed = text.trim().slice(0, MAX_CHECK_CHARS);
+  const trimmed = text.trim();
   if (!trimmed) return NOT_RUN;
 
-  const wanted = activeChecks(policy);
-  const [jailbreakProvider, offTopicProvider] = await Promise.all([
-    wanted.jailbreak ? resolveProvider("guardrail_jailbreak") : Promise.resolve(null),
-    wanted.offTopic ? resolveProvider("guardrail_offtopic") : Promise.resolve(null),
-  ]);
+  try {
+    // Provider resolution can fail on a database read or credential decrypt;
+    // keep it inside the fail-safe boundary just like the model request.
+    const wanted = activeChecks(policy);
+    const [jailbreakProvider, offTopicProvider] = await Promise.all([
+      wanted.jailbreak ? resolveProvider("guardrail_jailbreak") : Promise.resolve(null),
+      wanted.offTopic ? resolveProvider("guardrail_offtopic") : Promise.resolve(null),
+    ]);
 
-  const calls = planCheckCalls(wanted, jailbreakProvider, offTopicProvider);
-  if (calls.length === 0) return NOT_RUN;
+    const calls = planCheckCalls(wanted, jailbreakProvider, offTopicProvider);
+    if (calls.length === 0) return NOT_RUN;
 
-  const answers = await Promise.all(
-    calls.map((call) => runCheckCall(call, trimmed, topicFor(options), subject))
-  );
+    const answers = await Promise.all(
+      calls.map((call) => runCheckCall(call, trimmed, topicFor(options), subject))
+    );
 
-  // A finding is only taken from the call that actually asked for it, so a
-  // model volunteering an answer to the other question is ignored.
-  const result = emptyCheckResult();
-  const ran: CheckSelection = { jailbreak: false, offTopic: false };
-  calls.forEach((call, index) => {
-    const answer = answers[index];
-    if (!answer) return;
-    if (call.checks.jailbreak) {
-      result.jailbreak = answer.jailbreak;
-      ran.jailbreak = true;
+    // A finding is only taken from the call that actually asked for it, so a
+    // model volunteering an answer to the other question is ignored.
+    const result = emptyCheckResult();
+    const ran: CheckSelection = { jailbreak: false, offTopic: false };
+    let complete = true;
+    calls.forEach((call, index) => {
+      const answer = answers[index];
+      if (!answer) return;
+      complete = complete && answer.complete;
+      if (call.checks.jailbreak) {
+        result.jailbreak = answer.result.jailbreak;
+        ran.jailbreak = true;
+      }
+      if (call.checks.offTopic) {
+        result.offTopic = answer.result.offTopic;
+        ran.offTopic = true;
+      }
+    });
+
+    // Partial provider or document coverage is NOT a pass: fail-closed sites
+    // must not mistake either condition for a clean bill of health.
+    const checked =
+      complete &&
+      (!wanted.jailbreak || ran.jailbreak) &&
+      (!wanted.offTopic || ran.offTopic);
+    if (!ran.jailbreak && !ran.offTopic) return NOT_RUN;
+
+    const { blocked, reasons } = decideAction(result, policy);
+
+    if (reasons.length > 0) {
+      void logSystemEvent({
+        category: "GUARDRAIL",
+        type: blocked ? "SAFETY_BLOCK" : "SAFETY_FLAG",
+        severity: "WARNING",
+        message: `Guardrail ${blocked ? "blocked" : "flagged"} content on ${subject.surface}: ${reasons.join(", ")}`,
+        userId: subject.userId ?? null,
+        metadata: {
+          surface: subject.surface,
+          subjectId: subject.id ?? null,
+          reasons,
+          jailbreak: result.jailbreak,
+          offTopic: result.offTopic,
+          models: calls.map((call) => call.provider.model),
+        },
+      });
     }
-    if (call.checks.offTopic) {
-      result.offTopic = answer.offTopic;
-      ran.offTopic = true;
-    }
-  });
 
-  // Partial coverage is NOT a pass: if the admin asked for two checks and only
-  // one answered, `checked` stays false so a fail-closed site still refuses.
-  const checked = (!wanted.jailbreak || ran.jailbreak) && (!wanted.offTopic || ran.offTopic);
-  if (!ran.jailbreak && !ran.offTopic) return NOT_RUN;
-
-  const { blocked, reasons } = decideAction(result, policy);
-
-  if (reasons.length > 0) {
+    return { checked, blocked, reasons, result };
+  } catch (error) {
     void logSystemEvent({
       category: "GUARDRAIL",
-      type: blocked ? "SAFETY_BLOCK" : "SAFETY_FLAG",
-      severity: "WARNING",
-      message: `Guardrail ${blocked ? "blocked" : "flagged"} content on ${subject.surface}: ${reasons.join(", ")}`,
+      type: "SAFETY_CHECK_UNAVAILABLE",
+      severity: "INFO",
+      message: `Safety check setup failed on ${subject.surface}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
       userId: subject.userId ?? null,
-      metadata: {
-        surface: subject.surface,
-        subjectId: subject.id ?? null,
-        reasons,
-        jailbreak: result.jailbreak,
-        offTopic: result.offTopic,
-        models: calls.map((call) => call.provider.model),
-      },
+      metadata: { surface: subject.surface, subjectId: subject.id ?? null },
     });
+    return NOT_RUN;
   }
-
-  return { checked, blocked, reasons, result };
 }
 
 function topicFor(options: SafetyCheckOptions): string {

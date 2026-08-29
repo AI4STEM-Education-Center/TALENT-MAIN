@@ -424,6 +424,10 @@ model QuizPdfExtraction {
   id                 String   @id @default(cuid())
   quizId             String   @map("subtopicId")
   teacherId          String?
+  // User who initiated the extraction. Stored without a relation so audit and
+  // guardrail feedback can outlive a deleted account, including admin-owned
+  // global-pool extractions where teacherId is null.
+  createdByUserId    String?
   originalName       String
   sizeBytes          Int
   storageKey         String // original PDF

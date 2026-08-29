@@ -185,11 +185,22 @@ describe("checkContentSafety", () => {
     );
   });
 
-  it("treats a garbage model response as nothing detected rather than throwing", async () => {
+  it("FAILS OPEN when provider resolution throws", async () => {
+    resolveProvider.mockRejectedValue(new Error("database unavailable"));
+
+    await expect(
+      checkContentSafety(uniq("hello"), { surface: "assistant_chat" })
+    ).resolves.toEqual({ checked: false, blocked: false, reasons: [], result: null });
+    expect(logSystemEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "SAFETY_CHECK_UNAVAILABLE" })
+    );
+  });
+
+  it("treats a malformed model response as an unavailable check", async () => {
     streamJsonCompletion.mockResolvedValue({ value: "not an object" });
 
     const verdict = await checkContentSafety(uniq("hello"), { surface: "assistant_chat" });
-    expect(verdict.checked).toBe(true);
+    expect(verdict.checked).toBe(false);
     expect(verdict.blocked).toBe(false);
   });
 
@@ -203,11 +214,26 @@ describe("checkContentSafety", () => {
     expect((await checkContentSafety(uniq("x"), { surface: "assistant_chat" })).checked).toBe(false);
   });
 
-  it("caps very long input rather than sending it whole", async () => {
+  it("checks every chunk of a long ordinary input", async () => {
     await checkContentSafety("q ".repeat(50_000), { surface: "quiz_extraction" });
 
-    const params = streamJsonCompletion.mock.calls[0][1] as { messages: Array<{ content: string }> };
-    expect(params.messages[0].content.length).toBeLessThan(20_000);
+    expect(streamJsonCompletion).toHaveBeenCalledTimes(9);
+    const prompts = streamJsonCompletion.mock.calls.map(
+      (call) => (call[1] as { messages: Array<{ content: string }> }).messages[0].content
+    );
+    expect(prompts.at(-1)).toContain("q q q");
+  });
+
+  it("marks pathological input as partial instead of claiming a clean full check", async () => {
+    const verdict = await checkContentSafety("x".repeat(250_000), {
+      surface: "question_import",
+    });
+
+    expect(streamJsonCompletion).toHaveBeenCalledTimes(16);
+    expect(verdict.checked).toBe(false);
+    expect(logSystemEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "SAFETY_CHECK_PARTIAL" })
+    );
   });
 });
 
@@ -347,6 +373,14 @@ describe("per-check model assignment", () => {
     expect(verdict.result?.jailbreak.confidence).toBe(0.9);
     expect(verdict.result?.offTopic.confidence).toBe(0.8);
     expect(verdict.reasons).toEqual(["jailbreak (0.90)", "off-topic (0.80)"]);
+  });
+
+  it("splits into TWO calls when identical models use different credentials", async () => {
+    assign(PROVIDER, { ...PROVIDER, apiKey: "sk-other-account" });
+
+    await checkContentSafety(uniq("hello"), { surface: "assistant_chat" }, { policy: BOTH_ON });
+
+    expect(streamJsonCompletion).toHaveBeenCalledTimes(2);
   });
 
   it("keeps a check that HAS a model when the other one is unassigned", async () => {

@@ -137,6 +137,60 @@ let _cache: Map<UseCase, { data: ResolvedProvider; expiresAt: number }> =
 
 const CACHE_TTL_MS = 60_000; // 60 seconds
 
+let _legacyGuardrailMigration: Promise<void> | null = null;
+
+/**
+ * Phase 4 split the old single `guardrail` assignment into independently
+ * configurable jailbreak and off-topic assignments. Copy an existing value to
+ * both new slots without overwriting either slot if an admin has already made
+ * an explicit choice, then remove the obsolete row.
+ *
+ * The short-lived promise is a process-local mutex: the two checks are usually
+ * resolved concurrently, and both should share one migration attempt.
+ */
+export function carryOverLegacyGuardrailAssignment(): Promise<void> {
+  if (_legacyGuardrailMigration) return _legacyGuardrailMigration;
+
+  _legacyGuardrailMigration = (async () => {
+    const legacy = await prisma.aiUseCaseAssignment.findUnique({
+      where: { useCase: "guardrail" },
+    });
+    if (!legacy) return;
+
+    await prisma.$transaction([
+      prisma.aiUseCaseAssignment.upsert({
+        where: { useCase: "guardrail_jailbreak" },
+        update: {},
+        create: {
+          useCase: "guardrail_jailbreak",
+          providerId: legacy.providerId,
+          modelId: legacy.modelId,
+          thinkingLevel: legacy.thinkingLevel,
+        },
+      }),
+      prisma.aiUseCaseAssignment.upsert({
+        where: { useCase: "guardrail_offtopic" },
+        update: {},
+        create: {
+          useCase: "guardrail_offtopic",
+          providerId: legacy.providerId,
+          modelId: legacy.modelId,
+          thinkingLevel: legacy.thinkingLevel,
+        },
+      }),
+      // deleteMany also succeeds if another server process completed the same
+      // migration between our read and this transaction.
+      prisma.aiUseCaseAssignment.deleteMany({ where: { useCase: "guardrail" } }),
+    ]);
+    invalidateProviderCache("guardrail_jailbreak");
+    invalidateProviderCache("guardrail_offtopic");
+  })().finally(() => {
+    _legacyGuardrailMigration = null;
+  });
+
+  return _legacyGuardrailMigration;
+}
+
 /**
  * Invalidate the provider cache for all or a specific use case.
  * Call this when admin saves a new assignment.
@@ -196,6 +250,10 @@ export function thinkingParams(
 export async function resolveProvider(
   useCase: UseCase
 ): Promise<ResolvedProvider | null> {
+  if (useCase === "guardrail_jailbreak" || useCase === "guardrail_offtopic") {
+    await carryOverLegacyGuardrailAssignment();
+  }
+
   // Check cache first
   const cached = _cache.get(useCase);
   if (cached && Date.now() < cached.expiresAt) {

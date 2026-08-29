@@ -166,6 +166,30 @@ describe("failOpen", () => {
       (await guardText("x", { surface: "question_authoring" }, { requestPath: true })).blocked
     ).toBe(false);
   });
+
+  it("does not reject a disabled surface when fail-closed mode is enabled", async () => {
+    withSettings({
+      failOpen: false,
+      moderationEnabled: true,
+      jailbreakMode: "BLOCK",
+      disabledSurfaces: ["question_authoring"],
+    });
+    moderateText.mockResolvedValue({ checked: false, flagged: false, categories: [] });
+    checkContentSafety.mockResolvedValue({
+      checked: false,
+      blocked: false,
+      reasons: [],
+      result: null,
+    });
+
+    const decision = await guardText(
+      "x",
+      { surface: "question_authoring" },
+      { requestPath: true }
+    );
+    expect(decision.blocked).toBe(false);
+    expect(moderateText).not.toHaveBeenCalled();
+  });
 });
 
 describe("guardChatTurn", () => {
@@ -206,6 +230,9 @@ describe("auditText", () => {
     expect(decision.blocked).toBe(false);
     expect(decision.message).toBeNull();
     expect(decision.reasons).toContain("jailbreak (0.99)");
+    expect(recordGuardrailEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ blocked: false })
+    );
   });
 
   it("does nothing at all when the surface is fully disabled", async () => {

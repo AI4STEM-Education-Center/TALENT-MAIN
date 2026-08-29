@@ -190,6 +190,7 @@ describe("POST /api/quizzes/[id]/pdf-extractions (init) — auth", () => {
     const row = await prisma.quizPdfExtraction.findUnique({ where: { id: body.id } });
     expect(row?.status).toBe("PENDING_UPLOAD");
     expect(row?.teacherId).toBe(teacher.id);
+    expect(row?.createdByUserId).toBe(user.id);
   });
 
   it("201 for an admin extracting into a pool quiz", async () => {
@@ -201,6 +202,7 @@ describe("POST /api/quizzes/[id]/pdf-extractions (init) — auth", () => {
     const body = await res.json();
     const row = await prisma.quizPdfExtraction.findUnique({ where: { id: body.id } });
     expect(row?.teacherId).toBeNull();
+    expect(row?.createdByUserId).toBe(admin.id);
   });
 });
 

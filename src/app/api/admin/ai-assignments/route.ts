@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
+  carryOverLegacyGuardrailAssignment,
   invalidateProviderCache,
   isThinkingLevel,
   resolveThinkingLevel,
@@ -67,6 +68,7 @@ export async function GET() {
   }
 
   try {
+    await carryOverLegacyGuardrailAssignment();
     await carryOverLegacyThinkingLevels();
 
     const assignments = await prisma.aiUseCaseAssignment.findMany({

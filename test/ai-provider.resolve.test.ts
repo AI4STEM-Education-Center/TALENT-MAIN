@@ -70,6 +70,25 @@ describe("resolveProvider", () => {
     expect(await resolveProvider("pdf_description")).toBeNull();
   });
 
+  it("carries the legacy guardrail assignment into both independent checks", async () => {
+    await seedAssignment({
+      useCase: "guardrail",
+      apiKey: "sk-legacy",
+      thinkingLevel: "low",
+    });
+
+    const [jailbreak, offTopic] = await Promise.all([
+      resolveProvider("guardrail_jailbreak"),
+      resolveProvider("guardrail_offtopic"),
+    ]);
+
+    expect(jailbreak).toMatchObject({ model: "gpt-5.1", thinkingLevel: "low" });
+    expect(offTopic).toMatchObject({ model: "gpt-5.1", thinkingLevel: "low" });
+    expect(
+      await prisma.aiUseCaseAssignment.findUnique({ where: { useCase: "guardrail" } })
+    ).toBeNull();
+  });
+
   it("resolves and decrypts the API key for an active provider", async () => {
     await seedAssignment({ apiKey: "sk-secret-123", serviceTier: "flex" });
     const resolved = await resolveProvider("pdf_description");

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildGuardrailCheckPrompt,
+  guardrailCheckResponseIsComplete,
   validateGuardrailCheck,
   decideAction,
   policyIsInert,
@@ -205,6 +206,30 @@ describe("validateGuardrailCheck", () => {
     expect(validateGuardrailCheck({ jailbreak: { reason: "   " } }).jailbreak.reason).toBeNull();
     const long = validateGuardrailCheck({ jailbreak: { reason: "z".repeat(1000) } });
     expect(long.jailbreak.reason).toHaveLength(300);
+  });
+});
+
+describe("guardrailCheckResponseIsComplete", () => {
+  it("accepts a complete response and rejects forgiving-normalizer fallbacks", () => {
+    expect(guardrailCheckResponseIsComplete(CLEAN)).toBe(true);
+    for (const bad of [null, {}, { jailbreak: CLEAN.jailbreak }, { ...CLEAN, off_topic: {} }]) {
+      expect(guardrailCheckResponseIsComplete(bad)).toBe(false);
+    }
+  });
+
+  it("requires only the findings selected for this model call", () => {
+    expect(
+      guardrailCheckResponseIsComplete(
+        { jailbreak: CLEAN.jailbreak },
+        { jailbreak: true, offTopic: false }
+      )
+    ).toBe(true);
+    expect(
+      guardrailCheckResponseIsComplete(
+        { jailbreak: CLEAN.jailbreak },
+        { jailbreak: false, offTopic: true }
+      )
+    ).toBe(false);
   });
 });
 

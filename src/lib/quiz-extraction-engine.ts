@@ -269,6 +269,7 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
     const safety = await auditText(extractedText, {
       surface: "quiz_extraction",
       id: extraction.id,
+      userId: extraction.createdByUserId,
     });
     // Kept on the row so the warning the teacher reads carries an id they can
     // argue with — a check that fires on a legitimate document is exactly the
