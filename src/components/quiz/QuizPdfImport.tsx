@@ -36,6 +36,7 @@ type ExtractionDetail = ListItem & {
   aiModel?: string | null;
   aiProvider?: string | null;
   aiServiceTier?: string | null;
+  aiThinkingLevel?: string | null;
   aiTtftMs?: number | null;
   aiTokens?: number | null;
   aiTotalMs?: number | null;
@@ -491,6 +492,7 @@ export function QuizPdfImport({
                 model: detail.aiModel,
                 provider: detail.aiProvider,
                 serviceTier: detail.aiServiceTier,
+                thinkingLevel: detail.aiThinkingLevel,
                 ttftMs: detail.aiTtftMs,
                 totalMs: detail.aiTotalMs,
                 tokens: detail.aiTokens,

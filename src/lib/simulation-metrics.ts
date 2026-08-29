@@ -9,6 +9,7 @@ export type StoredSimulationMetrics = {
   aiModel: string | null;
   aiProvider: string | null;
   aiServiceTier: string | null;
+  aiThinkingLevel: string | null;
   aiTtftMs: number | null;
   aiGenerationMs: number | null;
   aiTotalMs: number | null;
@@ -20,15 +21,16 @@ export type StoredSimulationMetrics = {
 export type MetricsProvider = {
   providerType: ProviderType;
   serviceTier: string | null;
+  thinkingLevel: string | null;
 };
 
 /**
  * Aggregate one simulation job's calls into the fields persisted on its row.
- * The provider and its service tier are stored beside the model rather than
- * mashed into it — a gateway's model id already carries a vendor prefix
- * ("openai/gpt-5.5" on Cloudflare), so a single string couldn't say who served
- * it. Rows written before these columns existed keep their provider-qualified
- * aiModel and are left exactly as they are.
+ * The provider, its service tier, and its thinking level are stored beside the
+ * model rather than mashed into it — a gateway's model id already carries a
+ * vendor prefix ("openai/gpt-5.5" on Cloudflare), so one string couldn't say
+ * who served it. Rows written before these columns existed keep their
+ * provider-qualified aiModel and are left exactly as they are.
  *
  * Generation time comes from the aggregate, which reports it only when the
  * calls actually streamed (see `aggregateMetrics`) — null otherwise, so the UI
@@ -44,6 +46,7 @@ export function buildSimulationMetrics(
       aiModel: null,
       aiProvider: null,
       aiServiceTier: null,
+      aiThinkingLevel: null,
       aiTtftMs: null,
       aiGenerationMs: null,
       aiTotalMs: null,
@@ -56,6 +59,7 @@ export function buildSimulationMetrics(
     aiModel: aggregate.model,
     aiProvider: provider.providerType,
     aiServiceTier: provider.serviceTier,
+    aiThinkingLevel: provider.thinkingLevel,
     aiTtftMs: aggregate.ttftMs,
     aiGenerationMs: aggregate.generationMs,
     aiTotalMs: aggregate.totalMs,
@@ -72,6 +76,7 @@ export function simulationMetricsView(
     model: stored.aiModel,
     provider: stored.aiProvider,
     serviceTier: stored.aiServiceTier,
+    thinkingLevel: stored.aiThinkingLevel,
     ttftMs: stored.aiTtftMs,
     generationMs: stored.aiGenerationMs,
     totalMs: stored.aiTotalMs,

@@ -69,6 +69,7 @@ export async function triggerSimulations(
           aiModel: null,
           aiProvider: null,
           aiServiceTier: null,
+          aiThinkingLevel: null,
           aiTtftMs: null,
           aiGenerationMs: null,
           aiTotalMs: null,
