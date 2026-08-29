@@ -20,7 +20,7 @@ import {
 } from "./ai-streaming";
 import { getActiveConceptLabels } from "./concept-catalog";
 import { fenceUntrusted, UNTRUSTED_CONTENT_RULE } from "./guardrail-fence";
-import { moderateImages } from "./guardrails";
+import { checkContentSafety, moderateImages } from "./guardrails";
 
 // In-memory set of material IDs whose processing should be aborted.
 const cancelledMaterials = new Set<string>();
@@ -437,6 +437,17 @@ export async function processMaterial(materialId: string) {
     });
     return;
   }
+
+  // ── Guardrail: one check over what the model actually READ off the PDF. ──
+  // The page images went through free moderation as they were processed; this
+  // asks the classifier whether the extracted prose is trying to steer an
+  // assistant. One call for the whole document, and audit-only — the
+  // descriptions feed recommendations, so a finding is something an admin
+  // should see rather than a reason to discard a processed upload.
+  void checkContentSafety(
+    neededPages.map((p) => p.description ?? "").join("\n\n"),
+    { surface: "material_description", id: materialId }
+  );
 
   // Resolve model-ready URLs for Tier 2: presigned links for hosted providers,
   // inline base64 data URLs for local ones that can't reach S3.
