@@ -27,6 +27,7 @@ import {
   DEFAULT_GUARDRAIL_POLICY,
   DEFAULT_TOPIC_DESCRIPTION,
   buildGuardrailCheckPrompt,
+  guardrailCheckResponseIsComplete,
   validateGuardrailCheck,
   decideAction,
   policyIsInert,
@@ -270,6 +271,48 @@ export interface SafetyCheckOptions {
  * bounds cost without meaningfully bounding detection.
  */
 const MAX_CHECK_CHARS = 12_000;
+const MAX_CHECK_CALLS = 16;
+
+/**
+ * Cover ordinary inputs completely. Pathological inputs are sampled evenly
+ * from beginning to end and reported as partial (`checked: false`) so a
+ * fail-closed caller never mistakes sampling for complete coverage.
+ */
+function checkChunks(text: string): { chunks: string[]; complete: boolean } {
+  if (text.length <= MAX_CHECK_CHARS) return { chunks: [text], complete: true };
+
+  const totalChunks = Math.ceil(text.length / MAX_CHECK_CHARS);
+  if (totalChunks <= MAX_CHECK_CALLS) {
+    return {
+      chunks: Array.from({ length: totalChunks }, (_, index) =>
+        text.slice(index * MAX_CHECK_CHARS, (index + 1) * MAX_CHECK_CHARS)
+      ),
+      complete: true,
+    };
+  }
+
+  const lastStart = text.length - MAX_CHECK_CHARS;
+  return {
+    chunks: Array.from({ length: MAX_CHECK_CALLS }, (_, index) => {
+      const start = Math.round((lastStart * index) / (MAX_CHECK_CALLS - 1));
+      return text.slice(start, start + MAX_CHECK_CHARS);
+    }),
+    complete: false,
+  };
+}
+
+function mergeCheckResults(results: GuardrailCheckResult[]): GuardrailCheckResult {
+  const strongest = (key: "jailbreak" | "offTopic") =>
+    results.reduce(
+      (best, result) => {
+        const candidate = result[key];
+        if (candidate.detected !== best.detected) return candidate.detected ? candidate : best;
+        return candidate.confidence > best.confidence ? candidate : best;
+      },
+      results[0][key]
+    );
+  return { jailbreak: strongest("jailbreak"), offTopic: strongest("offTopic") };
+}
 
 // Same text checked twice — a worker redelivery, a teacher resubmitting an
 // unchanged import — reuses the verdict instead of re-billing. Bounded so a
@@ -337,34 +380,56 @@ export async function checkContentSafety(
   const policy = options.policy ?? DEFAULT_GUARDRAIL_POLICY;
   if (policyIsInert(policy)) return NOT_RUN;
 
-  const trimmed = text.trim().slice(0, MAX_CHECK_CHARS);
+  const trimmed = text.trim();
   if (!trimmed) return NOT_RUN;
 
-  const provider = await resolveProvider("guardrail");
-  if (!providerUsable(provider)) return NOT_RUN;
-
-  const topic = options.topicDescription?.trim() || DEFAULT_TOPIC_DESCRIPTION;
-  const key = cacheKey(trimmed, topic, policy, provider.model);
-  const cached = readCache(key);
-  if (cached) return cached;
-
   try {
+    // Provider resolution can fail on a database read or credential decrypt;
+    // keep it inside the fail-safe boundary just like the model request.
+    const provider = await resolveProvider("guardrail");
+    if (!providerUsable(provider)) return NOT_RUN;
+
+    const topic = options.topicDescription?.trim() || DEFAULT_TOPIC_DESCRIPTION;
+    const key = cacheKey(trimmed, topic, policy, provider.model);
+    const cached = readCache(key);
+    if (cached) return cached;
+
     const client = await createOpenAIClient(provider);
     const transport = transportFor(provider);
-    const { value } = await streamJsonCompletion(
-      client,
-      {
-        model: provider.model,
-        messages: [{ role: "user", content: buildGuardrailCheckPrompt(trimmed, topic) }],
-        ...thinkingParams(provider),
-      },
-      GUARDRAIL_CHECK_SCHEMA,
-      streamOptionsFor(transport)
+    const planned = checkChunks(trimmed);
+    const results = await Promise.all(
+      planned.chunks.map(async (chunk) => {
+        const { value } = await streamJsonCompletion(
+          client,
+          {
+            model: provider.model,
+            messages: [{ role: "user", content: buildGuardrailCheckPrompt(chunk, topic) }],
+            ...thinkingParams(provider),
+          },
+          GUARDRAIL_CHECK_SCHEMA,
+          streamOptionsFor(transport)
+        );
+        if (!guardrailCheckResponseIsComplete(value)) {
+          throw new Error("Guardrail classifier returned an incomplete response.");
+        }
+        return validateGuardrailCheck(value);
+      })
     );
 
-    const result = validateGuardrailCheck(value);
+    const result = mergeCheckResults(results);
     const { blocked, reasons } = decideAction(result, policy);
-    const verdict: SafetyVerdict = { checked: true, blocked, reasons, result };
+    const verdict: SafetyVerdict = { checked: planned.complete, blocked, reasons, result };
+
+    if (!planned.complete) {
+      void logSystemEvent({
+        category: "GUARDRAIL",
+        type: "SAFETY_CHECK_PARTIAL",
+        severity: "INFO",
+        message: `Safety check sampled oversized content on ${subject.surface}; complete coverage was not possible.`,
+        userId: subject.userId ?? null,
+        metadata: { surface: subject.surface, subjectId: subject.id ?? null, length: trimmed.length },
+      });
+    }
 
     if (reasons.length > 0) {
       void logSystemEvent({
