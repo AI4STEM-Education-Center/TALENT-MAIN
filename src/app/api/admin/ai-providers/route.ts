@@ -77,6 +77,7 @@ export async function GET() {
           modelId: m.modelId,
           displayName: m.displayName,
           serviceTier: m.serviceTier,
+          thinkingLevel: m.thinkingLevel,
           isDefault: m.isDefault,
         })),
         assignmentCount: p._count.assignments,

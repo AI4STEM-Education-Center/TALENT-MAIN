@@ -207,6 +207,35 @@ CLOUDFRONT_PRIVATE_KEY="LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQo..."
 > [!NOTE]
 > AI configuration (such as API keys, base URLs, and model selection) is now fully database-backed and managed dynamically via the Admin Dashboard. No `OPENAI_API_KEY` environment variables are required!
 
+### Per-model thinking level
+
+Every model registered in `/admin/ai-config` can be pinned to a **thinking level** (`none`,
+`minimal`, `low`, `medium`, `high`, `xhigh`, `max`), sent as `reasoning_effort` on every call that
+model serves — OpenAI, Cloudflare AI Gateway, and local OpenAI-compatible servers alike.
+
+The level is **optional and never inferred from the model id**. Leaving it unset omits
+`reasoning_effort` from the request body entirely, so non-reasoning models (and local servers that
+reject unknown fields) are unaffected — a pinned level only ever changes a call an admin explicitly
+opted in. Which levels a given model accepts varies by model; picking an unsupported one surfaces as
+a provider error on **Test**, which sends the same request the real use case will.
+
+Thinking level is part of a model row (like service tier), so each registered model carries its own
+level and use cases pick it up through their assignment. It is deliberately **not** part of
+`AiModel`'s unique key: widening that key is a change `prisma db push` classifies as potentially
+destructive, and the container entrypoint refuses those in production by design. To run one model id
+at two levels, register it twice under different service tiers (or under a second provider row).
+
+The level a run was made with is persisted alongside the other per-run AI metrics — on
+`LearningMaterial`, `QuizPdfExtraction`, `QuestionSimulation`, and both `ExamResult` sections — and
+rendered by `AiMetricsLine` (`think high`) next to the model, provider, and timings. Both chat
+assistants show the same line under each reply, from the stats on the turn's `done` event.
+
+> [!NOTE]
+> `AiMetricsLine` renders **nothing** when `NEXT_PUBLIC_APP_ENV=prod`. Model names, tuning, and
+> timings are a dev-site diagnostic; students and teachers on the production deployment never see
+> them. That single component is the gate — anything that wants to show AI stats should render
+> through it rather than formatting its own line.
+
 ## Learning materials
 
 Step-by-step **S3 + CloudFront** setup (bucket, CORS, IAM user, distribution, signing key group) is in [docs/SETUP.md](docs/SETUP.md).

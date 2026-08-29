@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("@/lib/ai-provider", () => ({
+// Only the DB/network-backed entry points are stubbed; the pure helpers (e.g.
+// thinkingParams) stay real so the request-shaping assertions below exercise
+// the same code the app runs.
+vi.mock("@/lib/ai-provider", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/ai-provider")>()),
   resolveProvider: vi.fn(),
   createOpenAIClient: vi.fn(),
 }));
@@ -9,17 +13,19 @@ import { runAssistantTurn, toolParameterSchema } from "./agent";
 import { defaultSettings } from "./config";
 import { listSkills } from "./skills";
 import { resolveProvider, createOpenAIClient } from "@/lib/ai-provider";
+import type { ResolvedProvider } from "@/lib/ai-provider";
 import type { AssistantStreamEvent, AssistantToolContext } from "./types";
 
 const mockResolve = vi.mocked(resolveProvider);
 const mockClient = vi.mocked(createOpenAIClient);
 
-const provider = {
-  providerType: "openai" as const,
+const provider: ResolvedProvider = {
+  providerType: "openai",
   baseUrl: null,
   apiKey: "k",
   model: "gpt-test",
   serviceTier: null,
+  thinkingLevel: null,
   cfAigByokAlias: null,
   timeoutMs: 1000,
 };
@@ -86,9 +92,13 @@ function fakeClient(rounds: Round[]) {
   return { client, calls };
 }
 
-async function run(rounds: Round[], overrides: Partial<ReturnType<typeof defaultSettings>> = {}) {
+async function run(
+  rounds: Round[],
+  overrides: Partial<ReturnType<typeof defaultSettings>> = {},
+  providerOverrides: Partial<typeof provider> = {}
+) {
   const { client, calls } = fakeClient(rounds);
-  mockResolve.mockResolvedValue(provider);
+  mockResolve.mockResolvedValue({ ...provider, ...providerOverrides });
   mockClient.mockResolvedValue(client as never);
 
   const events: AssistantStreamEvent[] = [];
@@ -136,6 +146,25 @@ describe("runAssistantTurn — provider resolution", () => {
     await run([{ text: "hello" }]);
     expect(mockResolve).toHaveBeenCalledWith("student_assistant");
   });
+
+  it("omits reasoning_effort entirely when the model has no thinking level", async () => {
+    const { calls } = await run([{ text: "hello" }]);
+    expect(calls[0]).not.toHaveProperty("reasoning_effort");
+  });
+
+  it("sends the model's thinking level as reasoning_effort when one is set", async () => {
+    const { calls } = await run([{ text: "hello" }], {}, { thinkingLevel: "high" });
+    expect(calls[0].reasoning_effort).toBe("high");
+  });
+
+  it("sends the thinking level for local providers too", async () => {
+    const { calls } = await run(
+      [{ text: "hello" }],
+      {},
+      { providerType: "local" as const, baseUrl: "http://localhost:1234/v1", thinkingLevel: "low" }
+    );
+    expect(calls[0].reasoning_effort).toBe("low");
+  });
 });
 
 describe("runAssistantTurn — plain answer", () => {
@@ -147,7 +176,14 @@ describe("runAssistantTurn — plain answer", () => {
       "i",
       "!",
     ]);
-    expect(events.at(-1)).toMatchObject({ type: "done", model: "openai/gpt-test", tokens: 7 });
+    expect(events.at(-1)).toMatchObject({
+      type: "done",
+      model: "gpt-test",
+      provider: "openai",
+      serviceTier: null,
+      thinkingLevel: null,
+      tokens: 7,
+    });
   });
 
   it("stops after one round when the model asks for no tools", async () => {

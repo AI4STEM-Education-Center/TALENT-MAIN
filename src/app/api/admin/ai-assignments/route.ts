@@ -31,7 +31,13 @@ export async function GET() {
           select: { id: true, name: true, providerType: true, isActive: true },
         },
         model: {
-          select: { id: true, modelId: true, displayName: true, serviceTier: true },
+          select: {
+            id: true,
+            modelId: true,
+            displayName: true,
+            serviceTier: true,
+            thinkingLevel: true,
+          },
         },
       },
     });
@@ -52,6 +58,7 @@ export async function GET() {
             modelIdentifier: assignment.model.modelId,
             modelDisplayName: assignment.model.displayName,
             serviceTier: assignment.model.serviceTier,
+            thinkingLevel: assignment.model.thinkingLevel,
           }
         : null;
     }

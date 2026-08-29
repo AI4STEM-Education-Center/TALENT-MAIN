@@ -18,7 +18,13 @@
 
 import type OpenAI from "openai";
 import { prisma } from "./prisma";
-import { resolveProvider, createOpenAIClient, type ResolvedProvider } from "./ai-provider";
+import {
+  resolveProvider,
+  createOpenAIClient,
+  thinkingParams,
+  type ResolvedProvider,
+  type ThinkingParams,
+} from "./ai-provider";
 import { resolveModelImageUrl } from "./storage";
 import { retryWithExponentialBackoff } from "./retry";
 import { streamJsonCompletion, aggregateMetrics, type AiCallMetrics } from "./ai-streaming";
@@ -78,6 +84,8 @@ type ModelCallOptions = {
   schema: unknown;
   serviceTier: string | null;
   tierActive: boolean;
+  /** `reasoning_effort` fragment; empty unless the model has a level pinned. */
+  thinking: ThinkingParams;
   isLocal: boolean;
 };
 
@@ -92,11 +100,11 @@ async function callJsonModel(
   client: OpenAI,
   opts: ModelCallOptions
 ): Promise<{ value: unknown; metrics: AiCallMetrics }> {
-  const { model, messages, schema, serviceTier, tierActive, isLocal } = opts;
+  const { model, messages, schema, serviceTier, tierActive, thinking, isLocal } = opts;
   return retryWithExponentialBackoff(() =>
     streamJsonCompletion(
       client,
-      { model, messages, service_tier: tierActive ? (serviceTier as never) : undefined },
+      { model, messages, service_tier: tierActive ? (serviceTier as never) : undefined, ...thinking },
       schema,
       { includeUsage: !isLocal, requestOptions: { maxRetries: isLocal ? 0 : 3 } }
     )
@@ -153,6 +161,9 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
     const serviceTier = provider.serviceTier;
     const tierActive =
       !isLocal && (serviceTier === "auto" || serviceTier === "default" || serviceTier === "flex");
+    // Applies to every pass below, on every provider type — and is a no-op
+    // unless an admin pinned a thinking level on the assigned model.
+    const thinking = thinkingParams(provider);
 
     // Resolve a model-ready URL for every page image, in page order (index i →
     // page i+1). Local providers can't fetch our presigned S3 URLs, so their
@@ -184,6 +195,7 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
       schema: QUIZ_EXTRACTION_SCHEMA,
       serviceTier,
       tierActive,
+      thinking,
       isLocal,
     });
     callMetrics.push(pass1Metrics);
@@ -208,6 +220,7 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
           schema: QUIZ_ANSWER_KEY_SCHEMA,
           serviceTier,
           tierActive,
+          thinking,
           isLocal,
         });
         callMetrics.push(keyMetrics);
@@ -247,6 +260,7 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
               schema: QUIZ_LOCALIZATION_SCHEMA,
               serviceTier,
               tierActive,
+              thinking,
               isLocal,
             });
             callMetrics.push(locMetrics);
@@ -280,6 +294,7 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
         aiModel: agg?.model ?? null,
         aiProvider: agg ? provider.providerType : null,
         aiServiceTier: agg ? provider.serviceTier : null,
+        aiThinkingLevel: agg ? provider.thinkingLevel : null,
         aiTtftMs: agg?.ttftMs ?? null,
         aiTokens: agg?.completionTokens ?? null,
         aiTotalMs: agg?.totalMs ?? null,
