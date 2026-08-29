@@ -37,9 +37,25 @@ export interface AiCallMetrics {
   tokensPerSec: number | null;
 }
 
+/** One tool call the model asked for, reassembled from its streamed deltas. */
+export interface StreamedToolCall {
+  id: string;
+  name: string;
+  /** Raw JSON-encoded arguments exactly as the model emitted them. */
+  arguments: string;
+}
+
 export interface StreamedCompletion {
   /** Concatenated assistant content across every chunk. */
   text: string;
+  /**
+   * Tool calls the model requested, in index order. Always empty unless the
+   * caller passed `tools` in the params. Text and tool calls are not exclusive:
+   * some models narrate before calling.
+   */
+  toolCalls: StreamedToolCall[];
+  /** The provider's `finish_reason` for the choice, when it reported one. */
+  finishReason: string | null;
   metrics: AiCallMetrics;
 }
 
@@ -93,6 +109,11 @@ export async function streamChatCompletion(
   let deltaCount = 0;
   let ttftMs: number | null = null;
   let usageTokens: number | null = null;
+  let finishReason: string | null = null;
+  // Tool-call deltas arrive fragmented and out of order across chunks; the
+  // per-choice `index` is the only stable key, so accumulate by it and flatten
+  // in index order at the end.
+  const toolCallParts = new Map<number, { id: string; name: string; arguments: string }>();
 
   for await (const chunk of stream) {
     // The usage block rides on the final chunk when include_usage is set; some
@@ -102,7 +123,18 @@ export async function streamChatCompletion(
       usageTokens = usage.completion_tokens;
     }
 
-    const content = chunk.choices?.[0]?.delta?.content;
+    const choice = chunk.choices?.[0];
+    if (choice?.finish_reason) finishReason = choice.finish_reason;
+
+    for (const part of choice?.delta?.tool_calls ?? []) {
+      const existing = toolCallParts.get(part.index) ?? { id: "", name: "", arguments: "" };
+      if (part.id) existing.id = part.id;
+      if (part.function?.name) existing.name += part.function.name;
+      if (part.function?.arguments) existing.arguments += part.function.arguments;
+      toolCallParts.set(part.index, existing);
+    }
+
+    const content = choice?.delta?.content;
     if (content) {
       if (ttftMs === null) ttftMs = now() - start;
       text += content;
@@ -123,8 +155,15 @@ export async function streamChatCompletion(
   const tokensPerSec =
     completionTokens > 0 && rateWindowMs > 0 ? completionTokens / (rateWindowMs / 1000) : null;
 
+  const toolCalls: StreamedToolCall[] = [...toolCallParts.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([, call]) => call)
+    .filter((call) => call.name !== "");
+
   return {
     text,
+    toolCalls,
+    finishReason,
     metrics: {
       model: params.model,
       ttftMs,

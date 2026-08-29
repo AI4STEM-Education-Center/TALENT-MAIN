@@ -224,6 +224,131 @@ For LLM or parsing pipelines, load the row by id and read bytes or location:
 - `resolveLearningMaterialLocation(materialId)` — returns `{ material, location }` with S3 bucket and key.
 - `readLearningMaterialBytes(materialId)` — returns a `Buffer` from S3.
 
+## Chat assistants
+
+Two floating chat bots, one per audience, mounted from `src/app/(dashboard)/layout.tsx` as a
+bottom-right launcher that expands into a panel. The widget self-hides unless the signed-in user's
+audience has an assistant an admin has enabled, so no role gate is needed at the mount site.
+Admins get neither — they configure the assistants rather than use one.
+
+**Admin setup** (`/admin/ai-config`) has two halves:
+
+1. The `student_assistant` and `teacher_assistant` **use-case assignments**, alongside the existing ones.
+   These pick the provider + model, so the assistants reuse the same OpenAI / local /
+   Cloudflare-AI-Gateway plumbing, encrypted-key storage, and connection tester as every other AI
+   feature. Pick a **vision-capable** model — the assistants take image input.
+2. The **Chat Assistants** section, backed by `AssistantConfig` (one row per audience): enabled
+   on/off, which skills load, **which individual tools inside those skills are on**, which attachment
+   types are accepted, per-message attachment and tool-call caps, how long attachments are kept, how
+   much transcript is replayed, per-user hourly message budget, and extra prompt instructions.
+
+   Tool toggles are stored as an opt-*out* list (`disabledTools`), so a tool added to a skill in a
+   later release is available to existing installs instead of staying dark until an admin re-saves.
+   Disabling every tool in a skill drops the skill entirely — its prompt instructions describe
+   abilities by tool name, and keeping them would have the model announce a tool it cannot call. The
+   system prompt also ends with the definitive list of callable tools, so a partially disabled skill
+   can't overclaim.
+
+Both assistants start **disabled** and stay that way until an admin assigns a model and turns them on.
+
+### Multimodal input
+
+`src/lib/assistant/attachments.ts` is a registry keyed by attachment kind. A kind owns its accepted
+MIME types, its byte ceiling, the file-picker `accept` string, and how it renders into model input —
+images become a base64 `image_url` part, text-ish files become a fenced text block. Registering
+`pdf` (or anything else) later is one entry there plus one in `ATTACHMENT_KINDS`; the agent, the API
+route, the admin picker, and the widget all read the registry and need no change.
+
+The browser downscales images to 1568px on the long edge before upload
+(`src/components/assistant/attachment-input.ts`), so the admin byte limit is a backstop rather than
+the normal constraint. A file that is rejected — wrong type, disabled kind, oversize, over count — is
+reported to the model as a system note so the assistant says it couldn't read the file instead of
+answering as if it had.
+
+#### Attachment retention
+
+Uploads are kept for `attachmentRetentionDays` (30 by default, per audience) so a later message can
+refer back to them. `src/lib/assistant/attachment-store.ts` owns this, on two invariants:
+
+- **Row before object.** The `AssistantAttachment` index row is written first and the S3 upload
+  follows, so an object can never exist that no row points at — which makes the retention sweep the
+  only deleter the bucket needs. A failed upload rolls the row back.
+- **Never fatal.** Unconfigured or unreachable storage costs the conversation its memory of the file,
+  not the answer: the attachment still reaches the model inline and the turn completes.
+
+Bytes live in S3 under `assistant-attachments/{userId}/{id}/`, never in the row — a few 5 MiB
+payloads per turn would bloat both the SQLite file and every nightly backup of it. The chat route
+streams an `attachments` event with the new ids; the client keeps them on its transcript and sends
+them back, and the server re-reads those files on later turns, capped at the audience's per-message
+attachment limit so replaying a long conversation never costs more than sending the files once.
+
+`GET /api/assistant/attachments/:id` serves one back (a 302 to a short-lived signed URL) for the
+panel's thumbnails. Authorization *is* the lookup: the query filters on the session's user id and on
+the expiry, so someone else's id and an expired one are both indistinguishable from a nonexistent one.
+That matters because these ids live in a client-held transcript the user can edit freely.
+
+The worker sweeps expired rows hourly (`purgeExpiredAssistantAttachments`), deleting object and row
+together. A deleted user's attachments go the same way — the row is relation-free precisely so no
+cascade can orphan bytes in the bucket that nothing could then find.
+
+### Loadable skills
+
+`src/lib/assistant/skills/` holds the registry. A skill is a declarative bundle — id, name,
+description, audience, prompt instructions, and a fixed list of tools:
+
+| Audience | Skill | Tools |
+| --- | --- | --- |
+| Student | `student-quiz-results` | `search_quiz_results`, `get_quiz_result_detail`, `summarize_performance` |
+| Teacher | `teacher-class-insights` | `list_classes`, `get_class_overview`, `get_quiz_breakdown`, `get_student_breakdown`, `find_struggling_students` |
+
+Each tool's `input` is a zod schema that serves as both the JSON Schema advertised to the model
+(via `z.toJSONSchema`) and the runtime validator for the arguments it sends back, so the advertised
+contract and the enforcement can't drift. Adding a skill is one file plus one line in `REGISTRY`; it
+appears in the admin picker for its audience on the next request, because the picker renders from the
+code registry rather than a hardcoded list.
+
+The shape deliberately mirrors an MCP server's capability set (id, name, description, tool list with
+JSON Schema params), so a skill can later be moved behind an MCP transport without any tool changing
+shape. It is in-process today because every tool reads this app's own rows and must be scoped to the
+caller — see below.
+
+### What the agent can and cannot do
+
+`src/lib/assistant/agent.ts` runs a bounded tool-calling loop: repeated streaming completions until
+the model stops requesting tools or `maxToolCalls` rounds elapse, then one final round with the tools
+withheld so a looping model still produces prose. Output streams to the client as NDJSON
+(`delta` / `tool` / `done` / `error`), the same transport the exam-results endpoint uses.
+
+There is **no code execution, no shell, and no raw-query tool**. The hand-written handlers in the
+registry are the entire capability surface, and every one of them is scoped to the caller's own rows:
+
+- `src/lib/assistant/session.ts` is the only place the audience and the queried identity are decided,
+  and both come from the session — never from the request body.
+- Student tools anchor on `ctx.studentId`. No student tool accepts a student id, so there is no
+  argument the model (or a prompt-injected attachment) could set to read someone else's results.
+  A fabricated or another student's `resultId` reads as "not found".
+- `get_quiz_result_detail` releases the answer key only for a **final** attempt — one with nothing in
+  progress and no retake left (attempts used up, quiz closed, or the quiz no longer offered to the
+  class; see `src/lib/quiz-availability.ts`, shared with the student class page). While a retake is
+  possible the response omits the correct answers *and* the per-question correct/incorrect flags,
+  because on a short option list "you got it wrong" is the answer. It sets `answerKeyWithheld` so the
+  assistant explains rather than guesses. Every ambiguous case withholds: an unpublished quiz (one
+  click republishes it) and a window that hasn't opened yet both count as retakeable.
+- The student prompt carries explicit academic-honesty rules: never hand over a direct answer, a
+  rewritten one, or a hint narrow enough to be one, whatever the student claims about having already
+  submitted or about what a teacher said. Enforcement is split on purpose — the tool controls what the
+  model can *see*, the prompt governs what it does with what it sees, and neither does the other's job.
+- Teacher tools resolve every class through an owner-filtered lookup, and `get_student_breakdown`
+  additionally checks enrollment — owning a class doesn't imply a given student is in it.
+- Teacher payloads drop student emails: the teacher sees them in the UI, but there's no reason to put
+  them in a model prompt.
+- The system prompt marks attachments and tool results as data, not instructions, and the admin's
+  extra instructions are appended under a header stating they cannot override the built-in rules.
+
+Unknown tool names, unparseable arguments, schema violations, and handler throws all become error
+*results* handed back to the model rather than exceptions, so it can correct itself instead of the
+turn dying.
+
 ## Project Structure
 
 ```
@@ -238,6 +363,7 @@ src/
 │   ├── ui/               # shadcn/ui components
 │   └── dashboard/        # Sidebar, shared dashboard components
 ├── lib/
+│   ├── assistant/        # Chat assistants: skill registry, tools, agent loop
 │   ├── auth.ts           # NextAuth config
 │   ├── prisma.ts         # Prisma client singleton
 │   ├── storage.ts        # S3 presigned URLs and object reads

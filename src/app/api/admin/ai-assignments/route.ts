@@ -10,6 +10,8 @@ const VALID_USE_CASES = [
   "recommendation",
   "quiz_extraction",
   "simulation_generation",
+  "student_assistant",
+  "teacher_assistant",
 ] as const;
 
 /**

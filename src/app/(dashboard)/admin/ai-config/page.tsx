@@ -37,6 +37,7 @@ import {
   Zap,
 } from "lucide-react";
 import { formatAiMetrics } from "@/lib/ai-metrics";
+import { AssistantSettings } from "@/components/admin/AssistantSettings";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -103,6 +104,11 @@ const USE_CASE_LABELS: Record<string, string> = {
   recommendation: "Recommendation",
   quiz_extraction: "Quiz PDF Extraction",
   simulation_generation: "Question Simulation Generation",
+  // The chat assistants take image input, so these two want a vision-capable
+  // model. Their behaviour (skills, attachment kinds, limits) is configured in
+  // the Chat Assistants section further down the page.
+  student_assistant: "Student Chat Assistant",
+  teacher_assistant: "Teacher Chat Assistant",
 };
 
 const EMPTY_PROVIDER_FORM: ProviderForm = {
@@ -1276,6 +1282,18 @@ export default function AiConfigPage() {
             );
           })}
         </div>
+      </section>
+
+      {/* ─── Chat Assistants ─────────────────────────────────────────────── */}
+      <section>
+        <div className="mb-3">
+          <h2 className="text-lg font-semibold">Chat Assistants</h2>
+          <p className="text-sm text-muted-foreground">
+            Behaviour of the student and teacher chat bots. Each one talks to the provider and
+            model assigned to its use case above.
+          </p>
+        </div>
+        <AssistantSettings />
       </section>
 
       {/* ─── Discover Models Modal ────────────────────────────────────────── */}

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { SetContentFullWidthContext } from "@/components/dashboard/content-width";
 import { ConsentGate } from "@/components/consent/ConsentGate";
+import { AssistantWidget } from "@/components/assistant/AssistantWidget";
 import { SessionProvider } from "next-auth/react";
 import { Menu, BookOpen, PanelLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -90,6 +91,11 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
           </SetContentFullWidthContext.Provider>
         </main>
       </div>
+
+      {/* Floating chat assistant. It self-hides unless this user's audience has
+          an assistant that an admin has turned on, so it is mounted for every
+          role rather than gated here. */}
+      <AssistantWidget />
     </div>
   );
 }

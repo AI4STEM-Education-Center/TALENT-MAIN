@@ -6,7 +6,12 @@ export type UseCase =
   | "description_generation"
   | "recommendation"
   | "quiz_extraction"
-  | "simulation_generation";
+  | "simulation_generation"
+  // The two chat assistants. Separate assignments on purpose: the student and
+  // teacher bots are tuned (and costed) independently, and a site may want a
+  // cheap local model for one and a hosted vision model for the other.
+  | "student_assistant"
+  | "teacher_assistant";
 export type ProviderType = "openai" | "local" | "cloudflare";
 
 export interface ResolvedProvider {
@@ -67,6 +72,7 @@ export function buildProviderHeaders(
  * For PDF page descriptions, use "pdf_description".
  * For exam-result summaries, use "description_generation".
  * For study-material recommendations, use "recommendation".
+ * For the chat assistants, use "student_assistant" / "teacher_assistant".
  */
 export async function resolveProvider(
   useCase: UseCase
