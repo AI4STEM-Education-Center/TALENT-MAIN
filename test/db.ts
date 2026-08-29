@@ -20,6 +20,9 @@ export async function resetDb() {
   await prisma.message.deleteMany();
   await prisma.quizAnswer.deleteMany();
   await prisma.quizAttempt.deleteMany();
+  // Relation-free (see schema): nothing cascades it away, so clear it explicitly
+  // or archived results bleed into the next spec file.
+  await prisma.examResult.deleteMany();
   await prisma.quizProgress.deleteMany();
   await prisma.option.deleteMany();
   // Simulation rows cascade from Question, but SimulationSession is relation-free
@@ -50,6 +53,10 @@ export async function resetDb() {
   // Config singletons/overrides are relation-free but leak across specs.
   await prisma.emailSender.deleteMany();
   await prisma.smtpConfig.deleteMany();
+  await prisma.assistantConfig.deleteMany();
+  // Relation-free (see schema): nothing cascades it, so clear it explicitly or
+  // stored chat attachments bleed into the next spec file.
+  await prisma.assistantAttachment.deleteMany();
 }
 
 let seq = 0;

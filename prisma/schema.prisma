@@ -676,7 +676,9 @@ model AiModel {
   @@index([providerId])
 }
 
-// useCase: "pdf_description" | "description_generation" | "recommendation" | "quiz_extraction" | "simulation_generation"
+// useCase: "pdf_description" | "description_generation" | "recommendation" |
+//          "quiz_extraction" | "simulation_generation" | "student_assistant" |
+//          "teacher_assistant"
 model AiUseCaseAssignment {
   id         String   @id @default(cuid())
   useCase    String   @unique       // only one assignment per use case
@@ -687,6 +689,95 @@ model AiUseCaseAssignment {
 
   provider AiProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
   model    AiModel    @relation(fields: [modelId], references: [id], onDelete: Cascade)
+}
+
+// ─── Assistant (chat bot) configuration ───────────────────────────────────────
+// One row per audience: "student" and "teacher". The id IS the audience so the
+// row is addressable without a lookup (mirroring SmtpConfig's "singleton" id).
+//
+// The provider/model each assistant talks to is NOT stored here — it comes from
+// AiUseCaseAssignment under the "student_assistant" / "teacher_assistant" use
+// cases, so assistants share the same provider plumbing (OpenAI / local /
+// Cloudflare AI Gateway) and connection tester as every other AI feature. This
+// row holds only the *behavior* knobs an admin tunes per audience.
+model AssistantConfig {
+  id       String @id // "student" | "teacher" — see ASSISTANT_AUDIENCES
+  audience String @unique
+
+  enabled Boolean @default(false)
+
+  // Appended to the built-in system prompt (never replaces it — the built-in
+  // half carries the safety rules). Empty/null = built-in prompt only.
+  extraInstructions String?
+
+  // JSON array of skill ids (see src/lib/assistant/skills). Only skills
+  // registered for this audience are loaded; unknown ids are ignored, so
+  // removing a skill from the code can never break a saved config.
+  enabledSkills String @default("[]")
+
+  // JSON array of tool names switched OFF inside the enabled skills. Stored as
+  // an opt-OUT list rather than an allow-list on purpose: a tool added to a
+  // skill in a later release is then available to every existing row instead of
+  // silently staying dark until an admin re-saves the form.
+  disabledTools String @default("[]")
+
+  // Multimodal input limits. attachmentKinds is a JSON array drawn from the
+  // registry in src/lib/assistant/attachments.ts ("image" | "text" | "csv");
+  // adding a kind there (pdf, …) makes it selectable here without a migration.
+  attachmentKinds    String @default("[\"image\"]")
+  maxAttachments     Int    @default(4)
+  maxAttachmentBytes Int    @default(5242880) // 5 MiB per attachment
+
+  // How long an uploaded chat attachment is kept before the worker's retention
+  // sweep deletes the row and its S3 object. See AssistantAttachment.
+  attachmentRetentionDays Int @default(30)
+
+  // Agent loop bounds. maxToolCalls caps tool-calling rounds per turn;
+  // maxHistoryMessages caps how much client-supplied transcript is replayed.
+  maxToolCalls       Int @default(6)
+  maxHistoryMessages Int @default(20)
+
+  // Per-user turn budget, enforced in-process like src/lib/rate-limit.ts.
+  turnsPerHour Int @default(60)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// One file a user attached to a chat-assistant turn. The bytes live in S3 under
+// `assistant-attachments/{userId}/{id}/`; this row is the index the app reads
+// them back through, plus the expiry the worker sweeps on
+// (AssistantConfig.attachmentRetentionDays, 30 days by default). Keeping the
+// payload out of the row matters: a handful of 5 MiB base64 blobs per chat turn
+// would bloat both the SQLite file and every nightly backup of it.
+//
+// Deliberately RELATION-FREE, like ExamResult: the row is what authorizes and
+// locates the object, so a cascade delete would silently orphan bytes in the
+// bucket that nothing could ever find again. Deleting a user therefore leaves
+// their attachments to the retention sweep, which removes object and row
+// together — the one place that deletion is complete.
+//
+// The write order is row-first, then upload: an object can never exist without a
+// row pointing at it, so the sweep is the only deleter it needs.
+model AssistantAttachment {
+  id       String @id @default(cuid())
+  userId   String
+  audience String // "student" | "teacher" — the assistant it was sent to
+
+  name     String // original filename, for display
+  mimeType String
+  kind     String // AttachmentKind: "image" | "text" | "csv" | …
+  bytes    Int
+
+  storageKey String
+  bucket     String
+
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  // Retention sweep (expiresAt < now) and per-user reads of a known id.
+  @@index([expiresAt])
+  @@index([userId, createdAt])
 }
 
 // ─── Email / Notifications ─────────────────────────────────────────────────────

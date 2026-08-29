@@ -37,6 +37,7 @@ import {
 import { runConsentExportJob, sweepExpiredConsentExports } from "./lib/consent-export";
 import { runBackupJob, claimDueBackup } from "./lib/backup";
 import { runS3Gc } from "./lib/s3-gc";
+import { purgeExpiredAssistantAttachments } from "./lib/assistant/attachment-store";
 import {
   pruneResourceSamples,
   startResourceSampler,
@@ -490,6 +491,36 @@ async function runResourceRetentionLoop() {
   }
 }
 
+const ASSISTANT_ATTACHMENT_PRUNE_INTERVAL_MS = 60 * 60 * 1000;
+
+/**
+ * Retention sweep for chat-assistant attachments: deletes the S3 object and the
+ * index row together once the audience's retention window has passed (see
+ * AssistantConfig.attachmentRetentionDays, 30 days by default).
+ *
+ * Hourly rather than daily because each row can carry megabytes, and because the
+ * sweep is batched — a backlog drains an hour at a time instead of a day.
+ * Deleting by cutoff is idempotent, so a missed or repeated run is harmless.
+ */
+async function runAssistantAttachmentRetentionLoop() {
+  console.log("[Worker] Assistant attachment retention loop started (1h interval)...");
+  for (;;) {
+    try {
+      const count = await purgeExpiredAssistantAttachments();
+      if (count > 0) console.log(`[Worker] Purged ${count} expired chat attachment(s)`);
+    } catch (err: any) {
+      console.error("[Worker] Assistant attachment purge failed:", err?.message ?? err);
+      await logSystemEvent({
+        category: "WORKER",
+        type: "ASSISTANT_ATTACHMENT_PURGE_FAILED",
+        severity: "ERROR",
+        message: `Assistant attachment purge failed: ${err?.message ?? err}`,
+      });
+    }
+    await new Promise((resolve) => setTimeout(resolve, ASSISTANT_ATTACHMENT_PRUNE_INTERVAL_MS));
+  }
+}
+
 async function startWorker() {
   try {
     // This node's own CPU/RAM/storage feed for the admin System Resources tab.
@@ -514,6 +545,7 @@ async function startWorker() {
       runS3GcLoop(),
       runLogRetentionLoop(),
       runResourceRetentionLoop(),
+      runAssistantAttachmentRetentionLoop(),
     ]);
   } catch (err) {
     console.error("[Worker] Fatal error in worker loop:", err);
