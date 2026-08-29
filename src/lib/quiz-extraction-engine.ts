@@ -26,7 +26,7 @@ import {
   type ThinkingParams,
 } from "./ai-provider";
 import { resolveModelImageUrl } from "./storage";
-import { moderateImages } from "./guardrails";
+import { checkContentSafety, moderateImages } from "./guardrails";
 import { retryWithExponentialBackoff } from "./retry";
 import {
   streamJsonCompletion,
@@ -248,6 +248,32 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
     }
     // Answer-dependent cleanup, now that the key (if any) has been applied.
     quiz = finalizeAnswers(quiz);
+
+    // ── Guardrail: one check over the WHOLE extracted text. ──
+    // This is the gate where a poisoned PDF would otherwise become permanent
+    // Question rows that go on to feed the simulation engine, the quiz review,
+    // and the chat assistant's tools. Aggregated into a single call rather than
+    // one per page — injected text survives aggregation either way.
+    //
+    // A trip becomes a WARNING on the row, not a failure: the teacher reviews
+    // every extraction before committing it, so surfacing the finding where
+    // they will read it beats discarding work they are waiting on.
+    const extractedText = quiz.questions
+      .map((q, i) => [`${i + 1}. ${q.text}`, ...q.options.map((o) => `   - ${o.text}`)].join("\n"))
+      .join("\n");
+    const safety = await checkContentSafety(extractedText, {
+      surface: "quiz_extraction",
+      id: extraction.id,
+    });
+    if (safety.reasons.length > 0) {
+      quiz = {
+        ...quiz,
+        warnings: [
+          ...quiz.warnings,
+          `safety check flagged this document (${safety.reasons.join(", ")}) — read the question text before committing`,
+        ],
+      };
+    }
 
     // ── Pass 3: tight bounding boxes — only when something needs cropping. ──
     // Best-effort: any failure (whole block or a single page) leaves the

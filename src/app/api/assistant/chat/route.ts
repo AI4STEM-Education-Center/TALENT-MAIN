@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { readBoundedText, BODY_TOO_LARGE } from "@/lib/request-body";
 import { rateLimit } from "@/lib/rate-limit";
-import { moderateContent } from "@/lib/guardrails";
+import { checkContentSafety, moderateContent } from "@/lib/guardrails";
 import { logApiError, logSystemEvent } from "@/lib/system-log";
 import { resolveAssistantSession } from "@/lib/assistant/session";
 import { buildUserContent, validateAttachments } from "@/lib/assistant/attachments";
@@ -160,6 +160,24 @@ export async function POST(req: Request) {
               type: "error",
               message:
                 "This message was blocked by the site's content filter. Please rephrase and try again.",
+            });
+            return;
+          }
+
+          // Jailbreak / off-topic classification on the message text. Runs
+          // FLAG-only by default, so today this writes a log row and lets the
+          // turn through; Phase 3 makes the mode an admin setting. Attachments
+          // are not re-sent here — they were already moderated above, and
+          // re-billing a vision model per turn is not worth it.
+          const safety = await checkContentSafety(parsed.data.message, {
+            surface: "assistant_chat",
+            id: conversationId,
+            userId: ctx.userId,
+          });
+          if (safety.blocked) {
+            emit({
+              type: "error",
+              message: "This message was blocked by the site's safety checks. Please rephrase and try again.",
             });
             return;
           }

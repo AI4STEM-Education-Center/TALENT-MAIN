@@ -16,7 +16,11 @@ export type UseCase =
   // any other use case, so leaving it unassigned turns the check off — see
   // src/lib/guardrails.ts. Wants a moderation model (omni-moderation-latest),
   // not a chat model.
-  | "moderation";
+  | "moderation"
+  // Jailbreak + off-topic classification (one call answers both). Wants a
+  // cheap, fast chat model — it never writes anything a user sees. Leaving it
+  // unassigned turns the check off. See src/lib/guardrail-check.ts.
+  | "guardrail";
 export type ProviderType = "openai" | "local" | "cloudflare";
 
 /**

@@ -142,6 +142,9 @@ const USE_CASE_LABELS: Record<string, string> = {
   // Wants a moderation model (e.g. omni-moderation-latest), not a chat model.
   // Free to call, and leaving it unassigned turns content moderation off.
   moderation: "Content Moderation",
+  // Jailbreak + off-topic classification. One call answers both, and its output
+  // is never shown to a user — a small fast model is the right choice.
+  guardrail: "Guardrail Checks (jailbreak / off-topic)",
 };
 
 const EMPTY_PROVIDER_FORM: ProviderForm = {

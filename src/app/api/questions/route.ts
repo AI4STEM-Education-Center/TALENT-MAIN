@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { checkContentSafety, moderateText } from "@/lib/guardrails";
 import { prisma } from "@/lib/prisma";
 import { canManage, canRead, getContentActor } from "@/lib/quiz-access";
 import { normalizeNumericValue } from "@/lib/quiz-scoring";
@@ -86,6 +87,25 @@ export async function POST(req: NextRequest) {
   const quiz = await prisma.quiz.findUnique({ where: { id: quizId } });
   if (!quiz || !canManage(actor, quiz)) {
     return NextResponse.json({ error: "Quiz not found" }, { status: 404 });
+  }
+
+  // A teacher typing a question is the ordinary case; this catches the one
+  // where the text was pasted out of a document that carried a payload. Both
+  // guardrails fail open, and off-topic is OFF by default here — a physics
+  // question IS the topic, so running it would be pure false positives.
+  const authored = [text, ...(options ?? []).map((o: { text?: string }) => o?.text ?? "")]
+    .filter(Boolean)
+    .join("\n");
+  const subject = { surface: "question_authoring", id: quizId, userId: actor.userId };
+  const [moderation, safety] = await Promise.all([
+    moderateText(authored, subject),
+    checkContentSafety(authored, subject),
+  ]);
+  if (moderation.flagged || safety.blocked) {
+    return NextResponse.json(
+      { error: "This question was blocked by the site's safety checks. Please review the text." },
+      { status: 422 }
+    );
   }
 
   const question = await prisma.question.create({

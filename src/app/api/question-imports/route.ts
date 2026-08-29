@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { canManage, getContentActor } from "@/lib/quiz-access";
 import { QuestionImportError, validateParsedQuestionBank } from "@/lib/question-import/qti";
 import { rateLimit } from "@/lib/rate-limit";
+import { checkContentSafety, moderateText } from "@/lib/guardrails";
 import { BODY_TOO_LARGE, readBoundedText } from "@/lib/request-body";
 
 export const runtime = "nodejs";
@@ -73,6 +74,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Invalid question import payload." },
       { status: 400 }
+    );
+  }
+
+  // A QTI bank is an uploaded file's contents arriving as JSON, so it is
+  // checked like any other imported document before it becomes Question rows.
+  // Fails open; off-topic stays off (a question bank IS the topic).
+  const importedText = parsed.questions
+    .map((q) => [q.text, ...(q.options ?? []).map((o) => o.text)].filter(Boolean).join("\n"))
+    .join("\n");
+  const subject = { surface: "question_import", id: quizId, userId: actor.userId };
+  const [moderation, safety] = await Promise.all([
+    moderateText(importedText, subject),
+    checkContentSafety(importedText, subject),
+  ]);
+  if (moderation.flagged || safety.blocked) {
+    return NextResponse.json(
+      { error: "This import was blocked by the site's safety checks. Please review the file." },
+      { status: 422 }
     );
   }
 

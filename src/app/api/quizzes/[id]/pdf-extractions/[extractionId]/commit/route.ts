@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { canManage, getContentActor } from "@/lib/quiz-access";
 import { mapStagedToQuestionData, validateCommitQuestions } from "@/lib/quiz-extraction";
 import { deleteS3Objects, headS3Object, listS3Objects, quizExtractionPrefix } from "@/lib/storage";
+import { checkContentSafety, moderateText } from "@/lib/guardrails";
 
 export const runtime = "nodejs";
 
@@ -67,6 +68,25 @@ export async function POST(
   // crops uploaded under the old indexes. Slot-binding would reject those
   // legitimate flows while adding nothing — every key in this set is already
   // confined to this extraction, and the teacher authors the payload anyway.
+  // The commit is where PDF-derived text becomes permanent Question rows, so
+  // it gets a second look even though the extraction job already checked the
+  // document — the teacher may have edited the staged text in between. Fails
+  // open; off-topic stays off, as on the manual authoring route.
+  const committedText = questions
+    .map((q) => [q.text, ...(q.options ?? []).map((o) => o.text)].filter(Boolean).join("\n"))
+    .join("\n");
+  const subject = { surface: "extraction_commit", id: extraction.id, userId: actor.userId };
+  const [moderation, safety] = await Promise.all([
+    moderateText(committedText, subject),
+    checkContentSafety(committedText, subject),
+  ]);
+  if (moderation.flagged || safety.blocked) {
+    return NextResponse.json(
+      { error: "These questions were blocked by the site's safety checks. Please review the text." },
+      { status: 422 }
+    );
+  }
+
   const figurePrefix = `${quizExtractionPrefix(extraction.storageKey)}figures/`;
   const issuedFigures = await prisma.quizPdfExtractionFigure.findMany({
     where: { extractionId: extraction.id },
