@@ -17,10 +17,16 @@ export type UseCase =
   // src/lib/guardrails.ts. Wants a moderation model (omni-moderation-latest),
   // not a chat model.
   | "moderation"
-  // Jailbreak + off-topic classification (one call answers both). Wants a
-  // cheap, fast chat model — it never writes anything a user sees. Leaving it
-  // unassigned turns the check off. See src/lib/guardrail-check.ts.
-  | "guardrail";
+  // The two LLM guardrail classifiers, assigned independently so an admin can
+  // spend differently on them — jailbreak is the adversarial one and may want a
+  // stronger model, while off-topic is a blunt relevance question a cheap model
+  // answers well. Point BOTH at the same model and the two questions are asked
+  // in a single call; point them at different models and each is asked its own.
+  // Either way the output is never shown to a user, so a small fast model is
+  // usually right. Leaving one unassigned turns that check off.
+  // See src/lib/guardrail-check.ts.
+  | "guardrail_jailbreak"
+  | "guardrail_offtopic";
 export type ProviderType = "openai" | "local" | "cloudflare";
 
 /**

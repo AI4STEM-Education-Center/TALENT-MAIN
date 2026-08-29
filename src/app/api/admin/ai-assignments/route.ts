@@ -18,7 +18,8 @@ const VALID_USE_CASES = [
   "student_assistant",
   "teacher_assistant",
   "moderation",
-  "guardrail",
+  "guardrail_jailbreak",
+  "guardrail_offtopic",
 ] as const;
 
 /**

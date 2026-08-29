@@ -143,9 +143,13 @@ const USE_CASE_LABELS: Record<string, string> = {
   // Wants a moderation model (e.g. omni-moderation-latest), not a chat model.
   // Free to call, and leaving it unassigned turns content moderation off.
   moderation: "Content Moderation",
-  // Jailbreak + off-topic classification. One call answers both, and its output
-  // is never shown to a user — a small fast model is the right choice.
-  guardrail: "Guardrail Checks (jailbreak / off-topic)",
+  // The two LLM guardrail checks, assigned separately so they can be costed
+  // separately. Assign both to the SAME model and one call answers both
+  // questions; assign different models and each check makes its own call.
+  // Neither writes anything a user sees, so a small fast model usually wins.
+  // Leaving one unassigned turns that check off.
+  guardrail_jailbreak: "Guardrail — Jailbreak Check",
+  guardrail_offtopic: "Guardrail — Off-Topic Check",
 };
 
 const EMPTY_PROVIDER_FORM: ProviderForm = {
@@ -221,6 +225,10 @@ export default function AiConfigPage() {
   } | null>(null);
   const [editModelForm, setEditModelForm] = useState<ModelForm>(EMPTY_MODEL_FORM);
   const [editModelSaving, setEditModelSaving] = useState(false);
+
+  // Bumped after assignments are saved, so the Guardrails panel re-reads which
+  // model each of its checks is running on rather than showing a stale one.
+  const [assignmentsSavedAt, setAssignmentsSavedAt] = useState(0);
 
   // Assignment state
   const [assignmentEdits, setAssignmentEdits] = useState<
@@ -574,6 +582,7 @@ export default function AiConfigPage() {
 
       setAssignmentEdits({});
       await fetchAssignments();
+      setAssignmentsSavedAt((n) => n + 1);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -1451,7 +1460,7 @@ export default function AiConfigPage() {
         </div>
         <AssistantSettings />
 
-        <GuardrailSettings />
+        <GuardrailSettings refreshKey={assignmentsSavedAt} />
       </section>
 
       {/* ─── Discover Models Modal ────────────────────────────────────────── */}

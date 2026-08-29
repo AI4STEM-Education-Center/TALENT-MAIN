@@ -23,13 +23,16 @@ import { streamJsonCompletion, streamOptionsFor, transportFor } from "@/lib/ai-s
 import { logSystemEvent } from "@/lib/system-log";
 import { chunkForModeration, flaggedCategories, MAX_INPUT_ITEMS } from "@/lib/guardrail-fence";
 import {
-  GUARDRAIL_CHECK_SCHEMA,
   DEFAULT_GUARDRAIL_POLICY,
   DEFAULT_TOPIC_DESCRIPTION,
+  activeChecks,
   buildGuardrailCheckPrompt,
-  validateGuardrailCheck,
   decideAction,
+  emptyCheckResult,
+  guardrailCheckSchema,
   policyIsInert,
+  validateGuardrailCheck,
+  type CheckSelection,
   type GuardrailCheckResult,
   type GuardrailPolicy,
 } from "@/lib/guardrail-check";
@@ -204,20 +207,34 @@ export async function moderateContent(
   return runModeration(items, subject, images.length > 0 ? "a message with attachments" : "text");
 }
 
-// ─── Jailbreak + off-topic check (one LLM call) ──────────────────────────────
+// ─── Jailbreak + off-topic check ─────────────────────────────────────────────
+//
+// The two checks carry INDEPENDENT model assignments ("guardrail_jailbreak" and
+// "guardrail_offtopic"), so how many calls a check costs depends on how the
+// admin configured it:
+//
+//   both on, same model      → 1 call asking both questions
+//   both on, different models→ 2 calls, each asking its own question
+//   one on                   → 1 call asking that one question
+//   neither on / unassigned  → 0 calls
+//
+// Sharing a model is therefore the cheap default and splitting is a deliberate
+// choice, which is exactly the trade-off the admin panel presents.
 
 export interface SafetyVerdict {
   /**
-   * Whether the check ran. False when no "guardrail" provider is assigned, the
-   * policy is inert, or the call failed. As with moderation, `blocked: false`
-   * is NOT "clean" unless `checked` is true.
+   * Whether EVERY check the policy switched on actually ran. False when a
+   * check has no provider assigned, the policy is inert, or a call failed —
+   * including the half-failure where one of two models answered and the other
+   * did not. As with moderation, `blocked: false` is NOT "clean" unless
+   * `checked` is true.
    */
   checked: boolean;
   /** True only when a tripped check is in BLOCK mode. */
   blocked: boolean;
   /** Trip descriptions for the caller's log/message, e.g. ["jailbreak (0.92)"]. */
   reasons: string[];
-  /** Raw findings, or null when the check did not run. */
+  /** Findings from whichever checks answered, or null when none did. */
   result: GuardrailCheckResult | null;
 }
 
@@ -237,41 +254,60 @@ export interface SafetyCheckOptions {
 const MAX_CHECK_CHARS = 12_000;
 
 // Same text checked twice — a worker redelivery, a teacher resubmitting an
-// unchanged import — reuses the verdict instead of re-billing. Bounded so a
-// busy site cannot grow it without limit; the TTL keeps a policy change from
-// being masked by a stale entry for long.
+// unchanged import — reuses the FINDINGS instead of re-billing. Thresholds and
+// modes are applied after the cache rather than baked into the key, so an admin
+// retuning a threshold re-reads a cached answer rather than paying for the same
+// classification again. Bounded so a busy site cannot grow it without limit.
 const CACHE_TTL_MS = 10 * 60_000;
 const CACHE_MAX_ENTRIES = 500;
-const _checkCache = new Map<string, { verdict: SafetyVerdict; expiresAt: number }>();
+const _checkCache = new Map<string, { result: GuardrailCheckResult; expiresAt: number }>();
 
-/** Cache key: the exact inputs that determine the verdict. */
-function cacheKey(text: string, topic: string, policy: GuardrailPolicy, model: string): string {
+/**
+ * Everything about a resolved provider that changes what a call returns. Two
+ * use cases resolving to the same values are the same call and are merged; a
+ * difference anywhere — a different model, endpoint or reasoning effort —
+ * means two calls.
+ */
+function providerKey(provider: ResolvedProvider): string {
+  return JSON.stringify([
+    provider.providerType,
+    provider.baseUrl,
+    provider.model,
+    provider.apiSurface,
+    provider.thinkingLevel,
+    provider.serviceTier,
+  ]);
+}
+
+/** Cache key: the exact inputs that determine the findings. */
+function cacheKey(text: string, topic: string, checks: CheckSelection, provider: string): string {
+  const asked = `${checks.jailbreak ? "j" : ""}${checks.offTopic ? "o" : ""}`;
   return createHash("sha256")
-    .update(`${model}\u0000${topic}\u0000${JSON.stringify(policy)}\u0000${text}`)
+    .update(`${provider}\u0000${asked}\u0000${topic}\u0000${text}`)
     .digest("hex");
 }
 
-function readCache(key: string): SafetyVerdict | null {
+function readCache(key: string): GuardrailCheckResult | null {
   const hit = _checkCache.get(key);
   if (!hit) return null;
   if (Date.now() >= hit.expiresAt) {
     _checkCache.delete(key);
     return null;
   }
-  return hit.verdict;
+  return hit.result;
 }
 
-function writeCache(key: string, verdict: SafetyVerdict): void {
+function writeCache(key: string, result: GuardrailCheckResult): void {
   // Cheapest sound eviction for a Map: insertion order means the first key is
   // the oldest, so dropping it approximates FIFO without a second structure.
   if (_checkCache.size >= CACHE_MAX_ENTRIES) {
     const oldest = _checkCache.keys().next();
     if (!oldest.done) _checkCache.delete(oldest.value);
   }
-  _checkCache.set(key, { verdict, expiresAt: Date.now() + CACHE_TTL_MS });
+  _checkCache.set(key, { result, expiresAt: Date.now() + CACHE_TTL_MS });
 }
 
-/** Drop every cached verdict. Called when an admin changes guardrail settings. */
+/** Drop every cached finding. Called when an admin changes guardrail settings. */
 export function invalidateGuardrailCheckCache(): void {
   _checkCache.clear();
 }
@@ -285,13 +321,95 @@ function providerUsable(provider: ResolvedProvider | null): provider is Resolved
   return true;
 }
 
+/** One planned model call: the questions it asks and the provider it asks them on. */
+interface CheckCall {
+  checks: CheckSelection;
+  provider: ResolvedProvider;
+}
+
 /**
- * Run the jailbreak + off-topic classifier over one piece of text.
- *
- * ONE call answers both questions — same text, same model, one round trip.
+ * Decide which calls to make. Exported for the tests, which assert the merging
+ * rule directly rather than inferring it from call counts.
+ */
+export function planCheckCalls(
+  wanted: CheckSelection,
+  jailbreakProvider: ResolvedProvider | null,
+  offTopicProvider: ResolvedProvider | null
+): CheckCall[] {
+  const jailbreak = wanted.jailbreak && providerUsable(jailbreakProvider) ? jailbreakProvider : null;
+  const offTopic = wanted.offTopic && providerUsable(offTopicProvider) ? offTopicProvider : null;
+
+  // Same model, both questions: one call. This is the configuration the panel
+  // recommends, and it costs exactly what asking a single question costs.
+  if (jailbreak && offTopic && providerKey(jailbreak) === providerKey(offTopic)) {
+    return [{ checks: { jailbreak: true, offTopic: true }, provider: jailbreak }];
+  }
+
+  const calls: CheckCall[] = [];
+  if (jailbreak) calls.push({ checks: { jailbreak: true, offTopic: false }, provider: jailbreak });
+  if (offTopic) calls.push({ checks: { jailbreak: false, offTopic: true }, provider: offTopic });
+  return calls;
+}
+
+/**
+ * Run one planned call. Returns null when it could not produce findings, which
+ * the caller reads as "this call's checks did not run" — never as "clean".
+ */
+async function runCheckCall(
+  call: CheckCall,
+  text: string,
+  topic: string,
+  subject: GuardrailSubject
+): Promise<GuardrailCheckResult | null> {
+  const key = cacheKey(text, topic, call.checks, providerKey(call.provider));
+  const cached = readCache(key);
+  if (cached) return cached;
+
+  try {
+    const client = await createOpenAIClient(call.provider);
+    const transport = transportFor(call.provider);
+    const { value } = await streamJsonCompletion(
+      client,
+      {
+        model: call.provider.model,
+        messages: [
+          { role: "user", content: buildGuardrailCheckPrompt(text, topic, call.checks) },
+        ],
+        ...thinkingParams(call.provider),
+      },
+      guardrailCheckSchema(call.checks),
+      streamOptionsFor(transport)
+    );
+
+    const result = validateGuardrailCheck(value, call.checks);
+    writeCache(key, result);
+    return result;
+  } catch (error) {
+    void logSystemEvent({
+      category: "GUARDRAIL",
+      type: "SAFETY_CHECK_UNAVAILABLE",
+      severity: "INFO",
+      message: `Safety check skipped on ${subject.surface} (${call.provider.model}): ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      userId: subject.userId ?? null,
+      metadata: {
+        surface: subject.surface,
+        subjectId: subject.id ?? null,
+        model: call.provider.model,
+        checks: call.checks,
+      },
+    });
+    return null;
+  }
+}
+
+/**
+ * Run the jailbreak and off-topic classifiers over one piece of text, on
+ * whichever models the admin assigned to each.
  *
  * FAILS OPEN like the rest of this module: no assignment, an inert policy, an
- * unusable provider, or a thrown call all return `checked: false`, and the
+ * unusable provider, or a thrown call all leave `checked: false`, and the
  * caller proceeds. The classifier is a second opinion, not a dependency.
  */
 export async function checkContentSafety(
@@ -305,62 +423,64 @@ export async function checkContentSafety(
   const trimmed = text.trim().slice(0, MAX_CHECK_CHARS);
   if (!trimmed) return NOT_RUN;
 
-  const provider = await resolveProvider("guardrail");
-  if (!providerUsable(provider)) return NOT_RUN;
+  const wanted = activeChecks(policy);
+  const [jailbreakProvider, offTopicProvider] = await Promise.all([
+    wanted.jailbreak ? resolveProvider("guardrail_jailbreak") : Promise.resolve(null),
+    wanted.offTopic ? resolveProvider("guardrail_offtopic") : Promise.resolve(null),
+  ]);
 
-  const topic = options.topicDescription?.trim() || DEFAULT_TOPIC_DESCRIPTION;
-  const key = cacheKey(trimmed, topic, policy, provider.model);
-  const cached = readCache(key);
-  if (cached) return cached;
+  const calls = planCheckCalls(wanted, jailbreakProvider, offTopicProvider);
+  if (calls.length === 0) return NOT_RUN;
 
-  try {
-    const client = await createOpenAIClient(provider);
-    const transport = transportFor(provider);
-    const { value } = await streamJsonCompletion(
-      client,
-      {
-        model: provider.model,
-        messages: [{ role: "user", content: buildGuardrailCheckPrompt(trimmed, topic) }],
-        ...thinkingParams(provider),
-      },
-      GUARDRAIL_CHECK_SCHEMA,
-      streamOptionsFor(transport)
-    );
+  const answers = await Promise.all(
+    calls.map((call) => runCheckCall(call, trimmed, topicFor(options), subject))
+  );
 
-    const result = validateGuardrailCheck(value);
-    const { blocked, reasons } = decideAction(result, policy);
-    const verdict: SafetyVerdict = { checked: true, blocked, reasons, result };
-
-    if (reasons.length > 0) {
-      void logSystemEvent({
-        category: "GUARDRAIL",
-        type: blocked ? "SAFETY_BLOCK" : "SAFETY_FLAG",
-        severity: "WARNING",
-        message: `Guardrail ${blocked ? "blocked" : "flagged"} content on ${subject.surface}: ${reasons.join(", ")}`,
-        userId: subject.userId ?? null,
-        metadata: {
-          surface: subject.surface,
-          subjectId: subject.id ?? null,
-          reasons,
-          jailbreak: result.jailbreak,
-          offTopic: result.offTopic,
-        },
-      });
+  // A finding is only taken from the call that actually asked for it, so a
+  // model volunteering an answer to the other question is ignored.
+  const result = emptyCheckResult();
+  const ran: CheckSelection = { jailbreak: false, offTopic: false };
+  calls.forEach((call, index) => {
+    const answer = answers[index];
+    if (!answer) return;
+    if (call.checks.jailbreak) {
+      result.jailbreak = answer.jailbreak;
+      ran.jailbreak = true;
     }
+    if (call.checks.offTopic) {
+      result.offTopic = answer.offTopic;
+      ran.offTopic = true;
+    }
+  });
 
-    writeCache(key, verdict);
-    return verdict;
-  } catch (error) {
+  // Partial coverage is NOT a pass: if the admin asked for two checks and only
+  // one answered, `checked` stays false so a fail-closed site still refuses.
+  const checked = (!wanted.jailbreak || ran.jailbreak) && (!wanted.offTopic || ran.offTopic);
+  if (!ran.jailbreak && !ran.offTopic) return NOT_RUN;
+
+  const { blocked, reasons } = decideAction(result, policy);
+
+  if (reasons.length > 0) {
     void logSystemEvent({
       category: "GUARDRAIL",
-      type: "SAFETY_CHECK_UNAVAILABLE",
-      severity: "INFO",
-      message: `Safety check skipped on ${subject.surface}: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
+      type: blocked ? "SAFETY_BLOCK" : "SAFETY_FLAG",
+      severity: "WARNING",
+      message: `Guardrail ${blocked ? "blocked" : "flagged"} content on ${subject.surface}: ${reasons.join(", ")}`,
       userId: subject.userId ?? null,
-      metadata: { surface: subject.surface, subjectId: subject.id ?? null },
+      metadata: {
+        surface: subject.surface,
+        subjectId: subject.id ?? null,
+        reasons,
+        jailbreak: result.jailbreak,
+        offTopic: result.offTopic,
+        models: calls.map((call) => call.provider.model),
+      },
     });
-    return NOT_RUN;
   }
+
+  return { checked, blocked, reasons, result };
+}
+
+function topicFor(options: SafetyCheckOptions): string {
+  return options.topicDescription?.trim() || DEFAULT_TOPIC_DESCRIPTION;
 }

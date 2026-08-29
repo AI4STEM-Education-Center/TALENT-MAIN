@@ -22,13 +22,43 @@ type Settings = {
   disabledSurfaces: string[];
 };
 
+type ModelInfo = { label: string; providerActive: boolean } | null;
+
 type Payload = {
   settings: Settings;
   surfaces: SurfaceInfo[];
   defaultTopicDescription: string;
   maxTopicDescriptionChars: number;
   thresholdBounds: { min: number; max: number };
+  /** Keyed by use case: moderation, guardrail_jailbreak, guardrail_offtopic. */
+  models: Record<string, ModelInfo>;
+  /** True when both LLM checks resolve to the same model, i.e. one call. */
+  sharesOneCall: boolean;
 };
+
+/**
+ * What a check is currently running on. Unassigned is not an error state — it
+ * is how a check is switched off — so it reads as a plain statement rather than
+ * a warning, and only an INACTIVE provider is called out in red.
+ */
+function ModelReadout({ model }: { model: ModelInfo }) {
+  if (!model) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Model: <strong>not assigned</strong> — this check does not run. Pick one in the use-case
+        table at the top of this page.
+      </p>
+    );
+  }
+  return (
+    <p className="text-sm text-muted-foreground">
+      Model: <strong>{model.label}</strong>
+      {!model.providerActive && (
+        <span className="text-destructive"> — provider is disabled, so this check cannot run</span>
+      )}
+    </p>
+  );
+}
 
 const MODES: { value: Mode; label: string; blurb: string }[] = [
   { value: "OFF", label: "Off", blurb: "Not run at all — no cost, no log rows." },
@@ -74,7 +104,7 @@ function ModePicker({
  * table above (Content Moderation / Guardrail Checks); this card is the
  * behaviour around them.
  */
-export function GuardrailSettings() {
+export function GuardrailSettings({ refreshKey = 0 }: { refreshKey?: number }) {
   const [data, setData] = useState<Payload | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [saving, setSaving] = useState(false);
@@ -97,7 +127,9 @@ export function GuardrailSettings() {
     return () => {
       cancelled = true;
     };
-  }, []);
+    // Re-read after the use-case table saves, so the model read-outs below
+    // cannot disagree with the assignments the admin just changed.
+  }, [refreshKey]);
 
   const update = <K extends keyof Settings>(key: K, value: Settings[K]) =>
     setSettings((prev) => (prev ? { ...prev, [key]: value } : prev));
@@ -159,9 +191,11 @@ export function GuardrailSettings() {
           <ShieldCheck className="h-5 w-5" /> Guardrails
         </CardTitle>
         <p className="text-sm text-muted-foreground">
-          Safety checks applied to chat messages, uploaded PDFs, and authored questions. Pick
-          which model runs them in the use-case table above — <strong>Content Moderation</strong>{" "}
-          and <strong>Guardrail Checks</strong>. A use case left unassigned turns that check off.
+          Safety checks applied to chat messages, uploaded PDFs, and authored questions. Each
+          check runs on its own model, picked in the use-case table at the top of this page —{" "}
+          <strong>Content Moderation</strong>, <strong>Guardrail — Jailbreak Check</strong> and{" "}
+          <strong>Guardrail — Off-Topic Check</strong>. Leaving one unassigned turns that check
+          off.
         </p>
       </CardHeader>
 
@@ -182,6 +216,7 @@ export function GuardrailSettings() {
             OpenAI&apos;s moderation endpoint. It costs nothing, so there is rarely a reason to
             turn it off. Flagged chat messages are always blocked; flagged PDF pages are logged.
           </p>
+          <ModelReadout model={data.models.moderation} />
         </section>
 
         {/* Jailbreak */}
@@ -213,6 +248,7 @@ export function GuardrailSettings() {
               aria-label="Jailbreak confidence threshold"
             />
           </label>
+          <ModelReadout model={data.models.guardrail_jailbreak} />
         </section>
 
         {/* Off-topic */}
@@ -257,6 +293,12 @@ export function GuardrailSettings() {
               onChange={(e) => update("topicDescription", e.target.value)}
             />
           </div>
+          <ModelReadout model={data.models.guardrail_offtopic} />
+          <p className="text-sm text-muted-foreground">
+            {data.sharesOneCall
+              ? "Both checks run on the same model, so one request answers both questions — the second check costs nothing extra."
+              : "The two checks are on different models, so each submission makes two requests. Point them at the same model to halve that."}
+          </p>
         </section>
 
         {/* Failure posture */}
