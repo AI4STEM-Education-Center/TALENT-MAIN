@@ -17,6 +17,7 @@ const VALID_USE_CASES = [
   "simulation_generation",
   "student_assistant",
   "teacher_assistant",
+  "moderation",
 ] as const;
 
 /**

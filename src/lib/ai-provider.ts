@@ -11,7 +11,12 @@ export type UseCase =
   // teacher bots are tuned (and costed) independently, and a site may want a
   // cheap local model for one and a hosted vision model for the other.
   | "student_assistant"
-  | "teacher_assistant";
+  | "teacher_assistant"
+  // Content moderation (OpenAI's free /v1/moderations endpoint). Assigned like
+  // any other use case, so leaving it unassigned turns the check off — see
+  // src/lib/guardrails.ts. Wants a moderation model (omni-moderation-latest),
+  // not a chat model.
+  | "moderation";
 export type ProviderType = "openai" | "local" | "cloudflare";
 
 /**

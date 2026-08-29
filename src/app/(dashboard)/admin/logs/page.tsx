@@ -47,7 +47,7 @@ interface LogsResponse {
   };
 }
 
-const CATEGORIES = ["AUTH", "API", "WORKER", "USAGE", "SYSTEM"] as const;
+const CATEGORIES = ["AUTH", "API", "WORKER", "USAGE", "SYSTEM", "GUARDRAIL"] as const;
 const SEVERITIES = ["INFO", "WARNING", "ERROR"] as const;
 const ALL = "ALL";
 

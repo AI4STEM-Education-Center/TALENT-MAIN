@@ -19,6 +19,8 @@ import {
   type AiTransport,
 } from "./ai-streaming";
 import { getActiveConceptLabels } from "./concept-catalog";
+import { fenceUntrusted, UNTRUSTED_CONTENT_RULE } from "./guardrail-fence";
+import { moderateImages } from "./guardrails";
 
 // In-memory set of material IDs whose processing should be aborted.
 const cancelledMaterials = new Set<string>();
@@ -127,7 +129,14 @@ const TIER2_BASE_PROMPT =
  */
 export function buildTier1Prompt(allowedConcepts: string[]): string {
   requireActiveConcepts(allowedConcepts);
-  return `${TIER1_BASE_PROMPT} Choose key_concept ONLY from this list (use the exact label). If no listed concept fits, use "None". The description must discuss only the selected listed concept and must not introduce unlisted concepts.\n${formatConceptBulletList(allowedConcepts)}`;
+  // Concept labels arrive by admin CSV import, so they are fenced like any
+  // other stored text. The response schema already pins key_concept to this
+  // enum; the fence protects the surrounding instructions instead.
+  return `${TIER1_BASE_PROMPT} Choose key_concept ONLY from this list (use the exact label). If no listed concept fits, use "None". The description must discuss only the selected listed concept and must not introduce unlisted concepts.
+
+${UNTRUSTED_CONTENT_RULE}
+
+${fenceUntrusted("concept catalog", formatConceptBulletList(allowedConcepts))}`;
 }
 
 /**
@@ -135,7 +144,11 @@ export function buildTier1Prompt(allowedConcepts: string[]): string {
  */
 export function buildTier2Prompt(allowedConcepts: string[]): string {
   requireActiveConcepts(allowedConcepts);
-  return `${TIER2_BASE_PROMPT} Choose key concepts ONLY from this list (use the exact labels). Return an empty list if none apply. The description must discuss only concepts selected from this list and must not introduce unlisted concepts.\n${formatConceptBulletList(allowedConcepts)}`;
+  return `${TIER2_BASE_PROMPT} Choose key concepts ONLY from this list (use the exact labels). Return an empty list if none apply. The description must discuss only concepts selected from this list and must not introduce unlisted concepts.
+
+${UNTRUSTED_CONTENT_RULE}
+
+${fenceUntrusted("concept catalog", formatConceptBulletList(allowedConcepts))}`;
 }
 
 /**
@@ -222,6 +235,11 @@ async function processPage(
     inlineBase64: transport.isLocal,
     expiresIn: 3600,
   });
+
+  // Audit, not a gate: one flagged page must not abandon a teacher's whole
+  // upload, and the description model sees the page either way. The log row is
+  // what an admin acts on. Fire-and-forget so it never adds to page latency.
+  void moderateImages([imageUrl], { surface: "material_page", id: materialId });
 
   const prompt = buildTier1Prompt(allowedConcepts);
 

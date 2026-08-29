@@ -26,6 +26,7 @@ import {
   type StreamedToolCall,
 } from "@/lib/ai-streaming";
 import { logSystemEvent } from "@/lib/system-log";
+import { fenceUntrusted } from "@/lib/guardrail-fence";
 import { buildUserContent, type DecodedAttachment } from "./attachments";
 import type { ReplayedAttachment } from "./attachment-store";
 import { buildSystemPrompt } from "./prompt";
@@ -188,7 +189,12 @@ async function runToolCall(
   }
 
   try {
-    return { ok: true, content: serializeResult(await tool.handler(parsed.data, ctx)) };
+    // Fenced, not raw. A tool result is our own JSON, but the VALUES inside it
+    // are stored text — a question extracted from an uploaded PDF, a class name
+    // a teacher typed. That is the one path by which a poisoned upload reaches
+    // a model that holds tools, so it is marked as data on the way in.
+    const result = serializeResult(await tool.handler(parsed.data, ctx));
+    return { ok: true, content: fenceUntrusted(`${call.name} result`, result) };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     void logSystemEvent({

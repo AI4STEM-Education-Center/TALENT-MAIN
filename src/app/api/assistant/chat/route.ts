@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { readBoundedText, BODY_TOO_LARGE } from "@/lib/request-body";
 import { rateLimit } from "@/lib/rate-limit";
+import { moderateContent } from "@/lib/guardrails";
 import { logApiError, logSystemEvent } from "@/lib/system-log";
 import { resolveAssistantSession } from "@/lib/assistant/session";
-import { validateAttachments } from "@/lib/assistant/attachments";
+import { buildUserContent, validateAttachments } from "@/lib/assistant/attachments";
 import {
   loadStoredAttachments,
   persistAttachments,
@@ -146,6 +147,23 @@ export async function POST(req: Request) {
           );
           if (conversationId) emit({ type: "conversation", id: conversationId });
 
+          // Moderation runs on exactly what the model would be given (message
+          // plus every accepted attachment, images included), before anything
+          // is stored or sent upstream. Free, and it fails open: a moderation
+          // outage returns `checked: false` and the turn proceeds.
+          const verdict = await moderateContent(
+            buildUserContent(parsed.data.message, accepted),
+            { surface: "assistant_chat", id: conversationId, userId: ctx.userId }
+          );
+          if (verdict.flagged) {
+            emit({
+              type: "error",
+              message:
+                "This message was blocked by the site's content filter. Please rephrase and try again.",
+            });
+            return;
+          }
+
           // Keep the turn's files before answering, so the ids can go out ahead
           // of the reply and the client can reference them next turn. Best
           // effort by design: persistAttachments swallows storage failures, and
@@ -183,6 +201,18 @@ export async function POST(req: Request) {
           // answer leaves the conversation row at messageCount 0, which every
           // listing filters out — better than a transcript with a question and
           // a blank reply under it.
+          // The reply streamed as it was generated, so this is an AUDIT trail
+          // rather than a block — by the time a verdict exists the user has
+          // already read the text. It still matters: a flagged reply is the
+          // signal an admin needs to tighten the prompt or the model choice.
+          if (result.text.trim()) {
+            void moderateContent(result.text, {
+              surface: "assistant_reply",
+              id: conversationId,
+              userId: ctx.userId,
+            });
+          }
+
           if (conversationId && result.text.trim()) {
             await appendTurn(
               conversationId,

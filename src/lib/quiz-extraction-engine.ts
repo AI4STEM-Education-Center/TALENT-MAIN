@@ -26,6 +26,7 @@ import {
   type ThinkingParams,
 } from "./ai-provider";
 import { resolveModelImageUrl } from "./storage";
+import { moderateImages } from "./guardrails";
 import { retryWithExponentialBackoff } from "./retry";
 import {
   streamJsonCompletion,
@@ -187,6 +188,11 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
       )
     );
     const pageNumbers = extraction.pages.map((p) => p.pageNumber);
+
+    // One moderation call for the whole document (the endpoint takes an array),
+    // not one per page. Audit only: a flagged page is a signal for an admin,
+    // not a reason to abandon an extraction the teacher is waiting on.
+    void moderateImages(imageUrls, { surface: "quiz_extraction_page", id: extraction.id });
 
     // TTFT + generated-token metrics, collected across pass 1 and every
     // localization call, aggregated onto the row on completion.

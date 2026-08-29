@@ -7,7 +7,15 @@ import { prisma } from "@/lib/prisma";
  * worker jobs) can't be broken by their own diagnostics.
  */
 
-export type SystemLogCategory = "AUTH" | "API" | "WORKER" | "USAGE" | "SYSTEM";
+export type SystemLogCategory =
+  | "AUTH"
+  | "API"
+  | "WORKER"
+  | "USAGE"
+  | "SYSTEM"
+  // Guardrail decisions (moderation flags, skipped checks). Its own category
+  // so an admin can filter the safety trail apart from ordinary API noise.
+  | "GUARDRAIL";
 export type SystemLogSeverity = "INFO" | "WARNING" | "ERROR";
 
 export interface SystemLogEvent {
