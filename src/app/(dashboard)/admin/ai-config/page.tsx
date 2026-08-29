@@ -47,11 +47,11 @@ interface AiModel {
   modelId: string;
   displayName: string | null;
   serviceTier: string | null;
-  thinkingLevel: string | null;
   isDefault: boolean;
 }
 
 type ProviderType = "openai" | "local" | "cloudflare";
+type ApiSurface = "responses" | "chat_completions";
 
 interface AiProvider {
   id: string;
@@ -62,6 +62,8 @@ interface AiProvider {
   maskedApiKey: string | null;
   cfAigByokAlias: string | null;
   timeoutMs: number | null;
+  /** null = unset, i.e. this provider uses DEFAULT_API_SURFACE. */
+  apiSurface: ApiSurface | null;
   isActive: boolean;
   models: AiModel[];
   assignmentCount: number;
@@ -77,6 +79,7 @@ interface Assignment {
   modelIdentifier: string;
   modelDisplayName: string | null;
   serviceTier: string | null;
+  /** Reasoning effort for this use case; null → `reasoning_effort` is not sent. */
   thinkingLevel: string | null;
 }
 
@@ -90,21 +93,29 @@ interface ProviderForm {
   cfAigByokAlias: string;
   /** Per-request timeout in seconds. Empty string → use the server default. */
   timeoutSec: string;
+  /** Empty string → unset, i.e. fall back to DEFAULT_API_SURFACE. */
+  apiSurface: ApiSurface | "";
 }
 
 interface ModelForm {
   modelId: string;
   displayName: string;
   serviceTier: string;
-  /** Empty string → no `reasoning_effort` is sent for this model. */
-  thinkingLevel: string;
   isDefault: boolean;
 }
 
-// Thinking (reasoning-effort) options offered per model. Mirrors THINKING_LEVELS
-// in src/lib/ai-provider.ts. Only sent when set, so a model that doesn't support
-// reasoning is left alone — which levels a model accepts varies by model, and
-// picking an unsupported one surfaces as a provider error on Test.
+/** A pending edit to one use-case row, before "Save Assignments". */
+interface AssignmentEdit {
+  providerId: string;
+  modelId: string;
+  /** Empty string → no `reasoning_effort` is sent for this use case. */
+  thinkingLevel: string;
+}
+
+// Thinking (reasoning-effort) options offered per use case. Mirrors
+// THINKING_LEVELS in src/lib/ai-provider.ts. Only sent when set, so a model that
+// doesn't support reasoning is left alone — which levels a model accepts varies
+// by model, and picking an unsupported one surfaces as a provider error on Test.
 const THINKING_LEVEL_OPTIONS = [
   "none",
   "minimal",
@@ -137,17 +148,26 @@ const EMPTY_PROVIDER_FORM: ProviderForm = {
   apiKey: "",
   cfAigByokAlias: "",
   timeoutSec: "",
+  apiSurface: "",
 };
 
 // Default per-request timeout (seconds) — mirrors DEFAULT_AI_TIMEOUT_MS in
 // src/lib/ai-provider.ts; shown as the placeholder when no override is set.
 const DEFAULT_TIMEOUT_SEC = 600;
 
+// Mirrors resolveApiSurface() in src/lib/ai-provider.ts — what a provider with
+// no explicit pin resolves to.
+const DEFAULT_API_SURFACE: ApiSurface = "responses";
+
+const API_SURFACE_LABELS: Record<ApiSurface, string> = {
+  responses: "Responses (/v1/responses)",
+  chat_completions: "Chat Completions (/v1/chat/completions)",
+};
+
 const EMPTY_MODEL_FORM: ModelForm = {
   modelId: "",
   displayName: "",
   serviceTier: "",
-  thinkingLevel: "",
   isDefault: false,
 };
 
@@ -195,7 +215,7 @@ export default function AiConfigPage() {
 
   // Assignment state
   const [assignmentEdits, setAssignmentEdits] = useState<
-    Record<string, { providerId: string; modelId: string }>
+    Record<string, AssignmentEdit>
   >({});
   const [assignmentSaving, setAssignmentSaving] = useState(false);
 
@@ -255,7 +275,11 @@ export default function AiConfigPage() {
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...providerForm, timeoutMs }),
+        body: JSON.stringify({
+          ...providerForm,
+          timeoutMs,
+          apiSurface: providerForm.apiSurface || null,
+        }),
       });
 
       if (!res.ok) {
@@ -282,6 +306,7 @@ export default function AiConfigPage() {
       apiKey: p.maskedApiKey || "",
       cfAigByokAlias: p.cfAigByokAlias || "",
       timeoutSec: p.timeoutMs != null ? String(p.timeoutMs / 1000) : "",
+      apiSurface: p.apiSurface ?? "",
     });
     setEditingProviderId(p.id);
     setShowProviderForm(true);
@@ -446,7 +471,6 @@ export default function AiConfigPage() {
       modelId: m.modelId,
       displayName: m.displayName || "",
       serviceTier: m.serviceTier || "",
-      thinkingLevel: m.thinkingLevel || "",
       isDefault: m.isDefault,
     });
     setEditingModel({ providerId, id: m.id });
@@ -479,18 +503,25 @@ export default function AiConfigPage() {
 
   // ─── Assignments ────────────────────────────────────────────────────────────
 
+  /** The saved state of a use-case row, in edit-form shape. */
+  const currentAssignmentEdit = (useCase: string): AssignmentEdit => {
+    const existing = assignments[useCase];
+    return {
+      providerId: existing?.providerId || "",
+      modelId: existing?.modelId || "",
+      thinkingLevel: existing?.thinkingLevel || "",
+    };
+  };
+
   const handleAssignmentChange = (
     useCase: string,
-    field: "providerId" | "modelId",
+    field: keyof AssignmentEdit,
     value: string
   ) => {
     setAssignmentEdits((prev) => ({
       ...prev,
       [useCase]: {
-        ...(prev[useCase] || {
-          providerId: assignments[useCase]?.providerId || "",
-          modelId: assignments[useCase]?.modelId || "",
-        }),
+        ...(prev[useCase] || currentAssignmentEdit(useCase)),
         [field]: value,
         // Reset modelId when provider changes
         ...(field === "providerId" ? { modelId: "" } : {}),
@@ -501,7 +532,7 @@ export default function AiConfigPage() {
   const handleSaveAssignments = async () => {
     setAssignmentSaving(true);
     try {
-      const payload: Record<string, { providerId: string; modelId: string } | null> = {};
+      const payload: Record<string, AssignmentEdit | null> = {};
 
       for (const useCase of Object.keys(USE_CASE_LABELS)) {
         if (useCase in assignmentEdits) {
@@ -591,15 +622,10 @@ export default function AiConfigPage() {
     return providers.find((p) => p.id === providerId)?.models || [];
   };
 
-  const getEffectiveAssignment = (useCase: string) => {
-    if (useCase in assignmentEdits) {
-      return assignmentEdits[useCase];
-    }
-    const existing = assignments[useCase];
-    return existing
-      ? { providerId: existing.providerId, modelId: existing.modelId }
-      : { providerId: "", modelId: "" };
-  };
+  const getEffectiveAssignment = (useCase: string): AssignmentEdit =>
+    useCase in assignmentEdits
+      ? assignmentEdits[useCase]
+      : currentAssignmentEdit(useCase);
 
   // ─── Render ─────────────────────────────────────────────────────────────────
 
@@ -786,6 +812,38 @@ export default function AiConfigPage() {
                   </div>
                 )}
                 <div>
+                  <label htmlFor="provider-surface" className="block text-sm font-medium mb-1">
+                    API endpoint{" "}
+                    <span className="text-muted-foreground font-normal">
+                      (leave on the default unless this endpoint misbehaves)
+                    </span>
+                  </label>
+                  <select
+                    id="provider-surface"
+                    value={providerForm.apiSurface}
+                    onChange={(e) =>
+                      setProviderForm((f) => ({
+                        ...f,
+                        apiSurface: e.target.value as ApiSurface | "",
+                      }))
+                    }
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-hidden focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
+                  >
+                    <option value="">
+                      Default — {API_SURFACE_LABELS[DEFAULT_API_SURFACE]}
+                    </option>
+                    <option value="responses">{API_SURFACE_LABELS.responses}</option>
+                    <option value="chat_completions">
+                      {API_SURFACE_LABELS.chat_completions}
+                    </option>
+                  </select>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {providerForm.providerType === "openai"
+                      ? "OpenAI serves both. Responses keeps a reasoning model's thinking across tool rounds, and accepts a thinking level alongside tools."
+                      : "Responses is tried first and falls back to Chat Completions on its own if this endpoint does not serve it — pin Chat Completions to skip that one-time probe."}
+                  </p>
+                </div>
+                <div>
                   <label htmlFor="provider-timeout" className="block text-sm font-medium mb-1">
                     Request timeout (seconds){" "}
                     <span className="text-muted-foreground font-normal">
@@ -903,6 +961,16 @@ export default function AiConfigPage() {
                           timeout: {p.timeoutMs / 1000}s
                         </span>
                       )}
+                      {/* Only shown when pinned; an unset provider is on the
+                          default and does not need a badge to say so. */}
+                      {p.apiSurface != null && (
+                        <span
+                          className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-1.5 py-0.5 text-xs text-muted-foreground dark:bg-gray-800"
+                          title="API endpoint override"
+                        >
+                          {p.apiSurface === "responses" ? "responses" : "chat completions"}
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-1">
                       <button type="button"
@@ -990,7 +1058,7 @@ export default function AiConfigPage() {
                     {/* Model add form */}
                     {showModelForm === p.id && (
                       <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50/50 p-3 dark:border-blue-900 dark:bg-blue-950/20">
-                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                           <input
                             type="text"
                             placeholder="Model ID (e.g. gpt-5.1)"
@@ -1034,27 +1102,6 @@ export default function AiConfigPage() {
                               <SelectItem value="flex">Flex</SelectItem>
                               <SelectItem value="auto">Auto</SelectItem>
                               <SelectItem value="default">Default</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <Select
-                            value={modelForm.thinkingLevel || "unset"}
-                            onValueChange={(v) =>
-                              setModelForm((f) => ({
-                                ...f,
-                                thinkingLevel: v === "unset" ? "" : v,
-                              }))
-                            }
-                          >
-                            <SelectTrigger className="h-8 text-sm">
-                              <SelectValue placeholder="Thinking Level" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="unset">No Thinking Level</SelectItem>
-                              {THINKING_LEVEL_OPTIONS.map((level) => (
-                                <SelectItem key={level} value={level}>
-                                  {level}
-                                </SelectItem>
-                              ))}
                             </SelectContent>
                           </Select>
                         </div>
@@ -1123,11 +1170,6 @@ export default function AiConfigPage() {
                                   <Zap className="size-3" /> {m.serviceTier}
                                 </span>
                               )}
-                              {m.thinkingLevel && (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-1.5 py-0.5 text-xs text-violet-700 dark:bg-violet-900/30 dark:text-violet-400">
-                                  <Brain className="size-3" /> {m.thinkingLevel}
-                                </span>
-                              )}
                               {m.isDefault && (
                                 <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
                                   default
@@ -1170,7 +1212,8 @@ export default function AiConfigPage() {
               <Settings2 className="size-5" /> Use Case Assignments
             </h2>
             <p className="text-sm text-muted-foreground">
-              Assign a provider and model to each use case.
+              Assign a provider, model and thinking level to each use case. The same model can
+              run at a different reasoning effort for each one.
             </p>
           </div>
           <button type="button"
@@ -1223,7 +1266,7 @@ export default function AiConfigPage() {
                     </div>
                   </div>
 
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     <div>
                       <label id={`provider-label-${useCase}`} htmlFor={`provider-select-${useCase}`} className="block text-xs font-medium text-muted-foreground mb-1">
                         Provider
@@ -1301,9 +1344,41 @@ export default function AiConfigPage() {
                               {m.serviceTier
                                 ? ` [${m.serviceTier}]`
                                 : ""}
-                              {m.thinkingLevel
-                                ? ` {think: ${m.thinkingLevel}}`
-                                : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <label
+                        id={`thinking-label-${useCase}`}
+                        htmlFor={`thinking-select-${useCase}`}
+                        className="flex items-center gap-1 text-xs font-medium text-muted-foreground mb-1"
+                      >
+                        <Brain className="size-3" /> Thinking Level
+                      </label>
+                      <Select
+                        aria-labelledby={`thinking-label-${useCase}`}
+                        value={effective.thinkingLevel || "unset"}
+                        onValueChange={(v) =>
+                          handleAssignmentChange(
+                            useCase,
+                            "thinkingLevel",
+                            v === "unset" ? "" : v
+                          )
+                        }
+                        disabled={!effective.modelId}
+                      >
+                        <SelectTrigger id={`thinking-select-${useCase}`} className="h-9">
+                          <SelectValue placeholder="No thinking level" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {/* Unset is the safe default: models that don't take
+                              reasoning_effort reject the field outright. */}
+                          <SelectItem value="unset"> -  Not set - </SelectItem>
+                          {THINKING_LEVEL_OPTIONS.map((level) => (
+                            <SelectItem key={level} value={level}>
+                              {level}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -1513,36 +1588,6 @@ export default function AiConfigPage() {
                   <SelectItem value="flex">Flex</SelectItem>
                   <SelectItem value="auto">Auto</SelectItem>
                   <SelectItem value="default">Default</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label id="edit-model-thinking-label" className="block text-sm font-medium mb-1">
-                Thinking Level{" "}
-                <span className="text-muted-foreground font-normal">
-                  (reasoning effort, only sent when set)
-                </span>
-              </label>
-              <Select
-                aria-labelledby="edit-model-thinking-label"
-                value={editModelForm.thinkingLevel || "unset"}
-                onValueChange={(v) =>
-                  setEditModelForm((f) => ({
-                    ...f,
-                    thinkingLevel: v === "unset" ? "" : v,
-                  }))
-                }
-              >
-                <SelectTrigger className="h-10">
-                  <SelectValue placeholder="Thinking Level" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="unset">No Thinking Level</SelectItem>
-                  {THINKING_LEVEL_OPTIONS.map((level) => (
-                    <SelectItem key={level} value={level}>
-                      {level}
-                    </SelectItem>
-                  ))}
                 </SelectContent>
               </Select>
             </div>

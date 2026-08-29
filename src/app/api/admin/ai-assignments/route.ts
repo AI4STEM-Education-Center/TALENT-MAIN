@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { invalidateProviderCache } from "@/lib/ai-provider";
+import {
+  invalidateProviderCache,
+  isThinkingLevel,
+  resolveThinkingLevel,
+  THINKING_LEVELS,
+} from "@/lib/ai-provider";
 import { logApiError } from "@/lib/system-log";
 
 const VALID_USE_CASES = [
@@ -15,8 +20,42 @@ const VALID_USE_CASES = [
 ] as const;
 
 /**
+ * Move any leftover per-model thinking level onto the assignments that use the
+ * model, then clear it. Thinking level used to be a per-model control; this is
+ * the one-shot carry-over for configs saved before it moved to the use case.
+ * Idempotent and self-terminating — once a model's legacy value is cleared it
+ * is never seen again. Models with no assignment are left alone: their value
+ * has nowhere to go yet, and `resolveThinkingLevel` still honours it if one of
+ * them is assigned later (the next load of this page carries it over properly).
+ */
+async function carryOverLegacyThinkingLevels(): Promise<void> {
+  const legacy = await prisma.aiModel.findMany({
+    where: { thinkingLevel: { not: null }, assignments: { some: {} } },
+    select: { id: true, thinkingLevel: true },
+  });
+  if (legacy.length === 0) return;
+
+  await prisma.$transaction([
+    // Only fill assignments that have no level of their own — an explicit
+    // per-use-case choice always outranks the inherited one.
+    ...legacy.map((m) =>
+      prisma.aiUseCaseAssignment.updateMany({
+        where: { modelId: m.id, thinkingLevel: null },
+        data: { thinkingLevel: m.thinkingLevel },
+      })
+    ),
+    prisma.aiModel.updateMany({
+      where: { id: { in: legacy.map((m) => m.id) } },
+      data: { thinkingLevel: null },
+    }),
+  ]);
+
+  invalidateProviderCache();
+}
+
+/**
  * GET /api/admin/ai-assignments
- * Return current use-case → provider+model mappings.
+ * Return current use-case → provider+model+thinkingLevel mappings.
  */
 export async function GET() {
   const session = await auth();
@@ -25,6 +64,8 @@ export async function GET() {
   }
 
   try {
+    await carryOverLegacyThinkingLevels();
+
     const assignments = await prisma.aiUseCaseAssignment.findMany({
       include: {
         provider: {
@@ -58,7 +99,10 @@ export async function GET() {
             modelIdentifier: assignment.model.modelId,
             modelDisplayName: assignment.model.displayName,
             serviceTier: assignment.model.serviceTier,
-            thinkingLevel: assignment.model.thinkingLevel,
+            thinkingLevel: resolveThinkingLevel(
+              assignment.thinkingLevel,
+              assignment.model.thinkingLevel
+            ),
           }
         : null;
     }
@@ -73,8 +117,9 @@ export async function GET() {
 /**
  * PUT /api/admin/ai-assignments
  * Update/upsert use case assignments.
- * Body: { assignments: { [useCase]: { providerId, modelId } | null } }
- * Setting a use case to null removes its assignment.
+ * Body: { assignments: { [useCase]: { providerId, modelId, thinkingLevel? } | null } }
+ * Setting a use case to null removes its assignment. An omitted, empty or null
+ * `thinkingLevel` means "send no reasoning_effort for this use case".
  */
 export async function PUT(req: Request) {
   const session = await auth();
@@ -123,6 +168,18 @@ export async function PUT(req: Request) {
         continue;
       }
 
+      // Unset is a real choice, not a missing field: it keeps `reasoning_effort`
+      // off the wire entirely for models that would reject it.
+      const rawLevel =
+        typeof assignment.thinkingLevel === "string"
+          ? assignment.thinkingLevel.trim()
+          : "";
+      const thinkingLevel = rawLevel || null;
+      if (thinkingLevel && !isThinkingLevel(thinkingLevel)) {
+        results[useCase] = `skipped (thinking level must be one of: ${THINKING_LEVELS.join(", ")}, or empty)`;
+        continue;
+      }
+
       // Validate that the provider and model exist
       const provider = await prisma.aiProvider.findUnique({
         where: { id: providerId },
@@ -142,8 +199,8 @@ export async function PUT(req: Request) {
 
       await prisma.aiUseCaseAssignment.upsert({
         where: { useCase },
-        update: { providerId, modelId },
-        create: { useCase, providerId, modelId },
+        update: { providerId, modelId, thinkingLevel },
+        create: { useCase, providerId, modelId, thinkingLevel },
       });
       results[useCase] = "saved";
     }

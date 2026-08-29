@@ -14,7 +14,15 @@ import {
   type ResolvedProvider,
   type ThinkingParams,
 } from "./ai-provider";
-import { streamChatCompletion, streamJsonCompletion, aggregateMetrics, type AiCallMetrics } from "./ai-streaming";
+import {
+  streamChatCompletion,
+  streamJsonCompletion,
+  aggregateMetrics,
+  streamOptionsFor,
+  transportFor,
+  type AiCallMetrics,
+  type AiTransport,
+} from "./ai-streaming";
 import { retryWithExponentialBackoff } from "./retry";
 import { signObjectReadUrl, getS3Config } from "./storage";
 import { presignOptionImage, presignQuestionFigure } from "./question-figures";
@@ -130,7 +138,8 @@ async function runChatCompletionText(
   onContent?: (text: string, delta: string) => void | Promise<void>
 ): Promise<{ text: string; metrics: AiCallMetrics }> {
   const client = await createOpenAIClient(provider);
-  const isLocal = provider.providerType === "local";
+  const transport = transportFor(provider);
+  const { isLocal } = transport;
   const serviceTier = provider.serviceTier;
   const tierActive =
     !isLocal && (serviceTier === "auto" || serviceTier === "default" || serviceTier === "flex");
@@ -146,11 +155,7 @@ async function runChatCompletionText(
       // Empty unless an admin pinned a thinking level on the assigned model.
       ...thinkingParams(provider),
     },
-    {
-      includeUsage: !isLocal,
-      requestOptions: { maxRetries: isLocal ? 0 : 3 },
-      onContent,
-    }
+    streamOptionsFor(transport, { onContent })
   );
 }
 
@@ -173,13 +178,13 @@ async function runStructuredStep<T>(
   schemaName: string,
   schema: object,
   thinking: ThinkingParams,
-  isLocal: boolean
+  transport: AiTransport
 ): Promise<{ value: T; metrics: AiCallMetrics }> {
   return streamJsonCompletion<T>(
     client,
     { model, messages: [{ role: "user", content: prompt }], ...thinking },
     { name: schemaName, schema: schema as Record<string, unknown>, strict: true },
-    { includeUsage: !isLocal, requestOptions: { maxRetries: isLocal ? 0 : 3 } }
+    streamOptionsFor(transport)
   );
 }
 
@@ -198,7 +203,7 @@ async function selectPagesForMaterial(
   material: MaterialRow,
   materialReason: string,
   thinking: ThinkingParams,
-  isLocal: boolean
+  transport: AiTransport
 ): Promise<{ recommendation: StoredRecommendation | null; metrics: AiCallMetrics[] }> {
   const metrics: AiCallMetrics[] = [];
 
@@ -219,7 +224,7 @@ async function selectPagesForMaterial(
     "page_selection",
     PAGE_SELECTION_SCHEMA,
     thinking,
-    isLocal
+    transport
   );
   metrics.push(m);
 
@@ -262,7 +267,7 @@ async function labelMisconceptions(
   client: OpenAI,
   model: string,
   thinking: ThinkingParams,
-  isLocal: boolean,
+  transport: AiTransport,
   snapshot: ReviewSnapshot
 ): Promise<{ errorMisconceptions: StoredQuestionMisconceptions[]; metrics: AiCallMetrics[] }> {
   const catalog = await getActiveMisconceptions();
@@ -287,7 +292,7 @@ async function labelMisconceptions(
             ...thinking,
           },
           { name: "misconception_labeling", schema: buildMisconceptionSchema(ids), strict: true },
-          { includeUsage: !isLocal, requestOptions: { maxRetries: isLocal ? 0 : 3 } }
+          streamOptionsFor(transport)
         )
       );
       const misconceptions: StoredMisconception[] = resolveLabeledMisconceptions(
@@ -469,7 +474,7 @@ async function generateRecommendations(
     };
   }
 
-  const isLocal = provider.providerType === "local";
+  const transport = transportFor(provider);
   const client = await createOpenAIClient(provider);
   // Threaded through every step below; empty unless the assigned model has a
   // thinking level pinned in AI config.
@@ -484,7 +489,7 @@ async function generateRecommendations(
     client,
     provider.model,
     thinking,
-    isLocal,
+    transport,
     snapshot
   );
   allMetrics.push(...labelMetrics);
@@ -545,7 +550,7 @@ async function generateRecommendations(
         "material_selection",
         MATERIAL_SELECTION_SCHEMA,
         thinking,
-        isLocal
+        transport
       );
       allMetrics.push(mSel);
 
@@ -568,7 +573,7 @@ async function generateRecommendations(
               material,
               sel.reasoning,
               thinking,
-              isLocal
+              transport
             );
           } catch (err) {
             console.error("[ExamResults] Failed to build a recommendation:", err);

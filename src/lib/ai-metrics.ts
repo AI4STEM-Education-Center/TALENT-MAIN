@@ -2,6 +2,74 @@
 // persisted AI-generation metrics (model + provider + timing + generated
 // tokens). Kept free of server imports so client components can use it directly.
 
+/**
+ * Metrics for one streamed model call. Produced identically by both transports
+ * (/v1/responses and /v1/chat/completions) via `computeCallMetrics`, so a
+ * provider switching endpoints does not change what any of these numbers mean.
+ */
+export interface AiCallMetrics {
+  /** The model id that produced the response. */
+  model: string;
+  /** Time from request start to the first content token, in ms. null if no content arrived. */
+  ttftMs: number | null;
+  /**
+   * Completion tokens generated. Taken from the provider's reported usage when
+   * available; otherwise an estimate from the count of streamed content deltas.
+   */
+  completionTokens: number;
+  /** true when `completionTokens` is a streamed-delta estimate (provider gave no usage). */
+  tokensEstimated: boolean;
+  /** Total wall-clock time for the call, in ms. */
+  totalMs: number;
+  /**
+   * The window the content streamed over, in ms — null when the response wasn't
+   * delivered incrementally (a buffering gateway flushes every delta at once,
+   * making that window a transport artifact rather than generation time). See
+   * `isStreamedGenerationWindow`.
+   */
+  generationMs: number | null;
+  /**
+   * Mean generation rate, over `generationMs` when we observed one and over the
+   * whole call when we didn't. null when no tokens were generated.
+   */
+  tokensPerSec: number | null;
+}
+
+/**
+ * Derive the metrics for one streamed call from what the stream reported.
+ *
+ * Shared by both transports on purpose: TTFT is "time until the first visible
+ * content token" and the token count is "whatever usage the provider reported,
+ * else how many content deltas we saw" under either endpoint, so keeping the
+ * arithmetic in one place is what lets a provider move between them without
+ * shifting its numbers.
+ */
+export function computeCallMetrics(observed: {
+  model: string;
+  /** ms from request start to the first content delta; null if none arrived. */
+  ttftMs: number | null;
+  /** ms of wall clock for the whole call. */
+  totalMs: number;
+  /** Provider-reported output tokens, or null when it reported none. */
+  usageTokens: number | null;
+  /** Content deltas seen, used as the token estimate when usage is absent. */
+  deltaCount: number;
+}): AiCallMetrics {
+  const { model, ttftMs, totalMs, usageTokens, deltaCount } = observed;
+  const tokensEstimated = usageTokens === null;
+  const completionTokens = usageTokens ?? deltaCount;
+  // The post-TTFT window is only the generation window if the content really
+  // arrived across it; a gateway that buffered the upstream stream flushes it
+  // in a few ms, and dividing the token count by that yields nonsense rates.
+  const streamedMs = ttftMs !== null ? Math.max(0, totalMs - ttftMs) : 0;
+  const generationMs = isStreamedGenerationWindow(streamedMs, totalMs) ? streamedMs : null;
+  const rateWindowMs = generationMs ?? totalMs;
+  const tokensPerSec =
+    completionTokens > 0 && rateWindowMs > 0 ? completionTokens / (rateWindowMs / 1000) : null;
+
+  return { model, ttftMs, completionTokens, tokensEstimated, totalMs, generationMs, tokensPerSec };
+}
+
 export interface DisplayAiMetrics {
   model?: string | null;
   /**

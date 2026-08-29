@@ -694,6 +694,13 @@ model AiProvider {
   // null → fall back to DEFAULT_AI_TIMEOUT_MS (see src/lib/ai-provider.ts).
   timeoutMs    Int?
 
+  // Which OpenAI-compatible endpoint to call: "responses" or "chat_completions".
+  // null → the per-type default from `resolveApiSurface` (currently "responses"
+  // everywhere). A "responses" call that the endpoint does not implement falls
+  // back to /chat/completions on its own, so this is a preference, not a
+  // promise — see src/lib/ai-streaming.ts.
+  apiSurface   String?
+
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -708,10 +715,12 @@ model AiModel {
   modelId     String                // e.g. "gpt-5.1", "llama-3.3-70b"
   displayName String?               // optional friendly name
   serviceTier String?               // "flex" | "auto" | "default" | null
-  // Reasoning/thinking effort sent as `reasoning_effort` on every call made
-  // with this model: "none" | "minimal" | "low" | "medium" | "high" | null.
-  // null (the default) omits the parameter entirely, so models that don't
-  // support thinking are unaffected — see src/lib/ai-provider.ts.
+  // LEGACY. Thinking level used to be pinned per model; it is now chosen per
+  // use case on AiUseCaseAssignment. Nothing writes this column any more — the
+  // admin assignments route carries a leftover value over to the assignments
+  // using the model and then nulls it out. It stays declared because dropping a
+  // column is a potential-data-loss change and the container entrypoint runs
+  // `db push` without --accept-data-loss.
   thinkingLevel String?
   isDefault   Boolean  @default(false)
   createdAt   DateTime @default(now())
@@ -719,11 +728,11 @@ model AiModel {
   provider    AiProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
   assignments AiUseCaseAssignment[]
 
-  // NOT part of this key: adding a column to a unique constraint is a
-  // potential-data-loss change, and the container entrypoint runs `db push`
-  // without --accept-data-loss in production on purpose. A model id can still
-  // be registered more than once per provider under different service tiers;
-  // each of those rows carries its own thinking level.
+  // `thinkingLevel` is NOT part of this key, and adding it never was an option:
+  // adding a column to a unique constraint is a potential-data-loss change, and
+  // the container entrypoint runs `db push` without --accept-data-loss in
+  // production on purpose. Moot now that the level is per use case — a model id
+  // registered once can serve several use cases at different efforts.
   @@unique([providerId, modelId, serviceTier])
   @@index([providerId])
 }
@@ -736,6 +745,14 @@ model AiUseCaseAssignment {
   useCase    String   @unique       // only one assignment per use case
   providerId String
   modelId    String
+  // Reasoning/thinking effort sent as `reasoning_effort` on every call made for
+  // this use case: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" |
+  // "max" | null. null (the default) omits the parameter entirely, so models
+  // that don't support thinking are unaffected — see src/lib/ai-provider.ts.
+  // Per use case rather than per model on purpose: the same model is often
+  // assigned to both a cheap bulk job and an interactive assistant, which want
+  // different efforts.
+  thinkingLevel String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
