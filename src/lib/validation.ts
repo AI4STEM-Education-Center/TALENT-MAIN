@@ -221,7 +221,7 @@ export const simulationSessionCreateSchema = z.object({
     .nullable()
     .optional()
     .transform((v) => v ?? null),
-  surface: z.enum(["rail", "mobile"]),
+  surface: z.enum(["rail", "mobile", "library"]),
 });
 
 export const simulationSessionUpdateSchema = z.object({
