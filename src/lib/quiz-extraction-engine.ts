@@ -27,7 +27,14 @@ import {
 } from "./ai-provider";
 import { resolveModelImageUrl } from "./storage";
 import { retryWithExponentialBackoff } from "./retry";
-import { streamJsonCompletion, aggregateMetrics, type AiCallMetrics } from "./ai-streaming";
+import {
+  streamJsonCompletion,
+  aggregateMetrics,
+  streamOptionsFor,
+  transportFor,
+  type AiCallMetrics,
+  type AiTransport,
+} from "./ai-streaming";
 import {
   QUIZ_EXTRACTION_SCHEMA,
   QUIZ_ANSWER_KEY_SCHEMA,
@@ -86,7 +93,7 @@ type ModelCallOptions = {
   tierActive: boolean;
   /** `reasoning_effort` fragment; empty unless the model has a level pinned. */
   thinking: ThinkingParams;
-  isLocal: boolean;
+  transport: AiTransport;
 };
 
 /**
@@ -100,13 +107,13 @@ async function callJsonModel(
   client: OpenAI,
   opts: ModelCallOptions
 ): Promise<{ value: unknown; metrics: AiCallMetrics }> {
-  const { model, messages, schema, serviceTier, tierActive, thinking, isLocal } = opts;
+  const { model, messages, schema, serviceTier, tierActive, thinking, transport } = opts;
   return retryWithExponentialBackoff(() =>
     streamJsonCompletion(
       client,
       { model, messages, service_tier: tierActive ? (serviceTier as never) : undefined, ...thinking },
       schema,
-      { includeUsage: !isLocal, requestOptions: { maxRetries: isLocal ? 0 : 3 } }
+      streamOptionsFor(transport)
     )
   );
 }
@@ -158,6 +165,7 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
 
     const client = await createOpenAIClient(provider);
     const isLocal = provider.providerType === "local";
+    const transport = transportFor(provider);
     const serviceTier = provider.serviceTier;
     const tierActive =
       !isLocal && (serviceTier === "auto" || serviceTier === "default" || serviceTier === "flex");
@@ -196,7 +204,7 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
       serviceTier,
       tierActive,
       thinking,
-      isLocal,
+      transport,
     });
     callMetrics.push(pass1Metrics);
     let quiz: ExtractedQuiz = normalizeStructure(validateExtractedQuiz(pass1Parsed));
@@ -221,7 +229,7 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
           serviceTier,
           tierActive,
           thinking,
-          isLocal,
+          transport,
         });
         callMetrics.push(keyMetrics);
         quiz = applyAnswerKey(quiz, validateAnswerKeyResult(keyParsed));
@@ -261,7 +269,7 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
               serviceTier,
               tierActive,
               thinking,
-              isLocal,
+              transport,
             });
             callMetrics.push(locMetrics);
             const known = new Set(targets.map((t) => t.targetId));

@@ -25,6 +25,9 @@ import { retryWithExponentialBackoff } from "./retry";
 import {
   streamChatCompletion,
   streamJsonCompletion,
+  streamOptionsFor,
+  transportFor,
+  type AiTransport,
   type AiCallMetrics,
 } from "./ai-streaming";
 import { buildSimulationMetrics } from "./simulation-metrics";
@@ -64,11 +67,13 @@ type CallContext = {
   /** `reasoning_effort` fragment; empty unless the model has a level pinned. */
   thinking: ThinkingParams;
   isLocal: boolean;
+  transport: AiTransport;
 };
 
 async function buildCallContext(provider: ResolvedProvider): Promise<CallContext> {
   const client = await createOpenAIClient(provider);
   const isLocal = provider.providerType === "local";
+  const transport = transportFor(provider);
   const serviceTier = provider.serviceTier;
   const tierActive =
     !isLocal && (serviceTier === "auto" || serviceTier === "default" || serviceTier === "flex");
@@ -81,6 +86,7 @@ async function buildCallContext(provider: ResolvedProvider): Promise<CallContext
     thinkingLevel: provider.thinkingLevel,
     thinking: thinkingParams(provider),
     isLocal,
+    transport,
   };
 }
 
@@ -101,7 +107,7 @@ async function callTextModel(
     streamChatCompletion(
       ctx.client,
       { model: ctx.model, messages, service_tier: tierParam(ctx), ...ctx.thinking },
-      { includeUsage: !ctx.isLocal, requestOptions: { maxRetries: ctx.isLocal ? 0 : 3 } }
+      streamOptionsFor(ctx.transport)
     )
   );
   if (!result.text.trim()) throw new Error("Model returned an empty response");
@@ -250,7 +256,7 @@ async function runFirstGeneration(sim: LoadedSimulation): Promise<void> {
           ...ctx.thinking,
         },
         SIMULATION_TRIAGE_SCHEMA,
-        { includeUsage: !ctx.isLocal, requestOptions: { maxRetries: ctx.isLocal ? 0 : 3 } }
+        streamOptionsFor(ctx.transport)
       )
     );
     callMetrics.push(triage.metrics);

@@ -11,7 +11,12 @@
 
 import type OpenAI from "openai";
 import { z } from "zod";
-import { resolveProvider, createOpenAIClient, thinkingParams } from "@/lib/ai-provider";
+import {
+  resolveProvider,
+  createOpenAIClient,
+  thinkingParams,
+  type ThinkingParams,
+} from "@/lib/ai-provider";
 import {
   streamChatCompletion,
   aggregateMetrics,
@@ -118,6 +123,21 @@ function serializeResult(value: unknown): string {
     note: `Result was too large and was cut off at ${MAX_TOOL_RESULT_CHARS} characters. Narrow the request with more specific filters.`,
     partial: text.slice(0, MAX_TOOL_RESULT_CHARS),
   });
+}
+
+/**
+ * True for the provider's "pick one" 400: several hosted reasoning models take
+ * `reasoning_effort` or function tools on /v1/chat/completions, but not both,
+ * and answer with a 400 pointing at /v1/responses. The assistant is the only
+ * caller in the app that sends tools, so a thinking level pinned on its use
+ * case in AI Config fails every turn rather than degrading — which is why the
+ * turn drops the field and retries instead of surfacing the error.
+ */
+function rejectsToolsWithThinking(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  if ((error as { status?: unknown }).status !== 400) return false;
+  const message = error instanceof Error ? error.message : String(error);
+  return /reasoning_effort/i.test(message) && /tool/i.test(message);
 }
 
 /**
@@ -297,6 +317,11 @@ export async function runAssistantTurn(
   let finalText = "";
   let toolCallCount = 0;
 
+  // No-op unless the assigned model has a thinking level pinned on the use case
+  // in AI config; applies to hosted and local assistants alike. Cleared for the
+  // rest of the turn if the provider refuses it alongside tools.
+  let thinking = thinkingParams(provider);
+
   // One extra round beyond maxToolCalls, with tools withheld, guarantees the
   // user gets prose even if the model would have kept calling tools forever.
   for (let round = 0; round <= settings.maxToolCalls; round += 1) {
@@ -304,29 +329,53 @@ export async function runAssistantTurn(
 
     const offerTools = definitions.length > 0 && round < settings.maxToolCalls;
 
-    const result = await streamChatCompletion(
-      client,
-      {
-        model: provider.model,
-        messages,
-        ...(offerTools ? { tools: definitions, tool_choice: "auto" as const } : {}),
-        max_completion_tokens: !isLocal ? MAX_REPLY_TOKENS : undefined,
-        max_tokens: isLocal ? MAX_REPLY_TOKENS : undefined,
-        service_tier:
-          !isLocal && provider.serviceTier && ["auto", "default", "flex"].includes(provider.serviceTier)
-            ? (provider.serviceTier as "auto" | "default" | "flex")
-            : undefined,
-        // No-op unless the assigned model has a thinking level pinned in AI
-        // config; applies to hosted and local assistants alike.
-        ...thinkingParams(provider),
-      },
-      {
-        includeUsage: !isLocal,
-        onContent: async (_text, delta) => {
-          await emit({ type: "delta", text: delta });
+    const runRound = (effort: ThinkingParams) =>
+      streamChatCompletion(
+        client,
+        {
+          model: provider.model,
+          messages,
+          ...(offerTools ? { tools: definitions, tool_choice: "auto" as const } : {}),
+          max_completion_tokens: !isLocal ? MAX_REPLY_TOKENS : undefined,
+          max_tokens: isLocal ? MAX_REPLY_TOKENS : undefined,
+          service_tier:
+            !isLocal && provider.serviceTier && ["auto", "default", "flex"].includes(provider.serviceTier)
+              ? (provider.serviceTier as "auto" | "default" | "flex")
+              : undefined,
+          ...effort,
         },
+        {
+          includeUsage: !isLocal,
+          onContent: async (_text, delta) => {
+            await emit({ type: "delta", text: delta });
+          },
+        }
+      );
+
+    let result;
+    try {
+      result = await runRound(thinking);
+    } catch (error) {
+      // The 400 lands before the stream opens, so nothing has been emitted yet
+      // and the round is safe to replay without the thinking level.
+      if (!offerTools || !thinking.reasoning_effort || !rejectsToolsWithThinking(error)) {
+        throw error;
       }
-    );
+      void logSystemEvent({
+        category: "API",
+        type: "ASSISTANT_THINKING_LEVEL_DROPPED",
+        severity: "WARNING",
+        message: `${provider.model} rejects reasoning_effort alongside tools; answering without it.`,
+        userId: ctx.userId,
+        metadata: {
+          audience: ctx.audience,
+          model: provider.model,
+          thinkingLevel: thinking.reasoning_effort,
+        },
+      });
+      thinking = {};
+      result = await runRound(thinking);
+    }
 
     parts.push(result.metrics);
     finalText += result.text;
@@ -381,7 +430,8 @@ export async function runAssistantTurn(
       model: provider.model,
       provider: provider.providerType,
       serviceTier: provider.serviceTier,
-      thinkingLevel: provider.thinkingLevel,
+      // What the turn actually ran with, not what was configured.
+      thinkingLevel: thinking.reasoning_effort ?? null,
       ttftMs: metrics?.ttftMs ?? null,
       generationMs: metrics?.generationMs ?? null,
       totalMs: metrics?.totalMs ?? null,

@@ -6,7 +6,7 @@ import {
   thinkingParams,
   type UseCase,
 } from "@/lib/ai-provider";
-import { streamChatCompletion } from "@/lib/ai-streaming";
+import { streamChatCompletion, streamOptionsFor, transportFor } from "@/lib/ai-streaming";
 import { logApiError } from "@/lib/system-log";
 
 const VALID_USE_CASES: UseCase[] = [
@@ -82,7 +82,7 @@ export async function POST(req: Request) {
         // exercises exactly the request the real use case will send.
         ...thinkingParams(provider),
       },
-      { includeUsage: !isLocal }
+      streamOptionsFor(transportFor(provider))
     );
 
     return NextResponse.json({

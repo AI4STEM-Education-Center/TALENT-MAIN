@@ -208,11 +208,11 @@ CLOUDFRONT_PRIVATE_KEY="LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQo..."
 > [!NOTE]
 > AI configuration (such as API keys, base URLs, and model selection) is now fully database-backed and managed dynamically via the Admin Dashboard. No `OPENAI_API_KEY` environment variables are required!
 
-### Per-model thinking level
+### Per-use-case thinking level
 
-Every model registered in `/admin/ai-config` can be pinned to a **thinking level** (`none`,
+Every use case assigned in `/admin/ai-config` can be pinned to a **thinking level** (`none`,
 `minimal`, `low`, `medium`, `high`, `xhigh`, `max`), sent as `reasoning_effort` on every call that
-model serves — OpenAI, Cloudflare AI Gateway, and local OpenAI-compatible servers alike.
+use case makes — OpenAI, Cloudflare AI Gateway, and local OpenAI-compatible servers alike.
 
 The level is **optional and never inferred from the model id**. Leaving it unset omits
 `reasoning_effort` from the request body entirely, so non-reasoning models (and local servers that
@@ -220,11 +220,16 @@ reject unknown fields) are unaffected — a pinned level only ever changes a cal
 opted in. Which levels a given model accepts varies by model; picking an unsupported one surfaces as
 a provider error on **Test**, which sends the same request the real use case will.
 
-Thinking level is part of a model row (like service tier), so each registered model carries its own
-level and use cases pick it up through their assignment. It is deliberately **not** part of
-`AiModel`'s unique key: widening that key is a change `prisma db push` classifies as potentially
-destructive, and the container entrypoint refuses those in production by design. To run one model id
-at two levels, register it twice under different service tiers (or under a second provider row).
+The level lives on the use-case assignment rather than on the model row, because one model is
+routinely shared between jobs with different appetites — quiz extraction over a 60-page PDF wants
+`low`, the chat assistant answering a student wants `high`. Pick the model once, then set the effort
+per feature; no need to register the same model id twice to get two levels.
+
+Configs saved before the setting moved are migrated automatically: the first time an admin opens
+`/admin/ai-config`, any leftover per-model level is copied onto the use cases running that model and
+then cleared. `AiModel.thinkingLevel` stays declared in the schema but unused — dropping a column is
+a change `prisma db push` classifies as potentially destructive, and the container entrypoint
+refuses those in production by design.
 
 The level a run was made with is persisted alongside the other per-run AI metrics — on
 `LearningMaterial`, `QuizPdfExtraction`, `QuestionSimulation`, and both `ExamResult` sections — and
