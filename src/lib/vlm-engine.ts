@@ -20,7 +20,9 @@ import {
 } from "./ai-streaming";
 import { getActiveConceptLabels } from "./concept-catalog";
 import { fenceUntrusted, UNTRUSTED_CONTENT_RULE } from "./guardrail-fence";
-import { checkContentSafety, moderateImages } from "./guardrails";
+import { moderateImages } from "./guardrails";
+import { auditText } from "./guardrail-runner";
+import { getGuardrailSettings, moderationEnabledFor } from "./guardrail-settings";
 
 // In-memory set of material IDs whose processing should be aborted.
 const cancelledMaterials = new Set<string>();
@@ -227,7 +229,9 @@ async function processPage(
   serviceTier: string | null,
   thinking: ThinkingParams,
   transport: AiTransport,
-  allowedConcepts: string[]
+  allowedConcepts: string[],
+  /** Free page-image moderation, per the admin's guardrail settings. */
+  moderatePages: boolean
 ): Promise<AiCallMetrics> {
   // Resolve a model-ready URL for this page: a JIT presigned link for hosted
   // providers, or an inline base64 data URL for local ones that can't reach S3.
@@ -239,7 +243,7 @@ async function processPage(
   // Audit, not a gate: one flagged page must not abandon a teacher's whole
   // upload, and the description model sees the page either way. The log row is
   // what an admin acts on. Fire-and-forget so it never adds to page latency.
-  void moderateImages([imageUrl], { surface: "material_page", id: materialId });
+  if (moderatePages) void moderateImages([imageUrl], { surface: "material_page", id: materialId });
 
   const prompt = buildTier1Prompt(allowedConcepts);
 
@@ -305,6 +309,11 @@ export async function processMaterial(materialId: string) {
   // Fail closed before making any AI call: material concept metadata and its
   // prose description must always be grounded in the admin-managed catalog.
   const allowedConcepts = await getActiveConceptLabels();
+  // Read once for the whole job rather than per page: the settings are cached
+  // for 60s anyway, and a mid-document toggle flip should not split a document
+  // into moderated and unmoderated halves.
+  const guardrailSettings = await getGuardrailSettings();
+  const moderatePages = moderationEnabledFor(guardrailSettings, "material_page");
   requireActiveConcepts(allowedConcepts);
 
   // Resolve provider from DB config
@@ -330,7 +339,7 @@ export async function processMaterial(materialId: string) {
     const batch = pagesToProcess.slice(i, i + CONCURRENCY);
     await Promise.all(
       batch.map((page) =>
-        processPage(materialId, page.pageNumber, page.storageKey, bucket, openai, model, serviceTier, thinking, transport, allowedConcepts)
+        processPage(materialId, page.pageNumber, page.storageKey, bucket, openai, model, serviceTier, thinking, transport, allowedConcepts, moderatePages)
           .then((m) => { callMetrics.push(m); })
           .catch((err) => {
             console.error(`[VLM Engine] Failed to process page ${page.pageNumber}:`, err);
@@ -373,7 +382,7 @@ export async function processMaterial(materialId: string) {
       const batch = failedPages.slice(i, i + CONCURRENCY);
       await Promise.all(
         batch.map((page) =>
-          processPage(materialId, page.pageNumber, page.storageKey, bucket, openai, model, serviceTier, thinking, transport, allowedConcepts)
+          processPage(materialId, page.pageNumber, page.storageKey, bucket, openai, model, serviceTier, thinking, transport, allowedConcepts, moderatePages)
             .then((m) => { callMetrics.push(m); })
             .catch((err) => {
               console.error(`[VLM Engine] Retry ${retryAttempt} failed for page ${page.pageNumber}:`, err);
@@ -444,10 +453,10 @@ export async function processMaterial(materialId: string) {
   // assistant. One call for the whole document, and audit-only — the
   // descriptions feed recommendations, so a finding is something an admin
   // should see rather than a reason to discard a processed upload.
-  void checkContentSafety(
-    neededPages.map((p) => p.description ?? "").join("\n\n"),
-    { surface: "material_description", id: materialId }
-  );
+  void auditText(neededPages.map((p) => p.description ?? "").join("\n\n"), {
+    surface: "material_description",
+    id: materialId,
+  });
 
   // Resolve model-ready URLs for Tier 2: presigned links for hosted providers,
   // inline base64 data URLs for local ones that can't reach S3.

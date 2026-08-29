@@ -39,6 +39,7 @@ import {
 } from "lucide-react";
 import { formatAiMetrics } from "@/lib/ai-metrics";
 import { AssistantSettings } from "@/components/admin/AssistantSettings";
+import { GuardrailSettings } from "@/components/admin/GuardrailSettings";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -1449,6 +1450,8 @@ export default function AiConfigPage() {
           </p>
         </div>
         <AssistantSettings />
+
+        <GuardrailSettings />
       </section>
 
       {/* ─── Discover Models Modal ────────────────────────────────────────── */}

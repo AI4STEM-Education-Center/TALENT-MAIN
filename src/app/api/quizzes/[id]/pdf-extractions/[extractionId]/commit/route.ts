@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { canManage, getContentActor } from "@/lib/quiz-access";
 import { mapStagedToQuestionData, validateCommitQuestions } from "@/lib/quiz-extraction";
 import { deleteS3Objects, headS3Object, listS3Objects, quizExtractionPrefix } from "@/lib/storage";
-import { checkContentSafety, moderateText } from "@/lib/guardrails";
+import { guardText } from "@/lib/guardrail-runner";
 
 export const runtime = "nodejs";
 
@@ -75,16 +75,13 @@ export async function POST(
   const committedText = questions
     .map((q) => [q.text, ...(q.options ?? []).map((o) => o.text)].filter(Boolean).join("\n"))
     .join("\n");
-  const subject = { surface: "extraction_commit", id: extraction.id, userId: actor.userId };
-  const [moderation, safety] = await Promise.all([
-    moderateText(committedText, subject),
-    checkContentSafety(committedText, subject),
-  ]);
-  if (moderation.flagged || safety.blocked) {
-    return NextResponse.json(
-      { error: "These questions were blocked by the site's safety checks. Please review the text." },
-      { status: 422 }
-    );
+  const guard = await guardText(
+    committedText,
+    { surface: "extraction_commit", id: extraction.id, userId: actor.userId },
+    { requestPath: true }
+  );
+  if (guard.blocked) {
+    return NextResponse.json({ error: guard.message }, { status: 422 });
   }
 
   const figurePrefix = `${quizExtractionPrefix(extraction.storageKey)}figures/`;

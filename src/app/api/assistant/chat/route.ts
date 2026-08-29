@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { readBoundedText, BODY_TOO_LARGE } from "@/lib/request-body";
 import { rateLimit } from "@/lib/rate-limit";
-import { checkContentSafety, moderateContent } from "@/lib/guardrails";
+import { auditText, guardChatTurn } from "@/lib/guardrail-runner";
 import { logApiError, logSystemEvent } from "@/lib/system-log";
 import { resolveAssistantSession } from "@/lib/assistant/session";
 import { buildUserContent, validateAttachments } from "@/lib/assistant/attachments";
@@ -147,38 +147,17 @@ export async function POST(req: Request) {
           );
           if (conversationId) emit({ type: "conversation", id: conversationId });
 
-          // Moderation runs on exactly what the model would be given (message
-          // plus every accepted attachment, images included), before anything
-          // is stored or sent upstream. Free, and it fails open: a moderation
-          // outage returns `checked: false` and the turn proceeds.
-          const verdict = await moderateContent(
+          // Both guardrails, under the admin's current settings, before
+          // anything is stored or sent upstream. Moderation sees exactly what
+          // the model would be given (message plus every accepted attachment,
+          // images included); the LLM check reads the message text.
+          const guard = await guardChatTurn(
+            parsed.data.message,
             buildUserContent(parsed.data.message, accepted),
             { surface: "assistant_chat", id: conversationId, userId: ctx.userId }
           );
-          if (verdict.flagged) {
-            emit({
-              type: "error",
-              message:
-                "This message was blocked by the site's content filter. Please rephrase and try again.",
-            });
-            return;
-          }
-
-          // Jailbreak / off-topic classification on the message text. Runs
-          // FLAG-only by default, so today this writes a log row and lets the
-          // turn through; Phase 3 makes the mode an admin setting. Attachments
-          // are not re-sent here — they were already moderated above, and
-          // re-billing a vision model per turn is not worth it.
-          const safety = await checkContentSafety(parsed.data.message, {
-            surface: "assistant_chat",
-            id: conversationId,
-            userId: ctx.userId,
-          });
-          if (safety.blocked) {
-            emit({
-              type: "error",
-              message: "This message was blocked by the site's safety checks. Please rephrase and try again.",
-            });
+          if (guard.blocked) {
+            emit({ type: "error", message: guard.message ?? "This message was blocked." });
             return;
           }
 
@@ -224,7 +203,7 @@ export async function POST(req: Request) {
           // already read the text. It still matters: a flagged reply is the
           // signal an admin needs to tighten the prompt or the model choice.
           if (result.text.trim()) {
-            void moderateContent(result.text, {
+            void auditText(result.text, {
               surface: "assistant_reply",
               id: conversationId,
               userId: ctx.userId,
