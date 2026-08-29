@@ -20,6 +20,7 @@ import { SimulationPanel } from "@/components/simulation/SimulationPanel";
 import { AiMetricsLine } from "@/components/ai-metrics-line";
 import type { DisplayAiMetrics } from "@/lib/ai-metrics";
 import { Plus, Pencil, Trash2, Check, X, ArrowLeft, FileQuestion, Upload, Download, Atom, Eye, Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { GuardrailFeedbackButton } from "@/components/guardrails/GuardrailFeedbackButton";
 
 type AnswerMode = "SINGLE_SELECT" | "MULTI_SELECT" | "NUMERIC";
 // hasImage is the durable "this option is an image choice" signal; imageUrl is
@@ -118,7 +119,16 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
   const [openSimulationId, setOpenSimulationId] = useState<string | null>(null);
   // Keys ("quiz" / `q:<questionId>`) with a simulation action in flight.
   const [simBusy, setSimBusy] = useState<Set<string>>(new Set());
-  const [msg, setMsg] = useState("");
+  const [msg, setMsgText] = useState("");
+  // Set alongside `msg` when a safety check refused the submission, so the
+  // banner can offer a way to report it. Every other message clears it, which
+  // is why setMsg wraps both — a report button outliving its message would
+  // attach a user's complaint to the wrong thing.
+  const [guardrailEventId, setGuardrailEventId] = useState<string | null>(null);
+  const setMsg = (text: string, eventId: string | null = null) => {
+    setMsgText(text);
+    setGuardrailEventId(eventId);
+  };
   // The "New Question" form renders inline at the end of the list; scroll it
   // into view when opened so it isn't missed below a long list of questions.
   const addFormRef = useRef<HTMLDivElement | null>(null);
@@ -315,11 +325,18 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
 
     const method = editingQuestion ? "PATCH" : "POST";
     const res = await fetch("/api/questions", { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    if (res.ok) {
-      setMsg(editingQuestion ? "Question updated." : "Question created.");
-      resetForm();
-      await refreshQuestions();
+    if (!res.ok) {
+      // A refusal used to leave the form sitting there with no explanation,
+      // which reads as a dead Save button. A guardrail block is now a likely
+      // reason to land here, and it comes with an id the teacher can dispute.
+      const data = await res.json().catch(() => ({}));
+      setMsg(data.error ?? "Could not save this question.", data.guardrailEventId ?? null);
+      return;
     }
+
+    setMsg(editingQuestion ? "Question updated." : "Question created.");
+    resetForm();
+    await refreshQuestions();
   }
 
   async function deleteQuestion(id: string) {
@@ -461,7 +478,7 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
       });
       const data = await res.json();
       if (!res.ok) {
-        setMsg(data.error ?? "Import failed.");
+        setMsg(data.error ?? "Import failed.", data.guardrailEventId ?? null);
         return;
       }
 
@@ -627,7 +644,12 @@ export function QuizEditor({ quizId, backHref, backLabel }: { quizId: string; ba
         </div>
       </div>
 
-      {msg && <div className="p-3 rounded-md bg-primary/10 text-primary text-sm">{msg}</div>}
+      {msg && (
+        <div className="p-3 rounded-md bg-primary/10 text-primary text-sm">
+          {msg}
+          <GuardrailFeedbackButton eventId={guardrailEventId} className="ml-2" />
+        </div>
+      )}
 
       {!readOnly && !pdfImportActive && (
         <Card>

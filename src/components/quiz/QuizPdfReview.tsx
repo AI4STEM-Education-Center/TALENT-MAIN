@@ -12,6 +12,7 @@ import { normalizeNumericValue } from "@/lib/quiz-scoring";
 import type { FigureBbox, StagedOption, StagedQuestion } from "@/lib/quiz-extraction";
 import { MultiBoxCropper, type CropBox } from "./MultiBoxCropper";
 import { isQuestionComplete } from "@/lib/staged-question-complete";
+import { GuardrailFeedbackButton } from "@/components/guardrails/GuardrailFeedbackButton";
 
 export type PageImage = { pageNumber: number; url: string };
 
@@ -441,6 +442,7 @@ export function QuizPdfReview({
   questionKeys,
   hasAnswerKey,
   warnings,
+  guardrailEventId,
   pageImages,
   onChangeQuestion,
   onRemoveQuestion,
@@ -450,6 +452,12 @@ export function QuizPdfReview({
   questionKeys: string[];
   hasAnswerKey: boolean;
   warnings: string[];
+  /**
+   * Set when the post-extraction safety check produced one of the warnings
+   * above. The teacher reading them is the person best placed to say the check
+   * was wrong about their document, so it is worth asking them.
+   */
+  guardrailEventId?: string | null;
   pageImages: PageImage[];
   onChangeQuestion: (index: number, next: StagedQuestion) => void;
   onRemoveQuestion: (index: number) => void;
@@ -462,12 +470,18 @@ export function QuizPdfReview({
         </div>
       )}
       {warnings.length > 0 && (
-        <ul className="list-disc space-y-0.5 pl-5 text-xs text-muted-foreground">
-          {warnings.map((w, i) => (
-            // react-doctor-disable-next-line react-doctor/no-array-index-as-key -- warnings is a static list of strings with no per-item state; index identity is stable enough
-            <li key={i}>{w}</li>
-          ))}
-        </ul>
+        <div className="space-y-1">
+          <ul className="list-disc space-y-0.5 pl-5 text-xs text-muted-foreground">
+            {warnings.map((w, i) => (
+              // react-doctor-disable-next-line react-doctor/no-array-index-as-key -- warnings is a static list of strings with no per-item state; index identity is stable enough
+              <li key={i}>{w}</li>
+            ))}
+          </ul>
+          <GuardrailFeedbackButton
+            eventId={guardrailEventId}
+            className="pl-5 text-muted-foreground"
+          />
+        </div>
       )}
       {questions.map((q, i) => (
         <QuestionCard

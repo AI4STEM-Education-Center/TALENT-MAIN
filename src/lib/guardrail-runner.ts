@@ -24,6 +24,7 @@ import {
   policyFor,
   type GuardrailSettings,
 } from "@/lib/guardrail-settings";
+import { recordGuardrailEvent } from "@/lib/guardrail-events";
 
 export interface GuardDecision {
   /** True when the caller must refuse the submission. */
@@ -32,9 +33,24 @@ export interface GuardDecision {
   message: string | null;
   /** Trip descriptions for the caller's own logging. Never shown to a user. */
   reasons: string[];
+  /**
+   * Id of the recorded finding, to hand to the user alongside the message so
+   * they can report it as wrong. Null when nothing tripped, or when the record
+   * could not be written — callers must treat it as optional and simply omit
+   * the report button.
+   */
+  eventId: string | null;
 }
 
-const ALLOWED: GuardDecision = { blocked: false, message: null, reasons: [] };
+const ALLOWED: GuardDecision = { blocked: false, message: null, reasons: [], eventId: null };
+
+/**
+ * A decision before it has been recorded. `record` is explicit rather than
+ * inferred from `blocked`, because the two diverge: a check that could not RUN
+ * blocks without being a finding anyone can disagree with, and a FLAG-only trip
+ * is a finding without blocking.
+ */
+type PendingDecision = GuardDecision & { record: boolean };
 
 const BLOCKED_MESSAGE =
   "This content was blocked by the site's safety checks. Please review the wording and try again.";
@@ -65,20 +81,57 @@ function decide(
   settings: GuardrailSettings,
   options: GuardOptions,
   expected: { moderation: boolean; safety: boolean }
-): GuardDecision {
+): PendingDecision {
   if (moderationFlagged || safetyBlocked) {
-    return { blocked: true, message: BLOCKED_MESSAGE, reasons };
+    return {
+      // Background/audit paths report the finding but deliberately continue.
+      blocked: options.requestPath !== false,
+      message: BLOCKED_MESSAGE,
+      reasons,
+      eventId: null,
+      record: true,
+    };
   }
 
   // Fail-closed: a check that was supposed to run but couldn't is a refusal
   // rather than a silent pass. Only ever applied on request paths.
   if (!settings.failOpen && options.requestPath) {
     if ((expected.moderation && !moderationRan) || (expected.safety && !safetyRan)) {
-      return { blocked: true, message: UNAVAILABLE_MESSAGE, reasons: ["check unavailable"] };
+      // Not recorded: there is nothing here for a user to disagree with, and an
+      // outage in the review queue is noise that buries the real reports.
+      return {
+        blocked: true,
+        message: UNAVAILABLE_MESSAGE,
+        reasons: ["check unavailable"],
+        eventId: null,
+        record: false,
+      };
     }
   }
 
-  return { blocked: false, message: null, reasons };
+  // Nothing blocked, but a FLAG-only trip still produced reasons a teacher will
+  // read as a warning — so it is recorded and can be argued with.
+  return { blocked: false, message: null, reasons, eventId: null, record: reasons.length > 0 };
+}
+
+/**
+ * Record a finding the user is about to be shown and stamp its id onto the
+ * decision, dropping the internal `record` marker on the way out.
+ */
+async function withEvent(
+  pending: PendingDecision,
+  subject: GuardrailSubject
+): Promise<GuardDecision> {
+  const { record, ...decision } = pending;
+  if (!record) return decision;
+  const eventId = await recordGuardrailEvent({
+    surface: subject.surface,
+    subjectId: subject.id ?? null,
+    userId: subject.userId ?? null,
+    blocked: decision.blocked,
+    reasons: decision.reasons,
+  });
+  return { ...decision, eventId };
 }
 
 /**
@@ -109,18 +162,21 @@ export async function guardText(
     ...safety.reasons,
   ];
 
-  return decide(
-    moderation.checked,
-    moderation.flagged,
-    safety.checked,
-    safety.blocked,
-    reasons,
-    settings,
-    options,
-    {
-      moderation: runModeration,
-      safety: policy.jailbreakMode !== "OFF" || policy.offTopicMode !== "OFF",
-    }
+  return withEvent(
+    decide(
+      moderation.checked,
+      moderation.flagged,
+      safety.checked,
+      safety.blocked,
+      reasons,
+      settings,
+      options,
+      {
+        moderation: runModeration,
+        safety: policy.jailbreakMode !== "OFF" || policy.offTopicMode !== "OFF",
+      }
+    ),
+    subject
   );
 }
 
@@ -157,18 +213,21 @@ export async function guardChatTurn(
     ...safety.reasons,
   ];
 
-  return decide(
-    moderation.checked,
-    moderation.flagged,
-    safety.checked,
-    safety.blocked,
-    reasons,
-    settings,
-    { ...options, requestPath: options.requestPath ?? true },
-    {
-      moderation: runModeration,
-      safety: policy.jailbreakMode !== "OFF" || policy.offTopicMode !== "OFF",
-    }
+  return withEvent(
+    decide(
+      moderation.checked,
+      moderation.flagged,
+      safety.checked,
+      safety.blocked,
+      reasons,
+      settings,
+      { ...options, requestPath: options.requestPath ?? true },
+      {
+        moderation: runModeration,
+        safety: policy.jailbreakMode !== "OFF" || policy.offTopicMode !== "OFF",
+      }
+    ),
+    subject
   );
 }
 
@@ -187,5 +246,8 @@ export async function auditText(
     if (policy.jailbreakMode === "OFF" && policy.offTopicMode === "OFF") return ALLOWED;
   }
   const decision = await guardText(text, subject, { settings, requestPath: false });
+  // The event id survives: an audit finding is shown to a teacher as a warning
+  // on work they are reviewing, and that warning is exactly the place a false
+  // positive most needs a way to be argued with.
   return { ...decision, blocked: false, message: null };
 }

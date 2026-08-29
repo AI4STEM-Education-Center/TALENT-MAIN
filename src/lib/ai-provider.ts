@@ -17,10 +17,16 @@ export type UseCase =
   // src/lib/guardrails.ts. Wants a moderation model (omni-moderation-latest),
   // not a chat model.
   | "moderation"
-  // Jailbreak + off-topic classification (one call answers both). Wants a
-  // cheap, fast chat model — it never writes anything a user sees. Leaving it
-  // unassigned turns the check off. See src/lib/guardrail-check.ts.
-  | "guardrail";
+  // The two LLM guardrail classifiers, assigned independently so an admin can
+  // spend differently on them — jailbreak is the adversarial one and may want a
+  // stronger model, while off-topic is a blunt relevance question a cheap model
+  // answers well. Point BOTH at the same model and the two questions are asked
+  // in a single call; point them at different models and each is asked its own.
+  // Either way the output is never shown to a user, so a small fast model is
+  // usually right. Leaving one unassigned turns that check off.
+  // See src/lib/guardrail-check.ts.
+  | "guardrail_jailbreak"
+  | "guardrail_offtopic";
 export type ProviderType = "openai" | "local" | "cloudflare";
 
 /**
@@ -131,6 +137,60 @@ let _cache: Map<UseCase, { data: ResolvedProvider; expiresAt: number }> =
 
 const CACHE_TTL_MS = 60_000; // 60 seconds
 
+let _legacyGuardrailMigration: Promise<void> | null = null;
+
+/**
+ * Phase 4 split the old single `guardrail` assignment into independently
+ * configurable jailbreak and off-topic assignments. Copy an existing value to
+ * both new slots without overwriting either slot if an admin has already made
+ * an explicit choice, then remove the obsolete row.
+ *
+ * The short-lived promise is a process-local mutex: the two checks are usually
+ * resolved concurrently, and both should share one migration attempt.
+ */
+export function carryOverLegacyGuardrailAssignment(): Promise<void> {
+  if (_legacyGuardrailMigration) return _legacyGuardrailMigration;
+
+  _legacyGuardrailMigration = (async () => {
+    const legacy = await prisma.aiUseCaseAssignment.findUnique({
+      where: { useCase: "guardrail" },
+    });
+    if (!legacy) return;
+
+    await prisma.$transaction([
+      prisma.aiUseCaseAssignment.upsert({
+        where: { useCase: "guardrail_jailbreak" },
+        update: {},
+        create: {
+          useCase: "guardrail_jailbreak",
+          providerId: legacy.providerId,
+          modelId: legacy.modelId,
+          thinkingLevel: legacy.thinkingLevel,
+        },
+      }),
+      prisma.aiUseCaseAssignment.upsert({
+        where: { useCase: "guardrail_offtopic" },
+        update: {},
+        create: {
+          useCase: "guardrail_offtopic",
+          providerId: legacy.providerId,
+          modelId: legacy.modelId,
+          thinkingLevel: legacy.thinkingLevel,
+        },
+      }),
+      // deleteMany also succeeds if another server process completed the same
+      // migration between our read and this transaction.
+      prisma.aiUseCaseAssignment.deleteMany({ where: { useCase: "guardrail" } }),
+    ]);
+    invalidateProviderCache("guardrail_jailbreak");
+    invalidateProviderCache("guardrail_offtopic");
+  })().finally(() => {
+    _legacyGuardrailMigration = null;
+  });
+
+  return _legacyGuardrailMigration;
+}
+
 /**
  * Invalidate the provider cache for all or a specific use case.
  * Call this when admin saves a new assignment.
@@ -190,6 +250,10 @@ export function thinkingParams(
 export async function resolveProvider(
   useCase: UseCase
 ): Promise<ResolvedProvider | null> {
+  if (useCase === "guardrail_jailbreak" || useCase === "guardrail_offtopic") {
+    await carryOverLegacyGuardrailAssignment();
+  }
+
   // Check cache first
   const cached = _cache.get(useCase);
   if (cached && Date.now() < cached.expiresAt) {

@@ -133,3 +133,67 @@ describe("PUT /api/admin/guardrails", () => {
     expect((await getGuardrailSettings()).jailbreakMode).toBe("BLOCK");
   });
 });
+
+describe("GET /api/admin/guardrails — model read-out", () => {
+  async function assign(useCase: string, modelId: string, thinkingLevel: string | null = null) {
+    const provider =
+      (await prisma.aiProvider.findFirst({ where: { name: "Test OpenAI" } })) ??
+      (await prisma.aiProvider.create({
+        data: { name: "Test OpenAI", providerType: "openai", isActive: true },
+      }));
+    const model =
+      (await prisma.aiModel.findFirst({ where: { providerId: provider.id, modelId } })) ??
+      (await prisma.aiModel.create({ data: { providerId: provider.id, modelId } }));
+    await prisma.aiUseCaseAssignment.create({
+      data: { useCase, providerId: provider.id, modelId: model.id, thinkingLevel },
+    });
+    return { provider, model };
+  }
+
+  it("reports every guardrail check as unassigned when nothing is set up", async () => {
+    const body = await (await GET()).json();
+    expect(body.models.moderation).toBeNull();
+    expect(body.models.guardrail_jailbreak).toBeNull();
+    expect(body.models.guardrail_offtopic).toBeNull();
+    expect(body.sharesOneCall).toBe(false);
+  });
+
+  it("names the model each check runs on", async () => {
+    await assign("guardrail_jailbreak", "gpt-5-mini");
+
+    const body = await (await GET()).json();
+    expect(body.models.guardrail_jailbreak.label).toBe("Test OpenAI — gpt-5-mini");
+    expect(body.models.guardrail_jailbreak.providerActive).toBe(true);
+    expect(body.models.guardrail_offtopic).toBeNull();
+  });
+
+  it("reports sharesOneCall when both checks land on the same model", async () => {
+    await assign("guardrail_jailbreak", "gpt-5-mini");
+    await assign("guardrail_offtopic", "gpt-5-mini");
+
+    expect((await (await GET()).json()).sharesOneCall).toBe(true);
+  });
+
+  it("does not report sharesOneCall for different models", async () => {
+    await assign("guardrail_jailbreak", "gpt-5-mini");
+    await assign("guardrail_offtopic", "gpt-5-nano");
+
+    expect((await (await GET()).json()).sharesOneCall).toBe(false);
+  });
+
+  it("does not report sharesOneCall when only the reasoning effort differs", async () => {
+    // Same model, different reasoning effort is a different request, so the two
+    // questions cannot ride in one call — matching planCheckCalls().
+    await assign("guardrail_jailbreak", "gpt-5-mini", "high");
+    await assign("guardrail_offtopic", "gpt-5-mini", null);
+
+    expect((await (await GET()).json()).sharesOneCall).toBe(false);
+  });
+
+  it("flags a check whose provider has been switched off", async () => {
+    const { provider } = await assign("guardrail_jailbreak", "gpt-5-mini");
+    await prisma.aiProvider.update({ where: { id: provider.id }, data: { isActive: false } });
+
+    expect((await (await GET()).json()).models.guardrail_jailbreak.providerActive).toBe(false);
+  });
+});

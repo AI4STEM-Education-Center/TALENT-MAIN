@@ -118,6 +118,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       id: extractionId,
       quizId,
       teacherId: actor.teacherId,
+      createdByUserId: actor.userId,
       originalName,
       sizeBytes,
       storageKey,

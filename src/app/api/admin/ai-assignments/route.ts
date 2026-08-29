@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
+  carryOverLegacyGuardrailAssignment,
   invalidateProviderCache,
   isThinkingLevel,
   resolveThinkingLevel,
@@ -18,7 +19,8 @@ const VALID_USE_CASES = [
   "student_assistant",
   "teacher_assistant",
   "moderation",
-  "guardrail",
+  "guardrail_jailbreak",
+  "guardrail_offtopic",
 ] as const;
 
 /**
@@ -66,6 +68,7 @@ export async function GET() {
   }
 
   try {
+    await carryOverLegacyGuardrailAssignment();
     await carryOverLegacyThinkingLevels();
 
     const assignments = await prisma.aiUseCaseAssignment.findMany({

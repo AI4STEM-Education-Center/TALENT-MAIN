@@ -48,6 +48,7 @@ export async function GET(
     errorMessage: extraction.errorMessage,
     hasAnswerKey: extraction.hasAnswerKey,
     warnings: parseWarnings(extraction.warnings),
+    guardrailEventId: extraction.guardrailEventId,
     createdAt: extraction.createdAt,
     aiModel: extraction.aiModel,
     aiProvider: extraction.aiProvider,

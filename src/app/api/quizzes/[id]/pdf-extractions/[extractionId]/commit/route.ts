@@ -81,7 +81,12 @@ export async function POST(
     { requestPath: true }
   );
   if (guard.blocked) {
-    return NextResponse.json({ error: guard.message }, { status: 422 });
+    // The id lets the client offer "report a problem" on the refusal. The
+    // message stays vague about WHY on purpose; the reasons are admin-only.
+    return NextResponse.json(
+      { error: guard.message, guardrailEventId: guard.eventId },
+      { status: 422 }
+    );
   }
 
   const figurePrefix = `${quizExtractionPrefix(extraction.storageKey)}figures/`;

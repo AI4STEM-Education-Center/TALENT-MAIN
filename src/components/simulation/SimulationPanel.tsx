@@ -10,6 +10,7 @@ import { SimulationViewer } from "@/components/simulation/SimulationViewer";
 import { AiMetricsLine } from "@/components/ai-metrics-line";
 import type { DisplayAiMetrics } from "@/lib/ai-metrics";
 import { Loader2, Send, Trash2 } from "lucide-react";
+import { GuardrailFeedbackButton } from "@/components/guardrails/GuardrailFeedbackButton";
 
 interface FeedbackRound {
   id: string;
@@ -56,7 +57,14 @@ export function SimulationPanel({
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [msg, setMsg] = useState("");
+  const [msg, setMsgText] = useState("");
+  // Paired with `msg`: set only when a safety check refused the feedback, and
+  // cleared by every other message so the report button cannot outlive it.
+  const [guardrailEventId, setGuardrailEventId] = useState<string | null>(null);
+  const setMsg = (text: string, eventId: string | null = null) => {
+    setMsgText(text);
+    setGuardrailEventId(eventId);
+  };
 
   const refresh = useCallback(async () => {
     const res = await fetch(`/api/simulations/${simulationId}`);
@@ -92,7 +100,7 @@ export function SimulationPanel({
       });
       const data = await res.json();
       if (!res.ok) {
-        setMsg(data.error ?? "Failed to send feedback.");
+        setMsg(data.error ?? "Failed to send feedback.", data.guardrailEventId ?? null);
         return;
       }
       setDraft("");
@@ -147,7 +155,12 @@ export function SimulationPanel({
           )}
         </DialogHeader>
 
-        {msg && <p className="text-sm text-destructive">{msg}</p>}
+        {msg && (
+          <p className="text-sm text-destructive">
+            {msg}
+            <GuardrailFeedbackButton eventId={guardrailEventId} className="ml-2" />
+          </p>
+        )}
 
         {!detail ? (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">

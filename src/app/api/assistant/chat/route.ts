@@ -157,7 +157,11 @@ export async function POST(req: Request) {
             { surface: "assistant_chat", id: conversationId, userId: ctx.userId }
           );
           if (guard.blocked) {
-            emit({ type: "error", message: guard.message ?? "This message was blocked." });
+            emit({
+              type: "error",
+              message: guard.message ?? "This message was blocked.",
+              guardrailEventId: guard.eventId,
+            });
             return;
           }
 

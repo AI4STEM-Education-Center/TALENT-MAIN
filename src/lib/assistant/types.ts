@@ -134,7 +134,16 @@ export type AssistantStreamEvent =
       tokens: number;
       tokensEstimated: boolean;
     }
-  | { type: "error"; message: string };
+  | {
+      type: "error";
+      message: string;
+      /**
+       * Set only when a guardrail refused the turn: the id of the recorded
+       * finding, so the widget can offer to report it as a false positive.
+       * Absent for every other kind of error, which has nothing to report.
+       */
+      guardrailEventId?: string | null;
+    };
 
 /** A persisted attachment as the client sees it: enough to label and re-render it. */
 export type StoredAttachmentRef = {
