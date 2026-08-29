@@ -9,6 +9,11 @@ import {
   loadStoredAttachments,
   persistAttachments,
 } from "@/lib/assistant/attachment-store";
+import {
+  appendTurn,
+  loadConversationHistory,
+  resolveConversation,
+} from "@/lib/assistant/conversation-store";
 import { runAssistantTurn, MAX_MESSAGE_CHARS } from "@/lib/assistant/agent";
 import type { AssistantStreamEvent } from "@/lib/assistant/types";
 
@@ -31,9 +36,20 @@ const turnSchema = z.object({
 
 const bodySchema = z.object({
   message: z.string().min(1).max(MAX_MESSAGE_CHARS),
-  // Client-held transcript. It is replayed as context only — nothing
-  // security-relevant is read from it, and the agent trims it to the configured
-  // window, so a tampered history can at worst confuse the model about itself.
+  // The transcript this turn continues. Safe to take from the client for the
+  // same reason the attachment ids are: it is re-scoped to the caller's own
+  // conversations, so an id that isn't theirs (or has aged out of their history
+  // window) starts a new conversation instead of reaching anything.
+  //
+  // Nullable, not merely optional: the panel holds "no conversation yet" as
+  // null and serialises it, so an `.optional()` field would reject the very
+  // first message of every chat.
+  conversationId: z.string().max(64).nullish(),
+  // Client-held transcript, used ONLY as a fallback for when the server has no
+  // stored conversation to replay (persistence unavailable). It is context and
+  // nothing else — nothing security-relevant is read from it, and the agent
+  // trims it to the configured window — so a tampered history can at worst
+  // confuse the model about itself.
   history: z.array(turnSchema).max(60).optional(),
   attachments: z
     .array(
@@ -118,6 +134,18 @@ export async function POST(req: Request) {
 
       void (async () => {
         try {
+          // Open the transcript first: the id goes out ahead of the answer so a
+          // client that disconnects mid-stream still knows which conversation to
+          // resume. Null means persistence is unavailable — the turn then runs
+          // unrecorded rather than failing.
+          const conversationId = await resolveConversation(
+            { userId: ctx.userId, audience: ctx.audience },
+            parsed.data.conversationId ?? null,
+            parsed.data.message,
+            settings.historyRetentionDays
+          );
+          if (conversationId) emit({ type: "conversation", id: conversationId });
+
           // Keep the turn's files before answering, so the ids can go out ahead
           // of the reply and the client can reference them next turn. Best
           // effort by design: persistAttachments swallows storage failures, and
@@ -130,10 +158,18 @@ export async function POST(req: Request) {
           );
           if (stored.length > 0) emit({ type: "attachments", stored });
 
-          await runAssistantTurn({
+          // Replay what the server recorded, not what the client sent back. The
+          // client copy is only reached for when there is no stored transcript
+          // to read, so a conversation still has context on a box where
+          // persistence is down.
+          const history = conversationId
+            ? await loadConversationHistory(conversationId, settings.maxHistoryMessages)
+            : (parsed.data.history ?? []);
+
+          const result = await runAssistantTurn({
             settings,
             ctx,
-            history: parsed.data.history ?? [],
+            history,
             message: parsed.data.message,
             attachments: accepted,
             notices,
@@ -142,6 +178,22 @@ export async function POST(req: Request) {
             emit,
             signal: req.signal,
           });
+
+          // Only a completed exchange is recorded. A turn the model failed to
+          // answer leaves the conversation row at messageCount 0, which every
+          // listing filters out — better than a transcript with a question and
+          // a blank reply under it.
+          if (conversationId && result.text.trim()) {
+            await appendTurn(
+              conversationId,
+              {
+                content: parsed.data.message,
+                attachmentIds: stored.map((item) => item.id),
+                attachmentNames: accepted.map((item) => item.name),
+              },
+              result.text
+            );
+          }
         } catch (error) {
           // A provider outage or a malformed upstream response lands here. The
           // detail goes to the admin log; the user gets a plain sentence.

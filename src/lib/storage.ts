@@ -203,6 +203,20 @@ export function buildAssistantAttachmentKey(
   );
 }
 
+/**
+ * Where an archived chat transcript lives. One newline-delimited JSON object per
+ * conversation, written once when it ages out of its owner's history window and
+ * then read only by admins — so the key is derived from the conversation id
+ * alone, making the archive write idempotent if a sweep is retried.
+ *
+ * Kept UNCOMPRESSED on purpose: a transcript is small next to the images in the
+ * neighbouring `assistant-attachments/` prefix, and a plain-text object is one
+ * an admin can read straight out of the bucket if the app is unavailable.
+ */
+export function buildAssistantTranscriptKey(userId: string, conversationId: string): string {
+  return prefixedS3Key(`assistant-transcripts/${userId}/${conversationId}.jsonl`);
+}
+
 export function getS3Config(): { bucket: string; region: string } {
   const bucket = process.env.AWS_S3_BUCKET;
   const region = process.env.AWS_REGION;

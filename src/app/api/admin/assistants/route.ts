@@ -57,6 +57,7 @@ const patchSchema = z.object({
   maxAttachments: z.number().int().optional(),
   maxAttachmentBytes: z.number().int().optional(),
   attachmentRetentionDays: z.number().int().optional(),
+  historyRetentionDays: z.number().int().optional(),
   maxToolCalls: z.number().int().optional(),
   maxHistoryMessages: z.number().int().optional(),
   turnsPerHour: z.number().int().optional(),

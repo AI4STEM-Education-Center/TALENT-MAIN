@@ -20,6 +20,12 @@ export type AssistantSettings = {
   maxAttachments: number;
   maxAttachmentBytes: number;
   attachmentRetentionDays: number;
+  /**
+   * How far back a user may browse their own chat history, in days. A
+   * VISIBILITY window, not a deletion one — transcripts past it are archived
+   * and stay readable to admins. See the AssistantConversation model.
+   */
+  historyRetentionDays: number;
   maxToolCalls: number;
   maxHistoryMessages: number;
   turnsPerHour: number;
@@ -43,6 +49,7 @@ export function defaultSettings(audience: AssistantAudience): AssistantSettings 
     maxAttachments: 4,
     maxAttachmentBytes: 5 * 1024 * 1024,
     attachmentRetentionDays: 30,
+    historyRetentionDays: 30,
     maxToolCalls: 6,
     maxHistoryMessages: 20,
     turnsPerHour: 60,
@@ -55,6 +62,7 @@ export const SETTINGS_BOUNDS = {
   maxAttachments: { min: 0, max: 8 },
   maxAttachmentBytes: { min: 64 * 1024, max: 10 * 1024 * 1024 },
   attachmentRetentionDays: { min: 1, max: 365 },
+  historyRetentionDays: { min: 1, max: 365 },
   maxToolCalls: { min: 1, max: 12 },
   maxHistoryMessages: { min: 2, max: 40 },
   turnsPerHour: { min: 1, max: 500 },
@@ -122,6 +130,7 @@ export async function getAssistantSettings(
       row.attachmentRetentionDays,
       SETTINGS_BOUNDS.attachmentRetentionDays
     ),
+    historyRetentionDays: clamp(row.historyRetentionDays, SETTINGS_BOUNDS.historyRetentionDays),
     maxToolCalls: clamp(row.maxToolCalls, SETTINGS_BOUNDS.maxToolCalls),
     maxHistoryMessages: clamp(row.maxHistoryMessages, SETTINGS_BOUNDS.maxHistoryMessages),
     turnsPerHour: clamp(row.turnsPerHour, SETTINGS_BOUNDS.turnsPerHour),
@@ -170,6 +179,7 @@ export async function saveAssistantSettings(
       next.attachmentRetentionDays,
       SETTINGS_BOUNDS.attachmentRetentionDays
     ),
+    historyRetentionDays: clamp(next.historyRetentionDays, SETTINGS_BOUNDS.historyRetentionDays),
     maxToolCalls: clamp(next.maxToolCalls, SETTINGS_BOUNDS.maxToolCalls),
     maxHistoryMessages: clamp(next.maxHistoryMessages, SETTINGS_BOUNDS.maxHistoryMessages),
     turnsPerHour: clamp(next.turnsPerHour, SETTINGS_BOUNDS.turnsPerHour),
