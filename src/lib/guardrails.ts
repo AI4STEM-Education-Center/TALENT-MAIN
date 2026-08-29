@@ -96,11 +96,14 @@ async function runModeration(
   subject: GuardrailSubject,
   describe: string
 ): Promise<ModerationVerdict> {
-  const provider = await resolveProvider("moderation");
-  if (!provider) return NOT_CHECKED;
-  if (provider.providerType !== "local" && !provider.apiKey) return NOT_CHECKED;
-
   try {
+    // Provider resolution touches the database and decrypts credentials, so it
+    // belongs inside the same fail-safe boundary as the network call. A lookup
+    // failure is an unavailable check, not an exception for callers to handle.
+    const provider = await resolveProvider("moderation");
+    if (!provider) return NOT_CHECKED;
+    if (provider.providerType !== "local" && !provider.apiKey) return NOT_CHECKED;
+
     const client = await createOpenAIClient(provider);
     const response = await client.moderations.create({ model: provider.model, input });
     const categories = flaggedCategories(response.results ?? []);
@@ -154,13 +157,35 @@ export async function moderateImages(
   imageUrls: string[],
   subject: GuardrailSubject
 ): Promise<ModerationVerdict> {
-  const urls = imageUrls.filter((url) => url.trim()).slice(0, MAX_INPUT_ITEMS);
+  const urls = imageUrls.filter((url) => url.trim());
   if (urls.length === 0) return NOT_CHECKED;
-  return runModeration(
-    urls.map((url) => ({ type: "image_url" as const, image_url: { url } })),
-    subject,
-    urls.length === 1 ? "an image" : `${urls.length} images`
+
+  // The endpoint caps one request at MAX_INPUT_ITEMS. Split a long PDF into
+  // bounded requests instead of silently leaving every page after the cap
+  // unchecked.
+  const verdicts = await Promise.all(
+    Array.from({ length: Math.ceil(urls.length / MAX_INPUT_ITEMS) }, (_, batchIndex) => {
+      const batch = urls.slice(
+        batchIndex * MAX_INPUT_ITEMS,
+        (batchIndex + 1) * MAX_INPUT_ITEMS
+      );
+      return runModeration(
+        batch.map((url) => ({ type: "image_url" as const, image_url: { url } })),
+        subject,
+        batch.length === 1 ? "an image" : `${batch.length} images`
+      );
+    })
   );
+  return combineModerationVerdicts(verdicts);
+}
+
+/** Combine bounded moderation calls without mistaking partial coverage for clean. */
+function combineModerationVerdicts(verdicts: ModerationVerdict[]): ModerationVerdict {
+  return {
+    checked: verdicts.length > 0 && verdicts.every((verdict) => verdict.checked),
+    flagged: verdicts.some((verdict) => verdict.flagged),
+    categories: [...new Set(verdicts.flatMap((verdict) => verdict.categories))],
+  };
 }
 
 /**
@@ -176,8 +201,8 @@ export type ModerationContentPart =
  * Moderate mixed text/image content in one call.
  *
  * Text parts are joined and chunked; image parts are passed straight through.
- * The combined item list is capped at MAX_INPUT_ITEMS with text first, so a
- * turn carrying eight images still gets its message checked.
+ * Text stays first, then the complete item list is split into bounded calls so
+ * neither a long attachment nor an image-heavy turn loses its tail.
  */
 export async function moderateContent(
   content: string | ModerationContentPart[],
@@ -198,10 +223,20 @@ export async function moderateContent(
   const items = [
     ...chunkForModeration(text).map((chunk) => ({ type: "text" as const, text: chunk })),
     ...images.map((part) => ({ type: "image_url" as const, image_url: { url: part.image_url.url } })),
-  ].slice(0, MAX_INPUT_ITEMS);
+  ];
 
   if (items.length === 0) return NOT_CHECKED;
-  return runModeration(items, subject, images.length > 0 ? "a message with attachments" : "text");
+  const verdicts: ModerationVerdict[] = [];
+  for (let i = 0; i < items.length; i += MAX_INPUT_ITEMS) {
+    verdicts.push(
+      await runModeration(
+        items.slice(i, i + MAX_INPUT_ITEMS),
+        subject,
+        images.length > 0 ? "a message with attachments" : "text"
+      )
+    );
+  }
+  return combineModerationVerdicts(verdicts);
 }
 
 // ─── Jailbreak + off-topic check (one LLM call) ──────────────────────────────
