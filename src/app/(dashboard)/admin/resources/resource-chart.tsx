@@ -74,8 +74,10 @@ function niceMax(value: number, base: number): number {
 function formatClock(t: number, spanMs: number): string {
   const d = new Date(t);
   if (spanMs > 36 * 60 * 60 * 1000) {
+    // react-doctor-disable-next-line react-doctor/no-locale-format-in-render -- called only from the client-polled chart, which renders no samples during SSR
     return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }
+  // react-doctor-disable-next-line react-doctor/no-locale-format-in-render -- called only from the client-polled chart, which renders no samples during SSR
   return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
@@ -333,6 +335,7 @@ export function ResourceChart({
             }}
           >
             <p className="text-[10px] text-muted-foreground mb-1">
+              {/* react-doctor-disable-next-line react-doctor/no-locale-format-in-render -- activeStamp comes from client-polled samples and hover state, neither of which exists during SSR */}
               {new Date(activeStamp).toLocaleString()}
             </p>
             {series.map((s) => {

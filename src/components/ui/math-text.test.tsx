@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { MathText, splitMathSegments } from "./math-text";
+import { MathText } from "./math-text";
+import { splitMathSegments } from "@/lib/math-segments";
 
 describe("splitMathSegments", () => {
   it("returns a single text segment for plain text", () => {

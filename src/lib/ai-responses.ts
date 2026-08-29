@@ -201,24 +201,36 @@ export function toResponsesRequest(params: ChatParams): ResponsesParams {
   };
 }
 
+/** Words an error uses to name the endpoint rather than the request body. */
+const NAMES_THE_ENDPOINT = /\b(endpoint|path|route|url)\b/i;
+
+/** Words an error uses to say a thing isn't there or isn't served. */
+const CALLS_IT_ABSENT =
+  /\b(unsupported|unknown|invalid)\b|\bnot\s+(supported|found|implemented|available)\b|\bdoes\s+not\s+exist\b/i;
+
 /**
  * True when an error says this endpoint doesn't serve /v1/responses at all —
  * the signal to fall back to /chat/completions.
  *
- * Deliberately narrow. A 404/405 is the endpoint being absent (llama.cpp and
- * Ollama answer that way); a 400 about the request body means the endpoint
- * exists and we built a bad request, which should surface rather than silently
- * re-run somewhere else and hide the bug.
+ * A 404/405/501 is the plain case: the route is absent, which is how llama.cpp
+ * and Ollama answer. Gateways that route before they authenticate use 400
+ * instead — Cloudflare's compat endpoint answers
+ * "Compatibility endpoint: responses is not supported." — so a 400 counts only
+ * when it names the *endpoint* AND calls it absent. Requiring both halves is
+ * what keeps a 400 about the request itself (a bad tool schema, a parameter the
+ * model won't take) surfacing instead of silently re-running on the other
+ * transport and hiding the real bug.
+ *
+ * A provider whose refusal is phrased some third way is not left broken: an
+ * admin can pin "chat_completions" on it in AI Config.
  */
 export function isResponsesUnsupported(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
   const status = (error as { status?: unknown }).status;
   if (status === 404 || status === 405 || status === 501) return true;
-  // Some proxies answer 400 with an "unknown/unsupported path" body instead of
-  // a 404; match only that phrasing, not every 400.
   if (status !== 400) return false;
   const message = error instanceof Error ? error.message : String(error);
-  return /(unknown|unsupported|not\s+supported|invalid)\s+(url|path|route|endpoint)/i.test(message);
+  return NAMES_THE_ENDPOINT.test(message) && CALLS_IT_ABSENT.test(message);
 }
 
 /**

@@ -138,8 +138,13 @@ export function TeacherQuizzesClient({
     setImportBusyId(id);
     try {
       const res = await fetch(`/api/quizzes/pool/${id}/import`, { method: "POST" });
+      if (!res.ok) {
+        // Status before body; the error payload is read only in this branch.
+        const errorBody = await res.json().catch(() => null);
+        setMsg(errorBody?.error ?? "Import failed.");
+        return;
+      }
       const data = await res.json();
-      if (!res.ok) { setMsg(data.error ?? "Import failed."); return; }
       setQuizzes((prev) => [...prev, data]);
       setPool((prev) => prev.map((q) => (q.id === id ? { ...q, alreadyImported: true } : q)));
       if (data.topic && !topics.some((t) => t.id === data.topic.id)) {

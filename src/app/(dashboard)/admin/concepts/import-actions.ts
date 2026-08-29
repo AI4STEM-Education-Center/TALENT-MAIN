@@ -21,11 +21,13 @@ async function postJson(url: string, body: unknown): Promise<any> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  const data = await res.json().catch(() => ({}));
+  // Status before body: the error payload is read deliberately inside the
+  // failure branch, so a non-2xx can never be returned as a success result.
   if (!res.ok) {
-    throw new Error(data.error || "Upload failed.");
+    const errorBody = await res.json().catch(() => ({}) as { error?: string });
+    throw new Error(errorBody.error || "Upload failed.");
   }
-  return data;
+  return res.json();
 }
 
 function describeError(error: unknown, fallback: string): UploadResult {

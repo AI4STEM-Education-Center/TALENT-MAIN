@@ -192,6 +192,13 @@ export default function AdminBackupPage() {
     setTesting(true);
     try {
       const res = await fetch("/api/admin/backup/test", { method: "POST" });
+      // Status before body: an HTTP error page has no `success` field, so it
+      // would otherwise fall through to the generic "test failed" branch and
+      // hide the real status.
+      if (!res.ok) {
+        setBanner({ type: "error", text: `WebDAV test failed (HTTP ${res.status}).` });
+        return;
+      }
       const data = await res.json();
       if (data.success) {
         setBanner({ type: "success", text: data.message || "Connected to WebDAV." });

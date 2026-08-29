@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { RotateCcw, Loader2 } from "lucide-react";
 import { useConfirm, useAlert } from "@/components/ui/confirm-dialog";
@@ -15,8 +15,14 @@ export default function MaterialRetryButton({ classId, materialId }: MaterialRet
   const confirm = useConfirm();
   const alert = useAlert();
   const [isRetrying, setIsRetrying] = useState(false);
+  // See material-delete-button: the confirm dialog is awaited before
+  // `isRetrying` is set, so the ref is what actually blocks a double click.
+  const inFlight = useRef(false);
 
   const handleRetry = async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    try {
     const ok = await confirm({
       title: "Retry processing this material?",
       confirmText: "Retry",
@@ -34,11 +40,14 @@ export default function MaterialRetryButton({ classId, materialId }: MaterialRet
       }
 
       refresh();
-    } catch (err) {
-      console.error(err);
-      await alert("An error occurred while retrying the material.");
+      } catch (err) {
+        console.error(err);
+        await alert("An error occurred while retrying the material.");
+      } finally {
+        setIsRetrying(false);
+      }
     } finally {
-      setIsRetrying(false);
+      inFlight.current = false;
     }
   };
 

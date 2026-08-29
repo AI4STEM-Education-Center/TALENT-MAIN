@@ -437,9 +437,12 @@ function NumberField({
   step?: number;
   onChange: (value: number) => void;
 }) {
+  // Derived from the visible label so each field gets a stable, unique id to
+  // bind to; these labels are distinct within the settings form.
+  const fieldId = `assistant-setting-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
   return (
     <div>
-      <label className="mb-1 block text-xs font-medium text-muted-foreground">
+      <label htmlFor={fieldId} className="mb-1 block text-xs font-medium text-muted-foreground">
         {label}
         {bound && (
           <span className="ml-1 font-normal">
@@ -448,6 +451,7 @@ function NumberField({
         )}
       </label>
       <Input
+        id={fieldId}
         type="number"
         className="h-9"
         value={value}
