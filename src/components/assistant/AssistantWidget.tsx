@@ -249,6 +249,7 @@ export function AssistantWidget() {
     <>
       {open && (
         <div
+          // react-doctor-disable-next-line react-doctor/prefer-html-dialog -- this is a docked non-modal chat panel, not a modal; <dialog> would change stacking and focus semantics
           role="dialog"
           aria-label={isTeacher ? "Teaching assistant" : "Study assistant"}
           className="fixed inset-x-2 bottom-2 z-50 flex max-h-[min(80vh,640px)] flex-col overflow-hidden rounded-xl border border-border bg-background shadow-2xl sm:inset-x-auto sm:right-4 sm:bottom-4 sm:w-[26rem]"
@@ -295,6 +296,7 @@ export function AssistantWidget() {
 
             {bubbles.map((bubble, index) => (
               <div
+                // react-doctor-disable-next-line react-doctor/no-array-index-as-key -- bubbles is append-only; entries are never inserted, removed, or reordered
                 key={index}
                 className={cn("flex", bubble.role === "user" ? "justify-end" : "justify-start")}
               >
@@ -392,7 +394,7 @@ export function AssistantWidget() {
             <ul className="flex flex-wrap gap-2 border-t border-border px-3 py-2">
               {attachments.map((attachment, index) => (
                 <li
-                  key={`${attachment.name}-${index}`}
+                  key={attachment.id}
                   className="flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-1.5 py-1 text-xs"
                 >
                   {attachment.previewUrl ? (

@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
@@ -204,6 +204,8 @@ export default function AiConfigPage() {
   } | null>(null);
   const [selectedDiscover, setSelectedDiscover] = useState<Set<string>>(new Set());
   const [discoverAdding, setDiscoverAdding] = useState(false);
+  // Synchronous re-entry guard for the bulk "add selected models" action.
+  const addSelectedInFlight = useRef(false);
 
   // Edit-model modal state
   const [editingModel, setEditingModel] = useState<{
@@ -440,6 +442,10 @@ export default function AiConfigPage() {
 
   const handleAddSelectedModels = async () => {
     if (!discoverModal) return;
+    // `discoverAdding` is state, so it does not disable the button until the
+    // next render; the ref closes the double-submit window synchronously.
+    if (addSelectedInFlight.current) return;
+    addSelectedInFlight.current = true;
     setDiscoverAdding(true);
     try {
       for (const modelId of selectedDiscover) {
@@ -462,6 +468,7 @@ export default function AiConfigPage() {
     } catch (err: any) {
       setError(err.message);
     } finally {
+      addSelectedInFlight.current = false;
       setDiscoverAdding(false);
     }
   };
@@ -580,6 +587,21 @@ export default function AiConfigPage() {
         body: JSON.stringify({ useCase }),
       });
 
+      // Status before body: on a non-2xx the body carries no metrics, so the
+      // line below would render a row of "undefined" as if the test had run.
+      if (!res.ok) {
+        const errorBody = await res.json().catch(() => null);
+        setTestResults((prev) => ({
+          ...prev,
+          [useCase]: {
+            success: false,
+            message: errorBody?.error || `Test failed (HTTP ${res.status}).`,
+            loading: false,
+          },
+        }));
+        return;
+      }
+
       const data = await res.json();
 
       const metricsLine = formatAiMetrics({
@@ -658,6 +680,7 @@ export default function AiConfigPage() {
           <AlertTriangle className="size-4 shrink-0" />
           <span>{error}</span>
           <button type="button"
+            aria-label="Dismiss error"
             onClick={() => setError("")}
             className="ml-auto text-red-500 hover:text-red-700"
           >
@@ -1566,6 +1589,7 @@ export default function AiConfigPage() {
               />
             </div>
             <div>
+              {/* react-doctor-disable-next-line react-doctor/label-has-associated-control -- Radix Select is not a native form control, so it is named via aria-labelledby pointing at this label's id */}
               <label id="edit-model-tier-label" className="block text-sm font-medium mb-1">
                 Service Tier{" "}
                 <span className="text-muted-foreground font-normal">(service level)</span>

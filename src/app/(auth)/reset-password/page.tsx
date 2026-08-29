@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { PASSWORD_REQUIREMENTS, validatePassword } from "@/lib/account-validation";
 import { CheckCircle2, Loader2 } from "lucide-react";
 
+// react-doctor-disable-next-line react-doctor/no-secrets-in-client-code -- AUTH_BACKDROP is a Tailwind class list, not a credential
 const AUTH_BACKDROP =
   "min-h-screen bg-linear-to-br from-slate-900 via-blue-950 to-slate-900 flex items-center justify-center px-4";
 
@@ -33,6 +34,13 @@ function ResetPasswordForm() {
     }
     try {
       const res = await fetch(`/api/auth/reset-password?token=${encodeURIComponent(token)}`);
+      // Status before body: fetch resolves on 4xx/5xx, so an HTTP error payload
+      // must not be mistaken for a token verdict.
+      if (!res.ok) {
+        setTokenValid(false);
+        setTokenError("We couldn't check this link. Please request a new one.");
+        return;
+      }
       const data = await res.json();
       setTokenValid(!!data.valid);
       if (!data.valid) setTokenError(data.error || "This reset link is no longer valid.");

@@ -1,11 +1,8 @@
 import type { ReactNode } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import type { DistributionBucket } from "@/lib/quiz-stats";
+import { pct, ratePct } from "@/lib/stats-format";
 
-/** Round a 0-100 score for display. */
-export const pct = (v: number): string => `${Math.round(v)}%`;
-/** Format a 0-1 rate as a percentage. */
-export const ratePct = (v: number): string => `${Math.round(v * 100)}%`;
 
 /** A single headline metric in a card. */
 export function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {

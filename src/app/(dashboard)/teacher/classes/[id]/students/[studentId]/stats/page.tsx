@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, ChevronRight, Atom } from "lucide-react";
 import { getStudentStats, getStudentSimulationSessions } from "@/lib/quiz-stats-server";
-import { StatCard, pct } from "@/components/teacher/stats-ui";
+import { StatCard } from "@/components/teacher/stats-ui";
+import { pct } from "@/lib/stats-format";
 import { formatDurationMs } from "@/lib/simulation-stats";
 
 const fmtDateTime = (d: Date | null) =>

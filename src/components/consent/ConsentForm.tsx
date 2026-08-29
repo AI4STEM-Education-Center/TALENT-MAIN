@@ -106,6 +106,7 @@ export function ConsentForm({
 
       <div
         className="max-h-72 overflow-y-auto rounded-md border border-input p-4 text-sm leading-relaxed [&_h2]:text-base [&_h2]:font-semibold [&_h3]:mt-3 [&_h3]:text-sm [&_h3]:font-semibold [&_h4]:mt-3 [&_h4]:text-sm [&_h4]:font-semibold [&_li]:mt-1 [&_p]:mt-2 [&_ul]:mt-2 [&_ul]:list-disc [&_ul]:pl-5"
+        // react-doctor-disable-next-line react-doctor/dangerous-html-sink -- bodyHtml is allowlist-sanitized by sanitizeConsentHtml on write (api/admin/consent/forms/route.ts) and again at both read boundaries (api/consent/route.ts, teacher/consent-required/page.tsx)
         dangerouslySetInnerHTML={{ __html: activeForm.bodyHtml }}
       />
 

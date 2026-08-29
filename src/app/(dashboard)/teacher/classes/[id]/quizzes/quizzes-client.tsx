@@ -106,24 +106,31 @@ export function ClassQuizzesClient({
     const availableFrom = fromLocalInput(form.availableFrom);
     const availableUntil = fromLocalInput(form.availableUntil);
     const maxAttempts = form.maxAttempts.trim() === "" ? null : Number(form.maxAttempts);
-    const res = await fetch(`/api/classes/${classId}/quizzes`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ quizId: editing.quizId, availableFrom, availableUntil, maxAttempts }),
-    });
-    setSaving(false);
-    if (res.ok) {
-      setClassQuizzes((prev) =>
-        prev.map((cq) =>
-          cq.quizId === editing.quizId
-            ? { ...cq, availableFrom, availableUntil, maxAttempts }
-            : cq
-        )
-      );
-      setEditing(null);
-      setMsg("Quiz settings saved.");
-    } else {
+    // `saving` disables the Save button, so it has to clear on rejection too —
+    // a network failure used to leave the dialog stuck with no way to retry.
+    try {
+      const res = await fetch(`/api/classes/${classId}/quizzes`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quizId: editing.quizId, availableFrom, availableUntil, maxAttempts }),
+      });
+      if (res.ok) {
+        setClassQuizzes((prev) =>
+          prev.map((cq) =>
+            cq.quizId === editing.quizId
+              ? { ...cq, availableFrom, availableUntil, maxAttempts }
+              : cq
+          )
+        );
+        setEditing(null);
+        setMsg("Quiz settings saved.");
+      } else {
+        setMsg("Could not save settings.");
+      }
+    } catch {
       setMsg("Could not save settings.");
+    } finally {
+      setSaving(false);
     }
   }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -50,7 +50,7 @@ export default function AdminConsentFormsPage() {
     [preview, bodyHtml]
   );
 
-  async function load(signal?: AbortSignal) {
+  const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     try {
       const res = await fetch("/api/admin/consent/forms", { cache: "no-store", signal });
@@ -66,15 +66,17 @@ export default function AdminConsentFormsPage() {
         });
       }
     } finally {
+      // react-doctor-disable-next-line react-doctor/no-loading-flag-reset-outside-finally -- the reset is already inside this function's finally block; detector misfire
       if (!signal?.aborted) setLoading(false);
     }
-  }
+  }, [alert]);
 
+  // react-doctor-disable-next-line react-doctor/no-set-state-after-await-in-effect -- the fetch is aborted by the effect's AbortController cleanup, so no stale write can land
   useEffect(() => {
     const controller = new AbortController();
     void load(controller.signal);
     return () => controller.abort();
-  }, [alert]);
+  }, [load]);
 
   async function publish() {
     setPublishing(true);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { DISPLAY_LOCALE, formatDateTime } from "@/lib/format-date";
 import {
   AlertTriangle,
   Ban,
@@ -52,24 +53,29 @@ const STATUS_VARIANT: Record<TeacherCodeStatus, "success" | "warning" | "seconda
   REVOKED: "secondary",
 };
 
+const RELATIVE_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
+  ["minute", 60_000],
+  ["hour", 3_600_000],
+  ["day", 86_400_000],
+];
+
+// Built once at module scope rather than per call. The locale is pinned for the
+// same reason as `formatDate`: an undefined locale resolves to the runtime's, so
+// the server and the browser can format the same instant differently.
+const RELATIVE_FORMATTER = new Intl.RelativeTimeFormat(DISPLAY_LOCALE, { numeric: "auto" });
+
 /** "in 3 days" / "5 hours ago" — enough for an admin to judge a code at a glance. */
 function relativeTime(iso: string): string {
   const deltaMs = new Date(iso).getTime() - Date.now();
-  const units: [Intl.RelativeTimeFormatUnit, number][] = [
-    ["minute", 60_000],
-    ["hour", 3_600_000],
-    ["day", 86_400_000],
-  ];
-  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
-  let chosen = units[0];
-  for (const unit of units) {
+  let chosen = RELATIVE_UNITS[0];
+  for (const unit of RELATIVE_UNITS) {
     if (Math.abs(deltaMs) >= unit[1]) chosen = unit;
   }
-  return formatter.format(Math.round(deltaMs / chosen[1]), chosen[0]);
+  return RELATIVE_FORMATTER.format(Math.round(deltaMs / chosen[1]), chosen[0]);
 }
 
 function absoluteTime(iso: string): string {
-  return new Date(iso).toLocaleString();
+  return formatDateTime(iso);
 }
 
 export function TeacherCodesClient() {
@@ -78,6 +84,7 @@ export function TeacherCodesClient() {
   const [envTokenActive, setEnvTokenActive] = useState(false);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const createInFlight = useRef(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
@@ -91,11 +98,13 @@ export function TeacherCodesClient() {
     setLoading(true);
     try {
       const res = await fetch("/api/admin/teacher-codes");
-      const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Could not load registration codes.");
+        // Status before body; the error payload is read only in this branch.
+        const errorBody = await res.json().catch(() => null);
+        setError(errorBody?.error || "Could not load registration codes.");
         return;
       }
+      const data = await res.json();
       setCodes(data.codes);
       setEnvTokenActive(data.envTokenActive);
       setError("");
@@ -135,6 +144,10 @@ export function TeacherCodesClient() {
   async function createCode(event: React.FormEvent) {
     event.preventDefault();
     if (durationError || usesError) return;
+    // `creating` is state and does not disable the submit button until the next
+    // render, so a double submit would mint two codes.
+    if (createInFlight.current) return;
+    createInFlight.current = true;
 
     setCreating(true);
     setError("");
@@ -149,11 +162,12 @@ export function TeacherCodesClient() {
           maxUses: maxUses.trim() ? Number(maxUses) : null,
         }),
       });
-      const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Could not create the code.");
+        const errorBody = await res.json().catch(() => null);
+        setError(errorBody?.error || "Could not create the code.");
         return;
       }
+      const data = await res.json();
       setCodes((prev) => [data, ...prev]);
       setNotice(`Code ${data.code} created — copy it now and share it with the teacher.`);
       setLabel("");
@@ -162,6 +176,7 @@ export function TeacherCodesClient() {
     } catch {
       setError("Could not create the code.");
     } finally {
+      createInFlight.current = false;
       setCreating(false);
     }
   }
@@ -186,11 +201,12 @@ export function TeacherCodesClient() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ active }),
     });
-    const data = await res.json();
     if (!res.ok) {
-      setError(data.error || "Could not update the code.");
+      const errorBody = await res.json().catch(() => null);
+      setError(errorBody?.error || "Could not update the code.");
       return;
     }
+    const data = await res.json();
     setCodes((prev) => prev.map((c) => (c.id === data.id ? data : c)));
   }
 

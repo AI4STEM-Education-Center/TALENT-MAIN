@@ -190,7 +190,10 @@ export async function sendEmailToRecipient(opts: {
 export async function sendEmail(opts: SendOptions): Promise<SendResult> {
   const cfg = await requireSendableConfig();
 
-  const recipients = opts.to.map((e) => e.trim()).filter(Boolean);
+  const recipients = opts.to.flatMap((e) => {
+    const trimmed = e.trim();
+    return trimmed ? [trimmed] : [];
+  });
   if (recipients.length === 0) {
     return { sent: 0, failed: 0, errors: [] };
   }

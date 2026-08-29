@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -75,38 +75,44 @@ export default function StudentsPage() {
   const [editError, setEditError] = useState("");
   const [editLoading, setEditLoading] = useState(false);
 
-  useEffect(() => {
-    fetchStudents();
-    fetchClassName();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  const fetchClassName = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const res = await fetch(`/api/classes/${id}`, { signal });
+      if (res.ok) {
+        const data = await res.json();
+        if (!signal?.aborted) setClassName(data.name || "");
+      }
+    } catch {
+      // ignore (including AbortError)
+    }
   }, [id]);
 
-  async function fetchClassName() {
-    try {
-      const res = await fetch(`/api/classes/${id}`);
-      if (res.ok) {
-        const data = await res.json();
-        setClassName(data.name || "");
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  async function fetchStudents() {
+  const fetchStudents = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/classes/${id}/students`);
+      const res = await fetch(`/api/classes/${id}/students`, { signal });
       if (res.ok) {
         const data = await res.json();
-        setStudents(data);
+        if (!signal?.aborted) setStudents(data);
       }
     } catch {
-      // ignore
+      // ignore (including AbortError)
     } finally {
-      setLoading(false);
+      // An aborted request must not clear the spinner owned by its successor.
+      // react-doctor-disable-next-line react-doctor/no-loading-flag-reset-outside-finally -- the reset is already inside this finally; detector misfire
+      if (!signal?.aborted) setLoading(false);
     }
-  }
+  }, [id]);
+
+  // react-doctor-disable-next-line react-doctor/no-set-state-after-await-in-effect -- every post-await write is guarded by `signal.aborted`, and the effect aborts on cleanup
+  useEffect(() => {
+    // Navigating between classes leaves the previous class's requests in flight;
+    // without this they can land afterwards and paint the wrong roster.
+    const controller = new AbortController();
+    void fetchStudents(controller.signal);
+    void fetchClassName(controller.signal);
+    return () => controller.abort();
+  }, [fetchStudents, fetchClassName]);
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -118,16 +124,18 @@ export default function StudentsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(addForm),
       });
-      const data = await res.json();
+      // Status before body; the error payload is read only in the failure branch.
       if (!res.ok) {
-        setAddError(data.error || "Failed to add student.");
-      } else {
-        setStudents((prev) => [...prev, { ...data, isEnrolled: false, enrolledAt: null }].sort((a, b) =>
-          a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName)
-        ));
-        setAddForm({ orgDefinedId: "", firstName: "", lastName: "", email: "" });
-        setAddOpen(false);
+        const errorBody = await res.json().catch(() => null);
+        setAddError(errorBody?.error || "Failed to add student.");
+        return;
       }
+      const data = await res.json();
+      setStudents((prev) => [...prev, { ...data, isEnrolled: false, enrolledAt: null }].sort((a, b) =>
+        a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName)
+      ));
+      setAddForm({ orgDefinedId: "", firstName: "", lastName: "", email: "" });
+      setAddOpen(false);
     } catch {
       setAddError("An unexpected error occurred.");
     } finally {
@@ -228,10 +236,14 @@ export default function StudentsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(editForm),
       });
-      const data = await res.json();
+      // Status before body; the error payload is read only in the failure branch.
       if (!res.ok) {
-        setEditError(data.error || "Failed to update student.");
-      } else {
+        const errorBody = await res.json().catch(() => null);
+        setEditError(errorBody?.error || "Failed to update student.");
+        return;
+      }
+      {
+        const data = await res.json();
         setStudents((prev) =>
           prev
             .map((s) => (s.id === editTarget.id ? { ...s, ...data } : s))
