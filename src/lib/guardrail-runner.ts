@@ -63,7 +63,8 @@ function decide(
   safetyBlocked: boolean,
   reasons: string[],
   settings: GuardrailSettings,
-  options: GuardOptions
+  options: GuardOptions,
+  expected: { moderation: boolean; safety: boolean }
 ): GuardDecision {
   if (moderationFlagged || safetyBlocked) {
     return { blocked: true, message: BLOCKED_MESSAGE, reasons };
@@ -72,10 +73,7 @@ function decide(
   // Fail-closed: a check that was supposed to run but couldn't is a refusal
   // rather than a silent pass. Only ever applied on request paths.
   if (!settings.failOpen && options.requestPath) {
-    const moderationExpected = moderationEnabledFor(settings, "");
-    const safetyExpected =
-      settings.jailbreakMode !== "OFF" || settings.offTopicMode !== "OFF";
-    if ((moderationExpected && !moderationRan) || (safetyExpected && !safetyRan)) {
+    if ((expected.moderation && !moderationRan) || (expected.safety && !safetyRan)) {
       return { blocked: true, message: UNAVAILABLE_MESSAGE, reasons: ["check unavailable"] };
     }
   }
@@ -118,7 +116,11 @@ export async function guardText(
     safety.blocked,
     reasons,
     settings,
-    options
+    options,
+    {
+      moderation: runModeration,
+      safety: policy.jailbreakMode !== "OFF" || policy.offTopicMode !== "OFF",
+    }
   );
 }
 
@@ -162,7 +164,11 @@ export async function guardChatTurn(
     safety.blocked,
     reasons,
     settings,
-    { ...options, requestPath: options.requestPath ?? true }
+    { ...options, requestPath: options.requestPath ?? true },
+    {
+      moderation: runModeration,
+      safety: policy.jailbreakMode !== "OFF" || policy.offTopicMode !== "OFF",
+    }
   );
 }
 
