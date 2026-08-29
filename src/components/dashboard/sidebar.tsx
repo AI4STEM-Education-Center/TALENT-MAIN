@@ -30,6 +30,7 @@ import {
   ScrollText,
   UserRound,
   ShieldCheck,
+  KeyRound,
 } from "lucide-react";
 
 interface NavItem {
@@ -75,6 +76,7 @@ const adminNav: NavItem[] = [
   { href: "/admin/materials", label: "Materials Processing", icon: <FolderOpen className="size-4" /> },
   { href: "/admin/concepts", label: "Concepts", icon: <BookOpen className="size-4" /> },
   { href: "/admin/users", label: "Users", icon: <Users className="size-4" /> },
+  { href: "/admin/teacher-codes", label: "Teacher Codes", icon: <KeyRound className="size-4" /> },
   { href: "/admin/ai-config", label: "AI Config", icon: <Settings className="size-4" /> },
   { href: "/admin/email", label: "Email / SMTP", icon: <Mail className="size-4" /> },
   { href: "/admin/backup", label: "Database Backup", icon: <HardDrive className="size-4" /> },

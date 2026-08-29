@@ -5,6 +5,7 @@ import {
   MAX_TELEMETRY_COUNT,
   sanitizeControlCounts,
 } from "./simulation-telemetry";
+import { MAX_LABEL_LENGTH } from "./teacher-codes";
 
 /**
  * Centralized request-body validation built on zod. Routes parse untrusted
@@ -59,6 +60,41 @@ export const forgotPasswordSchema = z.object({
 export const resetPasswordSchema = z.object({
   token: z.string().min(1).max(200),
   password: passwordField,
+});
+
+// ─── Teacher registration codes ─────────────────────────────────────────────
+// Bodies for the admin panel's code issuer. The numeric bounds live in
+// src/lib/teacher-registration-codes.ts so the UI, the API and the docs quote
+// one set of limits.
+
+// Only the SHAPE is checked here. The numeric ranges are enforced by the route
+// so an out-of-range duration or use limit gets a message naming the actual
+// bound, rather than parseBody's uniform "All fields are required." — the same
+// exception consentSubmitSchema makes above.
+export const teacherCodeCreateSchema = z.object({
+  label: z
+    .string()
+    .max(MAX_LABEL_LENGTH)
+    .transform((s) => s.trim())
+    .nullish()
+    .transform((s) => (s ? s : null)),
+  /** null / omitted = never expires. */
+  expiresInMinutes: z
+    .number()
+    .int()
+    .nullish()
+    .transform((v) => v ?? null),
+  /** null / omitted = unlimited registrations. */
+  maxUses: z
+    .number()
+    .int()
+    .nullish()
+    .transform((v) => v ?? null),
+});
+
+/** Revoke (`active: false`) or restore (`active: true`) one existing code. */
+export const teacherCodeUpdateSchema = z.object({
+  active: z.boolean(),
 });
 
 // ─── Per-purpose email senders ──────────────────────────────────────────────
