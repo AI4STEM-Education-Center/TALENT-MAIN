@@ -16,8 +16,12 @@
 /** postMessage `type` the injected script uses for its cumulative batches. */
 export const SIM_TELEMETRY_MESSAGE_TYPE = "sim-telemetry";
 
-/** Where the student was viewing the simulation. */
-export type SimulationSurface = "rail" | "mobile";
+/**
+ * Where the student was viewing the simulation: the post-quiz results rail,
+ * its full-screen phone/tablet form, or the standalone simulations library
+ * under /student/simulations (opened outside any attempt).
+ */
+export type SimulationSurface = "rail" | "mobile" | "library";
 
 /** Cumulative in-simulation totals reported by the injected script. */
 export type SimTelemetryTotals = {
