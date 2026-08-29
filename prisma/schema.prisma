@@ -219,6 +219,43 @@ model Invitation {
   @@index([classId])
 }
 
+// One admin-issued teacher registration code. Teachers self-register at
+// /register by presenting a code; each code carries its own expiry and use
+// limit so an administrator can hand out a single-use, week-long code for one
+// hire and an open code for a workshop, and revoke either independently.
+//
+// Deliberately RELATION-FREE (createdById carries no FK, like
+// ConsentExportSettings.updatedById): deleting the admin who issued a code must
+// not delete the code, and the audit trail of who issued it should survive.
+//
+// The code is stored in plaintext rather than hashed, unlike
+// PasswordResetToken: an admin has to be able to re-read a code in the panel to
+// share it again, and the same trade-off is already made for Invitation.token.
+// It is still a BEARER CREDENTIAL — anyone holding it can create a TEACHER
+// account — so it is generated with crypto.randomBytes, never a cuid()
+// default; see src/lib/teacher-registration-codes.ts.
+model TeacherRegistrationCode {
+  id    String  @id @default(cuid())
+  code  String  @unique
+  /// Admin-facing note ("Fall 2026 TAs"), so a code list is readable.
+  label String?
+
+  /// null = never expires.
+  expiresAt DateTime?
+  /// null = unlimited registrations.
+  maxUses   Int?
+  usedCount Int       @default(0)
+  /// Revoked codes stay in the table as an audit record; this is the kill switch.
+  active    Boolean   @default(true)
+
+  createdAt   DateTime  @default(now())
+  createdById String?
+  lastUsedAt  DateTime?
+
+  // Admin list: newest-first.
+  @@index([createdAt])
+}
+
 // ─── Content ──────────────────────────────────────────────────────────────────
 // Ownership convention: teacherId = NULL means the row lives in the GLOBAL POOL
 // (admin-managed); a non-null teacherId means it is private to that teacher.

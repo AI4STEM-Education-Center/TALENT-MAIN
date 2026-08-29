@@ -150,7 +150,8 @@ DEV_DATABASE_URL="file:./data/dev.db"
 
 # --- Authentication & Registration Security ---
 AUTH_SECRET="your-generated-nextauth-secret-here"
-TEACHER_SIGNUP_TOKEN="your-secret-teacher-code"
+# Optional legacy fallback — teacher codes are issued in Admin > Teacher Codes.
+TEACHER_SIGNUP_TOKEN=""
 ADMIN_SIGNUP_TOKEN="your-secret-admin-code"
 
 # --- Encryption Key for AI Provider Credentials ---
@@ -185,7 +186,7 @@ CLOUDFRONT_PRIVATE_KEY="LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQo..."
 | `DB_PROVIDER` | Set to `sqlite` to run WAL mode optimizations on startup |
 | `APP_URL` | Public base URL of the deployment (e.g. `https://dev.ai4talent.org`). New-message notification emails use it to link students straight to the message; without it (or `AUTH_URL` / `NEXTAUTH_URL`) those emails fall back to "sign in and open Notifications" |
 | `AUTH_SECRET` | Secret key used by NextAuth to sign session tokens |
-| `TEACHER_SIGNUP_TOKEN` | Secret token teachers must enter when registering at `/register` |
+| `TEACHER_SIGNUP_TOKEN` | **Optional, legacy.** A single always-valid teacher registration code. Codes are now issued in **Admin → Teacher Codes**, each with its own expiry and use limit; a code set here works alongside them but never expires and cannot be revoked without a redeploy, so clear it once the first code has been issued |
 | `ADMIN_SIGNUP_TOKEN` | Secret token admins must enter when registering at `/admin-register` |
 | `API_KEY_ENCRYPTION_SECRET` | Hex-encoded 32-byte secret key used to encrypt AI Provider API keys stored in the database |
 | `LEARNING_MATERIAL_MAX_BYTES` | Max upload size for learning materials in bytes (default 52428800 = 50 MiB) |
