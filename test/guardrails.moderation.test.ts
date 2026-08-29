@@ -129,6 +129,17 @@ describe("moderateText", () => {
     );
   });
 
+  it("FAILS OPEN when provider resolution throws", async () => {
+    resolveProvider.mockRejectedValue(new Error("database unavailable"));
+
+    await expect(
+      moderateText("x", { surface: "assistant_chat" })
+    ).resolves.toEqual({ checked: false, flagged: false, categories: [] });
+    expect(logSystemEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "MODERATION_UNAVAILABLE" })
+    );
+  });
+
   it("does not call the endpoint for empty or whitespace-only text", async () => {
     const create = mockModeration(CLEAN);
     expect((await moderateText("   \n ", { surface: "assistant_chat" })).checked).toBe(false);
@@ -171,6 +182,18 @@ describe("moderateImages", () => {
     expect(create).toHaveBeenCalledTimes(1);
   });
 
+  it("checks every page of a document longer than one endpoint batch", async () => {
+    const create = mockModeration(CLEAN);
+    await moderateImages(
+      Array.from({ length: 30 }, (_, i) => `https://s3/p${i}.png`),
+      { surface: "quiz_extraction_page" }
+    );
+
+    expect(create).toHaveBeenCalledTimes(2);
+    expect((create.mock.calls[0][0].input as unknown[])).toHaveLength(16);
+    expect((create.mock.calls[1][0].input as unknown[])).toHaveLength(14);
+  });
+
   it("does nothing when there are no usable URLs", async () => {
     const create = mockModeration(CLEAN);
     expect((await moderateImages(["", "  "], { surface: "material_page" })).checked).toBe(false);
@@ -202,7 +225,7 @@ describe("moderateContent", () => {
     ]);
   });
 
-  it("puts text first so the message is still checked on an image-heavy turn", async () => {
+  it("puts text first and checks every image on an image-heavy turn", async () => {
     const create = mockModeration(CLEAN);
     await moderateContent(
       [
@@ -215,9 +238,12 @@ describe("moderateContent", () => {
       { surface: "assistant_chat" }
     );
 
-    const input = create.mock.calls[0][0].input as Array<{ type: string }>;
-    expect(input[0]).toEqual({ type: "text", text: "question" });
-    expect(input.length).toBeLessThanOrEqual(16);
+    const inputs = create.mock.calls.flatMap(
+      (call) => call[0].input as Array<{ type: string; image_url?: { url: string } }>
+    );
+    expect(inputs[0]).toEqual({ type: "text", text: "question" });
+    expect(inputs.filter((item) => item.type === "image_url")).toHaveLength(20);
+    expect(create).toHaveBeenCalledTimes(2);
   });
 
   it("skips image parts with a blank URL", async () => {

@@ -136,6 +136,31 @@ function readFinding(raw: unknown): CheckFinding {
   };
 }
 
+function findingIsComplete(raw: unknown): boolean {
+  if (!raw || typeof raw !== "object") return false;
+  const { detected, confidence, reason } = raw as Record<string, unknown>;
+  return (
+    typeof detected === "boolean" &&
+    typeof confidence === "number" &&
+    Number.isFinite(confidence) &&
+    (reason === null || typeof reason === "string")
+  );
+}
+
+/**
+ * Whether a provider returned every field requested by the strict schema.
+ * Providers may fall back to unconstrained JSON, so structural completeness
+ * must be checked separately from the forgiving normalizer below.
+ */
+export function guardrailCheckResponseIsComplete(raw: unknown): boolean {
+  if (!raw || typeof raw !== "object") return false;
+  const source = raw as Record<string, unknown>;
+  return (
+    findingIsComplete(source.jailbreak) &&
+    findingIsComplete(source.off_topic ?? source.offTopic)
+  );
+}
+
 /**
  * Normalize a model response into a verdict.
  *

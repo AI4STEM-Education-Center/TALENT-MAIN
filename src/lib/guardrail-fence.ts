@@ -74,7 +74,6 @@ export function fenceUntrusted(label: string, text: string): string {
   return `[BEGIN UNTRUSTED ${safeLabel}]\n${neutralizeUntrusted(text)}\n[END UNTRUSTED ${safeLabel}]`;
 }
 
-
 // ─── Moderation input shaping (pure) ────────────────────────
 
 /**
@@ -120,4 +119,3 @@ export function flaggedCategories(results: readonly unknown[]): string[] {
   }
   return [...names];
 }
-
