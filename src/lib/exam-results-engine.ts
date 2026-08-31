@@ -625,7 +625,15 @@ export async function generateExamResult(examResultId: string): Promise<void> {
   // else's, it just never gets an AI summary, study recommendations, or
   // misconception labels generated for it. "SKIPPED_NO_CONSENT" is distinct
   // from "FAILED" so it's never mistaken for a bug or retried.
-  if (!(await hasResearchConsent(examResult.studentId))) {
+  //
+  // ExamResult.studentId is a Student.id (see src/app/api/quiz/route.ts), while
+  // consent records are keyed by User.id — resolve across before asking, or
+  // every attempt reads as non-consenting and no summary is ever generated.
+  const student = await prisma.student.findUnique({
+    where: { id: examResult.studentId },
+    select: { userId: true },
+  });
+  if (!student || !(await hasResearchConsent(student.userId))) {
     await prisma.examResult.updateMany({
       where: { id: examResult.id, summaryStatus: { not: RESULT_STATUS.READY } },
       data: { summaryStatus: "SKIPPED_NO_CONSENT" },
