@@ -11,6 +11,7 @@ import {
 } from "@/lib/storage";
 import { materialLinkedToClass } from "@/lib/learning-material";
 import { rateLimit } from "@/lib/rate-limit";
+import { PAGE_IMAGE_EXTENSION_VALUES } from "@/lib/page-image-format";
 
 export const runtime = "nodejs";
 
@@ -78,15 +79,26 @@ export async function POST(
   // extraction commit route applies to figure keys.
   const pagesPrefix = `${materialPrefixFromStorageKey(material.storageKey)}pages/`;
   const storageClassId = material.classId ?? classId;
+
+  // Ordered by pageNumber, not by the order the client happened to post. The
+  // uploader fires pages in concurrent batches and appends each one as its PUT
+  // resolves, so the array arrives shuffled whenever two pages in a batch finish
+  // out of order — which is what made a long PDF fail here with "Pages must be
+  // contiguous from 1". Sorting costs nothing and the identity of each page is
+  // still pinned by the exact-key check below, not by its position.
+  const posted = [...body.pages].sort(
+    (a, b) => (Number(a?.pageNumber) || 0) - (Number(b?.pageNumber) || 0)
+  );
+
   const pages: Array<{ pageNumber: number; storageKey: string }> = [];
-  for (let i = 0; i < body.pages.length; i++) {
-    const page = body.pages[i];
+  for (let i = 0; i < posted.length; i++) {
+    const page = posted[i];
     const expectedPageNumber = i + 1;
-    const expectedKey = buildPageStorageKey(
-      teacher.id,
-      storageClassId,
-      material.id,
-      expectedPageNumber
+    // One candidate per supported image format: the page format is negotiated
+    // at presign time and the completion request does not carry it, so the key
+    // is matched against the deterministic key for each allowed extension.
+    const expectedKeys = PAGE_IMAGE_EXTENSION_VALUES.map((extension) =>
+      buildPageStorageKey(teacher.id, storageClassId, material.id, expectedPageNumber, extension)
     );
     if (
       !page ||
@@ -94,14 +106,14 @@ export async function POST(
       page.pageNumber !== expectedPageNumber ||
       typeof page.storageKey !== "string" ||
       !page.storageKey.startsWith(pagesPrefix) ||
-      page.storageKey !== expectedKey
+      !expectedKeys.includes(page.storageKey)
     ) {
       return NextResponse.json(
         { error: "Pages must be contiguous from 1 and use their exact upload keys." },
         { status: 400 }
       );
     }
-    pages.push({ pageNumber: expectedPageNumber, storageKey: expectedKey });
+    pages.push({ pageNumber: expectedPageNumber, storageKey: page.storageKey });
   }
 
   let bucket: string;

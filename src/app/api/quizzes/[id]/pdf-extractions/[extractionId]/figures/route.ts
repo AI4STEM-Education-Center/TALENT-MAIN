@@ -7,6 +7,11 @@ import {
   buildQuizExtractionOptionImageKey,
   presignPutUpload,
 } from "@/lib/storage";
+import {
+  pageImageExtension,
+  parsePageImageMimeType,
+  suffixPageImageKey,
+} from "@/lib/page-image-format";
 
 export const runtime = "nodejs";
 
@@ -20,7 +25,7 @@ function isValidIndex(value: unknown, max: number): value is number {
 }
 
 // POST: hand back presigned PUT URLs so the review UI can upload cropped figure
-// PNGs before commit — both the per-question figure crops AND the per-option
+// images before commit — both the per-question figure crops AND the per-option
 // image-choice crops. Each request gets fresh keys under the extraction's
 // figures/ prefix. Upload URLs are write-once, so fresh keys allow a safe retry
 // without making a previously validated/committed object mutable.
@@ -45,12 +50,25 @@ export async function POST(
     return NextResponse.json({ error: "Extraction is not awaiting review" }, { status: 400 });
   }
 
-  let body: { questionFigures?: unknown; optionImages?: unknown };
+  let body: { questionFigures?: unknown; optionImages?: unknown; contentType?: unknown };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
+
+  // The crop format the review UI encoded with — WebP unless the browser could
+  // not produce it. It fixes both the key extension and the signed
+  // Content-Type, so a request that omits it gets the legacy PNG contract.
+  const cropMimeType = parsePageImageMimeType(body.contentType);
+  if (body.contentType !== undefined && !cropMimeType) {
+    return NextResponse.json(
+      { error: "contentType must be image/webp or image/png" },
+      { status: 400 }
+    );
+  }
+  const mimeType = cropMimeType ?? "image/png";
+  const extension = pageImageExtension(mimeType);
 
   // Question-figure crops: an array of question indexes.
   const figureIndexes = new Set<number>();
@@ -104,23 +122,31 @@ export async function POST(
   const figureSlots = [...figureIndexes].map((questionIndex) => ({
     questionIndex,
     optionIndex: null,
-    storageKey: buildQuizExtractionFigureKey(
-      extraction.teacherId,
-      extraction.quizId,
-      extraction.id,
-      questionIndex
-    ).replace(/\.png$/, `-${randomUUID()}.png`),
+    storageKey: suffixPageImageKey(
+      buildQuizExtractionFigureKey(
+        extraction.teacherId,
+        extraction.quizId,
+        extraction.id,
+        questionIndex,
+        extension
+      ),
+      `-${randomUUID()}`
+    ),
   }));
   const optionSlots = optionPairs.map(({ questionIndex, optionIndex }) => ({
     questionIndex,
     optionIndex,
-    storageKey: buildQuizExtractionOptionImageKey(
-      extraction.teacherId,
-      extraction.quizId,
-      extraction.id,
-      questionIndex,
-      optionIndex
-    ).replace(/\.png$/, `-${randomUUID()}.png`),
+    storageKey: suffixPageImageKey(
+      buildQuizExtractionOptionImageKey(
+        extraction.teacherId,
+        extraction.quizId,
+        extraction.id,
+        questionIndex,
+        optionIndex,
+        extension
+      ),
+      `-${randomUUID()}`
+    ),
   }));
 
   try {
@@ -143,7 +169,8 @@ export async function POST(
         figureSlots.map(async ({ questionIndex, storageKey }) => ({
           questionIndex,
           storageKey,
-          presignedUrl: await presignPutUpload(extraction.bucket, storageKey, "image/png", 0),
+          mimeType,
+          presignedUrl: await presignPutUpload(extraction.bucket, storageKey, mimeType, 0),
         }))
       ),
       Promise.all(
@@ -151,7 +178,8 @@ export async function POST(
           questionIndex,
           optionIndex,
           storageKey,
-          presignedUrl: await presignPutUpload(extraction.bucket, storageKey, "image/png", 0),
+          mimeType,
+          presignedUrl: await presignPutUpload(extraction.bucket, storageKey, mimeType, 0),
         }))
       ),
     ]);

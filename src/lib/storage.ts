@@ -1,4 +1,8 @@
 import {
+  LEGACY_PAGE_IMAGE_EXTENSION,
+  type PageImageExtension,
+} from "./page-image-format";
+import {
   S3Client,
   PutObjectCommand,
   HeadObjectCommand,
@@ -85,9 +89,20 @@ export function buildStorageKey(teacherId: string, classId: string, materialId: 
   return prefixedS3Key(`learning-materials/${teacherId}/${classId}/${materialId}/${safe}`);
 }
 
-export function buildPageStorageKey(teacherId: string, classId: string, materialId: string, pageNumber: number): string {
+/**
+ * Deterministic key for one rendered page. `extension` is negotiated with the
+ * client at presign time (see src/lib/page-image-format.ts) and defaults to the
+ * legacy `png` so a caller that never negotiated gets the key it always got.
+ */
+export function buildPageStorageKey(
+  teacherId: string,
+  classId: string,
+  materialId: string,
+  pageNumber: number,
+  extension: PageImageExtension = LEGACY_PAGE_IMAGE_EXTENSION
+): string {
   return prefixedS3Key(
-    `learning-materials/${teacherId}/${classId}/${materialId}/pages/page-${pageNumber}.png`
+    `learning-materials/${teacherId}/${classId}/${materialId}/pages/page-${pageNumber}.${extension}`
   );
 }
 
@@ -126,10 +141,11 @@ export function buildQuizExtractionPageKey(
   teacherId: string | null,
   quizId: string,
   extractionId: string,
-  pageNumber: number
+  pageNumber: number,
+  extension: PageImageExtension = LEGACY_PAGE_IMAGE_EXTENSION
 ): string {
   return prefixedS3Key(
-    `quiz-extractions/${quizExtractionScope(teacherId)}/${quizId}/${extractionId}/pages/page-${pageNumber}.png`
+    `quiz-extractions/${quizExtractionScope(teacherId)}/${quizId}/${extractionId}/pages/page-${pageNumber}.${extension}`
   );
 }
 
@@ -137,10 +153,11 @@ export function buildQuizExtractionFigureKey(
   teacherId: string | null,
   quizId: string,
   extractionId: string,
-  questionIndex: number
+  questionIndex: number,
+  extension: PageImageExtension = LEGACY_PAGE_IMAGE_EXTENSION
 ): string {
   return prefixedS3Key(
-    `quiz-extractions/${quizExtractionScope(teacherId)}/${quizId}/${extractionId}/figures/figure-${questionIndex}.png`
+    `quiz-extractions/${quizExtractionScope(teacherId)}/${quizId}/${extractionId}/figures/figure-${questionIndex}.${extension}`
   );
 }
 
@@ -154,10 +171,11 @@ export function buildQuizExtractionOptionImageKey(
   quizId: string,
   extractionId: string,
   questionIndex: number,
-  optionIndex: number
+  optionIndex: number,
+  extension: PageImageExtension = LEGACY_PAGE_IMAGE_EXTENSION
 ): string {
   return prefixedS3Key(
-    `quiz-extractions/${quizExtractionScope(teacherId)}/${quizId}/${extractionId}/figures/option-${questionIndex}-${optionIndex}.png`
+    `quiz-extractions/${quizExtractionScope(teacherId)}/${quizId}/${extractionId}/figures/option-${questionIndex}-${optionIndex}.${extension}`
   );
 }
 
@@ -421,8 +439,9 @@ export async function presignGetUrl(
  * providers (Ollama / vLLM / LM Studio / …) which typically can't reach our
  * presigned S3 URLs over the network, so the image bytes are embedded directly
  * in the chat-completions request instead of linked. The MIME type comes from
- * the object's stored Content-Type, defaulting to image/png (every image we
- * store for vision — rasterized pages, figure and option crops — is a PNG).
+ * the object's stored Content-Type, defaulting to image/png for objects
+ * written before Content-Type was recorded (pages and crops are WebP now, but
+ * S3 hands back whatever each object was stored with).
  */
 export async function getS3ObjectAsDataUrl(bucket: string, key: string): Promise<string> {
   const client = getS3Client();

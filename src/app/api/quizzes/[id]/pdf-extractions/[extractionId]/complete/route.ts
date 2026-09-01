@@ -9,6 +9,7 @@ import {
   headS3Object,
 } from "@/lib/storage";
 import { rateLimit } from "@/lib/rate-limit";
+import { PAGE_IMAGE_EXTENSION_VALUES } from "@/lib/page-image-format";
 
 export const runtime = "nodejs";
 
@@ -18,7 +19,7 @@ class ExtractionAlreadyClaimedError extends Error {}
 
 type CompletePage = { pageNumber: number; storageKey: string };
 
-// POST: finalize a quiz-PDF upload. The client has PUT the PDF + page PNGs to
+// POST: finalize a quiz-PDF upload. The client has PUT the PDF + page images to
 // the presigned URLs from init; this confirms every object exists, persists the
 // page rows, flips the extraction to EXTRACTING, and enqueues the vision-LLM
 // job. The job IS the feature, so an enqueue failure marks the row FAILED.
@@ -82,19 +83,24 @@ export async function POST(
         { status: 400 }
       );
     }
-    const expectedKey = buildQuizExtractionPageKey(
-      extraction.teacherId,
-      extraction.quizId,
-      extraction.id,
-      pageNumber
+    // One candidate per supported page-image format — the format was chosen at
+    // init time and this request does not carry it.
+    const expectedKeys = PAGE_IMAGE_EXTENSION_VALUES.map((extension) =>
+      buildQuizExtractionPageKey(
+        extraction.teacherId,
+        extraction.quizId,
+        extraction.id,
+        pageNumber,
+        extension
+      )
     );
-    if (typeof raw.storageKey !== "string" || raw.storageKey !== expectedKey) {
+    if (typeof raw.storageKey !== "string" || !expectedKeys.includes(raw.storageKey)) {
       return NextResponse.json(
         { error: `pages[${i}].storageKey does not match the expected upload key` },
         { status: 400 }
       );
     }
-    pages.push({ pageNumber, storageKey: expectedKey });
+    pages.push({ pageNumber, storageKey: raw.storageKey });
   }
 
   // Confirm the PDF and every page actually landed in S3 before we commit to

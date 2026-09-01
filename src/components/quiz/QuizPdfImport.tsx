@@ -5,7 +5,12 @@ import { FileUp, Loader2, RotateCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useConfirm } from "@/components/ui/confirm-dialog";
-import { rasterizePdfToPngBlobs } from "@/lib/pdf-rasterize-client";
+import {
+  encodeCanvasToPageImage,
+  rasterizePdfToImageBlobs,
+  resolvePageImageMimeType,
+} from "@/lib/pdf-rasterize-client";
+import type { PageImageMimeType } from "@/lib/page-image-format";
 import type { FigureBbox, StagedQuestion } from "@/lib/quiz-extraction";
 import { QuizPdfReview, type PageImage } from "./QuizPdfReview";
 import { isQuestionComplete } from "@/lib/staged-question-complete";
@@ -77,12 +82,21 @@ async function putBlob(url: string, contentType: string, body: Blob): Promise<vo
 
 /**
  * Draw the normalized crop of an already-loaded page image into a canvas and
- * return a PNG blob. Uses crossOrigin="anonymous" so the canvas is not tainted.
- * NOTE: The read response must allow this origin via the CloudFront response
- * headers policy (or S3 CORS on the fallback path), otherwise the canvas taints
- * and toBlob throws SecurityError.
+ * return it encoded as `mimeType`. Uses crossOrigin="anonymous" so the canvas is
+ * not tainted. NOTE: The read response must allow this origin via the CloudFront
+ * response headers policy (or S3 CORS on the fallback path), otherwise the
+ * canvas taints and toBlob throws SecurityError.
+ *
+ * The caller has already told the server which format it will PUT, and that
+ * choice is baked into the presigned URL's signature — so a browser that
+ * quietly encodes something else has to fail loudly rather than upload bytes
+ * that do not match their key or Content-Type.
  */
-async function cropToPngBlob(pageUrl: string, bbox: FigureBbox): Promise<Blob> {
+async function cropToImageBlob(
+  pageUrl: string,
+  bbox: FigureBbox,
+  mimeType: PageImageMimeType
+): Promise<Blob> {
   const img = new Image();
   img.crossOrigin = "anonymous";
   await new Promise<void>((resolve, reject) => {
@@ -104,16 +118,25 @@ async function cropToPngBlob(pageUrl: string, bbox: FigureBbox): Promise<Blob> {
   // toBlob throws on a tainted canvas — surfaced as the CORS error below.
   ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
 
-  return new Promise<Blob>((resolve, reject) => {
-    try {
-      canvas.toBlob((blob) => {
-        if (blob) resolve(blob);
-        else reject(new Error("Failed to encode figure crop"));
-      }, "image/png");
-    } catch {
-      reject(new Error("Storage CORS GET required: configure the CloudFront response headers policy (or S3 CORS on the fallback path)."));
+  let encoded: { blob: Blob; mimeType: PageImageMimeType };
+  try {
+    encoded = await encodeCanvasToPageImage(canvas, mimeType);
+  } catch (e) {
+    // A tainted canvas makes toBlob throw SecurityError; anything else is a
+    // genuine encoder failure and should not be reported as a CORS problem.
+    if (e instanceof DOMException && e.name === "SecurityError") {
+      throw new Error(
+        "Storage CORS GET required: configure the CloudFront response headers policy (or S3 CORS on the fallback path)."
+      );
     }
-  });
+    throw e instanceof Error ? e : new Error("Failed to encode figure crop");
+  }
+  if (encoded.mimeType !== mimeType) {
+    // Only reachable for a crop too large for the WebP container, since the
+    // format was probed against this browser before the URLs were signed.
+    throw new Error(`This browser encoded the crop as ${encoded.mimeType}, not ${mimeType}.`);
+  }
+  return encoded.blob;
 }
 
 /**
@@ -274,7 +297,7 @@ export function QuizPdfImport({
     setPhase("uploading");
     try {
       setStatusText("Rendering pages…");
-      const pageBlobs = await rasterizePdfToPngBlobs(file, MAX_PAGES);
+      const pageBlobs = await rasterizePdfToImageBlobs(file, MAX_PAGES);
 
       setStatusText("Requesting upload URLs…");
       const initRes = await fetch(base, {
@@ -283,7 +306,11 @@ export function QuizPdfImport({
         body: JSON.stringify({
           originalName: file.name,
           sizeBytes: file.size,
-          pages: pageBlobs.map((p) => ({ pageNumber: p.pageNumber, sizeBytes: p.sizeBytes })),
+          pages: pageBlobs.map((p) => ({
+            pageNumber: p.pageNumber,
+            sizeBytes: p.sizeBytes,
+            contentType: p.mimeType,
+          })),
         }),
       });
       if (!initRes.ok) throw new Error((await initRes.json()).error || "Failed to start extraction");
@@ -297,7 +324,7 @@ export function QuizPdfImport({
         setStatusText(`Uploading page ${page.pageNumber}/${init.pages.length}…`);
         const blob = byPage.get(page.pageNumber);
         if (!blob) throw new Error(`Missing rendered page ${page.pageNumber}`);
-        await putBlob(page.presignedUrl, "image/png", blob.blob);
+        await putBlob(page.presignedUrl, blob.mimeType, blob.blob);
       }
 
       setStatusText("Finalizing…");
@@ -372,12 +399,19 @@ export function QuizPdfImport({
 
     if (pendingFigures.length === 0 && pendingOptions.length === 0) return questions;
 
+    // One format for every crop in this request: the server signs each PUT with
+    // it, so it has to be settled before the URLs are minted rather than per
+    // blob. Probed against this browser, not just configured, so a canvas that
+    // cannot encode WebP asks for PNG keys instead of failing every upload.
+    const cropMimeType = await resolvePageImageMimeType();
+
     const figRes = await fetch(`${base}/${extractionIdRef.current}/figures`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         questionFigures: pendingFigures.map((p) => p.index),
         optionImages: pendingOptions,
+        contentType: cropMimeType,
       }),
     });
     if (!figRes.ok) throw new Error((await figRes.json()).error || "Failed to get figure upload URLs");
@@ -393,8 +427,8 @@ export function QuizPdfImport({
       if (!fig) throw new Error(`Missing figure upload URL for question ${index + 1}`);
       const pageUrl = pageUrlByNumber.get(q.figurePage ?? q.sourcePage);
       if (!pageUrl) throw new Error(`Missing source page image for question ${index + 1}`);
-      const blob = await cropToPngBlob(pageUrl, q.figureBbox!);
-      await putBlob(fig.presignedUrl, "image/png", blob);
+      const blob = await cropToImageBlob(pageUrl, q.figureBbox!, cropMimeType);
+      await putBlob(fig.presignedUrl, cropMimeType, blob);
       next[index] = { ...next[index], figureStorageKey: fig.storageKey };
     }
 
@@ -409,8 +443,8 @@ export function QuizPdfImport({
       if (!pageUrl) {
         throw new Error(`Missing source page image for question ${questionIndex + 1} option ${optionIndex + 1}`);
       }
-      const blob = await cropToPngBlob(pageUrl, o.imageBbox!);
-      await putBlob(fig.presignedUrl, "image/png", blob);
+      const blob = await cropToImageBlob(pageUrl, o.imageBbox!, cropMimeType);
+      await putBlob(fig.presignedUrl, cropMimeType, blob);
       next[questionIndex].options[optionIndex] = {
         ...next[questionIndex].options[optionIndex],
         imageStorageKey: fig.storageKey,
