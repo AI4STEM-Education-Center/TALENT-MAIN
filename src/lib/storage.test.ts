@@ -81,6 +81,12 @@ describe("buildStorageKey / buildPageStorageKey", () => {
       "learning-materials/t1/c1/m1/pages/page-3.png"
     );
   });
+
+  it("takes the extension from the negotiated page image format", () => {
+    expect(buildPageStorageKey("t1", "c1", "m1", 3, "webp")).toBe(
+      "learning-materials/t1/c1/m1/pages/page-3.webp"
+    );
+  });
 });
 
 describe("S3 key namespace", () => {
@@ -176,6 +182,18 @@ describe("buildQuizExtraction* keys", () => {
     );
     expect(buildQuizExtractionFigureKey("t1", "qz1", "ex1", 2)).toBe(
       "quiz-extractions/t1/qz1/ex1/figures/figure-2.png"
+    );
+  });
+
+  it("carries the negotiated image format into page, figure and option keys", () => {
+    expect(buildQuizExtractionPageKey("t1", "qz1", "ex1", 4, "webp")).toBe(
+      "quiz-extractions/t1/qz1/ex1/pages/page-4.webp"
+    );
+    expect(buildQuizExtractionFigureKey("t1", "qz1", "ex1", 2, "webp")).toBe(
+      "quiz-extractions/t1/qz1/ex1/figures/figure-2.webp"
+    );
+    expect(buildQuizExtractionOptionImageKey("t1", "qz1", "ex1", 0, 1, "webp")).toBe(
+      "quiz-extractions/t1/qz1/ex1/figures/option-0-1.webp"
     );
   });
 });

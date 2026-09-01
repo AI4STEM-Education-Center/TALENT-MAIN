@@ -53,12 +53,17 @@ Key layout under the prefix (see `src/lib/storage.ts`):
 
 ```
 <prefix>learning-materials/{teacherId}/{classId}/{materialId}/{file}
-<prefix>learning-materials/{teacherId}/{classId}/{materialId}/pages/page-N.png
+<prefix>learning-materials/{teacherId}/{classId}/{materialId}/pages/page-N.webp
 <prefix>quiz-extractions/{teacherId|pool}/{quizId}/{extractionId}/{file}
-<prefix>quiz-extractions/{teacherId|pool}/{quizId}/{extractionId}/pages/page-N.png
-<prefix>quiz-extractions/{teacherId|pool}/{quizId}/{extractionId}/figures/figure-N.png
+<prefix>quiz-extractions/{teacherId|pool}/{quizId}/{extractionId}/pages/page-N.webp
+<prefix>quiz-extractions/{teacherId|pool}/{quizId}/{extractionId}/figures/figure-N.webp
 <prefix>simulations/{teacherId|pool}/{quizId}/{questionId}/v{n}.html
 ```
+
+Page renders and figure crops are WebP; objects written before that switch keep
+their `.png` keys and are still served, so both extensions appear in an
+established bucket. `NEXT_PUBLIC_PAGE_IMAGE_FORMAT=png` renders new pages as PNG
+again — only needed for a local model server that cannot decode WebP.
 
 Objects are never overwritten in place — simulations are versioned `v{n}.html`
 because deep-copied quizzes share keys. That immutability is what makes long CDN
@@ -260,6 +265,8 @@ AWS_SECRET_ACCESS_KEY="..."
 AWS_REGION="us-east-1"
 AWS_S3_BUCKET="your-bucket-name"
 LEARNING_MATERIAL_MAX_BYTES="52428800"
+# Optional; leave unset for the WebP default (see the key layout above).
+NEXT_PUBLIC_PAGE_IMAGE_FORMAT=""
 
 # --- CloudFront ---
 CLOUDFRONT_DOMAIN="d111111abcdef8.cloudfront.net"

@@ -11,13 +11,18 @@ import {
   presignPutUpload,
   sanitizeFilename,
 } from "@/lib/storage";
+import {
+  pageImageExtension,
+  parsePageImageMimeType,
+  type PageImageMimeType,
+} from "@/lib/page-image-format";
 
 export const runtime = "nodejs";
 
 /** Maximum number of pages accepted in a single quiz-PDF extraction. */
 export const MAX_QUIZ_PDF_PAGES = 20;
 
-type InitPage = { pageNumber: number; sizeBytes: number };
+type InitPage = { pageNumber: number; sizeBytes: number; mimeType: PageImageMimeType };
 
 // POST: initialize a quiz-PDF extraction. Mirrors the materials presigned-upload
 // init: create the row, presign a PUT for the PDF + one per page, and roll the
@@ -79,7 +84,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const pages: InitPage[] = [];
   for (let i = 0; i < body.pages.length; i++) {
-    const raw = body.pages[i] as { pageNumber?: unknown; sizeBytes?: unknown } | null;
+    const raw = body.pages[i] as {
+      pageNumber?: unknown;
+      sizeBytes?: unknown;
+      contentType?: unknown;
+    } | null;
     if (!raw || typeof raw !== "object") {
       return NextResponse.json({ error: `pages[${i}] must be an object` }, { status: 400 });
     }
@@ -98,7 +107,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         { status: 400 }
       );
     }
-    pages.push({ pageNumber, sizeBytes: pageSize });
+    // The client renders pages as WebP where it can and declares what it
+    // produced; the key extension and the signed Content-Type both follow from
+    // it. A client that sends nothing predates the WebP switch and uploads PNG.
+    const requested = parsePageImageMimeType(raw.contentType);
+    if (raw.contentType !== undefined && !requested) {
+      return NextResponse.json(
+        { error: `pages[${i}].contentType must be image/webp or image/png` },
+        { status: 400 }
+      );
+    }
+    pages.push({ pageNumber, sizeBytes: pageSize, mimeType: requested ?? "image/png" });
   }
   if (
     pages.reduce((total, page) => total + page.sizeBytes, 0) >
@@ -131,9 +150,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const pdfPresignedUrl = await presignPutUpload(bucket, storageKey, "application/pdf", sizeBytes);
     const pagePresigns = await Promise.all(
       pages.map(async (p) => {
-        const key = buildQuizExtractionPageKey(actor.teacherId, quizId, extractionId, p.pageNumber);
-        const presignedUrl = await presignPutUpload(bucket, key, "image/png", p.sizeBytes);
-        return { pageNumber: p.pageNumber, presignedUrl, storageKey: key };
+        const key = buildQuizExtractionPageKey(
+          actor.teacherId,
+          quizId,
+          extractionId,
+          p.pageNumber,
+          pageImageExtension(p.mimeType)
+        );
+        const presignedUrl = await presignPutUpload(bucket, key, p.mimeType, p.sizeBytes);
+        return { pageNumber: p.pageNumber, presignedUrl, storageKey: key, mimeType: p.mimeType };
       })
     );
 

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { CheckCircle2, FileUp, Loader2, MinusCircle, Pencil, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { rasterizePdfToPngBlobs } from "@/lib/pdf-rasterize-client";
+import { rasterizePdfToImageBlobs } from "@/lib/pdf-rasterize-client";
 
 const MAX_PAGES = 20;
 const POLL_MS = 2500;
@@ -154,7 +154,7 @@ export function PdfBatchUpload({
       onQuizCreated(created as CreatedPoolQuiz);
       updateItem(key, { quizId: created.id, status: "uploading", note: "Rendering pages…" });
 
-      const pageBlobs = await rasterizePdfToPngBlobs(file, MAX_PAGES);
+      const pageBlobs = await rasterizePdfToImageBlobs(file, MAX_PAGES);
 
       updateItem(key, { note: "Requesting upload URLs…" });
       const initRes = await fetch(`/api/quizzes/${quizId}/pdf-extractions`, {
@@ -163,7 +163,11 @@ export function PdfBatchUpload({
         body: JSON.stringify({
           originalName: file.name,
           sizeBytes: file.size,
-          pages: pageBlobs.map((p) => ({ pageNumber: p.pageNumber, sizeBytes: p.sizeBytes })),
+          pages: pageBlobs.map((p) => ({
+            pageNumber: p.pageNumber,
+            sizeBytes: p.sizeBytes,
+            contentType: p.mimeType,
+          })),
         }),
       });
       if (!initRes.ok) throw new Error((await initRes.json()).error || "Failed to start extraction");
@@ -178,7 +182,7 @@ export function PdfBatchUpload({
         updateItem(key, { note: `Uploading page ${page.pageNumber}/${init.pages.length}…` });
         const blob = byPage.get(page.pageNumber);
         if (!blob) throw new Error(`Missing rendered page ${page.pageNumber}`);
-        await putBlob(page.presignedUrl, "image/png", blob.blob);
+        await putBlob(page.presignedUrl, blob.mimeType, blob.blob);
       }
 
       updateItem(key, { note: "Finalizing…" });

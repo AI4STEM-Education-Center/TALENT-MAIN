@@ -9,6 +9,11 @@ import {
   getS3Config,
 } from "@/lib/storage";
 import { materialLinkedToClass } from "@/lib/learning-material";
+import {
+  LEGACY_PAGE_IMAGE_EXTENSION,
+  pageImageExtension,
+  parsePageImageMimeType,
+} from "@/lib/page-image-format";
 
 export const runtime = "nodejs";
 
@@ -59,7 +64,9 @@ export async function POST(
     );
   }
 
-  let body: { pages?: Array<{ pageNumber: number; sizeBytes: number }> };
+  let body: {
+    pages?: Array<{ pageNumber: number; sizeBytes: number; contentType?: string }>;
+  };
   try {
     body = await req.json();
   } catch {
@@ -114,8 +121,6 @@ export async function POST(
     );
   }
 
-  const mimeType = "image/png"; // Using PNG for page slices
-
   const results = await Promise.all(
     body.pages.map(async (page) => {
       if (typeof page.pageNumber !== "number" || typeof page.sizeBytes !== "number") {
@@ -125,10 +130,35 @@ export async function POST(
         return { pageNumber: page.pageNumber, error: `sizeBytes must be between 1 and ${maxBytes}` };
       }
 
-      const storageKey = buildPageStorageKey(teacher.id, storageClassId, materialId, page.pageNumber);
+      // The client declares the format it encoded each page in — WebP for any
+      // browser whose canvas can produce it, PNG otherwise — and the key's
+      // extension is derived from that, so the signed Content-Type always
+      // matches the bytes that land. An omitted contentType is a client from
+      // before the WebP switch, which uploads PNG.
+      const requested = parsePageImageMimeType(page.contentType);
+      if (page.contentType !== undefined && !requested) {
+        return { pageNumber: page.pageNumber, error: "Unsupported page image contentType" };
+      }
+      const mimeType = requested ?? "image/png";
+      const extension = requested
+        ? pageImageExtension(requested)
+        : LEGACY_PAGE_IMAGE_EXTENSION;
+
+      const storageKey = buildPageStorageKey(
+        teacher.id,
+        storageClassId,
+        materialId,
+        page.pageNumber,
+        extension
+      );
       
       try {
-        const presignedUrl = await presignPutUpload(bucket, storageKey, mimeType, page.sizeBytes);
+        const presignedUrl = await presignPutUpload(
+          bucket,
+          storageKey,
+          mimeType,
+          page.sizeBytes
+        );
         return {
           pageNumber: page.pageNumber,
           presignedUrl,

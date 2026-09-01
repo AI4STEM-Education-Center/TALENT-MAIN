@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { UploadCloud, Loader2 } from "lucide-react";
-import { rasterizePdfToPngBlobs } from "@/lib/pdf-rasterize-client";
+import { rasterizePdfToImageBlobs } from "@/lib/pdf-rasterize-client";
 
 interface MaterialUploadProps {
   classId: string;
@@ -62,7 +62,9 @@ export default function MaterialUploadForm({ classId }: MaterialUploadProps) {
 
         setStatusText("Processing pages locally...");
         // 3. Rasterize PDF pages in the browser via PDFium (WASM). Max 100 pages.
-        const pageBlobs = await rasterizePdfToPngBlobs(file, 100);
+        // Each page comes back WebP-encoded where the browser supports it — see
+        // src/lib/page-image-format.ts — carrying the MIME type it actually used.
+        const pageBlobs = await rasterizePdfToImageBlobs(file, 100);
         const numPages = pageBlobs.length;
         setProgress(30); // First 30% is rendering
 
@@ -72,7 +74,11 @@ export default function MaterialUploadForm({ classId }: MaterialUploadProps) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            pages: pageBlobs.map((p) => ({ pageNumber: p.pageNumber, sizeBytes: p.sizeBytes })),
+            pages: pageBlobs.map((p) => ({
+              pageNumber: p.pageNumber,
+              sizeBytes: p.sizeBytes,
+              contentType: p.mimeType,
+            })),
           }),
         });
 
@@ -85,7 +91,6 @@ export default function MaterialUploadForm({ classId }: MaterialUploadProps) {
         setStatusText("Uploading page images...");
         // 5. Upload all pages directly to S3
         let uploadedCount = 0;
-        const uploadedPagesForComplete: { pageNumber: number; storageKey: string }[] = [];
 
         // Index page blobs by page number for O(1) lookup during upload
         const blobsByPageNumber = new Map(pageBlobs.map((p) => [p.pageNumber, p]));
@@ -107,17 +112,24 @@ export default function MaterialUploadForm({ classId }: MaterialUploadProps) {
               });
 
               if (!res.ok) throw new Error(`Failed to upload page ${pageData.pageNumber}`);
-              
-              uploadedPagesForComplete.push({
-                pageNumber: pageData.pageNumber,
-                storageKey: pageData.storageKey,
-              });
-              
+
               uploadedCount++;
               setProgress(30 + (uploadedCount / numPages) * 60); // 30% to 90% is uploading
             })
           );
         }
+
+        // The completion endpoint needs the pages in page order. Take them from
+        // the server's own presign response, which is already ordered, rather
+        // than from the order the concurrent PUTs above happened to finish in —
+        // collecting them as each upload resolved shuffled the list and made
+        // every multi-batch document fail finalization.
+        const uploadedPagesForComplete = pageUrls
+          .map((pageData: any) => ({
+            pageNumber: pageData.pageNumber,
+            storageKey: pageData.storageKey,
+          }))
+          .sort((a: { pageNumber: number }, b: { pageNumber: number }) => a.pageNumber - b.pageNumber);
 
         setStatusText("Finalizing upload...");
         // 6. Complete upload and trigger VLM
@@ -127,7 +139,16 @@ export default function MaterialUploadForm({ classId }: MaterialUploadProps) {
           body: JSON.stringify({ pages: uploadedPagesForComplete }),
         });
 
-        if (!completeRes.ok) throw new Error("Failed to finalize material");
+        if (!completeRes.ok) {
+          // Surface what the server actually objected to; the old generic
+          // message left the teacher (and the console) with no way to tell an
+          // ordering bug from an over-budget document.
+          const reason = await completeRes
+            .json()
+            .then((data) => data?.error)
+            .catch(() => null);
+          throw new Error(reason || "Failed to finalize material");
+        }
 
         setProgress(100);
         setStatusText("Done!");
