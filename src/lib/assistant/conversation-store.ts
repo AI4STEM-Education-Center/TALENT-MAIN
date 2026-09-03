@@ -683,9 +683,7 @@ export async function listConversationsForAdmin(
  * turns rather than failing, so the admin sees that it exists and that the
  * bucket is the problem.
  */
-export async function readConversationForAdmin(
-  conversationId: string,
-): Promise<
+export async function readConversationForAdmin(conversationId: string): Promise<
   | (AdminConversationRow & {
       turns: AssistantTurn[];
       transcriptUnavailable: boolean;
