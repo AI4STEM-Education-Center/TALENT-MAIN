@@ -29,7 +29,14 @@ interface ConsentRecordRow {
   formVersion: { title: string; version: string };
 }
 
-type JobState = { jobId: string; status: string; processedRecords: number; totalRecords: number | null; downloadUrl: string | null; error: string | null } | null;
+type JobState = {
+  jobId: string;
+  status: string;
+  processedRecords: number;
+  totalRecords: number | null;
+  downloadUrl: string | null;
+  error: string | null;
+} | null;
 
 export default function AdminConsentPage() {
   const alert = useAlert();
@@ -47,7 +54,9 @@ export default function AdminConsentPage() {
     if (role !== "ALL") params.set("role", role);
     if (decision !== "ALL") params.set("decision", decision);
     try {
-      const res = await fetch(`/api/admin/consent?${params}`, { cache: "no-store" });
+      const res = await fetch(`/api/admin/consent?${params}`, {
+        cache: "no-store",
+      });
       if (!res.ok) throw new Error("Could not load consent records.");
       const data = await res.json();
       setRecords(data.records ?? []);
@@ -97,11 +106,21 @@ export default function AdminConsentPage() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
-        await alert({ title: "Couldn't start export", description: data?.error || "Unknown error." });
+        await alert({
+          title: "Couldn't start export",
+          description: data?.error || "Unknown error.",
+        });
         return;
       }
       const data = await res.json();
-      setJob({ jobId: data.jobId, status: "PENDING", processedRecords: 0, totalRecords: data.totalRecords, downloadUrl: null, error: null });
+      setJob({
+        jobId: data.jobId,
+        status: "PENDING",
+        processedRecords: 0,
+        totalRecords: data.totalRecords,
+        downloadUrl: null,
+        error: null,
+      });
     } finally {
       setRequestingExport(false);
     }
@@ -113,16 +132,21 @@ export default function AdminConsentPage() {
         <div>
           <h1 className="text-3xl font-bold">Consent Records</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Only visible here and never to teachers. Preview one or two records instantly, or select several for a
-            bulk PDF download — large exports run in the background so they never slow down the site.
+            Only visible here and never to teachers. Preview one or two records
+            instantly, or select several for a bulk PDF download — large exports
+            run in the background so they never slow down the site.
           </p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" asChild>
-            <Link href="/admin/consent/forms"><FileText className="size-4" /> Form versions</Link>
+            <Link href="/admin/consent/forms">
+              <FileText className="size-4" /> Form versions
+            </Link>
           </Button>
           <Button variant="outline" size="sm" asChild>
-            <Link href="/admin/consent/settings"><Settings className="size-4" /> Export settings</Link>
+            <Link href="/admin/consent/settings">
+              <Settings className="size-4" /> Export settings
+            </Link>
           </Button>
         </div>
       </div>
@@ -131,7 +155,9 @@ export default function AdminConsentPage() {
         <div className="space-y-1">
           <Label className="text-xs">Role</Label>
           <Select value={role} onValueChange={setRole}>
-            <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-36">
+              <SelectValue />
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">All roles</SelectItem>
               <SelectItem value="STUDENT">Student</SelectItem>
@@ -142,7 +168,9 @@ export default function AdminConsentPage() {
         <div className="space-y-1">
           <Label className="text-xs">Decision</Label>
           <Select value={decision} onValueChange={setDecision}>
-            <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-36">
+              <SelectValue />
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">Any</SelectItem>
               <SelectItem value="AGREE">Agree</SelectItem>
@@ -152,9 +180,14 @@ export default function AdminConsentPage() {
         </div>
         <Button
           onClick={requestExport}
-          disabled={selected.size === 0 || requestingExport || Boolean(job && job.status !== "COMPLETE" && job.status !== "FAILED")}
+          disabled={
+            selected.size === 0 ||
+            requestingExport ||
+            Boolean(job && job.status !== "COMPLETE" && job.status !== "FAILED")
+          }
         >
-          <Download className="size-4" /> Download {selected.size || ""} selected as ZIP
+          <Download className="size-4" /> Download {selected.size || ""}{" "}
+          selected as ZIP
         </Button>
       </div>
 
@@ -163,7 +196,10 @@ export default function AdminConsentPage() {
           <CardContent className="flex flex-wrap items-center gap-3 py-4 text-sm">
             {job.status === "COMPLETE" ? (
               <>
-                <span>Export ready ({job.totalRecords ?? job.processedRecords} records).</span>
+                <span>
+                  Export ready ({job.totalRecords ?? job.processedRecords}{" "}
+                  records).
+                </span>
                 {job.downloadUrl && (
                   <Button size="sm" asChild>
                     <a href={job.downloadUrl}>Download zip</a>
@@ -171,13 +207,16 @@ export default function AdminConsentPage() {
                 )}
               </>
             ) : job.status === "FAILED" ? (
-              <span className="text-destructive">Export failed: {job.error}</span>
+              <span className="text-destructive">
+                Export failed: {job.error}
+              </span>
             ) : (
               <>
                 <Loader2 className="size-4 animate-spin" />
                 <span>
                   Generating in the background — {job.processedRecords}
-                  {job.totalRecords ? ` / ${job.totalRecords}` : ""} records processed.
+                  {job.totalRecords ? ` / ${job.totalRecords}` : ""} records
+                  processed.
                 </span>
               </>
             )}
@@ -194,14 +233,18 @@ export default function AdminConsentPage() {
           <table className="w-full text-sm">
             <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
               <tr>
-                <th className="p-2"><span className="sr-only">Select</span></th>
+                <th className="p-2">
+                  <span className="sr-only">Select</span>
+                </th>
                 <th className="p-2">Name</th>
                 <th className="p-2">Role</th>
                 <th className="p-2">Decision</th>
                 <th className="p-2">Form</th>
                 <th className="p-2">Signed at</th>
                 <th className="p-2">Device</th>
-                <th className="p-2"><span className="sr-only">Actions</span></th>
+                <th className="p-2">
+                  <span className="sr-only">Actions</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -217,14 +260,18 @@ export default function AdminConsentPage() {
                   </td>
                   <td className="p-2">
                     <div>{r.signerNameSnapshot}</div>
-                    <div className="text-xs text-muted-foreground">{r.signerEmailSnapshot}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {r.signerEmailSnapshot}
+                    </div>
                   </td>
                   <td className="p-2">{r.role}</td>
                   <td className="p-2">{r.decision}</td>
                   <td className="p-2 text-xs text-muted-foreground">
                     {r.formVersion.title} ({r.formVersion.version})
                   </td>
-                  <td className="p-2 text-xs">{new Date(r.signedAt).toLocaleString()}</td>
+                  <td className="p-2 text-xs">
+                    {new Date(r.signedAt).toLocaleString()}
+                  </td>
                   <td className="p-2 text-xs capitalize">{r.deviceType}</td>
                   <td className="p-2 text-right">
                     <Button variant="ghost" size="sm" asChild>
@@ -242,7 +289,10 @@ export default function AdminConsentPage() {
               ))}
               {records.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="p-6 text-center text-muted-foreground">
+                  <td
+                    colSpan={8}
+                    className="p-6 text-center text-muted-foreground"
+                  >
                     No consent records match this filter.
                   </td>
                 </tr>

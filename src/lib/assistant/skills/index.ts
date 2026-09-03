@@ -14,11 +14,18 @@
 // To add a skill: write it in this directory and add it to REGISTRY. It shows up
 // in the admin panel for its audience on the next request.
 
-import type { AssistantAudience, AssistantSkill, AssistantTool } from "../types";
+import type {
+  AssistantAudience,
+  AssistantSkill,
+  AssistantTool,
+} from "../types";
 import { studentQuizResultsSkill } from "./student-quiz-results";
 import { teacherClassInsightsSkill } from "./teacher-class-insights";
 
-const REGISTRY: AssistantSkill[] = [studentQuizResultsSkill, teacherClassInsightsSkill];
+const REGISTRY: AssistantSkill[] = [
+  studentQuizResultsSkill,
+  teacherClassInsightsSkill,
+];
 
 /** Every skill registered for an audience, in registry order. */
 export function listSkills(audience: AssistantAudience): AssistantSkill[] {
@@ -27,7 +34,9 @@ export function listSkills(audience: AssistantAudience): AssistantSkill[] {
 
 /** Every tool name registered for an audience, across all of its skills. */
 export function allToolNames(audience: AssistantAudience): string[] {
-  return listSkills(audience).flatMap((skill) => skill.tools.map((tool) => tool.name));
+  return listSkills(audience).flatMap((skill) =>
+    skill.tools.map((tool) => tool.name),
+  );
 }
 
 /** UI-safe descriptor for the admin skill picker. */
@@ -46,7 +55,10 @@ export function skillInfo(audience: AssistantAudience): SkillInfo[] {
     name: skill.name,
     description: skill.description,
     toolNames: skill.tools.map((tool) => tool.name),
-    tools: skill.tools.map((tool) => ({ name: tool.name, label: tool.activityLabel })),
+    tools: skill.tools.map((tool) => ({
+      name: tool.name,
+      label: tool.activityLabel,
+    })),
   }));
 }
 
@@ -73,7 +85,7 @@ export type ResolvedSkills = {
 export function resolveSkills(
   audience: AssistantAudience,
   enabledIds: string[],
-  disabledTools: string[] = []
+  disabledTools: string[] = [],
 ): ResolvedSkills {
   const wanted = new Set(enabledIds);
   const off = new Set(disabledTools);
@@ -87,7 +99,7 @@ export function resolveSkills(
       if (off.has(tool.name)) continue;
       if (tools.has(tool.name)) {
         console.error(
-          `[Assistant] Duplicate tool name "${tool.name}" from skill "${skill.id}"; keeping the first.`
+          `[Assistant] Duplicate tool name "${tool.name}" from skill "${skill.id}"; keeping the first.`,
         );
         continue;
       }

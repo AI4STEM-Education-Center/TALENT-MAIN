@@ -8,7 +8,9 @@ import { prisma } from "@/lib/prisma";
 export async function getTeacherClass(userId: string, classId: string) {
   const teacher = await prisma.teacher.findUnique({ where: { userId } });
   if (!teacher) return null;
-  return prisma.class.findFirst({ where: { id: classId, teacherId: teacher.id } });
+  return prisma.class.findFirst({
+    where: { id: classId, teacherId: teacher.id },
+  });
 }
 
 /**
@@ -21,13 +23,15 @@ export async function getTeacherClass(userId: string, classId: string) {
  */
 export async function canReadClass(
   user: { id: string; role?: string | null },
-  classId: string
+  classId: string,
 ): Promise<boolean> {
   if (user.role === "TEACHER") {
     return (await getTeacherClass(user.id, classId)) !== null;
   }
   if (user.role === "STUDENT") {
-    const student = await prisma.student.findUnique({ where: { userId: user.id } });
+    const student = await prisma.student.findUnique({
+      where: { userId: user.id },
+    });
     if (!student) return false;
     const enrollment = await prisma.classEnrollment.findUnique({
       where: { classId_studentId: { classId, studentId: student.id } },

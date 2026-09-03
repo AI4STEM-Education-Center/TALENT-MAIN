@@ -3,7 +3,9 @@ import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 vi.mock("@/lib/auth", () => ({ auth: vi.fn() }));
 // The password-change notice is best-effort email; stub it so these specs
 // exercise the account logic rather than SMTP.
-vi.mock("@/lib/password-notices", () => ({ sendPasswordChangedNotice: vi.fn(async () => true) }));
+vi.mock("@/lib/password-notices", () => ({
+  sendPasswordChangedNotice: vi.fn(async () => true),
+}));
 
 import bcrypt from "bcryptjs";
 import { GET as GET_PROFILE, PATCH } from "@/app/api/profile/route";
@@ -26,7 +28,7 @@ function patchProfile(body: unknown) {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
-    }) as never
+    }) as never,
   );
 }
 
@@ -36,7 +38,7 @@ function postPassword(body: unknown) {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
-    }) as never
+    }) as never,
   );
 }
 
@@ -57,7 +59,10 @@ describe("GET /api/profile", () => {
   });
 
   it("returns the caller's own details without the password hash", async () => {
-    const { user } = await createStudent({ email: "ada@example.com", username: "ada" });
+    const { user } = await createStudent({
+      email: "ada@example.com",
+      username: "ada",
+    });
     asUser(user.id);
 
     const res = await GET_PROFILE();
@@ -78,7 +83,10 @@ describe("GET /api/profile", () => {
 describe("PATCH /api/profile", () => {
   it("401s an unauthenticated caller", async () => {
     mockAuth.mockResolvedValue(null as never);
-    expect((await patchProfile({ firstName: "A", lastName: "B", email: "a@b.com" })).status).toBe(401);
+    expect(
+      (await patchProfile({ firstName: "A", lastName: "B", email: "a@b.com" }))
+        .status,
+    ).toBe(401);
   });
 
   it("updates the name and normalizes the email", async () => {
@@ -100,14 +108,21 @@ describe("PATCH /api/profile", () => {
   it("rejects a malformed email with 400", async () => {
     const { user } = await createStudent();
     asUser(user.id);
-    const res = await patchProfile({ firstName: "A", lastName: "B", email: "not-an-email" });
+    const res = await patchProfile({
+      firstName: "A",
+      lastName: "B",
+      email: "not-an-email",
+    });
     expect(res.status).toBe(400);
   });
 
   it("rejects blank required fields with 400", async () => {
     const { user } = await createStudent();
     asUser(user.id);
-    expect((await patchProfile({ firstName: "  ", lastName: "B", email: "a@b.com" })).status).toBe(400);
+    expect(
+      (await patchProfile({ firstName: "  ", lastName: "B", email: "a@b.com" }))
+        .status,
+    ).toBe(400);
   });
 
   it("409s when another account already uses the email", async () => {
@@ -115,7 +130,11 @@ describe("PATCH /api/profile", () => {
     await createTeacher({ email: "taken@example.com" });
     asUser(user.id);
 
-    const res = await patchProfile({ firstName: "A", lastName: "B", email: "taken@example.com" });
+    const res = await patchProfile({
+      firstName: "A",
+      lastName: "B",
+      email: "taken@example.com",
+    });
     expect(res.status).toBe(409);
   });
 
@@ -123,18 +142,34 @@ describe("PATCH /api/profile", () => {
     const { user } = await createStudent({ email: "mine@example.com" });
     asUser(user.id);
 
-    const res = await patchProfile({ firstName: "New", lastName: "Name", email: "mine@example.com" });
+    const res = await patchProfile({
+      firstName: "New",
+      lastName: "Name",
+      email: "mine@example.com",
+    });
     expect(res.status).toBe(200);
   });
 
   it("does not let a caller edit someone else's account", async () => {
-    const { user: mine } = await createStudent({ email: "mine@example.com", username: "mine" });
-    const { user: theirs } = await createStudent({ email: "theirs@example.com", username: "theirs" });
+    const { user: mine } = await createStudent({
+      email: "mine@example.com",
+      username: "mine",
+    });
+    const { user: theirs } = await createStudent({
+      email: "theirs@example.com",
+      username: "theirs",
+    });
     asUser(mine.id);
 
-    await patchProfile({ firstName: "Hijack", lastName: "Ed", email: "mine@example.com" });
+    await patchProfile({
+      firstName: "Hijack",
+      lastName: "Ed",
+      email: "mine@example.com",
+    });
 
-    const untouched = await prisma.user.findUnique({ where: { id: theirs.id } });
+    const untouched = await prisma.user.findUnique({
+      where: { id: theirs.id },
+    });
     expect(untouched?.firstName).toBe("Stu");
   });
 });
@@ -145,14 +180,20 @@ describe("POST /api/profile/password", () => {
 
   it("401s an unauthenticated caller", async () => {
     mockAuth.mockResolvedValue(null as never);
-    expect((await postPassword({ currentPassword: CURRENT, newPassword: NEXT })).status).toBe(401);
+    expect(
+      (await postPassword({ currentPassword: CURRENT, newPassword: NEXT }))
+        .status,
+    ).toBe(401);
   });
 
   it("403s when the current password is wrong", async () => {
     const { user } = await createStudent();
     asUser(user.id);
 
-    const res = await postPassword({ currentPassword: "WrongPass1!", newPassword: NEXT });
+    const res = await postPassword({
+      currentPassword: "WrongPass1!",
+      newPassword: NEXT,
+    });
     expect(res.status).toBe(403);
 
     const stored = await prisma.user.findUnique({ where: { id: user.id } });
@@ -162,14 +203,20 @@ describe("POST /api/profile/password", () => {
   it("400s a new password that fails the strength rules", async () => {
     const { user } = await createStudent();
     asUser(user.id);
-    const res = await postPassword({ currentPassword: CURRENT, newPassword: "weak" });
+    const res = await postPassword({
+      currentPassword: CURRENT,
+      newPassword: "weak",
+    });
     expect(res.status).toBe(400);
   });
 
   it("400s when the new password matches the current one", async () => {
     const { user } = await createStudent();
     asUser(user.id);
-    const res = await postPassword({ currentPassword: CURRENT, newPassword: CURRENT });
+    const res = await postPassword({
+      currentPassword: CURRENT,
+      newPassword: CURRENT,
+    });
     expect(res.status).toBe(400);
   });
 
@@ -184,7 +231,10 @@ describe("POST /api/profile/password", () => {
     });
     asUser(user.id);
 
-    const res = await postPassword({ currentPassword: CURRENT, newPassword: NEXT });
+    const res = await postPassword({
+      currentPassword: CURRENT,
+      newPassword: NEXT,
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ success: true, notified: true });
 
@@ -205,7 +255,10 @@ describe("POST /api/profile/password", () => {
     const { user } = await createStudent();
     asUser(user.id);
 
-    const res = await postPassword({ currentPassword: CURRENT, newPassword: NEXT });
+    const res = await postPassword({
+      currentPassword: CURRENT,
+      newPassword: NEXT,
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ success: true, notified: false });
   });

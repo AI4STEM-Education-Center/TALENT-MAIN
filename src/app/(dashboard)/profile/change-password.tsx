@@ -4,15 +4,25 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { PASSWORD_REQUIREMENTS, validatePassword } from "@/lib/account-validation";
+import {
+  PASSWORD_REQUIREMENTS,
+  validatePassword,
+} from "@/lib/account-validation";
 import { AlertTriangle, Check, KeyRound, Loader2 } from "lucide-react";
 
-const EMPTY_FORM = { currentPassword: "", newPassword: "", confirmPassword: "" };
+const EMPTY_FORM = {
+  currentPassword: "",
+  newPassword: "",
+  confirmPassword: "",
+};
 
 export function ChangePassword() {
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [saving, setSaving] = useState(false);
-  const [banner, setBanner] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [banner, setBanner] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -40,7 +50,10 @@ export function ChangePassword() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setBanner({ type: "error", text: data.error || "Could not change your password." });
+        setBanner({
+          type: "error",
+          text: data.error || "Could not change your password.",
+        });
       } else {
         setForm({ ...EMPTY_FORM });
         setBanner({
@@ -90,7 +103,9 @@ export function ChangePassword() {
                 id="currentPassword"
                 type="password"
                 value={form.currentPassword}
-                onChange={(e) => setForm((p) => ({ ...p, currentPassword: e.target.value }))}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, currentPassword: e.target.value }))
+                }
                 required
                 autoComplete="current-password"
               />
@@ -103,7 +118,9 @@ export function ChangePassword() {
                   id="newPassword"
                   type="password"
                   value={form.newPassword}
-                  onChange={(e) => setForm((p) => ({ ...p, newPassword: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, newPassword: e.target.value }))
+                  }
                   required
                   autoComplete="new-password"
                 />
@@ -114,17 +131,25 @@ export function ChangePassword() {
                   id="confirmNewPassword"
                   type="password"
                   value={form.confirmPassword}
-                  onChange={(e) => setForm((p) => ({ ...p, confirmPassword: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, confirmPassword: e.target.value }))
+                  }
                   required
                   autoComplete="new-password"
                 />
               </div>
             </div>
 
-            <p className="text-xs text-muted-foreground">{PASSWORD_REQUIREMENTS}</p>
+            <p className="text-xs text-muted-foreground">
+              {PASSWORD_REQUIREMENTS}
+            </p>
 
             <Button type="submit" disabled={saving}>
-              {saving ? <Loader2 className="size-4 animate-spin" /> : <KeyRound className="size-4" />}
+              {saving ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <KeyRound className="size-4" />
+              )}
               {saving ? "Updating..." : "Update password"}
             </Button>
           </form>

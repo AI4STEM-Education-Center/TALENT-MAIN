@@ -10,7 +10,13 @@ import { resetDb, createStudent, createTeacher, createAdmin } from "./db";
 
 const mockAuth = vi.mocked(auth);
 
-function asUser(user: { id: string; role: string; firstName?: string; lastName?: string; email?: string }) {
+function asUser(user: {
+  id: string;
+  role: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+}) {
   mockAuth.mockResolvedValue({
     user: {
       id: user.id,
@@ -32,13 +38,19 @@ function post(body: unknown, headers: Record<string, string> = {}) {
       method: "POST",
       headers: { "Content-Type": "application/json", ...headers },
       body: JSON.stringify(body),
-    })
+    }),
   );
 }
 
 async function publishVersion(role: "STUDENT" | "TEACHER") {
   return prisma.consentFormVersion.create({
-    data: { role, version: "v1", title: `${role} form`, bodyHtml: "<p>hello</p>", isActive: true },
+    data: {
+      role,
+      version: "v1",
+      title: `${role} form`,
+      bodyHtml: "<p>hello</p>",
+      isActive: true,
+    },
   });
 }
 
@@ -61,7 +73,12 @@ describe("GET /api/consent", () => {
     const admin = await createAdmin();
     asUser({ id: admin.id, role: "ADMIN" });
     const data = await (await get()).json();
-    expect(data).toEqual({ needsDecision: false, role: null, activeForm: null, priorDecision: null });
+    expect(data).toEqual({
+      needsDecision: false,
+      role: null,
+      activeForm: null,
+      priorDecision: null,
+    });
   });
 
   it("reports nothing to enforce when no form is published yet", async () => {
@@ -98,20 +115,26 @@ describe("POST /api/consent", () => {
   it("403s an ADMIN account", async () => {
     const admin = await createAdmin();
     asUser({ id: admin.id, role: "ADMIN" });
-    expect((await post({ decision: "AGREE", signatureTypedName: "x" })).status).toBe(403);
+    expect(
+      (await post({ decision: "AGREE", signatureTypedName: "x" })).status,
+    ).toBe(403);
   });
 
   it("409s when no active form is published for the role", async () => {
     const { user } = await createStudent();
     asUser({ id: user.id, role: "STUDENT" });
-    expect((await post({ decision: "AGREE", signatureTypedName: "x" })).status).toBe(409);
+    expect(
+      (await post({ decision: "AGREE", signatureTypedName: "x" })).status,
+    ).toBe(409);
   });
 
   it("400s an invalid decision", async () => {
     await publishVersion("STUDENT");
     const { user } = await createStudent();
     asUser({ id: user.id, role: "STUDENT" });
-    expect((await post({ decision: "MAYBE", signatureTypedName: "x" })).status).toBe(400);
+    expect(
+      (await post({ decision: "MAYBE", signatureTypedName: "x" })).status,
+    ).toBe(400);
   });
 
   it("400s an AGREE with recording consent but no initials drawn", async () => {
@@ -129,26 +152,41 @@ describe("POST /api/consent", () => {
   it("records a complete AGREE decision with server-derived ip/device, never trusting client-supplied values", async () => {
     const version = await publishVersion("STUDENT");
     const { user } = await createStudent();
-    asUser({ id: user.id, role: "STUDENT", email: user.email, firstName: "Ada", lastName: "Lovelace" });
+    asUser({
+      id: user.id,
+      role: "STUDENT",
+      email: user.email,
+      firstName: "Ada",
+      lastName: "Lovelace",
+    });
 
     const res = await post(
       {
         decision: "AGREE",
         interviewRecordingConsent: true,
-        initialsStrokeData: [{ points: [{ x: 0, y: 0 }, { x: 5, y: 5 }] }],
+        initialsStrokeData: [
+          {
+            points: [
+              { x: 0, y: 0 },
+              { x: 5, y: 5 },
+            ],
+          },
+        ],
         signatureTypedName: "Ada Lovelace",
         // A client-supplied ip/device should be ignored entirely — the route
         // doesn't even accept such fields, but assert the stored row reflects
         // the request's real origin, not anything the body could claim.
         ipAddress: "1.2.3.4",
       },
-      { "x-forwarded-for": "203.0.113.9", "user-agent": "TestSuite/1.0" }
+      { "x-forwarded-for": "203.0.113.9", "user-agent": "TestSuite/1.0" },
     );
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toEqual({ ok: true, decision: "AGREE", formVersion: "v1" });
 
-    const record = await prisma.consentRecord.findFirst({ where: { userId: user.id } });
+    const record = await prisma.consentRecord.findFirst({
+      where: { userId: user.id },
+    });
     expect(record).toMatchObject({
       role: "STUDENT",
       formVersionId: version.id,
@@ -167,10 +205,15 @@ describe("POST /api/consent", () => {
     const { user } = await createTeacher();
     asUser({ id: user.id, role: "TEACHER", email: user.email });
 
-    const res = await post({ decision: "DECLINE", signatureTypedName: "Tess Teacher" });
+    const res = await post({
+      decision: "DECLINE",
+      signatureTypedName: "Tess Teacher",
+    });
     expect(res.status).toBe(200);
 
-    const record = await prisma.consentRecord.findFirst({ where: { userId: user.id } });
+    const record = await prisma.consentRecord.findFirst({
+      where: { userId: user.id },
+    });
     expect(record?.decision).toBe("DECLINE");
     expect(record?.interviewRecordingConsent).toBeNull();
     expect(record?.initialsStrokeData).toBeNull();

@@ -54,7 +54,7 @@ const bounced = (s: SimSessionRecord): boolean =>
  */
 export function summarizeSimulationEngagement(
   sessions: SimSessionRecord[],
-  titles: Map<string, string>
+  titles: Map<string, string>,
 ): SimulationEngagementRow[] {
   const bySim = new Map<string, SimSessionRecord[]>();
   for (const s of sessions) {
@@ -72,7 +72,9 @@ export function summarizeSimulationEngagement(
       meanParamChanges: mean(rows.map((r) => r.paramChanges)),
       bounceRate: rows.filter(bounced).length / rows.length,
     }))
-    .toSorted((a, b) => b.uniqueStudents - a.uniqueStudents || b.sessions - a.sessions);
+    .toSorted(
+      (a, b) => b.uniqueStudents - a.uniqueStudents || b.sessions - a.sessions,
+    );
 }
 
 /** A completed quiz attempt, minimal shape for the retake-impact split. */
@@ -96,39 +98,55 @@ export type RetakeImpact = { withSim: RetakeGroup; withoutSim: RetakeGroup };
  */
 export function retakeImprovementBySimUse(
   attempts: AttemptRecord[],
-  sessions: SimSessionRecord[]
+  sessions: SimSessionRecord[],
 ): RetakeImpact {
-  type Group = { studentId: string; quizId: string; rows: { score: number; completedAt: Date }[] };
+  type Group = {
+    studentId: string;
+    quizId: string;
+    rows: { score: number; completedAt: Date }[];
+  };
   const byStudentQuiz = new Map<string, Group>();
   for (const a of attempts) {
     if (!a.quizId || !a.completedAt) continue;
     const key = `${a.studentId}:${a.quizId}`;
-    const group = byStudentQuiz.get(key) ?? { studentId: a.studentId, quizId: a.quizId, rows: [] };
+    const group = byStudentQuiz.get(key) ?? {
+      studentId: a.studentId,
+      quizId: a.quizId,
+      rows: [],
+    };
     group.rows.push({ score: a.score ?? 0, completedAt: a.completedAt });
     byStudentQuiz.set(key, group);
   }
 
   const engagedSessions = sessions.filter(
-    (s) => s.quizId !== null && s.activeMs >= ENGAGED_ACTIVE_MS
+    (s) => s.quizId !== null && s.activeMs >= ENGAGED_ACTIVE_MS,
   );
 
   const withDeltas: number[] = [];
   const withoutDeltas: number[] = [];
   for (const { studentId, quizId, rows } of byStudentQuiz.values()) {
     if (rows.length < 2) continue;
-    const ordered = rows.toSorted((a, b) => a.completedAt.getTime() - b.completedAt.getTime());
+    const ordered = rows.toSorted(
+      (a, b) => a.completedAt.getTime() - b.completedAt.getTime(),
+    );
     const first = ordered[0];
     const bestLater = Math.max(...ordered.slice(1).map((r) => r.score));
     const delta = bestLater - first.score;
 
     const usedSim = engagedSessions.some(
-      (s) => s.studentId === studentId && s.quizId === quizId && s.startedAt > first.completedAt
+      (s) =>
+        s.studentId === studentId &&
+        s.quizId === quizId &&
+        s.startedAt > first.completedAt,
     );
     (usedSim ? withDeltas : withoutDeltas).push(delta);
   }
 
   return {
     withSim: { students: withDeltas.length, meanDelta: mean(withDeltas) },
-    withoutSim: { students: withoutDeltas.length, meanDelta: mean(withoutDeltas) },
+    withoutSim: {
+      students: withoutDeltas.length,
+      meanDelta: mean(withoutDeltas),
+    },
   };
 }

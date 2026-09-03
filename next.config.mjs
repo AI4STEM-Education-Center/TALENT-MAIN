@@ -47,7 +47,12 @@ const securityHeaders = [
   // HSTS only in production: localhost dev is plain HTTP and must not be pinned
   // to HTTPS. In prod, Cloudflare terminates TLS and serves the app over HTTPS.
   ...(isProd
-    ? [{ key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" }]
+    ? [
+        {
+          key: "Strict-Transport-Security",
+          value: "max-age=31536000; includeSubDomains",
+        },
+      ]
     : []),
 ];
 

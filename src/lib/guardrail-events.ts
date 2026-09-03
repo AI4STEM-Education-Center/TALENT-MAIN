@@ -19,10 +19,17 @@ import { logSystemEvent } from "@/lib/system-log";
 /** Longest report accepted. Long enough for context, short enough to read. */
 export const MAX_FEEDBACK_CHARS = 2_000;
 
-export const GUARDRAIL_FEEDBACK_STATUSES = ["NEW", "REVIEWED", "DISMISSED"] as const;
-export type GuardrailFeedbackStatus = (typeof GUARDRAIL_FEEDBACK_STATUSES)[number];
+export const GUARDRAIL_FEEDBACK_STATUSES = [
+  "NEW",
+  "REVIEWED",
+  "DISMISSED",
+] as const;
+export type GuardrailFeedbackStatus =
+  (typeof GUARDRAIL_FEEDBACK_STATUSES)[number];
 
-export function isGuardrailFeedbackStatus(value: unknown): value is GuardrailFeedbackStatus {
+export function isGuardrailFeedbackStatus(
+  value: unknown,
+): value is GuardrailFeedbackStatus {
   return (
     typeof value === "string" &&
     (GUARDRAIL_FEEDBACK_STATUSES as readonly string[]).includes(value)
@@ -48,7 +55,7 @@ export interface GuardrailEventInput {
  * itself already happened and is already in the audit log.
  */
 export async function recordGuardrailEvent(
-  input: GuardrailEventInput
+  input: GuardrailEventInput,
 ): Promise<string | null> {
   try {
     const event = await prisma.guardrailEvent.create({
@@ -93,7 +100,7 @@ export type FeedbackResult = "saved" | "not_found" | "empty";
 export async function submitGuardrailFeedback(
   eventId: string,
   userId: string,
-  message: string
+  message: string,
 ): Promise<FeedbackResult> {
   const trimmed = message.trim().slice(0, MAX_FEEDBACK_CHARS);
   if (!trimmed) return "empty";
@@ -106,7 +113,12 @@ export async function submitGuardrailFeedback(
 
   await prisma.guardrailFeedback.upsert({
     where: { eventId },
-    update: { message: trimmed, status: "NEW", reviewedAt: null, reviewedBy: null },
+    update: {
+      message: trimmed,
+      status: "NEW",
+      reviewedAt: null,
+      reviewedBy: null,
+    },
     create: { eventId, userId, message: trimmed },
   });
 
@@ -126,7 +138,9 @@ export async function submitGuardrailFeedback(
 export function readReasons(raw: string): string[] {
   try {
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((r): r is string => typeof r === "string") : [];
+    return Array.isArray(parsed)
+      ? parsed.filter((r): r is string => typeof r === "string")
+      : [];
   } catch {
     return [];
   }

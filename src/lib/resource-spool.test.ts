@@ -64,7 +64,9 @@ describe("spool location", () => {
 describe("encode / decode", () => {
   it("round-trips every field", () => {
     const at = Date.UTC(2026, 7, 17, 10, 0, 0);
-    const decoded = decodeSample(encodeSample(sample({ s3Bytes: 87_200_000 }), at));
+    const decoded = decodeSample(
+      encodeSample(sample({ s3Bytes: 87_200_000 }), at),
+    );
     expect(decoded).toMatchObject({
       nodeId: "dev-web",
       appEnv: "dev",
@@ -80,7 +82,9 @@ describe("encode / decode", () => {
   });
 
   it("keeps a missing host reading null rather than turning it into zero", () => {
-    const decoded = decodeSample(encodeSample(sample({ hostCpuPercent: null }), Date.now()));
+    const decoded = decodeSample(
+      encodeSample(sample({ hostCpuPercent: null }), Date.now()),
+    );
     expect(decoded?.hostCpuPercent).toBeNull();
   });
 
@@ -101,20 +105,29 @@ describe("writing and reading", () => {
     createSpoolWriter("dev-web", 60_000).write(sample(), now);
     createSpoolWriter("prod-worker", 60_000).write(
       sample({ nodeId: "prod-worker", appEnv: "prod", role: "worker" }),
-      now
+      now,
     );
 
     const { samples, files, error } = readSpool(now - 60_000);
     expect(error).toBeNull();
     expect(files).toEqual(["dev-web.ndjson", "prod-worker.ndjson"]);
-    expect(samples.map((s) => s.nodeId).sort()).toEqual(["dev-web", "prod-worker"]);
+    expect(samples.map((s) => s.nodeId).sort()).toEqual([
+      "dev-web",
+      "prod-worker",
+    ]);
   });
 
   it("returns samples oldest first across files", () => {
     const now = Date.now();
     createSpoolWriter("dev-web", 60_000).write(sample(), now - 2000);
-    createSpoolWriter("prod-web", 60_000).write(sample({ nodeId: "prod-web" }), now - 3000);
-    createSpoolWriter("dev-worker", 60_000).write(sample({ nodeId: "dev-worker" }), now - 1000);
+    createSpoolWriter("prod-web", 60_000).write(
+      sample({ nodeId: "prod-web" }),
+      now - 3000,
+    );
+    createSpoolWriter("dev-worker", 60_000).write(
+      sample({ nodeId: "dev-worker" }),
+      now - 1000,
+    );
 
     const times = readSpool(0).samples.map((s) => s.createdAt.getTime());
     expect(times).toEqual([...times].sort((a, b) => a - b));
@@ -141,7 +154,9 @@ describe("writing and reading", () => {
   });
 
   it("refuses a node id that could escape the spool directory", () => {
-    expect(() => createSpoolWriter("../../etc/passwd", 60_000)).toThrow(/Unsafe node id/);
+    expect(() => createSpoolWriter("../../etc/passwd", 60_000)).toThrow(
+      /Unsafe node id/,
+    );
   });
 });
 
@@ -155,7 +170,7 @@ describe("compaction", () => {
         encodeSample(sample(), now - 8 * 24 * 60 * 60_000),
         encodeSample(sample(), now - 2 * 24 * 60 * 60_000),
         encodeSample(sample(), now),
-      ].join("")
+      ].join(""),
     );
 
     expect(compactSpoolFile(file, now - 7 * 24 * 60 * 60_000)).toBe(1);

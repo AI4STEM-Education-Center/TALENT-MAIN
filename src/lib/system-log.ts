@@ -41,7 +41,9 @@ export async function logSystemEvent(event: SystemLogEvent): Promise<void> {
     if (event.metadata) {
       metadata = JSON.stringify(event.metadata);
       if (metadata.length > MAX_METADATA_LENGTH) {
-        metadata = JSON.stringify({ truncated: metadata.slice(0, MAX_METADATA_LENGTH) });
+        metadata = JSON.stringify({
+          truncated: metadata.slice(0, MAX_METADATA_LENGTH),
+        });
       }
     }
     await prisma.systemLog.create({
@@ -66,7 +68,11 @@ export async function logSystemEvent(event: SystemLogEvent): Promise<void> {
  * error (with a trimmed stack) for the admin log. Fire-and-forget — callers
  * are about to return a 500 and must not wait on diagnostics.
  */
-export function logApiError(tag: string, error: unknown, context?: string): void {
+export function logApiError(
+  tag: string,
+  error: unknown,
+  context?: string,
+): void {
   if (context) console.error(`[${tag}] ${context}:`, error);
   else console.error(`[${tag}]`, error);
   const message = error instanceof Error ? error.message : String(error);

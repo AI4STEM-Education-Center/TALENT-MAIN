@@ -38,8 +38,14 @@ async function buildPayload() {
   const overrides = new Map<string, SenderOverride>(
     rows.map((r) => [
       r.purpose,
-      { localPart: r.localPart, fromName: r.fromName, replyTo: r.replyTo, subject: r.subject, body: r.body },
-    ])
+      {
+        localPart: r.localPart,
+        fromName: r.fromName,
+        replyTo: r.replyTo,
+        subject: r.subject,
+        body: r.body,
+      },
+    ]),
   );
 
   const smtpView = {
@@ -107,8 +113,10 @@ export async function PUT(req: Request) {
       senderDomain = normalizeSenderDomain(rawDomain);
       if (!senderDomain) {
         return NextResponse.json(
-          { error: `"${rawDomain}" is not a valid domain. Use a bare hostname such as example.com.` },
-          { status: 400 }
+          {
+            error: `"${rawDomain}" is not a valid domain. Use a bare hostname such as example.com.`,
+          },
+          { status: 400 },
         );
       }
       // The domain is a column on SmtpConfig, which only exists once the server
@@ -120,7 +128,7 @@ export async function PUT(req: Request) {
               "Save the SMTP server settings above before setting a shared sender domain — " +
               "the domain is stored alongside them.",
           },
-          { status: 400 }
+          { status: 400 },
         );
       }
     }
@@ -130,11 +138,16 @@ export async function PUT(req: Request) {
     const updates: { purpose: EmailPurpose; data: PersistedSender }[] = [];
     for (const row of senders) {
       if (!isEmailPurpose(row.purpose)) {
-        return NextResponse.json({ error: `Unknown email purpose "${row.purpose}".` }, { status: 400 });
+        return NextResponse.json(
+          { error: `Unknown email purpose "${row.purpose}".` },
+          { status: 400 },
+        );
       }
       const definition = EMAIL_PURPOSE_DEFINITIONS[row.purpose];
 
-      const localPart = row.localPart ? normalizeLocalPart(row.localPart) : definition.defaultLocalPart;
+      const localPart = row.localPart
+        ? normalizeLocalPart(row.localPart)
+        : definition.defaultLocalPart;
       if (!localPart) {
         return NextResponse.json(
           {
@@ -142,14 +155,16 @@ export async function PUT(req: Request) {
               `"${row.localPart}" is not a valid address prefix for ${definition.label}. ` +
               "Use letters, digits, dots, dashes or underscores.",
           },
-          { status: 400 }
+          { status: 400 },
         );
       }
 
       if (row.replyTo && !isEmailAddress(row.replyTo)) {
         return NextResponse.json(
-          { error: `"${row.replyTo}" is not a valid reply-to address for ${definition.label}.` },
-          { status: 400 }
+          {
+            error: `"${row.replyTo}" is not a valid reply-to address for ${definition.label}.`,
+          },
+          { status: 400 },
         );
       }
 
@@ -175,13 +190,16 @@ export async function PUT(req: Request) {
           where: { purpose: u.purpose },
           create: { purpose: u.purpose, ...u.data },
           update: u.data,
-        })
+        }),
       ),
     ]);
 
     return NextResponse.json(await buildPayload());
   } catch (error) {
     logApiError("ADMIN_EMAIL_SENDERS_PUT", error);
-    return NextResponse.json({ error: "Internal server error." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error." },
+      { status: 500 },
+    );
   }
 }

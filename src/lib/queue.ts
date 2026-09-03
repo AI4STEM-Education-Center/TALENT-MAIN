@@ -18,7 +18,10 @@ export type ExamResultsJobPayload = { examResultId: string };
 export type QuizExtractionJobPayload = { extractionId: string };
 export type BackupJobPayload = { action: "backup"; includeS3?: boolean };
 // feedbackId present = a revision of an existing artifact; absent = first generation.
-export type SimulationJobPayload = { simulationId: string; feedbackId?: string };
+export type SimulationJobPayload = {
+  simulationId: string;
+  feedbackId?: string;
+};
 // One job per recipient (a MessageEmailDelivery row), so one bad address never
 // holds up the rest of a class broadcast and each recipient retries on its own.
 export type MessageEmailJobPayload = { deliveryId: string };
@@ -35,7 +38,9 @@ export type ConsentExportJobPayload = { jobId: string };
  * the sweeper can re-enqueue a stranded row as a brand-new job, and only the
  * persisted counter survives that.
  */
-export const MESSAGE_EMAILS_QUEUE_OPTIONS = { visibilityTimeoutS: 120 } as const;
+export const MESSAGE_EMAILS_QUEUE_OPTIONS = {
+  visibilityTimeoutS: 120,
+} as const;
 
 /**
  * Map a main SQLite path to Honker's sibling queue path (`foo.db` ->
@@ -97,9 +102,14 @@ export function enqueueQuizExtraction(extractionId: string): void {
  * failures: the job is the feature, so trigger routes mark the simulation row
  * FAILED if this throws.
  */
-export function enqueueSimulation(simulationId: string, feedbackId?: string): void {
+export function enqueueSimulation(
+  simulationId: string,
+  feedbackId?: string,
+): void {
   const db = honker.open(resolveQueueDbPath());
-  const payload: SimulationJobPayload = feedbackId ? { simulationId, feedbackId } : { simulationId };
+  const payload: SimulationJobPayload = feedbackId
+    ? { simulationId, feedbackId }
+    : { simulationId };
   db.queue(SIMULATIONS_QUEUE).enqueue(payload);
 }
 
@@ -127,7 +137,10 @@ export function enqueueMessageEmails(deliveryIds: string[]): void {
  */
 export function enqueueBackup(options: { includeS3?: boolean } = {}): void {
   const db = honker.open(resolveQueueDbPath());
-  const payload: BackupJobPayload = { action: "backup", includeS3: options.includeS3 === true };
+  const payload: BackupJobPayload = {
+    action: "backup",
+    includeS3: options.includeS3 === true,
+  };
   db.queue(BACKUPS_QUEUE).enqueue(payload);
 }
 

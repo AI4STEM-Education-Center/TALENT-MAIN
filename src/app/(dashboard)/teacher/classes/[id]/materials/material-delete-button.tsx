@@ -11,7 +11,11 @@ interface MaterialDeleteButtonProps {
   isImported?: boolean;
 }
 
-export default function MaterialDeleteButton({ classId, materialId, isImported }: MaterialDeleteButtonProps) {
+export default function MaterialDeleteButton({
+  classId,
+  materialId,
+  isImported,
+}: MaterialDeleteButtonProps) {
   const { refresh } = useRouter();
   const confirm = useConfirm();
   const alert = useAlert();
@@ -25,28 +29,31 @@ export default function MaterialDeleteButton({ classId, materialId, isImported }
     if (inFlight.current) return;
     inFlight.current = true;
     try {
-    const description = isImported
-      ? "It stays in your other classes; the file is permanently deleted only if no other class uses it."
-      : "The file is permanently deleted only if no other class uses it.";
-    const ok = await confirm({
-      title: "Remove this material from this class?",
-      description,
-      confirmText: "Remove",
-      variant: "destructive",
-    });
-    if (!ok) return;
-
-    setIsDeleting(true);
-    try {
-      const res = await fetch(`/api/classes/${classId}/materials/${materialId}`, {
-        method: "DELETE",
+      const description = isImported
+        ? "It stays in your other classes; the file is permanently deleted only if no other class uses it."
+        : "The file is permanently deleted only if no other class uses it.";
+      const ok = await confirm({
+        title: "Remove this material from this class?",
+        description,
+        confirmText: "Remove",
+        variant: "destructive",
       });
+      if (!ok) return;
 
-      if (!res.ok) {
-        throw new Error("Failed to delete material");
-      }
+      setIsDeleting(true);
+      try {
+        const res = await fetch(
+          `/api/classes/${classId}/materials/${materialId}`,
+          {
+            method: "DELETE",
+          },
+        );
 
-      refresh();
+        if (!res.ok) {
+          throw new Error("Failed to delete material");
+        }
+
+        refresh();
       } catch (err) {
         console.error(err);
         await alert("An error occurred while deleting the material.");
@@ -59,7 +66,8 @@ export default function MaterialDeleteButton({ classId, materialId, isImported }
   };
 
   return (
-    <button type="button"
+    <button
+      type="button"
       onClick={handleDelete}
       disabled={isDeleting}
       className="ml-3 p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"

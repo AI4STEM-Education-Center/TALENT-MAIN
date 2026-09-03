@@ -46,8 +46,8 @@ function ModelReadout({ model }: { model: ModelInfo }) {
   if (!model) {
     return (
       <p className="text-sm text-muted-foreground">
-        Model: <strong>not assigned</strong> — this check does not run. Pick one in the use-case
-        table at the top of this page.
+        Model: <strong>not assigned</strong> — this check does not run. Pick one
+        in the use-case table at the top of this page.
       </p>
     );
   }
@@ -55,16 +55,31 @@ function ModelReadout({ model }: { model: ModelInfo }) {
     <p className="text-sm text-muted-foreground">
       Model: <strong>{model.label}</strong>
       {!model.providerActive && (
-        <span className="text-destructive"> — provider is disabled, so this check cannot run</span>
+        <span className="text-destructive">
+          {" "}
+          — provider is disabled, so this check cannot run
+        </span>
       )}
     </p>
   );
 }
 
 const MODES: { value: Mode; label: string; blurb: string }[] = [
-  { value: "OFF", label: "Off", blurb: "Not run at all — no cost, no log rows." },
-  { value: "FLAG", label: "Report", blurb: "Runs and logs, but never blocks. Start here." },
-  { value: "BLOCK", label: "Block", blurb: "Refuses the submission when it trips." },
+  {
+    value: "OFF",
+    label: "Off",
+    blurb: "Not run at all — no cost, no log rows.",
+  },
+  {
+    value: "FLAG",
+    label: "Report",
+    blurb: "Runs and logs, but never blocks. Start here.",
+  },
+  {
+    value: "BLOCK",
+    label: "Block",
+    blurb: "Refuses the submission when it trips.",
+  },
 ];
 
 function ModePicker({
@@ -90,7 +105,7 @@ function ModePicker({
             "rounded-md border px-3 py-1.5 text-sm transition-colors",
             value === mode.value
               ? "border-primary bg-primary text-primary-foreground"
-              : "border-input bg-background hover:bg-accent"
+              : "border-input bg-background hover:bg-accent",
           )}
         >
           {mode.label}
@@ -144,7 +159,7 @@ export function GuardrailSettings({ refreshKey = 0 }: { refreshKey?: number }) {
               ? prev.disabledSurfaces.filter((s) => s !== key)
               : [...prev.disabledSurfaces, key],
           }
-        : prev
+        : prev,
     );
 
   async function save() {
@@ -192,11 +207,12 @@ export function GuardrailSettings({ refreshKey = 0 }: { refreshKey?: number }) {
           <ShieldCheck className="h-5 w-5" /> Guardrails
         </CardTitle>
         <p className="text-sm text-muted-foreground">
-          Safety checks applied to chat messages, uploaded PDFs, and authored questions. Each
-          check runs on its own model, picked in the use-case table at the top of this page —{" "}
-          <strong>Content Moderation</strong>, <strong>Guardrail — Jailbreak Check</strong> and{" "}
-          <strong>Guardrail — Off-Topic Check</strong>. Leaving one unassigned turns that check
-          off.
+          Safety checks applied to chat messages, uploaded PDFs, and authored
+          questions. Each check runs on its own model, picked in the use-case
+          table at the top of this page — <strong>Content Moderation</strong>,{" "}
+          <strong>Guardrail — Jailbreak Check</strong> and{" "}
+          <strong>Guardrail — Off-Topic Check</strong>. Leaving one unassigned
+          turns that check off.
         </p>
       </CardHeader>
 
@@ -213,9 +229,10 @@ export function GuardrailSettings({ refreshKey = 0 }: { refreshKey?: number }) {
             Content moderation (free)
           </label>
           <p className="text-sm text-muted-foreground">
-            Checks text and images for hate, violence, sexual and self-harm content using
-            OpenAI&apos;s moderation endpoint. It costs nothing, so there is rarely a reason to
-            turn it off. Flagged chat messages are always blocked; flagged PDF pages are logged.
+            Checks text and images for hate, violence, sexual and self-harm
+            content using OpenAI&apos;s moderation endpoint. It costs nothing,
+            so there is rarely a reason to turn it off. Flagged chat messages
+            are always blocked; flagged PDF pages are logged.
           </p>
           <ModelReadout model={data.models.moderation} />
         </section>
@@ -226,8 +243,9 @@ export function GuardrailSettings({ refreshKey = 0 }: { refreshKey?: number }) {
             <div>
               <h3 className="text-sm font-medium">Jailbreak detection</h3>
               <p className="text-sm text-muted-foreground">
-                Catches text trying to manipulate the AI — &ldquo;ignore your rules&rdquo;, fake
-                system messages, attempts to talk it into revealing an answer key.
+                Catches text trying to manipulate the AI — &ldquo;ignore your
+                rules&rdquo;, fake system messages, attempts to talk it into
+                revealing an answer key.
               </p>
             </div>
             <ModePicker
@@ -244,7 +262,9 @@ export function GuardrailSettings({ refreshKey = 0 }: { refreshKey?: number }) {
               min={data.thresholdBounds.min}
               max={data.thresholdBounds.max}
               value={settings.jailbreakThreshold}
-              onChange={(e) => update("jailbreakThreshold", Number(e.target.value))}
+              onChange={(e) =>
+                update("jailbreakThreshold", Number(e.target.value))
+              }
               className="w-24"
               aria-label="Jailbreak confidence threshold"
             />
@@ -258,8 +278,9 @@ export function GuardrailSettings({ refreshKey = 0 }: { refreshKey?: number }) {
             <div>
               <h3 className="text-sm font-medium">Off-topic detection</h3>
               <p className="text-sm text-muted-foreground">
-                Catches content unrelated to what this site is for. Off by default — a physics
-                question <em>is</em> the topic, so this mostly matters for chat.
+                Catches content unrelated to what this site is for. Off by
+                default — a physics question <em>is</em> the topic, so this
+                mostly matters for chat.
               </p>
             </div>
             <ModePicker
@@ -276,13 +297,18 @@ export function GuardrailSettings({ refreshKey = 0 }: { refreshKey?: number }) {
               min={data.thresholdBounds.min}
               max={data.thresholdBounds.max}
               value={settings.offTopicThreshold}
-              onChange={(e) => update("offTopicThreshold", Number(e.target.value))}
+              onChange={(e) =>
+                update("offTopicThreshold", Number(e.target.value))
+              }
               className="w-24"
               aria-label="Off-topic confidence threshold"
             />
           </label>
           <div className="space-y-1">
-            <label htmlFor="topic-description" className="text-sm text-muted-foreground">
+            <label
+              htmlFor="topic-description"
+              className="text-sm text-muted-foreground"
+            >
               What counts as on-topic (leave blank for the built-in description)
             </label>
             <Textarea
@@ -314,10 +340,11 @@ export function GuardrailSettings({ refreshKey = 0 }: { refreshKey?: number }) {
             Allow content through when a check cannot run
           </label>
           <p className="text-sm text-muted-foreground">
-            Recommended. When a check is unavailable — no model assigned, a timeout, an upstream
-            outage — this lets the submission through and writes a log row. Unticking it rejects
-            submissions instead, which is safer but takes chat and question authoring down with
-            the provider. Background PDF processing always allows through either way, so an
+            Recommended. When a check is unavailable — no model assigned, a
+            timeout, an upstream outage — this lets the submission through and
+            writes a log row. Unticking it rejects submissions instead, which is
+            safer but takes chat and question authoring down with the provider.
+            Background PDF processing always allows through either way, so an
             outage cannot strand an upload a teacher is waiting on.
           </p>
         </section>
@@ -326,12 +353,15 @@ export function GuardrailSettings({ refreshKey = 0 }: { refreshKey?: number }) {
         <section className="space-y-2 border-t pt-4">
           <h3 className="text-sm font-medium">Where checks run</h3>
           <p className="text-sm text-muted-foreground">
-            Untick a surface to switch every check off for it. Useful when one place turns out
-            noisy and the rest are behaving.
+            Untick a surface to switch every check off for it. Useful when one
+            place turns out noisy and the rest are behaving.
           </p>
           <div className="grid gap-2 sm:grid-cols-2">
             {data.surfaces.map((surface) => (
-              <label key={surface.key} className="flex items-center gap-2 text-sm">
+              <label
+                key={surface.key}
+                className="flex items-center gap-2 text-sm"
+              >
                 <input
                   type="checkbox"
                   className="h-4 w-4"
@@ -353,7 +383,9 @@ export function GuardrailSettings({ refreshKey = 0 }: { refreshKey?: number }) {
             )}
             Save guardrail settings
           </Button>
-          {status && <span className="text-sm text-muted-foreground">{status}</span>}
+          {status && (
+            <span className="text-sm text-muted-foreground">{status}</span>
+          )}
         </div>
 
         <p className="text-sm text-muted-foreground">
@@ -361,8 +393,8 @@ export function GuardrailSettings({ refreshKey = 0 }: { refreshKey?: number }) {
           <Link href="/admin/logs" className="underline">
             System Logs
           </Link>
-          . Run a new check in <em>Report</em> for a week and read those rows before switching it
-          to <em>Block</em>.
+          . Run a new check in <em>Report</em> for a week and read those rows
+          before switching it to <em>Block</em>.
         </p>
       </CardContent>
     </Card>

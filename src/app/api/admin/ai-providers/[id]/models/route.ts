@@ -10,7 +10,7 @@ import { logApiError } from "@/lib/system-log";
  */
 export async function GET(
   _req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await auth();
   if (!session?.user || session.user.role !== "ADMIN") {
@@ -22,7 +22,10 @@ export async function GET(
   try {
     const provider = await prisma.aiProvider.findUnique({ where: { id } });
     if (!provider) {
-      return NextResponse.json({ error: "Provider not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Provider not found" },
+        { status: 404 },
+      );
     }
 
     const models = await prisma.aiModel.findMany({
@@ -41,7 +44,10 @@ export async function GET(
     });
   } catch (error) {
     logApiError("AI_MODELS_GET", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }
 
@@ -51,7 +57,7 @@ export async function GET(
  */
 export async function POST(
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await auth();
   if (!session?.user || session.user.role !== "ADMIN") {
@@ -63,24 +69,36 @@ export async function POST(
   try {
     const provider = await prisma.aiProvider.findUnique({ where: { id } });
     if (!provider) {
-      return NextResponse.json({ error: "Provider not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Provider not found" },
+        { status: 404 },
+      );
     }
 
     const body = await req.json();
     const modelId = typeof body.modelId === "string" ? body.modelId.trim() : "";
-    const displayName = typeof body.displayName === "string" ? body.displayName.trim() || null : null;
-    const serviceTier = typeof body.serviceTier === "string" ? body.serviceTier.trim() || null : null;
+    const displayName =
+      typeof body.displayName === "string"
+        ? body.displayName.trim() || null
+        : null;
+    const serviceTier =
+      typeof body.serviceTier === "string"
+        ? body.serviceTier.trim() || null
+        : null;
     const isDefault = body.isDefault === true;
 
     if (!modelId) {
-      return NextResponse.json({ error: "Model ID is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Model ID is required" },
+        { status: 400 },
+      );
     }
 
     // Validate service tier
     if (serviceTier && !["flex", "auto", "default"].includes(serviceTier)) {
       return NextResponse.json(
         { error: "Service tier must be 'flex', 'auto', 'default', or empty" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -104,26 +122,32 @@ export async function POST(
 
     invalidateProviderCache();
 
-    return NextResponse.json({
-      model: {
-        id: model.id,
-        modelId: model.modelId,
-        displayName: model.displayName,
-        serviceTier: model.serviceTier,
-        isDefault: model.isDefault,
+    return NextResponse.json(
+      {
+        model: {
+          id: model.id,
+          modelId: model.modelId,
+          displayName: model.displayName,
+          serviceTier: model.serviceTier,
+          isDefault: model.isDefault,
+        },
       },
-    }, { status: 201 });
+      { status: 201 },
+    );
   } catch (error: any) {
     // Handle unique constraint violation
     if (error?.code === "P2002") {
       return NextResponse.json(
         { error: "This model ID already exists for this provider" },
-        { status: 409 }
+        { status: 409 },
       );
     }
 
     logApiError("AI_MODELS_POST", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }
 
@@ -134,7 +158,7 @@ export async function POST(
  */
 export async function PATCH(
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await auth();
   if (!session?.user || session.user.role !== "ADMIN") {
@@ -148,7 +172,10 @@ export async function PATCH(
     const recordId = typeof body.id === "string" ? body.id.trim() : "";
 
     if (!recordId) {
-      return NextResponse.json({ error: "Model record ID is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Model record ID is required" },
+        { status: 400 },
+      );
     }
 
     const existing = await prisma.aiModel.findFirst({
@@ -166,9 +193,13 @@ export async function PATCH(
     } = {};
 
     if (body.modelId !== undefined) {
-      const modelId = typeof body.modelId === "string" ? body.modelId.trim() : "";
+      const modelId =
+        typeof body.modelId === "string" ? body.modelId.trim() : "";
       if (!modelId) {
-        return NextResponse.json({ error: "Model ID cannot be empty" }, { status: 400 });
+        return NextResponse.json(
+          { error: "Model ID cannot be empty" },
+          { status: 400 },
+        );
       }
       data.modelId = modelId;
     }
@@ -188,7 +219,7 @@ export async function PATCH(
       if (serviceTier && !["flex", "auto", "default"].includes(serviceTier)) {
         return NextResponse.json(
           { error: "Service tier must be 'flex', 'auto', 'default', or empty" },
-          { status: 400 }
+          { status: 400 },
         );
       }
       data.serviceTier = serviceTier;
@@ -225,13 +256,19 @@ export async function PATCH(
   } catch (error: any) {
     if (error?.code === "P2002") {
       return NextResponse.json(
-        { error: "A model with this ID and service tier already exists for this provider" },
-        { status: 409 }
+        {
+          error:
+            "A model with this ID and service tier already exists for this provider",
+        },
+        { status: 409 },
       );
     }
 
     logApiError("AI_MODELS_PATCH", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }
 
@@ -241,7 +278,7 @@ export async function PATCH(
  */
 export async function DELETE(
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await auth();
   if (!session?.user || session.user.role !== "ADMIN") {
@@ -252,10 +289,14 @@ export async function DELETE(
 
   try {
     const body = await req.json();
-    const modelRecordId = typeof body.modelId === "string" ? body.modelId.trim() : "";
+    const modelRecordId =
+      typeof body.modelId === "string" ? body.modelId.trim() : "";
 
     if (!modelRecordId) {
-      return NextResponse.json({ error: "Model record ID is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Model record ID is required" },
+        { status: 400 },
+      );
     }
 
     const model = await prisma.aiModel.findFirst({
@@ -273,6 +314,9 @@ export async function DELETE(
     return NextResponse.json({ success: true });
   } catch (error) {
     logApiError("AI_MODELS_DELETE", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }

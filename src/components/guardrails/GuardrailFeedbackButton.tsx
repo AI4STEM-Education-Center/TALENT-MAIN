@@ -81,7 +81,7 @@ export function GuardrailFeedbackButton({
         onClick={() => setOpen(true)}
         className={cn(
           "inline-flex items-center gap-1 text-xs underline underline-offset-2 hover:no-underline",
-          className
+          className,
         )}
       >
         <Flag className="h-3 w-3" aria-hidden="true" />
@@ -93,8 +93,9 @@ export function GuardrailFeedbackButton({
           <DialogHeader>
             <DialogTitle>Report a safety check</DialogTitle>
             <DialogDescription>
-              Tell us what you were trying to do. This goes to a site admin, who can adjust the
-              checks. Your message is stored with the flagged submission.
+              Tell us what you were trying to do. This goes to a site admin, who
+              can adjust the checks. Your message is stored with the flagged
+              submission.
             </DialogDescription>
           </DialogHeader>
 
@@ -110,7 +111,11 @@ export function GuardrailFeedbackButton({
           {error && <p className="text-sm text-destructive">{error}</p>}
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)} disabled={sending}>
+            <Button
+              variant="outline"
+              onClick={() => setOpen(false)}
+              disabled={sending}
+            >
               Cancel
             </Button>
             <Button onClick={send} disabled={sending || !message.trim()}>

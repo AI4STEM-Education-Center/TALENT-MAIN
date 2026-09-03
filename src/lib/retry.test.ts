@@ -45,7 +45,10 @@ describe("retryWithExponentialBackoff", () => {
   it("logs a warning between attempts", async () => {
     vi.useFakeTimers();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const fn = vi.fn().mockRejectedValueOnce(new Error("boom")).mockResolvedValue("ok");
+    const fn = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValue("ok");
 
     const p = retryWithExponentialBackoff(fn, 3, 10, 100);
     await vi.runAllTimersAsync();

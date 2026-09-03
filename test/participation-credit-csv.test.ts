@@ -35,7 +35,7 @@ describe("participation credit CSV", () => {
     expect(csv).toBe(
       "OrgDefinedId,Last Name,First Name,Course Participation Points Grade <Numeric MaxPoints:5>,End-of-Line Indicator\r\n" +
         "#811947904,Nash,Aaron,5,#\r\n" +
-        "#811107402,Sherer,Aaron,0,#\r\n"
+        "#811107402,Sherer,Aaron,0,#\r\n",
     );
   });
 
@@ -51,7 +51,9 @@ describe("participation credit CSV", () => {
       rows,
     });
 
-    expect(csv).toContain("Practice Credit Points Grade <Numeric MaxPoints:2.5>");
+    expect(csv).toContain(
+      "Practice Credit Points Grade <Numeric MaxPoints:2.5>",
+    );
     expect(csv).toContain("#811947904,Nash,Aaron,2.5,#");
     expect(csv).toContain("#811107402,Sherer,Aaron,0,#");
   });

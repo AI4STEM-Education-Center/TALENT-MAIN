@@ -10,7 +10,11 @@ import {
 } from "@/lib/assistant/config";
 import { skillInfo } from "@/lib/assistant/skills";
 import { allAttachmentKindInfo } from "@/lib/assistant/attachments";
-import { ASSISTANT_AUDIENCES, AUDIENCE_USE_CASE, isAssistantAudience } from "@/lib/assistant/types";
+import {
+  ASSISTANT_AUDIENCES,
+  AUDIENCE_USE_CASE,
+  isAssistantAudience,
+} from "@/lib/assistant/types";
 
 export const runtime = "nodejs";
 
@@ -33,7 +37,7 @@ export async function GET() {
         ...(await getAssistantSettings(audience)),
         useCase: AUDIENCE_USE_CASE[audience],
         availableSkills: skillInfo(audience),
-      }))
+      })),
     );
 
     return NextResponse.json({
@@ -44,7 +48,10 @@ export async function GET() {
     });
   } catch (error) {
     logApiError("ADMIN_ASSISTANTS_GET", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }
 
@@ -80,13 +87,16 @@ export async function PUT(req: Request) {
     if (!isAssistantAudience(body?.audience)) {
       return NextResponse.json(
         { error: `audience must be one of: ${ASSISTANT_AUDIENCES.join(", ")}` },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     const parsed = patchSchema.safeParse(body.settings ?? {});
     if (!parsed.success) {
-      return NextResponse.json({ error: "Invalid settings payload." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Invalid settings payload." },
+        { status: 400 },
+      );
     }
 
     // Loose strings are fine here: saveAssistantSettings reconciles the skill
@@ -97,6 +107,9 @@ export async function PUT(req: Request) {
     return NextResponse.json({ settings });
   } catch (error) {
     logApiError("ADMIN_ASSISTANTS_PUT", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }

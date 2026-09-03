@@ -20,7 +20,9 @@ export async function getContentActor(): Promise<ContentActor | null> {
     return { role: "ADMIN", teacherId: null, userId: session.user.id };
   }
   if (session.user.role !== "TEACHER") return null;
-  const teacher = await prisma.teacher.findUnique({ where: { userId: session.user.id } });
+  const teacher = await prisma.teacher.findUnique({
+    where: { userId: session.user.id },
+  });
   if (!teacher) return null;
   return { role: "TEACHER", teacherId: teacher.id, userId: session.user.id };
 }
@@ -31,12 +33,18 @@ export function ownScope(actor: ContentActor): string | null {
 }
 
 /** Can the actor edit/delete this content? Teachers manage their own, admins manage the pool. */
-export function canManage(actor: ContentActor, content: { teacherId: string | null }): boolean {
+export function canManage(
+  actor: ContentActor,
+  content: { teacherId: string | null },
+): boolean {
   return content.teacherId === actor.teacherId;
 }
 
 /** Can the actor view this content? Own content, plus the pool is readable by everyone. */
-export function canRead(actor: ContentActor, content: { teacherId: string | null }): boolean {
+export function canRead(
+  actor: ContentActor,
+  content: { teacherId: string | null },
+): boolean {
   return content.teacherId === null || content.teacherId === actor.teacherId;
 }
 
@@ -52,13 +60,16 @@ export function canRead(actor: ContentActor, content: { teacherId: string | null
 export async function deepCopyQuiz(
   sourceQuizId: string,
   targetTeacherId: string | null,
-  targetTopicId?: string | null
+  targetTopicId?: string | null,
 ) {
   const source = await prisma.quiz.findUnique({
     where: { id: sourceQuizId },
     include: {
       topic: true,
-      questions: { include: { options: true, simulation: true }, orderBy: { createdAt: "asc" } },
+      questions: {
+        include: { options: true, simulation: true },
+        orderBy: { createdAt: "asc" },
+      },
     },
   });
   if (!source) return null;
@@ -67,19 +78,33 @@ export async function deepCopyQuiz(
     let topicId: string | null = targetTopicId ?? null;
     if (targetTopicId) {
       const targetTopic = await tx.topic.findFirst({
-        where: { id: targetTopicId, teacherId: targetTeacherId, contentType: "QUIZ" },
+        where: {
+          id: targetTopicId,
+          teacherId: targetTeacherId,
+          contentType: "QUIZ",
+        },
         select: { id: true },
       });
-      if (!targetTopic) throw new Error("Quiz topic not found in the target scope.");
+      if (!targetTopic)
+        throw new Error("Quiz topic not found in the target scope.");
     }
     if (targetTopicId === undefined && source.topic?.contentType === "QUIZ") {
       const existing = await tx.topic.findFirst({
-        where: { teacherId: targetTeacherId, contentType: "QUIZ", name: source.topic.name },
+        where: {
+          teacherId: targetTeacherId,
+          contentType: "QUIZ",
+          name: source.topic.name,
+        },
       });
       const topic =
         existing ??
         (await tx.topic.create({
-          data: { name: source.topic.name, order: source.topic.order, contentType: "QUIZ", teacherId: targetTeacherId },
+          data: {
+            name: source.topic.name,
+            order: source.topic.order,
+            contentType: "QUIZ",
+            teacherId: targetTeacherId,
+          },
         }));
       topicId = topic.id;
     }

@@ -92,7 +92,9 @@ function RecipientSelector({
   const normalizedSearch = search.trim().toLowerCase();
   const visibleStudents = normalizedSearch
     ? students.filter((student) =>
-        `${student.firstName} ${student.lastName} ${student.email}`.toLowerCase().includes(normalizedSearch)
+        `${student.firstName} ${student.lastName} ${student.email}`
+          .toLowerCase()
+          .includes(normalizedSearch),
       )
     : students;
 
@@ -100,7 +102,7 @@ function RecipientSelector({
     onSelectionChange(
       selectedSet.has(userId)
         ? selectedUserIds.filter((id) => id !== userId)
-        : [...selectedUserIds, userId]
+        : [...selectedUserIds, userId],
     );
   }
 
@@ -119,7 +121,8 @@ function RecipientSelector({
           <span className="text-sm">
             <span className="block font-medium">Whole class</span>
             <span className="mt-0.5 block text-muted-foreground">
-              All {students.length} enrolled student{students.length === 1 ? "" : "s"}
+              All {students.length} enrolled student
+              {students.length === 1 ? "" : "s"}
             </span>
           </span>
         </label>
@@ -135,7 +138,9 @@ function RecipientSelector({
           />
           <span className="text-sm">
             <span className="block font-medium">Specific students</span>
-            <span className="mt-0.5 block text-muted-foreground">Choose one student or a group</span>
+            <span className="mt-0.5 block text-muted-foreground">
+              Choose one student or a group
+            </span>
           </span>
         </label>
       </div>
@@ -157,19 +162,28 @@ function RecipientSelector({
               type="button"
               size="sm"
               variant="ghost"
-              onClick={() => onSelectionChange(students.map((student) => student.userId))}
+              onClick={() =>
+                onSelectionChange(students.map((student) => student.userId))
+              }
             >
               Select all
             </Button>
             {selectedUserIds.length > 0 && (
-              <Button type="button" size="sm" variant="ghost" onClick={() => onSelectionChange([])}>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => onSelectionChange([])}
+              >
                 Clear
               </Button>
             )}
           </div>
           <div className="max-h-56 divide-y overflow-y-auto">
             {visibleStudents.length === 0 ? (
-              <p className="p-4 text-center text-sm text-muted-foreground">No students match your search.</p>
+              <p className="p-4 text-center text-sm text-muted-foreground">
+                No students match your search.
+              </p>
             ) : (
               visibleStudents.map((student) => (
                 <label
@@ -186,14 +200,20 @@ function RecipientSelector({
                     <span className="block font-medium">
                       {student.firstName} {student.lastName}
                     </span>
-                    <span className="block truncate text-xs text-muted-foreground">{student.email}</span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {student.email}
+                    </span>
                   </span>
                 </label>
               ))
             )}
           </div>
-          <p className="border-t bg-muted/20 px-3 py-2 text-xs text-muted-foreground" aria-live="polite">
-            {selectedUserIds.length} student{selectedUserIds.length === 1 ? "" : "s"} selected
+          <p
+            className="border-t bg-muted/20 px-3 py-2 text-xs text-muted-foreground"
+            aria-live="polite"
+          >
+            {selectedUserIds.length} student
+            {selectedUserIds.length === 1 ? "" : "s"} selected
           </p>
         </div>
       )}
@@ -215,7 +235,10 @@ export default function ClassMessagesPage() {
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
   const sendLock = useRef(false);
-  const [banner, setBanner] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [banner, setBanner] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
 
   const load = useCallback(async () => {
     const [msgsRes, quotaRes] = await Promise.all([
@@ -258,12 +281,18 @@ export default function ClassMessagesPage() {
 
   const remaining = data.quota?.remaining ?? 0;
   const selectedUserIdSet = new Set(selectedUserIds);
-  const selectedStudents = data.students.filter((student) => selectedUserIdSet.has(student.userId));
-  const targetStudents = recipientMode === "all" ? data.students : selectedStudents;
+  const selectedStudents = data.students.filter((student) =>
+    selectedUserIdSet.has(student.userId),
+  );
+  const targetStudents =
+    recipientMode === "all" ? data.students : selectedStudents;
   const targetInAppCount = targetStudents.length;
-  const targetEmailCount = targetStudents.filter((student) => EMAIL_RE.test(student.email)).length;
+  const targetEmailCount = targetStudents.filter((student) =>
+    EMAIL_RE.test(student.email),
+  ).length;
   const emailOverBudget = targetEmailCount > remaining;
-  const canSend = !!form.subject.trim() && !!form.body.trim() && targetInAppCount > 0;
+  const canSend =
+    !!form.subject.trim() && !!form.body.trim() && targetInAppCount > 0;
 
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
@@ -278,12 +307,17 @@ export default function ClassMessagesPage() {
         body: JSON.stringify({
           subject: form.subject,
           body: form.body,
-          ...(recipientMode === "selected" ? { recipientUserIds: selectedUserIds } : {}),
+          ...(recipientMode === "selected"
+            ? { recipientUserIds: selectedUserIds }
+            : {}),
         }),
       });
       if (!res.ok) {
         const result = await res.json().catch(() => ({}));
-        setBanner({ type: "error", text: result.error || "Failed to send message." });
+        setBanner({
+          type: "error",
+          text: result.error || "Failed to send message.",
+        });
       } else {
         const result = await res.json();
         const notified = result.inApp?.count ?? 0;
@@ -327,8 +361,9 @@ export default function ClassMessagesPage() {
           <MessageSquare className="size-6" /> Messages
         </h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Send an in-app notification to one student, a group, or all of {data.className || "this class"}.
-          Students with an email address on file are also emailed a link to it.
+          Send an in-app notification to one student, a group, or all of{" "}
+          {data.className || "this class"}. Students with an email address on
+          file are also emailed a link to it.
         </p>
       </div>
 
@@ -368,7 +403,9 @@ export default function ClassMessagesPage() {
               <Input
                 id="subject"
                 value={form.subject}
-                onChange={(e) => setForm((p) => ({ ...p, subject: e.target.value }))}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, subject: e.target.value }))
+                }
                 required
                 placeholder="e.g. Reminder: Quiz 3 due Friday"
               />
@@ -378,7 +415,9 @@ export default function ClassMessagesPage() {
               <Textarea
                 id="body"
                 value={form.body}
-                onChange={(e) => setForm((p) => ({ ...p, body: e.target.value }))}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, body: e.target.value }))
+                }
                 required
                 rows={6}
                 placeholder="Write your message to the class..."
@@ -390,9 +429,11 @@ export default function ClassMessagesPage() {
                 <Bell className="size-4 shrink-0 mt-0.5 text-muted-foreground" />
                 <span>
                   <strong>
-                    {targetInAppCount} student{targetInAppCount === 1 ? "" : "s"}
+                    {targetInAppCount} student
+                    {targetInAppCount === 1 ? "" : "s"}
                   </strong>{" "}
-                  will see this under Notifications the next time they open the app.
+                  will see this under Notifications the next time they open the
+                  app.
                 </span>
               </p>
               <p className="flex items-start gap-2">
@@ -403,9 +444,11 @@ export default function ClassMessagesPage() {
                   ) : (
                     <>
                       <strong>
-                        {targetEmailCount} student{targetEmailCount === 1 ? "" : "s"}
+                        {targetEmailCount} student
+                        {targetEmailCount === 1 ? "" : "s"}
                       </strong>{" "}
-                      will also be emailed a link to it, queued and retried until delivered.
+                      will also be emailed a link to it, queued and retried
+                      until delivered.
                       {data.quota
                         ? ` Email budget: ${data.quota.dailyRemaining} left today, ${data.quota.monthlyRemaining} this month.`
                         : ""}
@@ -417,8 +460,9 @@ export default function ClassMessagesPage() {
                 <p className="flex items-start gap-2 text-destructive">
                   <AlertTriangle className="size-4 shrink-0 mt-0.5" />
                   <span>
-                    Only {remaining} email{remaining === 1 ? "" : "s"} left in your budget, so this message will be
-                    delivered in-app only. It will email normally once the budget resets.
+                    Only {remaining} email{remaining === 1 ? "" : "s"} left in
+                    your budget, so this message will be delivered in-app only.
+                    It will email normally once the budget resets.
                   </span>
                 </p>
               )}
@@ -433,7 +477,11 @@ export default function ClassMessagesPage() {
             )}
 
             <Button type="submit" disabled={sending || !canSend}>
-              {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+              {sending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Send className="size-4" />
+              )}
               {sending ? "Sending..." : "Send message"}
             </Button>
           </form>
@@ -448,7 +496,9 @@ export default function ClassMessagesPage() {
         </CardHeader>
         <CardContent>
           {data.messages.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-6">No messages sent yet.</p>
+            <p className="text-sm text-muted-foreground text-center py-6">
+              No messages sent yet.
+            </p>
           ) : (
             <div className="divide-y">
               {data.messages.map((m) => (
@@ -467,16 +517,20 @@ export default function ClassMessagesPage() {
                     )}
                     {m.email.queued > 0 && (
                       <Badge variant="outline" className="text-[10px]">
-                        <Clock className="size-3 mr-1" /> {m.email.queued} queued
+                        <Clock className="size-3 mr-1" /> {m.email.queued}{" "}
+                        queued
                       </Badge>
                     )}
                     {m.email.failed > 0 && (
                       <Badge variant="destructive" className="text-[10px]">
-                        <AlertTriangle className="size-3 mr-1" /> {m.email.failed} failed
+                        <AlertTriangle className="size-3 mr-1" />{" "}
+                        {m.email.failed} failed
                       </Badge>
                     )}
                   </div>
-                  <p className="text-xs text-muted-foreground line-clamp-2">{m.body}</p>
+                  <p className="text-xs text-muted-foreground line-clamp-2">
+                    {m.body}
+                  </p>
                   <p className="text-[11px] text-muted-foreground">
                     {m.sentAtLabel}
                     {m.error ? ` · ${m.error}` : ""}

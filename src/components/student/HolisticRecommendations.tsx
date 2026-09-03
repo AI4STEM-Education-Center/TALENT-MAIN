@@ -25,7 +25,8 @@ export function HolisticRecommendations({
   metrics: ResultComponentMetrics | null;
   audience?: "student" | "teacher";
 }) {
-  const pending = status === RESULT_STATUS.PENDING || status === RESULT_STATUS.GENERATING;
+  const pending =
+    status === RESULT_STATUS.PENDING || status === RESULT_STATUS.GENERATING;
 
   return (
     /* Container for the card grid below: column count must follow the
@@ -48,13 +49,14 @@ export function HolisticRecommendations({
         </div>
       ) : pending ? (
         <div className="flex items-center gap-2 rounded-xl border p-4 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin text-primary" /> Finding study material
+          <Loader2 className="size-4 animate-spin text-primary" /> Finding study
+          material
           {audience === "student" ? " for you" : " for this student"}…
         </div>
       ) : (
         <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
-          No specific study material to recommend right now — review your class materials to keep
-          building on what you know.
+          No specific study material to recommend right now — review your class
+          materials to keep building on what you know.
         </div>
       )}
 

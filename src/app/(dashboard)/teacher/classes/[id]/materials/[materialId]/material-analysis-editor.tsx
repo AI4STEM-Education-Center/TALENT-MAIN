@@ -53,7 +53,9 @@ export default function MaterialAnalysisEditor({
   pages,
 }: MaterialAnalysisEditorProps) {
   const [summary, setSummary] = useState(batchDescription ?? "");
-  const [summaryOriginal, setSummaryOriginal] = useState(batchDescription ?? "");
+  const [summaryOriginal, setSummaryOriginal] = useState(
+    batchDescription ?? "",
+  );
   const [summarySaving, setSummarySaving] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const [summarySavedAt, setSummarySavedAt] = useState<number | null>(null);
@@ -78,13 +80,15 @@ export default function MaterialAnalysisEditor({
           needed,
         },
       };
-    })
+    }),
   );
 
   const keyConcepts = useMemo(() => {
     try {
       const parsed = JSON.parse(batchKeyConcepts || "[]");
-      return Array.isArray(parsed) ? parsed.filter((item) => typeof item === "string") : [];
+      return Array.isArray(parsed)
+        ? parsed.filter((item) => typeof item === "string")
+        : [];
     } catch {
       return [] as string[];
     }
@@ -92,12 +96,17 @@ export default function MaterialAnalysisEditor({
 
   const coreCount = useMemo(
     () => pageStates.filter((page) => page.needed).length,
-    [pageStates]
+    [pageStates],
   );
 
-  const summaryDirty = normalizeText(summary) !== normalizeText(summaryOriginal);
+  const summaryDirty =
+    normalizeText(summary) !== normalizeText(summaryOriginal);
 
-  const updatePageField = (pageId: string, field: "keyConcept" | "description" | "needed", value: string | boolean) => {
+  const updatePageField = (
+    pageId: string,
+    field: "keyConcept" | "description" | "needed",
+    value: string | boolean,
+  ) => {
     setPageStates((prev) =>
       prev.map((page) =>
         page.id === pageId
@@ -107,8 +116,8 @@ export default function MaterialAnalysisEditor({
               savedAt: null,
               error: null,
             }
-          : page
-      )
+          : page,
+      ),
     );
   };
 
@@ -124,8 +133,8 @@ export default function MaterialAnalysisEditor({
               error: null,
               savedAt: null,
             }
-          : page
-      )
+          : page,
+      ),
     );
   };
 
@@ -135,11 +144,14 @@ export default function MaterialAnalysisEditor({
     setSummaryError(null);
 
     try {
-      const res = await fetch(`/api/classes/${classId}/materials/${materialId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ batchDescription: summary }),
-      });
+      const res = await fetch(
+        `/api/classes/${classId}/materials/${materialId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ batchDescription: summary }),
+        },
+      );
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -164,8 +176,10 @@ export default function MaterialAnalysisEditor({
     if (!page || page.saving) return;
 
     const isDirty =
-      normalizeText(page.keyConcept) !== normalizeText(page.original.keyConcept) ||
-      normalizeText(page.description) !== normalizeText(page.original.description) ||
+      normalizeText(page.keyConcept) !==
+        normalizeText(page.original.keyConcept) ||
+      normalizeText(page.description) !==
+        normalizeText(page.original.description) ||
       page.needed !== page.original.needed;
 
     if (!isDirty) return;
@@ -178,20 +192,23 @@ export default function MaterialAnalysisEditor({
               saving: true,
               error: null,
             }
-          : item
-      )
+          : item,
+      ),
     );
 
     try {
-      const res = await fetch(`/api/classes/${classId}/materials/${materialId}/pages/${pageId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          needed: page.needed,
-          keyConcept: page.keyConcept,
-          description: page.description,
-        }),
-      });
+      const res = await fetch(
+        `/api/classes/${classId}/materials/${materialId}/pages/${pageId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            needed: page.needed,
+            keyConcept: page.keyConcept,
+            description: page.description,
+          }),
+        },
+      );
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -202,7 +219,8 @@ export default function MaterialAnalysisEditor({
       const updated = data.page || {};
       const updatedKeyConcept = updated.keyConcept ?? "";
       const updatedDescription = updated.description ?? "";
-      const updatedNeeded = typeof updated.needed === "boolean" ? updated.needed : page.needed;
+      const updatedNeeded =
+        typeof updated.needed === "boolean" ? updated.needed : page.needed;
 
       setPageStates((prev) =>
         prev.map((item) =>
@@ -221,8 +239,8 @@ export default function MaterialAnalysisEditor({
                   needed: updatedNeeded,
                 },
               }
-            : item
-        )
+            : item,
+        ),
       );
     } catch (err: any) {
       setPageStates((prev) =>
@@ -233,8 +251,8 @@ export default function MaterialAnalysisEditor({
                 saving: false,
                 error: err.message || "Failed to update page",
               }
-            : item
-        )
+            : item,
+        ),
       );
     }
   };
@@ -245,7 +263,9 @@ export default function MaterialAnalysisEditor({
         <div className="bg-blue-50 border border-blue-100 rounded-lg p-6">
           <div className="flex items-center gap-x-3 mb-4">
             <Save className="size-5 text-blue-600" />
-            <h2 className="text-xl font-semibold text-blue-900">Document Summary</h2>
+            <h2 className="text-xl font-semibold text-blue-900">
+              Document Summary
+            </h2>
           </div>
           <div className="space-y-3">
             <Textarea
@@ -261,7 +281,10 @@ export default function MaterialAnalysisEditor({
               disabled={summarySaving}
             />
             <div className="flex flex-wrap items-center gap-3">
-              <Button onClick={saveSummary} disabled={!summaryDirty || summarySaving}>
+              <Button
+                onClick={saveSummary}
+                disabled={!summaryDirty || summarySaving}
+              >
                 {summarySaving ? (
                   <>
                     <Loader2 className="size-4 animate-spin" /> Saving
@@ -275,7 +298,9 @@ export default function MaterialAnalysisEditor({
                   <Check className="size-4" /> Saved
                 </span>
               )}
-              {summaryError && <span className="text-sm text-red-600">{summaryError}</span>}
+              {summaryError && (
+                <span className="text-sm text-red-600">{summaryError}</span>
+              )}
             </div>
           </div>
 
@@ -303,7 +328,9 @@ export default function MaterialAnalysisEditor({
         <div className="flex items-end justify-between border-b pb-2">
           <div>
             <h2 className="text-2xl font-bold text-gray-900">All Pages</h2>
-            <p className="text-sm text-gray-500">{coreCount} marked as core content.</p>
+            <p className="text-sm text-gray-500">
+              {coreCount} marked as core content.
+            </p>
           </div>
         </div>
 
@@ -313,15 +340,24 @@ export default function MaterialAnalysisEditor({
           <div className="grid gap-8">
             {pageStates.map((page) => {
               const isDirty =
-                normalizeText(page.keyConcept) !== normalizeText(page.original.keyConcept) ||
-                normalizeText(page.description) !== normalizeText(page.original.description) ||
+                normalizeText(page.keyConcept) !==
+                  normalizeText(page.original.keyConcept) ||
+                normalizeText(page.description) !==
+                  normalizeText(page.original.description) ||
                 page.needed !== page.original.needed;
 
               return (
-                <div key={page.id} className="bg-white border rounded-xl overflow-hidden shadow-xs">
+                <div
+                  key={page.id}
+                  className="bg-white border rounded-xl overflow-hidden shadow-xs"
+                >
                   <div className="flex flex-col md:flex-row">
                     <div className="md:w-1/3 bg-gray-100 flex items-center justify-center p-4 border-b md:border-b-0 md:border-r border-gray-200">
-                      <PageViewer classId={classId} materialId={materialId} pageId={page.id} />
+                      <PageViewer
+                        classId={classId}
+                        materialId={materialId}
+                        pageId={page.id}
+                      />
                     </div>
                     <div className="p-6 md:w-2/3 space-y-4">
                       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -332,7 +368,13 @@ export default function MaterialAnalysisEditor({
                           <input
                             type="checkbox"
                             checked={page.needed}
-                            onChange={(e) => updatePageField(page.id, "needed", e.target.checked)}
+                            onChange={(e) =>
+                              updatePageField(
+                                page.id,
+                                "needed",
+                                e.target.checked,
+                              )
+                            }
                             className="size-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                             disabled={page.saving}
                           />
@@ -341,13 +383,22 @@ export default function MaterialAnalysisEditor({
                       </div>
 
                       <div>
-                        <label htmlFor={`key-concept-${page.id}`} className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                        <label
+                          htmlFor={`key-concept-${page.id}`}
+                          className="text-xs font-semibold text-gray-500 uppercase tracking-wider"
+                        >
                           Key concept
                         </label>
                         <Input
                           id={`key-concept-${page.id}`}
                           value={page.keyConcept}
-                          onChange={(e) => updatePageField(page.id, "keyConcept", e.target.value)}
+                          onChange={(e) =>
+                            updatePageField(
+                              page.id,
+                              "keyConcept",
+                              e.target.value,
+                            )
+                          }
                           placeholder="Short key concept"
                           className="mt-2"
                           disabled={page.saving}
@@ -355,13 +406,22 @@ export default function MaterialAnalysisEditor({
                       </div>
 
                       <div>
-                        <label htmlFor={`description-${page.id}`} className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                        <label
+                          htmlFor={`description-${page.id}`}
+                          className="text-xs font-semibold text-gray-500 uppercase tracking-wider"
+                        >
                           Description
                         </label>
                         <Textarea
                           id={`description-${page.id}`}
                           value={page.description}
-                          onChange={(e) => updatePageField(page.id, "description", e.target.value)}
+                          onChange={(e) =>
+                            updatePageField(
+                              page.id,
+                              "description",
+                              e.target.value,
+                            )
+                          }
                           placeholder="Describe what students should learn from this page."
                           className="mt-2"
                           rows={4}
@@ -370,7 +430,10 @@ export default function MaterialAnalysisEditor({
                       </div>
 
                       <div className="flex flex-wrap items-center gap-3">
-                        <Button onClick={() => savePage(page.id)} disabled={!isDirty || page.saving}>
+                        <Button
+                          onClick={() => savePage(page.id)}
+                          disabled={!isDirty || page.saving}
+                        >
                           {page.saving ? (
                             <>
                               <Loader2 className="size-4 animate-spin" /> Saving
@@ -379,7 +442,11 @@ export default function MaterialAnalysisEditor({
                             <>Save page</>
                           )}
                         </Button>
-                        <Button variant="ghost" onClick={() => resetPage(page.id)} disabled={!isDirty || page.saving}>
+                        <Button
+                          variant="ghost"
+                          onClick={() => resetPage(page.id)}
+                          disabled={!isDirty || page.saving}
+                        >
                           Reset
                         </Button>
                         {page.savedAt && (
@@ -387,7 +454,11 @@ export default function MaterialAnalysisEditor({
                             <Check className="size-4" /> Saved
                           </span>
                         )}
-                        {page.error && <span className="text-sm text-red-600">{page.error}</span>}
+                        {page.error && (
+                          <span className="text-sm text-red-600">
+                            {page.error}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>

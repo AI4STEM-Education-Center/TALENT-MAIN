@@ -10,7 +10,7 @@ import { logApiError } from "@/lib/system-log";
  */
 export async function POST(
   _req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await auth();
   if (!session?.user || session.user.role !== "ADMIN") {
@@ -22,13 +22,16 @@ export async function POST(
   try {
     const provider = await prisma.aiProvider.findUnique({ where: { id } });
     if (!provider) {
-      return NextResponse.json({ error: "Provider not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Provider not found" },
+        { status: 404 },
+      );
     }
 
     if (!provider.baseUrl) {
       return NextResponse.json(
         { error: "Provider has no base URL configured" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -39,12 +42,12 @@ export async function POST(
         apiKey = decryptApiKey(
           provider.apiKeyEnc,
           provider.apiKeyIv,
-          provider.apiKeyTag
+          provider.apiKeyTag,
         );
       } catch {
         return NextResponse.json(
           { error: "Failed to decrypt provider API key" },
-          { status: 500 }
+          { status: 500 },
         );
       }
     }
@@ -72,7 +75,7 @@ export async function POST(
     if (!response.ok) {
       return NextResponse.json(
         { error: `Models endpoint returned ${response.status}` },
-        { status: 502 }
+        { status: 502 },
       );
     }
 
@@ -94,13 +97,17 @@ export async function POST(
           if (typeof entry === "string") {
             id = entry.trim();
           } else if (entry && typeof entry === "object") {
-            const obj = entry as { id?: unknown; name?: unknown; model?: unknown };
+            const obj = entry as {
+              id?: unknown;
+              name?: unknown;
+              model?: unknown;
+            };
             const raw = obj.id ?? obj.name ?? obj.model;
             id = typeof raw === "string" ? raw.trim() : "";
           }
           return id ? [id] : [];
-        })
-      )
+        }),
+      ),
     ).sort((a, b) => a.localeCompare(b));
 
     return NextResponse.json({ models: modelIds });
@@ -108,14 +115,14 @@ export async function POST(
     if (error?.name === "TimeoutError" || error?.name === "AbortError") {
       return NextResponse.json(
         { error: "Models endpoint timed out after 10 seconds" },
-        { status: 504 }
+        { status: 504 },
       );
     }
 
     logApiError("AI_MODELS_DISCOVER", error);
     return NextResponse.json(
       { error: "Failed to discover models from the provider" },
-      { status: 502 }
+      { status: 502 },
     );
   }
 }

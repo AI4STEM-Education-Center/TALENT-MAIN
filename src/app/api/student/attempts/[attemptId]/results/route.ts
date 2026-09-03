@@ -5,7 +5,10 @@ import { presignStoredRecommendations } from "@/lib/exam-results-engine";
 import { RESULT_STATUS } from "@/lib/exam-results";
 import { enqueueExamResult } from "@/lib/queue";
 import { logApiError } from "@/lib/system-log";
-import type { PresignedRecommendations, ResultComponentMetrics } from "@/lib/exam-results";
+import type {
+  PresignedRecommendations,
+  ResultComponentMetrics,
+} from "@/lib/exam-results";
 
 export const runtime = "nodejs";
 
@@ -32,7 +35,7 @@ function componentMetrics(
   generationMs: number | null,
   totalMs: number | null,
   tokens: number | null,
-  tokensEstimated: boolean | null
+  tokensEstimated: boolean | null,
 ): ResultComponentMetrics | null {
   if (
     model === null &&
@@ -58,7 +61,7 @@ function componentMetrics(
 
 async function resultPayload(
   examResult: ExamResultRow,
-  presigned?: PresignedRecommendations
+  presigned?: PresignedRecommendations,
 ) {
   const recommendations =
     presigned ??
@@ -77,7 +80,7 @@ async function resultPayload(
       examResult.summaryGenerationMs,
       examResult.summaryTotalMs,
       examResult.summaryTokens,
-      examResult.summaryTokensEstimated
+      examResult.summaryTokensEstimated,
     ),
     recommendationsStatus: examResult.recommendationsStatus,
     recommendations: recommendations.items,
@@ -90,7 +93,7 @@ async function resultPayload(
       examResult.recsGenerationMs,
       examResult.recsTotalMs,
       examResult.recsTokens,
-      examResult.recsTokensEstimated
+      examResult.recsTokensEstimated,
     ),
     simulations: recommendations.simulations ?? [],
     truncated: recommendations.truncated,
@@ -100,10 +103,7 @@ async function resultPayload(
 const terminal = (status: string) =>
   status === RESULT_STATUS.READY || status === RESULT_STATUS.FAILED;
 
-function streamResult(
-  request: Request,
-  initial: ExamResultRow
-): Response {
+function streamResult(request: Request, initial: ExamResultRow): Response {
   const encoder = new TextEncoder();
   let cancelled = false;
   const body = new ReadableStream<Uint8Array>({
@@ -121,13 +121,15 @@ function streamResult(
               cachedRaw !== current.recommendations
             ) {
               cachedRaw = current.recommendations;
-              cachedPresigned = await presignStoredRecommendations(current.recommendations);
+              cachedPresigned = await presignStoredRecommendations(
+                current.recommendations,
+              );
             }
             const payload = await resultPayload(
               current,
               current.recommendationsStatus === RESULT_STATUS.READY
                 ? cachedPresigned
-                : { items: [], truncated: false }
+                : { items: [], truncated: false },
             );
             const serialized = JSON.stringify(payload);
             if (serialized !== lastSent) {
@@ -178,7 +180,7 @@ function streamResult(
 
 export async function GET(
   req: Request,
-  { params }: { params: Promise<{ attemptId: string }> }
+  { params }: { params: Promise<{ attemptId: string }> },
 ) {
   const session = await auth();
   if (!session?.user || session.user.role !== "STUDENT") {
@@ -189,7 +191,8 @@ export async function GET(
     where: { userId: session.user.id },
     select: { id: true },
   });
-  if (!student) return NextResponse.json({ error: "Student not found" }, { status: 404 });
+  if (!student)
+    return NextResponse.json({ error: "Student not found" }, { status: 404 });
 
   const { attemptId } = await params;
   const examResult = await prisma.examResult.findUnique({
@@ -204,12 +207,20 @@ export async function GET(
   const stale = Date.now() - examResult.updatedAt.getTime() > STALE_MS;
   const sectionStuck = (status: string) =>
     status === RESULT_STATUS.PENDING ||
-    ((status === RESULT_STATUS.GENERATING || status === RESULT_STATUS.FAILED) && stale);
-  if (sectionStuck(examResult.summaryStatus) || sectionStuck(examResult.recommendationsStatus)) {
+    ((status === RESULT_STATUS.GENERATING || status === RESULT_STATUS.FAILED) &&
+      stale);
+  if (
+    sectionStuck(examResult.summaryStatus) ||
+    sectionStuck(examResult.recommendationsStatus)
+  ) {
     try {
       enqueueExamResult(examResult.id);
     } catch (err) {
-      logApiError("STUDENT_RESULTS", err, "Failed to re-enqueue exam-result generation");
+      logApiError(
+        "STUDENT_RESULTS",
+        err,
+        "Failed to re-enqueue exam-result generation",
+      );
     }
   }
 

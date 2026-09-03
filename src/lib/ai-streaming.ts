@@ -14,7 +14,10 @@
 
 import type OpenAI from "openai";
 import { computeCallMetrics, type AiCallMetrics } from "./ai-metrics";
-import { isResponsesUnsupported, streamResponsesCompletion } from "./ai-responses";
+import {
+  isResponsesUnsupported,
+  streamResponsesCompletion,
+} from "./ai-responses";
 import type { ApiSurface, ResolvedProvider } from "./ai-provider";
 
 // Defined in ai-metrics so both transports (and client components) can share
@@ -37,7 +40,7 @@ export interface AiTransport {
 }
 
 export function transportFor(
-  provider: Pick<ResolvedProvider, "providerType" | "apiSurface" | "baseUrl">
+  provider: Pick<ResolvedProvider, "providerType" | "apiSurface" | "baseUrl">,
 ): AiTransport {
   return {
     isLocal: provider.providerType === "local",
@@ -52,7 +55,7 @@ export function transportFor(
  */
 export function streamOptionsFor(
   transport: AiTransport,
-  extra: StreamOptions = {}
+  extra: StreamOptions = {},
 ): StreamOptions {
   return {
     includeUsage: !transport.isLocal,
@@ -130,7 +133,7 @@ export interface StreamOptions {
 async function streamViaChatCompletions(
   client: OpenAI,
   params: BaseParams,
-  options: StreamOptions = {}
+  options: StreamOptions = {},
 ): Promise<StreamedCompletion> {
   const now = options.now ?? Date.now;
   const start = now();
@@ -139,9 +142,11 @@ async function streamViaChatCompletions(
     {
       ...params,
       stream: true,
-      ...(options.includeUsage ? { stream_options: { include_usage: true } } : {}),
+      ...(options.includeUsage
+        ? { stream_options: { include_usage: true } }
+        : {}),
     } as OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming,
-    options.requestOptions
+    options.requestOptions,
   );
 
   let text = "";
@@ -152,12 +157,16 @@ async function streamViaChatCompletions(
   // Tool-call deltas arrive fragmented and out of order across chunks; the
   // per-choice `index` is the only stable key, so accumulate by it and flatten
   // in index order at the end.
-  const toolCallParts = new Map<number, { id: string; name: string; arguments: string }>();
+  const toolCallParts = new Map<
+    number,
+    { id: string; name: string; arguments: string }
+  >();
 
   for await (const chunk of stream) {
     // The usage block rides on the final chunk when include_usage is set; some
     // providers also attach a running usage to every chunk — last write wins.
-    const usage = (chunk as { usage?: { completion_tokens?: number } | null }).usage;
+    const usage = (chunk as { usage?: { completion_tokens?: number } | null })
+      .usage;
     if (usage && typeof usage.completion_tokens === "number") {
       usageTokens = usage.completion_tokens;
     }
@@ -166,10 +175,15 @@ async function streamViaChatCompletions(
     if (choice?.finish_reason) finishReason = choice.finish_reason;
 
     for (const part of choice?.delta?.tool_calls ?? []) {
-      const existing = toolCallParts.get(part.index) ?? { id: "", name: "", arguments: "" };
+      const existing = toolCallParts.get(part.index) ?? {
+        id: "",
+        name: "",
+        arguments: "",
+      };
       if (part.id) existing.id = part.id;
       if (part.function?.name) existing.name += part.function.name;
-      if (part.function?.arguments) existing.arguments += part.function.arguments;
+      if (part.function?.arguments)
+        existing.arguments += part.function.arguments;
       toolCallParts.set(part.index, existing);
     }
 
@@ -230,7 +244,7 @@ export function resetSurfaceMemo(): void {
 export async function streamChatCompletion(
   client: OpenAI,
   params: BaseParams,
-  options: StreamOptions = {}
+  options: StreamOptions = {},
 ): Promise<StreamedCompletion> {
   const surface = options.surface ?? "chat_completions";
   const key = options.surfaceKey ?? client.baseURL ?? "default";
@@ -251,7 +265,7 @@ export async function streamChatCompletion(
   } catch (error) {
     if (streamed || !isResponsesUnsupported(error)) throw error;
     console.warn(
-      `[AI] ${key} does not serve /v1/responses; using /chat/completions for the rest of this process.`
+      `[AI] ${key} does not serve /v1/responses; using /chat/completions for the rest of this process.`,
     );
     noResponsesSupport.add(key);
     return streamViaChatCompletions(client, params, options);
@@ -280,7 +294,7 @@ export async function streamJsonCompletion<T = unknown>(
   client: OpenAI,
   baseParams: Omit<BaseParams, "response_format">,
   jsonSchema: unknown,
-  options: StreamOptions = {}
+  options: StreamOptions = {},
 ): Promise<StreamedJson<T>> {
   const withSchema: BaseParams = {
     ...baseParams,
@@ -293,9 +307,13 @@ export async function streamJsonCompletion<T = unknown>(
   } catch (schemaErr) {
     console.warn(
       "[AI] Schema-constrained streaming call failed; retrying once without response_format:",
-      schemaErr instanceof Error ? schemaErr.message : schemaErr
+      schemaErr instanceof Error ? schemaErr.message : schemaErr,
     );
-    result = await streamChatCompletion(client, baseParams as BaseParams, options);
+    result = await streamChatCompletion(
+      client,
+      baseParams as BaseParams,
+      options,
+    );
   }
 
   if (!result.text.trim()) throw new Error("Model returned an empty response");
@@ -323,9 +341,17 @@ export async function streamJsonCompletion<T = unknown>(
 export function aggregateMetrics(parts: AiCallMetrics[]): AiCallMetrics | null {
   if (parts.length === 0) return null;
 
-  const completionTokens = parts.reduce((sum, m) => sum + m.completionTokens, 0);
-  const ttfts = parts.map((m) => m.ttftMs).filter((t): t is number => t !== null);
-  const ttftMs = ttfts.length > 0 ? Math.round(ttfts.reduce((a, b) => a + b, 0) / ttfts.length) : null;
+  const completionTokens = parts.reduce(
+    (sum, m) => sum + m.completionTokens,
+    0,
+  );
+  const ttfts = parts
+    .map((m) => m.ttftMs)
+    .filter((t): t is number => t !== null);
+  const ttftMs =
+    ttfts.length > 0
+      ? Math.round(ttfts.reduce((a, b) => a + b, 0) / ttfts.length)
+      : null;
   const totalMs = parts.reduce((sum, m) => sum + m.totalMs, 0);
   // Calls that produced no content have no window to contribute and shouldn't
   // disqualify the sum; a contentful call with an unobservable window does.
@@ -336,7 +362,9 @@ export function aggregateMetrics(parts: AiCallMetrics[]): AiCallMetrics | null {
       : null;
   const rateWindowMs = generationMs ?? totalMs;
   const tokensPerSec =
-    completionTokens > 0 && rateWindowMs > 0 ? completionTokens / (rateWindowMs / 1000) : null;
+    completionTokens > 0 && rateWindowMs > 0
+      ? completionTokens / (rateWindowMs / 1000)
+      : null;
   const tokensEstimated = parts.some((m) => m.tokensEstimated);
 
   return {

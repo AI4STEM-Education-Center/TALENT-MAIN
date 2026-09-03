@@ -116,8 +116,14 @@ export function encodeSample(sample: ResourceSampleInput, at: number): string {
     s3: sample.s3Bytes === null ? null : Math.round(sample.s3Bytes),
     hc: sample.hostCpuPercent,
     hk: sample.hostCpuCores,
-    hmu: sample.hostMemUsedBytes === null ? null : Math.round(sample.hostMemUsedBytes),
-    hmt: sample.hostMemTotalBytes === null ? null : Math.round(sample.hostMemTotalBytes),
+    hmu:
+      sample.hostMemUsedBytes === null
+        ? null
+        : Math.round(sample.hostMemUsedBytes),
+    hmt:
+      sample.hostMemTotalBytes === null
+        ? null
+        : Math.round(sample.hostMemTotalBytes),
   };
   return `${JSON.stringify(record)}\n`;
 }
@@ -139,9 +145,16 @@ export function decodeSample(line: string): SpooledSample | null {
   }
   if (record.v !== RECORD_VERSION) return null;
   const { t, id } = record;
-  if (typeof t !== "number" || !Number.isFinite(t) || typeof id !== "string" || !id) return null;
+  if (
+    typeof t !== "number" ||
+    !Number.isFinite(t) ||
+    typeof id !== "string" ||
+    !id
+  )
+    return null;
 
-  const num = (value: unknown): number => (typeof value === "number" && Number.isFinite(value) ? value : 0);
+  const num = (value: unknown): number =>
+    typeof value === "number" && Number.isFinite(value) ? value : 0;
   const nullable = (value: unknown): number | null =>
     typeof value === "number" && Number.isFinite(value) ? value : null;
 
@@ -175,7 +188,8 @@ function spoolFile(dir: string, nodeId: string): string {
   // nodeId is built from APP_ENV and a literal role in resolveNodeIdentity, but
   // it reaches the filesystem, so refuse anything that is not the shape we
   // build rather than trusting that it always will be.
-  if (!/^[a-z0-9-]+$/i.test(nodeId)) throw new Error(`Unsafe node id: ${nodeId}`);
+  if (!/^[a-z0-9-]+$/i.test(nodeId))
+    throw new Error(`Unsafe node id: ${nodeId}`);
   return path.join(dir, `${nodeId}${SPOOL_FILE_SUFFIX}`);
 }
 
@@ -261,7 +275,12 @@ export function readSpool(sinceMs: number): SpoolReadResult {
     return {
       samples: [],
       files: [],
-      error: code === "ENOENT" ? null : err instanceof Error ? err.message : String(err),
+      error:
+        code === "ENOENT"
+          ? null
+          : err instanceof Error
+            ? err.message
+            : String(err),
     };
   }
 

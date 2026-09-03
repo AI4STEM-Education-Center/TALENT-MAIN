@@ -17,7 +17,11 @@ export default async function AdminQuizPoolPage() {
       where: { teacherId: { not: null } },
       include: {
         topic: true,
-        teacher: { include: { user: { select: { firstName: true, lastName: true, email: true } } } },
+        teacher: {
+          include: {
+            user: { select: { firstName: true, lastName: true, email: true } },
+          },
+        },
         _count: { select: { questions: true } },
       },
       orderBy: { createdAt: "desc" },
@@ -31,7 +35,10 @@ export default async function AdminQuizPoolPage() {
 
   // Flag which teacher quizzes already have a pool copy (depends on the ids above).
   const promoted = await prisma.quiz.findMany({
-    where: { teacherId: null, sourceQuizId: { in: teacherOwned.map((q) => q.id) } },
+    where: {
+      teacherId: null,
+      sourceQuizId: { in: teacherOwned.map((q) => q.id) },
+    },
     select: { sourceQuizId: true },
   });
   const promotedIds = new Set(promoted.map((q) => q.sourceQuizId));

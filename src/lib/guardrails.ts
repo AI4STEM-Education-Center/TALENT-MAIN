@@ -19,9 +19,17 @@ import {
   thinkingParams,
   type ResolvedProvider,
 } from "@/lib/ai-provider";
-import { streamJsonCompletion, streamOptionsFor, transportFor } from "@/lib/ai-streaming";
+import {
+  streamJsonCompletion,
+  streamOptionsFor,
+  transportFor,
+} from "@/lib/ai-streaming";
 import { logSystemEvent } from "@/lib/system-log";
-import { chunkForModeration, flaggedCategories, MAX_INPUT_ITEMS } from "@/lib/guardrail-fence";
+import {
+  chunkForModeration,
+  flaggedCategories,
+  MAX_INPUT_ITEMS,
+} from "@/lib/guardrail-fence";
 import {
   DEFAULT_GUARDRAIL_POLICY,
   DEFAULT_TOPIC_DESCRIPTION,
@@ -71,7 +79,11 @@ export interface ModerationVerdict {
   categories: string[];
 }
 
-const NOT_CHECKED: ModerationVerdict = { checked: false, flagged: false, categories: [] };
+const NOT_CHECKED: ModerationVerdict = {
+  checked: false,
+  flagged: false,
+  categories: [],
+};
 
 /**
  * Where a moderation call came from. Recorded on the log row so an admin
@@ -98,7 +110,7 @@ async function runModeration(
     Awaited<ReturnType<typeof createOpenAIClient>>["moderations"]["create"]
   >[0]["input"],
   subject: GuardrailSubject,
-  describe: string
+  describe: string,
 ): Promise<ModerationVerdict> {
   try {
     // Provider resolution touches the database and decrypts credentials, so it
@@ -106,10 +118,14 @@ async function runModeration(
     // failure is an unavailable check, not an exception for callers to handle.
     const provider = await resolveProvider("moderation");
     if (!provider) return NOT_CHECKED;
-    if (provider.providerType !== "local" && !provider.apiKey) return NOT_CHECKED;
+    if (provider.providerType !== "local" && !provider.apiKey)
+      return NOT_CHECKED;
 
     const client = await createOpenAIClient(provider);
-    const response = await client.moderations.create({ model: provider.model, input });
+    const response = await client.moderations.create({
+      model: provider.model,
+      input,
+    });
     const categories = flaggedCategories(response.results ?? []);
     const flagged = categories.length > 0;
 
@@ -120,7 +136,11 @@ async function runModeration(
         severity: "WARNING",
         message: `Moderation flagged ${describe} on ${subject.surface}: ${categories.join(", ")}`,
         userId: subject.userId ?? null,
-        metadata: { surface: subject.surface, subjectId: subject.id ?? null, categories },
+        metadata: {
+          surface: subject.surface,
+          subjectId: subject.id ?? null,
+          categories,
+        },
       });
     }
 
@@ -146,7 +166,7 @@ async function runModeration(
 /** Moderate a block of text. Empty/whitespace input is a no-op. */
 export async function moderateText(
   text: string,
-  subject: GuardrailSubject
+  subject: GuardrailSubject,
 ): Promise<ModerationVerdict> {
   const chunks = chunkForModeration(text.trim());
   if (chunks.length === 0) return NOT_CHECKED;
@@ -159,7 +179,7 @@ export async function moderateText(
  */
 export async function moderateImages(
   imageUrls: string[],
-  subject: GuardrailSubject
+  subject: GuardrailSubject,
 ): Promise<ModerationVerdict> {
   const urls = imageUrls.filter((url) => url.trim());
   if (urls.length === 0) return NOT_CHECKED;
@@ -168,25 +188,34 @@ export async function moderateImages(
   // bounded requests instead of silently leaving every page after the cap
   // unchecked.
   const verdicts = await Promise.all(
-    Array.from({ length: Math.ceil(urls.length / MAX_INPUT_ITEMS) }, (_, batchIndex) => {
-      const batch = urls.slice(
-        batchIndex * MAX_INPUT_ITEMS,
-        (batchIndex + 1) * MAX_INPUT_ITEMS
-      );
-      return runModeration(
-        batch.map((url) => ({ type: "image_url" as const, image_url: { url } })),
-        subject,
-        batch.length === 1 ? "an image" : `${batch.length} images`
-      );
-    })
+    Array.from(
+      { length: Math.ceil(urls.length / MAX_INPUT_ITEMS) },
+      (_, batchIndex) => {
+        const batch = urls.slice(
+          batchIndex * MAX_INPUT_ITEMS,
+          (batchIndex + 1) * MAX_INPUT_ITEMS,
+        );
+        return runModeration(
+          batch.map((url) => ({
+            type: "image_url" as const,
+            image_url: { url },
+          })),
+          subject,
+          batch.length === 1 ? "an image" : `${batch.length} images`,
+        );
+      },
+    ),
   );
   return combineModerationVerdicts(verdicts);
 }
 
 /** Combine bounded moderation calls without mistaking partial coverage for clean. */
-function combineModerationVerdicts(verdicts: ModerationVerdict[]): ModerationVerdict {
+function combineModerationVerdicts(
+  verdicts: ModerationVerdict[],
+): ModerationVerdict {
   return {
-    checked: verdicts.length > 0 && verdicts.every((verdict) => verdict.checked),
+    checked:
+      verdicts.length > 0 && verdicts.every((verdict) => verdict.checked),
     flagged: verdicts.some((verdict) => verdict.flagged),
     categories: [...new Set(verdicts.flatMap((verdict) => verdict.categories))],
   };
@@ -210,23 +239,31 @@ export type ModerationContentPart =
  */
 export async function moderateContent(
   content: string | ModerationContentPart[],
-  subject: GuardrailSubject
+  subject: GuardrailSubject,
 ): Promise<ModerationVerdict> {
   if (typeof content === "string") return moderateText(content, subject);
 
   const text = content
-    .filter((part): part is { type: "text"; text: string } => part.type === "text")
+    .filter(
+      (part): part is { type: "text"; text: string } => part.type === "text",
+    )
     .map((part) => part.text)
     .join("\n")
     .trim();
   const images = content.filter(
     (part): part is { type: "image_url"; image_url: { url: string } } =>
-      part.type === "image_url" && Boolean(part.image_url?.url?.trim())
+      part.type === "image_url" && Boolean(part.image_url?.url?.trim()),
   );
 
   const items = [
-    ...chunkForModeration(text).map((chunk) => ({ type: "text" as const, text: chunk })),
-    ...images.map((part) => ({ type: "image_url" as const, image_url: { url: part.image_url.url } })),
+    ...chunkForModeration(text).map((chunk) => ({
+      type: "text" as const,
+      text: chunk,
+    })),
+    ...images.map((part) => ({
+      type: "image_url" as const,
+      image_url: { url: part.image_url.url },
+    })),
   ];
 
   if (items.length === 0) return NOT_CHECKED;
@@ -236,8 +273,8 @@ export async function moderateContent(
       await runModeration(
         items.slice(i, i + MAX_INPUT_ITEMS),
         subject,
-        images.length > 0 ? "a message with attachments" : "text"
-      )
+        images.length > 0 ? "a message with attachments" : "text",
+      ),
     );
   }
   return combineModerationVerdicts(verdicts);
@@ -274,7 +311,12 @@ export interface SafetyVerdict {
   result: GuardrailCheckResult | null;
 }
 
-const NOT_RUN: SafetyVerdict = { checked: false, blocked: false, reasons: [], result: null };
+const NOT_RUN: SafetyVerdict = {
+  checked: false,
+  blocked: false,
+  reasons: [],
+  result: null,
+};
 
 export interface SafetyCheckOptions {
   policy?: GuardrailPolicy;
@@ -302,7 +344,7 @@ function checkChunks(text: string): { chunks: string[]; complete: boolean } {
   if (totalChunks <= MAX_CHECK_CALLS) {
     return {
       chunks: Array.from({ length: totalChunks }, (_, index) =>
-        text.slice(index * MAX_CHECK_CHARS, (index + 1) * MAX_CHECK_CHARS)
+        text.slice(index * MAX_CHECK_CHARS, (index + 1) * MAX_CHECK_CHARS),
       ),
       complete: true,
     };
@@ -318,16 +360,16 @@ function checkChunks(text: string): { chunks: string[]; complete: boolean } {
   };
 }
 
-function mergeCheckResults(results: GuardrailCheckResult[]): GuardrailCheckResult {
+function mergeCheckResults(
+  results: GuardrailCheckResult[],
+): GuardrailCheckResult {
   const strongest = (key: "jailbreak" | "offTopic") =>
-    results.reduce(
-      (best, result) => {
-        const candidate = result[key];
-        if (candidate.detected !== best.detected) return candidate.detected ? candidate : best;
-        return candidate.confidence > best.confidence ? candidate : best;
-      },
-      results[0][key]
-    );
+    results.reduce((best, result) => {
+      const candidate = result[key];
+      if (candidate.detected !== best.detected)
+        return candidate.detected ? candidate : best;
+      return candidate.confidence > best.confidence ? candidate : best;
+    }, results[0][key]);
   return { jailbreak: strongest("jailbreak"), offTopic: strongest("offTopic") };
 }
 
@@ -338,7 +380,10 @@ function mergeCheckResults(results: GuardrailCheckResult[]): GuardrailCheckResul
 // classification again. Bounded so a busy site cannot grow it without limit.
 const CACHE_TTL_MS = 10 * 60_000;
 const CACHE_MAX_ENTRIES = 500;
-const _checkCache = new Map<string, { result: GuardrailCheckResult; expiresAt: number }>();
+const _checkCache = new Map<
+  string,
+  { result: GuardrailCheckResult; expiresAt: number }
+>();
 
 /**
  * Everything about a resolved provider that changes what a call returns. Two
@@ -360,7 +405,12 @@ function providerKey(provider: ResolvedProvider): string {
 }
 
 /** Cache key: the exact inputs that determine the findings. */
-function cacheKey(text: string, topic: string, checks: CheckSelection, provider: string): string {
+function cacheKey(
+  text: string,
+  topic: string,
+  checks: CheckSelection,
+  provider: string,
+): string {
   const asked = `${checks.jailbreak ? "j" : ""}${checks.offTopic ? "o" : ""}`;
   return createHash("sha256")
     .update(`${provider}\u0000${asked}\u0000${topic}\u0000${text}`)
@@ -392,10 +442,16 @@ export function invalidateGuardrailCheckCache(): void {
   _checkCache.clear();
 }
 
-function providerUsable(provider: ResolvedProvider | null): provider is ResolvedProvider {
+function providerUsable(
+  provider: ResolvedProvider | null,
+): provider is ResolvedProvider {
   if (!provider) return false;
   if (provider.providerType !== "local" && !provider.apiKey) return false;
-  if ((provider.providerType === "local" || provider.providerType === "cloudflare") && !provider.baseUrl) {
+  if (
+    (provider.providerType === "local" ||
+      provider.providerType === "cloudflare") &&
+    !provider.baseUrl
+  ) {
     return false;
   }
   return true;
@@ -414,20 +470,40 @@ interface CheckCall {
 export function planCheckCalls(
   wanted: CheckSelection,
   jailbreakProvider: ResolvedProvider | null,
-  offTopicProvider: ResolvedProvider | null
+  offTopicProvider: ResolvedProvider | null,
 ): CheckCall[] {
-  const jailbreak = wanted.jailbreak && providerUsable(jailbreakProvider) ? jailbreakProvider : null;
-  const offTopic = wanted.offTopic && providerUsable(offTopicProvider) ? offTopicProvider : null;
+  const jailbreak =
+    wanted.jailbreak && providerUsable(jailbreakProvider)
+      ? jailbreakProvider
+      : null;
+  const offTopic =
+    wanted.offTopic && providerUsable(offTopicProvider)
+      ? offTopicProvider
+      : null;
 
   // Same model, both questions: one call. This is the configuration the panel
   // recommends, and it costs exactly what asking a single question costs.
-  if (jailbreak && offTopic && providerKey(jailbreak) === providerKey(offTopic)) {
-    return [{ checks: { jailbreak: true, offTopic: true }, provider: jailbreak }];
+  if (
+    jailbreak &&
+    offTopic &&
+    providerKey(jailbreak) === providerKey(offTopic)
+  ) {
+    return [
+      { checks: { jailbreak: true, offTopic: true }, provider: jailbreak },
+    ];
   }
 
   const calls: CheckCall[] = [];
-  if (jailbreak) calls.push({ checks: { jailbreak: true, offTopic: false }, provider: jailbreak });
-  if (offTopic) calls.push({ checks: { jailbreak: false, offTopic: true }, provider: offTopic });
+  if (jailbreak)
+    calls.push({
+      checks: { jailbreak: true, offTopic: false },
+      provider: jailbreak,
+    });
+  if (offTopic)
+    calls.push({
+      checks: { jailbreak: false, offTopic: true },
+      provider: offTopic,
+    });
   return calls;
 }
 
@@ -439,7 +515,7 @@ async function runCheckCall(
   call: CheckCall,
   text: string,
   topic: string,
-  subject: GuardrailSubject
+  subject: GuardrailSubject,
 ): Promise<{ result: GuardrailCheckResult; complete: boolean } | null> {
   try {
     const client = await createOpenAIClient(call.provider);
@@ -447,7 +523,12 @@ async function runCheckCall(
     const planned = checkChunks(text);
     const results = await Promise.all(
       planned.chunks.map(async (chunk) => {
-        const key = cacheKey(chunk, topic, call.checks, providerKey(call.provider));
+        const key = cacheKey(
+          chunk,
+          topic,
+          call.checks,
+          providerKey(call.provider),
+        );
         const cached = readCache(key);
         if (cached) return cached;
 
@@ -456,21 +537,26 @@ async function runCheckCall(
           {
             model: call.provider.model,
             messages: [
-              { role: "user", content: buildGuardrailCheckPrompt(chunk, topic, call.checks) },
+              {
+                role: "user",
+                content: buildGuardrailCheckPrompt(chunk, topic, call.checks),
+              },
             ],
             ...thinkingParams(call.provider),
           },
           guardrailCheckSchema(call.checks),
-          streamOptionsFor(transport)
+          streamOptionsFor(transport),
         );
         if (!guardrailCheckResponseIsComplete(value, call.checks)) {
-          throw new Error("Guardrail classifier returned an incomplete response.");
+          throw new Error(
+            "Guardrail classifier returned an incomplete response.",
+          );
         }
 
         const result = validateGuardrailCheck(value, call.checks);
         writeCache(key, result);
         return result;
-      })
+      }),
     );
 
     if (!planned.complete) {
@@ -522,7 +608,7 @@ async function runCheckCall(
 export async function checkContentSafety(
   text: string,
   subject: GuardrailSubject,
-  options: SafetyCheckOptions = {}
+  options: SafetyCheckOptions = {},
 ): Promise<SafetyVerdict> {
   const policy = options.policy ?? DEFAULT_GUARDRAIL_POLICY;
   if (policyIsInert(policy)) return NOT_RUN;
@@ -535,15 +621,21 @@ export async function checkContentSafety(
     // keep it inside the fail-safe boundary just like the model request.
     const wanted = activeChecks(policy);
     const [jailbreakProvider, offTopicProvider] = await Promise.all([
-      wanted.jailbreak ? resolveProvider("guardrail_jailbreak") : Promise.resolve(null),
-      wanted.offTopic ? resolveProvider("guardrail_offtopic") : Promise.resolve(null),
+      wanted.jailbreak
+        ? resolveProvider("guardrail_jailbreak")
+        : Promise.resolve(null),
+      wanted.offTopic
+        ? resolveProvider("guardrail_offtopic")
+        : Promise.resolve(null),
     ]);
 
     const calls = planCheckCalls(wanted, jailbreakProvider, offTopicProvider);
     if (calls.length === 0) return NOT_RUN;
 
     const answers = await Promise.all(
-      calls.map((call) => runCheckCall(call, trimmed, topicFor(options), subject))
+      calls.map((call) =>
+        runCheckCall(call, trimmed, topicFor(options), subject),
+      ),
     );
 
     // A finding is only taken from the call that actually asked for it, so a

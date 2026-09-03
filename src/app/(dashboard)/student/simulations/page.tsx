@@ -20,13 +20,16 @@ export default async function StudentSimulationsPage() {
   const session = await auth();
   if (!session?.user || session.user.role !== "STUDENT") redirect("/login");
 
-  const student = await prisma.student.findUnique({ where: { userId: session.user.id } });
+  const student = await prisma.student.findUnique({
+    where: { userId: session.user.id },
+  });
   if (!student) redirect("/login");
 
   const classes = await listStudentSimulations(student.id);
   const total = classes.reduce(
-    (sum, cls) => sum + cls.quizzes.reduce((n, quiz) => n + quiz.simulations.length, 0),
-    0
+    (sum, cls) =>
+      sum + cls.quizzes.reduce((n, quiz) => n + quiz.simulations.length, 0),
+    0,
   );
 
   return (
@@ -46,7 +49,8 @@ export default async function StudentSimulationsPage() {
             <Atom className="size-12 text-muted-foreground mb-4" />
             <p className="text-lg font-medium mb-2">No simulations yet</p>
             <p className="text-muted-foreground text-sm">
-              Once your teacher publishes a quiz with simulations, they show up here.
+              Once your teacher publishes a quiz with simulations, they show up
+              here.
             </p>
           </CardContent>
         </Card>

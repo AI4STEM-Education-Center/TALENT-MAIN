@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { listClassMaterials, materialLinkedToClass } from "@/lib/learning-material";
+import {
+  listClassMaterials,
+  materialLinkedToClass,
+} from "@/lib/learning-material";
 import { prisma } from "@/lib/prisma";
 import { resetDb, createTeacher, createClass } from "./db";
 
@@ -29,7 +32,9 @@ describe("materialLinkedToClass", () => {
     const { teacher } = await createTeacher();
     const cls = await createClass(teacher.id);
     const material = await createMaterial(teacher.id);
-    await prisma.materialClass.create({ data: { materialId: material.id, classId: cls.id } });
+    await prisma.materialClass.create({
+      data: { materialId: material.id, classId: cls.id },
+    });
 
     expect(await materialLinkedToClass(material.id, cls.id)).toBe(true);
   });
@@ -51,7 +56,9 @@ describe("materialLinkedToClass", () => {
     const classA = await createClass(teacher.id, "A");
     const classB = await createClass(teacher.id, "B");
     const material = await createMaterial(teacher.id);
-    await prisma.materialClass.create({ data: { materialId: material.id, classId: classA.id } });
+    await prisma.materialClass.create({
+      data: { materialId: material.id, classId: classA.id },
+    });
 
     expect(await materialLinkedToClass(material.id, classA.id)).toBe(true);
     expect(await materialLinkedToClass(material.id, classB.id)).toBe(false);

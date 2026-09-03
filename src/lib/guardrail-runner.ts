@@ -42,7 +42,12 @@ export interface GuardDecision {
   eventId: string | null;
 }
 
-const ALLOWED: GuardDecision = { blocked: false, message: null, reasons: [], eventId: null };
+const ALLOWED: GuardDecision = {
+  blocked: false,
+  message: null,
+  reasons: [],
+  eventId: null,
+};
 
 /**
  * A decision before it has been recorded. `record` is explicit rather than
@@ -80,7 +85,7 @@ function decide(
   reasons: string[],
   settings: GuardrailSettings,
   options: GuardOptions,
-  expected: { moderation: boolean; safety: boolean }
+  expected: { moderation: boolean; safety: boolean },
 ): PendingDecision {
   if (moderationFlagged || safetyBlocked) {
     return {
@@ -96,7 +101,10 @@ function decide(
   // Fail-closed: a check that was supposed to run but couldn't is a refusal
   // rather than a silent pass. Only ever applied on request paths.
   if (!settings.failOpen && options.requestPath) {
-    if ((expected.moderation && !moderationRan) || (expected.safety && !safetyRan)) {
+    if (
+      (expected.moderation && !moderationRan) ||
+      (expected.safety && !safetyRan)
+    ) {
       // Not recorded: there is nothing here for a user to disagree with, and an
       // outage in the review queue is noise that buries the real reports.
       return {
@@ -111,7 +119,13 @@ function decide(
 
   // Nothing blocked, but a FLAG-only trip still produced reasons a teacher will
   // read as a warning — so it is recorded and can be argued with.
-  return { blocked: false, message: null, reasons, eventId: null, record: reasons.length > 0 };
+  return {
+    blocked: false,
+    message: null,
+    reasons,
+    eventId: null,
+    record: reasons.length > 0,
+  };
 }
 
 /**
@@ -120,7 +134,7 @@ function decide(
  */
 async function withEvent(
   pending: PendingDecision,
-  subject: GuardrailSubject
+  subject: GuardrailSubject,
 ): Promise<GuardDecision> {
   const { record, ...decision } = pending;
   if (!record) return decision;
@@ -141,7 +155,7 @@ async function withEvent(
 export async function guardText(
   text: string,
   subject: GuardrailSubject,
-  options: GuardOptions = {}
+  options: GuardOptions = {},
 ): Promise<GuardDecision> {
   const settings = options.settings ?? (await getGuardrailSettings());
   const policy = policyFor(settings, subject.surface);
@@ -174,9 +188,9 @@ export async function guardText(
       {
         moderation: runModeration,
         safety: policy.jailbreakMode !== "OFF" || policy.offTopicMode !== "OFF",
-      }
+      },
     ),
-    subject
+    subject,
   );
 }
 
@@ -192,7 +206,7 @@ export async function guardChatTurn(
   message: string,
   modelContent: string | ModerationContentPart[],
   subject: GuardrailSubject,
-  options: GuardOptions = {}
+  options: GuardOptions = {},
 ): Promise<GuardDecision> {
   const settings = options.settings ?? (await getGuardrailSettings());
   const policy = policyFor(settings, subject.surface);
@@ -225,9 +239,9 @@ export async function guardChatTurn(
       {
         moderation: runModeration,
         safety: policy.jailbreakMode !== "OFF" || policy.offTopicMode !== "OFF",
-      }
+      },
     ),
-    subject
+    subject,
   );
 }
 
@@ -238,14 +252,18 @@ export async function guardChatTurn(
  */
 export async function auditText(
   text: string,
-  subject: GuardrailSubject
+  subject: GuardrailSubject,
 ): Promise<GuardDecision> {
   const settings = await getGuardrailSettings();
   if (!moderationEnabledFor(settings, subject.surface)) {
     const policy = policyFor(settings, subject.surface);
-    if (policy.jailbreakMode === "OFF" && policy.offTopicMode === "OFF") return ALLOWED;
+    if (policy.jailbreakMode === "OFF" && policy.offTopicMode === "OFF")
+      return ALLOWED;
   }
-  const decision = await guardText(text, subject, { settings, requestPath: false });
+  const decision = await guardText(text, subject, {
+    settings,
+    requestPath: false,
+  });
   // The event id survives: an audit finding is shown to a teacher as a warning
   // on work they are reviewing, and that warning is exactly the place a false
   // positive most needs a way to be argued with.

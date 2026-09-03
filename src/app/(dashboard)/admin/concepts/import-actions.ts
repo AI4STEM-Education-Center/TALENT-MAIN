@@ -31,15 +31,22 @@ async function postJson(url: string, body: unknown): Promise<any> {
 }
 
 function describeError(error: unknown, fallback: string): UploadResult {
-  if (error instanceof CsvHeaderError) return { ok: false, message: error.message };
-  return { ok: false, message: error instanceof Error ? error.message : fallback };
+  if (error instanceof CsvHeaderError)
+    return { ok: false, message: error.message };
+  return {
+    ok: false,
+    message: error instanceof Error ? error.message : fallback,
+  };
 }
 
 export async function uploadConceptsCsv(text: string): Promise<UploadResult> {
   try {
     const { concepts, skipped } = parseConceptsCsv(text);
     if (concepts.length === 0) {
-      return { ok: false, message: "No valid concept rows found in this file." };
+      return {
+        ok: false,
+        message: "No valid concept rows found in this file.",
+      };
     }
     if (skipped.length > 0) {
       return {
@@ -51,19 +58,23 @@ export async function uploadConceptsCsv(text: string): Promise<UploadResult> {
     const data = await postJson("/api/admin/concepts/import", { concepts });
     return {
       ok: true,
-      message:
-        `Imported concepts — ${data.created} created, ${data.updated} updated, ${data.deprecated} absent row(s) deprecated.`,
+      message: `Imported concepts — ${data.created} created, ${data.updated} updated, ${data.deprecated} absent row(s) deprecated.`,
     };
   } catch (error) {
     return describeError(error, "Failed to import concepts.");
   }
 }
 
-export async function uploadMisconceptionsCsv(text: string): Promise<UploadResult> {
+export async function uploadMisconceptionsCsv(
+  text: string,
+): Promise<UploadResult> {
   try {
     const { misconceptions, skipped } = parseMisconceptionsCsv(text);
     if (misconceptions.length === 0) {
-      return { ok: false, message: "No valid misconception rows found in this file." };
+      return {
+        ok: false,
+        message: "No valid misconception rows found in this file.",
+      };
     }
     if (skipped.length > 0) {
       return {
@@ -72,11 +83,12 @@ export async function uploadMisconceptionsCsv(text: string): Promise<UploadResul
         details: skipped.map((s) => `Row ${s.row}: ${s.reason}`),
       };
     }
-    const data = await postJson("/api/admin/misconceptions/import", { misconceptions });
+    const data = await postJson("/api/admin/misconceptions/import", {
+      misconceptions,
+    });
     return {
       ok: true,
-      message:
-        `Imported misconceptions — ${data.created} created, ${data.updated} updated, ${data.deprecated} absent row(s) deprecated.`,
+      message: `Imported misconceptions — ${data.created} created, ${data.updated} updated, ${data.deprecated} absent row(s) deprecated.`,
     };
   } catch (error) {
     return describeError(error, "Failed to import misconceptions.");
@@ -87,7 +99,11 @@ export async function uploadMappingsCsv(text: string): Promise<UploadResult> {
   try {
     const { mappings, externalRefs, skipped } = parseMappingsCsv(text);
     if (mappings.length === 0 && externalRefs.length === 0) {
-      return { ok: false, message: "No valid mapping or external-reference rows found in this file." };
+      return {
+        ok: false,
+        message:
+          "No valid mapping or external-reference rows found in this file.",
+      };
     }
     if (skipped.length > 0) {
       return {
@@ -96,11 +112,20 @@ export async function uploadMappingsCsv(text: string): Promise<UploadResult> {
         details: skipped.map((s) => `Row ${s.row}: ${s.reason}`),
       };
     }
-    const data = await postJson("/api/admin/concept-mappings/import", { mappings, externalRefs });
-    const serverSkipped: { misconceptionId: string; conceptId: string; reason: string }[] = data.skipped ?? [];
+    const data = await postJson("/api/admin/concept-mappings/import", {
+      mappings,
+      externalRefs,
+    });
+    const serverSkipped: {
+      misconceptionId: string;
+      conceptId: string;
+      reason: string;
+    }[] = data.skipped ?? [];
     const details = [
       ...skipped.map((s) => `Row ${s.row}: ${s.reason}`),
-      ...serverSkipped.map((s) => `${s.misconceptionId} -> ${s.conceptId}: ${s.reason}`),
+      ...serverSkipped.map(
+        (s) => `${s.misconceptionId} -> ${s.conceptId}: ${s.reason}`,
+      ),
     ];
     return {
       ok: true,

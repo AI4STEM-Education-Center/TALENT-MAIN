@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { logApiError } from "@/lib/system-log";
-import { submitGuardrailFeedback, MAX_FEEDBACK_CHARS } from "@/lib/guardrail-events";
+import {
+  submitGuardrailFeedback,
+  MAX_FEEDBACK_CHARS,
+} from "@/lib/guardrail-events";
 
 export const runtime = "nodejs";
 
@@ -28,28 +31,50 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
   if (!body || typeof body !== "object") {
-    return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Invalid request body." },
+      { status: 400 },
+    );
   }
 
   const { eventId, message } = body as { eventId?: unknown; message?: unknown };
   if (typeof eventId !== "string" || !eventId.trim()) {
-    return NextResponse.json({ error: "eventId is required." }, { status: 400 });
+    return NextResponse.json(
+      { error: "eventId is required." },
+      { status: 400 },
+    );
   }
   if (typeof message !== "string") {
-    return NextResponse.json({ error: "message is required." }, { status: 400 });
+    return NextResponse.json(
+      { error: "message is required." },
+      { status: 400 },
+    );
   }
 
   try {
-    const result = await submitGuardrailFeedback(eventId.trim(), session.user.id, message);
+    const result = await submitGuardrailFeedback(
+      eventId.trim(),
+      session.user.id,
+      message,
+    );
     if (result === "empty") {
-      return NextResponse.json({ error: "Please describe what went wrong." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Please describe what went wrong." },
+        { status: 400 },
+      );
     }
     if (result === "not_found") {
-      return NextResponse.json({ error: "That report could not be matched." }, { status: 404 });
+      return NextResponse.json(
+        { error: "That report could not be matched." },
+        { status: 404 },
+      );
     }
     return NextResponse.json({ ok: true, maxChars: MAX_FEEDBACK_CHARS });
   } catch (error) {
     logApiError("GUARDRAIL_FEEDBACK", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }

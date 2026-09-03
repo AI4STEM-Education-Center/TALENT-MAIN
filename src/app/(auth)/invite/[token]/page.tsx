@@ -4,7 +4,11 @@ import { InviteClient, type InviteInfo } from "./invite-client";
 // Public page: validate the invite token on the server (no API round-trip) and
 // hand the result to the client component, which owns the interactive
 // verify/sign-up/join flow. Mirrors GET /api/invitations/[token].
-export default async function InvitePage({ params }: { params: Promise<{ token: string }> }) {
+export default async function InvitePage({
+  params,
+}: {
+  params: Promise<{ token: string }>;
+}) {
   const { token } = await params;
 
   const invitation = await prisma.invitation.findUnique({

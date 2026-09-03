@@ -6,67 +6,114 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Users, BookOpen, Link2, ArrowLeft, UserCheck, ClipboardList, FileText, FileUp, MessageSquare, BarChart3 } from "lucide-react";
+import {
+  Users,
+  BookOpen,
+  Link2,
+  ArrowLeft,
+  UserCheck,
+  ClipboardList,
+  FileText,
+  FileUp,
+  MessageSquare,
+  BarChart3,
+} from "lucide-react";
 import MaterialTitleEdit from "./materials/material-title-edit";
 
-export default async function ClassDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ClassDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const session = await auth();
   if (!session?.user || session.user.role !== "TEACHER") redirect("/login");
   const { id } = await params;
 
-  const teacher = await prisma.teacher.findUnique({ where: { userId: session.user.id } });
+  const teacher = await prisma.teacher.findUnique({
+    where: { userId: session.user.id },
+  });
   const cls = await prisma.class.findFirst({
     where: { id, teacherId: teacher?.id ?? "" },
     include: {
-      enrollments: { include: { student: { include: { user: true } } }, orderBy: { joinedAt: "desc" } },
-      classQuizzes: { include: { quiz: { include: { topic: true, _count: { select: { questions: true } } } } }, orderBy: { quiz: { order: "asc" } } },
-      invitations: { where: { active: true }, orderBy: { createdAt: "desc" }, take: 3 },
+      enrollments: {
+        include: { student: { include: { user: true } } },
+        orderBy: { joinedAt: "desc" },
+      },
+      classQuizzes: {
+        include: {
+          quiz: {
+            include: { topic: true, _count: { select: { questions: true } } },
+          },
+        },
+        orderBy: { quiz: { order: "asc" } },
+      },
+      invitations: {
+        where: { active: true },
+        orderBy: { createdAt: "desc" },
+        take: 3,
+      },
       studentList: { orderBy: [{ lastName: "asc" }, { firstName: "asc" }] },
       materialLinks: {
         orderBy: { material: { createdAt: "desc" } },
         take: 3,
         include: { material: true },
       },
-      _count: { select: { enrollments: true, studentList: true, materialLinks: true } },
+      _count: {
+        select: { enrollments: true, studentList: true, materialLinks: true },
+      },
     },
   });
 
   if (!cls) notFound();
 
   const headersList = await headers();
-  const host = headersList.get("x-forwarded-host") || headersList.get("host") || "localhost:3000";
+  const host =
+    headersList.get("x-forwarded-host") ||
+    headersList.get("host") ||
+    "localhost:3000";
   const proto = headersList.get("x-forwarded-proto") || "http";
   const appUrl = `${proto}://${host}`;
 
   // Build enrollment lookup to show enrollment status in preview
   const enrolledNames = new Set(
     cls.enrollments.map(
-      (e) => `${e.student.user.firstName.toLowerCase()}|${e.student.user.lastName.toLowerCase()}`
-    )
+      (e) =>
+        `${e.student.user.firstName.toLowerCase()}|${e.student.user.lastName.toLowerCase()}`,
+    ),
   );
 
   return (
     <div className="p-4 md:p-6 space-y-6">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="sm" asChild>
-          <Link href="/teacher/classes"><ArrowLeft className="size-4" /> Classes</Link>
+          <Link href="/teacher/classes">
+            <ArrowLeft className="size-4" /> Classes
+          </Link>
         </Button>
       </div>
 
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-3xl font-bold">{cls.name}</h1>
-          {cls.description && <p className="text-muted-foreground mt-1">{cls.description}</p>}
+          {cls.description && (
+            <p className="text-muted-foreground mt-1">{cls.description}</p>
+          )}
         </div>
         <div className="flex gap-2 shrink-0">
           <Button variant="outline" asChild>
-            <Link href={`/teacher/classes/${cls.id}/stats`}><BarChart3 className="size-4" /> Statistics</Link>
+            <Link href={`/teacher/classes/${cls.id}/stats`}>
+              <BarChart3 className="size-4" /> Statistics
+            </Link>
           </Button>
           <Button variant="outline" asChild>
-            <Link href={`/teacher/classes/${cls.id}/messages`}><MessageSquare className="size-4" /> Messages</Link>
+            <Link href={`/teacher/classes/${cls.id}/messages`}>
+              <MessageSquare className="size-4" /> Messages
+            </Link>
           </Button>
           <Button variant="outline" asChild>
-            <Link href={`/teacher/classes/${cls.id}/invite`}><Link2 className="size-4" /> Invite Link</Link>
+            <Link href={`/teacher/classes/${cls.id}/invite`}>
+              <Link2 className="size-4" /> Invite Link
+            </Link>
           </Button>
         </div>
       </div>
@@ -77,9 +124,13 @@ export default async function ClassDetailPage({ params }: { params: Promise<{ id
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card className="md:col-span-2 md:col-start-1 md:row-start-1">
           <CardHeader className="flex flex-row items-center justify-between pb-3">
-            <CardTitle className="flex items-center gap-2"><BookOpen className="size-4" /> Quizzes</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <BookOpen className="size-4" /> Quizzes
+            </CardTitle>
             <Button size="sm" asChild>
-              <Link href={`/teacher/classes/${cls.id}/quizzes`}>Manage Quizzes</Link>
+              <Link href={`/teacher/classes/${cls.id}/quizzes`}>
+                Manage Quizzes
+              </Link>
             </Button>
           </CardHeader>
           <CardContent>
@@ -87,23 +138,31 @@ export default async function ClassDetailPage({ params }: { params: Promise<{ id
               <div className="text-center py-8 text-muted-foreground">
                 <p className="mb-3">No quizzes assigned yet.</p>
                 <Button size="sm" asChild>
-                  <Link href={`/teacher/classes/${cls.id}/quizzes`}>Add Quizzes</Link>
+                  <Link href={`/teacher/classes/${cls.id}/quizzes`}>
+                    Add Quizzes
+                  </Link>
                 </Button>
               </div>
             ) : (
               <div className="space-y-3">
                 {cls.classQuizzes.map((cq) => (
-                  <div key={cq.id} className="flex items-center justify-between p-3 rounded-lg border">
+                  <div
+                    key={cq.id}
+                    className="flex items-center justify-between p-3 rounded-lg border"
+                  >
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{cq.quiz.name}</span>
-                        {cq.quiz.topic && <Badge variant="outline">{cq.quiz.topic.name}</Badge>}
+                        {cq.quiz.topic && (
+                          <Badge variant="outline">{cq.quiz.topic.name}</Badge>
+                        )}
                         <Badge variant={cq.published ? "success" : "secondary"}>
                           {cq.published ? "Published" : "Draft"}
                         </Badge>
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        {cq.quiz._count.questions} question{cq.quiz._count.questions !== 1 ? "s" : ""}
+                        {cq.quiz._count.questions} question
+                        {cq.quiz._count.questions !== 1 ? "s" : ""}
                       </p>
                     </div>
                   </div>
@@ -115,9 +174,13 @@ export default async function ClassDetailPage({ params }: { params: Promise<{ id
 
         <Card className="md:col-span-2 md:col-start-1 md:row-start-2">
           <CardHeader className="flex flex-row items-center justify-between pb-3">
-            <CardTitle className="flex items-center gap-2"><FileText className="size-4" /> Learning Materials</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="size-4" /> Learning Materials
+            </CardTitle>
             <Button size="sm" asChild>
-              <Link href={`/teacher/classes/${cls.id}/materials`}>Manage Materials</Link>
+              <Link href={`/teacher/classes/${cls.id}/materials`}>
+                Manage Materials
+              </Link>
             </Button>
           </CardHeader>
           <CardContent>
@@ -125,7 +188,9 @@ export default async function ClassDetailPage({ params }: { params: Promise<{ id
               <div className="text-center py-8 text-muted-foreground">
                 <p className="mb-3">No materials uploaded yet.</p>
                 <Button size="sm" variant="outline" asChild>
-                  <Link href={`/teacher/classes/${cls.id}/materials`}><FileUp className="size-4 mr-2" /> Upload Materials</Link>
+                  <Link href={`/teacher/classes/${cls.id}/materials`}>
+                    <FileUp className="size-4 mr-2" /> Upload Materials
+                  </Link>
                 </Button>
               </div>
             ) : (
@@ -133,22 +198,44 @@ export default async function ClassDetailPage({ params }: { params: Promise<{ id
                 {cls.materialLinks.map((link) => {
                   const mat = link.material;
                   return (
-                    <div key={mat.id} className="flex items-center justify-between p-3 rounded-lg border">
+                    <div
+                      key={mat.id}
+                      className="flex items-center justify-between p-3 rounded-lg border"
+                    >
                       <div className="flex items-center gap-3">
                         <div className="p-2 bg-blue-50 rounded-md">
                           <FileText className="size-5 text-blue-600" />
                         </div>
                         <div>
                           <div className="flex items-center gap-2">
-                            <MaterialTitleEdit classId={cls.id} materialId={mat.id} title={mat.title} originalName={mat.originalName} className="font-medium text-sm" />
+                            <MaterialTitleEdit
+                              classId={cls.id}
+                              materialId={mat.id}
+                              title={mat.title}
+                              originalName={mat.originalName}
+                              className="font-medium text-sm"
+                            />
                             {mat.classId !== cls.id && (
-                              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Imported</Badge>
+                              <Badge
+                                variant="secondary"
+                                className="text-[10px] px-1.5 py-0"
+                              >
+                                Imported
+                              </Badge>
                             )}
                           </div>
                           <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-                            <span>{(mat.sizeBytes / 1024 / 1024).toFixed(2)} MB</span>
+                            <span>
+                              {(mat.sizeBytes / 1024 / 1024).toFixed(2)} MB
+                            </span>
                             <span>•</span>
-                            <span>{mat.processingStatus === "SUCCESS" ? "Ready" : mat.processingStatus === "FAILED" ? "Failed" : "Processing"}</span>
+                            <span>
+                              {mat.processingStatus === "SUCCESS"
+                                ? "Ready"
+                                : mat.processingStatus === "FAILED"
+                                  ? "Failed"
+                                  : "Processing"}
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -156,7 +243,12 @@ export default async function ClassDetailPage({ params }: { params: Promise<{ id
                   );
                 })}
                 {cls._count.materialLinks > 3 && (
-                  <Button variant="ghost" size="sm" className="w-full mt-2" asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full mt-2"
+                    asChild
+                  >
                     <Link href={`/teacher/classes/${cls.id}/materials`}>
                       View all {cls._count.materialLinks} materials
                     </Link>
@@ -169,9 +261,13 @@ export default async function ClassDetailPage({ params }: { params: Promise<{ id
 
         <Card className="md:col-start-3 md:row-start-1">
           <CardHeader className="flex flex-row items-center justify-between pb-3">
-            <CardTitle className="flex items-center gap-2 text-base"><ClipboardList className="size-4" /> Student Roster</CardTitle>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ClipboardList className="size-4" /> Student Roster
+            </CardTitle>
             <Button size="sm" variant="outline" asChild>
-              <Link href={`/teacher/classes/${cls.id}/students`}>Manage Roster</Link>
+              <Link href={`/teacher/classes/${cls.id}/students`}>
+                Manage Roster
+              </Link>
             </Button>
           </CardHeader>
           <CardContent>
@@ -180,11 +276,14 @@ export default async function ClassDetailPage({ params }: { params: Promise<{ id
                 <Users className="size-3" /> {cls._count.studentList} in roster
               </span>
               <span className="flex items-center gap-1 text-muted-foreground">
-                <UserCheck className="size-3" /> {cls._count.enrollments} enrolled
+                <UserCheck className="size-3" /> {cls._count.enrollments}{" "}
+                enrolled
               </span>
             </div>
             {cls.studentList.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">No students in roster yet.</p>
+              <p className="text-sm text-muted-foreground text-center py-4">
+                No students in roster yet.
+              </p>
             ) : (
               <div className="space-y-2">
                 {cls.studentList.slice(0, 5).map((s) => {
@@ -193,15 +292,33 @@ export default async function ClassDetailPage({ params }: { params: Promise<{ id
                   return (
                     <div key={s.id} className="flex items-center gap-2">
                       <div className="size-7 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary">
-                        {s.firstName[0]}{s.lastName[0]}
+                        {s.firstName[0]}
+                        {s.lastName[0]}
                       </div>
-                      <span className="text-sm flex-1">{s.firstName} {s.lastName}</span>
+                      <span className="text-sm flex-1">
+                        {s.firstName} {s.lastName}
+                      </span>
                       {isEnrolled ? (
-                        <Badge variant="success" className="text-[10px] px-1.5 py-0">Enrolled</Badge>
+                        <Badge
+                          variant="success"
+                          className="text-[10px] px-1.5 py-0"
+                        >
+                          Enrolled
+                        </Badge>
                       ) : s.isRegistered ? (
-                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Registered</Badge>
+                        <Badge
+                          variant="secondary"
+                          className="text-[10px] px-1.5 py-0"
+                        >
+                          Registered
+                        </Badge>
                       ) : (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-amber-600">Pending</Badge>
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] px-1.5 py-0 text-amber-600"
+                        >
+                          Pending
+                        </Badge>
                       )}
                     </div>
                   );
@@ -209,7 +326,8 @@ export default async function ClassDetailPage({ params }: { params: Promise<{ id
                 {cls.studentList.length > 5 && (
                   <Button variant="ghost" size="sm" className="w-full" asChild>
                     <Link href={`/teacher/classes/${cls.id}/students`}>
-                      <UserCheck className="size-3" /> View all {cls.studentList.length} students
+                      <UserCheck className="size-3" /> View all{" "}
+                      {cls.studentList.length} students
                     </Link>
                   </Button>
                 )}
@@ -221,20 +339,31 @@ export default async function ClassDetailPage({ params }: { params: Promise<{ id
         {cls.invitations.length > 0 && (
           <Card className="md:col-start-3 md:row-start-2">
             <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2"><Link2 className="size-4" /> Active Invite Links</CardTitle>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Link2 className="size-4" /> Active Invite Links
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               {cls.invitations.map((inv) => (
-                <div key={inv.id} className="p-2 rounded border bg-muted/30 text-xs">
-                  <p className="font-mono truncate">{appUrl}/invite/{inv.token}</p>
+                <div
+                  key={inv.id}
+                  className="p-2 rounded border bg-muted/30 text-xs"
+                >
+                  <p className="font-mono truncate">
+                    {appUrl}/invite/{inv.token}
+                  </p>
                   <p className="text-muted-foreground mt-0.5">
-                    {inv.usedCount}{inv.maxUses ? `/${inv.maxUses}` : ""} uses
-                    {inv.expiresAt && ` · expires ${new Date(inv.expiresAt).toLocaleDateString()}`}
+                    {inv.usedCount}
+                    {inv.maxUses ? `/${inv.maxUses}` : ""} uses
+                    {inv.expiresAt &&
+                      ` · expires ${new Date(inv.expiresAt).toLocaleDateString()}`}
                   </p>
                 </div>
               ))}
               <Button variant="outline" size="sm" className="w-full" asChild>
-                <Link href={`/teacher/classes/${cls.id}/invite`}>Manage Links</Link>
+                <Link href={`/teacher/classes/${cls.id}/invite`}>
+                  Manage Links
+                </Link>
               </Button>
             </CardContent>
           </Card>

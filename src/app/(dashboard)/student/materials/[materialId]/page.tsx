@@ -46,10 +46,13 @@ export default async function StudentMaterialPage({
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-3xl font-bold">{title}</h1>
-          {material.topic && <Badge variant="secondary">{material.topic.name}</Badge>}
+          {material.topic && (
+            <Badge variant="secondary">{material.topic.name}</Badge>
+          )}
         </div>
         <p className="text-sm text-muted-foreground">
-          {material.classes.map((c) => c.name).join(", ")} · {material.pages.length} page
+          {material.classes.map((c) => c.name).join(", ")} ·{" "}
+          {material.pages.length} page
           {material.pages.length !== 1 ? "s" : ""}
         </p>
       </div>

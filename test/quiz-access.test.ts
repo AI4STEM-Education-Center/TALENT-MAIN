@@ -16,8 +16,16 @@ import { resetDb, createTeacher } from "./db";
 
 const mockAuth = vi.mocked(auth);
 
-const teacherActor: ContentActor = { role: "TEACHER", teacherId: "t1", userId: "u1" };
-const adminActor: ContentActor = { role: "ADMIN", teacherId: null, userId: "uA" };
+const teacherActor: ContentActor = {
+  role: "TEACHER",
+  teacherId: "t1",
+  userId: "u1",
+};
+const adminActor: ContentActor = {
+  role: "ADMIN",
+  teacherId: null,
+  userId: "uA",
+};
 
 beforeEach(async () => {
   await resetDb();
@@ -77,13 +85,21 @@ describe("getContentActor", () => {
   });
 
   it("returns an ADMIN actor scoped to the pool", async () => {
-    mockAuth.mockResolvedValue({ user: { id: "admin-1", role: "ADMIN" } } as never);
-    expect(await getContentActor()).toEqual({ role: "ADMIN", teacherId: null, userId: "admin-1" });
+    mockAuth.mockResolvedValue({
+      user: { id: "admin-1", role: "ADMIN" },
+    } as never);
+    expect(await getContentActor()).toEqual({
+      role: "ADMIN",
+      teacherId: null,
+      userId: "admin-1",
+    });
   });
 
   it("returns a TEACHER actor carrying their Teacher row id", async () => {
     const { user, teacher } = await createTeacher();
-    mockAuth.mockResolvedValue({ user: { id: user.id, role: "TEACHER" } } as never);
+    mockAuth.mockResolvedValue({
+      user: { id: user.id, role: "TEACHER" },
+    } as never);
     expect(await getContentActor()).toEqual({
       role: "TEACHER",
       teacherId: teacher.id,
@@ -102,14 +118,18 @@ describe("getContentActor", () => {
         role: "TEACHER",
       },
     });
-    mockAuth.mockResolvedValue({ user: { id: user.id, role: "TEACHER" } } as never);
+    mockAuth.mockResolvedValue({
+      user: { id: user.id, role: "TEACHER" },
+    } as never);
     expect(await getContentActor()).toBeNull();
   });
 });
 
 describe("deepCopyQuiz", () => {
   async function seedSourceQuiz(teacherId: string | null) {
-    const topic = await prisma.topic.create({ data: { name: "Forces", order: 2, teacherId } });
+    const topic = await prisma.topic.create({
+      data: { name: "Forces", order: 2, teacherId },
+    });
     const quiz = await prisma.quiz.create({
       data: { name: "Quiz A", order: 5, topicId: topic.id, teacherId },
     });
@@ -163,7 +183,9 @@ describe("deepCopyQuiz", () => {
     expect(copiedQuestion.figureStorageKey).toBe("figs/q1.png");
     expect(copiedQuestion.figureBucket).toBe("bucket-x");
     expect(copiedQuestion.options).toHaveLength(2);
-    expect(copiedQuestion.options.find((o) => o.text === "4")!.isCorrect).toBe(true);
+    expect(copiedQuestion.options.find((o) => o.text === "4")!.isCorrect).toBe(
+      true,
+    );
   });
 
   it("creates the topic in the target scope rather than sharing the source topic row", async () => {
@@ -179,12 +201,16 @@ describe("deepCopyQuiz", () => {
 
   it("reuses an existing same-named topic in the target scope", async () => {
     const { teacher } = await createTeacher();
-    const existing = await prisma.topic.create({ data: { name: "Forces", teacherId: teacher.id } });
+    const existing = await prisma.topic.create({
+      data: { name: "Forces", teacherId: teacher.id },
+    });
     const { quiz: source } = await seedSourceQuiz(null);
 
     const copy = await deepCopyQuiz(source.id, teacher.id);
     expect(copy!.topic!.id).toBe(existing.id);
-    const topicCount = await prisma.topic.count({ where: { name: "Forces", teacherId: teacher.id } });
+    const topicCount = await prisma.topic.count({
+      where: { name: "Forces", teacherId: teacher.id },
+    });
     expect(topicCount).toBe(1);
   });
 
@@ -234,9 +260,13 @@ describe("deepCopyQuiz", () => {
 
     await prisma.quiz.delete({ where: { id: source.id } });
 
-    const stillThere = await prisma.quiz.findUnique({ where: { id: copy!.id } });
+    const stillThere = await prisma.quiz.findUnique({
+      where: { id: copy!.id },
+    });
     expect(stillThere).not.toBeNull();
-    const questions = await prisma.question.count({ where: { quizId: copy!.id } });
+    const questions = await prisma.question.count({
+      where: { quizId: copy!.id },
+    });
     expect(questions).toBe(1);
   });
 });

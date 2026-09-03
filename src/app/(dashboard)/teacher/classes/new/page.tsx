@@ -7,7 +7,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, Upload, FileText, X, Users, AlertTriangle } from "lucide-react";
+import {
+  ArrowLeft,
+  Upload,
+  FileText,
+  X,
+  Users,
+  AlertTriangle,
+} from "lucide-react";
 import { parseRosterCsv, type ParsedRosterStudent } from "@/lib/csv-roster";
 
 type ParsedStudent = ParsedRosterStudent;
@@ -34,11 +41,12 @@ export default function NewClassPage() {
     const reader = new FileReader();
     reader.onload = (ev) => {
       const text = ev.target?.result as string;
-      const { students, headerInferred, skipped, normalizedEmails } = parseRosterCsv(text);
+      const { students, headerInferred, skipped, normalizedEmails } =
+        parseRosterCsv(text);
       if (students.length === 0) {
         setError(
           "Could not parse any students with a valid email from the CSV. " +
-            "Each row needs an ID, first name, last name, and email."
+            "Each row needs an ID, first name, last name, and email.",
         );
         setStudentList([]);
         setShowPreview(false);
@@ -49,16 +57,18 @@ export default function NewClassPage() {
         if (headerInferred) {
           notes.push(
             "No recognizable header row was found, so columns were inferred as " +
-              "OrgDefinedId, Last Name, First Name, Email. Verify the preview is correct."
+              "OrgDefinedId, Last Name, First Name, Email. Verify the preview is correct.",
           );
         }
         if (skipped > 0) {
-          notes.push(`${skipped} row(s) were skipped for missing or invalid email addresses.`);
+          notes.push(
+            `${skipped} row(s) were skipped for missing or invalid email addresses.`,
+          );
         }
         if (normalizedEmails > 0) {
           notes.push(
             `${normalizedEmails} email address(es) used the LMS-only ` +
-              "@uga.view.usg.edu domain and were rewritten to @uga.edu."
+              "@uga.view.usg.edu domain and were rewritten to @uga.edu.",
           );
         }
         setWarning(notes.join(" "));
@@ -109,7 +119,9 @@ export default function NewClassPage() {
     <div className="p-4 md:p-6 max-w-2xl">
       <div className="mb-6">
         <Button variant="ghost" size="sm" asChild>
-          <Link href="/teacher/classes"><ArrowLeft className="size-4" /> Back to classes</Link>
+          <Link href="/teacher/classes">
+            <ArrowLeft className="size-4" /> Back to classes
+          </Link>
         </Button>
       </div>
       <Card>
@@ -118,24 +130,45 @@ export default function NewClassPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
-            {error && <div className="p-3 rounded-md bg-destructive/10 text-destructive text-sm">{error}</div>}
+            {error && (
+              <div className="p-3 rounded-md bg-destructive/10 text-destructive text-sm">
+                {error}
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="name">Class Name</Label>
-              <Input id="name" value={name} onChange={(e) => setName(e.target.value)} required placeholder="e.g. CSCI4300 Web Programming - Spring 2026" />
+              <Input
+                id="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+                placeholder="e.g. CSCI4300 Web Programming - Spring 2026"
+              />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="description">Description <span className="text-muted-foreground">(optional)</span></Label>
-              <Textarea id="description" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Brief description of this class..." />
+              <Label htmlFor="description">
+                Description{" "}
+                <span className="text-muted-foreground">(optional)</span>
+              </Label>
+              <Textarea
+                id="description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Brief description of this class..."
+              />
             </div>
 
             {/* CSV Upload */}
             <div className="space-y-2">
-              <Label>Class List (CSV) <span className="text-destructive">*</span></Label>
+              <Label>
+                Class List (CSV) <span className="text-destructive">*</span>
+              </Label>
               <p className="text-xs text-muted-foreground">
-                Upload a CSV file with columns: OrgDefinedId, Last Name, First Name, Email.
-                An email address is required for every student so you can send them notifications.
-                The # prefix on 81 numbers is removed automatically. If no header row is detected,
-                columns are inferred in that order.
+                Upload a CSV file with columns: OrgDefinedId, Last Name, First
+                Name, Email. An email address is required for every student so
+                you can send them notifications. The # prefix on 81 numbers is
+                removed automatically. If no header row is detected, columns are
+                inferred in that order.
               </p>
               {warning && (
                 <div className="p-3 rounded-md bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs flex items-start gap-2">
@@ -149,7 +182,9 @@ export default function NewClassPage() {
                   className="flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed border-muted-foreground/25 rounded-lg cursor-pointer hover:border-primary/50 hover:bg-muted/50 transition-colors"
                 >
                   <Upload className="size-8 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">Click to upload CSV file</span>
+                  <span className="text-sm text-muted-foreground">
+                    Click to upload CSV file
+                  </span>
                   <input
                     ref={fileRef}
                     id="csv-upload"
@@ -166,10 +201,16 @@ export default function NewClassPage() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{fileName}</p>
                     <p className="text-xs text-muted-foreground flex items-center gap-1">
-                      <Users className="size-3" /> {studentList.length} students parsed
+                      <Users className="size-3" /> {studentList.length} students
+                      parsed
                     </p>
                   </div>
-                  <Button type="button" variant="ghost" size="sm" onClick={clearFile}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={clearFile}
+                  >
                     <X className="size-4" />
                   </Button>
                 </div>
@@ -198,7 +239,9 @@ export default function NewClassPage() {
                         <th className="text-left p-2 font-medium">#</th>
                         <th className="text-left p-2 font-medium">81 Number</th>
                         <th className="text-left p-2 font-medium">Last Name</th>
-                        <th className="text-left p-2 font-medium">First Name</th>
+                        <th className="text-left p-2 font-medium">
+                          First Name
+                        </th>
                         <th className="text-left p-2 font-medium">Email</th>
                       </tr>
                     </thead>
@@ -206,7 +249,9 @@ export default function NewClassPage() {
                       {studentList.map((s, i) => (
                         <tr key={s.orgDefinedId} className="hover:bg-muted/50">
                           <td className="p-2 text-muted-foreground">{i + 1}</td>
-                          <td className="p-2 font-mono text-xs">{s.orgDefinedId}</td>
+                          <td className="p-2 font-mono text-xs">
+                            {s.orgDefinedId}
+                          </td>
                           <td className="p-2">{s.lastName}</td>
                           <td className="p-2">{s.firstName}</td>
                           <td className="p-2 text-xs">{s.email}</td>
@@ -219,8 +264,12 @@ export default function NewClassPage() {
             )}
 
             <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={loading}>{loading ? "Creating..." : "Create Class"}</Button>
-              <Button type="button" variant="outline" asChild><Link href="/teacher/classes">Cancel</Link></Button>
+              <Button type="submit" disabled={loading}>
+                {loading ? "Creating..." : "Create Class"}
+              </Button>
+              <Button type="button" variant="outline" asChild>
+                <Link href="/teacher/classes">Cancel</Link>
+              </Button>
             </div>
           </form>
         </CardContent>

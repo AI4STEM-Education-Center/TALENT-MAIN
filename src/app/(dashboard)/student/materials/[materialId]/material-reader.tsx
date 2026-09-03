@@ -58,9 +58,10 @@ export function MaterialReader({
       try {
         const res = await fetch(
           `/api/student/materials/${materialId}/pages/${pageId}/image`,
-          { signal }
+          { signal },
         );
-        if (!res.ok) throw new Error(`Page image request failed (HTTP ${res.status})`);
+        if (!res.ok)
+          throw new Error(`Page image request failed (HTTP ${res.status})`);
         const data = await res.json();
         if (signal.aborted) return;
         setImageUrl(typeof data?.url === "string" ? data.url : null);
@@ -95,7 +96,8 @@ export function MaterialReader({
       {pages.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            This material has no page previews yet — open the original PDF above.
+            This material has no page previews yet — open the original PDF
+            above.
           </CardContent>
         </Card>
       ) : (
@@ -117,7 +119,9 @@ export function MaterialReader({
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setIndex((i) => Math.min(pages.length - 1, i + 1))}
+                  onClick={() =>
+                    setIndex((i) => Math.min(pages.length - 1, i + 1))
+                  }
                   disabled={index === pages.length - 1}
                 >
                   Next <ChevronRight className="size-4" />
@@ -148,10 +152,14 @@ export function MaterialReader({
               {(current.keyConcept || current.description) && (
                 <div className="space-y-1 rounded-md border bg-card p-3">
                   {current.keyConcept && (
-                    <p className="text-sm font-semibold">{current.keyConcept}</p>
+                    <p className="text-sm font-semibold">
+                      {current.keyConcept}
+                    </p>
                   )}
                   {current.description && (
-                    <p className="text-sm text-muted-foreground">{current.description}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {current.description}
+                    </p>
                   )}
                 </div>
               )}
@@ -160,7 +168,9 @@ export function MaterialReader({
 
           <Card className="lg:sticky lg:top-4">
             <CardContent className="p-3">
-              <p className="mb-2 text-xs font-medium text-muted-foreground">Jump to page</p>
+              <p className="mb-2 text-xs font-medium text-muted-foreground">
+                Jump to page
+              </p>
               <div className="flex max-h-72 flex-wrap gap-1.5 overflow-y-auto">
                 {pages.map((page, i) => (
                   <button
@@ -172,7 +182,7 @@ export function MaterialReader({
                       "size-9 rounded-md border text-xs font-medium transition-colors",
                       i === index
                         ? "border-primary bg-primary/10 text-primary"
-                        : "text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+                        : "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
                     )}
                   >
                     {page.pageNumber}

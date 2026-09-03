@@ -91,10 +91,14 @@ export default function ClassesPage() {
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-3xl font-bold">My Classes</h1>
-          <p className="text-muted-foreground mt-1">{classes.length} class{classes.length !== 1 ? "es" : ""}</p>
+          <p className="text-muted-foreground mt-1">
+            {classes.length} class{classes.length !== 1 ? "es" : ""}
+          </p>
         </div>
         <Button asChild className="shrink-0">
-          <Link href="/teacher/classes/new"><Plus className="size-4" /> New Class</Link>
+          <Link href="/teacher/classes/new">
+            <Plus className="size-4" /> New Class
+          </Link>
         </Button>
       </div>
 
@@ -103,8 +107,14 @@ export default function ClassesPage() {
           <CardContent className="flex flex-col items-center justify-center py-16 text-center">
             <Users className="size-12 text-muted-foreground mb-4" />
             <p className="text-lg font-medium mb-2">No classes yet</p>
-            <p className="text-muted-foreground text-sm mb-4">Create your first class and invite students.</p>
-            <Button asChild><Link href="/teacher/classes/new"><Plus className="size-4" /> Create Class</Link></Button>
+            <p className="text-muted-foreground text-sm mb-4">
+              Create your first class and invite students.
+            </p>
+            <Button asChild>
+              <Link href="/teacher/classes/new">
+                <Plus className="size-4" /> Create Class
+              </Link>
+            </Button>
           </CardContent>
         </Card>
       ) : (
@@ -114,16 +124,28 @@ export default function ClassesPage() {
               <CardContent className="flex items-start justify-between gap-3 flex-wrap p-5">
                 <div className="space-y-1 min-w-0 flex-1">
                   <h2 className="text-lg font-semibold">{cls.name}</h2>
-                  {cls.description && <p className="text-sm text-muted-foreground">{cls.description}</p>}
+                  {cls.description && (
+                    <p className="text-sm text-muted-foreground">
+                      {cls.description}
+                    </p>
+                  )}
                   <div className="flex flex-wrap gap-3 text-xs text-muted-foreground pt-1">
-                    <span className="flex items-center gap-1"><Users className="size-3" />{cls._count.enrollments} students</span>
-                    <span className="flex items-center gap-1"><BookOpen className="size-3" />{cls._count.classQuizzes} quizzes</span>
+                    <span className="flex items-center gap-1">
+                      <Users className="size-3" />
+                      {cls._count.enrollments} students
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <BookOpen className="size-3" />
+                      {cls._count.classQuizzes} quizzes
+                    </span>
                     <span>Created {formatDate(cls.createdAt)}</span>
                   </div>
                 </div>
                 <div className="flex gap-2 shrink-0">
                   <Button variant="outline" size="sm" asChild>
-                    <Link href={`/teacher/classes/${cls.id}/invite`}>Invite</Link>
+                    <Link href={`/teacher/classes/${cls.id}/invite`}>
+                      Invite
+                    </Link>
                   </Button>
                   <Button size="sm" asChild>
                     <Link href={`/teacher/classes/${cls.id}`}>Manage</Link>
@@ -147,21 +169,33 @@ export default function ClassesPage() {
       )}
 
       {/* Delete confirmation dialog */}
-      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+      <Dialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete Class</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete <strong>{deleteTarget?.name}</strong>? This will remove
-              all student enrollments, roster entries, quiz assignments, and invite links associated with this class.
-              This action cannot be undone.
+              Are you sure you want to delete{" "}
+              <strong>{deleteTarget?.name}</strong>? This will remove all
+              student enrollments, roster entries, quiz assignments, and invite
+              links associated with this class. This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={deleteLoading}>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteTarget(null)}
+              disabled={deleteLoading}
+            >
               Cancel
             </Button>
-            <Button variant="destructive" onClick={handleDelete} disabled={deleteLoading}>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleteLoading}
+            >
               {deleteLoading ? "Deleting..." : "Delete Class"}
             </Button>
           </DialogFooter>

@@ -23,7 +23,8 @@ export const PAGE_IMAGE_EXTENSIONS = {
 } as const;
 
 export type PageImageMimeType = keyof typeof PAGE_IMAGE_EXTENSIONS;
-export type PageImageExtension = (typeof PAGE_IMAGE_EXTENSIONS)[PageImageMimeType];
+export type PageImageExtension =
+  (typeof PAGE_IMAGE_EXTENSIONS)[PageImageMimeType];
 
 /**
  * Every extension a derived-image key may end in, newest first. The completion
@@ -31,7 +32,10 @@ export type PageImageExtension = (typeof PAGE_IMAGE_EXTENSIONS)[PageImageMimeTyp
  * of these, because the format was negotiated per page at presign time and the
  * completion request does not carry it.
  */
-export const PAGE_IMAGE_EXTENSION_VALUES: readonly PageImageExtension[] = ["webp", "png"];
+export const PAGE_IMAGE_EXTENSION_VALUES: readonly PageImageExtension[] = [
+  "webp",
+  "png",
+];
 
 /**
  * The extension the key builders assume when a caller does not negotiate one.
@@ -54,7 +58,9 @@ export const PAGE_IMAGE_WEBP_QUALITY = 0.95;
  */
 export const WEBP_MAX_DIMENSION = 16383;
 
-export function pageImageExtension(mimeType: PageImageMimeType): PageImageExtension {
+export function pageImageExtension(
+  mimeType: PageImageMimeType,
+): PageImageExtension {
   return PAGE_IMAGE_EXTENSIONS[mimeType];
 }
 
@@ -64,8 +70,11 @@ export function pageImageExtension(mimeType: PageImageMimeType): PageImageExtens
  * wave through inherited keys like "toString" — whose "extension" is
  * `undefined`, which would then be baked into a storage key.
  */
-export function parsePageImageMimeType(value: unknown): PageImageMimeType | null {
-  return typeof value === "string" && Object.hasOwn(PAGE_IMAGE_EXTENSIONS, value)
+export function parsePageImageMimeType(
+  value: unknown,
+): PageImageMimeType | null {
+  return typeof value === "string" &&
+    Object.hasOwn(PAGE_IMAGE_EXTENSIONS, value)
     ? (value as PageImageMimeType)
     : null;
 }
@@ -84,8 +93,12 @@ export function parsePageImageMimeType(value: unknown): PageImageMimeType | null
  */
 export function preferredPageImageMimeType(): PageImageMimeType {
   const configured =
-    typeof process === "undefined" ? undefined : process.env?.NEXT_PUBLIC_PAGE_IMAGE_FORMAT;
-  return configured?.trim().toLowerCase() === "png" ? "image/png" : "image/webp";
+    typeof process === "undefined"
+      ? undefined
+      : process.env?.NEXT_PUBLIC_PAGE_IMAGE_FORMAT;
+  return configured?.trim().toLowerCase() === "png"
+    ? "image/png"
+    : "image/webp";
 }
 
 /**
@@ -96,5 +109,7 @@ export function preferredPageImageMimeType(): PageImageMimeType {
  */
 export function suffixPageImageKey(key: string, suffix: string): string {
   const dot = key.lastIndexOf(".");
-  return dot === -1 ? `${key}${suffix}` : `${key.slice(0, dot)}${suffix}${key.slice(dot)}`;
+  return dot === -1
+    ? `${key}${suffix}`
+    : `${key.slice(0, dot)}${suffix}${key.slice(dot)}`;
 }

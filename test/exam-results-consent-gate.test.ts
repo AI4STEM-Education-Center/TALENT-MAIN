@@ -45,8 +45,12 @@ async function agree(userId: string, formVersionId: string, email: string) {
  */
 async function seedExamResult(studentId: string) {
   const { teacher } = await createTeacher();
-  const cls = await prisma.class.create({ data: { name: "Physics 101", teacherId: teacher.id } });
-  const quiz = await prisma.quiz.create({ data: { name: "Quiz 1", teacherId: teacher.id } });
+  const cls = await prisma.class.create({
+    data: { name: "Physics 101", teacherId: teacher.id },
+  });
+  const quiz = await prisma.quiz.create({
+    data: { name: "Quiz 1", teacherId: teacher.id },
+  });
   const examResult = await prisma.examResult.create({
     data: {
       quizAttemptId: `attempt-${studentId}`,
@@ -62,7 +66,9 @@ async function seedExamResult(studentId: string) {
       completedAt: new Date(),
       // No incorrect questions, so the recommendations section terminates
       // without an LLM call and only the summary exercises the provider path.
-      reviewSnapshot: JSON.stringify({ questions: [{ text: "Q1", isCorrect: true }] }),
+      reviewSnapshot: JSON.stringify({
+        questions: [{ text: "Q1", isCorrect: true }],
+      }),
     },
   });
   return examResult;
@@ -81,7 +87,9 @@ describe("generateExamResult research-consent gate", () => {
     // No AI provider is configured in the test database, so the summary lands
     // on FAILED. That is the point: reaching the provider at all proves the
     // consent gate resolved Student -> User instead of skipping the attempt.
-    const after = await prisma.examResult.findUniqueOrThrow({ where: { id: examResult.id } });
+    const after = await prisma.examResult.findUniqueOrThrow({
+      where: { id: examResult.id },
+    });
     expect(after.summaryStatus).not.toBe("SKIPPED_NO_CONSENT");
     expect(after.summaryStatus).toBe("FAILED");
   });
@@ -93,7 +101,9 @@ describe("generateExamResult research-consent gate", () => {
     const examResult = await seedExamResult(student.id);
     await generateExamResult(examResult.id);
 
-    const after = await prisma.examResult.findUniqueOrThrow({ where: { id: examResult.id } });
+    const after = await prisma.examResult.findUniqueOrThrow({
+      where: { id: examResult.id },
+    });
     expect(after.summaryStatus).toBe("SKIPPED_NO_CONSENT");
     expect(after.recommendationsStatus).toBe("SKIPPED_NO_CONSENT");
   });

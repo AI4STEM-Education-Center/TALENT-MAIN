@@ -23,8 +23,7 @@ export function AiMetricsLine({
   return (
     <span className={className}>
       {prefix}
-      {text}
-      {" "}
+      {text}{" "}
       <span className="inline-flex rounded-full bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
         Dev site only
       </span>

@@ -15,10 +15,27 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { useConfirm } from "@/components/ui/confirm-dialog";
-import { ArrowLeft, Plus, Eye, EyeOff, Trash2, FileQuestion, Settings, Clock } from "lucide-react";
+import {
+  ArrowLeft,
+  Plus,
+  Eye,
+  EyeOff,
+  Trash2,
+  FileQuestion,
+  Settings,
+  Clock,
+} from "lucide-react";
 
-interface Topic { id: string; name: string }
-interface Quiz { id: string; name: string; topic: Topic | null; _count: { questions: number } }
+interface Topic {
+  id: string;
+  name: string;
+}
+interface Quiz {
+  id: string;
+  name: string;
+  topic: Topic | null;
+  _count: { questions: number };
+}
 interface ClassQuiz {
   id: string;
   quizId: string;
@@ -79,13 +96,18 @@ export function ClassQuizzesClient({
   initialAllQuizzes: Quiz[];
 }) {
   const confirm = useConfirm();
-  const [classQuizzes, setClassQuizzes] = useState<ClassQuiz[]>(initialClassQuizzes);
+  const [classQuizzes, setClassQuizzes] =
+    useState<ClassQuiz[]>(initialClassQuizzes);
   const [allQuizzes, setAllQuizzes] = useState<Quiz[]>(initialAllQuizzes);
   const [msg, setMsg] = useState("");
 
   // The quiz whose settings dialog is open, plus its working form values.
   const [editing, setEditing] = useState<ClassQuiz | null>(null);
-  const [form, setForm] = useState({ availableFrom: "", availableUntil: "", maxAttempts: "" });
+  const [form, setForm] = useState({
+    availableFrom: "",
+    availableUntil: "",
+    maxAttempts: "",
+  });
   const [saving, setSaving] = useState(false);
 
   const assignedQuizIds = new Set(classQuizzes.map((cq) => cq.quizId));
@@ -95,7 +117,8 @@ export function ClassQuizzesClient({
     setForm({
       availableFrom: toLocalInput(cq.availableFrom),
       availableUntil: toLocalInput(cq.availableUntil),
-      maxAttempts: cq.maxAttempts && cq.maxAttempts > 0 ? String(cq.maxAttempts) : "",
+      maxAttempts:
+        cq.maxAttempts && cq.maxAttempts > 0 ? String(cq.maxAttempts) : "",
     });
     setEditing(cq);
   }
@@ -105,22 +128,28 @@ export function ClassQuizzesClient({
     setSaving(true);
     const availableFrom = fromLocalInput(form.availableFrom);
     const availableUntil = fromLocalInput(form.availableUntil);
-    const maxAttempts = form.maxAttempts.trim() === "" ? null : Number(form.maxAttempts);
+    const maxAttempts =
+      form.maxAttempts.trim() === "" ? null : Number(form.maxAttempts);
     // `saving` disables the Save button, so it has to clear on rejection too —
     // a network failure used to leave the dialog stuck with no way to retry.
     try {
       const res = await fetch(`/api/classes/${classId}/quizzes`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ quizId: editing.quizId, availableFrom, availableUntil, maxAttempts }),
+        body: JSON.stringify({
+          quizId: editing.quizId,
+          availableFrom,
+          availableUntil,
+          maxAttempts,
+        }),
       });
       if (res.ok) {
         setClassQuizzes((prev) =>
           prev.map((cq) =>
             cq.quizId === editing.quizId
               ? { ...cq, availableFrom, availableUntil, maxAttempts }
-              : cq
-          )
+              : cq,
+          ),
         );
         setEditing(null);
         setMsg("Quiz settings saved.");
@@ -155,8 +184,16 @@ export function ClassQuizzesClient({
       body: JSON.stringify({ quizId, published: !current }),
     });
     if (res.ok) {
-      setClassQuizzes((prev) => prev.map((cq) => cq.quizId === quizId ? { ...cq, published: !current } : cq));
-      setMsg(!current ? "Quiz published — students can now take it." : "Quiz unpublished — hidden from students.");
+      setClassQuizzes((prev) =>
+        prev.map((cq) =>
+          cq.quizId === quizId ? { ...cq, published: !current } : cq,
+        ),
+      );
+      setMsg(
+        !current
+          ? "Quiz published — students can now take it."
+          : "Quiz unpublished — hidden from students.",
+      );
     }
   }
 
@@ -180,7 +217,9 @@ export function ClassQuizzesClient({
       if (quizDeleted) {
         // It's gone from the library too — don't reoffer it under "Add Quizzes".
         setAllQuizzes((prev) => prev.filter((q) => q.id !== quizId));
-        setMsg("Quiz removed — it was in no other class, so it has been deleted.");
+        setMsg(
+          "Quiz removed — it was in no other class, so it has been deleted.",
+        );
       } else {
         setMsg("Quiz removed from this class.");
       }
@@ -191,17 +230,24 @@ export function ClassQuizzesClient({
     <div className="p-4 md:p-6 space-y-6">
       <div>
         <Button variant="ghost" size="sm" asChild>
-          <Link href={`/teacher/classes/${classId}`}><ArrowLeft className="size-4" /> Back to class</Link>
+          <Link href={`/teacher/classes/${classId}`}>
+            <ArrowLeft className="size-4" /> Back to class
+          </Link>
         </Button>
       </div>
 
       <div>
         <h1 className="text-2xl font-bold">Manage Quizzes</h1>
-        <p className="text-muted-foreground text-sm mt-1">Add your quizzes to this class and control when students can take them.</p>
+        <p className="text-muted-foreground text-sm mt-1">
+          Add your quizzes to this class and control when students can take
+          them.
+        </p>
       </div>
 
       {msg && (
-        <div className="p-3 rounded-md bg-primary/10 text-primary text-sm">{msg}</div>
+        <div className="p-3 rounded-md bg-primary/10 text-primary text-sm">
+          {msg}
+        </div>
       )}
 
       {/* Assigned Quizzes */}
@@ -211,29 +257,41 @@ export function ClassQuizzesClient({
         </CardHeader>
         <CardContent>
           {classQuizzes.length === 0 ? (
-            <p className="text-muted-foreground text-sm text-center py-6">No quizzes assigned. Add one below.</p>
+            <p className="text-muted-foreground text-sm text-center py-6">
+              No quizzes assigned. Add one below.
+            </p>
           ) : (
             <div className="space-y-3">
               {classQuizzes.map((cq) => (
-                <div key={cq.id} className="flex items-start justify-between gap-2 flex-wrap p-3 rounded-lg border">
+                <div
+                  key={cq.id}
+                  className="flex items-start justify-between gap-2 flex-wrap p-3 rounded-lg border"
+                >
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
                       <FileQuestion className="size-4 text-muted-foreground shrink-0" />
                       <span className="font-medium">{cq.quiz.name}</span>
-                      {cq.quiz.topic && <Badge variant="outline">{cq.quiz.topic.name}</Badge>}
+                      {cq.quiz.topic && (
+                        <Badge variant="outline">{cq.quiz.topic.name}</Badge>
+                      )}
                       <Badge variant={cq.published ? "success" : "warning"}>
                         {cq.published ? "Published" : "Draft"}
                       </Badge>
                     </div>
                     <p className="text-xs text-muted-foreground mt-1 ml-6">
-                      {cq.quiz._count.questions} question{cq.quiz._count.questions !== 1 ? "s" : ""}
+                      {cq.quiz._count.questions} question
+                      {cq.quiz._count.questions !== 1 ? "s" : ""}
                     </p>
                     <div className="mt-1 ml-6">
                       <SettingsSummary cq={cq} />
                     </div>
                   </div>
                   <div className="flex gap-2 shrink-0">
-                    <Button size="sm" variant="outline" onClick={() => openSettings(cq)}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openSettings(cq)}
+                    >
                       <Settings className="size-3" /> Settings
                     </Button>
                     <Button
@@ -241,9 +299,21 @@ export function ClassQuizzesClient({
                       variant={cq.published ? "secondary" : "default"}
                       onClick={() => togglePublish(cq.quizId, cq.published)}
                     >
-                      {cq.published ? <><EyeOff className="size-3" /> Unpublish</> : <><Eye className="size-3" /> Publish</>}
+                      {cq.published ? (
+                        <>
+                          <EyeOff className="size-3" /> Unpublish
+                        </>
+                      ) : (
+                        <>
+                          <Eye className="size-3" /> Publish
+                        </>
+                      )}
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => removeQuiz(cq.quizId)}>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => removeQuiz(cq.quizId)}
+                    >
                       <Trash2 className="size-3 text-destructive" />
                     </Button>
                   </div>
@@ -263,14 +333,23 @@ export function ClassQuizzesClient({
           <CardContent>
             <div className="space-y-2">
               {availableQuizzes.map((q) => (
-                <div key={q.id} className="flex items-center justify-between p-3 rounded-lg border border-dashed">
+                <div
+                  key={q.id}
+                  className="flex items-center justify-between p-3 rounded-lg border border-dashed"
+                >
                   <div>
                     <p className="font-medium">{q.name}</p>
                     <p className="text-xs text-muted-foreground">
-                      {q.topic ? `${q.topic.name} · ` : ""}{q._count.questions} question{q._count.questions !== 1 ? "s" : ""}
+                      {q.topic ? `${q.topic.name} · ` : ""}
+                      {q._count.questions} question
+                      {q._count.questions !== 1 ? "s" : ""}
                     </p>
                   </div>
-                  <Button size="sm" variant="outline" onClick={() => addQuiz(q.id)}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => addQuiz(q.id)}
+                  >
                     <Plus className="size-3" /> Add
                   </Button>
                 </div>
@@ -283,27 +362,44 @@ export function ClassQuizzesClient({
       {availableQuizzes.length === 0 && classQuizzes.length > 0 && (
         <p className="text-sm text-muted-foreground text-center">
           All of your quizzes are assigned.{" "}
-          <Link href="/teacher/quizzes" className="text-primary hover:underline">Create new quizzes</Link> to add more.
+          <Link
+            href="/teacher/quizzes"
+            className="text-primary hover:underline"
+          >
+            Create new quizzes
+          </Link>{" "}
+          to add more.
         </p>
       )}
 
       {allQuizzes.length === 0 && (
         <Card>
           <CardContent className="text-center py-10">
-            <p className="text-muted-foreground mb-3">You don&apos;t have any quizzes yet.</p>
-            <Button asChild><Link href="/teacher/quizzes"><Plus className="size-4" /> Create Quizzes</Link></Button>
+            <p className="text-muted-foreground mb-3">
+              You don&apos;t have any quizzes yet.
+            </p>
+            <Button asChild>
+              <Link href="/teacher/quizzes">
+                <Plus className="size-4" /> Create Quizzes
+              </Link>
+            </Button>
           </CardContent>
         </Card>
       )}
 
       {/* Per-class quiz settings dialog */}
-      <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
+      <Dialog
+        open={!!editing}
+        onOpenChange={(open) => !open && setEditing(null)}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Quiz settings{editing ? ` — ${editing.quiz.name}` : ""}</DialogTitle>
+            <DialogTitle>
+              Quiz settings{editing ? ` — ${editing.quiz.name}` : ""}
+            </DialogTitle>
             <DialogDescription>
-              Control when this quiz is open and how many attempts each student gets. Leave a field
-              blank for no limit.
+              Control when this quiz is open and how many attempts each student
+              gets. Leave a field blank for no limit.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
@@ -313,9 +409,13 @@ export function ClassQuizzesClient({
                 id="availableFrom"
                 type="datetime-local"
                 value={form.availableFrom}
-                onChange={(e) => setForm((f) => ({ ...f, availableFrom: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, availableFrom: e.target.value }))
+                }
               />
-              <p className="text-xs text-muted-foreground">Blank = always open.</p>
+              <p className="text-xs text-muted-foreground">
+                Blank = always open.
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="availableUntil">Closes</Label>
@@ -323,9 +423,13 @@ export function ClassQuizzesClient({
                 id="availableUntil"
                 type="datetime-local"
                 value={form.availableUntil}
-                onChange={(e) => setForm((f) => ({ ...f, availableUntil: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, availableUntil: e.target.value }))
+                }
               />
-              <p className="text-xs text-muted-foreground">Blank = never closes.</p>
+              <p className="text-xs text-muted-foreground">
+                Blank = never closes.
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="maxAttempts">Max attempts</Label>
@@ -335,15 +439,23 @@ export function ClassQuizzesClient({
                 min={1}
                 step={1}
                 value={form.maxAttempts}
-                onChange={(e) => setForm((f) => ({ ...f, maxAttempts: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, maxAttempts: e.target.value }))
+                }
                 placeholder="Unlimited"
                 className="max-w-32"
               />
-              <p className="text-xs text-muted-foreground">Blank or 0 = unlimited (1 = a single try).</p>
+              <p className="text-xs text-muted-foreground">
+                Blank or 0 = unlimited (1 = a single try).
+              </p>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditing(null)} disabled={saving}>
+            <Button
+              variant="outline"
+              onClick={() => setEditing(null)}
+              disabled={saving}
+            >
               Cancel
             </Button>
             <Button onClick={saveSettings} disabled={saving}>

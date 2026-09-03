@@ -8,7 +8,12 @@ import { logApiError } from "@/lib/system-log";
 
 const SINGLETON_ID = "singleton";
 
-function clampInt(value: unknown, def: number, min: number, max: number): number {
+function clampInt(
+  value: unknown,
+  def: number,
+  min: number,
+  max: number,
+): number {
   const n = Math.floor(Number(value));
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : def;
 }
@@ -38,7 +43,9 @@ function serialize(cfg: {
   let maskedPassword: string | null = null;
   if (cfg.passwordEnc && cfg.passwordIv && cfg.passwordTag) {
     try {
-      maskedPassword = maskApiKey(decryptApiKey(cfg.passwordEnc, cfg.passwordIv, cfg.passwordTag));
+      maskedPassword = maskApiKey(
+        decryptApiKey(cfg.passwordEnc, cfg.passwordIv, cfg.passwordTag),
+      );
     } catch {
       maskedPassword = "••••(decryption failed)";
     }
@@ -100,14 +107,19 @@ export async function PUT(req: Request) {
     const webdavUrl =
       typeof body.webdavUrl === "string" ? body.webdavUrl.trim() || null : null;
     const webdavUsername =
-      typeof body.webdavUsername === "string" ? body.webdavUsername.trim() || null : null;
-    let baseDir = typeof body.baseDir === "string" ? body.baseDir.trim() : "/backups";
+      typeof body.webdavUsername === "string"
+        ? body.webdavUsername.trim() || null
+        : null;
+    let baseDir =
+      typeof body.baseDir === "string" ? body.baseDir.trim() : "/backups";
     if (!baseDir.startsWith("/")) baseDir = `/${baseDir}`;
     baseDir = baseDir.replace(/\/+$/, "") || "/backups";
 
     const enabled = body.enabled === true;
     const intervalHours = clampInt(body.intervalHours, 24, 1, 24 * 30);
-    const anchorTime = /^\d{2}:\d{2}$/.test(body.anchorTime) ? body.anchorTime : "02:00";
+    const anchorTime = /^\d{2}:\d{2}$/.test(body.anchorTime)
+      ? body.anchorTime
+      : "02:00";
     const timezone =
       typeof body.timezone === "string" && body.timezone.trim()
         ? body.timezone.trim()
@@ -127,15 +139,27 @@ export async function PUT(req: Request) {
 
     // Password encryption (mirror SMTP): masked → unchanged; "" → clear; new → encrypt.
     let passwordFields:
-      | { passwordEnc: string | null; passwordIv: string | null; passwordTag: string | null }
+      | {
+          passwordEnc: string | null;
+          passwordIv: string | null;
+          passwordTag: string | null;
+        }
       | undefined;
     if (typeof body.password === "string") {
       const raw = body.password;
       if (raw && !raw.startsWith("••••")) {
         const enc = encryptApiKey(raw);
-        passwordFields = { passwordEnc: enc.encrypted, passwordIv: enc.iv, passwordTag: enc.tag };
+        passwordFields = {
+          passwordEnc: enc.encrypted,
+          passwordIv: enc.iv,
+          passwordTag: enc.tag,
+        };
       } else if (raw === "") {
-        passwordFields = { passwordEnc: null, passwordIv: null, passwordTag: null };
+        passwordFields = {
+          passwordEnc: null,
+          passwordIv: null,
+          passwordTag: null,
+        };
       }
     }
 
@@ -161,12 +185,20 @@ export async function PUT(req: Request) {
 
     const existing = await prisma.backupConfig.findFirst();
     const cfg = existing
-      ? await prisma.backupConfig.update({ where: { id: existing.id }, data: baseData })
-      : await prisma.backupConfig.create({ data: { id: SINGLETON_ID, ...baseData } });
+      ? await prisma.backupConfig.update({
+          where: { id: existing.id },
+          data: baseData,
+        })
+      : await prisma.backupConfig.create({
+          data: { id: SINGLETON_ID, ...baseData },
+        });
 
     return NextResponse.json({ config: serialize(cfg) });
   } catch (error) {
     logApiError("BACKUP_PUT", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }

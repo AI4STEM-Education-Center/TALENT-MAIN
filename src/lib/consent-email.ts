@@ -1,10 +1,22 @@
 import { prisma } from "@/lib/prisma";
-import { sendEmailToRecipient, getSenderOverride, SmtpNotConfiguredError, type EmailAttachment } from "@/lib/email";
-import { APP_NAME, renderPurposeMessage, type EmailPurpose } from "@/lib/email-purposes";
+import {
+  sendEmailToRecipient,
+  getSenderOverride,
+  SmtpNotConfiguredError,
+  type EmailAttachment,
+} from "@/lib/email";
+import {
+  APP_NAME,
+  renderPurposeMessage,
+  type EmailPurpose,
+} from "@/lib/email-purposes";
 import { renderConsentPdf } from "@/lib/consent-pdf";
 import { buildConsentExportCsv } from "@/lib/consent-csv";
 import { getConsentExportSettings } from "@/lib/consent-settings";
-import { latestConsentDecisionsByEmail, type ConsentDecision } from "@/lib/consent";
+import {
+  latestConsentDecisionsByEmail,
+  type ConsentDecision,
+} from "@/lib/consent";
 
 /**
  * Queued delivery for consent-related emails (confirmation copy, export
@@ -31,28 +43,48 @@ export function backoffSecondsFor(attempt: number): number {
 
 function describeError(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
-  return raw.replace(/\s+/g, " ").trim().slice(0, MAX_ERROR_LENGTH) || "Unknown error";
+  return (
+    raw.replace(/\s+/g, " ").trim().slice(0, MAX_ERROR_LENGTH) ||
+    "Unknown error"
+  );
 }
 
 function classifyError(error: unknown): "TRANSIENT" | "PERMANENT" {
   if (error instanceof SmtpNotConfiguredError) return "TRANSIENT";
-  const responseCode = (error as { responseCode?: unknown } | null)?.responseCode;
-  if (typeof responseCode === "number" && responseCode >= 500 && responseCode < 600) return "PERMANENT";
+  const responseCode = (error as { responseCode?: unknown } | null)
+    ?.responseCode;
+  if (
+    typeof responseCode === "number" &&
+    responseCode >= 500 &&
+    responseCode < 600
+  )
+    return "PERMANENT";
   return "TRANSIENT";
 }
 
 export type ConsentEmailPayload =
   | { kind: "CONSENT_CONFIRMATION"; consentRecordId: string }
   | { kind: "CONSENT_EXPORT_READY"; exportRequestId: string }
-  | { kind: "CONSENT_EXPORT_REQUEST"; subject: string; text: string; replyTo?: string };
+  | {
+      kind: "CONSENT_EXPORT_REQUEST";
+      subject: string;
+      text: string;
+      replyTo?: string;
+    };
 
-export async function enqueueConsentConfirmationEmail(consentRecordId: string, recipient: string): Promise<string> {
+export async function enqueueConsentConfirmationEmail(
+  consentRecordId: string,
+  recipient: string,
+): Promise<string> {
   return prisma.$transaction(async (tx) => {
     const row = await tx.consentEmailDelivery.create({
       data: {
         kind: "CONSENT_CONFIRMATION",
         recipient,
-        payload: JSON.stringify({ kind: "CONSENT_CONFIRMATION", consentRecordId } satisfies ConsentEmailPayload),
+        payload: JSON.stringify({
+          kind: "CONSENT_CONFIRMATION",
+          consentRecordId,
+        } satisfies ConsentEmailPayload),
       },
     });
     await tx.consentRecord.update({
@@ -84,13 +116,19 @@ export async function enqueueConsentExportRequestEmail(opts: {
   return row.id;
 }
 
-export async function enqueueConsentExportReadyEmail(exportRequestId: string, recipient: string): Promise<string> {
+export async function enqueueConsentExportReadyEmail(
+  exportRequestId: string,
+  recipient: string,
+): Promise<string> {
   return prisma.$transaction(async (tx) => {
     const row = await tx.consentEmailDelivery.create({
       data: {
         kind: "CONSENT_EXPORT_READY",
         recipient,
-        payload: JSON.stringify({ kind: "CONSENT_EXPORT_READY", exportRequestId } satisfies ConsentEmailPayload),
+        payload: JSON.stringify({
+          kind: "CONSENT_EXPORT_READY",
+          exportRequestId,
+        } satisfies ConsentEmailPayload),
       },
     });
     await tx.consentExportRequest.update({
@@ -105,7 +143,7 @@ async function updateReferencedEmailAudit(
   payload: ConsentEmailPayload,
   status: "PENDING" | "SENT" | "FAILED",
   error: string | null,
-  now: Date
+  now: Date,
 ): Promise<void> {
   if (payload.kind === "CONSENT_CONFIRMATION") {
     await prisma.consentRecord.updateMany({
@@ -130,7 +168,7 @@ async function updateReferencedEmailAudit(
 
 /** Attach a file only when it fits the admin-configured ceiling; otherwise send without it. */
 async function attachmentWithinLimit(
-  attachment: EmailAttachment
+  attachment: EmailAttachment,
 ): Promise<{ attachments: EmailAttachment[]; note: string | null }> {
   const settings = await getConsentExportSettings();
   if (attachment.content.byteLength > settings.maxEmailAttachmentBytes) {
@@ -145,8 +183,12 @@ async function attachmentWithinLimit(
 }
 
 async function buildConsentConfirmationMessage(
-  consentRecordId: string
-): Promise<{ subject: string; text: string; attachments: EmailAttachment[] } | null> {
+  consentRecordId: string,
+): Promise<{
+  subject: string;
+  text: string;
+  attachments: EmailAttachment[];
+} | null> {
   const record = await prisma.consentRecord.findUnique({
     where: { id: consentRecordId },
     include: { formVersion: true },
@@ -157,7 +199,8 @@ async function buildConsentConfirmationMessage(
     renderConsentPdf(record, record.formVersion),
     getSenderOverride("CONSENT_CONFIRMATION"),
   ]);
-  const firstName = record.signerNameSnapshot.split(" ")[0] || record.signerNameSnapshot;
+  const firstName =
+    record.signerNameSnapshot.split(" ")[0] || record.signerNameSnapshot;
   const { subject, text } = renderPurposeMessage(
     "CONSENT_CONFIRMATION",
     {
@@ -165,9 +208,12 @@ async function buildConsentConfirmationMessage(
       firstName,
       formTitle: record.formVersion.title,
       formVersion: record.formVersion.version,
-      decisionText: record.decision === "AGREE" ? "Yes, I agree to participate" : "No, I do not agree to participate",
+      decisionText:
+        record.decision === "AGREE"
+          ? "Yes, I agree to participate"
+          : "No, I do not agree to participate",
     },
-    override
+    override,
   );
   const { attachments, note } = await attachmentWithinLimit({
     filename: "consent-record.pdf",
@@ -178,8 +224,12 @@ async function buildConsentConfirmationMessage(
 }
 
 async function buildConsentExportReadyMessage(
-  exportRequestId: string
-): Promise<{ subject: string; text: string; attachments: EmailAttachment[] } | null> {
+  exportRequestId: string,
+): Promise<{
+  subject: string;
+  text: string;
+  attachments: EmailAttachment[];
+} | null> {
   const request = await prisma.consentExportRequest.findUnique({
     where: { id: exportRequestId },
     include: { class: { select: { name: true } } },
@@ -191,7 +241,9 @@ async function buildConsentExportReadyMessage(
       where: { classId: request.classId },
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     }),
-    prisma.consentFormVersion.findFirst({ where: { role: "STUDENT", isActive: true } }),
+    prisma.consentFormVersion.findFirst({
+      where: { role: "STUDENT", isActive: true },
+    }),
   ]);
 
   let latestDecisionByEmail = new Map<string, ConsentDecision>();
@@ -211,8 +263,10 @@ async function buildConsentExportReadyMessage(
       orgDefinedId: r.orgDefinedId,
       lastName: r.lastName,
       firstName: r.firstName,
-      signed: r.email ? latestDecisionByEmail.get(r.email.trim().toLowerCase()) === "AGREE" : false,
-    }))
+      signed: r.email
+        ? latestDecisionByEmail.get(r.email.trim().toLowerCase()) === "AGREE"
+        : false,
+    })),
   );
 
   const override = await getSenderOverride("CONSENT_EXPORT_READY").catch(() => null);
@@ -248,7 +302,7 @@ export type ConsentEmailOutcome =
  */
 export async function deliverConsentEmail(
   deliveryId: string,
-  now: Date = new Date()
+  now: Date = new Date(),
 ): Promise<ConsentEmailOutcome> {
   const leaseCutoff = new Date(now.getTime() - CONSENT_EMAIL_LEASE_MS);
 
@@ -261,11 +315,17 @@ export async function deliverConsentEmail(
     data: { claimedAt: now, attempts: { increment: 1 } },
   });
   if (claim.count === 0) {
-    return { status: "SKIPPED", reason: "already delivered, given up on, or claimed by another worker" };
+    return {
+      status: "SKIPPED",
+      reason: "already delivered, given up on, or claimed by another worker",
+    };
   }
 
-  const delivery = await prisma.consentEmailDelivery.findUnique({ where: { id: deliveryId } });
-  if (!delivery) return { status: "SKIPPED", reason: "delivery row no longer exists" };
+  const delivery = await prisma.consentEmailDelivery.findUnique({
+    where: { id: deliveryId },
+  });
+  if (!delivery)
+    return { status: "SKIPPED", reason: "delivery row no longer exists" };
 
   let payload: ConsentEmailPayload;
   try {
@@ -273,12 +333,20 @@ export async function deliverConsentEmail(
   } catch {
     await prisma.consentEmailDelivery.update({
       where: { id: delivery.id },
-      data: { status: "FAILED", claimedAt: null, lastError: "Malformed delivery payload" },
+      data: {
+        status: "FAILED",
+        claimedAt: null,
+        lastError: "Malformed delivery payload",
+      },
     });
     return { status: "FAILED", error: "Malformed delivery payload" };
   }
 
-  let message: { subject: string; text: string; attachments: EmailAttachment[] } | null;
+  let message: {
+    subject: string;
+    text: string;
+    attachments: EmailAttachment[];
+  } | null;
   let purpose: EmailPurpose = "NOTIFICATION";
   let replyTo: string | undefined;
   try {
@@ -291,7 +359,11 @@ export async function deliverConsentEmail(
     } else {
       purpose = "CONSENT_EXPORT_REQUEST";
       replyTo = payload.replyTo;
-      message = { subject: payload.subject, text: payload.text, attachments: [] };
+      message = {
+        subject: payload.subject,
+        text: payload.text,
+        attachments: [],
+      };
     }
   } catch (error) {
     // Rendering the PDF/CSV failed (e.g. a transient DB hiccup) — treat like a
@@ -300,7 +372,11 @@ export async function deliverConsentEmail(
     const delaySeconds = backoffSecondsFor(delivery.attempts);
     await prisma.consentEmailDelivery.update({
       where: { id: delivery.id },
-      data: { claimedAt: null, lastError: reason, nextAttemptAt: new Date(now.getTime() + delaySeconds * 1000) },
+      data: {
+        claimedAt: null,
+        lastError: reason,
+        nextAttemptAt: new Date(now.getTime() + delaySeconds * 1000),
+      },
     });
     await updateReferencedEmailAudit(payload, "PENDING", reason, now);
     return { status: "RETRY", delaySeconds, error: reason };
@@ -310,7 +386,11 @@ export async function deliverConsentEmail(
     // The referenced record/request was deleted — nothing left to send.
     await prisma.consentEmailDelivery.update({
       where: { id: delivery.id },
-      data: { status: "FAILED", claimedAt: null, lastError: "Referenced record no longer exists" },
+      data: {
+        status: "FAILED",
+        claimedAt: null,
+        lastError: "Referenced record no longer exists",
+      },
     });
     return { status: "FAILED", error: "Referenced record no longer exists" };
   }
@@ -326,7 +406,9 @@ export async function deliverConsentEmail(
     });
   } catch (error) {
     const reason = describeError(error);
-    const giveUp = classifyError(error) === "PERMANENT" || delivery.attempts >= CONSENT_EMAIL_MAX_ATTEMPTS;
+    const giveUp =
+      classifyError(error) === "PERMANENT" ||
+      delivery.attempts >= CONSENT_EMAIL_MAX_ATTEMPTS;
     if (giveUp) {
       await prisma.consentEmailDelivery.update({
         where: { id: delivery.id },
@@ -338,7 +420,11 @@ export async function deliverConsentEmail(
     const delaySeconds = backoffSecondsFor(delivery.attempts);
     await prisma.consentEmailDelivery.update({
       where: { id: delivery.id },
-      data: { claimedAt: null, lastError: reason, nextAttemptAt: new Date(now.getTime() + delaySeconds * 1000) },
+      data: {
+        claimedAt: null,
+        lastError: reason,
+        nextAttemptAt: new Date(now.getTime() + delaySeconds * 1000),
+      },
     });
     await updateReferencedEmailAudit(payload, "PENDING", reason, now);
     return { status: "RETRY", delaySeconds, error: reason };
@@ -353,7 +439,10 @@ export async function deliverConsentEmail(
 }
 
 /** Rows stuck PENDING past their due time with no live claim — see message-email.ts's twin. */
-export async function findStrandedConsentEmails(limit = 200, now: Date = new Date()): Promise<string[]> {
+export async function findStrandedConsentEmails(
+  limit = 200,
+  now: Date = new Date(),
+): Promise<string[]> {
   const due = new Date(now.getTime() - CONSENT_EMAIL_SWEEP_GRACE_MS);
   const leaseCutoff = new Date(now.getTime() - CONSENT_EMAIL_LEASE_MS);
   const rows = await prisma.consentEmailDelivery.findMany({
@@ -371,7 +460,9 @@ export async function findStrandedConsentEmails(limit = 200, now: Date = new Dat
 }
 
 /** Close out rows that used up every attempt but never reached a terminal state. */
-export async function failExhaustedConsentEmails(now: Date = new Date()): Promise<number> {
+export async function failExhaustedConsentEmails(
+  now: Date = new Date(),
+): Promise<number> {
   const leaseCutoff = new Date(now.getTime() - CONSENT_EMAIL_LEASE_MS);
   const stuck = await prisma.consentEmailDelivery.findMany({
     where: {
@@ -389,7 +480,9 @@ export async function failExhaustedConsentEmails(now: Date = new Date()): Promis
   });
   await prisma.consentEmailDelivery.updateMany({
     where: { id: { in: stuck.map((s) => s.id) }, lastError: null },
-    data: { lastError: `Gave up after ${CONSENT_EMAIL_MAX_ATTEMPTS} delivery attempts` },
+    data: {
+      lastError: `Gave up after ${CONSENT_EMAIL_MAX_ATTEMPTS} delivery attempts`,
+    },
   });
   await Promise.all(
     stuck.map(async (delivery) => {
@@ -399,12 +492,12 @@ export async function failExhaustedConsentEmails(now: Date = new Date()): Promis
           payload,
           "FAILED",
           `Gave up after ${CONSENT_EMAIL_MAX_ATTEMPTS} delivery attempts`,
-          now
+          now,
         );
       } catch {
         // A malformed payload has no safely identifiable source row to update.
       }
-    })
+    }),
   );
   return stuck.length;
 }

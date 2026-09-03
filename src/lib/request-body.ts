@@ -26,7 +26,7 @@ export const BODY_TOO_LARGE = Symbol("BODY_TOO_LARGE");
  */
 export async function readBoundedText(
   req: Request,
-  maxBytes: number
+  maxBytes: number,
 ): Promise<string | typeof BODY_TOO_LARGE> {
   const declared = Number(req.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > maxBytes) return BODY_TOO_LARGE;

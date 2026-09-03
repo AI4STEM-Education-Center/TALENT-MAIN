@@ -30,5 +30,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  return NextResponse.json({ error: "Provide a notification id or all: true." }, { status: 400 });
+  return NextResponse.json(
+    { error: "Provide a notification id or all: true." },
+    { status: 400 },
+  );
 }

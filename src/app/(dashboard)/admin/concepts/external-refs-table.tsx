@@ -9,14 +9,17 @@ interface ExternalRefsTableProps {
   search: string;
 }
 
-export function ExternalRefsTable({ externalRefs, search }: ExternalRefsTableProps) {
+export function ExternalRefsTable({
+  externalRefs,
+  search,
+}: ExternalRefsTableProps) {
   const q = search.trim().toLowerCase();
   const filtered = q
     ? externalRefs.filter(
         (r) =>
           r.conceptId.toLowerCase().includes(q) ||
           r.refCode.toLowerCase().includes(q) ||
-          r.refType.toLowerCase().includes(q)
+          r.refType.toLowerCase().includes(q),
       )
     : externalRefs;
 
@@ -32,7 +35,9 @@ export function ExternalRefsTable({ externalRefs, search }: ExternalRefsTablePro
       </CardHeader>
       <CardContent>
         {filtered.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-6 text-center">No external references match.</p>
+          <p className="text-sm text-muted-foreground py-6 text-center">
+            No external references match.
+          </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -47,8 +52,12 @@ export function ExternalRefsTable({ externalRefs, search }: ExternalRefsTablePro
               <tbody className="divide-y">
                 {filtered.map((r) => (
                   <tr key={r.id}>
-                    <td className="py-2 pr-3 font-mono text-xs whitespace-nowrap">{r.conceptId}</td>
-                    <td className="py-2 pr-3 font-mono text-xs whitespace-nowrap">{r.refCode}</td>
+                    <td className="py-2 pr-3 font-mono text-xs whitespace-nowrap">
+                      {r.conceptId}
+                    </td>
+                    <td className="py-2 pr-3 font-mono text-xs whitespace-nowrap">
+                      {r.refCode}
+                    </td>
                     <td className="py-2 pr-3">
                       <Badge variant="secondary">{r.refType}</Badge>
                     </td>
