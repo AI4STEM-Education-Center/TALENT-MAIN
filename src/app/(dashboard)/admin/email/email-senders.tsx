@@ -151,7 +151,7 @@ function ReceiverPreview({
       <div className="flex items-center gap-2 px-3 py-2 bg-muted/60 border-b border-border">
         <Eye className="size-3.5 text-muted-foreground" />
         <span className="text-xs font-medium text-muted-foreground">
-          Receiver preview — what the recipient sees (sample data)
+          Live receiver preview — updates as you type (sample data)
         </span>
       </div>
       <div className="px-3 py-3 space-y-2 bg-background">
@@ -268,7 +268,7 @@ export function EmailSenders() {
   const fallback = payload?.fallbackFromEmail ?? "";
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6 max-w-5xl">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
@@ -400,53 +400,57 @@ export function EmailSenders() {
                         </div>
 
                         {row.defaultTemplate ? (
-                          <>
-                            <div className="space-y-2">
-                              <div className="flex items-center justify-between">
-                                <Label htmlFor={`${row.purpose}-subject`}>Subject</Label>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 text-xs"
-                                  onClick={() => resetTemplate(row.purpose)}
-                                  title="Restore the built-in wording"
-                                >
-                                  <RotateCcw className="size-3 mr-1" /> Reset to default
-                                </Button>
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+                            <div className="space-y-3 min-w-0">
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <Label htmlFor={`${row.purpose}-subject`}>Subject</Label>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 text-xs"
+                                    onClick={() => resetTemplate(row.purpose)}
+                                    title="Restore the built-in wording"
+                                  >
+                                    <RotateCcw className="size-3 mr-1" /> Reset to default
+                                  </Button>
+                                </div>
+                                <Input
+                                  id={`${row.purpose}-subject`}
+                                  value={effectiveSubject}
+                                  onChange={(e) => updateRow(row.purpose, { subject: e.target.value })}
+                                  placeholder={row.defaultTemplate.subject}
+                                />
                               </div>
-                              <Input
-                                id={`${row.purpose}-subject`}
-                                value={effectiveSubject}
-                                onChange={(e) => updateRow(row.purpose, { subject: e.target.value })}
-                                placeholder={row.defaultTemplate.subject}
+                              <div className="space-y-2">
+                                <Label htmlFor={`${row.purpose}-body`}>Message</Label>
+                                <Textarea
+                                  id={`${row.purpose}-body`}
+                                  rows={14}
+                                  value={effectiveBody}
+                                  onChange={(e) => updateRow(row.purpose, { body: e.target.value })}
+                                  placeholder={row.defaultTemplate.body}
+                                  className="font-mono text-xs"
+                                />
+                                <p className="text-xs text-muted-foreground">
+                                  Edit the built-in wording directly — it is pre-filled below. Available placeholders:{" "}
+                                  {row.variables.map((v) => (
+                                    <span key={v} className="font-mono">{`{{${v}}} `}</span>
+                                  ))}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="min-w-0 lg:sticky lg:top-4">
+                              <ReceiverPreview
+                                row={row}
+                                subject={effectiveSubject}
+                                body={effectiveBody}
+                                fromEmail={fromPreview}
+                                fromName={row.fromName}
                               />
                             </div>
-                            <div className="space-y-2">
-                              <Label htmlFor={`${row.purpose}-body`}>Message</Label>
-                              <Textarea
-                                id={`${row.purpose}-body`}
-                                rows={10}
-                                value={effectiveBody}
-                                onChange={(e) => updateRow(row.purpose, { body: e.target.value })}
-                                placeholder={row.defaultTemplate.body}
-                                className="font-mono text-xs"
-                              />
-                              <p className="text-xs text-muted-foreground">
-                                Edit the built-in wording directly — it is pre-filled below. Available placeholders:{" "}
-                                {row.variables.map((v) => (
-                                  <span key={v} className="font-mono">{`{{${v}}} `}</span>
-                                ))}
-                              </p>
-                            </div>
-                            <ReceiverPreview
-                              row={row}
-                              subject={effectiveSubject}
-                              body={effectiveBody}
-                              fromEmail={fromPreview}
-                              fromName={row.fromName}
-                            />
-                          </>
+                          </div>
                         ) : (
                           <p className="text-xs text-muted-foreground">
                             The subject and message for these emails are written by the teacher or student sending
