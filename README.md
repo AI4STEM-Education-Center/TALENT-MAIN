@@ -47,7 +47,12 @@ An automated setup script is provided at [scripts/ec2-setup.sh](file:///home/edw
 
 ### Deployment via GitHub Actions
 
-Our CI/CD pipeline in [.github/workflows/deploy.yml](file:///home/edward/data/adaptive_learning_webapp/.github/workflows/deploy.yml) (on `master` branch) and [.github/workflows/deploy-dev.yml](file:///home/edward/data/adaptive_learning_webapp/.github/workflows/deploy-dev.yml) (on `dev` branch) automates deployment:
+Our CI/CD pipeline validates pull requests targeting `dev`, then deploys the
+already-validated merge without repeating unit/build validation. Production is
+deployed from `main`. See `.github/workflows/ci.yml`, `deploy-dev.yml`, and
+`deploy.yml`.
+
+The deployment workflows:
 1. Builds the Docker image based on [docker/Dockerfile](file:///home/edward/data/adaptive_learning_webapp/docker/Dockerfile) (injecting release version/date from `version.json`).
 2. Pushes the image to **GitHub Container Registry (GHCR)**.
 3. SCPs the docker-compose file to the EC2 server (`~/app`).
@@ -132,8 +137,17 @@ The GitHub Actions workflow currently needs these repository secrets:
 | `EC2_HOST` | Public host/IP of the deployment server |
 | `EC2_USER` | SSH username used for deploys |
 | `EC2_SSH_KEY` | Private SSH key for that server |
+| `DEV_TEST_STUDENT_LOGIN` / `DEV_TEST_STUDENT_PASSWORD` | Dedicated dev student used by live API checks |
+| `DEV_TEST_TEACHER_LOGIN` / `DEV_TEST_TEACHER_PASSWORD` | Dedicated dev teacher/developer account used by live API checks |
+| `DEV_TEST_ADMIN_LOGIN` / `DEV_TEST_ADMIN_PASSWORD` | Dedicated dev admin used by live API checks |
+| `DEV_PRESSURE_RESULTS_TOKEN` | Bearer token matching the dev server `.env` value |
+| `PROD_PRESSURE_RESULTS_TOKEN` | Bearer token matching the production server `.env` value |
 
 `GITHUB_TOKEN` is used by the workflow too, but GitHub provides that automatically, so you do not need to create it manually.
+
+The account prerequisites, manual full API workflow, automatic post-deploy
+subset, local AWS pressure runner, cleanup guarantees, and historical dashboard
+are documented in [pressure/README.md](pressure/README.md).
 
 ## Server `.env` For Docker Deploys
 
@@ -150,6 +164,8 @@ DEV_DATABASE_URL="file:./data/dev.db"
 
 # --- Authentication & Registration Security ---
 AUTH_SECRET="your-generated-nextauth-secret-here"
+DEV_PRESSURE_RESULTS_TOKEN="a-random-token-for-dev-result-ingestion"
+PROD_PRESSURE_RESULTS_TOKEN="a-different-random-token-for-prod-result-ingestion"
 # Optional legacy fallback — teacher codes are issued in Admin > Teacher Codes.
 TEACHER_SIGNUP_TOKEN=""
 ADMIN_SIGNUP_TOKEN="your-secret-admin-code"
@@ -186,6 +202,8 @@ CLOUDFRONT_PRIVATE_KEY="LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQo..."
 | `DB_PROVIDER` | Set to `sqlite` to run WAL mode optimizations on startup |
 | `APP_URL` | Public base URL of the deployment (e.g. `https://dev.ai4talent.org`). New-message notification emails use it to link students straight to the message; without it (or `AUTH_URL` / `NEXTAUTH_URL`) those emails fall back to "sign in and open Notifications" |
 | `AUTH_SECRET` | Secret key used by NextAuth to sign session tokens |
+| `DEV_PRESSURE_RESULTS_TOKEN` | Dev-only bearer token for storing API/pressure results; Docker Compose maps it to `PRESSURE_RESULTS_TOKEN` |
+| `PROD_PRESSURE_RESULTS_TOKEN` | Production-only bearer token for storing API/pressure results; Docker Compose maps it to `PRESSURE_RESULTS_TOKEN` |
 | `TEACHER_SIGNUP_TOKEN` | **Optional, legacy.** A single always-valid teacher registration code. Codes are now issued in **Admin → Teacher Codes**, each with its own expiry and use limit; a code set here works alongside them but never expires and cannot be revoked without a redeploy, so clear it once the first code has been issued |
 | `ADMIN_SIGNUP_TOKEN` | Secret token admins must enter when registering at `/admin-register` |
 | `API_KEY_ENCRYPTION_SECRET` | Hex-encoded 32-byte secret key used to encrypt AI Provider API keys stored in the database |

@@ -24,15 +24,10 @@
     "test:release": "vitest run --config vitest.release.config.ts",
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
-    "bench": "benchmark/run-local.sh",
-    "bench:smoke": "benchmark/run-local.sh --scenario smoke --seed-scale 0.2",
-    "bench:regression": "benchmark/run-local.sh --scenario regression",
-    "bench:signing": "benchmark/run-local.sh --compare-signing",
-    "bench:seed": "tsx benchmark/seed/seed-bench.ts",
-    "bench:sessions": "tsx benchmark/tools/mint-sessions.ts",
-    "bench:mock-ai": "tsx benchmark/mock-ai/server.ts",
-    "bench:report": "tsx benchmark/collect/summarize.ts",
-    "bench:compare": "tsx benchmark/collect/compare.ts"
+    "test:api:critical": "TEST_PROFILE=critical node pressure/api-test.mjs",
+    "test:api:full": "TEST_PROFILE=full node pressure/api-test.mjs",
+    "pressure": "pressure/run.sh",
+    "pressure:report": "tsx pressure/collect/summarize.ts"
   },
   "overrides": {
     "undici": "^7.29.0",

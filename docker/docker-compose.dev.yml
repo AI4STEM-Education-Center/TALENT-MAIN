@@ -42,6 +42,7 @@ services:
       # Same host directory the prod stack mounts — that shared mount is what
       # lets each site's System Resources tab chart all four nodes.
       RESOURCE_SPOOL_DIR: /app/metrics
+      PRESSURE_RESULTS_TOKEN: ${DEV_PRESSURE_RESULTS_TOKEN}
     volumes:
       - ./data/db/dev:/app/prisma/data
       - resource-metrics:/app/metrics
@@ -73,6 +74,7 @@ services:
       S3_KEY_PREFIX: "dev/"
       DATABASE_URL: ${DEV_DATABASE_URL}
       RESOURCE_SPOOL_DIR: /app/metrics
+      PRESSURE_RESULTS_TOKEN: ${DEV_PRESSURE_RESULTS_TOKEN}
     volumes:
       - ./data/db/dev:/app/prisma/data
       - resource-metrics:/app/metrics
