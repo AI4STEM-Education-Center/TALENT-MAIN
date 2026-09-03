@@ -140,8 +140,8 @@ The GitHub Actions workflow currently needs these repository secrets:
 | `DEV_TEST_STUDENT_LOGIN` / `DEV_TEST_STUDENT_PASSWORD` | Dedicated dev student used by live API checks |
 | `DEV_TEST_TEACHER_LOGIN` / `DEV_TEST_TEACHER_PASSWORD` | Dedicated dev teacher/developer account used by live API checks |
 | `DEV_TEST_ADMIN_LOGIN` / `DEV_TEST_ADMIN_PASSWORD` | Dedicated dev admin used by live API checks |
-| `DEV_PRESSURE_RESULTS_TOKEN` | Bearer token matching the dev server `.env` value |
-| `PROD_PRESSURE_RESULTS_TOKEN` | Bearer token matching the production server `.env` value |
+| `DEV_PRESSURE_RESULTS_TOKEN` | Ingestion token generated on dev at **Admin → Pressure Tests** |
+| `PROD_PRESSURE_RESULTS_TOKEN` | Ingestion token generated on production at **Admin → Pressure Tests** |
 
 `GITHUB_TOKEN` is used by the workflow too, but GitHub provides that automatically, so you do not need to create it manually.
 
@@ -164,8 +164,6 @@ DEV_DATABASE_URL="file:./data/dev.db"
 
 # --- Authentication & Registration Security ---
 AUTH_SECRET="your-generated-nextauth-secret-here"
-DEV_PRESSURE_RESULTS_TOKEN="a-random-token-for-dev-result-ingestion"
-PROD_PRESSURE_RESULTS_TOKEN="a-different-random-token-for-prod-result-ingestion"
 # Optional legacy fallback — teacher codes are issued in Admin > Teacher Codes.
 TEACHER_SIGNUP_TOKEN=""
 ADMIN_SIGNUP_TOKEN="your-secret-admin-code"
@@ -202,8 +200,6 @@ CLOUDFRONT_PRIVATE_KEY="LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQo..."
 | `DB_PROVIDER` | Set to `sqlite` to run WAL mode optimizations on startup |
 | `APP_URL` | Public base URL of the deployment (e.g. `https://dev.ai4talent.org`). New-message notification emails use it to link students straight to the message; without it (or `AUTH_URL` / `NEXTAUTH_URL`) those emails fall back to "sign in and open Notifications" |
 | `AUTH_SECRET` | Secret key used by NextAuth to sign session tokens |
-| `DEV_PRESSURE_RESULTS_TOKEN` | Dev-only bearer token for storing API/pressure results; Docker Compose maps it to `PRESSURE_RESULTS_TOKEN` |
-| `PROD_PRESSURE_RESULTS_TOKEN` | Production-only bearer token for storing API/pressure results; Docker Compose maps it to `PRESSURE_RESULTS_TOKEN` |
 | `TEACHER_SIGNUP_TOKEN` | **Optional, legacy.** A single always-valid teacher registration code. Codes are now issued in **Admin → Teacher Codes**, each with its own expiry and use limit; a code set here works alongside them but never expires and cannot be revoked without a redeploy, so clear it once the first code has been issued |
 | `ADMIN_SIGNUP_TOKEN` | Secret token admins must enter when registering at `/admin-register` |
 | `API_KEY_ENCRYPTION_SECRET` | Hex-encoded 32-byte secret key used to encrypt AI Provider API keys stored in the database |

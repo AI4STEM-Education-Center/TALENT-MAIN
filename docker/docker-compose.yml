@@ -58,7 +58,6 @@ services:
       # Both compose files point at the same volume; that is the whole
       # configuration — there is no peer URL or shared token any more.
       RESOURCE_SPOOL_DIR: /app/metrics
-      PRESSURE_RESULTS_TOKEN: ${PROD_PRESSURE_RESULTS_TOKEN}
     volumes:
       - ./data/db/prod:/app/prisma/data
       - resource-metrics:/app/metrics
@@ -90,7 +89,6 @@ services:
       S3_KEY_PREFIX: "prod/"
       DATABASE_URL: ${PROD_DATABASE_URL}
       RESOURCE_SPOOL_DIR: /app/metrics
-      PRESSURE_RESULTS_TOKEN: ${PROD_PRESSURE_RESULTS_TOKEN}
     volumes:
       - ./data/db/prod:/app/prisma/data
       - resource-metrics:/app/metrics

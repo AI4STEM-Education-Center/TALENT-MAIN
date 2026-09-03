@@ -1710,3 +1710,21 @@ model PressureTestResult {
   @@index([status, createdAt])
   @@index([environment, createdAt])
 }
+
+// Bearer credentials for POST /api/pressure-results, minted in the admin UI at
+// /admin/pressure-tests. Each deployment holds its own tokens in its own
+// database, so nothing about result ingestion lives in server environment
+// config. Only the SHA-256 digest is stored; the plaintext is shown once at
+// creation and is unrecoverable afterwards.
+model PressureResultToken {
+  id          String    @id @default(cuid())
+  name        String
+  tokenHash   String    @unique
+  tokenPrefix String
+  createdAt   DateTime  @default(now())
+  createdById String?
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+
+  @@index([createdAt])
+}

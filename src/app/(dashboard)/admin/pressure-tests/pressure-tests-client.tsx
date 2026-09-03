@@ -5,6 +5,8 @@ import { Activity, CheckCircle2, Clock3, Gauge, RefreshCw, XCircle } from "lucid
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatDateTime } from "./format";
+import { IngestionTokens } from "./ingestion-tokens";
 import { PressureTrendChart } from "./pressure-trend-chart";
 
 interface PressureResult {
@@ -37,15 +39,6 @@ interface ResponseBody {
   page: number;
   pageSize: number;
   facets: { suites: string[]; scenarios: string[]; environments: string[] };
-}
-
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-function formatDateTime(value: string) {
-  const date = new Date(value);
-  const hour = date.getUTCHours();
-  const displayHour = hour % 12 || 12;
-  return `${MONTHS[date.getUTCMonth()]} ${date.getUTCDate()}, ${date.getUTCFullYear()}, ${displayHour}:${String(date.getUTCMinutes()).padStart(2, "0")} ${hour < 12 ? "AM" : "PM"} UTC`;
 }
 
 function formatDuration(ms: number) {
@@ -338,6 +331,8 @@ export function PressureTestsClient() {
       </Card>
 
       <RunHistory data={data} error={error} loading={loading} page={page} setPage={setPage} />
+
+      <IngestionTokens />
     </div>
   );
 }

@@ -1,7 +1,7 @@
-import { createHash, timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { verifyPressureToken } from "@/lib/pressure-token";
 import { logApiError } from "@/lib/system-log";
 
 export const runtime = "nodejs";
@@ -64,25 +64,18 @@ const resultSchema = z.object({
   failures: z.array(z.unknown()).max(500).default([]),
 });
 
-function tokenMatches(request: NextRequest): boolean {
-  const expected = process.env.PRESSURE_RESULTS_TOKEN;
-  const authorization = request.headers.get("authorization");
-  if (!expected || !authorization?.startsWith("Bearer ")) return false;
-
-  // Compare fixed-size hashes so even different-length tokens take the same
-  // timingSafeEqual path. The plaintext token is never logged or persisted.
-  const expectedHash = createHash("sha256").update(expected).digest();
-  const suppliedHash = createHash("sha256").update(authorization.slice(7)).digest();
-  return timingSafeEqual(expectedHash, suppliedHash);
-}
-
-/** Authenticated machine-to-machine ingestion used by GitHub and local runs. */
+/**
+ * Authenticated machine-to-machine ingestion used by GitHub and local runs.
+ * The accepted tokens are the ones an admin minted in this deployment's own
+ * web UI, so dev and production each authorize themselves with no shared
+ * secret and no server environment variable.
+ */
 export async function POST(request: NextRequest) {
-  if (!tokenMatches(request)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   try {
+    if (!(await verifyPressureToken(request.headers.get("authorization")))) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     let raw: string;
     try {
       raw = await readLimitedBody(request);
