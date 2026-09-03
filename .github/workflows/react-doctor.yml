@@ -2,6 +2,7 @@ name: React Doctor
 
 on:
   pull_request:
+    branches: [dev]
     types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
@@ -19,14 +20,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       # Pinned to a stable release — `@main` regressed on 2026-06-10 (#769
       # "consolidate scan scope into one --scope flag") with "too many
       # arguments. Expected 1 argument but got 2".
       - uses: millionco/react-doctor@v2.2.9
-        # Every input below is stated explicitly: the v2.2.8 defaults are
+        # Every input below is stated explicitly: the v2.2.9 defaults are
         # version=latest, scope=changed, blocking=none, which silently drifts
         # from local runs and never fails the job. See
-        # https://github.com/millionco/react-doctor/blob/v2.2.8/action.yml
+        # https://github.com/millionco/react-doctor/blob/v2.2.9/action.yml
         with:
           # Match the scanner used for local triage so CI and local scores are
           # comparable. Bump both together.

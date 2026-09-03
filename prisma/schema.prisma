@@ -1670,3 +1670,43 @@ model ConsentExportSettings {
   updatedAt                 DateTime @updatedAt
   updatedById               String?
 }
+
+// Historical results from live API checks and isolated EC2 pressure runs.
+// Each deployment stores its own copy so both admin dashboards remain useful
+// when the peer environment is unavailable. Evolving details stay as JSON text;
+// stable filter/chart dimensions have dedicated columns.
+model PressureTestResult {
+  id           String   @id @default(cuid())
+  runId        String   @unique
+  createdAt    DateTime @default(now())
+  startedAt    DateTime
+  finishedAt   DateTime
+  environment  String
+  suite        String
+  scenario     String
+  status       String
+  source       String
+  commitSha    String?
+  branch       String?
+  targetUrl    String?
+  durationMs   Int
+  totalChecks  Int      @default(0)
+  passedChecks Int      @default(0)
+  failedChecks Int      @default(0)
+  p50Ms        Float?
+  p95Ms        Float?
+  p99Ms        Float?
+  maxMs        Float?
+  requestRate  Float?
+  virtualUsers Int?
+  errorRate    Float?
+  metadata     String   @default("{}")
+  metrics      String   @default("{}")
+  failures     String   @default("[]")
+
+  @@index([createdAt])
+  @@index([suite, createdAt])
+  @@index([scenario, createdAt])
+  @@index([status, createdAt])
+  @@index([environment, createdAt])
+}

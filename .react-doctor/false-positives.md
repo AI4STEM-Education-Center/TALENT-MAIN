@@ -128,3 +128,24 @@ reset, and the loading flag — is gated on `isCurrent()`.
 Predicate: `lookupRequestId` is still incremented per call and every write in
 `handleVerify` is still behind `isCurrent()`. That gate *is* the request-ownership
 check the rule asks for; it fires on the guarded line regardless.
+
+## `no-impure-call-at-module-scope` (5) — one-shot CLI timestamps
+
+`pressure/api-test.mjs` and `pressure/publish-k6-result.mjs` are executable Node
+command-line programs, not imported application or render modules. Their
+module-scope `Date` calls intentionally capture one run's start/end time and
+generate a collision-resistant local run id. There is no SSR, hydration, cached
+module state, or reusable import involved.
+
+Predicate: both files remain executable CLI entry points and are not imported
+by application code. If their result-building logic becomes reusable, move the
+clock behind an injected function and remove these suppressions.
+
+## `no-fetch-response-used-without-status-check` (1) — status precedes body read
+
+`pressure/api-test.mjs` calculates whether `response.status` is accepted and
+throws for a rejected status before calling `response.text()`. The scanner flags
+the `fetch` assignment even though the required check is a few statements below.
+
+Predicate: the accepted-status branch remains above the first body-consumption
+call. Remove the suppression if response parsing moves ahead of that branch.

@@ -26,6 +26,7 @@ import {
   Inbox,
   ClipboardCheck,
   Gauge,
+  Activity,
   HardDrive,
   PanelLeftClose,
   Atom,
@@ -86,6 +87,7 @@ const adminNav: NavItem[] = [
   { href: "/admin/email", label: "Email / SMTP", icon: <Mail className="size-4" /> },
   { href: "/admin/backup", label: "Database Backup", icon: <HardDrive className="size-4" /> },
   { href: "/admin/resources", label: "System Resources", icon: <Gauge className="size-4" /> },
+  { href: "/admin/pressure-tests", label: "Pressure Tests", icon: <Activity className="size-4" /> },
   { href: "/admin/logs", label: "System Logs", icon: <ScrollText className="size-4" /> },
 ];
 

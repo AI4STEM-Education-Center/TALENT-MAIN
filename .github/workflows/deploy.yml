@@ -38,9 +38,10 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # ── Build & Push Docker image ─────────────────────────────────────────
-      # Layer cache lives in GHCR (type=registry) — see ci.yml's build-image
-      # job for why. The dev cache ref matters here: main is promoted from dev
-      # with an identical tree, so most layers hit the cache dev already built.
+      # Layer cache lives in GHCR (type=registry), avoiding slow Actions-cache
+      # exports and eviction churn. The dev cache ref matters here: main is
+      # promoted from dev with an identical tree, so most layers hit the cache
+      # dev already built.
       - name: Build and push Docker image
         uses: docker/build-push-action@v7
         with:
