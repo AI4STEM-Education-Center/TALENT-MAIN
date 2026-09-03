@@ -215,19 +215,19 @@ export default async function StudentClassPage({
                                 </p>
                               )}
                               <div className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
-                                {notOpenYet && (
+                                {notOpenYet && opensAt && (
                                   <span>
                                     Opens{" "}
-                                    {opensAt!.toLocaleDateString(
+                                    {opensAt.toLocaleDateString(
                                       undefined,
                                       dateFmt,
                                     )}
                                   </span>
                                 )}
-                                {closed && (
+                                {closed && closesAt && (
                                   <span>
                                     Closed{" "}
-                                    {closesAt!.toLocaleDateString(
+                                    {closesAt.toLocaleDateString(
                                       undefined,
                                       dateFmt,
                                     )}

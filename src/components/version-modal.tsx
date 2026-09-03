@@ -7,7 +7,11 @@ import { Card } from "@/components/ui/card";
 import { getVersionInfo } from "@/lib/version";
 import { BookText, X } from "lucide-react";
 
-function ReleaseNotesList({ notes }: { notes: string[] }) {
+interface ReleaseNotesListProps {
+  notes: string[];
+}
+
+function ReleaseNotesList({ notes }: ReleaseNotesListProps) {
   if (notes.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">

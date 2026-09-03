@@ -110,7 +110,7 @@ type FormOption = {
 /** A simulation the viewer dialog can meaningfully open (artifact or a decline). */
 function simulationViewable(
   sim: QuestionSimulation | null | undefined,
-): boolean {
+): sim is QuestionSimulation {
   return Boolean(sim && (sim.hasContent || sim.status === "DECLINED"));
 }
 
@@ -126,21 +126,22 @@ const emptyOptions = (): FormOption[] => [
   emptyOption(),
 ];
 
+/** How often to re-fetch while the worker generates or revises a simulation. */
+const SIMULATION_POLL_INTERVAL_MS = 5_000;
+
+interface QuizEditorProps {
+  quizId: string;
+  backHref: string;
+  backLabel: string;
+}
+
 /**
  * Full quiz editor: rename/regroup the quiz, add/edit/delete questions, import
  * a QTI ZIP into it. Renders read-only (with an optional "import a copy"
  * action) when the caller can't manage the quiz — e.g. a teacher previewing a
  * global-pool quiz.
  */
-export function QuizEditor({
-  quizId,
-  backHref,
-  backLabel,
-}: {
-  quizId: string;
-  backHref: string;
-  backLabel: string;
-}) {
+export function QuizEditor({ quizId, backHref, backLabel }: QuizEditorProps) {
   const confirm = useConfirm();
   const router = useRouter();
 
@@ -248,7 +249,10 @@ export function QuizEditor({
   );
   useEffect(() => {
     if (!simsInFlight) return;
-    const timer = setInterval(() => void refreshQuestions(), 5000);
+    const timer = setInterval(
+      () => void refreshQuestions(),
+      SIMULATION_POLL_INTERVAL_MS,
+    );
     return () => clearInterval(timer);
   }, [simsInFlight, refreshQuestions]);
 
@@ -1156,9 +1160,12 @@ export function QuizEditor({
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={() =>
-                              setOpenSimulationId(q.simulation!.id)
-                            }
+                            onClick={() => {
+                              // Guarded by simulationViewable above; the check
+                              // keeps the compiler honest without a `!`.
+                              if (!q.simulation) return;
+                              setOpenSimulationId(q.simulation.id);
+                            }}
                           >
                             <Eye className="size-3" /> View
                           </Button>

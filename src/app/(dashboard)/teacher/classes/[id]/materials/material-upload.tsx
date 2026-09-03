@@ -4,6 +4,7 @@ import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { UploadCloud, Loader2 } from "lucide-react";
 import { rasterizePdfToImageBlobs } from "@/lib/pdf-rasterize-client";
+import { errorMessage } from "@/lib/errors";
 
 interface MaterialUploadProps {
   classId: string;
@@ -181,9 +182,9 @@ export default function MaterialUploadForm({ classId }: MaterialUploadProps) {
           setIsUploading(false);
           refresh();
         }, 1000);
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error(err);
-        setError(err.message || "An unexpected error occurred");
+        setError(errorMessage(err) || "An unexpected error occurred");
         setIsUploading(false);
       }
     },

@@ -41,6 +41,7 @@ import { formatAiMetrics } from "@/lib/ai-metrics";
 import { AssistantSettings } from "@/components/admin/AssistantSettings";
 import { GuardrailSettings } from "@/components/admin/GuardrailSettings";
 import { GuardrailFeedbackList } from "@/components/admin/GuardrailFeedbackList";
+import { errorMessage } from "@/lib/errors";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -256,8 +257,8 @@ export default function AiConfigPage() {
       if (!res.ok) throw new Error("Failed to load providers");
       const data = await res.json();
       setProviders(data.providers);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(errorMessage(err));
     }
   }, []);
 
@@ -267,8 +268,8 @@ export default function AiConfigPage() {
       if (!res.ok) throw new Error("Failed to load assignments");
       const data = await res.json();
       setAssignments(data.assignments);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(errorMessage(err));
     }
   }, []);
 
@@ -318,8 +319,8 @@ export default function AiConfigPage() {
       setEditingProviderId(null);
       setProviderForm(EMPTY_PROVIDER_FORM);
       await fetchProviders();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(errorMessage(err));
     } finally {
       setProviderSaving(false);
     }
@@ -353,8 +354,8 @@ export default function AiConfigPage() {
       });
       if (!res.ok) throw new Error("Failed to delete provider");
       await Promise.all([fetchProviders(), fetchAssignments()]);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(errorMessage(err));
     }
   };
 
@@ -367,8 +368,8 @@ export default function AiConfigPage() {
       });
       if (!res.ok) throw new Error("Failed to update provider");
       await fetchProviders();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(errorMessage(err));
     }
   };
 
@@ -391,8 +392,8 @@ export default function AiConfigPage() {
       setShowModelForm(null);
       setModelForm(EMPTY_MODEL_FORM);
       await fetchProviders();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(errorMessage(err));
     } finally {
       setModelSaving(false);
     }
@@ -410,8 +411,8 @@ export default function AiConfigPage() {
       });
       if (!res.ok) throw new Error("Failed to delete model");
       await Promise.all([fetchProviders(), fetchAssignments()]);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(errorMessage(err));
     }
   };
 
@@ -449,8 +450,8 @@ export default function AiConfigPage() {
       } else {
         setError("No models were discovered from this endpoint.");
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(errorMessage(err));
     } finally {
       setDiscovering(null);
     }
@@ -495,8 +496,8 @@ export default function AiConfigPage() {
       }
       await fetchProviders();
       closeDiscoverModal();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(errorMessage(err));
     } finally {
       addSelectedInFlight.current = false;
       setDiscoverAdding(false);
@@ -531,8 +532,8 @@ export default function AiConfigPage() {
       }
       setEditingModel(null);
       await Promise.all([fetchProviders(), fetchAssignments()]);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(errorMessage(err));
     } finally {
       setEditModelSaving(false);
     }
@@ -598,8 +599,8 @@ export default function AiConfigPage() {
       setAssignmentEdits({});
       await fetchAssignments();
       setAssignmentsSavedAt((n) => n + 1);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(errorMessage(err));
     } finally {
       setAssignmentSaving(false);
     }
@@ -657,12 +658,12 @@ export default function AiConfigPage() {
           loading: false,
         },
       }));
-    } catch (err: any) {
+    } catch (err: unknown) {
       setTestResults((prev) => ({
         ...prev,
         [useCase]: {
           success: false,
-          message: err.message,
+          message: errorMessage(err),
           loading: false,
         },
       }));

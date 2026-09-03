@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Check, Loader2, Save } from "lucide-react";
 import PageViewer from "./page-viewer";
+import { errorMessage } from "@/lib/errors";
 
 interface MaterialPageData {
   id: string;
@@ -164,8 +165,8 @@ export default function MaterialAnalysisEditor({
       setSummary(normalizedSummary);
       setSummaryOriginal(normalizedSummary);
       setSummarySavedAt(Date.now());
-    } catch (err: any) {
-      setSummaryError(err.message || "Failed to update summary");
+    } catch (err: unknown) {
+      setSummaryError(errorMessage(err) || "Failed to update summary");
     } finally {
       setSummarySaving(false);
     }
@@ -242,14 +243,14 @@ export default function MaterialAnalysisEditor({
             : item,
         ),
       );
-    } catch (err: any) {
+    } catch (err: unknown) {
       setPageStates((prev) =>
         prev.map((item) =>
           item.id === pageId
             ? {
                 ...item,
                 saving: false,
-                error: err.message || "Failed to update page",
+                error: errorMessage(err) || "Failed to update page",
               }
             : item,
         ),

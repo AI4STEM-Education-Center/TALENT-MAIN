@@ -186,7 +186,7 @@ export function computeNextRun(
 export function isBackupDue(
   row: BackupConfig | null,
   now: Date = new Date(),
-): boolean {
+): row is BackupConfig {
   if (!row || !row.enabled) return false;
   if (!row.nextRunAt) return true;
   return now.getTime() >= row.nextRunAt.getTime();
@@ -200,8 +200,8 @@ export async function claimDueBackup(now: Date = new Date()): Promise<boolean> {
   const row = await getConfigRow();
   if (!isBackupDue(row, now)) return false;
   await prisma.backupConfig.update({
-    where: { id: row!.id },
-    data: { nextRunAt: computeNextRun(row!, now) },
+    where: { id: row.id },
+    data: { nextRunAt: computeNextRun(row, now) },
   });
   return true;
 }
