@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { canManage, getContentActor } from "@/lib/quiz-access";
-import { QuestionImportError, validateParsedQuestionBank } from "@/lib/question-import/qti";
+import {
+  QuestionImportError,
+  validateParsedQuestionBank,
+} from "@/lib/question-import/qti";
 import { rateLimit } from "@/lib/rate-limit";
 import { BODY_TOO_LARGE, readBoundedText } from "@/lib/request-body";
 
@@ -15,7 +18,9 @@ function cleanString(value: unknown): string {
 function serializeErrors(errors: QuestionImportError[]) {
   return errors.map((error) => ({
     index: error.index,
-    ...(error.sourceQuestionId ? { sourceQuestionId: error.sourceQuestionId } : {}),
+    ...(error.sourceQuestionId
+      ? { sourceQuestionId: error.sourceQuestionId }
+      : {}),
     message: error.message,
   }));
 }
@@ -24,7 +29,8 @@ function serializeErrors(errors: QuestionImportError[]) {
 // their own quizzes; admins import straight into global-pool quizzes.
 export async function POST(req: NextRequest) {
   const actor = await getContentActor();
-  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!actor)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const limited = rateLimit(req, "question-import", 30, 60_000, actor.userId);
   if (limited) return limited;
@@ -34,23 +40,35 @@ export async function POST(req: NextRequest) {
   // before any check runs, so the cap is enforced during the read instead.
   const raw = await readBoundedText(req, MAX_IMPORT_BYTES);
   if (raw === BODY_TOO_LARGE) {
-    return NextResponse.json({ error: "Import payload is too large." }, { status: 413 });
+    return NextResponse.json(
+      { error: "Import payload is too large." },
+      { status: 413 },
+    );
   }
 
   let payload: unknown;
   try {
     payload = JSON.parse(raw);
   } catch {
-    return NextResponse.json({ error: "Invalid JSON import payload." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Invalid JSON import payload." },
+      { status: 400 },
+    );
   }
 
-  const importPayload = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+  const importPayload =
+    payload && typeof payload === "object"
+      ? (payload as Record<string, unknown>)
+      : {};
   const quizId = cleanString(importPayload.quizId);
   const originalName = cleanString(importPayload.originalName);
   const sourcePath = cleanString(importPayload.sourcePath) || null;
 
   if (originalName.length > 255 || (sourcePath?.length ?? 0) > 1000) {
-    return NextResponse.json({ error: "Import file metadata is too long." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Import file metadata is too long." },
+      { status: 400 },
+    );
   }
 
   if (!quizId) {
@@ -58,7 +76,10 @@ export async function POST(req: NextRequest) {
   }
 
   if (!originalName) {
-    return NextResponse.json({ error: "originalName is required." }, { status: 400 });
+    return NextResponse.json(
+      { error: "originalName is required." },
+      { status: 400 },
+    );
   }
 
   const quiz = await prisma.quiz.findUnique({ where: { id: quizId } });
@@ -71,8 +92,13 @@ export async function POST(req: NextRequest) {
     parsed = validateParsedQuestionBank(importPayload);
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Invalid question import payload." },
-      { status: 400 }
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Invalid question import payload.",
+      },
+      { status: 400 },
     );
   }
 
@@ -100,7 +126,9 @@ export async function POST(req: NextRequest) {
       const duplicate = await tx.question.findFirst({
         where: {
           quizId,
-          ...(question.sourceQuestionId ? { sourceQuestionId: question.sourceQuestionId } : { text: question.text }),
+          ...(question.sourceQuestionId
+            ? { sourceQuestionId: question.sourceQuestionId }
+            : { text: question.text }),
           import: {
             is: {
               teacherId: actor.teacherId,
@@ -138,7 +166,8 @@ export async function POST(req: NextRequest) {
       importedCount += 1;
     }
 
-    const status = importedCount > 0 || skippedCount > 0 ? "COMPLETED" : "FAILED";
+    const status =
+      importedCount > 0 || skippedCount > 0 ? "COMPLETED" : "FAILED";
     await tx.questionImport.update({
       where: { id: questionImport.id },
       data: {

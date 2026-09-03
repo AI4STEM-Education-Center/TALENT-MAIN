@@ -53,38 +53,138 @@ interface SidebarProps {
 }
 
 const teacherNav: NavItem[] = [
-  { href: "/teacher", label: "Dashboard", icon: <LayoutDashboard className="size-4" /> },
-  { href: "/teacher/classes", label: "My Classes", icon: <Users className="size-4" /> },
-  { href: "/teacher/stats", label: "Stats", icon: <BarChart3 className="size-4" /> },
-  { href: "/teacher/quizzes", label: "Quizzes", icon: <FileQuestion className="size-4" /> },
-  { href: "/teacher/messages", label: "Messages", icon: <MessageSquare className="size-4" /> },
+  {
+    href: "/teacher",
+    label: "Dashboard",
+    icon: <LayoutDashboard className="size-4" />,
+  },
+  {
+    href: "/teacher/classes",
+    label: "My Classes",
+    icon: <Users className="size-4" />,
+  },
+  {
+    href: "/teacher/stats",
+    label: "Stats",
+    icon: <BarChart3 className="size-4" />,
+  },
+  {
+    href: "/teacher/quizzes",
+    label: "Quizzes",
+    icon: <FileQuestion className="size-4" />,
+  },
+  {
+    href: "/teacher/messages",
+    label: "Messages",
+    icon: <MessageSquare className="size-4" />,
+  },
 ];
 
 const studentNav: NavItem[] = [
-  { href: "/student", label: "Dashboard", icon: <LayoutDashboard className="size-4" /> },
-  { href: "/student/classes", label: "My Classes", icon: <GraduationCap className="size-4" /> },
-  { href: "/student/notifications", label: "Notifications", icon: <Inbox className="size-4" /> },
-  { href: "/student/history", label: "Exam History", icon: <History className="size-4" /> },
+  {
+    href: "/student",
+    label: "Dashboard",
+    icon: <LayoutDashboard className="size-4" />,
+  },
+  {
+    href: "/student/classes",
+    label: "My Classes",
+    icon: <GraduationCap className="size-4" />,
+  },
+  {
+    href: "/student/notifications",
+    label: "Notifications",
+    icon: <Inbox className="size-4" />,
+  },
+  {
+    href: "/student/history",
+    label: "Exam History",
+    icon: <History className="size-4" />,
+  },
 ];
 
 const adminNav: NavItem[] = [
-  { href: "/admin", label: "Overview", icon: <LayoutDashboard className="size-4" /> },
-  { href: "/admin/quizzes", label: "Quiz Pool", icon: <FileQuestion className="size-4" /> },
-  { href: "/admin/material-pool", label: "Material Pool", icon: <FolderOpen className="size-4" /> },
-  { href: "/admin/pool-submissions", label: "Pool Approvals", icon: <ClipboardCheck className="size-4" /> },
-  { href: "/admin/consent", label: "Consent Records", icon: <ShieldCheck className="size-4" /> },
-  { href: "/admin/consent-requests", label: "Consent Export Requests", icon: <ClipboardCheck className="size-4" /> },
-  { href: "/admin/simulations", label: "Simulations", icon: <Atom className="size-4" /> },
-  { href: "/admin/materials", label: "Materials Processing", icon: <FolderOpen className="size-4" /> },
-  { href: "/admin/concepts", label: "Concepts", icon: <BookOpen className="size-4" /> },
+  {
+    href: "/admin",
+    label: "Overview",
+    icon: <LayoutDashboard className="size-4" />,
+  },
+  {
+    href: "/admin/quizzes",
+    label: "Quiz Pool",
+    icon: <FileQuestion className="size-4" />,
+  },
+  {
+    href: "/admin/material-pool",
+    label: "Material Pool",
+    icon: <FolderOpen className="size-4" />,
+  },
+  {
+    href: "/admin/pool-submissions",
+    label: "Pool Approvals",
+    icon: <ClipboardCheck className="size-4" />,
+  },
+  {
+    href: "/admin/consent",
+    label: "Consent Records",
+    icon: <ShieldCheck className="size-4" />,
+  },
+  {
+    href: "/admin/consent-requests",
+    label: "Consent Export Requests",
+    icon: <ClipboardCheck className="size-4" />,
+  },
+  {
+    href: "/admin/simulations",
+    label: "Simulations",
+    icon: <Atom className="size-4" />,
+  },
+  {
+    href: "/admin/materials",
+    label: "Materials Processing",
+    icon: <FolderOpen className="size-4" />,
+  },
+  {
+    href: "/admin/concepts",
+    label: "Concepts",
+    icon: <BookOpen className="size-4" />,
+  },
   { href: "/admin/users", label: "Users", icon: <Users className="size-4" /> },
-  { href: "/admin/teacher-codes", label: "Teacher Codes", icon: <KeyRound className="size-4" /> },
-  { href: "/admin/ai-config", label: "AI Config", icon: <Settings className="size-4" /> },
-  { href: "/admin/assistant-chats", label: "Chat Transcripts", icon: <MessagesSquare className="size-4" /> },
-  { href: "/admin/email", label: "Email / SMTP", icon: <Mail className="size-4" /> },
-  { href: "/admin/backup", label: "Database Backup", icon: <HardDrive className="size-4" /> },
-  { href: "/admin/resources", label: "System Resources", icon: <Gauge className="size-4" /> },
-  { href: "/admin/logs", label: "System Logs", icon: <ScrollText className="size-4" /> },
+  {
+    href: "/admin/teacher-codes",
+    label: "Teacher Codes",
+    icon: <KeyRound className="size-4" />,
+  },
+  {
+    href: "/admin/ai-config",
+    label: "AI Config",
+    icon: <Settings className="size-4" />,
+  },
+  {
+    href: "/admin/assistant-chats",
+    label: "Chat Transcripts",
+    icon: <MessagesSquare className="size-4" />,
+  },
+  {
+    href: "/admin/email",
+    label: "Email / SMTP",
+    icon: <Mail className="size-4" />,
+  },
+  {
+    href: "/admin/backup",
+    label: "Database Backup",
+    icon: <HardDrive className="size-4" />,
+  },
+  {
+    href: "/admin/resources",
+    label: "System Resources",
+    icon: <Gauge className="size-4" />,
+  },
+  {
+    href: "/admin/logs",
+    label: "System Logs",
+    icon: <ScrollText className="size-4" />,
+  },
 ];
 
 // Shared by every role and rendered under the role's own items.
@@ -111,7 +211,8 @@ function SidebarContent({
 }) {
   const pathname = usePathname();
 
-  const roleNav = role === "ADMIN" ? adminNav : role === "TEACHER" ? teacherNav : studentNav;
+  const roleNav =
+    role === "ADMIN" ? adminNav : role === "TEACHER" ? teacherNav : studentNav;
   const navItems = [...roleNav, profileNav];
 
   return (
@@ -124,7 +225,8 @@ function SidebarContent({
           </div>
           <span className="font-bold text-sidebar-foreground">AI4Talent</span>
           {onCollapse && (
-            <button type="button"
+            <button
+              type="button"
               aria-label="Hide sidebar"
               onClick={onCollapse}
               className="ml-auto p-1.5 rounded-md text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors"
@@ -156,13 +258,15 @@ function SidebarContent({
                 "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
                 isActive
                   ? "bg-sidebar-accent text-sidebar-accent-foreground ring-1 ring-inset ring-sidebar-primary/40"
-                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
               )}
             >
               {item.icon}
               {item.label}
               <span className="ml-auto flex items-center gap-1.5">
-                {item.href === "/student/notifications" && <NotificationsBadge />}
+                {item.href === "/student/notifications" && (
+                  <NotificationsBadge />
+                )}
                 {isActive && <ChevronRight className="size-3" />}
               </span>
             </Link>
@@ -177,7 +281,8 @@ function SidebarContent({
         <AssistantLauncher onOpen={onNavigate} />
         <div className="flex items-center gap-3 px-3 py-2 mb-2">
           <div className="size-8 rounded-full bg-sidebar-primary/15 flex items-center justify-center text-xs font-bold text-sidebar-primary shrink-0">
-            {firstName[0]}{lastName[0]}
+            {firstName[0]}
+            {lastName[0]}
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-sidebar-foreground truncate">
@@ -192,7 +297,8 @@ function SidebarContent({
           showLabel
           className="w-full px-3 py-2.5 rounded-lg text-sm text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
         />
-        <button type="button"
+        <button
+          type="button"
           onClick={onSignOut}
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground transition-colors"
         >
@@ -225,19 +331,19 @@ export function Sidebar({
       <aside
         className={cn(
           "w-64 h-screen sticky top-0 overflow-y-auto bg-sidebar flex-col border-r border-sidebar-border shrink-0",
-          desktopOpen ? "hidden md:flex" : "hidden"
+          desktopOpen ? "hidden md:flex" : "hidden",
         )}
       >
         <SidebarContent {...contentProps} onCollapse={onDesktopClose} />
       </aside>
 
       {/* Mobile drawer — shown below md */}
-      <Sheet open={mobileOpen} onOpenChange={(open) => !open && onMobileClose?.()}>
+      <Sheet
+        open={mobileOpen}
+        onOpenChange={(open) => !open && onMobileClose?.()}
+      >
         <SheetContent side="left" className="p-0 w-64 overflow-y-auto">
-          <SidebarContent
-            {...contentProps}
-            onNavigate={onMobileClose}
-          />
+          <SidebarContent {...contentProps} onNavigate={onMobileClose} />
         </SheetContent>
       </Sheet>
     </>

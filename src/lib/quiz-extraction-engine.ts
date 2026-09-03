@@ -58,27 +58,42 @@ import {
 
 const PAGE_URL_EXPIRES_SEC = 3600;
 
-function providerUsable(provider: ResolvedProvider | null): provider is ResolvedProvider {
+function providerUsable(
+  provider: ResolvedProvider | null,
+): provider is ResolvedProvider {
   if (!provider) return false;
   if (provider.providerType !== "local" && !provider.apiKey) return false;
-  if ((provider.providerType === "local" || provider.providerType === "cloudflare") && !provider.baseUrl) {
+  if (
+    (provider.providerType === "local" ||
+      provider.providerType === "cloudflare") &&
+    !provider.baseUrl
+  ) {
     return false;
   }
   return true;
 }
 
 /** Build the multimodal user-message content: the prompt text + one image per page (in order). */
-function buildExtractionContent(prompt: string, imageUrls: string[]): OpenAI.Chat.Completions.ChatCompletionContentPart[] {
+function buildExtractionContent(
+  prompt: string,
+  imageUrls: string[],
+): OpenAI.Chat.Completions.ChatCompletionContentPart[] {
   return [
     { type: "text", text: prompt },
     ...imageUrls.map(
-      (url): OpenAI.Chat.Completions.ChatCompletionContentPart => ({ type: "image_url", image_url: { url } })
+      (url): OpenAI.Chat.Completions.ChatCompletionContentPart => ({
+        type: "image_url",
+        image_url: { url },
+      }),
     ),
   ];
 }
 
 /** Build the localization message content: the prompt text + a single page image. */
-function buildLocalizationContent(prompt: string, pageImageUrl: string): OpenAI.Chat.Completions.ChatCompletionContentPart[] {
+function buildLocalizationContent(
+  prompt: string,
+  pageImageUrl: string,
+): OpenAI.Chat.Completions.ChatCompletionContentPart[] {
   return [
     { type: "text", text: prompt },
     { type: "image_url", image_url: { url: pageImageUrl } },
@@ -105,16 +120,29 @@ type ModelCallOptions = {
  */
 async function callJsonModel(
   client: OpenAI,
-  opts: ModelCallOptions
+  opts: ModelCallOptions,
 ): Promise<{ value: unknown; metrics: AiCallMetrics }> {
-  const { model, messages, schema, serviceTier, tierActive, thinking, transport } = opts;
+  const {
+    model,
+    messages,
+    schema,
+    serviceTier,
+    tierActive,
+    thinking,
+    transport,
+  } = opts;
   return retryWithExponentialBackoff(() =>
     streamJsonCompletion(
       client,
-      { model, messages, service_tier: tierActive ? (serviceTier as never) : undefined, ...thinking },
+      {
+        model,
+        messages,
+        service_tier: tierActive ? (serviceTier as never) : undefined,
+        ...thinking,
+      },
       schema,
-      streamOptionsFor(transport)
-    )
+      streamOptionsFor(transport),
+    ),
   );
 }
 
@@ -134,7 +162,9 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
   });
 
   if (!extraction) {
-    console.warn(`[QuizExtraction] Extraction ${extractionId} not found; nothing to do`);
+    console.warn(
+      `[QuizExtraction] Extraction ${extractionId} not found; nothing to do`,
+    );
     return;
   }
 
@@ -143,7 +173,7 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
   // stale redelivery — log and bail without touching the row.
   if (extraction.status !== "EXTRACTING") {
     console.log(
-      `[QuizExtraction] Extraction ${extractionId} is in status ${extraction.status}, not EXTRACTING; skipping`
+      `[QuizExtraction] Extraction ${extractionId} is in status ${extraction.status}, not EXTRACTING; skipping`,
     );
     return;
   }
@@ -159,7 +189,9 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
             "No AI provider assigned to quiz_extraction. An admin must configure the 'quiz_extraction' use case in the AI Config dashboard.",
         },
       });
-      console.error(`[QuizExtraction] No usable provider for extraction ${extractionId}`);
+      console.error(
+        `[QuizExtraction] No usable provider for extraction ${extractionId}`,
+      );
       return;
     }
 
@@ -168,7 +200,10 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
     const transport = transportFor(provider);
     const serviceTier = provider.serviceTier;
     const tierActive =
-      !isLocal && (serviceTier === "auto" || serviceTier === "default" || serviceTier === "flex");
+      !isLocal &&
+      (serviceTier === "auto" ||
+        serviceTier === "default" ||
+        serviceTier === "flex");
     // Applies to every pass below, on every provider type — and is a no-op
     // unless an admin pinned a thinking level on the assigned model.
     const thinking = thinkingParams(provider);
@@ -183,8 +218,8 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
         resolveModelImageUrl(extraction.bucket, page.storageKey, {
           inlineBase64: isLocal,
           expiresIn: PAGE_URL_EXPIRES_SEC,
-        })
-      )
+        }),
+      ),
     );
     const pageNumbers = extraction.pages.map((p) => p.pageNumber);
 
@@ -194,20 +229,29 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
 
     // ── Pass 1: identify questions / options / answer key over all pages. ──
     const pass1Prompt = buildExtractionPrompt(extraction.totalPages);
-    const pass1Messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-      { role: "user", content: buildExtractionContent(pass1Prompt, imageUrls) },
-    ];
-    const { value: pass1Parsed, metrics: pass1Metrics } = await callJsonModel(client, {
-      model: provider.model,
-      messages: pass1Messages,
-      schema: QUIZ_EXTRACTION_SCHEMA,
-      serviceTier,
-      tierActive,
-      thinking,
-      transport,
-    });
+    const pass1Messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] =
+      [
+        {
+          role: "user",
+          content: buildExtractionContent(pass1Prompt, imageUrls),
+        },
+      ];
+    const { value: pass1Parsed, metrics: pass1Metrics } = await callJsonModel(
+      client,
+      {
+        model: provider.model,
+        messages: pass1Messages,
+        schema: QUIZ_EXTRACTION_SCHEMA,
+        serviceTier,
+        tierActive,
+        thinking,
+        transport,
+      },
+    );
     callMetrics.push(pass1Metrics);
-    let quiz: ExtractedQuiz = normalizeStructure(validateExtractedQuiz(pass1Parsed));
+    let quiz: ExtractedQuiz = normalizeStructure(
+      validateExtractedQuiz(pass1Parsed),
+    );
 
     // ── Pass 2: isolated answer-key detection over all pages. ──
     // A dedicated call reads the answer key from ANY source (inline marks, a
@@ -218,25 +262,35 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
     // teacher to answer during review, rather than failing the extraction.
     if (quiz.questions.length > 0) {
       try {
-        const answerKeyPrompt = buildAnswerKeyPrompt(extraction.totalPages, quiz.questions);
-        const answerKeyMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-          { role: "user", content: buildExtractionContent(answerKeyPrompt, imageUrls) },
-        ];
-        const { value: keyParsed, metrics: keyMetrics } = await callJsonModel(client, {
-          model: provider.model,
-          messages: answerKeyMessages,
-          schema: QUIZ_ANSWER_KEY_SCHEMA,
-          serviceTier,
-          tierActive,
-          thinking,
-          transport,
-        });
+        const answerKeyPrompt = buildAnswerKeyPrompt(
+          extraction.totalPages,
+          quiz.questions,
+        );
+        const answerKeyMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] =
+          [
+            {
+              role: "user",
+              content: buildExtractionContent(answerKeyPrompt, imageUrls),
+            },
+          ];
+        const { value: keyParsed, metrics: keyMetrics } = await callJsonModel(
+          client,
+          {
+            model: provider.model,
+            messages: answerKeyMessages,
+            schema: QUIZ_ANSWER_KEY_SCHEMA,
+            serviceTier,
+            tierActive,
+            thinking,
+            transport,
+          },
+        );
         callMetrics.push(keyMetrics);
         quiz = applyAnswerKey(quiz, validateAnswerKeyResult(keyParsed));
       } catch (keyErr) {
         console.warn(
           `[QuizExtraction] ${extractionId}: answer-key pass failed; committing with no key:`,
-          keyErr instanceof Error ? keyErr.message : keyErr
+          keyErr instanceof Error ? keyErr.message : keyErr,
         );
       }
     }
@@ -254,30 +308,38 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
           const idx = pageNumbers.indexOf(pageNumber);
           if (idx === -1) {
             console.warn(
-              `[QuizExtraction] ${extractionId}: page ${pageNumber} has no image; skipping ${targets.length} target(s)`
+              `[QuizExtraction] ${extractionId}: page ${pageNumber} has no image; skipping ${targets.length} target(s)`,
             );
             continue;
           }
           try {
-            const locMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-              { role: "user", content: buildLocalizationContent(buildLocalizationPrompt(pageNumber, targets), imageUrls[idx]) },
-            ];
-            const { value: locParsed, metrics: locMetrics } = await callJsonModel(client, {
-              model: provider.model,
-              messages: locMessages,
-              schema: QUIZ_LOCALIZATION_SCHEMA,
-              serviceTier,
-              tierActive,
-              thinking,
-              transport,
-            });
+            const locMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] =
+              [
+                {
+                  role: "user",
+                  content: buildLocalizationContent(
+                    buildLocalizationPrompt(pageNumber, targets),
+                    imageUrls[idx],
+                  ),
+                },
+              ];
+            const { value: locParsed, metrics: locMetrics } =
+              await callJsonModel(client, {
+                model: provider.model,
+                messages: locMessages,
+                schema: QUIZ_LOCALIZATION_SCHEMA,
+                serviceTier,
+                tierActive,
+                thinking,
+                transport,
+              });
             callMetrics.push(locMetrics);
             const known = new Set(targets.map((t) => t.targetId));
             boxes.push(...validateLocalizationResult(locParsed, known));
           } catch (pageErr) {
             console.warn(
               `[QuizExtraction] ${extractionId}: localization failed for page ${pageNumber}:`,
-              pageErr instanceof Error ? pageErr.message : pageErr
+              pageErr instanceof Error ? pageErr.message : pageErr,
             );
           }
         }
@@ -285,7 +347,7 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
       } catch (locErr) {
         console.warn(
           `[QuizExtraction] ${extractionId}: pass-2 localization aborted; using coarse boxes:`,
-          locErr instanceof Error ? locErr.message : locErr
+          locErr instanceof Error ? locErr.message : locErr,
         );
       }
     }
@@ -309,11 +371,15 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
       },
     });
     console.log(
-      `[QuizExtraction] Extraction ${extractionId} complete: ${quiz.questions.length} question(s), hasAnswerKey=${quiz.hasAnswerKey}`
+      `[QuizExtraction] Extraction ${extractionId} complete: ${quiz.questions.length} question(s), hasAnswerKey=${quiz.hasAnswerKey}`,
     );
   } catch (err) {
-    const message = err instanceof Error ? err.message.trim() : String(err).trim();
-    console.error(`[QuizExtraction] Extraction ${extractionId} failed:`, message);
+    const message =
+      err instanceof Error ? err.message.trim() : String(err).trim();
+    console.error(
+      `[QuizExtraction] Extraction ${extractionId} failed:`,
+      message,
+    );
     try {
       await prisma.quizPdfExtraction.update({
         where: { id: extraction.id },
@@ -323,7 +389,10 @@ export async function runQuizExtraction(extractionId: string): Promise<void> {
         },
       });
     } catch (dbErr) {
-      console.error(`[QuizExtraction] Could not mark extraction ${extractionId} FAILED:`, dbErr);
+      console.error(
+        `[QuizExtraction] Could not mark extraction ${extractionId} FAILED:`,
+        dbErr,
+      );
     }
     return;
   }

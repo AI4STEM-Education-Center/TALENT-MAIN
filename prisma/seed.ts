@@ -1,6 +1,10 @@
 import { PrismaClient } from "@prisma/client";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
-import { prebuiltQuestions, prebuiltSubtopics, prebuiltTopic } from "./prebuilt-questions";
+import {
+  prebuiltQuestions,
+  prebuiltSubtopics,
+  prebuiltTopic,
+} from "./prebuilt-questions";
 import { resolveDatabaseUrl } from "../src/lib/db-url";
 
 const adapter = new PrismaBetterSqlite3({ url: resolveDatabaseUrl() });
@@ -40,7 +44,7 @@ async function main() {
         data: { ...subtopicData, topicId: topic.id },
       });
       console.log(`  Quiz: ${quiz.name}`);
-    })
+    }),
   );
 
   await Promise.all(
@@ -52,8 +56,8 @@ async function main() {
           difficultyLevel: questionData.difficulty,
           options: { create: questionData.options },
         },
-      })
-    )
+      }),
+    ),
   );
 
   console.log(`Seeded ${prebuiltQuestions.length} questions`);

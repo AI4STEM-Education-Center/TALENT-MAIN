@@ -45,7 +45,9 @@ export default function MaterialUploadForm({ classId }: MaterialUploadProps) {
         });
 
         if (!initRes.ok) {
-          throw new Error((await initRes.json()).error || "Failed to initialize upload");
+          throw new Error(
+            (await initRes.json()).error || "Failed to initialize upload",
+          );
         }
 
         const { id: materialId, presignedUrl, mimeType } = await initRes.json();
@@ -68,16 +70,24 @@ export default function MaterialUploadForm({ classId }: MaterialUploadProps) {
 
         setStatusText("Requesting upload URLs for pages...");
         // 4. Get presigned URLs for all pages
-        const pagesRes = await fetch(`/api/classes/${classId}/materials/${materialId}/pages`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            pages: pageBlobs.map((p) => ({ pageNumber: p.pageNumber, sizeBytes: p.sizeBytes })),
-          }),
-        });
+        const pagesRes = await fetch(
+          `/api/classes/${classId}/materials/${materialId}/pages`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              pages: pageBlobs.map((p) => ({
+                pageNumber: p.pageNumber,
+                sizeBytes: p.sizeBytes,
+              })),
+            }),
+          },
+        );
 
         if (!pagesRes.ok) {
-          throw new Error((await pagesRes.json()).error || "Failed to get page upload URLs");
+          throw new Error(
+            (await pagesRes.json()).error || "Failed to get page upload URLs",
+          );
         }
 
         const { pages: pageUrls } = await pagesRes.json();
@@ -85,66 +95,81 @@ export default function MaterialUploadForm({ classId }: MaterialUploadProps) {
         setStatusText("Uploading page images...");
         // 5. Upload all pages directly to S3
         let uploadedCount = 0;
-        const uploadedPagesForComplete: { pageNumber: number; storageKey: string }[] = [];
+        const uploadedPagesForComplete: {
+          pageNumber: number;
+          storageKey: string;
+        }[] = [];
 
         // Index page blobs by page number for O(1) lookup during upload
-        const blobsByPageNumber = new Map(pageBlobs.map((p) => [p.pageNumber, p]));
+        const blobsByPageNumber = new Map(
+          pageBlobs.map((p) => [p.pageNumber, p]),
+        );
 
         // Upload in batches of 5 to avoid overwhelming network
         for (let i = 0; i < pageUrls.length; i += 5) {
           const batch = pageUrls.slice(i, i + 5);
           await Promise.all(
             batch.map(async (pageData: any) => {
-              if (pageData.error) throw new Error(`Server error for page ${pageData.pageNumber}: ${pageData.error}`);
+              if (pageData.error)
+                throw new Error(
+                  `Server error for page ${pageData.pageNumber}: ${pageData.error}`,
+                );
 
               const blobData = blobsByPageNumber.get(pageData.pageNumber);
-              if (!blobData) throw new Error(`Missing blob for page ${pageData.pageNumber}`);
+              if (!blobData)
+                throw new Error(`Missing blob for page ${pageData.pageNumber}`);
 
               const res = await fetch(pageData.presignedUrl, {
                 method: "PUT",
-                headers: { "Content-Type": pageData.mimeType, "If-None-Match": "*" },
+                headers: {
+                  "Content-Type": pageData.mimeType,
+                  "If-None-Match": "*",
+                },
                 body: blobData.blob,
               });
 
-              if (!res.ok) throw new Error(`Failed to upload page ${pageData.pageNumber}`);
-              
+              if (!res.ok)
+                throw new Error(`Failed to upload page ${pageData.pageNumber}`);
+
               uploadedPagesForComplete.push({
                 pageNumber: pageData.pageNumber,
                 storageKey: pageData.storageKey,
               });
-              
+
               uploadedCount++;
               setProgress(30 + (uploadedCount / numPages) * 60); // 30% to 90% is uploading
-            })
+            }),
           );
         }
 
         setStatusText("Finalizing upload...");
         // 6. Complete upload and trigger VLM
-        const completeRes = await fetch(`/api/classes/${classId}/materials/${materialId}/complete`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ pages: uploadedPagesForComplete }),
-        });
+        const completeRes = await fetch(
+          `/api/classes/${classId}/materials/${materialId}/complete`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pages: uploadedPagesForComplete }),
+          },
+        );
 
         if (!completeRes.ok) throw new Error("Failed to finalize material");
 
         setProgress(100);
         setStatusText("Done!");
-        
+
         // Let user see 100% for a moment before refreshing list
         setTimeout(() => {
           setIsUploading(false);
           refresh();
         }, 1000);
-
       } catch (err: any) {
         console.error(err);
         setError(err.message || "An unexpected error occurred");
         setIsUploading(false);
       }
     },
-    [classId, refresh]
+    [classId, refresh],
   );
 
   return (
@@ -161,7 +186,9 @@ export default function MaterialUploadForm({ classId }: MaterialUploadProps) {
         {isUploading ? (
           <>
             <Loader2 className="size-10 text-blue-500 animate-spin" />
-            <div className="text-sm font-medium text-gray-700">{statusText}</div>
+            <div className="text-sm font-medium text-gray-700">
+              {statusText}
+            </div>
             <div className="w-full max-w-xs bg-gray-200 rounded-full h-2.5">
               <div
                 className="bg-blue-600 h-2.5 rounded-full transition-[width] duration-300"

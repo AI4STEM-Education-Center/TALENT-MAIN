@@ -6,18 +6,26 @@ import { Card, CardContent } from "@/components/ui/card";
 import { BarChart3, BookOpen, Users, ChevronRight } from "lucide-react";
 
 const fmtDate = (d: Date) =>
-  new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  new Date(d).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 
 export default async function TeacherStatsPage() {
   const session = await auth();
   if (!session?.user || session.user.role !== "TEACHER") redirect("/login");
 
-  const teacher = await prisma.teacher.findUnique({ where: { userId: session.user.id } });
+  const teacher = await prisma.teacher.findUnique({
+    where: { userId: session.user.id },
+  });
 
   const classes = teacher
     ? await prisma.class.findMany({
         where: { teacherId: teacher.id },
-        include: { _count: { select: { enrollments: true, classQuizzes: true } } },
+        include: {
+          _count: { select: { enrollments: true, classQuizzes: true } },
+        },
         orderBy: { createdAt: "desc" },
       })
     : [];
@@ -46,13 +54,19 @@ export default async function TeacherStatsPage() {
       ) : (
         <div className="grid gap-4">
           {classes.map((cls) => (
-            <Link key={cls.id} href={`/teacher/classes/${cls.id}/stats`} className="block">
+            <Link
+              key={cls.id}
+              href={`/teacher/classes/${cls.id}/stats`}
+              className="block"
+            >
               <Card className="hover:shadow-md transition-shadow">
                 <CardContent className="flex items-center justify-between gap-3 flex-wrap p-5">
                   <div className="space-y-1 min-w-0 flex-1">
                     <h2 className="text-lg font-semibold">{cls.name}</h2>
                     {cls.description && (
-                      <p className="text-sm text-muted-foreground">{cls.description}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {cls.description}
+                      </p>
                     )}
                     <div className="flex flex-wrap gap-3 text-xs text-muted-foreground pt-1">
                       <span className="flex items-center gap-1">

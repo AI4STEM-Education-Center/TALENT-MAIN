@@ -1,5 +1,17 @@
-import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from "vitest";
-import { resolveProvider, invalidateProviderCache, DEFAULT_AI_TIMEOUT_MS } from "@/lib/ai-provider";
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  afterAll,
+  vi,
+} from "vitest";
+import {
+  resolveProvider,
+  invalidateProviderCache,
+  DEFAULT_AI_TIMEOUT_MS,
+} from "@/lib/ai-provider";
 import { encryptApiKey } from "@/lib/crypto";
 import { prisma } from "@/lib/prisma";
 import { resetDb } from "./db";
@@ -17,7 +29,7 @@ async function seedAssignment(
     baseUrl?: string | null;
     cfAigByokAlias?: string | null;
     timeoutMs?: number | null;
-  } = {}
+  } = {},
 ) {
   const enc = opts.apiKey ? encryptApiKey(opts.apiKey) : null;
   const provider = await prisma.aiProvider.create({
@@ -83,22 +95,33 @@ describe("resolveProvider", () => {
 
   it("resolves the use case's thinking level when one is set", async () => {
     await seedAssignment({ apiKey: "sk-x", thinkingLevel: "high" });
-    expect((await resolveProvider("pdf_description"))?.thinkingLevel).toBe("high");
+    expect((await resolveProvider("pdf_description"))?.thinkingLevel).toBe(
+      "high",
+    );
   });
 
   it("leaves the thinking level null when the use case has none", async () => {
     await seedAssignment({ apiKey: "sk-x" });
-    expect((await resolveProvider("pdf_description"))?.thinkingLevel).toBeNull();
+    expect(
+      (await resolveProvider("pdf_description"))?.thinkingLevel,
+    ).toBeNull();
   });
 
   it("drops an unrecognized stored thinking level rather than sending it", async () => {
     await seedAssignment({ apiKey: "sk-x", thinkingLevel: "ludicrous" });
-    expect((await resolveProvider("pdf_description"))?.thinkingLevel).toBeNull();
+    expect(
+      (await resolveProvider("pdf_description"))?.thinkingLevel,
+    ).toBeNull();
   });
 
   it("falls back to a pre-move per-model level so old configs keep working", async () => {
-    await seedAssignment({ apiKey: "sk-x", legacyModelThinkingLevel: "medium" });
-    expect((await resolveProvider("pdf_description"))?.thinkingLevel).toBe("medium");
+    await seedAssignment({
+      apiKey: "sk-x",
+      legacyModelThinkingLevel: "medium",
+    });
+    expect((await resolveProvider("pdf_description"))?.thinkingLevel).toBe(
+      "medium",
+    );
   });
 
   it("lets the use case's level override a leftover per-model one", async () => {
@@ -107,7 +130,9 @@ describe("resolveProvider", () => {
       thinkingLevel: "low",
       legacyModelThinkingLevel: "high",
     });
-    expect((await resolveProvider("pdf_description"))?.thinkingLevel).toBe("low");
+    expect((await resolveProvider("pdf_description"))?.thinkingLevel).toBe(
+      "low",
+    );
   });
 
   it("falls back to DEFAULT_AI_TIMEOUT_MS when the provider has no override", async () => {
@@ -147,7 +172,10 @@ describe("resolveProvider", () => {
     expect(await resolveProvider("pdf_description")).not.toBeNull();
 
     // Deactivate in the DB — but within the TTL the cached value is still served.
-    await prisma.aiProvider.update({ where: { id: provider.id }, data: { isActive: false } });
+    await prisma.aiProvider.update({
+      where: { id: provider.id },
+      data: { isActive: false },
+    });
     vi.setSystemTime(30_000);
     expect(await resolveProvider("pdf_description")).not.toBeNull();
 
@@ -160,7 +188,10 @@ describe("resolveProvider", () => {
     const { provider } = await seedAssignment({ apiKey: "sk-x" });
     expect(await resolveProvider("pdf_description")).not.toBeNull();
 
-    await prisma.aiProvider.update({ where: { id: provider.id }, data: { isActive: false } });
+    await prisma.aiProvider.update({
+      where: { id: provider.id },
+      data: { isActive: false },
+    });
     invalidateProviderCache("pdf_description");
     expect(await resolveProvider("pdf_description")).toBeNull();
   });

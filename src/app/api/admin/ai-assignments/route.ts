@@ -42,7 +42,7 @@ async function carryOverLegacyThinkingLevels(): Promise<void> {
       prisma.aiUseCaseAssignment.updateMany({
         where: { modelId: m.id, thinkingLevel: null },
         data: { thinkingLevel: m.thinkingLevel },
-      })
+      }),
     ),
     prisma.aiModel.updateMany({
       where: { id: { in: legacy.map((m) => m.id) } },
@@ -101,7 +101,7 @@ export async function GET() {
             serviceTier: assignment.model.serviceTier,
             thinkingLevel: resolveThinkingLevel(
               assignment.thinkingLevel,
-              assignment.model.thinkingLevel
+              assignment.model.thinkingLevel,
             ),
           }
         : null;
@@ -110,7 +110,10 @@ export async function GET() {
     return NextResponse.json({ assignments: assignmentMap });
   } catch (error) {
     logApiError("AI_ASSIGNMENTS_GET", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }
 
@@ -134,7 +137,7 @@ export async function PUT(req: Request) {
     if (!incoming || typeof incoming !== "object") {
       return NextResponse.json(
         { error: "Body must contain 'assignments' object" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -159,9 +162,7 @@ export async function PUT(req: Request) {
           ? assignment.providerId.trim()
           : "";
       const modelId =
-        typeof assignment.modelId === "string"
-          ? assignment.modelId.trim()
-          : "";
+        typeof assignment.modelId === "string" ? assignment.modelId.trim() : "";
 
       if (!providerId || !modelId) {
         results[useCase] = "skipped (missing providerId or modelId)";
@@ -176,7 +177,8 @@ export async function PUT(req: Request) {
           : "";
       const thinkingLevel = rawLevel || null;
       if (thinkingLevel && !isThinkingLevel(thinkingLevel)) {
-        results[useCase] = `skipped (thinking level must be one of: ${THINKING_LEVELS.join(", ")}, or empty)`;
+        results[useCase] =
+          `skipped (thinking level must be one of: ${THINKING_LEVELS.join(", ")}, or empty)`;
         continue;
       }
 
@@ -211,6 +213,9 @@ export async function PUT(req: Request) {
     return NextResponse.json({ results });
   } catch (error) {
     logApiError("AI_ASSIGNMENTS_PUT", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }

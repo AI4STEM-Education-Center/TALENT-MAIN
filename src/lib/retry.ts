@@ -8,7 +8,7 @@ export async function retryWithExponentialBackoff<T>(
   fn: () => Promise<T>,
   maxRetries = 3,
   baseDelayMs = 500,
-  maxDelayMs = 5000
+  maxDelayMs = 5000,
 ): Promise<T> {
   let attempt = 0;
   while (attempt < maxRetries) {
@@ -19,7 +19,9 @@ export async function retryWithExponentialBackoff<T>(
       if (attempt >= maxRetries) throw error;
 
       const delay = Math.min(baseDelayMs * Math.pow(2, attempt), maxDelayMs);
-      console.warn(`[Retry] Attempt ${attempt} failed: ${error.message}. Retrying in ${delay}ms...`);
+      console.warn(
+        `[Retry] Attempt ${attempt} failed: ${error.message}. Retrying in ${delay}ms...`,
+      );
       await sleep(delay);
     }
   }

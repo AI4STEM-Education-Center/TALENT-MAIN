@@ -50,7 +50,7 @@ describe("summarizeSimulationEngagement", () => {
       new Map([
         ["a", "Friction Explorer"],
         ["b", "Projectile Lab"],
-      ])
+      ]),
     );
     expect(rows.map((r) => r.simulationId)).toEqual(["a", "b"]);
     expect(rows[0]).toMatchObject({
@@ -70,7 +70,7 @@ describe("summarizeSimulationEngagement", () => {
         session({}),
         session({}),
       ],
-      new Map()
+      new Map(),
     );
     expect(row.title).toBe("Removed simulation");
     expect(row.bounceRate).toBe(0.5);
@@ -82,8 +82,14 @@ describe("summarizeSimulationEngagement", () => {
 });
 
 describe("retakeImprovementBySimUse", () => {
-  const first = attempt({ score: 40, completedAt: new Date("2026-07-01T09:00:00Z") });
-  const retake = attempt({ score: 70, completedAt: new Date("2026-07-02T09:00:00Z") });
+  const first = attempt({
+    score: 40,
+    completedAt: new Date("2026-07-01T09:00:00Z"),
+  });
+  const retake = attempt({
+    score: 70,
+    completedAt: new Date("2026-07-02T09:00:00Z"),
+  });
 
   it("splits retakers by engaged simulation use after the first attempt", () => {
     const impact = retakeImprovementBySimUse(
@@ -91,9 +97,18 @@ describe("retakeImprovementBySimUse", () => {
         first,
         retake, // s1 used a sim between attempts → +30 with
         attempt({ studentId: "s2", score: 50 }),
-        attempt({ studentId: "s2", score: 60, completedAt: new Date("2026-07-02T09:00:00Z") }), // no sim → +10 without
+        attempt({
+          studentId: "s2",
+          score: 60,
+          completedAt: new Date("2026-07-02T09:00:00Z"),
+        }), // no sim → +10 without
       ],
-      [session({ studentId: "s1", startedAt: new Date("2026-07-01T10:00:00Z") })]
+      [
+        session({
+          studentId: "s1",
+          startedAt: new Date("2026-07-01T10:00:00Z"),
+        }),
+      ],
     );
     expect(impact.withSim).toEqual({ students: 1, meanDelta: 30 });
     expect(impact.withoutSim).toEqual({ students: 1, meanDelta: 10 });
@@ -120,7 +135,7 @@ describe("retakeImprovementBySimUse", () => {
         attempt({ score: 90, completedAt: new Date("2026-07-03T09:00:00Z") }),
         attempt({ studentId: "s9", score: 100 }), // one attempt only — excluded
       ],
-      []
+      [],
     );
     expect(impact.withoutSim).toEqual({ students: 1, meanDelta: 50 });
     expect(impact.withSim.students).toBe(0);

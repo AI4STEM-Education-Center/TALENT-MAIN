@@ -80,7 +80,10 @@ export function buildTier1Schema(allowedConcepts: string[]) {
       ...TIER1_SCHEMA.schema,
       properties: {
         ...TIER1_SCHEMA.schema.properties,
-        key_concept: { type: "string", enum: [...allowedConcepts, NONE_CONCEPT] },
+        key_concept: {
+          type: "string",
+          enum: [...allowedConcepts, NONE_CONCEPT],
+        },
       },
     },
   };
@@ -97,7 +100,10 @@ export function buildTier2Schema(allowedConcepts: string[]) {
       ...TIER2_SCHEMA.schema,
       properties: {
         ...TIER2_SCHEMA.schema.properties,
-        key_concept: { type: "array", items: { type: "string", enum: allowedConcepts } },
+        key_concept: {
+          type: "array",
+          items: { type: "string", enum: allowedConcepts },
+        },
       },
     },
   };
@@ -111,7 +117,7 @@ export function formatConceptBulletList(allowedConcepts: string[]): string {
 function requireActiveConcepts(allowedConcepts: string[]): void {
   if (allowedConcepts.length === 0) {
     throw new Error(
-      "The active concept catalog is empty. Upload concepts in the admin dashboard before generating material descriptions."
+      "The active concept catalog is empty. Upload concepts in the admin dashboard before generating material descriptions.",
     );
   }
 }
@@ -144,7 +150,10 @@ export function buildTier2Prompt(allowedConcepts: string[]): string {
  * response_format, so the schema enum alone isn't a guarantee). "None" or any
  * value outside the catalog is nulled out; empty catalogs fail closed.
  */
-export function resolveTier1KeyConcept(value: string, allowedConcepts: string[]): string | null {
+export function resolveTier1KeyConcept(
+  value: string,
+  allowedConcepts: string[],
+): string | null {
   requireActiveConcepts(allowedConcepts);
   if (value === NONE_CONCEPT) return null;
   return allowedConcepts.includes(value) ? value : null;
@@ -154,7 +163,10 @@ export function resolveTier1KeyConcept(value: string, allowedConcepts: string[])
  * Post-validation for tier-2 key_concept array (same defense-in-depth
  * rationale as resolveTier1KeyConcept). Empty catalogs fail closed.
  */
-export function filterTier2KeyConcepts(values: string[], allowedConcepts: string[]): string[] {
+export function filterTier2KeyConcepts(
+  values: string[],
+  allowedConcepts: string[],
+): string[] {
   requireActiveConcepts(allowedConcepts);
   return values.filter((v) => allowedConcepts.includes(v));
 }
@@ -181,7 +193,7 @@ async function getConfiguredOpenAI(): Promise<{
   if (!provider) {
     throw new Error(
       "No AI provider configured for PDF description generation. " +
-        "An admin must configure the 'pdf_description' use case in the AI Config dashboard."
+        "An admin must configure the 'pdf_description' use case in the AI Config dashboard.",
     );
   }
 
@@ -214,7 +226,7 @@ async function processPage(
   serviceTier: string | null,
   thinking: ThinkingParams,
   transport: AiTransport,
-  allowedConcepts: string[]
+  allowedConcepts: string[],
 ): Promise<AiCallMetrics> {
   // Resolve a model-ready URL for this page: a JIT presigned link for hosted
   // providers, or an inline base64 data URL for local ones that can't reach S3.
@@ -226,7 +238,11 @@ async function processPage(
   const prompt = buildTier1Prompt(allowedConcepts);
 
   const { value, metrics } = await retryWithExponentialBackoff(() =>
-    streamJsonCompletion<{ needed: boolean; key_concept: string; description: string }>(
+    streamJsonCompletion<{
+      needed: boolean;
+      key_concept: string;
+      description: string;
+    }>(
       openai,
       {
         model,
@@ -244,8 +260,8 @@ async function processPage(
         ...thinking,
       },
       buildTier1Schema(allowedConcepts),
-      streamOptionsFor(transport)
-    )
+      streamOptionsFor(transport),
+    ),
   );
 
   await prisma.materialPage.update({
@@ -275,7 +291,8 @@ export async function processMaterial(materialId: string) {
   });
 
   if (!material) throw new Error("Material not found");
-  if (material.pages.length === 0) throw new Error("No pages found for material");
+  if (material.pages.length === 0)
+    throw new Error("No pages found for material");
 
   let bucket: string;
   try {
@@ -290,8 +307,15 @@ export async function processMaterial(materialId: string) {
   requireActiveConcepts(allowedConcepts);
 
   // Resolve provider from DB config
-  const { client: openai, model, providerType, serviceTier, thinkingLevel, isLocal, transport } =
-    await getConfiguredOpenAI();
+  const {
+    client: openai,
+    model,
+    providerType,
+    serviceTier,
+    thinkingLevel,
+    isLocal,
+    transport,
+  } = await getConfiguredOpenAI();
   // Derived once and passed to every call below; empty unless a level is pinned.
   const thinking = thinkingParams({ thinkingLevel });
 
@@ -301,24 +325,42 @@ export async function processMaterial(materialId: string) {
 
   // Tier 1: Process pages in batches of 5
   const CONCURRENCY = 5;
-  const pagesToProcess = material.pages.filter(p => p.description === null); // Support retry
-  
+  const pagesToProcess = material.pages.filter((p) => p.description === null); // Support retry
+
   for (let i = 0; i < pagesToProcess.length; i += CONCURRENCY) {
     if (isCancelled(materialId)) {
-      console.log(`[VLM Engine] Processing cancelled for material ${materialId}`);
+      console.log(
+        `[VLM Engine] Processing cancelled for material ${materialId}`,
+      );
       cancelledMaterials.delete(materialId);
       return;
     }
     const batch = pagesToProcess.slice(i, i + CONCURRENCY);
     await Promise.all(
       batch.map((page) =>
-        processPage(materialId, page.pageNumber, page.storageKey, bucket, openai, model, serviceTier, thinking, transport, allowedConcepts)
-          .then((m) => { callMetrics.push(m); })
-          .catch((err) => {
-            console.error(`[VLM Engine] Failed to process page ${page.pageNumber}:`, err);
-            // Don't fail the whole batch, allow retry mechanism later
+        processPage(
+          materialId,
+          page.pageNumber,
+          page.storageKey,
+          bucket,
+          openai,
+          model,
+          serviceTier,
+          thinking,
+          transport,
+          allowedConcepts,
+        )
+          .then((m) => {
+            callMetrics.push(m);
           })
-      )
+          .catch((err) => {
+            console.error(
+              `[VLM Engine] Failed to process page ${page.pageNumber}:`,
+              err,
+            );
+            // Don't fail the whole batch, allow retry mechanism later
+          }),
+      ),
     );
   }
 
@@ -326,7 +368,9 @@ export async function processMaterial(materialId: string) {
   const MAX_PAGE_RETRIES = 3;
   for (let retryAttempt = 1; retryAttempt <= MAX_PAGE_RETRIES; retryAttempt++) {
     if (isCancelled(materialId)) {
-      console.log(`[VLM Engine] Processing cancelled for material ${materialId} during retry`);
+      console.log(
+        `[VLM Engine] Processing cancelled for material ${materialId} during retry`,
+      );
       cancelledMaterials.delete(materialId);
       return;
     }
@@ -334,7 +378,10 @@ export async function processMaterial(materialId: string) {
     const materialCheck = await prisma.learningMaterial.findUnique({
       where: { id: materialId },
     });
-    if (!materialCheck || materialCheck.processedPages >= materialCheck.totalPages) {
+    if (
+      !materialCheck ||
+      materialCheck.processedPages >= materialCheck.totalPages
+    ) {
       break; // All pages processed successfully
     }
 
@@ -345,7 +392,9 @@ export async function processMaterial(materialId: string) {
 
     if (failedPages.length === 0) break;
 
-    console.log(`[VLM Engine] Retry attempt ${retryAttempt}/${MAX_PAGE_RETRIES}: ${failedPages.length} failed pages for material ${materialId}`);
+    console.log(
+      `[VLM Engine] Retry attempt ${retryAttempt}/${MAX_PAGE_RETRIES}: ${failedPages.length} failed pages for material ${materialId}`,
+    );
 
     for (let i = 0; i < failedPages.length; i += CONCURRENCY) {
       if (isCancelled(materialId)) {
@@ -355,12 +404,28 @@ export async function processMaterial(materialId: string) {
       const batch = failedPages.slice(i, i + CONCURRENCY);
       await Promise.all(
         batch.map((page) =>
-          processPage(materialId, page.pageNumber, page.storageKey, bucket, openai, model, serviceTier, thinking, transport, allowedConcepts)
-            .then((m) => { callMetrics.push(m); })
-            .catch((err) => {
-              console.error(`[VLM Engine] Retry ${retryAttempt} failed for page ${page.pageNumber}:`, err);
+          processPage(
+            materialId,
+            page.pageNumber,
+            page.storageKey,
+            bucket,
+            openai,
+            model,
+            serviceTier,
+            thinking,
+            transport,
+            allowedConcepts,
+          )
+            .then((m) => {
+              callMetrics.push(m);
             })
-        )
+            .catch((err) => {
+              console.error(
+                `[VLM Engine] Retry ${retryAttempt} failed for page ${page.pageNumber}:`,
+                err,
+              );
+            }),
+        ),
       );
     }
   }
@@ -369,7 +434,10 @@ export async function processMaterial(materialId: string) {
   const materialAfterRetries = await prisma.learningMaterial.findUnique({
     where: { id: materialId },
   });
-  if (materialAfterRetries && materialAfterRetries.processedPages < materialAfterRetries.totalPages) {
+  if (
+    materialAfterRetries &&
+    materialAfterRetries.processedPages < materialAfterRetries.totalPages
+  ) {
     await prisma.learningMaterial.update({
       where: { id: materialId },
       data: {
@@ -382,7 +450,9 @@ export async function processMaterial(materialId: string) {
 
   // Check cancellation before Tier 2
   if (isCancelled(materialId)) {
-    console.log(`[VLM Engine] Processing cancelled for material ${materialId} before Tier 2`);
+    console.log(
+      `[VLM Engine] Processing cancelled for material ${materialId} before Tier 2`,
+    );
     cancelledMaterials.delete(materialId);
     return;
   }
@@ -396,8 +466,10 @@ export async function processMaterial(materialId: string) {
 
   if (!updatedMaterial) return;
 
-  const neededPages = updatedMaterial.pages.filter((p) => p.needed === true && p.description !== null);
-  
+  const neededPages = updatedMaterial.pages.filter(
+    (p) => p.needed === true && p.description !== null,
+  );
+
   if (neededPages.length === 0) {
     // Edge case: no pages needed or all failed. Persist whatever Tier 1 metrics
     // we collected so the teacher still sees the model + token usage.
@@ -423,7 +495,12 @@ export async function processMaterial(materialId: string) {
   // Resolve model-ready URLs for Tier 2: presigned links for hosted providers,
   // inline base64 data URLs for local ones that can't reach S3.
   const imageUrls = await Promise.all(
-    neededPages.map((p) => resolveModelImageUrl(bucket, p.storageKey, { inlineBase64: isLocal, expiresIn: 3600 }))
+    neededPages.map((p) =>
+      resolveModelImageUrl(bucket, p.storageKey, {
+        inlineBase64: isLocal,
+        expiresIn: 3600,
+      }),
+    ),
   );
 
   const contentArray: any[] = [
@@ -448,8 +525,8 @@ export async function processMaterial(materialId: string) {
           ...thinking,
         },
         buildTier2Schema(allowedConcepts),
-        streamOptionsFor(transport)
-      )
+        streamOptionsFor(transport),
+      ),
     );
     callMetrics.push(metrics);
 
@@ -459,7 +536,9 @@ export async function processMaterial(materialId: string) {
       data: {
         processingStatus: "SUCCESS",
         batchDescription: value.description,
-        batchKeyConcepts: JSON.stringify(filterTier2KeyConcepts(value.key_concept, allowedConcepts)),
+        batchKeyConcepts: JSON.stringify(
+          filterTier2KeyConcepts(value.key_concept, allowedConcepts),
+        ),
         aiModel: agg?.model ?? null,
         aiProvider: agg ? providerType : null,
         aiServiceTier: agg ? serviceTier : null,

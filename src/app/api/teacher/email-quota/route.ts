@@ -12,8 +12,11 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const teacher = await prisma.teacher.findUnique({ where: { userId: session.user.id } });
-  if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
+  const teacher = await prisma.teacher.findUnique({
+    where: { userId: session.user.id },
+  });
+  if (!teacher)
+    return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
 
   const quota = await getTeacherEmailQuota(teacher.userId, {
     emailDailyLimit: teacher.emailDailyLimit,

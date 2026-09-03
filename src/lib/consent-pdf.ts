@@ -1,4 +1,10 @@
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import {
+  PDFDocument,
+  StandardFonts,
+  rgb,
+  type PDFFont,
+  type PDFPage,
+} from "pdf-lib";
 
 /**
  * On-demand PDF rendering for one consent signature. Deliberately the ONLY
@@ -77,9 +83,11 @@ export function htmlToPlainTextLines(html: string): string[] {
     .replace(/&quot;/gi, '"')
     .replace(/&#0?39;/gi, "'");
 
-  const lines = decoded
-    .split("\n")
-    .map((line) => sanitizeForPdf(line).replace(/[ \t]+/g, " ").trim());
+  const lines = decoded.split("\n").map((line) =>
+    sanitizeForPdf(line)
+      .replace(/[ \t]+/g, " ")
+      .trim(),
+  );
 
   // Collapse runs of blank lines to one, so paragraph spacing stays readable.
   const collapsed: string[] = [];
@@ -92,7 +100,12 @@ export function htmlToPlainTextLines(html: string): string[] {
   return collapsed;
 }
 
-function wrapLine(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
+function wrapLine(
+  text: string,
+  font: PDFFont,
+  size: number,
+  maxWidth: number,
+): string[] {
   if (text === "") return [""];
   const words = text.split(" ");
   const lines: string[] = [];
@@ -127,14 +140,28 @@ function ensureSpace(cursor: Cursor, needed: number): void {
   if (cursor.y - needed < MARGIN) newPage(cursor);
 }
 
-function drawLine(cursor: Cursor, text: string, opts: { size: number; bold?: boolean; gap?: number } ): void {
+function drawLine(
+  cursor: Cursor,
+  text: string,
+  opts: { size: number; bold?: boolean; gap?: number },
+): void {
   const font = opts.bold ? cursor.boldFont : cursor.font;
   ensureSpace(cursor, opts.size + (opts.gap ?? LINE_GAP));
-  cursor.page.drawText(text, { x: MARGIN, y: cursor.y - opts.size, size: opts.size, font, color: rgb(0.1, 0.1, 0.1) });
+  cursor.page.drawText(text, {
+    x: MARGIN,
+    y: cursor.y - opts.size,
+    size: opts.size,
+    font,
+    color: rgb(0.1, 0.1, 0.1),
+  });
   cursor.y -= opts.size + (opts.gap ?? LINE_GAP);
 }
 
-function drawParagraph(cursor: Cursor, text: string, opts: { size?: number; bold?: boolean } = {}): void {
+function drawParagraph(
+  cursor: Cursor,
+  text: string,
+  opts: { size?: number; bold?: boolean } = {},
+): void {
   const size = opts.size ?? BODY_SIZE;
   const font = opts.bold ? cursor.boldFont : cursor.font;
   const wrapped = wrapLine(text, font, size, CONTENT_WIDTH);
@@ -163,7 +190,7 @@ interface StrokeGroup {
 function drawStrokes(
   cursor: Cursor,
   raw: string | null,
-  box: { x: number; y: number; width: number; height: number }
+  box: { x: number; y: number; width: number; height: number },
 ): boolean {
   if (!raw) return false;
   let groups: StrokeGroup[];
@@ -175,7 +202,10 @@ function drawStrokes(
     return false;
   }
 
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
   for (const g of groups) {
     for (const p of g.points ?? []) {
       if (typeof p.x === "number" && typeof p.y === "number") {
@@ -186,7 +216,13 @@ function drawStrokes(
       }
     }
   }
-  if (!Number.isFinite(minX) || !Number.isFinite(maxX) || maxX <= minX || maxY <= minY) return false;
+  if (
+    !Number.isFinite(minX) ||
+    !Number.isFinite(maxX) ||
+    maxX <= minX ||
+    maxY <= minY
+  )
+    return false;
 
   const srcW = maxX - minX;
   const srcH = maxY - minY;
@@ -201,14 +237,22 @@ function drawStrokes(
       const p0 = points[i - 1];
       const p1 = points[i];
       if (
-        typeof p0.x !== "number" || typeof p0.y !== "number" ||
-        typeof p1.x !== "number" || typeof p1.y !== "number"
+        typeof p0.x !== "number" ||
+        typeof p0.y !== "number" ||
+        typeof p1.x !== "number" ||
+        typeof p1.y !== "number"
       ) {
         continue;
       }
       cursor.page.drawLine({
-        start: { x: offsetX + (p0.x - minX) * scale, y: offsetY + (srcH - (p0.y - minY)) * scale },
-        end: { x: offsetX + (p1.x - minX) * scale, y: offsetY + (srcH - (p1.y - minY)) * scale },
+        start: {
+          x: offsetX + (p0.x - minX) * scale,
+          y: offsetY + (srcH - (p0.y - minY)) * scale,
+        },
+        end: {
+          x: offsetX + (p1.x - minX) * scale,
+          y: offsetY + (srcH - (p1.y - minY)) * scale,
+        },
         thickness: 1.2,
         color: rgb(0.1, 0.1, 0.5),
       });
@@ -224,17 +268,30 @@ function formatTimestamp(date: Date): string {
 
 export async function renderConsentPdf(
   record: ConsentRecordForPdf,
-  formVersion: ConsentFormVersionForPdf
+  formVersion: ConsentFormVersionForPdf,
 ): Promise<Buffer> {
   const doc = await PDFDocument.create();
   const [font, boldFont] = await Promise.all([
     doc.embedFont(StandardFonts.Helvetica),
     doc.embedFont(StandardFonts.HelveticaBold),
   ]);
-  const cursor: Cursor = { doc, font, boldFont, page: doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]), y: PAGE_HEIGHT - MARGIN };
+  const cursor: Cursor = {
+    doc,
+    font,
+    boldFont,
+    page: doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]),
+    y: PAGE_HEIGHT - MARGIN,
+  };
 
-  drawParagraph(cursor, sanitizeForPdf(formVersion.title), { size: HEADING_SIZE, bold: true });
-  drawParagraph(cursor, `Form version: ${formVersion.version} · Role: ${formVersion.role}`, { size: 9 });
+  drawParagraph(cursor, sanitizeForPdf(formVersion.title), {
+    size: HEADING_SIZE,
+    bold: true,
+  });
+  drawParagraph(
+    cursor,
+    `Form version: ${formVersion.version} · Role: ${formVersion.role}`,
+    { size: 9 },
+  );
   drawSpacer(cursor, 10);
 
   drawParagraph(cursor, "Signature record", { size: 12, bold: true });
@@ -242,7 +299,12 @@ export async function renderConsentPdf(
   const fields: [string, string][] = [
     ["Name", sanitizeForPdf(record.signerNameSnapshot)],
     ["Email", sanitizeForPdf(record.signerEmailSnapshot)],
-    ["Decision", record.decision === "AGREE" ? "Yes, I agree to participate" : "No, I do not agree to participate"],
+    [
+      "Decision",
+      record.decision === "AGREE"
+        ? "Yes, I agree to participate"
+        : "No, I do not agree to participate",
+    ],
     ["Signed at", formatTimestamp(record.signedAt)],
     ["IP address", record.ipAddress],
     ["Device type", record.deviceType],
@@ -260,18 +322,32 @@ export async function renderConsentPdf(
   }
   drawSpacer(cursor, 8);
 
-  drawParagraph(cursor, "Digital signature (typed name):", { size: LABEL_SIZE, bold: true });
-  drawParagraph(cursor, sanitizeForPdf(record.signatureTypedName), { size: 16 });
+  drawParagraph(cursor, "Digital signature (typed name):", {
+    size: LABEL_SIZE,
+    bold: true,
+  });
+  drawParagraph(cursor, sanitizeForPdf(record.signatureTypedName), {
+    size: 16,
+  });
   drawSpacer(cursor, 6);
 
   const signatureBoxHeight = 70;
   if (record.signatureStrokeData) {
     ensureSpace(cursor, signatureBoxHeight + 16);
-    const box = { x: MARGIN, y: cursor.y - signatureBoxHeight, width: 220, height: signatureBoxHeight };
+    const box = {
+      x: MARGIN,
+      y: cursor.y - signatureBoxHeight,
+      width: 220,
+      height: signatureBoxHeight,
+    };
     const drew = drawStrokes(cursor, record.signatureStrokeData, box);
     if (drew) {
       cursor.page.drawText("(hand-drawn signature)", {
-        x: MARGIN, y: cursor.y - signatureBoxHeight - 12, size: 8, font, color: rgb(0.4, 0.4, 0.4),
+        x: MARGIN,
+        y: cursor.y - signatureBoxHeight - 12,
+        size: 8,
+        font,
+        color: rgb(0.4, 0.4, 0.4),
       });
     }
     cursor.y -= signatureBoxHeight + 16;
@@ -279,8 +355,16 @@ export async function renderConsentPdf(
 
   if (record.interviewRecordingConsent && record.initialsStrokeData) {
     ensureSpace(cursor, signatureBoxHeight + 16);
-    drawParagraph(cursor, "Interview-recording initials:", { size: LABEL_SIZE, bold: true });
-    const box = { x: MARGIN, y: cursor.y - signatureBoxHeight, width: 100, height: signatureBoxHeight };
+    drawParagraph(cursor, "Interview-recording initials:", {
+      size: LABEL_SIZE,
+      bold: true,
+    });
+    const box = {
+      x: MARGIN,
+      y: cursor.y - signatureBoxHeight,
+      width: 100,
+      height: signatureBoxHeight,
+    };
     drawStrokes(cursor, record.initialsStrokeData, box);
     cursor.y -= signatureBoxHeight + 8;
   }

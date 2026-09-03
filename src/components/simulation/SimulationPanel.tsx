@@ -4,7 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { SimulationViewer } from "@/components/simulation/SimulationViewer";
 import { AiMetricsLine } from "@/components/ai-metrics-line";
@@ -113,7 +119,9 @@ export function SimulationPanel({
     setDeleting(true);
     setMsg("");
     try {
-      const res = await fetch(`/api/simulations/${simulationId}`, { method: "DELETE" });
+      const res = await fetch(`/api/simulations/${simulationId}`, {
+        method: "DELETE",
+      });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         setMsg(data.error ?? "Failed to delete the simulation.");
@@ -155,8 +163,13 @@ export function SimulationPanel({
           </p>
         ) : detail.status === "DECLINED" ? (
           <div className="rounded-md border p-4 text-sm text-muted-foreground">
-            <p className="font-medium text-foreground">No simulation for this question.</p>
-            <p className="mt-1 italic">{detail.declineReason ?? "The generator decided a simulation would not aid understanding here."}</p>
+            <p className="font-medium text-foreground">
+              No simulation for this question.
+            </p>
+            <p className="mt-1 italic">
+              {detail.declineReason ??
+                "The generator decided a simulation would not aid understanding here."}
+            </p>
           </div>
         ) : (
           <>
@@ -171,14 +184,17 @@ export function SimulationPanel({
                   />
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground">This simulation has no content yet.</p>
+                <p className="text-sm text-muted-foreground">
+                  This simulation has no content yet.
+                </p>
               )}
             </div>
 
             {revising && (
               <p className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" />
-                Revision in progress — the current version stays available until the new one lands.
+                Revision in progress — the current version stays available until
+                the new one lands.
               </p>
             )}
 
@@ -187,17 +203,27 @@ export function SimulationPanel({
                 {detail.feedback.map((f) => (
                   <div key={f.id} className="text-sm">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium">{f.authorName ?? "Reviewer"}</span>
+                      <span className="font-medium">
+                        {f.authorName ?? "Reviewer"}
+                      </span>
                       <span className="text-xs text-muted-foreground">
                         {new Date(f.createdAt).toLocaleString()}
                       </span>
-                      {f.status === "APPLIED" && <Badge variant="success">Applied</Badge>}
-                      {f.status === "PENDING" && <Badge variant="outline">In progress</Badge>}
-                      {f.status === "FAILED" && <Badge variant="destructive">Failed</Badge>}
+                      {f.status === "APPLIED" && (
+                        <Badge variant="success">Applied</Badge>
+                      )}
+                      {f.status === "PENDING" && (
+                        <Badge variant="outline">In progress</Badge>
+                      )}
+                      {f.status === "FAILED" && (
+                        <Badge variant="destructive">Failed</Badge>
+                      )}
                     </div>
                     <p className="text-muted-foreground">{f.feedback}</p>
                     {f.status === "FAILED" && f.errorMessage && (
-                      <p className="text-xs text-destructive">{f.errorMessage}</p>
+                      <p className="text-xs text-destructive">
+                        {f.errorMessage}
+                      </p>
                     )}
                   </div>
                 ))}
@@ -206,7 +232,10 @@ export function SimulationPanel({
 
             {canGiveFeedback && detail.status === "READY" && (
               <div className="space-y-2">
-                <Label htmlFor="sim-feedback">Report a problem — wrong physics/math, layout issues, or anything to correct</Label>
+                <Label htmlFor="sim-feedback">
+                  Report a problem — wrong physics/math, layout issues, or
+                  anything to correct
+                </Label>
                 <div className="flex gap-2">
                   <Textarea
                     id="sim-feedback"
@@ -216,8 +245,16 @@ export function SimulationPanel({
                     placeholder='e.g. "The period should use T = 2π√(L/g); it currently ignores L."'
                     className="flex-1"
                   />
-                  <Button onClick={sendFeedback} disabled={sending || !draft.trim()} className="shrink-0 self-end">
-                    {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+                  <Button
+                    onClick={sendFeedback}
+                    disabled={sending || !draft.trim()}
+                    className="shrink-0 self-end"
+                  >
+                    {sending ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <Send className="size-4" />
+                    )}
                     Send
                   </Button>
                 </div>
@@ -228,8 +265,17 @@ export function SimulationPanel({
 
         {detail && canGiveFeedback && (
           <div className="flex justify-end border-t pt-3">
-            <Button variant="ghost" size="sm" onClick={handleDelete} disabled={deleting || sending}>
-              {deleting ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4 text-destructive" />}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleDelete}
+              disabled={deleting || sending}
+            >
+              {deleting ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Trash2 className="size-4 text-destructive" />
+              )}
               Delete simulation
             </Button>
           </div>

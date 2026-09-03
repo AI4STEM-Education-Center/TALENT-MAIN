@@ -57,7 +57,7 @@ const bodySchema = z.object({
         name: z.string().min(1).max(200),
         mimeType: z.string().min(1).max(100),
         dataBase64: z.string().min(1),
-      })
+      }),
     )
     .max(16)
     .optional(),
@@ -76,7 +76,10 @@ export async function POST(req: Request) {
     session = await resolveAssistantSession();
   } catch (error) {
     logApiError("ASSISTANT_CHAT", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 
   if (!session) {
@@ -84,12 +87,21 @@ export async function POST(req: Request) {
   }
   const { ctx, settings } = session;
   if (!settings.enabled) {
-    return NextResponse.json({ error: "This assistant is currently turned off." }, { status: 503 });
+    return NextResponse.json(
+      { error: "This assistant is currently turned off." },
+      { status: 503 },
+    );
   }
 
   // Keyed by user, not IP: a shared classroom NAT must not make one student's
   // questions exhaust the whole room's budget.
-  const limited = rateLimit(req, "assistant-chat", settings.turnsPerHour, HOUR_MS, ctx.userId);
+  const limited = rateLimit(
+    req,
+    "assistant-chat",
+    settings.turnsPerHour,
+    HOUR_MS,
+    ctx.userId,
+  );
   if (limited) return limited;
 
   // The cap follows the admin's own attachment limits (base64 inflates ~4/3),
@@ -110,17 +122,24 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
   if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Invalid request body." },
+      { status: 400 },
+    );
   }
 
-  const { accepted, rejected } = validateAttachments(parsed.data.attachments ?? [], {
-    allowedKinds: settings.attachmentKinds,
-    maxAttachments: settings.maxAttachments,
-    maxAttachmentBytes: settings.maxAttachmentBytes,
-  });
+  const { accepted, rejected } = validateAttachments(
+    parsed.data.attachments ?? [],
+    {
+      allowedKinds: settings.attachmentKinds,
+      maxAttachments: settings.maxAttachments,
+      maxAttachmentBytes: settings.maxAttachmentBytes,
+    },
+  );
 
   const notices = rejected.map(
-    (rejection) => `the attachment "${rejection.name}" was not read: ${rejection.reason}`
+    (rejection) =>
+      `the attachment "${rejection.name}" was not read: ${rejection.reason}`,
   );
 
   const encoder = new TextEncoder();
@@ -142,9 +161,10 @@ export async function POST(req: Request) {
             { userId: ctx.userId, audience: ctx.audience },
             parsed.data.conversationId ?? null,
             parsed.data.message,
-            settings.historyRetentionDays
+            settings.historyRetentionDays,
           );
-          if (conversationId) emit({ type: "conversation", id: conversationId });
+          if (conversationId)
+            emit({ type: "conversation", id: conversationId });
 
           // Keep the turn's files before answering, so the ids can go out ahead
           // of the reply and the client can reference them next turn. Best
@@ -154,7 +174,7 @@ export async function POST(req: Request) {
           const stored = await persistAttachments(
             { userId: ctx.userId, audience: ctx.audience },
             accepted,
-            settings.attachmentRetentionDays
+            settings.attachmentRetentionDays,
           );
           if (stored.length > 0) emit({ type: "attachments", stored });
 
@@ -163,7 +183,10 @@ export async function POST(req: Request) {
           // to read, so a conversation still has context on a box where
           // persistence is down.
           const history = conversationId
-            ? await loadConversationHistory(conversationId, settings.maxHistoryMessages)
+            ? await loadConversationHistory(
+                conversationId,
+                settings.maxHistoryMessages,
+              )
             : (parsed.data.history ?? []);
 
           const result = await runAssistantTurn({
@@ -191,7 +214,7 @@ export async function POST(req: Request) {
                 attachmentIds: stored.map((item) => item.id),
                 attachmentNames: accepted.map((item) => item.name),
               },
-              result.text
+              result.text,
             );
           }
         } catch (error) {
@@ -208,7 +231,8 @@ export async function POST(req: Request) {
           });
           emit({
             type: "error",
-            message: "The assistant could not answer right now. Please try again.",
+            message:
+              "The assistant could not answer right now. Please try again.",
           });
         } finally {
           closed = true;

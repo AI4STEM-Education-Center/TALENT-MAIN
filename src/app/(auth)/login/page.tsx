@@ -6,12 +6,20 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 // Accept only same-origin relative paths from the URL to prevent open redirects
 // (reject protocol-relative "//host" and absolute URLs).
 function safeRelativeCallbackUrl(value: string | null): string | undefined {
-  return value && value.startsWith("/") && !value.startsWith("//") ? value : undefined;
+  return value && value.startsWith("/") && !value.startsWith("//")
+    ? value
+    : undefined;
 }
 
 function LoginForm() {
@@ -42,7 +50,9 @@ function LoginForm() {
         // Get fresh session to determine role
         const res = await fetch("/api/auth/session");
         if (!res.ok) {
-          setError("Signed in, but we couldn't load your account. Please try again.");
+          setError(
+            "Signed in, but we couldn't load your account. Please try again.",
+          );
           return;
         }
         const session = await res.json();
@@ -70,7 +80,9 @@ function LoginForm() {
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl font-bold">Sign in</CardTitle>
-          <CardDescription>Enter your email or username to sign in</CardDescription>
+          <CardDescription>
+            Enter your email or username to sign in
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -123,7 +135,8 @@ function LoginForm() {
                   Remember this computer
                 </Label>
                 <p className="text-xs text-muted-foreground">
-                  Stay signed in for 30 days. Otherwise, your sign-in expires after 1 day.
+                  Stay signed in for 30 days. Otherwise, your sign-in expires
+                  after 1 day.
                 </p>
               </div>
             </div>
@@ -145,7 +158,11 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-linear-to-br from-slate-900 via-blue-950 to-slate-900" />}>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-linear-to-br from-slate-900 via-blue-950 to-slate-900" />
+      }
+    >
       <LoginForm />
     </Suspense>
   );

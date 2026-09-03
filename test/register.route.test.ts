@@ -13,7 +13,7 @@ function postRegister(body: unknown) {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
-    }) as never
+    }) as never,
   );
 }
 
@@ -80,7 +80,9 @@ describe("POST /api/auth/register", () => {
       username: "MixedCaseUser",
     });
     expect(res.status).toBe(201);
-    const user = await prisma.user.findUnique({ where: { email: "mixedcase@example.com" } });
+    const user = await prisma.user.findUnique({
+      where: { email: "mixedcase@example.com" },
+    });
     expect(user?.username).toBe("mixedcaseuser");
   });
 
@@ -93,7 +95,10 @@ describe("POST /api/auth/register", () => {
   });
 
   it("rejects a duplicate username with 409", async () => {
-    await createTeacher({ email: "different@example.com", username: "newteacher" });
+    await createTeacher({
+      email: "different@example.com",
+      username: "newteacher",
+    });
     const res = await postRegister(validBody);
     expect(res.status).toBe(409);
     const body = await res.json();
@@ -116,7 +121,9 @@ describe("POST /api/auth/register — admin-issued codes", () => {
     const res = await postRegister({ ...validBody, teacherToken: code.code });
     expect(res.status).toBe(201);
 
-    const after = await prisma.teacherRegistrationCode.findUnique({ where: { id: code.id } });
+    const after = await prisma.teacherRegistrationCode.findUnique({
+      where: { id: code.id },
+    });
     expect(after?.usedCount).toBe(1);
     expect(after?.lastUsedAt).not.toBeNull();
   });
@@ -137,7 +144,10 @@ describe("POST /api/auth/register — admin-issued codes", () => {
 
   it("does not report 503 once a usable code exists — a wrong code is a 403", async () => {
     await createTeacherCode({});
-    const res = await postRegister({ ...validBody, teacherToken: "WRONGWRONGWRONG1" });
+    const res = await postRegister({
+      ...validBody,
+      teacherToken: "WRONGWRONGWRONG1",
+    });
     expect(res.status).toBe(403);
   });
 
@@ -171,7 +181,9 @@ describe("POST /api/auth/register — admin-issued codes", () => {
   it("refuses a code that has hit its use limit", async () => {
     const code = await createTeacherCode({ maxUses: 1 });
 
-    expect((await postRegister({ ...validBody, teacherToken: code.code })).status).toBe(201);
+    expect(
+      (await postRegister({ ...validBody, teacherToken: code.code })).status,
+    ).toBe(201);
 
     const second = await postRegister({
       ...validBody,
@@ -190,7 +202,9 @@ describe("POST /api/auth/register — admin-issued codes", () => {
     const res = await postRegister({ ...validBody, teacherToken: code.code });
     expect(res.status).toBe(409);
 
-    const after = await prisma.teacherRegistrationCode.findUnique({ where: { id: code.id } });
+    const after = await prisma.teacherRegistrationCode.findUnique({
+      where: { id: code.id },
+    });
     expect(after?.usedCount).toBe(0);
   });
 
@@ -200,7 +214,9 @@ describe("POST /api/auth/register — admin-issued codes", () => {
 
     expect((await postRegister(validBody)).status).toBe(201);
 
-    const after = await prisma.teacherRegistrationCode.findUnique({ where: { id: code.id } });
+    const after = await prisma.teacherRegistrationCode.findUnique({
+      where: { id: code.id },
+    });
     expect(after?.usedCount).toBe(0);
   });
 });

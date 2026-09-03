@@ -12,14 +12,21 @@ export const runtime = "nodejs";
  * students" path; anything larger goes through the bulk export job instead
  * (see /api/admin/consent/export). Never persisted.
  */
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
   const [session, { id }] = await Promise.all([auth(), params]);
   if (!session?.user || session.user.role !== "ADMIN") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const record = await prisma.consentRecord.findUnique({ where: { id }, include: { formVersion: true } });
-  if (!record) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const record = await prisma.consentRecord.findUnique({
+    where: { id },
+    include: { formVersion: true },
+  });
+  if (!record)
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const pdf = await renderConsentPdf(record, record.formVersion);
   return new NextResponse(new Uint8Array(pdf), {

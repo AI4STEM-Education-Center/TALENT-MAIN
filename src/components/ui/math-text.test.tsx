@@ -29,7 +29,7 @@ describe("splitMathSegments", () => {
 
   it("parses mixed text, inline, and display segments", () => {
     expect(
-      splitMathSegments("Solve $a^2$ then graph $$y = mx + b$$ today")
+      splitMathSegments("Solve $a^2$ then graph $$y = mx + b$$ today"),
     ).toEqual([
       { type: "text", value: "Solve " },
       { type: "inline", value: "a^2" },
@@ -86,7 +86,7 @@ describe("splitMathSegments", () => {
 describe("MathText", () => {
   it("fast path: emits exactly the input text in a span with the className", () => {
     const html = renderToStaticMarkup(
-      <MathText text="just plain text" className="my-class" />
+      <MathText text="just plain text" className="my-class" />,
     );
     expect(html).toBe('<span class="my-class">just plain text</span>');
   });
@@ -111,7 +111,7 @@ describe("MathText", () => {
 
   it("applies the className to the wrapper for math content", () => {
     const html = renderToStaticMarkup(
-      <MathText text="value $x$" className="wrapper" />
+      <MathText text="value $x$" className="wrapper" />,
     );
     expect(html).toContain('class="wrapper"');
   });

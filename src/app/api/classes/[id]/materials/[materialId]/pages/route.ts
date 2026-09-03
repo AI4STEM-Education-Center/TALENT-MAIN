@@ -14,7 +14,7 @@ export const runtime = "nodejs";
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string; materialId: string }> }
+  { params }: { params: Promise<{ id: string; materialId: string }> },
 ) {
   const session = await auth();
   if (!session?.user || session.user.role !== "TEACHER") {
@@ -25,13 +25,15 @@ export async function POST(
     params,
     prisma.teacher.findUnique({ where: { userId: session.user.id } }),
   ]);
-  if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
+  if (!teacher)
+    return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
 
   // Verify class ownership
   const cls = await prisma.class.findFirst({
     where: { id: classId, teacherId: teacher.id },
   });
-  if (!cls) return NextResponse.json({ error: "Class not found" }, { status: 404 });
+  if (!cls)
+    return NextResponse.json({ error: "Class not found" }, { status: 404 });
 
   // Verify material is linked to this class and owned by the teacher
   const material = await prisma.learningMaterial.findUnique({
@@ -55,7 +57,7 @@ export async function POST(
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "S3 not configured" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 
@@ -67,11 +69,17 @@ export async function POST(
   }
 
   if (!Array.isArray(body.pages) || body.pages.length === 0) {
-    return NextResponse.json({ error: "pages array is required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "pages array is required" },
+      { status: 400 },
+    );
   }
 
   if (body.pages.length > 100) {
-    return NextResponse.json({ error: "Maximum 100 pages per request" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Maximum 100 pages per request" },
+      { status: 400 },
+    );
   }
 
   const pageNumbers = body.pages.map((page) => page?.pageNumber);
@@ -81,13 +89,13 @@ export async function POST(
         typeof pageNumber !== "number" ||
         !Number.isInteger(pageNumber) ||
         pageNumber < 1 ||
-        pageNumber > 100
+        pageNumber > 100,
     ) ||
     new Set(pageNumbers).size !== pageNumbers.length
   ) {
     return NextResponse.json(
       { error: "pageNumber must be a unique integer between 1 and 100" },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
@@ -99,8 +107,9 @@ export async function POST(
   // already waited through the whole upload and the bucket is holding every
   // orphaned page. These declared sizes are enough to answer immediately.
   const declaredTotal = body.pages.reduce(
-    (total, page) => total + (typeof page?.sizeBytes === "number" ? page.sizeBytes : 0),
-    0
+    (total, page) =>
+      total + (typeof page?.sizeBytes === "number" ? page.sizeBytes : 0),
+    0,
   );
   const aggregateLimit = maxDerivedPageBytes(body.pages.length);
   if (declaredTotal > aggregateLimit) {
@@ -110,7 +119,7 @@ export async function POST(
           `These ${body.pages.length} pages total ${declaredTotal} bytes, over the ` +
           `${aggregateLimit}-byte limit for a document this length. Re-upload at a lower resolution.`,
       },
-      { status: 413 }
+      { status: 413 },
     );
   }
 
@@ -118,17 +127,33 @@ export async function POST(
 
   const results = await Promise.all(
     body.pages.map(async (page) => {
-      if (typeof page.pageNumber !== "number" || typeof page.sizeBytes !== "number") {
+      if (
+        typeof page.pageNumber !== "number" ||
+        typeof page.sizeBytes !== "number"
+      ) {
         return { pageNumber: page.pageNumber, error: "Invalid page data" };
       }
       if (page.sizeBytes < 1 || page.sizeBytes > maxBytes) {
-        return { pageNumber: page.pageNumber, error: `sizeBytes must be between 1 and ${maxBytes}` };
+        return {
+          pageNumber: page.pageNumber,
+          error: `sizeBytes must be between 1 and ${maxBytes}`,
+        };
       }
 
-      const storageKey = buildPageStorageKey(teacher.id, storageClassId, materialId, page.pageNumber);
-      
+      const storageKey = buildPageStorageKey(
+        teacher.id,
+        storageClassId,
+        materialId,
+        page.pageNumber,
+      );
+
       try {
-        const presignedUrl = await presignPutUpload(bucket, storageKey, mimeType, page.sizeBytes);
+        const presignedUrl = await presignPutUpload(
+          bucket,
+          storageKey,
+          mimeType,
+          page.sizeBytes,
+        );
         return {
           pageNumber: page.pageNumber,
           presignedUrl,
@@ -142,7 +167,7 @@ export async function POST(
           error: e instanceof Error ? e.message : "Failed to create upload URL",
         };
       }
-    })
+    }),
   );
 
   return NextResponse.json({ pages: results });

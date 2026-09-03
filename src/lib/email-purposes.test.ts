@@ -12,7 +12,11 @@ import {
   resolveSenderIdentity,
 } from "./email-purposes";
 
-const SMTP = { fromEmail: "fallback@example.com", fromName: "AI4Talent", senderDomain: null };
+const SMTP = {
+  fromEmail: "fallback@example.com",
+  fromName: "AI4Talent",
+  senderDomain: null,
+};
 
 describe("normalizeLocalPart", () => {
   it("lowercases and trims a valid prefix", () => {
@@ -24,7 +28,15 @@ describe("normalizeLocalPart", () => {
   });
 
   it("rejects prefixes that would break the address", () => {
-    for (const bad of ["", "  ", "-lead", "trail.", "has space", "with@at", "a".repeat(65)]) {
+    for (const bad of [
+      "",
+      "  ",
+      "-lead",
+      "trail.",
+      "has space",
+      "with@at",
+      "a".repeat(65),
+    ]) {
       expect(normalizeLocalPart(bad)).toBeNull();
     }
   });
@@ -33,12 +45,22 @@ describe("normalizeLocalPart", () => {
 describe("normalizeSenderDomain", () => {
   it("strips a pasted @, scheme and path", () => {
     expect(normalizeSenderDomain("@edwarcheng.net")).toBe("edwarcheng.net");
-    expect(normalizeSenderDomain("https://edwarcheng.net/mail")).toBe("edwarcheng.net");
-    expect(normalizeSenderDomain("noreply@Mail.Edwarcheng.NET")).toBe("mail.edwarcheng.net");
+    expect(normalizeSenderDomain("https://edwarcheng.net/mail")).toBe(
+      "edwarcheng.net",
+    );
+    expect(normalizeSenderDomain("noreply@Mail.Edwarcheng.NET")).toBe(
+      "mail.edwarcheng.net",
+    );
   });
 
   it("rejects values that aren't hostnames", () => {
-    for (const bad of ["", "localhost", "no_underscores.net", "-lead.net", "trailing-.net"]) {
+    for (const bad of [
+      "",
+      "localhost",
+      "no_underscores.net",
+      "-lead.net",
+      "trailing-.net",
+    ]) {
       expect(normalizeSenderDomain(bad)).toBeNull();
     }
   });
@@ -69,16 +91,26 @@ describe("resolveSenderIdentity", () => {
 
   it("builds prefix@domain from the catalog default once a domain is set", () => {
     const smtp = { ...SMTP, senderDomain: "edwarcheng.net" };
-    expect(resolveSenderIdentity("PASSWORD_RESET", smtp).fromEmail).toBe("password-reset@edwarcheng.net");
-    expect(resolveSenderIdentity("NOTIFICATION", smtp).fromEmail).toBe("notification@edwarcheng.net");
-    expect(resolveSenderIdentity("CONTACT_TEACHER", smtp).fromEmail).toBe("no-contact@edwarcheng.net");
+    expect(resolveSenderIdentity("PASSWORD_RESET", smtp).fromEmail).toBe(
+      "password-reset@edwarcheng.net",
+    );
+    expect(resolveSenderIdentity("NOTIFICATION", smtp).fromEmail).toBe(
+      "notification@edwarcheng.net",
+    );
+    expect(resolveSenderIdentity("CONTACT_TEACHER", smtp).fromEmail).toBe(
+      "no-contact@edwarcheng.net",
+    );
   });
 
   it("prefers the admin's overrides over the defaults", () => {
     const identity = resolveSenderIdentity(
       "PASSWORD_RESET",
       { ...SMTP, senderDomain: "edwarcheng.net" },
-      { localPart: "Reset", fromName: " Talent Support ", replyTo: "help@edwarcheng.net" }
+      {
+        localPart: "Reset",
+        fromName: " Talent Support ",
+        replyTo: "help@edwarcheng.net",
+      },
     );
     expect(identity).toEqual({
       fromEmail: "reset@edwarcheng.net",
@@ -91,7 +123,7 @@ describe("resolveSenderIdentity", () => {
     const identity = resolveSenderIdentity(
       "NOTIFICATION",
       { ...SMTP, senderDomain: "edwarcheng.net" },
-      { localPart: "not valid!", replyTo: "also-not-valid" }
+      { localPart: "not valid!", replyTo: "also-not-valid" },
     );
     expect(identity.fromEmail).toBe("notification@edwarcheng.net");
     expect(identity.replyTo).toBeNull();
@@ -100,25 +132,36 @@ describe("resolveSenderIdentity", () => {
 
 describe("formatFromHeader", () => {
   it("omits the angle brackets when there is no display name", () => {
-    expect(formatFromHeader({ fromEmail: "a@b.com", fromName: null, replyTo: null })).toBe("a@b.com");
+    expect(
+      formatFromHeader({ fromEmail: "a@b.com", fromName: null, replyTo: null }),
+    ).toBe("a@b.com");
   });
 
   it("escapes quotes in a display name so it can't inject header content", () => {
     expect(
-      formatFromHeader({ fromEmail: "a@b.com", fromName: 'Ev"il', replyTo: null })
+      formatFromHeader({
+        fromEmail: "a@b.com",
+        fromName: 'Ev"il',
+        replyTo: null,
+      }),
     ).toBe('"Ev\\"il" <a@b.com>');
   });
 });
 
 describe("renderTemplate", () => {
   it("substitutes known placeholders, including spaced ones", () => {
-    expect(renderTemplate("Hi {{firstName}} ({{ username }})", { firstName: "Ada", username: "ada" })).toBe(
-      "Hi Ada (ada)"
-    );
+    expect(
+      renderTemplate("Hi {{firstName}} ({{ username }})", {
+        firstName: "Ada",
+        username: "ada",
+      }),
+    ).toBe("Hi Ada (ada)");
   });
 
   it("leaves unknown placeholders visible instead of blanking them", () => {
-    expect(renderTemplate("Hi {{nope}}", { firstName: "Ada" })).toBe("Hi {{nope}}");
+    expect(renderTemplate("Hi {{nope}}", { firstName: "Ada" })).toBe(
+      "Hi {{nope}}",
+    );
   });
 });
 
@@ -151,7 +194,9 @@ describe("renderPurposeMessage", () => {
   });
 
   it("throws for purposes whose body is written by a user", () => {
-    expect(() => renderPurposeMessage("NOTIFICATION", vars)).toThrow(/no template/);
+    expect(() => renderPurposeMessage("NOTIFICATION", vars)).toThrow(
+      /no template/,
+    );
   });
 });
 
@@ -160,7 +205,9 @@ describe("catalog integrity", () => {
     for (const purpose of EMAIL_PURPOSES) {
       const definition = EMAIL_PURPOSE_DEFINITIONS[purpose];
       expect(definition.key).toBe(purpose);
-      expect(normalizeLocalPart(definition.defaultLocalPart)).toBe(definition.defaultLocalPart);
+      expect(normalizeLocalPart(definition.defaultLocalPart)).toBe(
+        definition.defaultLocalPart,
+      );
     }
   });
 
@@ -168,9 +215,11 @@ describe("catalog integrity", () => {
     for (const purpose of EMAIL_PURPOSES) {
       const { template, variables } = EMAIL_PURPOSE_DEFINITIONS[purpose];
       if (!template) continue;
-      const used = [...`${template.subject}\n${template.body}`.matchAll(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g)].map(
-        (m) => m[1]
-      );
+      const used = [
+        ...`${template.subject}\n${template.body}`.matchAll(
+          /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g,
+        ),
+      ].map((m) => m[1]);
       for (const name of used) expect(variables).toContain(name);
     }
   });

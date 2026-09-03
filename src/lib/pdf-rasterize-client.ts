@@ -6,7 +6,11 @@
 
 import { PDFiumLibrary } from "@hyzyla/pdfium/browser/base64";
 
-export type RasterizedPage = { pageNumber: number; blob: Blob; sizeBytes: number };
+export type RasterizedPage = {
+  pageNumber: number;
+  blob: Blob;
+  sizeBytes: number;
+};
 
 /**
  * Rasterize every page of `file` to a PNG blob (1-based pageNumber). Throws a
@@ -15,7 +19,7 @@ export type RasterizedPage = { pageNumber: number; blob: Blob; sizeBytes: number
  */
 export async function rasterizePdfToPngBlobs(
   file: File,
-  maxPages: number
+  maxPages: number,
 ): Promise<RasterizedPage[]> {
   const arrayBuffer = await file.arrayBuffer();
   const pages: RasterizedPage[] = [];
@@ -28,7 +32,9 @@ export async function rasterizePdfToPngBlobs(
       const numPages = pdfDoc.getPageCount();
 
       if (numPages > maxPages) {
-        throw new Error(`PDF exceeds maximum limit of ${maxPages} pages (has ${numPages}).`);
+        throw new Error(
+          `PDF exceeds maximum limit of ${maxPages} pages (has ${numPages}).`,
+        );
       }
 
       for (let i = 1; i <= numPages; i++) {
@@ -49,9 +55,15 @@ export async function rasterizePdfToPngBlobs(
         canvas.height = height;
         const ctx = canvas.getContext("2d");
         if (!ctx) throw new Error("Could not create canvas context");
-        ctx.putImageData(new ImageData(new Uint8ClampedArray(data), width, height), 0, 0);
+        ctx.putImageData(
+          new ImageData(new Uint8ClampedArray(data), width, height),
+          0,
+          0,
+        );
 
-        const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+        const blob = await new Promise<Blob | null>((resolve) =>
+          canvas.toBlob(resolve, "image/png"),
+        );
         if (!blob) throw new Error(`Failed to create blob for page ${i}`);
 
         pages.push({ pageNumber: i, blob, sizeBytes: blob.size });

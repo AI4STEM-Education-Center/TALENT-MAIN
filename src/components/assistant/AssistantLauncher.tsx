@@ -12,7 +12,8 @@ export function AssistantLauncher({ onOpen }: { onOpen?: () => void }) {
   const { config, open, setOpen } = useAssistant();
   if (!config?.available) return null;
 
-  const label = config.audience === "teacher" ? "Teaching assistant" : "Study assistant";
+  const label =
+    config.audience === "teacher" ? "Teaching assistant" : "Study assistant";
 
   return (
     <button

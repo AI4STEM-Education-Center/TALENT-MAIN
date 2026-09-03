@@ -68,26 +68,38 @@ export function SimulationViewer({
     })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (!cancelled && typeof data?.sessionId === "string") sessionId = data.sessionId;
+        if (!cancelled && typeof data?.sessionId === "string")
+          sessionId = data.sessionId;
       })
       .catch(() => {
         // Telemetry is best-effort — the simulation itself is unaffected.
       });
 
     const onMessage = (event: MessageEvent) => {
-      if (!iframeRef.current || event.source !== iframeRef.current.contentWindow) return;
-      const data = event.data as Partial<SimTelemetryTotals> & { type?: string };
+      if (
+        !iframeRef.current ||
+        event.source !== iframeRef.current.contentWindow
+      )
+        return;
+      const data = event.data as Partial<SimTelemetryTotals> & {
+        type?: string;
+      };
       if (!data || data.type !== SIM_TELEMETRY_MESSAGE_TYPE) return;
       totals = {
-        activeMs: typeof data.activeMs === "number" ? data.activeMs : totals.activeMs,
+        activeMs:
+          typeof data.activeMs === "number" ? data.activeMs : totals.activeMs,
         interactionCount:
           typeof data.interactionCount === "number"
             ? data.interactionCount
             : totals.interactionCount,
         paramChanges:
-          typeof data.paramChanges === "number" ? data.paramChanges : totals.paramChanges,
+          typeof data.paramChanges === "number"
+            ? data.paramChanges
+            : totals.paramChanges,
         controls:
-          data.controls && typeof data.controls === "object" ? data.controls : totals.controls,
+          data.controls && typeof data.controls === "object"
+            ? data.controls
+            : totals.controls,
       };
       dirty = true;
     };
@@ -98,9 +110,16 @@ export function SimulationViewer({
       dirty = false;
       if (ended) finalSent = true;
       const url = `/api/simulations/${simulationId}/sessions/${sessionId}`;
-      const body = JSON.stringify({ ...totals, dwellMs: Date.now() - startedAt, ended });
+      const body = JSON.stringify({
+        ...totals,
+        dwellMs: Date.now() - startedAt,
+        ended,
+      });
       if (ended && typeof navigator.sendBeacon === "function") {
-        navigator.sendBeacon(url, new Blob([body], { type: "application/json" }));
+        navigator.sendBeacon(
+          url,
+          new Blob([body], { type: "application/json" }),
+        );
       } else {
         fetch(url, {
           method: "POST",

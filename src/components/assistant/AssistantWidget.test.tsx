@@ -16,8 +16,8 @@ describe("AssistantWidget", () => {
       renderToStaticMarkup(
         <AssistantProvider>
           <AssistantWidget />
-        </AssistantProvider>
-      )
+        </AssistantProvider>,
+      ),
     ).toBe("");
   });
 });
@@ -30,8 +30,8 @@ describe("AssistantLauncher", () => {
       renderToStaticMarkup(
         <AssistantProvider>
           <AssistantLauncher />
-        </AssistantProvider>
-      )
+        </AssistantProvider>,
+      ),
     ).toBe("");
   });
 });
@@ -43,9 +43,14 @@ describe("AssistantLauncher", () => {
  * no matchMedia result other than `false` and no PointerEvent, so both are
  * stubbed — everything else is the component as it ships.
  */
-async function mountOpenPanel(): Promise<{ panel: HTMLElement; cleanup: () => void }> {
+async function mountOpenPanel(): Promise<{
+  panel: HTMLElement;
+  cleanup: () => void;
+}> {
   // React only suppresses its "not wrapped in act(...)" warning when this is set.
-  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  (
+    globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+  ).IS_REACT_ACT_ENVIRONMENT = true;
   vi.stubGlobal("matchMedia", () => ({
     matches: true,
     addEventListener: () => {},
@@ -63,7 +68,7 @@ async function mountOpenPanel(): Promise<{ panel: HTMLElement; cleanup: () => vo
         maxAttachments: 0,
         maxAttachmentBytes: 0,
       }),
-    }))
+    })),
   );
   // jsdom does not implement scrolling; the transcript auto-scroll calls it.
   Element.prototype.scrollTo = () => {};
@@ -78,11 +83,13 @@ async function mountOpenPanel(): Promise<{ panel: HTMLElement; cleanup: () => vo
       <AssistantProvider>
         <AssistantLauncher />
         <AssistantWidget />
-      </AssistantProvider>
+      </AssistantProvider>,
     );
   });
 
-  const launcher = host.querySelector<HTMLButtonElement>("button[aria-label^='Open']");
+  const launcher = host.querySelector<HTMLButtonElement>(
+    "button[aria-label^='Open']",
+  );
   if (!launcher) throw new Error("the launcher never appeared");
   await act(async () => launcher.click());
 
@@ -100,13 +107,28 @@ async function mountOpenPanel(): Promise<{ panel: HTMLElement; cleanup: () => vo
 
 /** jsdom has no PointerEvent; React only reads the mouse-event fields. */
 function pointer(type: string, x: number, y: number): MouseEvent {
-  return new MouseEvent(type, { bubbles: true, clientX: x, clientY: y, button: 0 });
+  return new MouseEvent(type, {
+    bubbles: true,
+    clientX: x,
+    clientY: y,
+    button: 0,
+  });
 }
 
-async function drag(target: EventTarget, from: [number, number], to: [number, number]) {
-  await act(async () => target.dispatchEvent(pointer("pointerdown", from[0], from[1])));
-  await act(async () => window.dispatchEvent(pointer("pointermove", to[0], to[1])));
-  await act(async () => window.dispatchEvent(pointer("pointerup", to[0], to[1])));
+async function drag(
+  target: EventTarget,
+  from: [number, number],
+  to: [number, number],
+) {
+  await act(async () =>
+    target.dispatchEvent(pointer("pointerdown", from[0], from[1])),
+  );
+  await act(async () =>
+    window.dispatchEvent(pointer("pointermove", to[0], to[1])),
+  );
+  await act(async () =>
+    window.dispatchEvent(pointer("pointerup", to[0], to[1])),
+  );
 }
 
 describe("moving and resizing the panel", () => {
@@ -117,7 +139,11 @@ describe("moving and resizing the panel", () => {
     try {
       const header = panel.querySelector("header");
       expect(header).not.toBeNull();
-      const before = { left: panel.style.left, top: panel.style.top, width: panel.style.width };
+      const before = {
+        left: panel.style.left,
+        top: panel.style.top,
+        width: panel.style.width,
+      };
 
       // Up and to the left: the panel opens against the bottom-right margin, so
       // that is the only direction with room to move on a 1024x768 jsdom window.
@@ -159,9 +185,9 @@ describe("moving and resizing the panel", () => {
       expect(parseFloat(panel.style.width)).toBe(width + 90);
       expect(parseFloat(panel.style.left)).toBe(left - 90);
       // Persisted once the gesture ends, so the panel reopens where it was left.
-      expect(JSON.parse(window.localStorage.getItem("assistant-panel-rect") ?? "{}")).toMatchObject(
-        { width: width + 90 }
-      );
+      expect(
+        JSON.parse(window.localStorage.getItem("assistant-panel-rect") ?? "{}"),
+      ).toMatchObject({ width: width + 90 });
     } finally {
       cleanup();
     }

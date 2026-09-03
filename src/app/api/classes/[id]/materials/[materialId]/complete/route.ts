@@ -19,7 +19,7 @@ class MaterialAlreadyCompletedError extends Error {}
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string; materialId: string }> }
+  { params }: { params: Promise<{ id: string; materialId: string }> },
 ) {
   const session = await auth();
   if (!session?.user || session.user.role !== "TEACHER") {
@@ -30,7 +30,8 @@ export async function POST(
     params,
     prisma.teacher.findUnique({ where: { userId: session.user.id } }),
   ]);
-  if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
+  if (!teacher)
+    return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
 
   const material = await prisma.learningMaterial.findUnique({
     where: { id: materialId },
@@ -45,7 +46,10 @@ export async function POST(
   }
 
   if (material.uploadStatus !== "PENDING") {
-    return NextResponse.json({ error: "Material is not in PENDING state" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Material is not in PENDING state" },
+      { status: 400 },
+    );
   }
 
   let body: { pages?: Array<{ pageNumber: number; storageKey: string }> };
@@ -56,14 +60,23 @@ export async function POST(
   }
 
   if (!Array.isArray(body.pages) || body.pages.length === 0) {
-    return NextResponse.json({ error: "pages array is required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "pages array is required" },
+      { status: 400 },
+    );
   }
-  const limited = rateLimit(req, "material-complete", 10, 60_000, session.user.id);
+  const limited = rateLimit(
+    req,
+    "material-complete",
+    10,
+    60_000,
+    session.user.id,
+  );
   if (limited) return limited;
   if (body.pages.length > MAX_MATERIAL_PAGES) {
     return NextResponse.json(
       { error: `A material may have at most ${MAX_MATERIAL_PAGES} pages.` },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
@@ -86,7 +99,7 @@ export async function POST(
       teacher.id,
       storageClassId,
       material.id,
-      expectedPageNumber
+      expectedPageNumber,
     );
     if (
       !page ||
@@ -97,8 +110,11 @@ export async function POST(
       page.storageKey !== expectedKey
     ) {
       return NextResponse.json(
-        { error: "Pages must be contiguous from 1 and use their exact upload keys." },
-        { status: 400 }
+        {
+          error:
+            "Pages must be contiguous from 1 and use their exact upload keys.",
+        },
+        { status: 400 },
       );
     }
     pages.push({ pageNumber: expectedPageNumber, storageKey: expectedKey });
@@ -110,7 +126,7 @@ export async function POST(
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "S3 not configured" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 
@@ -128,7 +144,10 @@ export async function POST(
       Promise.all(pages.map((page) => headS3Object(bucket, page.storageKey))),
     ]);
   } catch {
-    return NextResponse.json({ error: "Upload is incomplete in storage" }, { status: 404 });
+    return NextResponse.json(
+      { error: "Upload is incomplete in storage" },
+      { status: 404 },
+    );
   }
 
   const maxBytes = getMaxUploadBytes();
@@ -143,16 +162,16 @@ export async function POST(
     });
     return NextResponse.json(
       { error: `Uploaded file exceeds the ${maxBytes}-byte limit.` },
-      { status: 413 }
+      { status: 413 },
     );
   }
 
   const oversizedPage = uploadedPages.findIndex(
-    (page) => page.contentLength < 1 || page.contentLength > maxBytes
+    (page) => page.contentLength < 1 || page.contentLength > maxBytes,
   );
   const totalPageBytes = uploadedPages.reduce(
     (total, page) => total + page.contentLength,
-    0
+    0,
   );
   // Scales with page count — see maxDerivedPageBytes. The /pages endpoint has
   // already rejected an over-budget document from its declared sizes; this is
@@ -168,7 +187,7 @@ export async function POST(
             ? `Page ${oversizedPage + 1} exceeds the ${maxBytes}-byte limit.`
             : "Rendered pages exceed the aggregate upload limit.",
       },
-      { status: 413 }
+      { status: 413 },
     );
   }
 
@@ -203,13 +222,15 @@ export async function POST(
         });
       }
 
-      return tx.learningMaterial.findUniqueOrThrow({ where: { id: material.id } });
+      return tx.learningMaterial.findUniqueOrThrow({
+        where: { id: material.id },
+      });
     });
-    
+
     // In a real app we'd trigger a background job here (e.g. SQS, Inngest, BullMQ).
     // For this prototype, we'll invoke the background process directly to avoid network hairpin routing issues
     // that cause local fetch requests to hang indefinitely.
-    import('@/lib/vlm-engine').then(({ processMaterial }) => {
+    import("@/lib/vlm-engine").then(({ processMaterial }) => {
       processMaterial(material.id).catch(console.error);
     });
     return NextResponse.json({ material: updated });
@@ -217,13 +238,13 @@ export async function POST(
     if (e instanceof MaterialAlreadyCompletedError) {
       return NextResponse.json(
         { error: "Material upload has already been finalized." },
-        { status: 409 }
+        { status: 409 },
       );
     }
     console.error("Failed to complete upload:", e);
     return NextResponse.json(
       { error: "Failed to finalize material records" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

@@ -8,7 +8,10 @@ import { logApiError } from "@/lib/system-log";
 
 /** Per-message delivery tallies, keyed by message id, for the history list. */
 async function emailDeliveryCounts(messageIds: string[]) {
-  const byMessage = new Map<string, { queued: number; sent: number; failed: number }>();
+  const byMessage = new Map<
+    string,
+    { queued: number; sent: number; failed: number }
+  >();
   if (messageIds.length === 0) return byMessage;
 
   const rows = await prisma.messageEmailDelivery.groupBy({
@@ -19,7 +22,11 @@ async function emailDeliveryCounts(messageIds: string[]) {
 
   for (const row of rows) {
     const count = row._count._all;
-    const entry = byMessage.get(row.messageId) ?? { queued: 0, sent: 0, failed: 0 };
+    const entry = byMessage.get(row.messageId) ?? {
+      queued: 0,
+      sent: 0,
+      failed: 0,
+    };
     if (row.status === "SENT") entry.sent += count;
     else if (row.status === "FAILED") entry.failed += count;
     else entry.queued += count;
@@ -33,7 +40,7 @@ async function emailDeliveryCounts(messageIds: string[]) {
 // are queued, so those counts keep moving after the compose request returns.
 export async function GET(
   _req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await auth();
   if (!session?.user || session.user.role !== "TEACHER") {
@@ -41,25 +48,40 @@ export async function GET(
   }
 
   const { id } = await params;
-  const teacher = await prisma.teacher.findUnique({ where: { userId: session.user.id } });
-  if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
+  const teacher = await prisma.teacher.findUnique({
+    where: { userId: session.user.id },
+  });
+  if (!teacher)
+    return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
 
-  const cls = await prisma.class.findFirst({ where: { id, teacherId: teacher.id } });
-  if (!cls) return NextResponse.json({ error: "Class not found" }, { status: 404 });
+  const cls = await prisma.class.findFirst({
+    where: { id, teacherId: teacher.id },
+  });
+  if (!cls)
+    return NextResponse.json({ error: "Class not found" }, { status: 404 });
 
   const [messages, enrollments] = await Promise.all([
     prisma.message.findMany({
       where: { classId: id },
       orderBy: { createdAt: "desc" },
       take: 50,
-      include: { sender: { select: { firstName: true, lastName: true, role: true } } },
+      include: {
+        sender: { select: { firstName: true, lastName: true, role: true } },
+      },
     }),
     prisma.classEnrollment.findMany({
       where: { classId: id },
       include: {
         student: {
           select: {
-            user: { select: { id: true, firstName: true, lastName: true, email: true } },
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
+            },
           },
         },
       },
@@ -73,7 +95,7 @@ export async function GET(
     audience: {
       enrolled: enrollments.length,
       emailable: selectEmailRecipients(
-        enrollments.map((e) => ({ email: e.student.user.email }))
+        enrollments.map((e) => ({ email: e.student.user.email })),
       ).size,
     },
     recipients: enrollments
@@ -84,7 +106,9 @@ export async function GET(
         email: enrollment.student.user.email,
       }))
       .sort(
-        (a, b) => a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName)
+        (a, b) =>
+          a.lastName.localeCompare(b.lastName) ||
+          a.firstName.localeCompare(b.firstName),
       ),
     messages: messages.map((m) => ({
       ...m,
@@ -105,7 +129,7 @@ export async function GET(
 // server delays the notification rather than losing it.
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await auth();
   if (!session?.user || session.user.role !== "TEACHER") {
@@ -117,35 +141,55 @@ export async function POST(
     where: { userId: session.user.id },
     include: { user: true },
   });
-  if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
+  if (!teacher)
+    return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
 
-  const cls = await prisma.class.findFirst({ where: { id, teacherId: teacher.id } });
-  if (!cls) return NextResponse.json({ error: "Class not found" }, { status: 404 });
+  const cls = await prisma.class.findFirst({
+    where: { id, teacherId: teacher.id },
+  });
+  if (!cls)
+    return NextResponse.json({ error: "Class not found" }, { status: 404 });
 
   const { subject, body, recipientUserIds } = await req.json();
   if (!subject?.trim() || !body?.trim()) {
-    return NextResponse.json({ error: "Subject and message body are required." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Subject and message body are required." },
+      { status: 400 },
+    );
   }
 
   const hasExplicitRecipients = recipientUserIds !== undefined;
   if (hasExplicitRecipients && !Array.isArray(recipientUserIds)) {
-    return NextResponse.json({ error: "Recipients must be an array." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Recipients must be an array." },
+      { status: 400 },
+    );
   }
 
   const selectedUserIds = hasExplicitRecipients
     ? [
         ...new Set(
           (recipientUserIds as unknown[]).filter(
-            (value): value is string => typeof value === "string" && value.length > 0
-          )
+            (value): value is string =>
+              typeof value === "string" && value.length > 0,
+          ),
         ),
       ]
     : [];
-  if (hasExplicitRecipients && selectedUserIds.length !== (recipientUserIds as unknown[]).length) {
-    return NextResponse.json({ error: "Recipients must be unique student IDs." }, { status: 400 });
+  if (
+    hasExplicitRecipients &&
+    selectedUserIds.length !== (recipientUserIds as unknown[]).length
+  ) {
+    return NextResponse.json(
+      { error: "Recipients must be unique student IDs." },
+      { status: 400 },
+    );
   }
   if (hasExplicitRecipients && selectedUserIds.length === 0) {
-    return NextResponse.json({ error: "Select at least one student." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Select at least one student." },
+      { status: 400 },
+    );
   }
 
   // Recipients are the enrolled students — the people who will actually see the
@@ -153,35 +197,49 @@ export async function POST(
   // (validated at signup), so email follows the in-app audience exactly.
   const enrollments = await prisma.classEnrollment.findMany({
     where: { classId: id },
-    include: { student: { select: { userId: true, user: { select: { email: true } } } } },
+    include: {
+      student: { select: { userId: true, user: { select: { email: true } } } },
+    },
   });
 
   const selectedUserIdSet = new Set(selectedUserIds);
   const recipientEnrollments = hasExplicitRecipients
-    ? enrollments.filter((enrollment) => selectedUserIdSet.has(enrollment.student.userId))
+    ? enrollments.filter((enrollment) =>
+        selectedUserIdSet.has(enrollment.student.userId),
+      )
     : enrollments;
 
-  if (hasExplicitRecipients && recipientEnrollments.length !== selectedUserIds.length) {
+  if (
+    hasExplicitRecipients &&
+    recipientEnrollments.length !== selectedUserIds.length
+  ) {
     return NextResponse.json(
-      { error: "One or more selected students are not enrolled in this class." },
-      { status: 400 }
+      {
+        error: "One or more selected students are not enrolled in this class.",
+      },
+      { status: 400 },
     );
   }
 
   if (recipientEnrollments.length === 0) {
     return NextResponse.json(
-      { error: "No students have joined this class yet, so there is nobody to notify." },
-      { status: 400 }
+      {
+        error:
+          "No students have joined this class yet, so there is nobody to notify.",
+      },
+      { status: 400 },
     );
   }
 
-  const inAppUserIds = recipientEnrollments.map((enrollment) => enrollment.student.userId);
+  const inAppUserIds = recipientEnrollments.map(
+    (enrollment) => enrollment.student.userId,
+  );
 
   const emailRecipients = selectEmailRecipients(
     recipientEnrollments.map((enrollment) => ({
       userId: enrollment.student.userId,
       email: enrollment.student.user.email,
-    }))
+    })),
   );
 
   // Quota is checked before anything is queued. Emailing an arbitrary subset of
@@ -262,6 +320,6 @@ export async function POST(
         skippedReason: emailSkippedReason,
       },
     },
-    { status: 201 }
+    { status: 201 },
   );
 }

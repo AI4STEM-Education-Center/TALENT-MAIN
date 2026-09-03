@@ -15,9 +15,26 @@ export default async function PoolSubmissionsPage({
     prisma.poolSubmission.findMany({
       where: { reviewerId: session.user.id },
       include: {
-        teacher: { select: { user: { select: { firstName: true, lastName: true, email: true } } } },
-        quiz: { select: { id: true, name: true, _count: { select: { questions: true } } } },
-        material: { select: { id: true, title: true, originalName: true, totalPages: true } },
+        teacher: {
+          select: {
+            user: { select: { firstName: true, lastName: true, email: true } },
+          },
+        },
+        quiz: {
+          select: {
+            id: true,
+            name: true,
+            _count: { select: { questions: true } },
+          },
+        },
+        material: {
+          select: {
+            id: true,
+            title: true,
+            originalName: true,
+            totalPages: true,
+          },
+        },
         topic: { select: { id: true, name: true } },
       },
       orderBy: { createdAt: "desc" },

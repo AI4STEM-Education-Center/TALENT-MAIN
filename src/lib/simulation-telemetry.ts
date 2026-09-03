@@ -102,7 +102,10 @@ export function injectTelemetryScript(html: string): string {
   const lower = html.toLowerCase();
   for (const closer of ["</body>", "</html>"]) {
     const idx = lower.lastIndexOf(closer);
-    if (idx !== -1) return html.slice(0, idx) + SIMULATION_TELEMETRY_SNIPPET + html.slice(idx);
+    if (idx !== -1)
+      return (
+        html.slice(0, idx) + SIMULATION_TELEMETRY_SNIPPET + html.slice(idx)
+      );
   }
   return html + SIMULATION_TELEMETRY_SNIPPET;
 }
@@ -111,7 +114,8 @@ const clampCount = (value: number, max: number): number =>
   Number.isFinite(value) ? Math.min(Math.max(Math.round(value), 0), max) : 0;
 
 /** Clamp a client-reported millisecond duration into [0, MAX_TELEMETRY_MS]. */
-export const clampTelemetryMs = (value: number): number => clampCount(value, MAX_TELEMETRY_MS);
+export const clampTelemetryMs = (value: number): number =>
+  clampCount(value, MAX_TELEMETRY_MS);
 
 /** Clamp a client-reported counter into [0, MAX_TELEMETRY_COUNT]. */
 export const clampTelemetryCount = (value: number): number =>
@@ -123,13 +127,21 @@ export const clampTelemetryCount = (value: number): number =>
  * the entry count (keeping the most-changed controls so the cap can't be used
  * to crowd out the real signal).
  */
-export function sanitizeControlCounts(input: Record<string, number>): Record<string, number> {
+export function sanitizeControlCounts(
+  input: Record<string, number>,
+): Record<string, number> {
   const merged = new Map<string, number>();
   for (const [rawKey, rawCount] of Object.entries(input)) {
-    const key = rawKey.replace(/\s+/g, " ").trim().slice(0, MAX_CONTROL_LABEL_CHARS);
+    const key = rawKey
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, MAX_CONTROL_LABEL_CHARS);
     const count = clampTelemetryCount(rawCount);
     if (!key || count <= 0) continue;
-    merged.set(key, Math.min((merged.get(key) ?? 0) + count, MAX_TELEMETRY_COUNT));
+    merged.set(
+      key,
+      Math.min((merged.get(key) ?? 0) + count, MAX_TELEMETRY_COUNT),
+    );
   }
   const kept = [...merged.entries()]
     .sort((a, b) => b[1] - a[1])
@@ -144,7 +156,7 @@ export function sanitizeControlCounts(input: Record<string, number>): Record<str
  */
 export function mergeControlCounts(
   stored: Record<string, number>,
-  incoming: Record<string, number>
+  incoming: Record<string, number>,
 ): Record<string, number> {
   const merged: Record<string, number> = { ...stored };
   for (const [key, count] of Object.entries(incoming)) {
@@ -158,7 +170,8 @@ export function parseControlCounts(raw: string | null): Record<string, number> {
   if (!raw) return {};
   try {
     const parsed = JSON.parse(raw);
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
+      return {};
     const counts: Record<string, number> = {};
     for (const [key, value] of Object.entries(parsed)) {
       if (typeof value === "number") counts[key] = value;

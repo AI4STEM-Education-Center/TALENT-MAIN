@@ -58,7 +58,8 @@ export type LocalizationTarget = {
 /** A validated pass-2 result: a tight box for one target. */
 export type LocalizedBox = { targetId: string; bbox: FigureBbox };
 
-export type StagedQuestionType = "MULTIPLE_CHOICE" | "MULTI_SELECT" | "TRUE_FALSE" | "NUMERIC";
+export type StagedQuestionType =
+  "MULTIPLE_CHOICE" | "MULTI_SELECT" | "TRUE_FALSE" | "NUMERIC";
 
 export type StagedQuestion = {
   type: StagedQuestionType;
@@ -87,7 +88,8 @@ export type ExtractedQuiz = {
 };
 
 /** Where the pass-2 answer key came from (mirrors the prompt's source enum). */
-export type AnswerKeySource = "inline" | "key_block" | "green_mark" | "mixed" | "none";
+export type AnswerKeySource =
+  "inline" | "key_block" | "green_mark" | "mixed" | "none";
 
 /** One question's answer as read by the isolated pass-2 answer-key call. */
 export type QuestionAnswer = {
@@ -157,7 +159,15 @@ export const QUIZ_EXTRACTION_SCHEMA = {
           properties: {
             number: { type: ["integer", "null"] },
             page: { type: "integer" },
-            type: { type: "string", enum: ["multiple_choice", "multi_select", "true_false", "numeric"] },
+            type: {
+              type: "string",
+              enum: [
+                "multiple_choice",
+                "multi_select",
+                "true_false",
+                "numeric",
+              ],
+            },
             text: { type: "string" },
             points: { type: ["integer", "null"] },
             options: {
@@ -182,7 +192,14 @@ export const QUIZ_EXTRACTION_SCHEMA = {
                   image_page: { type: ["integer", "null"] },
                   image_alt: { type: ["string", "null"] },
                 },
-                required: ["text", "is_correct", "is_image", "image_bbox", "image_page", "image_alt"],
+                required: [
+                  "text",
+                  "is_correct",
+                  "is_image",
+                  "image_bbox",
+                  "image_page",
+                  "image_alt",
+                ],
                 additionalProperties: false,
               },
             },
@@ -300,12 +317,23 @@ export const QUIZ_ANSWER_KEY_SCHEMA = {
             question_index: { type: "integer" },
             correct_labels: { type: "array", items: { type: "string" } },
             numeric_answer: { type: ["number", "null"] },
-            source: { type: "string", enum: ["inline", "key_block", "green_mark", "mixed", "none"] },
+            source: {
+              type: "string",
+              enum: ["inline", "key_block", "green_mark", "mixed", "none"],
+            },
             confidence: { type: "number" },
             conflict: { type: "boolean" },
             note: { type: ["string", "null"] },
           },
-          required: ["question_index", "correct_labels", "numeric_answer", "source", "confidence", "conflict", "note"],
+          required: [
+            "question_index",
+            "correct_labels",
+            "numeric_answer",
+            "source",
+            "confidence",
+            "conflict",
+            "note",
+          ],
           additionalProperties: false,
         },
       },
@@ -380,7 +408,10 @@ Set has_answer_key=false in this pass (the answer-key pass decides it). Return e
  * the correct option letter(s) and/or numeric answer. Pure + deterministic (the
  * text and the question enumeration are asserted in tests).
  */
-export function buildAnswerKeyPrompt(totalPages: number, questions: StagedQuestion[]): string {
+export function buildAnswerKeyPrompt(
+  totalPages: number,
+  questions: StagedQuestion[],
+): string {
   return `You are reading the ANSWER KEY of a quiz. You are given ${totalPages} page image${
     totalPages === 1 ? "" : "s"
   }, in order, plus the list of questions that were already extracted from them (below). Your ONLY job is to determine the correct answer for each question. Do not re-transcribe the questions.
@@ -413,7 +444,9 @@ Return one entry per question, in the same order. Use the exact JSON schema prov
  * printed labels. Image options render as "[image: alt]". Numeric questions show
  * "(numeric — provide numeric_answer)". Pure.
  */
-export function summarizeQuestionsForAnswerKey(questions: StagedQuestion[]): string {
+export function summarizeQuestionsForAnswerKey(
+  questions: StagedQuestion[],
+): string {
   return questions
     .map((q, qIndex) => {
       const stem = q.text.replace(/\s+/g, " ").trim();
@@ -423,7 +456,10 @@ export function summarizeQuestionsForAnswerKey(questions: StagedQuestion[]): str
       const opts = q.options
         .map((o, oIndex) => {
           const label = optionLetter(oIndex);
-          const body = o.isImage === true ? `[image: ${o.imageAlt?.trim() || "figure"}]` : o.text.replace(/\s+/g, " ").trim();
+          const body =
+            o.isImage === true
+              ? `[image: ${o.imageAlt?.trim() || "figure"}]`
+              : o.text.replace(/\s+/g, " ").trim();
           return `      ${label}. ${body}`;
         })
         .join("\n");
@@ -459,9 +495,15 @@ export function letterToOptionIndex(label: string): number | null {
  * text and target ordering are asserted in tests). Lists every target on this
  * page by its engine-assigned target_id so the result maps back unambiguously.
  */
-export function buildLocalizationPrompt(pageNumber: number, targets: LocalizationTarget[]): string {
+export function buildLocalizationPrompt(
+  pageNumber: number,
+  targets: LocalizationTarget[],
+): string {
   const lines = targets.map((t) => {
-    const what = t.kind === "figure" ? "the question's figure/diagram" : "a single answer-choice image";
+    const what =
+      t.kind === "figure"
+        ? "the question's figure/diagram"
+        : "a single answer-choice image";
     const hint = t.hint ? ` — ${t.hint}` : "";
     return `- ${t.targetId}: ${what}${hint}`;
   });
@@ -537,16 +579,26 @@ function validateBbox(raw: unknown): FigureBbox | null {
   return { x: clamp(x, 0, 1), y: clamp(y, 0, 1), w: cw, h: ch };
 }
 
-function validateRawOption(raw: unknown, qIndex: number, oIndex: number): StagedOption {
+function validateRawOption(
+  raw: unknown,
+  qIndex: number,
+  oIndex: number,
+): StagedOption {
   if (!isRecord(raw)) {
-    throw new Error(`questions[${qIndex}].options[${oIndex}]: must be an object`);
+    throw new Error(
+      `questions[${qIndex}].options[${oIndex}]: must be an object`,
+    );
   }
   if (typeof raw.text !== "string") {
-    throw new Error(`questions[${qIndex}].options[${oIndex}].text: must be a string`);
+    throw new Error(
+      `questions[${qIndex}].options[${oIndex}].text: must be a string`,
+    );
   }
   const isCorrect = raw.is_correct;
   if (isCorrect !== true && isCorrect !== false && isCorrect !== null) {
-    throw new Error(`questions[${qIndex}].options[${oIndex}].is_correct: must be a boolean or null`);
+    throw new Error(
+      `questions[${qIndex}].options[${oIndex}].is_correct: must be a boolean or null`,
+    );
   }
   // Image-option fields are read tolerantly (qti.ts style): a bad shape degrades
   // to text/null rather than failing the whole quiz, and absent keys (old
@@ -554,17 +606,30 @@ function validateRawOption(raw: unknown, qIndex: number, oIndex: number): Staged
   const isImage = raw.is_image === true;
   const imageBbox = validateBbox(raw.image_bbox); // invalid → null, never throws
   const imagePage =
-    typeof raw.image_page === "number" && Number.isFinite(raw.image_page) ? Math.round(raw.image_page) : null;
+    typeof raw.image_page === "number" && Number.isFinite(raw.image_page)
+      ? Math.round(raw.image_page)
+      : null;
   const imageAlt = typeof raw.image_alt === "string" ? raw.image_alt : null;
-  return { text: raw.text, isCorrect, isImage, imageBbox, imagePage, imageStorageKey: null, imageAlt };
+  return {
+    text: raw.text,
+    isCorrect,
+    isImage,
+    imageBbox,
+    imagePage,
+    imageStorageKey: null,
+    imageAlt,
+  };
 }
 
 function validateRawQuestion(raw: unknown, qIndex: number): StagedQuestion {
-  if (!isRecord(raw)) throw new Error(`questions[${qIndex}]: must be an object`);
+  if (!isRecord(raw))
+    throw new Error(`questions[${qIndex}]: must be an object`);
 
   const rawType = raw.type;
   if (typeof rawType !== "string" || !(rawType in RAW_TYPE_MAP)) {
-    throw new Error(`questions[${qIndex}].type: unexpected value ${JSON.stringify(rawType)}`);
+    throw new Error(
+      `questions[${qIndex}].type: unexpected value ${JSON.stringify(rawType)}`,
+    );
   }
   const type = RAW_TYPE_MAP[rawType];
 
@@ -587,7 +652,9 @@ function validateRawQuestion(raw: unknown, qIndex: number): StagedQuestion {
   if (!Array.isArray(raw.options)) {
     throw new Error(`questions[${qIndex}].options: must be an array`);
   }
-  const options = raw.options.map((opt, oIndex) => validateRawOption(opt, qIndex, oIndex));
+  const options = raw.options.map((opt, oIndex) =>
+    validateRawOption(opt, qIndex, oIndex),
+  );
 
   if (typeof raw.confidence !== "number" || !Number.isFinite(raw.confidence)) {
     throw new Error(`questions[${qIndex}].confidence: must be a number`);
@@ -596,28 +663,44 @@ function validateRawQuestion(raw: unknown, qIndex: number): StagedQuestion {
 
   let numericAnswer: number | null = null;
   if (raw.numeric_answer !== null && raw.numeric_answer !== undefined) {
-    if (typeof raw.numeric_answer !== "number" || !Number.isFinite(raw.numeric_answer)) {
-      throw new Error(`questions[${qIndex}].numeric_answer: must be a number or null`);
+    if (
+      typeof raw.numeric_answer !== "number" ||
+      !Number.isFinite(raw.numeric_answer)
+    ) {
+      throw new Error(
+        `questions[${qIndex}].numeric_answer: must be a number or null`,
+      );
     }
     numericAnswer = raw.numeric_answer;
   }
 
-  const numericAnswerText = typeof raw.numeric_answer_text === "string" ? raw.numeric_answer_text : null;
-  const numericUnit = typeof raw.numeric_unit === "string" ? raw.numeric_unit : null;
+  const numericAnswerText =
+    typeof raw.numeric_answer_text === "string"
+      ? raw.numeric_answer_text
+      : null;
+  const numericUnit =
+    typeof raw.numeric_unit === "string" ? raw.numeric_unit : null;
 
   const hasFigure = raw.has_figure === true;
   let figurePage: number | null = null;
   if (raw.figure_page !== null && raw.figure_page !== undefined) {
-    if (typeof raw.figure_page !== "number" || !Number.isFinite(raw.figure_page)) {
-      throw new Error(`questions[${qIndex}].figure_page: must be a number or null`);
+    if (
+      typeof raw.figure_page !== "number" ||
+      !Number.isFinite(raw.figure_page)
+    ) {
+      throw new Error(
+        `questions[${qIndex}].figure_page: must be a number or null`,
+      );
     }
     figurePage = Math.round(raw.figure_page);
   }
   const figureBbox = validateBbox(raw.figure_bbox); // invalid shape → null, never throw
-  const figureCaption = typeof raw.figure_caption === "string" ? raw.figure_caption : null;
+  const figureCaption =
+    typeof raw.figure_caption === "string" ? raw.figure_caption : null;
 
   const needsReview = raw.needs_review === true;
-  const reviewNote = typeof raw.review_note === "string" ? raw.review_note : null;
+  const reviewNote =
+    typeof raw.review_note === "string" ? raw.review_note : null;
 
   return {
     type,
@@ -646,7 +729,8 @@ function validateRawQuestion(raw: unknown, qIndex: number): StagedQuestion {
  * figure_bbox rather than failing the whole quiz.
  */
 export function validateExtractedQuiz(input: unknown): ExtractedQuiz {
-  if (!isRecord(input)) throw new Error("extracted quiz: payload must be an object");
+  if (!isRecord(input))
+    throw new Error("extracted quiz: payload must be an object");
 
   if (typeof input.has_answer_key !== "boolean") {
     throw new Error("extracted quiz: has_answer_key must be a boolean");
@@ -655,8 +739,13 @@ export function validateExtractedQuiz(input: unknown): ExtractedQuiz {
     throw new Error("extracted quiz: questions must be an array");
   }
 
-  const quizTitle = typeof input.quiz_title === "string" && input.quiz_title.trim() ? input.quiz_title.trim() : null;
-  const questions = input.questions.map((q, index) => validateRawQuestion(q, index));
+  const quizTitle =
+    typeof input.quiz_title === "string" && input.quiz_title.trim()
+      ? input.quiz_title.trim()
+      : null;
+  const questions = input.questions.map((q, index) =>
+    validateRawQuestion(q, index),
+  );
 
   const warnings: string[] = [];
   if (Array.isArray(input.warnings)) {
@@ -679,7 +768,7 @@ function appendNote(existing: string | null, addition: string): string {
 function normalizeChoiceOptions(
   options: StagedOption[],
   qNumber: number,
-  warnings: string[]
+  warnings: string[],
 ): StagedOption[] {
   // Strip artifact-glyph / empty TEXT options. An image option is kept even with
   // empty text — its content is the picture, not a label — and carries all of
@@ -694,7 +783,9 @@ function normalizeChoiceOptions(
     kept.push({ ...opt, text: opt.text.trim() });
   }
   if (stripped > 0) {
-    warnings.push(`question ${qNumber}: stripped ${stripped} artifact option${stripped === 1 ? "" : "s"}`);
+    warnings.push(
+      `question ${qNumber}: stripped ${stripped} artifact option${stripped === 1 ? "" : "s"}`,
+    );
   }
 
   // Dedupe; keep first, but prefer a copy marked correct. Text options are keyed
@@ -715,7 +806,9 @@ function normalizeChoiceOptions(
     }
   }
   if (byKey.size < kept.length) {
-    warnings.push(`question ${qNumber}: removed duplicate option${kept.length - byKey.size === 1 ? "" : "s"}`);
+    warnings.push(
+      `question ${qNumber}: removed duplicate option${kept.length - byKey.size === 1 ? "" : "s"}`,
+    );
   }
   return order.map((key) => byKey.get(key)!);
 }
@@ -729,13 +822,20 @@ function normalizeChoiceOptions(
 
 // ── Structure-only per-question helpers (no correctness logic) ──
 
-function structureChoiceQuestion(q: StagedQuestion, qNumber: number, warnings: string[]): StagedQuestion {
+function structureChoiceQuestion(
+  q: StagedQuestion,
+  qNumber: number,
+  warnings: string[],
+): StagedQuestion {
   const options = normalizeChoiceOptions(q.options, qNumber, warnings);
   let needsReview = q.needsReview;
   let reviewNote = q.reviewNote;
   if (options.length < 2) {
     needsReview = true;
-    reviewNote = appendNote(reviewNote, "fewer than two options survived cleanup — review.");
+    reviewNote = appendNote(
+      reviewNote,
+      "fewer than two options survived cleanup — review.",
+    );
   }
   return { ...q, options, needsReview, reviewNote };
 }
@@ -757,9 +857,15 @@ function structureTrueFalse(q: StagedQuestion): StagedQuestion {
   };
 }
 
-function structureNumeric(q: StagedQuestion, qNumber: number, warnings: string[]): StagedQuestion {
+function structureNumeric(
+  q: StagedQuestion,
+  qNumber: number,
+  warnings: string[],
+): StagedQuestion {
   if (q.options.length > 0) {
-    warnings.push(`question ${qNumber}: numeric question had options — cleared`);
+    warnings.push(
+      `question ${qNumber}: numeric question had options — cleared`,
+    );
   }
   return { ...q, options: [] };
 }
@@ -805,23 +911,39 @@ export function normalizeStructure(quiz: ExtractedQuiz): ExtractedQuiz {
 
     // Any figure-bearing question must be confirmed by a teacher.
     if (q.hasFigure) {
-      q = { ...q, needsReview: true, reviewNote: appendNote(q.reviewNote, "confirm the figure crop.") };
+      q = {
+        ...q,
+        needsReview: true,
+        reviewNote: appendNote(q.reviewNote, "confirm the figure crop."),
+      };
     }
 
     // Image answer-choices likewise need their crops confirmed before commit.
     if (q.options.some((o) => o.isImage === true)) {
-      q = { ...q, needsReview: true, reviewNote: appendNote(q.reviewNote, "confirm the image-choice crops.") };
+      q = {
+        ...q,
+        needsReview: true,
+        reviewNote: appendNote(q.reviewNote, "confirm the image-choice crops."),
+      };
     }
 
     questions.push(q);
   });
 
-  return { hasAnswerKey: quiz.hasAnswerKey, quizTitle: quiz.quizTitle, questions, warnings };
+  return {
+    hasAnswerKey: quiz.hasAnswerKey,
+    quizTitle: quiz.quizTitle,
+    questions,
+    warnings,
+  };
 }
 
 // ── Answer-dependent per-question helpers ──
 
-function finalizeChoiceQuestion(q: StagedQuestion, hasAnswerKey: boolean): StagedQuestion {
+function finalizeChoiceQuestion(
+  q: StagedQuestion,
+  hasAnswerKey: boolean,
+): StagedQuestion {
   let type = q.type;
   let needsReview = q.needsReview;
   let reviewNote = q.reviewNote;
@@ -831,12 +953,18 @@ function finalizeChoiceQuestion(q: StagedQuestion, hasAnswerKey: boolean): Stage
   if (type === "MULTIPLE_CHOICE" && correctCount > 1) {
     type = "MULTI_SELECT";
     needsReview = true;
-    reviewNote = appendNote(reviewNote, "multiple options marked correct — converted to multi-select.");
+    reviewNote = appendNote(
+      reviewNote,
+      "multiple options marked correct — converted to multi-select.",
+    );
   }
 
   if (hasAnswerKey && correctCount === 0) {
     needsReview = true;
-    reviewNote = appendNote(reviewNote, "answer key present but no correct option marked — set it.");
+    reviewNote = appendNote(
+      reviewNote,
+      "answer key present but no correct option marked — set it.",
+    );
   }
 
   return { ...q, type, needsReview, reviewNote };
@@ -854,7 +982,10 @@ function finalizeTrueFalse(q: StagedQuestion): StagedQuestion {
     trueCorrect = null;
     falseCorrect = null;
     needsReview = true;
-    reviewNote = appendNote(reviewNote, "ambiguous true/false marking — set the correct answer.");
+    reviewNote = appendNote(
+      reviewNote,
+      "ambiguous true/false marking — set the correct answer.",
+    );
   }
 
   return {
@@ -868,7 +999,10 @@ function finalizeTrueFalse(q: StagedQuestion): StagedQuestion {
   };
 }
 
-function finalizeNumeric(q: StagedQuestion, hasAnswerKey: boolean): StagedQuestion {
+function finalizeNumeric(
+  q: StagedQuestion,
+  hasAnswerKey: boolean,
+): StagedQuestion {
   let needsReview = q.needsReview;
   let reviewNote = q.reviewNote;
 
@@ -880,7 +1014,10 @@ function finalizeNumeric(q: StagedQuestion, hasAnswerKey: boolean): StagedQuesti
 
   if (hasAnswerKey && numericAnswer === null) {
     needsReview = true;
-    reviewNote = appendNote(reviewNote, "answer key present but no numeric answer parsed — set it.");
+    reviewNote = appendNote(
+      reviewNote,
+      "answer key present but no numeric answer parsed — set it.",
+    );
   }
 
   return { ...q, options: [], numericAnswer, needsReview, reviewNote };
@@ -896,7 +1033,10 @@ function finalizeNumeric(q: StagedQuestion, hasAnswerKey: boolean): StagedQuesti
  */
 export function finalizeAnswers(quiz: ExtractedQuiz): ExtractedQuiz {
   const questions = quiz.questions.map((original) => {
-    let q: StagedQuestion = { ...original, options: original.options.map((o) => ({ ...o })) };
+    let q: StagedQuestion = {
+      ...original,
+      options: original.options.map((o) => ({ ...o })),
+    };
     switch (q.type) {
       case "MULTIPLE_CHOICE":
       case "MULTI_SELECT":
@@ -921,12 +1061,20 @@ export function finalizeAnswers(quiz: ExtractedQuiz): ExtractedQuiz {
         options: q.options.map((o) => ({ ...o, isCorrect: null })),
         numericAnswer: null,
         needsReview: true,
-        reviewNote: appendNote(q.reviewNote, "no answer key — set the correct answer"),
+        reviewNote: appendNote(
+          q.reviewNote,
+          "no answer key — set the correct answer",
+        ),
       };
     }
   }
 
-  return { hasAnswerKey: quiz.hasAnswerKey, quizTitle: quiz.quizTitle, questions, warnings: [...quiz.warnings] };
+  return {
+    hasAnswerKey: quiz.hasAnswerKey,
+    quizTitle: quiz.quizTitle,
+    questions,
+    warnings: [...quiz.warnings],
+  };
 }
 
 /**
@@ -940,7 +1088,13 @@ export function normalizeExtractedQuiz(quiz: ExtractedQuiz): ExtractedQuiz {
 
 // ─── Pass-2 answer key: validate raw JSON, apply onto the quiz ─────────────────
 
-const ANSWER_KEY_SOURCES: ReadonlySet<string> = new Set(["inline", "key_block", "green_mark", "mixed", "none"]);
+const ANSWER_KEY_SOURCES: ReadonlySet<string> = new Set([
+  "inline",
+  "key_block",
+  "green_mark",
+  "mixed",
+  "none",
+]);
 
 function isAnswerKeySource(value: unknown): value is AnswerKeySource {
   return typeof value === "string" && ANSWER_KEY_SOURCES.has(value);
@@ -953,7 +1107,8 @@ function isAnswerKeySource(value: unknown): value is AnswerKeySource {
  * teacher fill answers in review. Per-entry fields degrade tolerantly.
  */
 export function validateAnswerKeyResult(input: unknown): AnswerKeyResult {
-  if (!isRecord(input)) throw new Error("answer key: payload must be an object");
+  if (!isRecord(input))
+    throw new Error("answer key: payload must be an object");
   if (typeof input.has_answer_key !== "boolean") {
     throw new Error("answer key: has_answer_key must be a boolean");
   }
@@ -962,20 +1117,44 @@ export function validateAnswerKeyResult(input: unknown): AnswerKeyResult {
   }
 
   const answers: QuestionAnswer[] = input.answers.map((raw, i) => {
-    if (!isRecord(raw)) throw new Error(`answer key: answers[${i}] must be an object`);
-    if (typeof raw.question_index !== "number" || !Number.isFinite(raw.question_index) || raw.question_index < 0) {
-      throw new Error(`answer key: answers[${i}].question_index must be a non-negative integer`);
+    if (!isRecord(raw))
+      throw new Error(`answer key: answers[${i}] must be an object`);
+    if (
+      typeof raw.question_index !== "number" ||
+      !Number.isFinite(raw.question_index) ||
+      raw.question_index < 0
+    ) {
+      throw new Error(
+        `answer key: answers[${i}].question_index must be a non-negative integer`,
+      );
     }
     const correctLabels = Array.isArray(raw.correct_labels)
-      ? raw.correct_labels.filter((l): l is string => typeof l === "string" && l.trim() !== "").map((l) => l.trim())
+      ? raw.correct_labels
+          .filter((l): l is string => typeof l === "string" && l.trim() !== "")
+          .map((l) => l.trim())
       : [];
     const numericAnswer =
-      typeof raw.numeric_answer === "number" && Number.isFinite(raw.numeric_answer) ? raw.numeric_answer : null;
+      typeof raw.numeric_answer === "number" &&
+      Number.isFinite(raw.numeric_answer)
+        ? raw.numeric_answer
+        : null;
     const source = isAnswerKeySource(raw.source) ? raw.source : "none";
-    const confidence = typeof raw.confidence === "number" && Number.isFinite(raw.confidence) ? clamp(raw.confidence, 0, 1) : 0;
+    const confidence =
+      typeof raw.confidence === "number" && Number.isFinite(raw.confidence)
+        ? clamp(raw.confidence, 0, 1)
+        : 0;
     const conflict = raw.conflict === true;
-    const note = typeof raw.note === "string" && raw.note.trim() ? raw.note.trim() : null;
-    return { questionIndex: Math.round(raw.question_index), correctLabels, numericAnswer, source, confidence, conflict, note };
+    const note =
+      typeof raw.note === "string" && raw.note.trim() ? raw.note.trim() : null;
+    return {
+      questionIndex: Math.round(raw.question_index),
+      correctLabels,
+      numericAnswer,
+      source,
+      confidence,
+      conflict,
+      note,
+    };
   });
 
   return { hasAnswerKey: input.has_answer_key, answers };
@@ -989,11 +1168,17 @@ export function validateAnswerKeyResult(input: unknown): AnswerKeyResult {
  * a question with no key entry (or source "none") keeps null correctness so
  * `finalizeAnswers` flags it. The top-level hasAnswerKey comes from the result.
  */
-export function applyAnswerKey(quiz: ExtractedQuiz, result: AnswerKeyResult): ExtractedQuiz {
+export function applyAnswerKey(
+  quiz: ExtractedQuiz,
+  result: AnswerKeyResult,
+): ExtractedQuiz {
   const byIndex = new Map(result.answers.map((a) => [a.questionIndex, a]));
 
   const questions = quiz.questions.map((original, index) => {
-    const q: StagedQuestion = { ...original, options: original.options.map((o) => ({ ...o })) };
+    const q: StagedQuestion = {
+      ...original,
+      options: original.options.map((o) => ({ ...o })),
+    };
     const answer = byIndex.get(index);
 
     // No key overall, no entry for this question, or the model found none: leave
@@ -1004,11 +1189,19 @@ export function applyAnswerKey(quiz: ExtractedQuiz, result: AnswerKeyResult): Ex
     let reviewNote = q.reviewNote;
     if (answer.conflict) {
       needsReview = true;
-      reviewNote = appendNote(reviewNote, "answer sources disagreed — verify the correct answer.");
+      reviewNote = appendNote(
+        reviewNote,
+        "answer sources disagreed — verify the correct answer.",
+      );
     }
 
     if (q.type === "NUMERIC") {
-      return { ...q, numericAnswer: answer.numericAnswer, needsReview, reviewNote };
+      return {
+        ...q,
+        numericAnswer: answer.numericAnswer,
+        needsReview,
+        reviewNote,
+      };
     }
 
     const correctIdx = new Set<number>();
@@ -1023,14 +1216,25 @@ export function applyAnswerKey(quiz: ExtractedQuiz, result: AnswerKeyResult): Ex
     }
     if (badLabel) {
       needsReview = true;
-      reviewNote = appendNote(reviewNote, "an answer-key letter did not match an option — verify.");
+      reviewNote = appendNote(
+        reviewNote,
+        "an answer-key letter did not match an option — verify.",
+      );
     }
 
-    const options = q.options.map((o, oIndex) => ({ ...o, isCorrect: correctIdx.has(oIndex) }));
+    const options = q.options.map((o, oIndex) => ({
+      ...o,
+      isCorrect: correctIdx.has(oIndex),
+    }));
     return { ...q, options, needsReview, reviewNote };
   });
 
-  return { hasAnswerKey: result.hasAnswerKey, quizTitle: quiz.quizTitle, questions, warnings: [...quiz.warnings] };
+  return {
+    hasAnswerKey: result.hasAnswerKey,
+    quizTitle: quiz.quizTitle,
+    questions,
+    warnings: [...quiz.warnings],
+  };
 }
 
 // ─── Pass-2 localization: targets, validation, merge ───────────────────────────
@@ -1039,9 +1243,11 @@ export function applyAnswerKey(quiz: ExtractedQuiz, result: AnswerKeyResult): Ex
 export function buildTargetId(
   questionIndex: number,
   kind: LocalizationTargetKind,
-  optionIndex: number | null
+  optionIndex: number | null,
 ): string {
-  return kind === "figure" ? `q${questionIndex}.figure` : `q${questionIndex}.opt${optionIndex}`;
+  return kind === "figure"
+    ? `q${questionIndex}.figure`
+    : `q${questionIndex}.opt${optionIndex}`;
 }
 
 /**
@@ -1050,7 +1256,9 @@ export function buildTargetId(
  * options in order. The page always resolves to a real page (figure/option page
  * falls back to the question's source page). Pure.
  */
-export function collectLocalizationTargets(quiz: ExtractedQuiz): LocalizationTarget[] {
+export function collectLocalizationTargets(
+  quiz: ExtractedQuiz,
+): LocalizationTarget[] {
   const targets: LocalizationTarget[] = [];
   quiz.questions.forEach((q, questionIndex) => {
     if (q.hasFigure) {
@@ -1082,11 +1290,15 @@ export function collectLocalizationTargets(quiz: ExtractedQuiz): LocalizationTar
 
 /** Does this quiz have anything for pass 2 to localize? */
 export function needsLocalization(quiz: ExtractedQuiz): boolean {
-  return quiz.questions.some((q) => q.hasFigure || q.options.some((o) => o.isImage === true));
+  return quiz.questions.some(
+    (q) => q.hasFigure || q.options.some((o) => o.isImage === true),
+  );
 }
 
 /** Group targets by their 1-based page for the per-page pass-2 calls. */
-export function groupTargetsByPage(targets: LocalizationTarget[]): Map<number, LocalizationTarget[]> {
+export function groupTargetsByPage(
+  targets: LocalizationTarget[],
+): Map<number, LocalizationTarget[]> {
   const byPage = new Map<number, LocalizationTarget[]>();
   for (const t of targets) {
     const list = byPage.get(t.page);
@@ -1102,14 +1314,22 @@ export function groupTargetsByPage(targets: LocalizationTarget[]): Map<number, L
  * or a malformed bbox, and dedupes by target_id (first wins). `knownTargetIds`
  * is the anti-hallucination guard.
  */
-export function validateLocalizationResult(input: unknown, knownTargetIds: ReadonlySet<string>): LocalizedBox[] {
+export function validateLocalizationResult(
+  input: unknown,
+  knownTargetIds: ReadonlySet<string>,
+): LocalizedBox[] {
   if (!isRecord(input) || !Array.isArray(input.boxes)) return [];
   const seen = new Set<string>();
   const out: LocalizedBox[] = [];
   for (const raw of input.boxes) {
     if (!isRecord(raw)) continue;
     const targetId = raw.target_id;
-    if (typeof targetId !== "string" || !knownTargetIds.has(targetId) || seen.has(targetId)) continue;
+    if (
+      typeof targetId !== "string" ||
+      !knownTargetIds.has(targetId) ||
+      seen.has(targetId)
+    )
+      continue;
     if (raw.found !== true) continue;
     const bbox = validateBbox(raw.bbox);
     if (!bbox) continue;
@@ -1124,7 +1344,10 @@ export function validateLocalizationResult(input: unknown, knownTargetIds: Reado
  * input). A tight box overrides the coarse one; a target left with neither a
  * tight nor a coarse box is forced needsReview so the teacher draws it by hand.
  */
-export function mergeLocalizedBoxes(quiz: ExtractedQuiz, boxes: LocalizedBox[]): ExtractedQuiz {
+export function mergeLocalizedBoxes(
+  quiz: ExtractedQuiz,
+  boxes: LocalizedBox[],
+): ExtractedQuiz {
   const byId = new Map(boxes.map((b) => [b.targetId, b.bbox]));
 
   const questions = quiz.questions.map((q, questionIndex) => {
@@ -1137,17 +1360,25 @@ export function mergeLocalizedBoxes(quiz: ExtractedQuiz, boxes: LocalizedBox[]):
       if (tight) figureBbox = tight;
       else if (!figureBbox) {
         needsReview = true;
-        reviewNote = appendNote(reviewNote, "could not locate the figure — draw the crop.");
+        reviewNote = appendNote(
+          reviewNote,
+          "could not locate the figure — draw the crop.",
+        );
       }
     }
 
     const options = q.options.map((o, optionIndex) => {
       if (o.isImage !== true) return { ...o };
-      const tight = byId.get(buildTargetId(questionIndex, "option", optionIndex));
+      const tight = byId.get(
+        buildTargetId(questionIndex, "option", optionIndex),
+      );
       if (tight) return { ...o, imageBbox: tight };
       if (!(o.imageBbox ?? null)) {
         needsReview = true;
-        reviewNote = appendNote(reviewNote, "could not locate an image choice — draw the crop.");
+        reviewNote = appendNote(
+          reviewNote,
+          "could not locate an image choice — draw the crop.",
+        );
       }
       return { ...o };
     });
@@ -1161,19 +1392,24 @@ export function mergeLocalizedBoxes(quiz: ExtractedQuiz, boxes: LocalizedBox[]):
 // ─── validateCommitQuestions: strict validation of teacher-edited array ────────
 
 function validateCommitOptions(raw: unknown, qIndex: number): StagedOption[] {
-  if (!Array.isArray(raw)) throw new Error(`question ${qIndex + 1}: options must be an array`);
+  if (!Array.isArray(raw))
+    throw new Error(`question ${qIndex + 1}: options must be an array`);
   return raw.map((opt, oIndex) => {
     const where = `question ${qIndex + 1}, option ${oIndex + 1}`;
     if (!isRecord(opt)) throw new Error(`${where}: must be an object`);
     const text = typeof opt.text === "string" ? opt.text.trim() : "";
     const isImage = opt.isImage === true;
     const imageStorageKey =
-      typeof opt.imageStorageKey === "string" && opt.imageStorageKey.trim() ? opt.imageStorageKey.trim() : null;
+      typeof opt.imageStorageKey === "string" && opt.imageStorageKey.trim()
+        ? opt.imageStorageKey.trim()
+        : null;
     // A text option needs text; an image option may have empty text but must
     // carry an uploaded crop key (the client crops + uploads before commit).
     if (!isImage && !text) throw new Error(`${where}: text is required`);
     if (isImage && !imageStorageKey) {
-      throw new Error(`${where}: image option requires an uploaded image (crop it first)`);
+      throw new Error(
+        `${where}: image option requires an uploaded image (crop it first)`,
+      );
     }
     const isCorrect = opt.isCorrect;
     if (isCorrect !== true && isCorrect !== false && isCorrect !== null) {
@@ -1182,8 +1418,18 @@ function validateCommitOptions(raw: unknown, qIndex: number): StagedOption[] {
     if (!isImage) return { text, isCorrect };
     const imageAlt = typeof opt.imageAlt === "string" ? opt.imageAlt : null;
     const imagePage =
-      typeof opt.imagePage === "number" && Number.isFinite(opt.imagePage) ? Math.round(opt.imagePage) : null;
-    return { text, isCorrect, isImage: true, imageBbox: coerceBbox(opt.imageBbox), imagePage, imageStorageKey, imageAlt };
+      typeof opt.imagePage === "number" && Number.isFinite(opt.imagePage)
+        ? Math.round(opt.imagePage)
+        : null;
+    return {
+      text,
+      isCorrect,
+      isImage: true,
+      imageBbox: coerceBbox(opt.imageBbox),
+      imagePage,
+      imageStorageKey,
+      imageAlt,
+    };
   });
 }
 
@@ -1198,14 +1444,20 @@ function coerceBbox(raw: unknown): FigureBbox | null {
  * the (1-based) question index.
  */
 export function validateCommitQuestions(input: unknown): StagedQuestion[] {
-  if (!Array.isArray(input)) throw new Error("commit payload: questions must be an array");
+  if (!Array.isArray(input))
+    throw new Error("commit payload: questions must be an array");
 
   return input.map((raw, index) => {
     const where = `question ${index + 1}`;
     if (!isRecord(raw)) throw new Error(`${where}: must be an object`);
 
     const type = raw.type;
-    if (type !== "MULTIPLE_CHOICE" && type !== "MULTI_SELECT" && type !== "TRUE_FALSE" && type !== "NUMERIC") {
+    if (
+      type !== "MULTIPLE_CHOICE" &&
+      type !== "MULTI_SELECT" &&
+      type !== "TRUE_FALSE" &&
+      type !== "NUMERIC"
+    ) {
       throw new Error(`${where}: unexpected type ${JSON.stringify(type)}`);
     }
 
@@ -1224,38 +1476,70 @@ export function validateCommitQuestions(input: unknown): StagedQuestion[] {
 
     const hasFigure = raw.hasFigure === true;
     const figureStorageKey =
-      typeof raw.figureStorageKey === "string" && raw.figureStorageKey.trim() ? raw.figureStorageKey.trim() : null;
+      typeof raw.figureStorageKey === "string" && raw.figureStorageKey.trim()
+        ? raw.figureStorageKey.trim()
+        : null;
     if (hasFigure && !figureStorageKey) {
-      throw new Error(`${where}: hasFigure is true but figureStorageKey is missing (upload the crop first)`);
+      throw new Error(
+        `${where}: hasFigure is true but figureStorageKey is missing (upload the crop first)`,
+      );
     }
 
     let numericAnswer: number | null = null;
     if (raw.numericAnswer !== null && raw.numericAnswer !== undefined) {
-      if (typeof raw.numericAnswer !== "number" || !Number.isFinite(raw.numericAnswer)) {
-        throw new Error(`${where}: numericAnswer must be a finite number or null`);
+      if (
+        typeof raw.numericAnswer !== "number" ||
+        !Number.isFinite(raw.numericAnswer)
+      ) {
+        throw new Error(
+          `${where}: numericAnswer must be a finite number or null`,
+        );
       }
       numericAnswer = raw.numericAnswer;
     }
 
     // Per-type answer-completeness rules.
     if (type === "NUMERIC") {
-      if (options.length > 0) throw new Error(`${where}: NUMERIC question must have no options`);
-      if (numericAnswer === null) throw new Error(`${where}: NUMERIC question requires a numericAnswer`);
+      if (options.length > 0)
+        throw new Error(`${where}: NUMERIC question must have no options`);
+      if (numericAnswer === null)
+        throw new Error(`${where}: NUMERIC question requires a numericAnswer`);
     } else {
       const hasNull = options.some((o) => o.isCorrect === null);
-      if (hasNull) throw new Error(`${where}: every option must have isCorrect set (no nulls)`);
+      if (hasNull)
+        throw new Error(
+          `${where}: every option must have isCorrect set (no nulls)`,
+        );
       const correctCount = options.filter((o) => o.isCorrect === true).length;
 
       if (type === "TRUE_FALSE") {
-        if (options.length !== 2) throw new Error(`${where}: TRUE_FALSE question must have exactly 2 options`);
-        if (correctCount !== 1) throw new Error(`${where}: TRUE_FALSE question must have exactly one correct option`);
+        if (options.length !== 2)
+          throw new Error(
+            `${where}: TRUE_FALSE question must have exactly 2 options`,
+          );
+        if (correctCount !== 1)
+          throw new Error(
+            `${where}: TRUE_FALSE question must have exactly one correct option`,
+          );
       } else if (type === "MULTIPLE_CHOICE") {
-        if (options.length < 2) throw new Error(`${where}: MULTIPLE_CHOICE question must have at least 2 options`);
-        if (correctCount !== 1) throw new Error(`${where}: MULTIPLE_CHOICE question must have exactly one correct option`);
+        if (options.length < 2)
+          throw new Error(
+            `${where}: MULTIPLE_CHOICE question must have at least 2 options`,
+          );
+        if (correctCount !== 1)
+          throw new Error(
+            `${where}: MULTIPLE_CHOICE question must have exactly one correct option`,
+          );
       } else {
         // MULTI_SELECT
-        if (options.length < 2) throw new Error(`${where}: MULTI_SELECT question must have at least 2 options`);
-        if (correctCount < 1) throw new Error(`${where}: MULTI_SELECT question must have at least one correct option`);
+        if (options.length < 2)
+          throw new Error(
+            `${where}: MULTI_SELECT question must have at least 2 options`,
+          );
+        if (correctCount < 1)
+          throw new Error(
+            `${where}: MULTI_SELECT question must have at least one correct option`,
+          );
       }
 
       // True/false options are the literal words "True"/"False" — never images.
@@ -1263,21 +1547,34 @@ export function validateCommitQuestions(input: unknown): StagedQuestion[] {
         throw new Error(`${where}: TRUE_FALSE options cannot be images`);
       }
       // Every option must be distinct, keyed by its text or its image.
-      const identities = options.map((o) => (o.isImage === true ? `img:${o.imageStorageKey}` : `txt:${o.text}`));
+      const identities = options.map((o) =>
+        o.isImage === true ? `img:${o.imageStorageKey}` : `txt:${o.text}`,
+      );
       if (new Set(identities).size !== identities.length) {
         throw new Error(`${where}: options must be distinct`);
       }
     }
 
-    const numericAnswerText = typeof raw.numericAnswerText === "string" ? raw.numericAnswerText : null;
-    const numericUnit = typeof raw.numericUnit === "string" ? raw.numericUnit : null;
+    const numericAnswerText =
+      typeof raw.numericAnswerText === "string" ? raw.numericAnswerText : null;
+    const numericUnit =
+      typeof raw.numericUnit === "string" ? raw.numericUnit : null;
     const figurePage =
-      typeof raw.figurePage === "number" && Number.isFinite(raw.figurePage) ? Math.round(raw.figurePage) : null;
-    const figureCaption = typeof raw.figureCaption === "string" ? raw.figureCaption : null;
+      typeof raw.figurePage === "number" && Number.isFinite(raw.figurePage)
+        ? Math.round(raw.figurePage)
+        : null;
+    const figureCaption =
+      typeof raw.figureCaption === "string" ? raw.figureCaption : null;
     const sourcePage =
-      typeof raw.sourcePage === "number" && Number.isFinite(raw.sourcePage) ? Math.round(raw.sourcePage) : 1;
-    const confidence = typeof raw.confidence === "number" && Number.isFinite(raw.confidence) ? clamp(raw.confidence, 0, 1) : 0;
-    const reviewNote = typeof raw.reviewNote === "string" ? raw.reviewNote : null;
+      typeof raw.sourcePage === "number" && Number.isFinite(raw.sourcePage)
+        ? Math.round(raw.sourcePage)
+        : 1;
+    const confidence =
+      typeof raw.confidence === "number" && Number.isFinite(raw.confidence)
+        ? clamp(raw.confidence, 0, 1)
+        : 0;
+    const reviewNote =
+      typeof raw.reviewNote === "string" ? raw.reviewNote : null;
 
     return {
       type,
@@ -1324,7 +1621,12 @@ function answerModeFor(type: StagedQuestionType): AnswerMode {
  */
 export function mapStagedToQuestionData(
   q: StagedQuestion,
-  ctx: { quizId: string; importId: string; createdById: string | null; figureBucket: string | null }
+  ctx: {
+    quizId: string;
+    importId: string;
+    createdById: string | null;
+    figureBucket: string | null;
+  },
 ): QuestionCreateData {
   const answerMode = answerModeFor(q.type);
   const isNumeric = q.type === "NUMERIC";
@@ -1351,7 +1653,7 @@ export function mapStagedToQuestionData(
                   imageBucket: ctx.figureBucket,
                   imageAlt: o.imageAlt ?? null,
                 }
-              : { text: o.text, isCorrect: o.isCorrect === true }
+              : { text: o.text, isCorrect: o.isCorrect === true },
           ),
     },
   };

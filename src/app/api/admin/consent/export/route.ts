@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { normalizeConsentExportFilter, buildConsentRecordWhere } from "@/lib/consent-export";
+import {
+  normalizeConsentExportFilter,
+  buildConsentRecordWhere,
+} from "@/lib/consent-export";
 import { getConsentExportSettings } from "@/lib/consent-settings";
 import { enqueueConsentExport } from "@/lib/queue";
 
@@ -27,22 +30,31 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const filter = normalizeConsentExportFilter((raw as { filter?: unknown } | null)?.filter ?? {});
-  if (!filter) return NextResponse.json({ error: "Invalid export filter." }, { status: 400 });
+  const filter = normalizeConsentExportFilter(
+    (raw as { filter?: unknown } | null)?.filter ?? {},
+  );
+  if (!filter)
+    return NextResponse.json(
+      { error: "Invalid export filter." },
+      { status: 400 },
+    );
 
   const [settings, matchCount] = await Promise.all([
     getConsentExportSettings(),
     prisma.consentRecord.count({ where: buildConsentRecordWhere(filter) }),
   ]);
   if (matchCount === 0) {
-    return NextResponse.json({ error: "No consent records match that filter." }, { status: 400 });
+    return NextResponse.json(
+      { error: "No consent records match that filter." },
+      { status: 400 },
+    );
   }
   if (matchCount > settings.bulkExportMaxRecords) {
     return NextResponse.json(
       {
         error: `${matchCount} records match, which exceeds the configured limit of ${settings.bulkExportMaxRecords}. Narrow the filter or raise the limit in Consent Settings.`,
       },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
@@ -62,10 +74,18 @@ export async function POST(req: NextRequest) {
       data: { status: "FAILED", error: "Could not enqueue the export job." },
     });
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Could not enqueue the export job." },
-      { status: 500 }
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Could not enqueue the export job.",
+      },
+      { status: 500 },
     );
   }
 
-  return NextResponse.json({ jobId: job.id, totalRecords: matchCount }, { status: 201 });
+  return NextResponse.json(
+    { jobId: job.id, totalRecords: matchCount },
+    { status: 201 },
+  );
 }

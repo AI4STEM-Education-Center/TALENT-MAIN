@@ -85,14 +85,17 @@ export function ContactTeacherDialog({
             </div>
           )}
           <p className="text-xs text-muted-foreground">
-            Your teacher will receive this by email and can reply directly to your account email.
+            Your teacher will receive this by email and can reply directly to
+            your account email.
           </p>
           <div className="space-y-2">
             <Label htmlFor="contact-subject">Subject</Label>
             <Input
               id="contact-subject"
               value={form.subject}
-              onChange={(e) => setForm((p) => ({ ...p, subject: e.target.value }))}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, subject: e.target.value }))
+              }
               required
               placeholder="e.g. Question about Quiz 3"
             />
@@ -109,7 +112,11 @@ export function ContactTeacherDialog({
             />
           </div>
           <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+            {loading ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Send className="size-4" />
+            )}
             {loading ? "Sending..." : "Send message"}
           </Button>
         </form>

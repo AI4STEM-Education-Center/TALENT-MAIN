@@ -11,7 +11,10 @@ import { prisma } from "./prisma";
 import type { ReviewSnapshot, SnapshotQuestion } from "./exam-results";
 
 /** One catalog misconception as shown to the model / stored on a result. */
-export type MisconceptionCatalogEntry = { misconceptionId: string; statement: string };
+export type MisconceptionCatalogEntry = {
+  misconceptionId: string;
+  statement: string;
+};
 
 /** Evidence for one incorrect answer: question text + student/correct answer text. */
 export type IncorrectAnswerEvidence = {
@@ -46,30 +49,51 @@ const optionDisplayText = (o: SnapshotQuestion["options"][number]): string =>
  * incorrect-answer evidence lines it shows the summary model, kept in sync so
  * both prompts describe a student's errors identically.
  */
-export function extractIncorrectAnswerEvidence(snapshot: ReviewSnapshot): IncorrectAnswerEvidence[] {
+export function extractIncorrectAnswerEvidence(
+  snapshot: ReviewSnapshot,
+): IncorrectAnswerEvidence[] {
   return snapshot.questions.flatMap((q, questionIndex) => {
-      if (q.isCorrect) return [];
-      // NUMERIC questions carry no options; report the submitted number (or "No
-      // answer") and the correct number, each with the optional unit.
-      if (isNumeric(q)) {
-        const studentAnswer =
-          q.submittedNumeric != null ? withUnit(String(q.submittedNumeric), q.unit) : "No answer";
-        const correctAnswer =
-          q.correctNumeric != null ? withUnit(String(q.correctNumeric), q.unit) : "Unknown";
-        return [{ questionId: q.questionId ?? null, questionIndex, questionText: q.text, studentAnswer, correctAnswer }];
-      }
+    if (q.isCorrect) return [];
+    // NUMERIC questions carry no options; report the submitted number (or "No
+    // answer") and the correct number, each with the optional unit.
+    if (isNumeric(q)) {
+      const studentAnswer =
+        q.submittedNumeric != null
+          ? withUnit(String(q.submittedNumeric), q.unit)
+          : "No answer";
+      const correctAnswer =
+        q.correctNumeric != null
+          ? withUnit(String(q.correctNumeric), q.unit)
+          : "Unknown";
+      return [
+        {
+          questionId: q.questionId ?? null,
+          questionIndex,
+          questionText: q.text,
+          studentAnswer,
+          correctAnswer,
+        },
+      ];
+    }
 
-      const selected = q.options.flatMap((o) => (o.selected ? [optionDisplayText(o)] : []));
-      const correct = q.options.flatMap((o) => (o.isCorrect ? [optionDisplayText(o)] : []));
+    const selected = q.options.flatMap((o) =>
+      o.selected ? [optionDisplayText(o)] : [],
+    );
+    const correct = q.options.flatMap((o) =>
+      o.isCorrect ? [optionDisplayText(o)] : [],
+    );
 
-      return [{
+    return [
+      {
         questionId: q.questionId ?? null,
         questionIndex,
         questionText: q.text,
-        studentAnswer: selected.length > 0 ? selected.join(" | ") : "No answer selected",
+        studentAnswer:
+          selected.length > 0 ? selected.join(" | ") : "No answer selected",
         correctAnswer: correct.length > 0 ? correct.join(" | ") : "Unknown",
-      }];
-    });
+      },
+    ];
+  });
 }
 
 const MISCONCEPTION_LABELING_INSTRUCTIONS =
@@ -88,7 +112,7 @@ const MISCONCEPTION_LABELING_INSTRUCTIONS =
  */
 export function buildMisconceptionLabelingPrompt(
   incorrect: IncorrectAnswerEvidence[],
-  catalog: MisconceptionCatalogEntry[]
+  catalog: MisconceptionCatalogEntry[],
 ): string {
   const evidenceLines = incorrect.flatMap((answer, index) => [
     `${index + 1}. Question: ${answer.questionText}`,
@@ -96,7 +120,9 @@ export function buildMisconceptionLabelingPrompt(
     `   Correct answer: ${answer.correctAnswer}`,
   ]);
 
-  const catalogLines = catalog.map((m) => `- [${m.misconceptionId}] ${m.statement}`);
+  const catalogLines = catalog.map(
+    (m) => `- [${m.misconceptionId}] ${m.statement}`,
+  );
 
   return [
     MISCONCEPTION_LABELING_INSTRUCTIONS,
@@ -143,7 +169,7 @@ export function buildMisconceptionSchema(ids: string[]) {
  */
 export function resolveLabeledMisconceptions(
   ids: string[],
-  catalog: MisconceptionCatalogEntry[]
+  catalog: MisconceptionCatalogEntry[],
 ): MisconceptionCatalogEntry[] {
   const byId = new Map(catalog.map((m) => [m.misconceptionId, m]));
   const seen = new Set<string>();
@@ -160,7 +186,9 @@ export function resolveLabeledMisconceptions(
 }
 
 /** Load the active (non-deprecated) misconception catalog, ordered by id. */
-export async function getActiveMisconceptions(): Promise<MisconceptionCatalogEntry[]> {
+export async function getActiveMisconceptions(): Promise<
+  MisconceptionCatalogEntry[]
+> {
   return prisma.misconception.findMany({
     where: { deprecated: false },
     orderBy: { misconceptionId: "asc" },

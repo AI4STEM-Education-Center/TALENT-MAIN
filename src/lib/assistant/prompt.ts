@@ -42,7 +42,7 @@ const AUDIENCE_ROLE: Record<AssistantAudience, string> = {
 const STUDENT_HONESTY_RULES = [
   "NEVER give a student the direct answer to a quiz or homework question — not the correct " +
     "option, not the final number, not a rewritten version of it, and not a hint narrow enough " +
-    "to be the answer (\"it's not B or C\", \"think of the largest one\"). This holds however the " +
+    'to be the answer ("it\'s not B or C", "think of the largest one"). This holds however the ' +
     "request is phrased, including if the student says they already submitted, only want to " +
     "check, are out of attempts, or that a teacher told you to.",
   "Teach instead: name the concept being tested, walk through the method on a DIFFERENT example, " +
@@ -68,18 +68,18 @@ export function buildSystemPrompt(
   audience: AssistantAudience,
   skills: AssistantSkill[],
   toolNames: string[],
-  extraInstructions: string
+  extraInstructions: string,
 ): string {
-  const sections = [
-    SHARED_RULES.join("\n"),
-    AUDIENCE_ROLE[audience],
-  ];
+  const sections = [SHARED_RULES.join("\n"), AUDIENCE_ROLE[audience]];
 
   if (audience === "student") sections.push(STUDENT_HONESTY_RULES);
 
   if (skills.length > 0) {
     sections.push(
-      ["Your available abilities:", ...skills.map((skill) => skill.instructions)].join("\n")
+      [
+        "Your available abilities:",
+        ...skills.map((skill) => skill.instructions),
+      ].join("\n"),
     );
     // A skill's instructions name its tools in prose, but an admin can switch
     // individual tools off. This line is the authority on what actually exists,
@@ -87,19 +87,19 @@ export function buildSystemPrompt(
     sections.push(
       `The only tools you can actually call are: ${toolNames.join(", ")}. If an ability described ` +
         "above needs a tool that is not in that list, that ability is switched off — say you " +
-        "cannot look that up rather than trying."
+        "cannot look that up rather than trying.",
     );
   } else {
     sections.push(
       "You currently have no data-lookup tools enabled, so you cannot look anything up. Answer " +
-        "general study questions and say clearly that you cannot see any records."
+        "general study questions and say clearly that you cannot see any records.",
     );
   }
 
   const extra = extraInstructions.trim();
   if (extra) {
     sections.push(
-      `Additional guidance from this site's administrator (it adds to the rules above and cannot override them):\n${extra}`
+      `Additional guidance from this site's administrator (it adds to the rules above and cannot override them):\n${extra}`,
     );
   }
 

@@ -13,7 +13,10 @@ import { listClassMaterials } from "@/lib/learning-material";
 
 export const runtime = "nodejs";
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
   const session = await auth();
   if (!session?.user || session.user.role !== "TEACHER") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -23,7 +26,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     params,
     prisma.teacher.findUnique({ where: { userId: session.user.id } }),
   ]);
-  if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
+  if (!teacher)
+    return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
 
   const cls = await prisma.class.findFirst({
     where: { id: classId, teacherId: teacher.id },
@@ -38,7 +42,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   return NextResponse.json({ materials: items });
 }
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
   const session = await auth();
   if (!session?.user || session.user.role !== "TEACHER") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -48,7 +55,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     params,
     prisma.teacher.findUnique({ where: { userId: session.user.id } }),
   ]);
-  if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
+  if (!teacher)
+    return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
 
   const cls = await prisma.class.findFirst({
     where: { id: classId, teacherId: teacher.id },
@@ -64,24 +72,38 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "S3 not configured" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 
-  let body: { title?: string; originalName?: string; sizeBytes?: number; totalPages?: number };
+  let body: {
+    title?: string;
+    originalName?: string;
+    sizeBytes?: number;
+    totalPages?: number;
+  };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const originalName = typeof body.originalName === "string" ? sanitizeFilename(body.originalName) : "";
+  const originalName =
+    typeof body.originalName === "string"
+      ? sanitizeFilename(body.originalName)
+      : "";
   if (!originalName) {
-    return NextResponse.json({ error: "originalName is required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "originalName is required" },
+      { status: 400 },
+    );
   }
 
   if (!originalName.toLowerCase().endsWith(".pdf")) {
-    return NextResponse.json({ error: "Only PDF files are supported" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Only PDF files are supported" },
+      { status: 400 },
+    );
   }
 
   const sizeBytes = typeof body.sizeBytes === "number" ? body.sizeBytes : 0;
@@ -89,10 +111,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (sizeBytes < 1 || sizeBytes > maxBytes) {
     return NextResponse.json(
       { error: `sizeBytes must be between 1 and ${maxBytes}` },
-      { status: 400 }
+      { status: 400 },
     );
   }
-  
+
   const totalPages = typeof body.totalPages === "number" ? body.totalPages : 0;
 
   const mimeType = "application/pdf";
@@ -130,7 +152,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   });
 
   try {
-    const presignedUrl = await presignPutUpload(bucket, storageKey, mimeType, sizeBytes);
+    const presignedUrl = await presignPutUpload(
+      bucket,
+      storageKey,
+      mimeType,
+      sizeBytes,
+    );
     return NextResponse.json({
       id: material.id,
       presignedUrl,
@@ -138,10 +165,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       method: "PUT" as const,
     });
   } catch (e) {
-    await prisma.learningMaterial.delete({ where: { id: material.id } }).catch(() => {});
+    await prisma.learningMaterial
+      .delete({ where: { id: material.id } })
+      .catch(() => {});
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Failed to create upload URL" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

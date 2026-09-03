@@ -16,7 +16,12 @@ const MAX_QUESTION_INDEX = 199;
 const MAX_OPTION_INDEX = 25;
 
 function isValidIndex(value: unknown, max: number): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= max;
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value <= max
+  );
 }
 
 // POST: hand back presigned PUT URLs so the review UI can upload cropped figure
@@ -26,23 +31,35 @@ function isValidIndex(value: unknown, max: number): value is number {
 // without making a previously validated/committed object mutable.
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string; extractionId: string }> }
+  { params }: { params: Promise<{ id: string; extractionId: string }> },
 ) {
-  const [actor, { id: quizId, extractionId }] = await Promise.all([getContentActor(), params]);
-  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const [actor, { id: quizId, extractionId }] = await Promise.all([
+    getContentActor(),
+    params,
+  ]);
+  if (!actor)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const quiz = await prisma.quiz.findUnique({ where: { id: quizId } });
   if (!quiz || !canManage(actor, quiz)) {
     return NextResponse.json({ error: "Quiz not found" }, { status: 404 });
   }
 
-  const extraction = await prisma.quizPdfExtraction.findUnique({ where: { id: extractionId } });
+  const extraction = await prisma.quizPdfExtraction.findUnique({
+    where: { id: extractionId },
+  });
   if (!extraction || extraction.quizId !== quizId) {
-    return NextResponse.json({ error: "Extraction not found" }, { status: 404 });
+    return NextResponse.json(
+      { error: "Extraction not found" },
+      { status: 404 },
+    );
   }
 
   if (extraction.status !== "AWAITING_REVIEW") {
-    return NextResponse.json({ error: "Extraction is not awaiting review" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Extraction is not awaiting review" },
+      { status: 400 },
+    );
   }
 
   let body: { questionFigures?: unknown; optionImages?: unknown };
@@ -56,13 +73,18 @@ export async function POST(
   const figureIndexes = new Set<number>();
   if (body.questionFigures !== undefined) {
     if (!Array.isArray(body.questionFigures)) {
-      return NextResponse.json({ error: "questionFigures must be an array" }, { status: 400 });
+      return NextResponse.json(
+        { error: "questionFigures must be an array" },
+        { status: 400 },
+      );
     }
     for (const raw of body.questionFigures) {
       if (!isValidIndex(raw, MAX_QUESTION_INDEX)) {
         return NextResponse.json(
-          { error: `questionFigures must be integers in 0..${MAX_QUESTION_INDEX}` },
-          { status: 400 }
+          {
+            error: `questionFigures must be integers in 0..${MAX_QUESTION_INDEX}`,
+          },
+          { status: 400 },
         );
       }
       figureIndexes.add(raw);
@@ -74,15 +96,23 @@ export async function POST(
   const seenOption = new Set<string>();
   if (body.optionImages !== undefined) {
     if (!Array.isArray(body.optionImages)) {
-      return NextResponse.json({ error: "optionImages must be an array" }, { status: 400 });
+      return NextResponse.json(
+        { error: "optionImages must be an array" },
+        { status: 400 },
+      );
     }
     for (const raw of body.optionImages) {
       const qi = (raw as { questionIndex?: unknown })?.questionIndex;
       const oi = (raw as { optionIndex?: unknown })?.optionIndex;
-      if (!isValidIndex(qi, MAX_QUESTION_INDEX) || !isValidIndex(oi, MAX_OPTION_INDEX)) {
+      if (
+        !isValidIndex(qi, MAX_QUESTION_INDEX) ||
+        !isValidIndex(oi, MAX_OPTION_INDEX)
+      ) {
         return NextResponse.json(
-          { error: `optionImages need questionIndex 0..${MAX_QUESTION_INDEX} and optionIndex 0..${MAX_OPTION_INDEX}` },
-          { status: 400 }
+          {
+            error: `optionImages need questionIndex 0..${MAX_QUESTION_INDEX} and optionIndex 0..${MAX_OPTION_INDEX}`,
+          },
+          { status: 400 },
         );
       }
       const dedupeKey = `${qi}:${oi}`;
@@ -95,7 +125,7 @@ export async function POST(
   if (figureIndexes.size === 0 && optionPairs.length === 0) {
     return NextResponse.json(
       { error: "questionFigures or optionImages is required" },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
@@ -108,7 +138,7 @@ export async function POST(
       extraction.teacherId,
       extraction.quizId,
       extraction.id,
-      questionIndex
+      questionIndex,
     ).replace(/\.png$/, `-${randomUUID()}.png`),
   }));
   const optionSlots = optionPairs.map(({ questionIndex, optionIndex }) => ({
@@ -119,7 +149,7 @@ export async function POST(
       extraction.quizId,
       extraction.id,
       questionIndex,
-      optionIndex
+      optionIndex,
     ).replace(/\.png$/, `-${randomUUID()}.png`),
   }));
 
@@ -143,23 +173,38 @@ export async function POST(
         figureSlots.map(async ({ questionIndex, storageKey }) => ({
           questionIndex,
           storageKey,
-          presignedUrl: await presignPutUpload(extraction.bucket, storageKey, "image/png", 0),
-        }))
+          presignedUrl: await presignPutUpload(
+            extraction.bucket,
+            storageKey,
+            "image/png",
+            0,
+          ),
+        })),
       ),
       Promise.all(
         optionSlots.map(async ({ questionIndex, optionIndex, storageKey }) => ({
           questionIndex,
           optionIndex,
           storageKey,
-          presignedUrl: await presignPutUpload(extraction.bucket, storageKey, "image/png", 0),
-        }))
+          presignedUrl: await presignPutUpload(
+            extraction.bucket,
+            storageKey,
+            "image/png",
+            0,
+          ),
+        })),
       ),
     ]);
     return NextResponse.json({ questionFigures, optionImages });
   } catch (e) {
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Failed to create figure upload URLs" },
-      { status: 500 }
+      {
+        error:
+          e instanceof Error
+            ? e.message
+            : "Failed to create figure upload URLs",
+      },
+      { status: 500 },
     );
   }
 }

@@ -40,7 +40,9 @@ const withUnit = (value: string, unit: string | null | undefined): string =>
  * only for the answers the student got wrong.
  */
 export function buildQuizReviewPrompt(attempt: QuizReviewAttempt): string {
-  const incorrectAnswers = attempt.answers.filter((answer) => !answer.isCorrect);
+  const incorrectAnswers = attempt.answers.filter(
+    (answer) => !answer.isCorrect,
+  );
   const correctAnswerCount = attempt.answers.length - incorrectAnswers.length;
   const lines = [
     "You are an educational assistant reviewing a student's latest completed quiz attempt.",
@@ -87,19 +89,19 @@ export function buildQuizReviewPrompt(attempt: QuizReviewAttempt): string {
       lines.push(
         `${index + 1}. Question: ${answer.question.text}`,
         `   Student answer: ${studentAnswer}`,
-        `   Correct answer: ${correctAnswer}`
+        `   Correct answer: ${correctAnswer}`,
       );
       return;
     }
 
     const correctOptions = answer.question.options.flatMap((option) =>
-      option.isCorrect ? [option.text] : []
+      option.isCorrect ? [option.text] : [],
     );
 
     lines.push(
       `${index + 1}. Question: ${answer.question.text}`,
       `   Student selection: ${answer.selectedOption?.text ?? "No answer selected"}`,
-      `   Correct answer: ${correctOptions.length > 0 ? correctOptions.join(" | ") : "Unknown"}`
+      `   Correct answer: ${correctOptions.length > 0 ? correctOptions.join(" | ") : "Unknown"}`,
     );
   });
 

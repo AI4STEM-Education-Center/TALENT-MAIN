@@ -1,7 +1,10 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
-import { ExamHistoryList, type ExamHistoryItem } from "@/components/student/ExamHistoryList";
+import {
+  ExamHistoryList,
+  type ExamHistoryItem,
+} from "@/components/student/ExamHistoryList";
 
 export default async function StudentHistoryPage() {
   const session = await auth();

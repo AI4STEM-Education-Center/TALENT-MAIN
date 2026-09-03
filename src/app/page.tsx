@@ -5,7 +5,8 @@ import { redirect } from "next/navigation";
 
 export const metadata: Metadata = {
   title: "Adaptive Learning - Guided science education for every student",
-  description: "An adaptive learning platform providing personalized science education with AI-driven insights for teachers and students.",
+  description:
+    "An adaptive learning platform providing personalized science education with AI-driven insights for teachers and students.",
 };
 
 export default async function HomePage() {
@@ -22,8 +23,18 @@ export default async function HomePage() {
       <div className="max-w-2xl w-full text-center space-y-8">
         <div className="space-y-4">
           <div className="inline-flex items-center justify-center size-20 rounded-2xl bg-blue-500/20 border border-blue-400/30 mb-4">
-            <svg className="size-10 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.966 8.966 0 00-6 2.292m0-14.25v14.25" />
+            <svg
+              className="size-10 text-blue-400"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.5}
+                d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.966 8.966 0 00-6 2.292m0-14.25v14.25"
+              />
             </svg>
           </div>
           <h1 className="text-4xl sm:text-5xl font-bold text-white">
@@ -50,7 +61,8 @@ export default async function HomePage() {
         </div>
 
         <p className="text-sm text-slate-500">
-          Students: use the invitation link from your teacher to create an account and join your class.
+          Students: use the invitation link from your teacher to create an
+          account and join your class.
         </p>
       </div>
     </main>

@@ -83,7 +83,15 @@ export const SIMULATION_TRIAGE_SCHEMA = {
       learning_goal: { type: ["string", "null"] },
       spec: { type: ["string", "null"] },
     },
-    required: ["helpful", "refusal_reason", "duplicate_of", "topic", "title", "learning_goal", "spec"],
+    required: [
+      "helpful",
+      "refusal_reason",
+      "duplicate_of",
+      "topic",
+      "title",
+      "learning_goal",
+      "spec",
+    ],
     additionalProperties: false,
   },
 } as const;
@@ -98,7 +106,7 @@ export const SIMULATION_TRIAGE_SCHEMA = {
  */
 export function buildTriagePrompt(
   question: SimulationQuestionInput,
-  siblings: SiblingSimulation[]
+  siblings: SiblingSimulation[],
 ): string {
   const optionLines =
     question.options.length > 0
@@ -106,7 +114,9 @@ export function buildTriagePrompt(
       : "  (free-response numeric question — no options)";
   const siblingBlock =
     siblings.length > 0
-      ? siblings.map((s, i) => `  ${i + 1}. topic: ${s.topic} — title: ${s.title}`).join("\n")
+      ? siblings
+          .map((s, i) => `  ${i + 1}. topic: ${s.topic} — title: ${s.title}`)
+          .join("\n")
       : "  (none yet)";
 
   return `You are planning an interactive physics/STEM simulation for a learning platform. Students see these simulations AFTER submitting a quiz, while their results are still hidden, as material to explore the topic they were tested on.
@@ -198,7 +208,7 @@ export function buildRevisionPrompt(
   plan: { topic: string; title: string; learningGoal: string; spec: string },
   currentHtml: string,
   priorFeedback: string[],
-  newFeedback: string
+  newFeedback: string,
 ): string {
   const prior =
     priorFeedback.length > 0
@@ -267,20 +277,30 @@ function nonEmptyString(value: unknown): string | null {
  * the model's 1-based index into the sibling list; anything out of range is
  * treated as "no duplicate" rather than failing the job.
  */
-export function validateTriagePlan(input: unknown, siblingCount: number): TriagePlan {
+export function validateTriagePlan(
+  input: unknown,
+  siblingCount: number,
+): TriagePlan {
   if (!isRecord(input)) throw new Error("triage: payload must be an object");
-  if (typeof input.helpful !== "boolean") throw new Error("triage: helpful must be a boolean");
+  if (typeof input.helpful !== "boolean")
+    throw new Error("triage: helpful must be a boolean");
 
   if (!input.helpful) {
     return {
       helpful: false,
       refusalReason:
-        nonEmptyString(input.refusal_reason) ?? "The model declined without giving a reason.",
+        nonEmptyString(input.refusal_reason) ??
+        "The model declined without giving a reason.",
     };
   }
 
   const rawDup = input.duplicate_of;
-  if (typeof rawDup === "number" && Number.isInteger(rawDup) && rawDup >= 1 && rawDup <= siblingCount) {
+  if (
+    typeof rawDup === "number" &&
+    Number.isInteger(rawDup) &&
+    rawDup >= 1 &&
+    rawDup <= siblingCount
+  ) {
     return {
       helpful: true,
       duplicateOfIndex: rawDup - 1,
@@ -295,12 +315,31 @@ export function validateTriagePlan(input: unknown, siblingCount: number): Triage
   const title = nonEmptyString(input.title);
   const learningGoal = nonEmptyString(input.learning_goal);
   const spec = nonEmptyString(input.spec);
-  if (!topic) throw new Error("triage: topic is required when helpful and not a duplicate");
-  if (!title) throw new Error("triage: title is required when helpful and not a duplicate");
-  if (!learningGoal) throw new Error("triage: learning_goal is required when helpful and not a duplicate");
-  if (!spec) throw new Error("triage: spec is required when helpful and not a duplicate");
+  if (!topic)
+    throw new Error(
+      "triage: topic is required when helpful and not a duplicate",
+    );
+  if (!title)
+    throw new Error(
+      "triage: title is required when helpful and not a duplicate",
+    );
+  if (!learningGoal)
+    throw new Error(
+      "triage: learning_goal is required when helpful and not a duplicate",
+    );
+  if (!spec)
+    throw new Error(
+      "triage: spec is required when helpful and not a duplicate",
+    );
 
-  return { helpful: true, duplicateOfIndex: null, topic, title, learningGoal, spec };
+  return {
+    helpful: true,
+    duplicateOfIndex: null,
+    topic,
+    title,
+    learningGoal,
+    spec,
+  };
 }
 
 // ─── HTML extraction + static validation ─────────────────────────────────────
@@ -326,7 +365,8 @@ const FORBIDDEN_TAG_RE = /<\s*(iframe|object|embed|base|link)\b/i;
 const EXTERNAL_ATTR_RE = /\b(?:src|href)\s*=\s*["']?\s*(?:https?:)?\/\//i;
 const EXTERNAL_CSS_URL_RE = /url\(\s*["']?\s*(?:https?:)?\/\//i;
 const CSS_IMPORT_RE = /@import\b/i;
-const NETWORK_API_RE = /\b(?:fetch|XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts)\s*\(/;
+const NETWORK_API_RE =
+  /\b(?:fetch|XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts)\s*\(/;
 const VISUAL_STAGE_RE = /<\s*(canvas|svg)\b/gi;
 const STYLE_TAG_RE = /<\s*style\b/gi;
 const SCRIPT_BLOCK_RE = /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi;
@@ -342,7 +382,9 @@ function matches(text: string, pattern: RegExp): RegExpMatchArray[] {
 function parameterControls(html: string): RegExpMatchArray[] {
   return matches(html, PARAMETER_CONTROL_RE).filter((match) => {
     if (match[1].toLowerCase() === "select") return true;
-    const type = match[2].match(/\btype\s*=\s*["']?([^\s"'>]+)/i)?.[1]?.toLowerCase() ?? "text";
+    const type =
+      match[2].match(/\btype\s*=\s*["']?([^\s"'>]+)/i)?.[1]?.toLowerCase() ??
+      "text";
     return !["button", "submit", "reset", "hidden"].includes(type);
   });
 }
@@ -369,27 +411,37 @@ export function validateSimulationHtml(html: string): string[] {
     problems.push(`document exceeds ${MAX_SIMULATION_HTML_BYTES} bytes`);
   }
   if (!lower.includes("<script")) {
-    problems.push("document has no <script> — the simulation must be interactive");
+    problems.push(
+      "document has no <script> — the simulation must be interactive",
+    );
   }
 
   const styles = matches(text, STYLE_TAG_RE);
   if (styles.length !== 1) {
-    problems.push(`document must contain exactly one <style> tag (found ${styles.length})`);
+    problems.push(
+      `document must contain exactly one <style> tag (found ${styles.length})`,
+    );
   }
 
   const stages = matches(text, VISUAL_STAGE_RE);
   if (stages.length !== 1) {
-    problems.push(`document must contain exactly one visual stage: one <canvas> or one <svg> (found ${stages.length})`);
+    problems.push(
+      `document must contain exactly one visual stage: one <canvas> or one <svg> (found ${stages.length})`,
+    );
   }
 
   const controls = parameterControls(text);
   if (controls.length < 4 || controls.length > 5) {
-    problems.push(`document must contain exactly 4 or 5 adjustable parameter controls (found ${controls.length})`);
+    problems.push(
+      `document must contain exactly 4 or 5 adjustable parameter controls (found ${controls.length})`,
+    );
   }
 
   const scripts = matches(text, SCRIPT_BLOCK_RE);
   if (scripts.length !== 1) {
-    problems.push(`document must contain exactly one inline <script> (found ${scripts.length})`);
+    problems.push(
+      `document must contain exactly one inline <script> (found ${scripts.length})`,
+    );
   } else {
     const [attributes, source] = [scripts[0][1], scripts[0][2]];
     if (/\b(?:src|type\s*=\s*["']?module)\b/i.test(attributes)) {
@@ -398,7 +450,10 @@ export function validateSimulationHtml(html: string): string[] {
       try {
         new Script(source, { filename: "generated-simulation.js" });
       } catch (error) {
-        const message = error instanceof Error ? error.message.split("\n")[0] : "unknown syntax error";
+        const message =
+          error instanceof Error
+            ? error.message.split("\n")[0]
+            : "unknown syntax error";
         problems.push(`document JavaScript does not parse: ${message}`);
       }
     }
@@ -412,7 +467,9 @@ export function validateSimulationHtml(html: string): string[] {
     if (count > 1) duplicateIds.push(id);
   }
   if (duplicateIds.length > 0) {
-    problems.push(`document has duplicate element id(s): ${duplicateIds.join(", ")}`);
+    problems.push(
+      `document has duplicate element id(s): ${duplicateIds.join(", ")}`,
+    );
   }
 
   const referencedIds = new Set<string>();
@@ -424,7 +481,9 @@ export function validateSimulationHtml(html: string): string[] {
   }
   const missingIds = [...missingIdSet];
   if (missingIds.length > 0) {
-    problems.push(`script references missing element id(s): ${missingIds.join(", ")}`);
+    problems.push(
+      `script references missing element id(s): ${missingIds.join(", ")}`,
+    );
   }
 
   const controlsWithoutIds: string[] = [];
@@ -435,10 +494,14 @@ export function validateSimulationHtml(html: string): string[] {
     else if (!referencedIds.has(id)) unwiredControlIds.push(id);
   }
   if (controlsWithoutIds.length > 0) {
-    problems.push(`every adjustable parameter control needs a unique id (missing on: ${controlsWithoutIds.join(", ")})`);
+    problems.push(
+      `every adjustable parameter control needs a unique id (missing on: ${controlsWithoutIds.join(", ")})`,
+    );
   }
   if (unwiredControlIds.length > 0) {
-    problems.push(`script must look up every adjustable parameter control by id (missing: ${unwiredControlIds.join(", ")})`);
+    problems.push(
+      `script must look up every adjustable parameter control by id (missing: ${unwiredControlIds.join(", ")})`,
+    );
   }
 
   problems.push(...validateSimulationLatex(text));
@@ -446,17 +509,23 @@ export function validateSimulationHtml(html: string): string[] {
   const tag = text.match(FORBIDDEN_TAG_RE);
   if (tag) problems.push(`forbidden element <${tag[1].toLowerCase()}>`);
   if (EXTERNAL_ATTR_RE.test(text)) {
-    problems.push("src/href references an external URL — the document must be self-contained");
+    problems.push(
+      "src/href references an external URL — the document must be self-contained",
+    );
   }
   if (EXTERNAL_CSS_URL_RE.test(text)) {
-    problems.push("CSS url() references an external URL — embed assets as data: URIs");
+    problems.push(
+      "CSS url() references an external URL — embed assets as data: URIs",
+    );
   }
   if (CSS_IMPORT_RE.test(text)) {
     problems.push("@import is not allowed — inline all CSS");
   }
   const api = text.match(NETWORK_API_RE);
   if (api) {
-    problems.push(`network API ${api[0].replace(/\s*\($/, "")}() is not allowed — the page cannot make requests`);
+    problems.push(
+      `network API ${api[0].replace(/\s*\($/, "")}() is not allowed — the page cannot make requests`,
+    );
   }
   return problems;
 }

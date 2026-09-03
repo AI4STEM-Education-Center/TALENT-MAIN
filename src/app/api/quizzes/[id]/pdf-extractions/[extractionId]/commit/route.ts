@@ -1,8 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { canManage, getContentActor } from "@/lib/quiz-access";
-import { mapStagedToQuestionData, validateCommitQuestions } from "@/lib/quiz-extraction";
-import { deleteS3Objects, headS3Object, listS3Objects, quizExtractionPrefix } from "@/lib/storage";
+import {
+  mapStagedToQuestionData,
+  validateCommitQuestions,
+} from "@/lib/quiz-extraction";
+import {
+  deleteS3Objects,
+  headS3Object,
+  listS3Objects,
+  quizExtractionPrefix,
+} from "@/lib/storage";
 
 export const runtime = "nodejs";
 
@@ -13,19 +21,28 @@ export const runtime = "nodejs";
 // double commit. Figure keys are verified to be in-bounds + present in S3.
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string; extractionId: string }> }
+  { params }: { params: Promise<{ id: string; extractionId: string }> },
 ) {
-  const [actor, { id: quizId, extractionId }] = await Promise.all([getContentActor(), params]);
-  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const [actor, { id: quizId, extractionId }] = await Promise.all([
+    getContentActor(),
+    params,
+  ]);
+  if (!actor)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const quiz = await prisma.quiz.findUnique({ where: { id: quizId } });
   if (!quiz || !canManage(actor, quiz)) {
     return NextResponse.json({ error: "Quiz not found" }, { status: 404 });
   }
 
-  const extraction = await prisma.quizPdfExtraction.findUnique({ where: { id: extractionId } });
+  const extraction = await prisma.quizPdfExtraction.findUnique({
+    where: { id: extractionId },
+  });
   if (!extraction || extraction.quizId !== quizId) {
-    return NextResponse.json({ error: "Extraction not found" }, { status: 404 });
+    return NextResponse.json(
+      { error: "Extraction not found" },
+      { status: 404 },
+    );
   }
 
   // 409 (not 400) because the resource is in the wrong STATE — most importantly
@@ -33,7 +50,7 @@ export async function POST(
   if (extraction.status !== "AWAITING_REVIEW") {
     return NextResponse.json(
       { error: "Extraction is not awaiting review" },
-      { status: 409 }
+      { status: 409 },
     );
   }
 
@@ -50,7 +67,7 @@ export async function POST(
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Invalid commit payload" },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
@@ -80,8 +97,10 @@ export async function POST(
       const key = q.figureStorageKey ?? "";
       if (!issuedKeys.has(key)) {
         return NextResponse.json(
-          { error: `question ${qi + 1} figure was not uploaded for this extraction — re-crop it and try again` },
-          { status: 400 }
+          {
+            error: `question ${qi + 1} figure was not uploaded for this extraction — re-crop it and try again`,
+          },
+          { status: 400 },
         );
       }
       figureKeys.push(key);
@@ -92,8 +111,10 @@ export async function POST(
       const key = o.imageStorageKey ?? "";
       if (!issuedKeys.has(key)) {
         return NextResponse.json(
-          { error: `question ${qi + 1} option ${oi + 1} image was not uploaded for this extraction — re-crop it and try again` },
-          { status: 400 }
+          {
+            error: `question ${qi + 1} option ${oi + 1} image was not uploaded for this extraction — re-crop it and try again`,
+          },
+          { status: 400 },
         );
       }
       figureKeys.push(key);
@@ -101,9 +122,14 @@ export async function POST(
   }
 
   try {
-    await Promise.all(figureKeys.map((key) => headS3Object(extraction.bucket, key)));
+    await Promise.all(
+      figureKeys.map((key) => headS3Object(extraction.bucket, key)),
+    );
   } catch {
-    return NextResponse.json({ error: "figure upload incomplete" }, { status: 400 });
+    return NextResponse.json(
+      { error: "figure upload incomplete" },
+      { status: 400 },
+    );
   }
 
   const result = await prisma.$transaction(async (tx) => {
@@ -168,18 +194,25 @@ export async function POST(
   // Best-effort — the worker's S3 GC sweeps whatever is left.
   const committedKeys = new Set(figureKeys);
   const orphanFigureKeys = new Set(
-    issuedFigures.map((f) => f.storageKey).filter((key) => !committedKeys.has(key))
+    issuedFigures
+      .map((f) => f.storageKey)
+      .filter((key) => !committedKeys.has(key)),
   );
   try {
     const prefix = quizExtractionPrefix(extraction.storageKey);
     const keys = (await listS3Objects(extraction.bucket, prefix)).filter(
-      (key) => !key.startsWith(figurePrefix) || orphanFigureKeys.has(key)
+      (key) => !key.startsWith(figurePrefix) || orphanFigureKeys.has(key),
     );
     if (keys.length > 0) await deleteS3Objects(extraction.bucket, keys);
-    await prisma.quizPdfExtractionPage.deleteMany({ where: { extractionId: extraction.id } });
+    await prisma.quizPdfExtractionPage.deleteMany({
+      where: { extractionId: extraction.id },
+    });
     if (orphanFigureKeys.size > 0) {
       await prisma.quizPdfExtractionFigure.deleteMany({
-        where: { extractionId: extraction.id, storageKey: { in: [...orphanFigureKeys] } },
+        where: {
+          extractionId: extraction.id,
+          storageKey: { in: [...orphanFigureKeys] },
+        },
       });
     }
   } catch (e) {

@@ -12,7 +12,9 @@ import { resetDb } from "./db";
 const mockAuth = vi.mocked(auth);
 
 function asAdmin() {
-  mockAuth.mockResolvedValue({ user: { id: "admin-1", role: "ADMIN" } } as never);
+  mockAuth.mockResolvedValue({
+    user: { id: "admin-1", role: "ADMIN" },
+  } as never);
 }
 
 function logsRequest(query = "") {
@@ -62,9 +64,11 @@ describe("logSystemEvent", () => {
   });
 
   it("never throws on a failed write", async () => {
-    const spy = vi.spyOn(prisma.systemLog, "create").mockRejectedValueOnce(new Error("db down"));
+    const spy = vi
+      .spyOn(prisma.systemLog, "create")
+      .mockRejectedValueOnce(new Error("db down"));
     await expect(
-      logSystemEvent({ category: "SYSTEM", type: "T", message: "m" })
+      logSystemEvent({ category: "SYSTEM", type: "T", message: "m" }),
     ).resolves.toBeUndefined();
     spy.mockRestore();
   });
@@ -94,8 +98,18 @@ describe("GET /api/admin/logs", () => {
   });
 
   it("returns newest-first logs with pagination and a 24h summary", async () => {
-    await logSystemEvent({ category: "AUTH", type: "LOGIN_FAILED", severity: "WARNING", message: "bad login" });
-    await logSystemEvent({ category: "API", type: "SOME_ROUTE", severity: "ERROR", message: "boom" });
+    await logSystemEvent({
+      category: "AUTH",
+      type: "LOGIN_FAILED",
+      severity: "WARNING",
+      message: "bad login",
+    });
+    await logSystemEvent({
+      category: "API",
+      type: "SOME_ROUTE",
+      severity: "ERROR",
+      message: "boom",
+    });
     await logSystemEvent({
       category: "USAGE",
       type: "USAGE_SAMPLE",
@@ -118,15 +132,27 @@ describe("GET /api/admin/logs", () => {
   });
 
   it("filters by category, severity, and free text", async () => {
-    await logSystemEvent({ category: "AUTH", type: "LOGIN_FAILED", severity: "WARNING", message: "bad login" });
-    await logSystemEvent({ category: "API", type: "SOME_ROUTE", severity: "ERROR", message: "boom" });
+    await logSystemEvent({
+      category: "AUTH",
+      type: "LOGIN_FAILED",
+      severity: "WARNING",
+      message: "bad login",
+    });
+    await logSystemEvent({
+      category: "API",
+      type: "SOME_ROUTE",
+      severity: "ERROR",
+      message: "boom",
+    });
 
     asAdmin();
     const byCategory = await (await LOGS(logsRequest("?category=AUTH"))).json();
     expect(byCategory.total).toBe(1);
     expect(byCategory.logs[0].type).toBe("LOGIN_FAILED");
 
-    const bySeverity = await (await LOGS(logsRequest("?severity=ERROR"))).json();
+    const bySeverity = await (
+      await LOGS(logsRequest("?severity=ERROR"))
+    ).json();
     expect(bySeverity.total).toBe(1);
     expect(bySeverity.logs[0].type).toBe("SOME_ROUTE");
 

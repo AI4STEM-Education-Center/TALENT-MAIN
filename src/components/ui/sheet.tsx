@@ -17,15 +17,16 @@ function SheetOverlay({
     <DialogPrimitive.Overlay
       className={cn(
         "fixed inset-0 z-50 bg-black/60 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
-        className
+        className,
       )}
       {...props}
     />
   );
 }
 
-interface SheetContentProps
-  extends React.ComponentProps<typeof DialogPrimitive.Content> {
+interface SheetContentProps extends React.ComponentProps<
+  typeof DialogPrimitive.Content
+> {
   side?: "left" | "right";
 }
 
@@ -46,7 +47,7 @@ function SheetContent({
           side === "left"
             ? "inset-y-0 left-0 w-64 border-r data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left"
             : "inset-y-0 right-0 w-64 border-l data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right",
-          className
+          className,
         )}
         {...props}
       >

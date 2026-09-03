@@ -39,7 +39,9 @@ describe("sanitizeFilename", () => {
   });
 
   it("replaces unsafe characters with underscores", () => {
-    expect(sanitizeFilename("my file (final)!.pdf")).toBe("my_file__final__.pdf");
+    expect(sanitizeFilename("my file (final)!.pdf")).toBe(
+      "my_file__final__.pdf",
+    );
   });
 
   it("keeps dots, dashes and underscores", () => {
@@ -58,7 +60,7 @@ describe("sanitizeFilename", () => {
 describe("buildStorageKey / buildPageStorageKey", () => {
   it("builds an object key under the teacher/class/material prefix", () => {
     expect(buildStorageKey("t1", "c1", "m1", "notes.pdf")).toBe(
-      "learning-materials/t1/c1/m1/notes.pdf"
+      "learning-materials/t1/c1/m1/notes.pdf",
     );
   });
 
@@ -66,19 +68,19 @@ describe("buildStorageKey / buildPageStorageKey", () => {
     // The leading `../` is part of the path prefix, which sanitizeFilename
     // removes entirely (everything up to the last slash), leaving just the base.
     expect(buildStorageKey("t1", "c1", "m1", "../evil.pdf")).toBe(
-      "learning-materials/t1/c1/m1/evil.pdf"
+      "learning-materials/t1/c1/m1/evil.pdf",
     );
   });
 
   it("replaces unsafe characters in the base name within the key", () => {
     expect(buildStorageKey("t1", "c1", "m1", "weird name@2.pdf")).toBe(
-      "learning-materials/t1/c1/m1/weird_name_2.pdf"
+      "learning-materials/t1/c1/m1/weird_name_2.pdf",
     );
   });
 
   it("builds a deterministic page key", () => {
     expect(buildPageStorageKey("t1", "c1", "m1", 3)).toBe(
-      "learning-materials/t1/c1/m1/pages/page-3.png"
+      "learning-materials/t1/c1/m1/pages/page-3.png",
     );
   });
 });
@@ -89,25 +91,25 @@ describe("S3 key namespace", () => {
 
     expect(getS3KeyPrefix()).toBe("dev/");
     expect(buildStorageKey("t1", "c1", "m1", "notes.pdf")).toBe(
-      "dev/learning-materials/t1/c1/m1/notes.pdf"
+      "dev/learning-materials/t1/c1/m1/notes.pdf",
     );
     expect(buildPageStorageKey("t1", "c1", "m1", 1)).toBe(
-      "dev/learning-materials/t1/c1/m1/pages/page-1.png"
+      "dev/learning-materials/t1/c1/m1/pages/page-1.png",
     );
     expect(buildQuizExtractionPdfKey(null, "q1", "e1", "quiz.pdf")).toBe(
-      "dev/quiz-extractions/pool/q1/e1/quiz.pdf"
+      "dev/quiz-extractions/pool/q1/e1/quiz.pdf",
     );
     expect(buildQuizExtractionPageKey(null, "q1", "e1", 1)).toBe(
-      "dev/quiz-extractions/pool/q1/e1/pages/page-1.png"
+      "dev/quiz-extractions/pool/q1/e1/pages/page-1.png",
     );
     expect(buildQuizExtractionFigureKey(null, "q1", "e1", 0)).toBe(
-      "dev/quiz-extractions/pool/q1/e1/figures/figure-0.png"
+      "dev/quiz-extractions/pool/q1/e1/figures/figure-0.png",
     );
     expect(buildQuizExtractionOptionImageKey(null, "q1", "e1", 0, 1)).toBe(
-      "dev/quiz-extractions/pool/q1/e1/figures/option-0-1.png"
+      "dev/quiz-extractions/pool/q1/e1/figures/option-0-1.png",
     );
     expect(buildSimulationKey(null, "q1", "question1", 1)).toBe(
-      "dev/simulations/pool/q1/question1/v1.html"
+      "dev/simulations/pool/q1/question1/v1.html",
     );
   });
 
@@ -120,12 +122,16 @@ describe("S3 key namespace", () => {
 describe("materialPrefixFromStorageKey", () => {
   it("returns the prefix up to and including the last slash for an original key", () => {
     const key = buildStorageKey("t1", "c1", "m1", "notes.pdf");
-    expect(materialPrefixFromStorageKey(key)).toBe("learning-materials/t1/c1/m1/");
+    expect(materialPrefixFromStorageKey(key)).toBe(
+      "learning-materials/t1/c1/m1/",
+    );
   });
 
   it("returns the pages prefix for a page key (not the material root)", () => {
     const key = buildPageStorageKey("t1", "c1", "m1", 2);
-    expect(materialPrefixFromStorageKey(key)).toBe("learning-materials/t1/c1/m1/pages/");
+    expect(materialPrefixFromStorageKey(key)).toBe(
+      "learning-materials/t1/c1/m1/pages/",
+    );
   });
 });
 
@@ -160,22 +166,22 @@ describe("quizExtractionScope", () => {
 describe("buildQuizExtraction* keys", () => {
   it("builds a teacher-scoped PDF key with a sanitized filename", () => {
     expect(buildQuizExtractionPdfKey("t1", "qz1", "ex1", "Mid Term!.pdf")).toBe(
-      "quiz-extractions/t1/qz1/ex1/Mid_Term_.pdf"
+      "quiz-extractions/t1/qz1/ex1/Mid_Term_.pdf",
     );
   });
 
   it("scopes pool PDFs under 'pool'", () => {
     expect(buildQuizExtractionPdfKey(null, "qz1", "ex1", "exam.pdf")).toBe(
-      "quiz-extractions/pool/qz1/ex1/exam.pdf"
+      "quiz-extractions/pool/qz1/ex1/exam.pdf",
     );
   });
 
   it("builds deterministic page and figure keys", () => {
     expect(buildQuizExtractionPageKey("t1", "qz1", "ex1", 4)).toBe(
-      "quiz-extractions/t1/qz1/ex1/pages/page-4.png"
+      "quiz-extractions/t1/qz1/ex1/pages/page-4.png",
     );
     expect(buildQuizExtractionFigureKey("t1", "qz1", "ex1", 2)).toBe(
-      "quiz-extractions/t1/qz1/ex1/figures/figure-2.png"
+      "quiz-extractions/t1/qz1/ex1/figures/figure-2.png",
     );
   });
 });
@@ -186,8 +192,12 @@ describe("quizExtractionPrefix", () => {
     const prefix = quizExtractionPrefix(pdfKey);
     expect(prefix).toBe("quiz-extractions/t1/qz1/ex1/");
     // Pages and figures of the same extraction sit under that prefix.
-    expect(buildQuizExtractionPageKey("t1", "qz1", "ex1", 1).startsWith(prefix)).toBe(true);
-    expect(buildQuizExtractionFigureKey("t1", "qz1", "ex1", 1).startsWith(prefix)).toBe(true);
+    expect(
+      buildQuizExtractionPageKey("t1", "qz1", "ex1", 1).startsWith(prefix),
+    ).toBe(true);
+    expect(
+      buildQuizExtractionFigureKey("t1", "qz1", "ex1", 1).startsWith(prefix),
+    ).toBe(true);
   });
 });
 
@@ -224,7 +234,9 @@ describe("maxDerivedPageBytes", () => {
 
   it("never returns less than the flat allowance", () => {
     for (const pages of [0, 1, 10, 50, 100]) {
-      expect(maxDerivedPageBytes(pages)).toBeGreaterThanOrEqual(4 * DEFAULT_MAX_BYTES);
+      expect(maxDerivedPageBytes(pages)).toBeGreaterThanOrEqual(
+        4 * DEFAULT_MAX_BYTES,
+      );
     }
   });
 
@@ -255,13 +267,13 @@ describe("getAwsCredentials", () => {
   it("throws when either half of the key pair is missing", () => {
     delete process.env.AWS_ACCESS_KEY_ID;
     expect(() => getAwsCredentials()).toThrow(
-      /AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY/
+      /AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY/,
     );
 
     process.env.AWS_ACCESS_KEY_ID = "AKIA_EXAMPLE";
     delete process.env.AWS_SECRET_ACCESS_KEY;
     expect(() => getAwsCredentials()).toThrow(
-      /AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY/
+      /AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY/,
     );
   });
 
@@ -269,7 +281,7 @@ describe("getAwsCredentials", () => {
     process.env.AWS_ACCESS_KEY_ID = "   ";
     process.env.AWS_SECRET_ACCESS_KEY = "secret";
     expect(() => getAwsCredentials()).toThrow(
-      /AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY/
+      /AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY/,
     );
   });
 });

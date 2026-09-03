@@ -78,27 +78,47 @@ A copy of your completed, signed form is attached as a PDF for your records.
 If you have questions about this research study, contact the study's Principal Investigator or your institution's IRB using the contact information in the attached form.`,
 };
 
-export const EMAIL_PURPOSE_DEFINITIONS: Record<EmailPurpose, EmailPurposeDefinition> = {
+export const EMAIL_PURPOSE_DEFINITIONS: Record<
+  EmailPurpose,
+  EmailPurposeDefinition
+> = {
   PASSWORD_RESET: {
     key: "PASSWORD_RESET",
     label: "Password reset",
-    description: "The reset link sent when someone uses “Forgot password?” on the sign-in page.",
+    description:
+      "The reset link sent when someone uses “Forgot password?” on the sign-in page.",
     defaultLocalPart: "password-reset",
     template: PASSWORD_RESET_TEMPLATE,
-    variables: ["appName", "firstName", "lastName", "username", "resetUrl", "expiresInMinutes"],
+    variables: [
+      "appName",
+      "firstName",
+      "lastName",
+      "username",
+      "resetUrl",
+      "expiresInMinutes",
+    ],
   },
   PASSWORD_CHANGED: {
     key: "PASSWORD_CHANGED",
     label: "Password changed notice",
-    description: "The security confirmation sent after a password is changed or reset.",
+    description:
+      "The security confirmation sent after a password is changed or reset.",
     defaultLocalPart: "no-reply",
     template: PASSWORD_CHANGED_TEMPLATE,
-    variables: ["appName", "firstName", "lastName", "username", "changedAt", "resetRequestUrl"],
+    variables: [
+      "appName",
+      "firstName",
+      "lastName",
+      "username",
+      "changedAt",
+      "resetRequestUrl",
+    ],
   },
   NOTIFICATION: {
     key: "NOTIFICATION",
     label: "Class notifications",
-    description: "Announcements a teacher emails to their class. The teacher writes the body.",
+    description:
+      "Announcements a teacher emails to their class. The teacher writes the body.",
     defaultLocalPart: "notification",
     template: null,
     variables: [],
@@ -106,7 +126,8 @@ export const EMAIL_PURPOSE_DEFINITIONS: Record<EmailPurpose, EmailPurposeDefinit
   CONTACT_TEACHER: {
     key: "CONTACT_TEACHER",
     label: "Student → teacher messages",
-    description: "Messages a student sends to their teacher. Replies go to the student.",
+    description:
+      "Messages a student sends to their teacher. Replies go to the student.",
     defaultLocalPart: "no-contact",
     template: null,
     variables: [],
@@ -122,15 +143,24 @@ export const EMAIL_PURPOSE_DEFINITIONS: Record<EmailPurpose, EmailPurposeDefinit
   CONSENT_CONFIRMATION: {
     key: "CONSENT_CONFIRMATION",
     label: "Consent record confirmation",
-    description: "Sent to a student or teacher after they respond to a research consent form, with a signed PDF copy attached.",
+    description:
+      "Sent to a student or teacher after they respond to a research consent form, with a signed PDF copy attached.",
     defaultLocalPart: "consent",
     template: CONSENT_CONFIRMATION_TEMPLATE,
-    variables: ["appName", "firstName", "lastName", "formTitle", "formVersion", "decisionText"],
+    variables: [
+      "appName",
+      "firstName",
+      "lastName",
+      "formTitle",
+      "formVersion",
+      "decisionText",
+    ],
   },
   CONSENT_EXPORT_REQUEST: {
     key: "CONSENT_EXPORT_REQUEST",
     label: "Consent export request (to admin)",
-    description: "Sent to the administrator a teacher selects when requesting a signed-students export.",
+    description:
+      "Sent to the administrator a teacher selects when requesting a signed-students export.",
     defaultLocalPart: "consent",
     template: null,
     variables: [],
@@ -138,7 +168,8 @@ export const EMAIL_PURPOSE_DEFINITIONS: Record<EmailPurpose, EmailPurposeDefinit
   CONSENT_EXPORT_READY: {
     key: "CONSENT_EXPORT_READY",
     label: "Consent export ready (to teacher)",
-    description: "Sent to a teacher once an admin approves their signed-students export request, with the CSV attached.",
+    description:
+      "Sent to a teacher once an admin approves their signed-students export request, with the CSV attached.",
     defaultLocalPart: "consent",
     template: null,
     variables: [],
@@ -149,7 +180,10 @@ export const APP_NAME = "AI4Talent";
 
 /** Narrow an arbitrary string to a known purpose key. */
 export function isEmailPurpose(value: unknown): value is EmailPurpose {
-  return typeof value === "string" && (EMAIL_PURPOSES as readonly string[]).includes(value);
+  return (
+    typeof value === "string" &&
+    (EMAIL_PURPOSES as readonly string[]).includes(value)
+  );
 }
 
 /**
@@ -175,7 +209,12 @@ export function normalizeSenderDomain(value: string): string | null {
   trimmed = trimmed.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
   trimmed = trimmed.replace(/^.*@/, "");
   if (trimmed.length > 253) return null;
-  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(trimmed)) return null;
+  if (
+    !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(
+      trimmed,
+    )
+  )
+    return null;
   return trimmed;
 }
 
@@ -208,11 +247,17 @@ export interface SenderIdentity {
  */
 export function resolveSenderIdentity(
   purpose: EmailPurpose,
-  smtp: { fromEmail: string; fromName: string | null; senderDomain: string | null },
-  override?: SenderOverride | null
+  smtp: {
+    fromEmail: string;
+    fromName: string | null;
+    senderDomain: string | null;
+  },
+  override?: SenderOverride | null,
 ): SenderIdentity {
   const definition = EMAIL_PURPOSE_DEFINITIONS[purpose];
-  const domain = smtp.senderDomain ? normalizeSenderDomain(smtp.senderDomain) : null;
+  const domain = smtp.senderDomain
+    ? normalizeSenderDomain(smtp.senderDomain)
+    : null;
   const localPart =
     (override?.localPart ? normalizeLocalPart(override.localPart) : null) ??
     definition.defaultLocalPart;
@@ -240,9 +285,16 @@ export function formatFromHeader(identity: SenderIdentity): string {
  * typo in an admin-edited template is visible rather than silently blanking
  * part of the message.
  */
-export function renderTemplate(template: string, vars: Record<string, string | number>): string {
-  return template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (match, name: string) =>
-    Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : match
+export function renderTemplate(
+  template: string,
+  vars: Record<string, string | number>,
+): string {
+  return template.replace(
+    /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g,
+    (match, name: string) =>
+      Object.prototype.hasOwnProperty.call(vars, name)
+        ? String(vars[name])
+        : match,
   );
 }
 
@@ -253,11 +305,13 @@ export function renderTemplate(template: string, vars: Record<string, string | n
 export function renderPurposeMessage(
   purpose: EmailPurpose,
   vars: Record<string, string | number>,
-  override?: SenderOverride | null
+  override?: SenderOverride | null,
 ): { subject: string; text: string } {
   const definition = EMAIL_PURPOSE_DEFINITIONS[purpose];
   if (!definition.template) {
-    throw new Error(`Email purpose ${purpose} has no template — its body is supplied by the caller.`);
+    throw new Error(
+      `Email purpose ${purpose} has no template — its body is supplied by the caller.`,
+    );
   }
   const subject = override?.subject?.trim() || definition.template.subject;
   const body = override?.body?.trim() || definition.template.body;
