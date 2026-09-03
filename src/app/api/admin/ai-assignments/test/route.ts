@@ -12,6 +12,7 @@ import {
   transportFor,
 } from "@/lib/ai-streaming";
 import { logApiError } from "@/lib/system-log";
+import { errorMessage } from "@/lib/errors";
 
 const VALID_USE_CASES: UseCase[] = [
   "pdf_description",
@@ -108,11 +109,11 @@ export async function POST(req: Request) {
       serviceTier: provider.serviceTier,
       thinkingLevel: provider.thinkingLevel,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logApiError("AI_ASSIGNMENT_TEST", error);
     return NextResponse.json({
       success: false,
-      error: error.message || "Connection test failed",
+      error: errorMessage(error) || "Connection test failed",
     });
   }
 }

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { errorMessage } from "@/lib/errors";
 
 /**
  * Persistent system operation log (SystemLog table), surfaced to admins at
@@ -67,7 +68,7 @@ export function logApiError(
 ): void {
   if (context) console.error(`[${tag}] ${context}:`, error);
   else console.error(`[${tag}]`, error);
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorMessage(error);
   const stack =
     error instanceof Error && error.stack
       ? error.stack.split("\n").slice(0, 12).join("\n")

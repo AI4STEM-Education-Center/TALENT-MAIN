@@ -1,13 +1,12 @@
 import katex from "katex";
-import { splitMathSegments, type MathSegment } from "@/lib/math-segments";
+import { splitMathSegments } from "@/lib/math-segments";
 
-export function MathText({
-  text,
-  className,
-}: {
+interface MathTextProps {
   text: string;
   className?: string;
-}) {
+}
+
+export function MathText({ text, className }: MathTextProps) {
   // Fast path: plain text with no math is emitted verbatim, guaranteeing
   // pixel-identical output for existing plain-text questions.
   if (!text.includes("$")) {

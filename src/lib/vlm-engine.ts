@@ -10,6 +10,7 @@ import {
   type ThinkingParams,
 } from "@/lib/ai-provider";
 import { retryWithExponentialBackoff } from "./retry";
+import { errorMessage as getErrorMessage } from "./errors";
 import {
   streamJsonCompletion,
   aggregateMetrics,
@@ -548,13 +549,14 @@ export async function processMaterial(materialId: string) {
         aiTotalMs: agg?.totalMs ?? null,
       },
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error(`[VLM Engine] Tier 2 processing failed:`, err);
     await prisma.learningMaterial.update({
       where: { id: materialId },
       data: {
         processingStatus: "FAILED",
-        errorMessage: err.message || "Failed to generate batch summary",
+        errorMessage:
+          getErrorMessage(err) || "Failed to generate batch summary",
       },
     });
   }

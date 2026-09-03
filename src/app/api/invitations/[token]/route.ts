@@ -286,7 +286,8 @@ export async function POST(
           },
           include: { student: true },
         });
-        studentId = user.student!.id;
+        if (!user.student) throw new Error("Student profile was not created");
+        studentId = user.student.id;
       }
 
       await tx.classEnrollment.upsert({

@@ -39,6 +39,16 @@ interface SimDetail {
   feedback: FeedbackRound[];
 }
 
+interface SimulationPanelProps {
+  simulationId: string;
+  canGiveFeedback: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
+/** How often to re-fetch while the worker revises the simulation. */
+const SIMULATION_REVISION_POLL_INTERVAL_MS = 5_000;
+
 /**
  * Dialog for interacting with one question's simulation: the sandboxed
  * artifact, its topic/goal, the feedback history, and — when the caller may
@@ -51,12 +61,7 @@ export function SimulationPanel({
   canGiveFeedback,
   open,
   onOpenChange,
-}: {
-  simulationId: string;
-  canGiveFeedback: boolean;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
+}: SimulationPanelProps) {
   const confirm = useConfirm();
   const [detail, setDetail] = useState<SimDetail | null>(null);
   const [draft, setDraft] = useState("");
@@ -82,7 +87,7 @@ export function SimulationPanel({
   const revising = detail?.status === "REVISING";
   useEffect(() => {
     if (!open || !revising) return;
-    const timer = setInterval(refresh, 5000);
+    const timer = setInterval(refresh, SIMULATION_REVISION_POLL_INTERVAL_MS);
     return () => clearInterval(timer);
   }, [open, revising, refresh]);
 

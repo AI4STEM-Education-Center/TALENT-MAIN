@@ -54,6 +54,7 @@ import {
   RESOURCE_SAMPLE_RETENTION_DAYS,
 } from "./lib/resource-monitor";
 import { logSystemEvent } from "./lib/system-log";
+import { errorMessage } from "./lib/errors";
 
 // Honker opens its own SQLite file (a sibling of the Prisma DB); see
 // resolveQueueDbPath for why the queue never shares the app's database.
@@ -84,13 +85,16 @@ async function consumeMaterials() {
       await processMaterial(materialId);
       job.ack();
       console.log(`[Worker] Successfully processed and acked job ${job.id}`);
-    } catch (err: any) {
-      console.error(`[Worker] Error processing job ${job.id}:`, err.message);
+    } catch (err: unknown) {
+      console.error(
+        `[Worker] Error processing job ${job.id}:`,
+        errorMessage(err),
+      );
       await logSystemEvent({
         category: "WORKER",
         type: "JOB_FAILED",
         severity: "ERROR",
-        message: `Material processing job failed: ${err.message ?? err}`,
+        message: `Material processing job failed: ${errorMessage(err)}`,
         metadata: { queue: "materials", jobId: job.id, materialId },
       });
 
@@ -101,7 +105,7 @@ async function consumeMaterials() {
           data: {
             processingStatus: "FAILED",
             errorMessage:
-              err.message || "Unknown error during background processing",
+              errorMessage(err) || "Unknown error during background processing",
           },
         });
       } catch (dbErr) {
@@ -131,16 +135,16 @@ async function consumeExamResults() {
       // internally, so it always returns; ack unconditionally to avoid blocking.
       await generateExamResult(examResultId);
       console.log(`[Worker] Finished exam-result job ${job.id}`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(
         `[Worker] Error on exam-result job ${job.id}:`,
-        err?.message ?? err,
+        errorMessage(err),
       );
       await logSystemEvent({
         category: "WORKER",
         type: "JOB_FAILED",
         severity: "ERROR",
-        message: `Exam-result job failed: ${err?.message ?? err}`,
+        message: `Exam-result job failed: ${errorMessage(err)}`,
         metadata: { queue: EXAM_RESULTS_QUEUE, jobId: job.id, examResultId },
       });
     } finally {
@@ -165,16 +169,16 @@ async function consumeQuizExtractions() {
       // always returns; ack unconditionally to avoid blocking the queue.
       await runQuizExtraction(extractionId);
       console.log(`[Worker] Finished quiz-extraction job ${job.id}`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(
         `[Worker] Error on quiz-extraction job ${job.id}:`,
-        err?.message ?? err,
+        errorMessage(err),
       );
       await logSystemEvent({
         category: "WORKER",
         type: "JOB_FAILED",
         severity: "ERROR",
-        message: `Quiz-extraction job failed: ${err?.message ?? err}`,
+        message: `Quiz-extraction job failed: ${errorMessage(err)}`,
         metadata: {
           queue: QUIZ_EXTRACTIONS_QUEUE,
           jobId: job.id,
@@ -201,16 +205,16 @@ async function consumeSimulations() {
       // always returns; ack unconditionally to avoid blocking the queue.
       await runSimulationJob(simulationId, feedbackId);
       console.log(`[Worker] Finished simulation job ${job.id}`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(
         `[Worker] Error on simulation job ${job.id}:`,
-        err?.message ?? err,
+        errorMessage(err),
       );
       await logSystemEvent({
         category: "WORKER",
         type: "JOB_FAILED",
         severity: "ERROR",
-        message: `Simulation job failed: ${err?.message ?? err}`,
+        message: `Simulation job failed: ${errorMessage(err)}`,
         metadata: {
           queue: SIMULATIONS_QUEUE,
           jobId: job.id,
@@ -254,22 +258,22 @@ async function consumeMessageEmails() {
         });
       }
       job.ack();
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Only the engine's own bookkeeping can land here (the send path is
       // already handled). Retry so a blip in the database doesn't drop the
       // email; the delivery row's attempt cap still bounds it.
       console.error(
         `[Worker] Error on message-email job ${job.id}:`,
-        err?.message ?? err,
+        errorMessage(err),
       );
       await logSystemEvent({
         category: "WORKER",
         type: "JOB_FAILED",
         severity: "ERROR",
-        message: `Message-email job failed: ${err?.message ?? err}`,
+        message: `Message-email job failed: ${errorMessage(err)}`,
         metadata: { queue: MESSAGE_EMAILS_QUEUE, jobId: job.id, deliveryId },
       });
-      job.retry(60, String(err?.message ?? err));
+      job.retry(60, errorMessage(err));
     }
   }
 }
@@ -297,11 +301,8 @@ async function runMessageEmailSweeper() {
           `[Worker] Closed out ${exhausted} message email(s) that ran out of attempts`,
         );
       }
-    } catch (err: any) {
-      console.error(
-        "[Worker] Message-email sweep failed:",
-        err?.message ?? err,
-      );
+    } catch (err: unknown) {
+      console.error("[Worker] Message-email sweep failed:", errorMessage(err));
     }
     await new Promise((resolve) =>
       setTimeout(resolve, MESSAGE_EMAIL_SWEEP_INTERVAL_MS),
@@ -337,19 +338,19 @@ async function consumeConsentEmails() {
         });
       }
       job.ack();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(
         `[Worker] Error on consent-email job ${job.id}:`,
-        err?.message ?? err,
+        errorMessage(err),
       );
       await logSystemEvent({
         category: "WORKER",
         type: "JOB_FAILED",
         severity: "ERROR",
-        message: `Consent-email job failed: ${err?.message ?? err}`,
+        message: `Consent-email job failed: ${errorMessage(err)}`,
         metadata: { queue: CONSENT_EMAILS_QUEUE, jobId: job.id, deliveryId },
       });
-      job.retry(60, String(err?.message ?? err));
+      job.retry(60, errorMessage(err));
     }
   }
 }
@@ -376,11 +377,8 @@ async function runConsentEmailSweeper() {
           `[Worker] Closed out ${exhausted} consent email(s) that ran out of attempts`,
         );
       }
-    } catch (err: any) {
-      console.error(
-        "[Worker] Consent-email sweep failed:",
-        err?.message ?? err,
-      );
+    } catch (err: unknown) {
+      console.error("[Worker] Consent-email sweep failed:", errorMessage(err));
     }
     await new Promise((resolve) =>
       setTimeout(resolve, CONSENT_EMAIL_SWEEP_INTERVAL_MS),
@@ -405,16 +403,16 @@ async function consumeConsentExports() {
       // runConsentExportJob records its own terminal COMPLETE/FAILED status
       // internally and always returns, so ack unconditionally.
       await runConsentExportJob(jobId);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(
         `[Worker] Error on consent-export job ${job.id}:`,
-        err?.message ?? err,
+        errorMessage(err),
       );
       await logSystemEvent({
         category: "WORKER",
         type: "JOB_FAILED",
         severity: "ERROR",
-        message: `Consent-export job failed: ${err?.message ?? err}`,
+        message: `Consent-export job failed: ${errorMessage(err)}`,
         metadata: {
           queue: CONSENT_EXPORTS_QUEUE,
           jobId: job.id,
@@ -437,10 +435,10 @@ async function runConsentExportGcLoop() {
       const cleaned = await sweepExpiredConsentExports();
       if (cleaned > 0)
         console.log(`[Worker] Cleaned up ${cleaned} expired consent export(s)`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(
         "[Worker] Consent-export GC run failed:",
-        err?.message ?? err,
+        errorMessage(err),
       );
     }
     await new Promise((resolve) =>
@@ -464,16 +462,13 @@ async function consumeBackups() {
         `[Worker] Backup complete: ${result.key} (pruned ${result.pruned.length}` +
           `${result.s3 ? `, copied ${result.s3.objectCount} S3 object(s)` : ""})`,
       );
-    } catch (err: any) {
-      console.error(
-        `[Worker] Backup job ${job.id} failed:`,
-        err?.message ?? err,
-      );
+    } catch (err: unknown) {
+      console.error(`[Worker] Backup job ${job.id} failed:`, errorMessage(err));
       await logSystemEvent({
         category: "WORKER",
         type: "BACKUP_FAILED",
         severity: "ERROR",
-        message: `Backup job failed: ${err?.message ?? err}`,
+        message: `Backup job failed: ${errorMessage(err)}`,
         metadata: { queue: BACKUPS_QUEUE, jobId: job.id },
       });
     } finally {
@@ -498,11 +493,8 @@ async function runBackupScheduler() {
         console.log("[Worker] Scheduled backup due — enqueueing");
         enqueueBackup();
       }
-    } catch (err: any) {
-      console.error(
-        "[Worker] Backup scheduler tick error:",
-        err?.message ?? err,
-      );
+    } catch (err: unknown) {
+      console.error("[Worker] Backup scheduler tick error:", errorMessage(err));
     }
     await new Promise((resolve) => setTimeout(resolve, 60_000));
   }
@@ -530,13 +522,13 @@ async function runS3GcLoop() {
         `[Worker] S3 GC done: ${result.staleExtractionsDiscarded} stale extraction(s) discarded, ` +
           `${result.orphanObjectsDeleted} orphaned object(s) deleted`,
       );
-    } catch (err: any) {
-      console.error("[Worker] S3 GC run failed:", err?.message ?? err);
+    } catch (err: unknown) {
+      console.error("[Worker] S3 GC run failed:", errorMessage(err));
       await logSystemEvent({
         category: "WORKER",
         type: "S3_GC_FAILED",
         severity: "ERROR",
-        message: `S3 GC run failed: ${err?.message ?? err}`,
+        message: `S3 GC run failed: ${errorMessage(err)}`,
       });
     }
     await new Promise((resolve) => setTimeout(resolve, S3_GC_INTERVAL_MS));
@@ -573,8 +565,8 @@ async function runLogRetentionLoop() {
           `[Worker] Pruned ${count} system log row(s) older than ${cutoff.toISOString()}`,
         );
       }
-    } catch (err: any) {
-      console.error("[Worker] System log prune failed:", err?.message ?? err);
+    } catch (err: unknown) {
+      console.error("[Worker] System log prune failed:", errorMessage(err));
     }
     await new Promise((resolve) => setTimeout(resolve, LOG_PRUNE_INTERVAL_MS));
   }
@@ -596,10 +588,10 @@ async function runResourceRetentionLoop() {
       const count = await pruneResourceSamples();
       if (count > 0)
         console.log(`[Worker] Pruned ${count} expired resource sample(s)`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(
         "[Worker] Resource sample prune failed:",
-        err?.message ?? err,
+        errorMessage(err),
       );
     }
     await new Promise((resolve) =>
@@ -628,16 +620,16 @@ async function runAssistantAttachmentRetentionLoop() {
       const count = await purgeExpiredAssistantAttachments();
       if (count > 0)
         console.log(`[Worker] Purged ${count} expired chat attachment(s)`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(
         "[Worker] Assistant attachment purge failed:",
-        err?.message ?? err,
+        errorMessage(err),
       );
       await logSystemEvent({
         category: "WORKER",
         type: "ASSISTANT_ATTACHMENT_PURGE_FAILED",
         severity: "ERROR",
-        message: `Assistant attachment purge failed: ${err?.message ?? err}`,
+        message: `Assistant attachment purge failed: ${errorMessage(err)}`,
       });
     }
     await new Promise((resolve) =>
@@ -685,16 +677,16 @@ async function runAssistantTranscriptArchiveLoop() {
       const archived = await archiveAgedConversations(cutoffs);
       if (archived > 0)
         console.log(`[Worker] Archived ${archived} chat transcript(s) to S3`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(
         "[Worker] Assistant transcript archive failed:",
-        err?.message ?? err,
+        errorMessage(err),
       );
       await logSystemEvent({
         category: "WORKER",
         type: "ASSISTANT_TRANSCRIPT_ARCHIVE_FAILED",
         severity: "ERROR",
-        message: `Assistant transcript archive failed: ${err?.message ?? err}`,
+        message: `Assistant transcript archive failed: ${errorMessage(err)}`,
       });
     }
     await new Promise((resolve) =>
@@ -736,7 +728,7 @@ async function startWorker() {
       category: "WORKER",
       type: "WORKER_FATAL",
       severity: "ERROR",
-      message: `Worker crashed: ${err instanceof Error ? err.message : err}`,
+      message: `Worker crashed: ${err instanceof Error ? errorMessage(err) : err}`,
     });
     process.exit(1);
   }

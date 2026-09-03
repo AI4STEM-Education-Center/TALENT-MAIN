@@ -111,8 +111,11 @@ export async function POST(
     ).sort((a, b) => a.localeCompare(b));
 
     return NextResponse.json({ models: modelIds });
-  } catch (error: any) {
-    if (error?.name === "TimeoutError" || error?.name === "AbortError") {
+  } catch (error: unknown) {
+    if (
+      error instanceof Error &&
+      (error.name === "TimeoutError" || error.name === "AbortError")
+    ) {
       return NextResponse.json(
         { error: "Models endpoint timed out after 10 seconds" },
         { status: 504 },
