@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { sendEmailToRecipient, SmtpNotConfiguredError } from "@/lib/email";
+import { sendEmailToRecipient, SmtpNotConfiguredError, getSenderOverride } from "@/lib/email";
+import { APP_NAME, renderPurposeMessage, type SenderOverride } from "@/lib/email-purposes";
 import { isValidEmail } from "@/lib/csv-roster";
 
 /**
@@ -153,30 +154,42 @@ export function messageLink(appUrl: string, messageId: string): string {
  * the platform — where read state, the class it belongs to, and the reply path
  * all are — so the email says who wrote, what it is about, and links straight
  * to it. Message content therefore never sits in an inbox or a mail relay log.
+ *
+ * Rendering goes through the admin-editable NOTIFICATION template: the default
+ * copy reproduces the historical wording exactly, while an override lets the
+ * admin reword the nudge without touching code.
  */
-export function buildMessageEmail(input: MessageEmailInput): { subject: string; text: string } {
+export function buildMessageEmail(
+  input: MessageEmailInput,
+  override?: SenderOverride | null
+): { subject: string; text: string } {
   const className = input.className?.trim() || null;
   const senderName = input.senderName.trim() || "your teacher";
   const topic = input.subject.trim();
-  const subject = className
+  const subjectLine = className
     ? `New message in ${className}: ${topic}`
     : `New message from ${senderName}: ${topic}`;
 
-  const link = input.appUrl
-    ? `Read it here: ${messageLink(input.appUrl, input.messageId)}`
+  const greetingLine = `${senderName} has sent you a new message${className ? ` in ${className}` : ""}.`;
+  const messageUrl = input.appUrl ? messageLink(input.appUrl, input.messageId) : "";
+  const messageLinkLine = input.appUrl
+    ? `Read it here: ${messageUrl}`
     : "Sign in and open Notifications to read it.";
 
-  const text = [
-    `${senderName} has sent you a new message${className ? ` in ${className}` : ""}.`,
-    "",
-    `Subject: ${topic}`,
-    "",
-    link,
-    "",
-    "This is an automated notification — the message itself is waiting for you in the app.",
-  ].join("\n");
-
-  return { subject, text };
+  return renderPurposeMessage(
+    "NOTIFICATION",
+    {
+      appName: APP_NAME,
+      senderName,
+      className: className ?? "",
+      subject: topic,
+      subjectLine,
+      greetingLine,
+      messageUrl,
+      messageLinkLine,
+    },
+    override ?? null
+  );
 }
 
 export interface DeliveryCounts {
@@ -293,13 +306,17 @@ export async function deliverMessageEmail(
   }
 
   const { message } = delivery;
-  const { subject, text } = buildMessageEmail({
-    subject: message.subject,
-    senderName: `${message.sender.firstName} ${message.sender.lastName}`.trim(),
-    className: message.class?.name ?? null,
-    messageId: message.id,
-    appUrl: resolveAppUrl(),
-  });
+  const override = await getSenderOverride("NOTIFICATION").catch(() => null);
+  const { subject, text } = buildMessageEmail(
+    {
+      subject: message.subject,
+      senderName: `${message.sender.firstName} ${message.sender.lastName}`.trim(),
+      className: message.class?.name ?? null,
+      messageId: message.id,
+      appUrl: resolveAppUrl(),
+    },
+    override
+  );
 
   try {
     await sendEmailToRecipient({

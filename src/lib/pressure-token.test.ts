@@ -1,9 +1,20 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // vi.mock is hoisted above module scope, so the spies have to be too.
-const { findUnique, update } = vi.hoisted(() => ({ findUnique: vi.fn(), update: vi.fn() }));
+const { findUnique, update, sysCreate, userFindMany, smtpFindFirst } = vi.hoisted(() => ({
+  findUnique: vi.fn(),
+  update: vi.fn(),
+  sysCreate: vi.fn(),
+  userFindMany: vi.fn(),
+  smtpFindFirst: vi.fn(),
+}));
 vi.mock("@/lib/prisma", () => ({
-  prisma: { pressureResultToken: { findUnique, update } },
+  prisma: {
+    pressureResultToken: { findUnique, update },
+    systemLog: { create: sysCreate },
+    user: { findMany: userFindMany },
+    smtpConfig: { findFirst: smtpFindFirst },
+  },
 }));
 
 import {
@@ -17,6 +28,9 @@ import {
 beforeEach(() => {
   findUnique.mockReset();
   update.mockReset().mockResolvedValue({});
+  sysCreate.mockReset().mockResolvedValue({});
+  userFindMany.mockReset().mockResolvedValue([]);
+  smtpFindFirst.mockReset().mockResolvedValue(null);
 });
 
 describe("generatePressureToken", () => {
@@ -63,7 +77,14 @@ describe("bearerToken", () => {
 describe("verifyPressureToken", () => {
   it("looks the token up by digest and records the use", async () => {
     const token = generatePressureToken();
-    findUnique.mockResolvedValue({ id: "tok_1", name: "ci", revokedAt: null });
+    findUnique.mockResolvedValue({
+      id: "tok_1",
+      name: "ci",
+      tokenPrefix: "ptr_abc",
+      revokedAt: null,
+      revokedUseCount: 0,
+      lastRevokedUseAt: null,
+    });
 
     await expect(verifyPressureToken(`Bearer ${token}`)).resolves.toEqual({
       id: "tok_1",
@@ -77,10 +98,26 @@ describe("verifyPressureToken", () => {
     );
   });
 
-  it("rejects a revoked token", async () => {
-    findUnique.mockResolvedValue({ id: "tok_1", name: "ci", revokedAt: new Date() });
-    await expect(verifyPressureToken(`Bearer ${generatePressureToken()}`)).resolves.toBeNull();
-    expect(update).not.toHaveBeenCalled();
+  it("rejects a revoked token but counts the use for leak detection", async () => {
+    findUnique.mockResolvedValue({
+      id: "tok_1",
+      name: "ci",
+      tokenPrefix: "ptr_abc",
+      revokedAt: new Date(),
+      revokedUseCount: 0,
+      lastRevokedUseAt: null,
+    });
+    await expect(verifyPressureToken(`Bearer ${generatePressureToken()}`, { ip: "1.2.3.4" })).resolves.toBeNull();
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "tok_1" },
+        data: expect.objectContaining({
+          revokedUseCount: { increment: 1 },
+          lastRevokedIp: "1.2.3.4",
+        }),
+      })
+    );
+    expect(sysCreate).toHaveBeenCalled();
   });
 
   it("rejects an unknown token without touching lastUsedAt", async () => {

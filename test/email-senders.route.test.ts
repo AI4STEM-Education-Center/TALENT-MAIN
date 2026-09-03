@@ -206,20 +206,20 @@ describe("PUT /api/admin/email-senders", () => {
     expect(row?.localPart).toBe("notification");
   });
 
-  it("drops subject/body for purposes whose copy a user writes", async () => {
+  it("stores subject/body for every purpose — all templates are editable", async () => {
     await seedSmtp();
     asAdmin();
     await put({
       senderDomain: "edwarcheng.net",
       senders: [
-        { purpose: "NOTIFICATION", localPart: "notification", subject: "nope", body: "nope" },
+        { purpose: "NOTIFICATION", localPart: "notification", subject: "Heads up: {{subjectLine}}", body: "Hi — {{greetingLine}}" },
         { purpose: "PASSWORD_RESET", localPart: "password-reset", subject: "Reset it", body: "Link: {{resetUrl}}" },
       ],
     });
 
     const notification = await prisma.emailSender.findUnique({ where: { purpose: "NOTIFICATION" } });
-    expect(notification?.subject).toBeNull();
-    expect(notification?.body).toBeNull();
+    expect(notification?.subject).toBe("Heads up: {{subjectLine}}");
+    expect(notification?.body).toBe("Hi — {{greetingLine}}");
 
     const reset = await prisma.emailSender.findUnique({ where: { purpose: "PASSWORD_RESET" } });
     expect(reset?.subject).toBe("Reset it");

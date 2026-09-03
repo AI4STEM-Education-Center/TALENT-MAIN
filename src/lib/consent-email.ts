@@ -215,14 +215,17 @@ async function buildConsentExportReadyMessage(
     }))
   );
 
-  const subject = `Your consent export for ${request.class.name} is ready`;
-  const text = [
-    `Your requested consent-credit export for "${request.class.name}" was approved.`,
-    "",
-    `Grade column: ${request.gradeColumnName} (${request.pointsAwarded} points)`,
-    "",
-    "The attached CSV is formatted for direct import into eLC's Grades tool.",
-  ].join("\n");
+  const override = await getSenderOverride("CONSENT_EXPORT_READY").catch(() => null);
+  const { subject, text } = renderPurposeMessage(
+    "CONSENT_EXPORT_READY",
+    {
+      appName: APP_NAME,
+      className: request.class.name,
+      gradeColumnName: request.gradeColumnName,
+      pointsAwarded: request.pointsAwarded,
+    },
+    override
+  );
 
   const { attachments, note } = await attachmentWithinLimit({
     filename: "consent_export.csv",

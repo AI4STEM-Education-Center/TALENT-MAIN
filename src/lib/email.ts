@@ -270,7 +270,9 @@ export async function sendPurposeEmail(
 
 /**
  * Verify SMTP connectivity for a given config (used by the admin "Send test"
- * action). Optionally sends a test email to `testRecipient`.
+ * action). Optionally sends a test email to `testRecipient`, rendered through
+ * the admin-editable SYSTEM_TEST template so the preview in /admin/email
+ * matches what actually arrives.
  */
 export async function verifyAndTest(
   cfg: ResolvedSmtpConfig,
@@ -280,15 +282,22 @@ export async function verifyAndTest(
   await transport.verify();
 
   if (testRecipient) {
-    const identity = await getSenderIdentity("SYSTEM_TEST", cfg);
+    const override = await getSenderOverride("SYSTEM_TEST");
+    const identity = resolveSenderIdentity("SYSTEM_TEST", cfg, override);
+    const { subject, text } = renderPurposeMessage(
+      "SYSTEM_TEST",
+      {
+        appName: APP_NAME,
+        fromEmail: identity.fromEmail,
+        purposeLabel: EMAIL_PURPOSE_DEFINITIONS.SYSTEM_TEST.label,
+      },
+      override
+    );
     await transport.sendMail({
       from: formatFromHeader(identity),
       to: testRecipient,
-      subject: `${APP_NAME} SMTP test email`,
-      text:
-        `This is a test email confirming your ${APP_NAME} SMTP configuration works correctly.\n\n` +
-        `It was sent from ${identity.fromEmail} — the address configured for ` +
-        `"${EMAIL_PURPOSE_DEFINITIONS.SYSTEM_TEST.label}".`,
+      subject,
+      text,
     });
   }
 }

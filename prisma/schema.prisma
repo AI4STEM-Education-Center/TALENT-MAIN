@@ -1726,5 +1726,12 @@ model PressureResultToken {
   lastUsedAt  DateTime?
   revokedAt   DateTime?
 
+  // Revoked-use tracking: a call with a revoked token still 401s, but it is
+  // counted here so the admin list can highlight a possible leak, and the
+  // first use (then throttled repeats) emails every admin.
+  revokedUseCount  Int      @default(0)
+  lastRevokedUseAt DateTime?
+  lastRevokedIp    String?
+
   @@index([createdAt])
 }

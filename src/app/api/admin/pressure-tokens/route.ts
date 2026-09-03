@@ -20,6 +20,9 @@ const listSelect = {
   createdAt: true,
   lastUsedAt: true,
   revokedAt: true,
+  revokedUseCount: true,
+  lastRevokedUseAt: true,
+  lastRevokedIp: true,
 } as const;
 
 /** Lists this deployment's ingestion tokens. Secrets are never returned. */

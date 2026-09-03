@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { sendEmail, SmtpNotConfiguredError } from "@/lib/email";
+import { sendEmail, getSenderOverride, SmtpNotConfiguredError } from "@/lib/email";
+import { APP_NAME, renderPurposeMessage } from "@/lib/email-purposes";
 import { logApiError } from "@/lib/system-log";
 
 // POST: an enrolled student sends a message to their class teacher
@@ -40,16 +41,26 @@ export async function POST(
 
   const teacherEmail = cls.teacher.user.email;
   const studentName = `${student.user.firstName} ${student.user.lastName}`.trim();
-  const text =
-    `${body.trim()}\n\n` +
-    `— ${studentName}\n` +
-    `Student email: ${student.user.email}\n` +
-    `Class: ${cls.name}`;
+  const subjectLine = `[${cls.name}] ${subject.trim()}`;
+  const override = await getSenderOverride("CONTACT_TEACHER").catch(() => null);
+  const { subject: renderedSubject, text } = renderPurposeMessage(
+    "CONTACT_TEACHER",
+    {
+      appName: APP_NAME,
+      studentName,
+      studentEmail: student.user.email,
+      className: cls.name,
+      subject: subject.trim(),
+      subjectLine,
+      body: body.trim(),
+    },
+    override
+  );
 
   try {
     const result = await sendEmail({
       to: [teacherEmail],
-      subject: `[${cls.name}] ${subject.trim()}`,
+      subject: renderedSubject,
       text,
       purpose: "CONTACT_TEACHER",
       replyTo: student.user.email,
