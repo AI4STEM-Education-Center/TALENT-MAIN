@@ -554,7 +554,7 @@ export async function processMaterial(materialId: string) {
     ),
   );
 
-  const contentArray: any[] = [
+  const contentArray: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [
     {
       type: "text",
       text: buildTier2Prompt(allowedConcepts),

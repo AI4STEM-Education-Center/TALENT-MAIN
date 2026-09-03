@@ -11,6 +11,7 @@ import {
 import { materialLinkedToClass } from "@/lib/learning-material";
 import {
   LEGACY_PAGE_IMAGE_EXTENSION,
+  MAX_MATERIAL_PAGES,
   pageImageExtension,
   parsePageImageMimeType,
 } from "@/lib/page-image-format";
@@ -86,9 +87,9 @@ export async function POST(
     );
   }
 
-  if (body.pages.length > 100) {
+  if (body.pages.length > MAX_MATERIAL_PAGES) {
     return NextResponse.json(
-      { error: "Maximum 100 pages per request" },
+      { error: `Maximum ${MAX_MATERIAL_PAGES} pages per request` },
       { status: 400 },
     );
   }
@@ -100,12 +101,14 @@ export async function POST(
         typeof pageNumber !== "number" ||
         !Number.isInteger(pageNumber) ||
         pageNumber < 1 ||
-        pageNumber > 100,
+        pageNumber > MAX_MATERIAL_PAGES,
     ) ||
     new Set(pageNumbers).size !== pageNumbers.length
   ) {
     return NextResponse.json(
-      { error: "pageNumber must be a unique integer between 1 and 100" },
+      {
+        error: `pageNumber must be a unique integer between 1 and ${MAX_MATERIAL_PAGES}`,
+      },
       { status: 400 },
     );
   }

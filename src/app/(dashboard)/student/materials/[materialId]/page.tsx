@@ -51,7 +51,7 @@ export default async function StudentMaterialPage({
           )}
         </div>
         <p className="text-sm text-muted-foreground">
-          {material.classes.map((c) => c.name).join(", ")} ·{" "}
+          {material.classes.map((cls) => cls.name).join(", ")} ·{" "}
           {material.pages.length} page
           {material.pages.length !== 1 ? "s" : ""}
         </p>

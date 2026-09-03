@@ -10,12 +10,15 @@ import {
   buildPageStorageKey,
 } from "@/lib/storage";
 import { materialLinkedToClass } from "@/lib/learning-material";
+import { logApiError } from "@/lib/system-log";
 import { rateLimit } from "@/lib/rate-limit";
-import { PAGE_IMAGE_EXTENSION_VALUES } from "@/lib/page-image-format";
+import {
+  PAGE_IMAGE_EXTENSION_VALUES,
+  MAX_MATERIAL_PAGES,
+} from "@/lib/page-image-format";
 
 export const runtime = "nodejs";
 
-const MAX_MATERIAL_PAGES = 100;
 class MaterialAlreadyCompletedError extends Error {}
 
 export async function POST(
@@ -249,7 +252,9 @@ export async function POST(
     // For this prototype, we'll invoke the background process directly to avoid network hairpin routing issues
     // that cause local fetch requests to hang indefinitely.
     import("@/lib/vlm-engine").then(({ processMaterial }) => {
-      processMaterial(material.id).catch(console.error);
+      processMaterial(material.id).catch((error: unknown) =>
+        logApiError("MATERIAL_COMPLETE_BACKGROUND", error),
+      );
     });
     return NextResponse.json({ material: updated });
   } catch (e) {
@@ -259,7 +264,7 @@ export async function POST(
         { status: 409 },
       );
     }
-    console.error("Failed to complete upload:", e);
+    logApiError("MATERIAL_COMPLETE", e);
     return NextResponse.json(
       { error: "Failed to finalize material records" },
       { status: 500 },

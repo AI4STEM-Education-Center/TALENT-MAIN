@@ -12,8 +12,15 @@ import type { StudentMaterial } from "@/lib/student-content";
 
 const ALL_CLASSES = "__all__";
 
+/** Bytes per megabyte, for the file-size readout. */
+const BYTES_PER_MB = 1024 * 1024;
+
 function displayName(material: StudentMaterial): string {
   return material.title?.trim() || material.originalName;
+}
+
+interface MaterialsBrowserProps {
+  materials: StudentMaterial[];
 }
 
 /**
@@ -22,11 +29,7 @@ function displayName(material: StudentMaterial): string {
  * screen (by class, and by a title/filename search), so it is safe to do
  * entirely on the client.
  */
-export function MaterialsBrowser({
-  materials,
-}: {
-  materials: StudentMaterial[];
-}) {
+export function MaterialsBrowser({ materials }: MaterialsBrowserProps) {
   const [classId, setClassId] = useState(ALL_CLASSES);
   const [query, setQuery] = useState("");
 
@@ -47,7 +50,7 @@ export function MaterialsBrowser({
     return materials.filter((material) => {
       if (
         classId !== ALL_CLASSES &&
-        !material.classes.some((c) => c.id === classId)
+        !material.classes.some((cls) => cls.id === classId)
       )
         return false;
       if (!needle) return true;
@@ -130,14 +133,14 @@ export function MaterialsBrowser({
                   </span>
                   <span className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
                     <span>
-                      {material.classes.map((c) => c.name).join(", ")}
+                      {material.classes.map((cls) => cls.name).join(", ")}
                     </span>
                     <span>
                       {material.totalPages} page
                       {material.totalPages !== 1 ? "s" : ""}
                     </span>
                     <span>
-                      {(material.sizeBytes / 1024 / 1024).toFixed(2)} MB
+                      {(material.sizeBytes / BYTES_PER_MB).toFixed(2)} MB
                     </span>
                     <span>Shared {formatDate(material.createdAt)}</span>
                   </span>

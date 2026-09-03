@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { signObjectReadUrl } from "@/lib/storage";
+import { signObjectReadUrl, PRESIGN_EXPIRES_SEC } from "@/lib/storage";
 
 export const runtime = "nodejs";
 
@@ -49,7 +49,11 @@ export async function GET(
   if (!page) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   try {
-    const url = await signObjectReadUrl(material.bucket, page.storageKey, 3600);
+    const url = await signObjectReadUrl(
+      material.bucket,
+      page.storageKey,
+      PRESIGN_EXPIRES_SEC,
+    );
     return NextResponse.json({ url });
   } catch (e) {
     return NextResponse.json(

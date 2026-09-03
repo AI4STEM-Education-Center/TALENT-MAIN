@@ -58,6 +58,13 @@ export const PAGE_IMAGE_WEBP_QUALITY = 0.95;
  */
 export const WEBP_MAX_DIMENSION = 16383;
 
+/**
+ * How many page images one material upload may declare. Enforced by the
+ * presign and completion routes and mirrored by the browser uploader, so a
+ * document can never be half-accepted.
+ */
+export const MAX_MATERIAL_PAGES = 100;
+
 export function pageImageExtension(
   mimeType: PageImageMimeType,
 ): PageImageExtension {

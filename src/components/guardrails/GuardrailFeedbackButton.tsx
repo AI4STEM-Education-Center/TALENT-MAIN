@@ -13,9 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-
-/** Mirrors MAX_FEEDBACK_CHARS in src/lib/guardrail-events.ts. */
-const MAX_CHARS = 2_000;
+import { MAX_FEEDBACK_CHARS } from "@/lib/guardrail-events";
 
 /**
  * "Report a problem" on a guardrail result.
@@ -27,13 +25,15 @@ const MAX_CHARS = 2_000;
  * which is what a caller gets when the check passed or the record could not be
  * written, so it is safe to drop into any error path unconditionally.
  */
+interface GuardrailFeedbackButtonProps {
+  eventId?: string | null;
+  className?: string;
+}
+
 export function GuardrailFeedbackButton({
   eventId,
   className,
-}: {
-  eventId?: string | null;
-  className?: string;
-}) {
+}: GuardrailFeedbackButtonProps) {
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
@@ -102,7 +102,7 @@ export function GuardrailFeedbackButton({
           <Textarea
             rows={5}
             autoFocus
-            maxLength={MAX_CHARS}
+            maxLength={MAX_FEEDBACK_CHARS}
             placeholder="What were you trying to submit, and why do you think it was wrongly stopped?"
             value={message}
             onChange={(e) => setMessage(e.target.value)}

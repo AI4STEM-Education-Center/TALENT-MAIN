@@ -12,6 +12,9 @@ import { cn } from "@/lib/utils";
 type Mode = "OFF" | "FLAG" | "BLOCK";
 type SurfaceInfo = { key: string; label: string };
 
+/** Granularity of the confidence-threshold number inputs. */
+const THRESHOLD_STEP = "0.05";
+
 type Settings = {
   moderationEnabled: boolean;
   jailbreakMode: Mode;
@@ -24,6 +27,20 @@ type Settings = {
 };
 
 type ModelInfo = { label: string; providerActive: boolean } | null;
+
+interface ModelReadoutProps {
+  model: ModelInfo;
+}
+
+interface ModePickerProps {
+  value: Mode;
+  onChange: (mode: Mode) => void;
+  idPrefix: string;
+}
+
+interface GuardrailSettingsProps {
+  refreshKey?: number;
+}
 
 type Payload = {
   settings: Settings;
@@ -42,7 +59,7 @@ type Payload = {
  * is how a check is switched off — so it reads as a plain statement rather than
  * a warning, and only an INACTIVE provider is called out in red.
  */
-function ModelReadout({ model }: { model: ModelInfo }) {
+function ModelReadout({ model }: ModelReadoutProps) {
   if (!model) {
     return (
       <p className="text-sm text-muted-foreground">
@@ -82,15 +99,7 @@ const MODES: { value: Mode; label: string; blurb: string }[] = [
   },
 ];
 
-function ModePicker({
-  value,
-  onChange,
-  idPrefix,
-}: {
-  value: Mode;
-  onChange: (mode: Mode) => void;
-  idPrefix: string;
-}) {
+function ModePicker({ value, onChange, idPrefix }: ModePickerProps) {
   return (
     <div className="flex flex-wrap gap-2" role="group" aria-label="Mode">
       {MODES.map((mode) => (
@@ -120,7 +129,7 @@ function ModePicker({
  * table above (Content Moderation / Guardrail Checks); this card is the
  * behaviour around them.
  */
-export function GuardrailSettings({ refreshKey = 0 }: { refreshKey?: number }) {
+export function GuardrailSettings({ refreshKey = 0 }: GuardrailSettingsProps) {
   const [data, setData] = useState<Payload | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [saving, setSaving] = useState(false);
@@ -258,7 +267,7 @@ export function GuardrailSettings({ refreshKey = 0 }: { refreshKey?: number }) {
             <span className="text-muted-foreground">Confidence threshold</span>
             <Input
               type="number"
-              step="0.05"
+              step={THRESHOLD_STEP}
               min={data.thresholdBounds.min}
               max={data.thresholdBounds.max}
               value={settings.jailbreakThreshold}
@@ -293,7 +302,7 @@ export function GuardrailSettings({ refreshKey = 0 }: { refreshKey?: number }) {
             <span className="text-muted-foreground">Confidence threshold</span>
             <Input
               type="number"
-              step="0.05"
+              step={THRESHOLD_STEP}
               min={data.thresholdBounds.min}
               max={data.thresholdBounds.max}
               value={settings.offTopicThreshold}

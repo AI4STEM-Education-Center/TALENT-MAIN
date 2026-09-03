@@ -8,6 +8,7 @@
 // in the same AI Config panel as every other model choice.
 
 import { prisma } from "@/lib/prisma";
+import { logSystemEvent } from "@/lib/system-log";
 import {
   DEFAULT_GUARDRAIL_POLICY,
   isGuardrailMode,
@@ -114,6 +115,8 @@ function parseSurfaces(raw: string): GuardrailSurface[] {
 // The settings are read on nearly every AI call, so they are cached with the
 // same 60s TTL as the provider assignments in ai-provider.ts.
 const CACHE_TTL_MS = 60_000;
+/** The single GuardrailConfig row id — settings are global, not per tenant. */
+const SINGLETON_ID = "singleton";
 let _cache: { data: GuardrailSettings; expiresAt: number } | null = null;
 
 /** Drop the cached settings AND every cached verdict computed under them. */
@@ -130,7 +133,7 @@ export async function getGuardrailSettings(): Promise<GuardrailSettings> {
 
   try {
     const row = await prisma.guardrailConfig.findUnique({
-      where: { id: "singleton" },
+      where: { id: SINGLETON_ID },
     });
     if (row) {
       settings = {
@@ -157,10 +160,12 @@ export async function getGuardrailSettings(): Promise<GuardrailSettings> {
     // A database blip must not decide the safety posture by accident. The
     // defaults are report-only, so falling back to them is the same "observe,
     // don't enforce" stance the feature ships in.
-    console.error(
-      "[Guardrails] Could not read settings; using defaults:",
-      error,
-    );
+    void logSystemEvent({
+      category: "GUARDRAIL",
+      type: "SETTINGS_READ_FAILED",
+      severity: "ERROR",
+      message: "Could not read guardrail settings; using defaults",
+    });
     return defaults;
   }
 
@@ -233,7 +238,7 @@ export async function saveGuardrailSettings(
   await prisma.guardrailConfig.upsert({
     where: { id: "singleton" },
     update: data,
-    create: { id: "singleton", ...data },
+    create: { id: SINGLETON_ID, ...data },
   });
 
   invalidateGuardrailSettings();

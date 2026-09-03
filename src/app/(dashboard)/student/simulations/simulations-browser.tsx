@@ -19,6 +19,10 @@ import type {
 
 const ALL_CLASSES = "__all__";
 
+interface SimulationsBrowserProps {
+  classes: StudentSimulationClass[];
+}
+
 const displayTitle = (sim: StudentSimulation) =>
   sim.title ?? sim.topic ?? "Interactive simulation";
 
@@ -27,11 +31,7 @@ const displayTitle = (sim: StudentSimulation) =>
  * a single sandboxed viewer in a full-screen dialog: simulations are physics
  * loops, so only ever one runs, and none boots until the student asks for it.
  */
-export function SimulationsBrowser({
-  classes,
-}: {
-  classes: StudentSimulationClass[];
-}) {
+export function SimulationsBrowser({ classes }: SimulationsBrowserProps) {
   const [classId, setClassId] = useState(ALL_CLASSES);
   const [activeId, setActiveId] = useState<string | null>(null);
 
@@ -39,7 +39,7 @@ export function SimulationsBrowser({
     () =>
       classId === ALL_CLASSES
         ? classes
-        : classes.filter((c) => c.classId === classId),
+        : classes.filter((cls) => cls.classId === classId),
     [classes, classId],
   );
 

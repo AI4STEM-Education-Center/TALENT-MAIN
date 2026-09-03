@@ -19,6 +19,12 @@ export type ReaderPage = {
   description: string | null;
 };
 
+interface MaterialReaderProps {
+  materialId: string;
+  originalName: string;
+  pages: ReaderPage[];
+}
+
 /**
  * Page-by-page reader for a learning material. Page images are signed one at a
  * time by /api/student/materials/[materialId]/pages/[pageId]/image, so a long
@@ -29,11 +35,7 @@ export function MaterialReader({
   materialId,
   originalName,
   pages,
-}: {
-  materialId: string;
-  originalName: string;
-  pages: ReaderPage[];
-}) {
+}: MaterialReaderProps) {
   const [index, setIndex] = useState(0);
   const current = pages[index];
   const pageId = current?.id;

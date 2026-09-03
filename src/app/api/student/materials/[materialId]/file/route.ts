@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { signObjectReadUrl } from "@/lib/storage";
+import { signObjectReadUrl, PRESIGN_EXPIRES_SEC } from "@/lib/storage";
 
 export const runtime = "nodejs";
 
@@ -47,7 +47,11 @@ export async function GET(
 
   let url: string;
   try {
-    url = await signObjectReadUrl(material.bucket, material.storageKey, 3600);
+    url = await signObjectReadUrl(
+      material.bucket,
+      material.storageKey,
+      PRESIGN_EXPIRES_SEC,
+    );
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Failed to generate URL" },

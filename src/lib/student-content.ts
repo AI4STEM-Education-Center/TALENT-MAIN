@@ -101,7 +101,7 @@ export async function listStudentMaterials(
     const existing = byMaterial.get(material.id);
     if (existing) {
       // Same material, second enrolled class — record the extra grant only.
-      if (!existing.classes.some((c) => c.id === link.class.id))
+      if (!existing.classes.some((cls) => cls.id === link.class.id))
         existing.classes.push(link.class);
       continue;
     }

@@ -17,7 +17,8 @@ import { getSignedUrl as getS3PresignedUrl } from "@aws-sdk/s3-request-presigner
 import { getSignedUrl as getCloudFrontSignedUrl } from "@aws-sdk/cloudfront-signer";
 
 const DEFAULT_MAX_BYTES = 50 * 1024 * 1024;
-const PRESIGN_EXPIRES_SEC = 3600;
+/** Signed-URL lifetime, shared by teacher and student download routes. */
+export const PRESIGN_EXPIRES_SEC = 3600;
 
 /**
  * Optional namespace for every object this deployment creates. The compose
