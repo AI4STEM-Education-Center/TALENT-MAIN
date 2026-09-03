@@ -150,8 +150,34 @@ describe("renderPurposeMessage", () => {
     expect(text).toBe("Go to https://app.example/reset-password?token=abc");
   });
 
-  it("throws for purposes whose body is written by a user", () => {
-    expect(() => renderPurposeMessage("NOTIFICATION", vars)).toThrow(/no template/);
+  it("renders user-authored wrappers through their editable templates", () => {
+    const { subject, text } = renderPurposeMessage("NOTIFICATION", {
+      ...vars,
+      senderName: "Jordan",
+      className: "Biology 101",
+      subject: "Field trip",
+      subjectLine: "New message in Biology 101: Field trip",
+      greetingLine: "Jordan has sent you a new message in Biology 101.",
+      messageUrl: "https://app.example/m/1",
+      messageLinkLine: "Read it here: https://app.example/m/1",
+    });
+    expect(subject).toBe("New message in Biology 101: Field trip");
+    expect(text).toContain("Jordan has sent you");
+    expect(text).not.toContain("{{");
+  });
+
+  it("renders the new security-alert template for revoked-token use", () => {
+    const { subject, text } = renderPurposeMessage("SECURITY_ALERT", {
+      appName: "AI4Talent",
+      tokenName: "CI prod",
+      tokenPrefix: "ptr_Ab12Cd",
+      usedAt: "2026-09-03T10:15:00.000Z",
+      ip: "203.0.113.42",
+      useCount: 3,
+    });
+    expect(subject).toMatch(/Revoked ingestion token/);
+    expect(text).toContain("ptr_Ab12Cd");
+    expect(text).toContain("203.0.113.42");
   });
 });
 

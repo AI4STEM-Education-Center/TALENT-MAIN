@@ -56,7 +56,7 @@ async function buildPayload() {
       label: definition.label,
       description: definition.description,
       defaultLocalPart: definition.defaultLocalPart,
-      /** null when the body is written by a user rather than the app. */
+      /** Editable built-in copy (null only for rows predating the catalog). */
       defaultTemplate: definition.template,
       variables: definition.variables,
       localPart: override?.localPart ?? definition.defaultLocalPart,
@@ -153,18 +153,17 @@ export async function PUT(req: Request) {
         );
       }
 
-      // Templates only exist for app-authored emails; ignore anything sent for
-      // the purposes whose body comes from a teacher or student.
-      const templated = definition.template !== null;
-
+      // Every catalog purpose ships an editable template (user-authored content
+      // arrives as {{subject}} / {{body}} variables), so overrides are stored
+      // for all of them.
       updates.push({
         purpose: row.purpose,
         data: {
           localPart,
           fromName: row.fromName,
           replyTo: row.replyTo,
-          subject: templated ? row.subject : null,
-          body: templated ? row.body : null,
+          subject: row.subject,
+          body: row.body,
         },
       });
     }

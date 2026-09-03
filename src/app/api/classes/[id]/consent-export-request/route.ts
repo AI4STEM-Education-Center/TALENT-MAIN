@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { enqueueConsentExportRequestEmail } from "@/lib/consent-email";
 import { enqueueConsentEmails } from "@/lib/queue";
+import { getSenderOverride } from "@/lib/email";
+import { APP_NAME, renderPurposeMessage } from "@/lib/email-purposes";
 
 export const runtime = "nodejs";
 
@@ -122,17 +124,26 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const reviewUrl = `${applicationOrigin(req)}/admin/consent-requests?request=${request.id}`;
   try {
+    const teacherName =
+      `${teacherUser?.firstName ?? "A teacher"} ${teacherUser?.lastName ?? ""}`.trim() || "A teacher";
+    const override = await getSenderOverride("CONSENT_EXPORT_REQUEST").catch(() => null);
+    const { subject, text } = renderPurposeMessage(
+      "CONSENT_EXPORT_REQUEST",
+      {
+        appName: APP_NAME,
+        teacherName,
+        className: owned.cls.name,
+        gradeColumnName,
+        pointsAwarded,
+        reviewUrl,
+      },
+      override
+    );
     const deliveryId = await enqueueConsentExportRequestEmail({
       recipient: reviewer.email,
       replyTo: teacherUser?.email,
-      subject: `Consent export requested: ${owned.cls.name}`,
-      text: [
-        `${teacherUser?.firstName ?? "A teacher"} ${teacherUser?.lastName ?? ""} has requested a signed-students export for "${owned.cls.name}".`,
-        "",
-        `Grade column: ${gradeColumnName} (${pointsAwarded} points)`,
-        "",
-        `Review and approve or reject the request: ${reviewUrl}`,
-      ].join("\n"),
+      subject,
+      text,
     });
     enqueueConsentEmails([deliveryId]);
   } catch (error) {

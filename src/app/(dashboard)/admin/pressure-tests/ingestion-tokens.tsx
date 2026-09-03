@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, Copy, KeyRound, Loader2 } from "lucide-react";
+import { Check, Copy, KeyRound, Loader2, ShieldAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +15,9 @@ interface IngestionToken {
   createdAt: string;
   lastUsedAt: string | null;
   revokedAt: string | null;
+  revokedUseCount?: number | null;
+  lastRevokedUseAt?: string | null;
+  lastRevokedIp?: string | null;
 }
 
 function formatDate(value: string | null) {
@@ -57,16 +60,33 @@ function NewSecret({ secret }: { secret: string }) {
 }
 
 function TokenRow({ token, onRevoke }: { token: IngestionToken; onRevoke: (id: string) => void }) {
+  const revokedUsed = !!token.revokedAt && (token.revokedUseCount ?? 0) > 0;
   return (
-    <tr className="border-b last:border-0">
+    <tr className={`border-b last:border-0 ${revokedUsed ? "bg-destructive/10" : ""}`}>
       <td className="py-3 pr-4">
-        <div className="font-medium">{token.name}</div>
+        <div className="font-medium flex items-center gap-2">
+          {token.name}
+          {revokedUsed && <ShieldAlert className="size-4 text-destructive" aria-label="Possible leak" />}
+        </div>
         <div className="mt-1 font-mono text-xs text-muted-foreground">{token.tokenPrefix}…</div>
+        {revokedUsed && (
+          <div className="mt-1 text-xs text-destructive">
+            Used {token.revokedUseCount}× after revocation
+            {token.lastRevokedUseAt ? ` — last ${formatDate(token.lastRevokedUseAt)}` : ""}
+            {token.lastRevokedIp ? ` from ${token.lastRevokedIp}` : ""}. Possible leak — check where the old
+            value is still stored.
+          </div>
+        )}
       </td>
       <td className="py-3 pr-4">
-        {token.revokedAt
-          ? <Badge variant="destructive">Revoked</Badge>
-          : <Badge variant="default">Active</Badge>}
+        {token.revokedAt ? (
+          <span className="flex flex-col gap-1 items-start">
+            <Badge variant="destructive">Revoked</Badge>
+            {revokedUsed && <Badge variant="destructive">Used after revoke</Badge>}
+          </span>
+        ) : (
+          <Badge variant="default">Active</Badge>
+        )}
       </td>
       <td className="py-3 pr-4 whitespace-nowrap">{formatDate(token.createdAt)}</td>
       <td className="py-3 pr-4 whitespace-nowrap">{formatDate(token.lastUsedAt)}</td>
@@ -159,6 +179,8 @@ export function IngestionTokens() {
     }
   };
 
+  const leaked = tokens.filter((t) => t.revokedAt && (t.revokedUseCount ?? 0) > 0);
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -171,6 +193,31 @@ export function IngestionTokens() {
           on this deployment only. Generate one on dev and one on production, then store each in the
           matching GitHub Actions secret.
         </p>
+
+        {leaked.length > 0 && (
+          <div
+            role="alert"
+            className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive flex items-start gap-2"
+          >
+            <ShieldAlert className="size-4 shrink-0 mt-0.5" />
+            <span>
+              {leaked.length === 1 ? (
+                <>
+                  Revoked token <strong>{leaked[0].name}</strong> was used {leaked[0].revokedUseCount}× after
+                  revocation{leaked[0].lastRevokedIp ? ` (last from ${leaked[0].lastRevokedIp})` : ""}. This
+                  may point to a token leak. Remove the old value wherever it is still stored. Check
+                  admin inboxes for the security alert; delivery requires active SMTP.
+                </>
+              ) : (
+                <>
+                  {leaked.length} revoked tokens were used after revocation — this may point to a token leak.
+                  Remove the old values wherever they are still stored. Check admin inboxes for security
+                  alerts; delivery requires active SMTP.
+                </>
+              )}
+            </span>
+          </div>
+        )}
 
         {error && (
           <div role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">

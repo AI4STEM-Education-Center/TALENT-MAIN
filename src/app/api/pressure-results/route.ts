@@ -72,7 +72,11 @@ const resultSchema = z.object({
  */
 export async function POST(request: NextRequest) {
   try {
-    if (!(await verifyPressureToken(request.headers.get("authorization")))) {
+    const ip =
+      request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+      request.headers.get("x-real-ip")?.trim() ||
+      null;
+    if (!(await verifyPressureToken(request.headers.get("authorization"), { ip }))) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

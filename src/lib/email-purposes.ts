@@ -5,9 +5,13 @@
  * Every purpose has a default local part (the bit before the "@"), so a fresh
  * install already sends password resets from `password-reset@<domain>` and
  * announcements from `notification@<domain>` without any configuration. Admins
- * override the local part, display name, reply-to — and, for the purposes whose
- * copy the app writes rather than a user, the subject and body — from
- * /admin/email. The domain is shared across every purpose (SmtpConfig.senderDomain).
+ * override the local part, display name, reply-to, subject and body from
+ * /admin/email — every purpose ships an editable template whose placeholders
+ * are listed in the UI with a live receiver preview. User-authored content
+ * (the teacher's announcement subject, the student's message body) arrives as
+ * template variables such as {{subject}} / {{body}}, so the wrapper stays
+ * customizable without losing the human-written part. The domain is shared
+ * across every purpose (SmtpConfig.senderDomain).
  *
  * Deliberately free of Prisma/nodemailer imports so it stays unit-testable;
  * src/lib/email.ts is the side-effecting layer on top.
@@ -22,6 +26,7 @@ export const EMAIL_PURPOSES = [
   "CONSENT_CONFIRMATION",
   "CONSENT_EXPORT_REQUEST",
   "CONSENT_EXPORT_READY",
+  "SECURITY_ALERT",
 ] as const;
 
 export type EmailPurpose = (typeof EMAIL_PURPOSES)[number];
@@ -33,9 +38,10 @@ export interface EmailPurposeDefinition {
   description: string;
   defaultLocalPart: string;
   /**
-   * Built-in copy for app-generated emails. Null when the body comes from a
-   * user (class announcements, student→teacher messages) — those purposes only
-   * expose the sender identity.
+   * Built-in copy every purpose renders through. User-authored content arrives
+   * as variables ({{subject}} / {{body}}), so the admin-editable wrapper never
+   * swallows the human-written part. Kept nullable for backward compatibility
+   * with stored rows — the catalog itself defines a template for all purposes.
    */
   template: { subject: string; body: string } | null;
   /** Placeholder names available to the template, for the admin UI's hint line. */
@@ -78,6 +84,67 @@ A copy of your completed, signed form is attached as a PDF for your records.
 If you have questions about this research study, contact the study's Principal Investigator or your institution's IRB using the contact information in the attached form.`,
 };
 
+const NOTIFICATION_TEMPLATE = {
+  subject: "{{subjectLine}}",
+  body: `{{greetingLine}}
+
+Subject: {{subject}}
+
+{{messageLinkLine}}
+
+This is an automated notification — the message itself is waiting for you in the app.`,
+};
+
+const CONTACT_TEACHER_TEMPLATE = {
+  subject: "{{subjectLine}}",
+  body: `{{body}}
+
+— {{studentName}}
+Student email: {{studentEmail}}
+Class: {{className}}`,
+};
+
+const SYSTEM_TEST_TEMPLATE = {
+  subject: "{{appName}} SMTP test email",
+  body: `This is a test email confirming your {{appName}} SMTP configuration works correctly.
+
+It was sent from {{fromEmail}} — the address configured for "{{purposeLabel}}".`,
+};
+
+const CONSENT_EXPORT_REQUEST_TEMPLATE = {
+  subject: "Consent export requested: {{className}}",
+  body: `{{teacherName}} has requested a signed-students export for "{{className}}".
+
+Grade column: {{gradeColumnName}} ({{pointsAwarded}} points)
+
+Review and approve or reject the request: {{reviewUrl}}`,
+};
+
+const CONSENT_EXPORT_READY_TEMPLATE = {
+  subject: "Your consent export for {{className}} is ready",
+  body: `Your requested consent-credit export for "{{className}}" was approved.
+
+Grade column: {{gradeColumnName}} ({{pointsAwarded}} points)
+
+The attached CSV is formatted for direct import into eLC's Grades tool.`,
+};
+
+const SECURITY_ALERT_TEMPLATE = {
+  subject: "[{{appName}}] Revoked ingestion token used — possible leak",
+  body: `Hi,
+
+A revoked result-ingestion token was just used to call POST /api/pressure-results on {{appName}}.
+
+Token: {{tokenName}} ({{tokenPrefix}}…)
+When: {{usedAt}}
+Source IP: {{ip}}
+Times used since revocation: {{useCount}}
+
+This may point to a token leak — the old token may still live in a GitHub Actions secret, a local pressure/.env file, or a log. Remove the leaked value wherever it is stored and confirm no unexpected results were ingested.
+
+Review tokens in Admin → Pressure Tests.`,
+};
+
 export const EMAIL_PURPOSE_DEFINITIONS: Record<EmailPurpose, EmailPurposeDefinition> = {
   PASSWORD_RESET: {
     key: "PASSWORD_RESET",
@@ -98,26 +165,26 @@ export const EMAIL_PURPOSE_DEFINITIONS: Record<EmailPurpose, EmailPurposeDefinit
   NOTIFICATION: {
     key: "NOTIFICATION",
     label: "Class notifications",
-    description: "Announcements a teacher emails to their class. The teacher writes the body.",
+    description: "Announcements a teacher emails to their class. The teacher writes the subject and the message lives in the app — this template is the email nudge pointing at it.",
     defaultLocalPart: "notification",
-    template: null,
-    variables: [],
+    template: NOTIFICATION_TEMPLATE,
+    variables: ["appName", "senderName", "className", "subject", "subjectLine", "greetingLine", "messageUrl", "messageLinkLine"],
   },
   CONTACT_TEACHER: {
     key: "CONTACT_TEACHER",
     label: "Student → teacher messages",
     description: "Messages a student sends to their teacher. Replies go to the student.",
     defaultLocalPart: "no-contact",
-    template: null,
-    variables: [],
+    template: CONTACT_TEACHER_TEMPLATE,
+    variables: ["appName", "studentName", "studentEmail", "className", "subject", "subjectLine", "body"],
   },
   SYSTEM_TEST: {
     key: "SYSTEM_TEST",
     label: "SMTP test",
     description: "The test message sent from the “Test connection” box above.",
     defaultLocalPart: "no-reply",
-    template: null,
-    variables: [],
+    template: SYSTEM_TEST_TEMPLATE,
+    variables: ["appName", "fromEmail", "purposeLabel"],
   },
   CONSENT_CONFIRMATION: {
     key: "CONSENT_CONFIRMATION",
@@ -132,16 +199,24 @@ export const EMAIL_PURPOSE_DEFINITIONS: Record<EmailPurpose, EmailPurposeDefinit
     label: "Consent export request (to admin)",
     description: "Sent to the administrator a teacher selects when requesting a signed-students export.",
     defaultLocalPart: "consent",
-    template: null,
-    variables: [],
+    template: CONSENT_EXPORT_REQUEST_TEMPLATE,
+    variables: ["appName", "teacherName", "className", "gradeColumnName", "pointsAwarded", "reviewUrl"],
   },
   CONSENT_EXPORT_READY: {
     key: "CONSENT_EXPORT_READY",
     label: "Consent export ready (to teacher)",
     description: "Sent to a teacher once an admin approves their signed-students export request, with the CSV attached.",
     defaultLocalPart: "consent",
-    template: null,
-    variables: [],
+    template: CONSENT_EXPORT_READY_TEMPLATE,
+    variables: ["appName", "className", "gradeColumnName", "pointsAwarded"],
+  },
+  SECURITY_ALERT: {
+    key: "SECURITY_ALERT",
+    label: "Security alerts (to admin)",
+    description: "Sent to every administrator when a revoked ingestion token is used — a possible token leak.",
+    defaultLocalPart: "no-reply",
+    template: SECURITY_ALERT_TEMPLATE,
+    variables: ["appName", "tokenName", "tokenPrefix", "usedAt", "ip", "useCount"],
   },
 };
 
@@ -248,7 +323,8 @@ export function renderTemplate(template: string, vars: Record<string, string | n
 
 /**
  * Render a purpose's message, preferring the admin's override over the built-in
- * copy. Throws for purposes with no template (their body is user-authored).
+ * copy. Every catalog purpose ships a default template; the throw only guards
+ * against a hypothetical purpose without one.
  */
 export function renderPurposeMessage(
   purpose: EmailPurpose,
