@@ -204,14 +204,15 @@ export function IngestionTokens() {
               {leaked.length === 1 ? (
                 <>
                   Revoked token <strong>{leaked[0].name}</strong> was used {leaked[0].revokedUseCount}× after
-                  revocation{leaked[0].lastRevokedIp ? ` (last from ${leaked[0].lastRevokedIp})` : ""}. Every
-                  admin was emailed — this may point to a token leak. Remove the old value wherever it is
-                  still stored.
+                  revocation{leaked[0].lastRevokedIp ? ` (last from ${leaked[0].lastRevokedIp})` : ""}. This
+                  may point to a token leak. Remove the old value wherever it is still stored. Check
+                  admin inboxes for the security alert; delivery requires active SMTP.
                 </>
               ) : (
                 <>
                   {leaked.length} revoked tokens were used after revocation — this may point to a token leak.
-                  Every admin was emailed. Remove the old values wherever they are still stored.
+                  Remove the old values wherever they are still stored. Check admin inboxes for security
+                  alerts; delivery requires active SMTP.
                 </>
               )}
             </span>

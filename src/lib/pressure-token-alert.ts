@@ -11,12 +11,10 @@ import { logSystemEvent } from "@/lib/system-log";
  * GitHub Actions secret, a forgotten pressure/.env, a pasted log), i.e. a
  * possible leak. The ingestion route still answers 401; this is the signal.
  *
- * Throttling: the counter on the token row is bumped on every revoked use, but
- * email is sent at most once per hour per token so a looping CI job can't
- * flood inboxes. All sends are best-effort and never reject.
+ * Throttling is claimed atomically by pressure-token.ts before this function
+ * runs, so concurrent or continuously looping callers cannot flood inboxes.
+ * All sends are best-effort and never reject.
  */
-export const REVOKED_TOKEN_ALERT_THROTTLE_MS = 60 * 60 * 1_000;
-
 export interface RevokedTokenUse {
   id: string;
   name: string;
@@ -25,24 +23,15 @@ export interface RevokedTokenUse {
   useCount: number;
   usedAt: Date;
   ip: string | null;
-  /** When the previous revoked use happened (pre-update value), for throttling. */
-  previousLastUseAt: Date | null;
 }
 
 export async function notifyAdminsOfRevokedTokenUse(use: RevokedTokenUse): Promise<void> {
   try {
-    if (
-      use.previousLastUseAt &&
-      use.usedAt.getTime() - use.previousLastUseAt.getTime() < REVOKED_TOKEN_ALERT_THROTTLE_MS
-    ) {
-      return;
-    }
-
     const admins = await prisma.user.findMany({
       where: { role: "ADMIN" },
       select: { email: true },
     });
-    const recipients = admins.map((a) => a.email).filter(Boolean);
+    const recipients = admins.map((admin) => admin.email);
     if (recipients.length === 0) return;
 
     // Lazy import so unit tests mocking @/lib/prisma for pressure-token don't
@@ -69,13 +58,18 @@ export async function notifyAdminsOfRevokedTokenUse(use: RevokedTokenUse): Promi
       ip: use.ip ?? "unknown",
       useCount: use.useCount,
     };
-    for (const to of recipients) {
-      try {
-        await sendPurposeEmail("SECURITY_ALERT", to, vars);
-      } catch (error) {
-        console.error("[PressureTokenAlert] Failed to email admin", to, error);
-      }
-    }
+    await Promise.all(
+      recipients.map(async (to) => {
+        try {
+          const result = await sendPurposeEmail("SECURITY_ALERT", to, vars);
+          if (result.failed > 0) {
+            console.error("[PressureTokenAlert] Failed to email admin", to, result.errors);
+          }
+        } catch (error) {
+          console.error("[PressureTokenAlert] Failed to email admin", to, error);
+        }
+      })
+    );
   } catch (error) {
     console.error("[PressureTokenAlert]", error);
   }

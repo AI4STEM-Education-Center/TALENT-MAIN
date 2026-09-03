@@ -1,6 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 
+export const REVOKED_TOKEN_ALERT_THROTTLE_MS = 60 * 60 * 1_000;
+
 /**
  * Bearer tokens for machine-to-machine pressure/API result ingestion.
  *
@@ -66,7 +68,6 @@ export async function verifyPressureToken(
       tokenPrefix: true,
       revokedAt: true,
       revokedUseCount: true,
-      lastRevokedUseAt: true,
     },
   });
   if (!record) return null;
@@ -92,21 +93,40 @@ async function recordRevokedTokenUse(
     name: string;
     tokenPrefix: string;
     revokedUseCount: number;
-    lastRevokedUseAt: Date | null;
   },
   ip: string | null
 ): Promise<void> {
   const usedAt = new Date();
-  const useCount = (record.revokedUseCount ?? 0) + 1;
-  const previousLastUseAt = record.lastRevokedUseAt;
+  let useCount = (record.revokedUseCount ?? 0) + 1;
 
   try {
-    await prisma.pressureResultToken.update({
+    const updated = await prisma.pressureResultToken.update({
       where: { id: record.id },
       data: { revokedUseCount: { increment: 1 }, lastRevokedUseAt: usedAt, lastRevokedIp: ip },
+      select: { revokedUseCount: true },
     });
+    useCount = updated.revokedUseCount;
   } catch {
     // Counting must not block auth.
+  }
+
+  // Claim this token's hourly alert window with one conditional write. Unlike
+  // throttling against lastRevokedUseAt, a dedicated timestamp permits a fresh
+  // alert every hour even when the leaked token is used continuously. The
+  // conditional update also ensures concurrent requests cannot all send mail.
+  let shouldAlert = false;
+  try {
+    const alertCutoff = new Date(usedAt.getTime() - REVOKED_TOKEN_ALERT_THROTTLE_MS);
+    const claim = await prisma.pressureResultToken.updateMany({
+      where: {
+        id: record.id,
+        OR: [{ lastRevokedAlertAt: null }, { lastRevokedAlertAt: { lte: alertCutoff } }],
+      },
+      data: { lastRevokedAlertAt: usedAt },
+    });
+    shouldAlert = claim.count === 1;
+  } catch {
+    // Alerting is best-effort.
   }
 
   try {
@@ -128,18 +148,22 @@ async function recordRevokedTokenUse(
     // Logging is best-effort.
   }
 
-  try {
-    const { notifyAdminsOfRevokedTokenUse } = await import("./pressure-token-alert");
-    void notifyAdminsOfRevokedTokenUse({
-      id: record.id,
-      name: record.name,
-      tokenPrefix: record.tokenPrefix,
-      useCount,
-      usedAt,
-      ip,
-      previousLastUseAt,
-    });
-  } catch {
-    // Alerting is best-effort.
+  if (shouldAlert) {
+    try {
+      const { notifyAdminsOfRevokedTokenUse } = await import("./pressure-token-alert");
+      // Await completion so a serverless request cannot be torn down while the
+      // notification promise is still in flight. Only the hourly claimant pays
+      // this cost; every other revoked request returns immediately after logging.
+      await notifyAdminsOfRevokedTokenUse({
+        id: record.id,
+        name: record.name,
+        tokenPrefix: record.tokenPrefix,
+        useCount,
+        usedAt,
+        ip,
+      });
+    } catch {
+      // Alerting is best-effort.
+    }
   }
 }

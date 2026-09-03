@@ -1732,6 +1732,7 @@ model PressureResultToken {
   revokedUseCount  Int      @default(0)
   lastRevokedUseAt DateTime?
   lastRevokedIp    String?
+  lastRevokedAlertAt DateTime?
 
   @@index([createdAt])
 }
