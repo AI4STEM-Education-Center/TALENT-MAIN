@@ -145,6 +145,72 @@ describe("moving and resizing the panel", () => {
     }
   });
 
+  it("moves on the compositor and only touches layout once, at the end", async () => {
+    // The perf contract for a move drag: while the gesture runs the panel is
+    // offset with a transform (no layout, no React render), and `left`/`top`
+    // are written exactly once — when the gesture ends. A regression here means
+    // the panel is back to laying out the page on every pointer event.
+    const { panel, cleanup } = await mountOpenPanel();
+    try {
+      const header = panel.querySelector("header")!;
+      const left = parseFloat(panel.style.left);
+      const top = parseFloat(panel.style.top);
+
+      await act(async () => header.dispatchEvent(pointer("pointerdown", 500, 200)));
+      await act(async () => window.dispatchEvent(pointer("pointermove", 460, 150)));
+      // Let the scheduled frame run.
+      await act(async () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+
+      expect(panel.style.transform).toBe("translate3d(-40px, -50px, 0)");
+      // Untouched mid-gesture — the transform is doing the moving.
+      expect(parseFloat(panel.style.left)).toBe(left);
+      expect(parseFloat(panel.style.top)).toBe(top);
+
+      await act(async () => window.dispatchEvent(pointer("pointerup", 460, 150)));
+
+      // Folded back into real geometry, and the transform cleared in the same
+      // breath so the panel never flashes at its old position.
+      expect(panel.style.transform).toBe("");
+      expect(parseFloat(panel.style.left)).toBe(left - 40);
+      expect(parseFloat(panel.style.top)).toBe(top - 50);
+      // Not left promoted after the gesture — a permanent compositor layer is a
+      // cost paid on every page that mounts the widget.
+      expect(panel.style.willChange).toBe("");
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("coalesces a burst of pointer moves into a single frame", async () => {
+    // A mouse can report at 1000Hz. The panel must still be written once per
+    // display refresh, not once per event — this is the difference between a
+    // smooth drag and the queue-of-renders the old version built.
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
+      frames.push(cb);
+      return frames.length;
+    });
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+
+    const { panel, cleanup } = await mountOpenPanel();
+    try {
+      const header = panel.querySelector("header")!;
+      await act(async () => header.dispatchEvent(pointer("pointerdown", 500, 200)));
+      for (let i = 0; i < 25; i++) {
+        await act(async () => window.dispatchEvent(pointer("pointermove", 500 - i, 200 - i)));
+      }
+
+      expect(frames).toHaveLength(1);
+
+      // The one frame that does run paints the LAST position, not the first —
+      // coalescing must not mean lagging behind the pointer.
+      await act(async () => frames[0](0));
+      expect(panel.style.transform).toBe("translate3d(-24px, -24px, 0)");
+    } finally {
+      cleanup();
+    }
+  });
+
   it("grows when the west edge is dragged outward, and remembers the result", async () => {
     const { panel, cleanup } = await mountOpenPanel();
     try {

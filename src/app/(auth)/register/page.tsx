@@ -66,12 +66,12 @@ function RegisterForm() {
   }
 
   return (
-    <div className="min-h-screen bg-linear-to-br from-slate-900 via-blue-950 to-slate-900 flex items-center justify-center px-4 py-8">
+    <div className="min-h-screen auth-shell flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-md space-y-4">
 
         {/* Student notice */}
-        <div className="flex items-start gap-3 p-4 rounded-lg bg-blue-500/10 border border-blue-400/20 text-sm text-blue-200">
-          <Info className="size-4 mt-0.5 shrink-0 text-blue-400" />
+        <div className="flex items-start gap-3 rounded-[var(--radius)] border border-primary/25 bg-primary/10 p-4 text-sm text-foreground">
+          <Info className="mt-0.5 size-4 shrink-0 text-primary" />
           <span>
             <strong>Students:</strong> You cannot sign up here. Ask your teacher for an invitation link: you&apos;ll need your 81 number to verify your identity and create your account.
           </span>
@@ -217,7 +217,7 @@ export default function RegisterPage() {
   // useSearchParams needs a Suspense boundary in the App Router; same shape as
   // the login page's ?callbackUrl handling.
   return (
-    <Suspense fallback={<div className="min-h-screen bg-linear-to-br from-slate-900 via-blue-950 to-slate-900" />}>
+    <Suspense fallback={<div className="min-h-screen auth-shell" />}>
       <RegisterForm />
     </Suspense>
   );
