@@ -1,20 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import {
-  History,
-  Loader2,
-  Move,
-  Paperclip,
-  Send,
-  Sparkles,
-  SquarePen,
-  Wrench,
-  X,
-} from "lucide-react";
-import { AiMetricsLine } from "@/components/ai-metrics-line";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { History, Loader2, Move, Paperclip, Send, Sparkles, SquarePen, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { readNdjson } from "@/lib/assistant/ndjson";
@@ -22,7 +9,6 @@ import type {
   AssistantStreamEvent,
   AssistantTurn,
   ConversationSummary,
-  StoredAttachmentRef,
 } from "@/lib/assistant/types";
 import type { DisplayAiMetrics } from "@/lib/ai-metrics";
 import {
@@ -42,10 +28,8 @@ import {
   type ResizeEdge,
 } from "./panel-geometry";
 import { useAssistant } from "./assistant-context";
-import { GuardrailFeedbackButton } from "@/components/guardrails/GuardrailFeedbackButton";
-
-const MARKDOWN_CLASS =
-  "text-sm [&_p]:mb-2 [&_p:last-child]:mb-0 [&_h1]:text-base [&_h1]:font-semibold [&_h2]:text-sm [&_h2]:font-semibold [&_h3]:font-semibold [&_h2]:mt-3 [&_h3]:mt-3 [&_ul]:mb-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:mb-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:mb-1 [&_strong]:font-semibold [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-xs [&_table]:w-full [&_table]:text-xs [&_th]:border-b [&_th]:border-border [&_th]:px-1 [&_th]:py-1 [&_th]:text-left [&_td]:border-b [&_td]:border-border/50 [&_td]:px-1 [&_td]:py-1";
+import { AssistantTranscript, type Bubble, type ToolActivity } from "./AssistantTranscript";
+import { usePanelDrag } from "./use-panel-drag";
 
 /**
  * Short timestamp for a history row: a time for today, a weekday inside the last
@@ -63,32 +47,6 @@ function formatWhen(iso: string): string {
   }
   return when.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
-
-/** One rendered bubble. `pending` marks the assistant turn currently streaming. */
-type Bubble = AssistantTurn & {
-  pending?: boolean;
-  error?: string | null;
-  /**
-   * Set only when a guardrail refused the turn: lets the error line offer a way
-   * to report it as a false positive, which is otherwise a dead end for the
-   * user — the message never says which check fired.
-   */
-  guardrailEventId?: string | null;
-  /**
-   * User turns: the stored attachments that can be re-rendered inline, kept
-   * pre-filtered so the render pass doesn't re-scan every turn's list.
-   */
-  storedImages?: StoredAttachmentRef[];
-  /**
-   * Assistant turns: the model/timing stats from the turn's `done` event.
-   * Rendered by AiMetricsLine, which draws nothing on the production site — the
-   * numbers are a dev-site aid for checking which model answered and how fast.
-   */
-  stats?: DisplayAiMetrics;
-};
-
-/** A tool the assistant is running (or just ran) during the pending turn. */
-type ToolActivity = { name: string; label: string; status: "running" | "done" | "error" };
 
 /**
  * The eight grab targets around the panel. Edges are thin strips inset past the
@@ -133,16 +91,7 @@ export function AssistantWidget() {
   // across the bottom of the viewport — there is nowhere to drag it to.
   const [rect, setRect] = useState<PanelRect | null>(null);
   const [floating, setFloating] = useState(false);
-  const [dragging, setDragging] = useState(false);
-  const dragRef = useRef<{
-    mode: "move" | ResizeEdge;
-    x: number;
-    y: number;
-    from: PanelRect;
-  } | null>(null);
-  // The live rect, readable from the window-level pointer handlers below without
-  // re-subscribing them on every frame of a drag.
-  const rectRef = useRef<PanelRect | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   // Abort an in-flight turn if the widget unmounts (navigation, sign-out).
   useEffect(() => () => abortRef.current?.abort(), []);
@@ -169,43 +118,6 @@ export function AssistantWidget() {
       wide.removeEventListener("change", sync);
     };
   }, []);
-
-  useEffect(() => {
-    rectRef.current = rect;
-  }, [rect]);
-
-  // Pointer moves are tracked on the window rather than on the handle, so a fast
-  // drag that outruns the cursor keeps going instead of dropping the gesture the
-  // moment the pointer leaves the 6px strip it started on.
-  useEffect(() => {
-    if (!dragging) return;
-    const onMove = (event: PointerEvent) => {
-      const drag = dragRef.current;
-      if (!drag) return;
-      const dx = event.clientX - drag.x;
-      const dy = event.clientY - drag.y;
-      const { innerWidth: vw, innerHeight: vh } = window;
-      setRect(
-        drag.mode === "move"
-          ? movePanelRect(drag.from, dx, dy, vw, vh)
-          : resizePanelRect(drag.from, drag.mode, dx, dy, vw, vh)
-      );
-    };
-    const onEnd = () => {
-      dragRef.current = null;
-      setDragging(false);
-      // Written once per gesture, not once per frame.
-      if (rectRef.current) storePanelRect(rectRef.current);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onEnd);
-    window.addEventListener("pointercancel", onEnd);
-    return () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onEnd);
-      window.removeEventListener("pointercancel", onEnd);
-    };
-  }, [dragging]);
 
   // Object URLs are created per attachment; revoke them when the tray clears.
   useEffect(() => {
@@ -253,18 +165,17 @@ export function AssistantWidget() {
     [attachments.length, attachmentsEnabled, config?.maxAttachmentBytes, maxAttachments]
   );
 
-  const beginDrag = useCallback(
-    (mode: "move" | ResizeEdge) => (event: React.PointerEvent) => {
-      const from = rectRef.current;
-      if (!floating || !from || event.button !== 0) return;
-      // Stops the browser from starting a text selection or a touch scroll under
-      // the gesture.
-      event.preventDefault();
-      dragRef.current = { mode, x: event.clientX, y: event.clientY, from };
-      setDragging(true);
-    },
-    [floating]
-  );
+  // The gesture itself runs outside React — see use-panel-drag.ts. The panel is
+  // written once per animation frame instead of once per pointer event, and this
+  // component renders once, here, when the gesture ends.
+  const commitRect = useCallback((next: PanelRect) => {
+    setRect(next);
+    // Written once per gesture, not once per frame.
+    storePanelRect(next);
+  }, []);
+
+  const beginDrag = usePanelDrag({ panelRef, rect, enabled: floating, onCommit: commitRect });
+  const beginMove = useMemo(() => beginDrag("move"), [beginDrag]);
 
   /**
    * The keyboard path to the same two gestures: arrows nudge the panel, Shift
@@ -279,13 +190,12 @@ export function AssistantWidget() {
       ArrowDown: [0, step],
     };
     const delta = deltas[event.key];
-    const from = rectRef.current;
-    if (!delta || !from) return;
+    if (!delta || !rect) return;
     event.preventDefault();
     const { innerWidth: vw, innerHeight: vh } = window;
     const next = event.altKey
-      ? resizePanelRect(from, "se", delta[0], delta[1], vw, vh)
-      : movePanelRect(from, delta[0], delta[1], vw, vh);
+      ? resizePanelRect(rect, "se", delta[0], delta[1], vw, vh)
+      : movePanelRect(rect, delta[0], delta[1], vw, vh);
     setRect(next);
     storePanelRect(next);
   };
@@ -513,6 +423,7 @@ export function AssistantWidget() {
     <>
       {open && (
         <div
+          ref={panelRef}
           // react-doctor-disable-next-line react-doctor/prefer-html-dialog -- this is a docked non-modal chat panel, not a modal; <dialog> would change stacking and focus semantics
           role="dialog"
           aria-label={isTeacher ? "Teaching assistant" : "Study assistant"}
@@ -522,19 +433,21 @@ export function AssistantWidget() {
               : undefined
           }
           className={cn(
-            "fixed z-50 flex flex-col overflow-hidden rounded-xl border border-border bg-background shadow-2xl",
+            "fixed z-50 flex flex-col overflow-hidden rounded-[var(--radius)] border-[length:var(--border-width)] border-border bg-background [box-shadow:var(--shadow-overlay)]",
             // Narrow screens keep the old docked strip; anywhere with room, the
             // position and size come from `rect` instead.
             floatingPanel ? "max-h-none" : "inset-x-2 bottom-2 max-h-[min(80vh,640px)]",
-            // A drag that crosses the transcript must not select it.
-            dragging && "select-none"
+            // `data-dragging` is set imperatively for the duration of a gesture
+            // (globals.css turns off selection and hit-testing under it), so a
+            // drag never costs a React render just to change a class.
+            floatingPanel && "assistant-panel"
           )}
         >
           <header
             onPointerDown={(event) => {
               // The header buttons keep their clicks; only the bare strip drags.
               if ((event.target as HTMLElement).closest("button")) return;
-              beginDrag("move")(event);
+              beginMove(event);
             }}
             onDoubleClick={(event) => {
               if ((event.target as HTMLElement).closest("button")) return;
@@ -556,7 +469,7 @@ export function AssistantWidget() {
             {floatingPanel && (
               <button
                 type="button"
-                onPointerDown={beginDrag("move")}
+                onPointerDown={beginMove}
                 onKeyDown={nudge}
                 aria-label="Move or resize the assistant panel"
                 title="Drag to move · drag an edge to resize · arrow keys move, Alt+arrows resize · double-click the header to reset"
@@ -650,106 +563,7 @@ export function AssistantWidget() {
               historyOpen && "hidden"
             )}
           >
-            {bubbles.length === 0 && (
-              <div className="rounded-lg bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
-                {config.greeting}
-              </div>
-            )}
-
-            {bubbles.map((bubble, index) => (
-              <div
-                // react-doctor-disable-next-line react-doctor/no-array-index-as-key -- bubbles is append-only; entries are never inserted, removed, or reordered
-                key={index}
-                className={cn("flex", bubble.role === "user" ? "justify-end" : "justify-start")}
-              >
-                <div
-                  className={cn(
-                    "max-w-[85%] rounded-lg px-3 py-2",
-                    bubble.role === "user"
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted text-foreground"
-                  )}
-                >
-                  {bubble.role === "user" ? (
-                    <p className="whitespace-pre-wrap text-sm">{bubble.content}</p>
-                  ) : (
-                    <div className={MARKDOWN_CLASS} aria-live="polite">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{bubble.content}</ReactMarkdown>
-                    </div>
-                  )}
-
-                  {bubble.storedImages && bubble.storedImages.length > 0 && (
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {bubble.storedImages.map((item) => (
-                        // eslint-disable-next-line @next/next/no-img-element -- authorized redirect to a signed URL, not a static asset
-                        <img
-                          key={item.id}
-                          src={`/api/assistant/attachments/${item.id}`}
-                          alt={item.name}
-                          title={item.name}
-                          className="size-14 rounded border border-black/10 object-cover"
-                        />
-                      ))}
-                    </div>
-                  )}
-
-                  {bubble.attachmentNames && bubble.attachmentNames.length > 0 && (
-                    <p className="mt-1 text-xs opacity-80">
-                      <Paperclip className="mr-1 inline size-3" />
-                      {bubble.attachmentNames.join(", ")}
-                    </p>
-                  )}
-
-                  {bubble.stats && (
-                    <AiMetricsLine
-                      metrics={bubble.stats}
-                      prefix="Answered by "
-                      className="mt-1 block whitespace-normal text-xs text-muted-foreground"
-                    />
-                  )}
-
-                  {bubble.error && (
-                    <div className="mt-1 space-y-1">
-                      <p className="text-xs text-destructive">{bubble.error}</p>
-                      <GuardrailFeedbackButton
-                        eventId={bubble.guardrailEventId}
-                        className="text-destructive"
-                      />
-                    </div>
-                  )}
-
-                  {bubble.pending && !bubble.content && !bubble.error && (
-                    <span className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Loader2 className="size-3.5 animate-spin text-primary" /> Thinking…
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
-
-            {activity.length > 0 && (
-              <ul className="space-y-1">
-                {activity.map((item) => (
-                  <li
-                    key={item.name}
-                    className="flex items-center gap-2 text-xs text-muted-foreground"
-                  >
-                    {item.status === "running" ? (
-                      <Loader2 className="size-3 animate-spin text-primary" />
-                    ) : (
-                      <Wrench
-                        className={cn(
-                          "size-3",
-                          item.status === "error" ? "text-destructive" : "text-primary"
-                        )}
-                      />
-                    )}
-                    {item.label}
-                    {item.status === "error" && " — failed"}
-                  </li>
-                ))}
-              </ul>
-            )}
+            <AssistantTranscript bubbles={bubbles} activity={activity} greeting={config.greeting} />
           </div>
 
           {notice && (

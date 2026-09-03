@@ -11,7 +11,7 @@ import { CheckCircle2, Loader2 } from "lucide-react";
 
 // react-doctor-disable-next-line react-doctor/no-secrets-in-client-code -- AUTH_BACKDROP is a Tailwind class list, not a credential
 const AUTH_BACKDROP =
-  "min-h-screen bg-linear-to-br from-slate-900 via-blue-950 to-slate-900 flex items-center justify-center px-4";
+  "min-h-screen auth-shell flex items-center justify-center px-4";
 
 function ResetPasswordForm() {
   const { push } = useRouter();
@@ -93,7 +93,7 @@ function ResetPasswordForm() {
   if (tokenValid === null) {
     return (
       <div className={AUTH_BACKDROP}>
-        <Loader2 className="size-6 animate-spin text-white/70" />
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
