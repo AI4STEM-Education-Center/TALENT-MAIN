@@ -273,6 +273,14 @@ For LLM or parsing pipelines, load the row by id and read bytes or location:
 - `resolveLearningMaterialLocation(materialId)` — returns `{ material, location }` with S3 bucket and key.
 - `readLearningMaterialBytes(materialId)` — returns a `Buffer` from S3.
 
+## Conversational simulation editing
+
+Open a ready simulation from the quiz editor to edit it alongside a chat. Double-click preview text and blur the field to stage exact replacements, or describe functions to add/remove and changes to the teaching direction. The assistant asks clarification questions with answer buttons, supports free text and “None of the above,” and prepares a detailed revision plan. “Abort this edit” discards a proposal before generation. Confirm the plan to create a named version; the worker validates the HTML before publishing it and the preview updates automatically.
+
+Versions record their parent. Select any version (or ask the chat to show it by name) to preview or edit it, rename it, or choose “Use this version” to restore it for students. Editing an older version creates a new branch; later versions remain available. Previous artifacts from the older feedback workflow are included when their retained storage keys are available. Restoring a version is unavailable during generation. Failed revisions retain the live artifact and show an error in the editor.
+
+After applying the schema with the existing `npm run db:push` deployment step, deploy both the app and worker. In **Admin → AI Config**, assign a model to `simulation_chat` and enable **Simulation editing assistant**. This model plans edits independently of `simulation_generation`, which continues to generate/revise HTML. The new assistant uses the shared skill/tool toggles, extra instructions, tool-call budget, history replay limit, and hourly limit. It starts disabled. Simulation editing is text-only; attachment settings apply to the floating assistants. Chat conversations are private to their author; artifact branches belong to the managed simulation.
+
 ## Chat assistants
 
 Two floating chat bots, one per audience, mounted from `src/app/(dashboard)/layout.tsx` as a

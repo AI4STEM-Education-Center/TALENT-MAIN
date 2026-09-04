@@ -136,6 +136,7 @@ const USE_CASE_LABELS: Record<string, string> = {
   description_generation: "Exam Summary Generation",
   recommendation: "Recommendation",
   quiz_extraction: "Quiz PDF Extraction",
+  simulation_chat: "Simulation Editing Chat",
   simulation_generation: "Question Simulation Generation",
   // The chat assistants take image input, so these two want a vision-capable
   // model. Their behaviour (skills, attachment kinds, limits) is configured in

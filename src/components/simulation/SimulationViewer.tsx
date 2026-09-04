@@ -36,14 +36,37 @@ export function SimulationViewer({
   title,
   version,
   telemetry,
+  selectedVersion,
+  onTextEdit,
 }: {
   simulationId: string;
   title: string;
   /** Bump to bust the browser's private cache after a revision lands. */
   version?: number;
   telemetry?: SimulationTelemetryContext;
+  selectedVersion?: number;
+  onTextEdit?: (before: string, after: string) => void;
 }) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  useEffect(() => {
+    if (!onTextEdit) return;
+    const receive = (event: MessageEvent) => {
+      if (
+        event.source !== iframeRef.current?.contentWindow ||
+        event.data?.type !== "simulation-text-edit"
+      )
+        return;
+      if (
+        typeof event.data.before === "string" &&
+        typeof event.data.after === "string" &&
+        event.data.before.length <= 2000 &&
+        event.data.after.length <= 2000
+      )
+        onTextEdit(event.data.before, event.data.after);
+    };
+    window.addEventListener("message", receive);
+    return () => window.removeEventListener("message", receive);
+  }, [onTextEdit]);
   const attemptId = telemetry?.attemptId ?? null;
   const surface = telemetry?.surface ?? null;
 
@@ -145,7 +168,7 @@ export function SimulationViewer({
   return (
     <iframe
       ref={iframeRef}
-      src={`/api/simulations/${simulationId}/content${version ? `?v=${version}` : ""}`}
+      src={`/api/simulations/${simulationId}/content?v=${version ?? 0}${selectedVersion ? `&version=${selectedVersion}` : ""}${onTextEdit ? "&edit=1" : ""}`}
       title={title}
       sandbox="allow-scripts"
       className="h-full w-full rounded-md border bg-white"

@@ -6,6 +6,7 @@ export type UseCase =
   | "description_generation"
   | "recommendation"
   | "quiz_extraction"
+  | "simulation_chat"
   | "simulation_generation"
   // The two chat assistants. Separate assignments on purpose: the student and
   // teacher bots are tuned (and costed) independently, and a site may want a
