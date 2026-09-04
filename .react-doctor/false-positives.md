@@ -64,12 +64,12 @@ Predicate: each effect still constructs an `AbortController`, passes `signal` to
 `fetch`, and calls `controller.abort()` in its cleanup, so an out-of-order
 response cannot land.
 
-Two further sites are suppressed for the equivalent reason after being fixed:
-`teacher/.../materials/[materialId]/page-viewer.tsx` and
-`teacher/.../students/page.tsx` now guard **every** post-await write with
-`signal.aborted` — including the `loading` reset, so an aborted request cannot
-clear the spinner owned by its successor — but the rule only recognises an
-early-return ignore flag.
+Three further sites are suppressed for the equivalent reason after being fixed:
+`teacher/.../materials/[materialId]/page-viewer.tsx`,
+`teacher/.../students/page.tsx` and `components/feedback/my-feedback.tsx` now
+guard **every** post-await write with `signal.aborted` — including the
+`loading` reset, so an aborted request cannot clear the spinner owned by its
+successor — but the rule only recognises an early-return ignore flag.
 
 The other two original hits of this rule were **real** and were fixed.
 

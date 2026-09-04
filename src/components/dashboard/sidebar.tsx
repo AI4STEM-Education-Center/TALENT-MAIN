@@ -34,6 +34,7 @@ import {
   UserRound,
   ShieldCheck,
   KeyRound,
+  Star,
 } from "lucide-react";
 
 interface NavItem {
@@ -78,6 +79,11 @@ const teacherNav: NavItem[] = [
     href: "/teacher/messages",
     label: "Messages",
     icon: <MessageSquare className="size-4" />,
+  },
+  {
+    href: "/teacher/feedback",
+    label: "Feedback",
+    icon: <Star className="size-4" />,
   },
 ];
 
@@ -149,6 +155,11 @@ const adminNav: NavItem[] = [
     href: "/admin/simulations",
     label: "Simulations",
     icon: <Atom className="size-4" />,
+  },
+  {
+    href: "/admin/feedback",
+    label: "Feedback",
+    icon: <Star className="size-4" />,
   },
   {
     href: "/admin/materials",

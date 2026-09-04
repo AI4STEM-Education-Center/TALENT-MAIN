@@ -1445,6 +1445,74 @@ model SimulationSession {
   @@index([classId, startedAt])
 }
 
+// ─── Content feedback (5-point rating + written explanation) ──────────────────
+// One person's verdict on one piece of AI-produced content: a learning material
+// or simulation recommended to a student after a quiz, or a simulation a
+// teacher had generated. This is the QUALITY signal — SimulationSession says
+// how long a student stayed, and only these rows say whether it was any good.
+//
+// Distinct from SimulationFeedback, which is a correction that DRIVES a
+// revision job. Nothing here is fed back into generation; it is read by the
+// consolidated Feedback panel (teacher: rows routed to them, admin: all) and
+// the CSV export.
+//
+// Deliberately RELATION-FREE on every id (like ExamResult / SimulationSession)
+// so a verdict survives deletion of the author's account, the simulation, the
+// quiz, or the class — a research/quality record that vanishes when staff tidy
+// up is worse than no record. Display fields are snapshots for the same reason.
+//
+// audience:    "STUDENT" | "TEACHER"   — which surface it was left on
+// subjectType: "MATERIAL" | "SIMULATION"
+// rating:      1-5, where 5 is best (see FEEDBACK_RATING_LABELS)
+model ContentFeedback {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  audience    String
+  subjectType String
+
+  rating  Int
+  comment String
+
+  // Author identity snapshot. No FK: see the RELATION-FREE note above.
+  authorUserId String
+  authorName   String?
+  authorEmail  String?
+  authorRole   String // "STUDENT" | "TEACHER" | "ADMIN"
+
+  // What it is about. subjectId is null for materials, which reach the student
+  // results page as a title + page range snapshot with no material row behind
+  // them (see StoredRecommendation in src/lib/exam-results.ts).
+  subjectId    String?
+  subjectLabel String
+  subjectDetail String? // "pages 4-8", a learning goal — free display text
+
+  // Re-submitting edits the existing verdict instead of stacking a second one,
+  // so one student cannot swamp a subject's average. Built by
+  // feedbackSubjectKey() in src/lib/content-feedback.ts — a non-null composite
+  // precisely because SQLite treats NULLs in a unique index as distinct, which
+  // would let nullable subjectId/attemptId columns duplicate freely.
+  subjectKey String
+
+  // Routing + reporting context, all plain ids.
+  // routedTeacherId is who, besides an admin, may read the row: the class's
+  // owning teacher for student feedback, and the author for teacher feedback.
+  routedTeacherId String?
+  attemptId       String?
+  quizId          String?
+  quizName        String?
+  classId         String?
+  className       String?
+
+  @@unique([authorUserId, subjectKey])
+  // Panel reads: newest-first, either scoped to one teacher or unscoped (admin).
+  @@index([routedTeacherId, createdAt])
+  @@index([createdAt])
+  @@index([audience, subjectType, createdAt])
+  @@index([subjectType, subjectId])
+}
+
 // ─── System operation log ─────────────────────────────────────────────────────
 // Admin-viewable operational log persisted for error diagnosis: auth events
 // (failed / successful / throttled logins), API route errors, worker job
