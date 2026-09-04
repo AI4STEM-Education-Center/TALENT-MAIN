@@ -53,7 +53,9 @@ SUT_TYPE=""
 KEY_NAME=""
 ACK_REAL_DATA="no"
 DEADMAN_MINUTES=240
+AMI_WAIT_MINUTES="${PRESSURE_AMI_WAIT_MINUTES:-60}"
 KEEP_ON_FAILURE="no"
+ORCHESTRATED="no"
 
 die() { echo "provision: FATAL: $*" >&2; exit 1; }
 log() { echo "provision: $*"; }
@@ -71,8 +73,10 @@ while [ $# -gt 0 ]; do
     --sut-type) SUT_TYPE="$2"; shift 2 ;;
     --key-name) KEY_NAME="$2"; shift 2 ;;
     --deadman-minutes) DEADMAN_MINUTES="$2"; shift 2 ;;
+    --ami-wait-minutes) AMI_WAIT_MINUTES="$2"; shift 2 ;;
     --ack-real-data) ACK_REAL_DATA="yes"; shift ;;
     --keep-on-failure) KEEP_ON_FAILURE="yes"; shift ;;
+    --orchestrated) ORCHESTRATED="yes"; shift ;;
     -h|--help) usage ;;
     *) die "unknown argument: $1" ;;
   esac
@@ -85,6 +89,10 @@ command -v aws >/dev/null || die "the AWS CLI is not installed"
 command -v jq  >/dev/null || die "jq is not installed"
 [ -n "$SOURCE_INSTANCE" ] || die "--source-instance is required (the production instance to clone)"
 [ -n "$REGION" ] || die "--region or AWS_REGION is required"
+case "$AMI_WAIT_MINUTES" in
+  ''|*[!0-9]*) die "--ami-wait-minutes must be a positive whole number" ;;
+esac
+[ "$AMI_WAIT_MINUTES" -gt 0 ] || die "--ami-wait-minutes must be greater than zero"
 
 # The acknowledgement is a hard gate, not a warning. Cloning production's volume
 # puts real student records and real IRB consent data on a temporary instance;
@@ -186,6 +194,13 @@ if [ "$SUT_TYPE" != "$SRC_TYPE" ]; then
   log "NOTE: the clone's instance type differs from production (${SUT_TYPE} vs ${SRC_TYPE}). Capacity numbers will NOT transfer to production."
 fi
 
+SUT_SPECS="$(aws ec2 describe-instance-types --region "$REGION" --instance-types "$SUT_TYPE" \
+  --query 'InstanceTypes[0].{vcpus:VCpuInfo.DefaultVCpus,memoryMiB:MemoryInfo.SizeInMiB}' --output json)" \
+  || die "could not describe instance type ${SUT_TYPE}"
+SUT_VCPUS="$(echo "$SUT_SPECS" | jq -r '.vcpus')"
+SUT_MEMORY_MIB="$(echo "$SUT_SPECS" | jq -r '.memoryMiB')"
+log "clone capacity: ${SUT_VCPUS} vCPUs, ${SUT_MEMORY_MIB} MiB memory"
+
 # The IAM instance profile is deliberately NOT copied onto the clone. The app
 # does not use one (docs/SETUP.md: credentials come from ~/app/.env), so the only
 # thing attaching it could do is hand the clone AWS permissions it has no need
@@ -207,12 +222,42 @@ CREATED_AMI="$(aws ec2 create-image --region "$REGION" \
   --name "${RUN_ID}-clone" \
   --description "Throwaway benchmark clone of ${SOURCE_INSTANCE}" \
   --no-reboot \
-  --tag-specifications "ResourceType=image,Tags=[{Key=${TAG_KEY},Value=${TAG_VALUE}},{Key=PressureRunId,Value=${RUN_ID}}]" \
+  --tag-specifications \
+    "ResourceType=image,Tags=[{Key=${TAG_KEY},Value=${TAG_VALUE}},{Key=PressureRunId,Value=${RUN_ID}}]" \
+    "ResourceType=snapshot,Tags=[{Key=${TAG_KEY},Value=${TAG_VALUE}},{Key=PressureRunId,Value=${RUN_ID}}]" \
   --query 'ImageId' --output text)"
 write_state
-log "AMI ${CREATED_AMI} registered; waiting for it to become available (this is the slow step, typically 3-8 minutes)..."
-aws ec2 wait image-available --region "$REGION" --image-ids "$CREATED_AMI" \
-  || die "AMI ${CREATED_AMI} never became available"
+log "AMI ${CREATED_AMI} registered; waiting up to ${AMI_WAIT_MINUTES} minutes for it to become available..."
+
+# The stock AWS CLI waiter polls 40 times at 15-second intervals, so it gives up
+# after only 10 minutes. Initial EBS snapshots can legitimately take longer.
+# Poll explicitly so the limit is appropriate for a production-sized volume and
+# so a terminal EC2 failure is reported with its actual reason.
+AMI_WAIT_DEADLINE=$((SECONDS + AMI_WAIT_MINUTES * 60))
+AMI_LAST_LOGGED_AT=0
+while true; do
+  AMI_STATUS="$(aws ec2 describe-images --region "$REGION" --image-ids "$CREATED_AMI" \
+    --query 'Images[0].{state:State,reason:StateReason.Message}' --output json)" \
+    || die "could not read the status of AMI ${CREATED_AMI}"
+  AMI_STATE="$(echo "$AMI_STATUS" | jq -r '.state // "missing"')"
+  AMI_REASON="$(echo "$AMI_STATUS" | jq -r '.reason // empty')"
+
+  case "$AMI_STATE" in
+    available) break ;;
+    failed|error|deregistered|missing)
+      die "AMI ${CREATED_AMI} entered state '${AMI_STATE}'${AMI_REASON:+: ${AMI_REASON}}"
+      ;;
+  esac
+
+  if [ "$SECONDS" -ge "$AMI_WAIT_DEADLINE" ]; then
+    die "AMI ${CREATED_AMI} is still '${AMI_STATE}' after ${AMI_WAIT_MINUTES} minutes${AMI_REASON:+: ${AMI_REASON}}"
+  fi
+  if [ $((SECONDS - AMI_LAST_LOGGED_AT)) -ge 60 ]; then
+    log "AMI ${CREATED_AMI} is still ${AMI_STATE}; continuing to wait..."
+    AMI_LAST_LOGGED_AT=$SECONDS
+  fi
+  sleep 15
+done
 
 # Record the backing snapshots so teardown can delete them; deleting only the
 # AMI leaves the snapshots behind, silently billing forever.
@@ -362,6 +407,8 @@ cat > "$STATE_FILE" <<JSON
   "snapshots": "${CREATED_SNAPSHOTS}",
   "sut": "${CREATED_SUT}",
   "sutType": "${SUT_TYPE}",
+  "sutVcpus": ${SUT_VCPUS},
+  "sutMemoryMiB": ${SUT_MEMORY_MIB},
   "sutPrivateIp": "${SUT_PRIVATE_IP}",
   "loadgen": "${CREATED_LOADGEN}",
   "loadgenType": "${LOADGEN_TYPE}",
@@ -377,7 +424,18 @@ JSON
 # Provisioning succeeded, so the failure trap must not fire on a clean exit.
 trap - EXIT
 
-cat <<SUMMARY
+if [ "$ORCHESTRATED" = "yes" ]; then
+  cat <<SUMMARY
+
+provision: DONE — run ${RUN_ID}
+  clone (SUT)      ${CREATED_SUT}   private ${SUT_PRIVATE_IP}   (no public IP)
+  load generator   ${CREATED_LOADGEN}   public  ${LOADGEN_PUBLIC_IP}
+  state            ${STATE_FILE}
+
+provision: handing the booting instances back to the end-to-end runner...
+SUMMARY
+else
+  cat <<SUMMARY
 
 provision: DONE — run ${RUN_ID}
   clone (SUT)      ${CREATED_SUT}   private ${SUT_PRIVATE_IP}   (no public IP)
@@ -403,3 +461,4 @@ WHEN YOU ARE DONE — this is not optional, these instances cost money:
   pressure/ec2/teardown.sh --run-id ${RUN_ID} --region ${REGION}
 
 SUMMARY
+fi

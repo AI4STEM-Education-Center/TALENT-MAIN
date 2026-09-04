@@ -13,7 +13,14 @@
 // database file. Omitting either would report a capacity the real deployment
 // cannot reach.
 
-import { requireTier, identityFor, scaled, SESSIONS, RUN_LABEL, SLO } from "../lib/config.js";
+import {
+  requireTier,
+  identityFor,
+  studentTarget,
+  SESSIONS,
+  RUN_LABEL,
+  SLO,
+} from "../lib/config.js";
 import { thresholds, TREND_STATS } from "../lib/metrics.js";
 import { studentQuizJourney, teacherMonitorJourney } from "../lib/journeys.js";
 
@@ -21,7 +28,7 @@ import { studentQuizJourney, teacherMonitorJourney } from "../lib/journeys.js";
 // cohort limit; the number would be wrong and someone would plan around it.
 requireTier("exam-day", ["ec2-clone"]);
 
-const COHORT = scaled(Number(__ENV.PRESSURE_COHORT || 120));
+const COHORT = studentTarget(Number(__ENV.PRESSURE_COHORT || 120));
 const TEACHERS = Math.max(1, Math.round(COHORT / 30));
 
 const STEPS = [

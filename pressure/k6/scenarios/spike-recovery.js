@@ -18,16 +18,33 @@
 // Compare the quiet phase BEFORE the spike with the quiet phase AFTER. Equal
 // latency means it recovered. Worse means something is still draining.
 
-import { requireTier, identityFor, scaled, RUN_LABEL, SLO } from "../lib/config.js";
+import {
+  requireTier,
+  identityFor,
+  scaled,
+  studentTarget,
+  hasStudentTarget,
+  RUN_LABEL,
+  SLO,
+} from "../lib/config.js";
 import { thresholds, TREND_STATS } from "../lib/metrics.js";
 import { studentQuizJourney, publicLanding } from "../lib/journeys.js";
 
 requireTier("spike-recovery", ["ec2-clone"]);
 
-const BASELINE = scaled(Number(__ENV.PRESSURE_BASELINE || 20));
-const SPIKE = scaled(Number(__ENV.PRESSURE_SPIKE || 400));
+const SPIKE = studentTarget(Number(__ENV.PRESSURE_SPIKE || 400));
+const BASELINE = hasStudentTarget()
+  ? Math.max(1, Math.round(SPIKE / 20))
+  : scaled(Number(__ENV.PRESSURE_BASELINE || 20));
 
-const STEPS = ["static_page", "student_dashboard", "class_quizzes", "student_quiz_start", "student_quiz_submit", "student_results"];
+const STEPS = [
+  "static_page",
+  "student_dashboard",
+  "class_quizzes",
+  "student_quiz_start",
+  "student_quiz_submit",
+  "student_results",
+];
 
 export const options = {
   summaryTrendStats: TREND_STATS,
@@ -37,11 +54,11 @@ export const options = {
       exec: "student",
       startVUs: BASELINE,
       stages: [
-        { duration: "3m", target: BASELINE },   // quiet BEFORE — the reference
-        { duration: "10s", target: SPIKE },     // near-instant spike
-        { duration: "2m", target: SPIKE },      // sustained overload
-        { duration: "10s", target: BASELINE },  // load removed
-        { duration: "5m", target: BASELINE },   // quiet AFTER — did it recover?
+        { duration: "3m", target: BASELINE }, // quiet BEFORE — the reference
+        { duration: "10s", target: SPIKE }, // near-instant spike
+        { duration: "2m", target: SPIKE }, // sustained overload
+        { duration: "10s", target: BASELINE }, // load removed
+        { duration: "5m", target: BASELINE }, // quiet AFTER — did it recover?
       ],
       gracefulRampDown: "30s",
     },
@@ -68,12 +85,17 @@ export const options = {
 };
 
 export function student() {
-  studentQuizJourney(identityFor("students", __VU), { fetchMedia: false, thinkPerQuestion: [1, 3] });
+  studentQuizJourney(identityFor("students", __VU), {
+    fetchMedia: false,
+    thinkPerQuestion: [1, 3],
+  });
 }
 export function beat() {
   publicLanding();
 }
 
 export function handleSummary(data) {
-  return { stdout: `\nspike-recovery complete: ${BASELINE} -> ${SPIKE} -> ${BASELINE} label=${RUN_LABEL}\n` };
+  return {
+    stdout: `\nspike-recovery complete: ${BASELINE} -> ${SPIKE} -> ${BASELINE} label=${RUN_LABEL}\n`,
+  };
 }
