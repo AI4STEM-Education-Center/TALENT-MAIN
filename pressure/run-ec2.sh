@@ -25,7 +25,10 @@ SCENARIO="smoke"
 REGION="${AWS_REGION:-}"
 SSH_KEY=""
 SCALE="1"
-COHORT=""
+STUDENT_COUNT=""
+SUITE_STUDENT_COUNT=""
+SUITE_RUN="no"
+ORCHESTRATED="no"
 SKIP_TEARDOWN="yes"
 
 log() { echo "run-ec2: $*"; }
@@ -38,7 +41,11 @@ while [ $# -gt 0 ]; do
     --region) REGION="$2"; shift 2 ;;
     --ssh-key) SSH_KEY="$2"; shift 2 ;;
     --scale) SCALE="$2"; shift 2 ;;
-    --cohort) COHORT="$2"; shift 2 ;;
+    --students) STUDENT_COUNT="$2"; shift 2 ;;
+    --cohort) STUDENT_COUNT="$2"; shift 2 ;; # legacy alias
+    --suite-run) SUITE_RUN="yes"; shift ;;
+    --suite-students) SUITE_STUDENT_COUNT="$2"; shift 2 ;;
+    --orchestrated) ORCHESTRATED="yes"; shift ;;
     --teardown-after) SKIP_TEARDOWN="no"; shift ;;
     -h|--help) sed -n '3,18p' "$0" | sed 's|^# \{0,1\}||'; exit 0 ;;
     *) die "unknown argument: $1" ;;
@@ -46,6 +53,14 @@ while [ $# -gt 0 ]; do
 done
 
 [ -n "$RUN_ID" ] || die "--run-id is required (printed by ec2/provision.sh)"
+for count in "$STUDENT_COUNT" "$SUITE_STUDENT_COUNT"; do
+  [ -n "$count" ] || continue
+  case "$count" in
+    *[!0-9]*|'') die "--students must be a positive whole number" ;;
+  esac
+  [ "$count" -gt 0 ] || die "--students must be greater than zero"
+  [ "$count" -le 2000 ] || die "--students cannot exceed the ec2-clone safety ceiling of 2000"
+done
 STATE_FILE="${STATE_DIR}/${RUN_ID}.json"
 [ -f "$STATE_FILE" ] || die "no state file at ${STATE_FILE} — was this run provisioned from this machine?"
 command -v jq >/dev/null || die "jq is not installed"
@@ -55,6 +70,8 @@ SUT_IP="$(jq -r '.sutPrivateIp' "$STATE_FILE")"
 SUT_ID="$(jq -r '.sut' "$STATE_FILE")"
 SUT_TYPE="$(jq -r '.sutType' "$STATE_FILE")"
 SRC_TYPE="$(jq -r '.sourceInstanceType' "$STATE_FILE")"
+SUT_VCPUS="$(jq -r '.sutVcpus // null' "$STATE_FILE")"
+SUT_MEMORY_MIB="$(jq -r '.sutMemoryMiB // null' "$STATE_FILE")"
 [ -n "$REGION" ] || REGION="$(jq -r '.region' "$STATE_FILE")"
 
 SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ServerAliveInterval=30)
@@ -68,9 +85,12 @@ sut() { lg "ssh -o StrictHostKeyChecking=accept-new ubuntu@${SUT_IP} \"$*\""; }
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. Wait for both instances, and REFUSE to proceed unless sanitize succeeded
 # ─────────────────────────────────────────────────────────────────────────────
-log "waiting for the load generator to finish cloud-init..."
-for _ in $(seq 1 60); do
+log "waiting for the load generator to finish cloud-init (package installation can take several minutes)..."
+for attempt in $(seq 1 60); do
   if lg "test -f /opt/pressure/READY" 2>/dev/null; then break; fi
+  if [ $((attempt % 3)) -eq 0 ]; then
+    log "load generator is still initializing ($((attempt * 10))s elapsed)..."
+  fi
   sleep 10
 done
 lg "test -f /opt/pressure/READY" || die "the load generator never became ready; check 'sudo cat /var/log/pressure/boot.log' on ${LOADGEN_IP}"
@@ -82,8 +102,11 @@ lg "test -f /opt/pressure/READY" || die "the load generator never became ready; 
 # to ~47 KB. So it is shipped now, over SSH, through the load generator — the
 # clone has no public IP.
 log "waiting for the clone to finish cloud-init..."
-for _ in $(seq 1 90); do
+for attempt in $(seq 1 90); do
   if sut "test -f /opt/pressure/BOOTED" 2>/dev/null; then break; fi
+  if [ $((attempt % 3)) -eq 0 ]; then
+    log "clone is still initializing ($((attempt * 10))s elapsed)..."
+  fi
   sleep 10
 done
 sut "test -f /opt/pressure/BOOTED" || die "the clone never finished cloud-init; check 'sudo cat /var/log/pressure/boot.log' via ${LOADGEN_IP}"
@@ -140,8 +163,11 @@ if ! sut "test -f /opt/pressure/SANITIZED" 2>/dev/null; then
   echo "run-ec2:   pressure/ec2/teardown.sh --run-id ${RUN_ID} --region ${REGION}" >&2
   exit 1
 fi
-log "clone is sanitized. Controls applied:"
-sut "sudo cat /opt/pressure/sanitize-report.json" | sed 's/^/    /'
+if [ "$SUITE_RUN" != "yes" ] || ! lg "test -f /opt/pressure/SUITE_STARTED" 2>/dev/null; then
+  log "clone is sanitized. Controls applied:"
+  sut "sudo cat /opt/pressure/sanitize-report.json" | sed 's/^/    /'
+  [ "$SUITE_RUN" = "yes" ] && lg "touch /opt/pressure/SUITE_STARTED"
+fi
 
 sut "test -f /opt/pressure/READY" || die "the clone sanitized but the application never became healthy; check 'sudo tail -50 /var/log/pressure/boot.log'"
 
@@ -152,17 +178,21 @@ fi
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. Ship the harness and mint sessions with the CLONE's rotated secret
 # ─────────────────────────────────────────────────────────────────────────────
-log "copying the harness to the load generator..."
-lg "rm -rf /opt/pressure/harness && mkdir -p /opt/pressure/harness"
-tar -C "$REPO_DIR" -czf - pressure package.json package-lock.json prisma src/lib/db-url.ts \
-  | lg "tar -C /opt/pressure/harness -xzf -"
+if [ "$SUITE_RUN" = "yes" ] && lg "test -f /opt/pressure/HARNESS_READY" 2>/dev/null; then
+  log "reusing the prepared harness and dependencies for this suite"
+else
+  log "copying the harness to the load generator..."
+  lg "rm -rf /opt/pressure/harness && mkdir -p /opt/pressure/harness"
+  tar -C "$REPO_DIR" -czf - pressure package.json package-lock.json prisma src/lib/db-url.ts \
+    | lg "tar -C /opt/pressure/harness -xzf -"
 
-log "installing harness dependencies on the load generator..."
-# --omit=dev is wrong here: tsx and prisma are devDependencies and the minter
-# needs both. --ignore-scripts is also wrong: better-sqlite3 must compile its
-# native binding to open the database at all.
-lg "cd /opt/pressure/harness && npm ci --no-audit --no-fund >/dev/null 2>&1 && npx prisma generate >/dev/null 2>&1" \
-  || die "dependency install failed on the load generator"
+  log "installing harness dependencies on the load generator..."
+  # --omit=dev is wrong here: tsx and prisma are devDependencies and the minter
+  # needs both. --ignore-scripts is also wrong: better-sqlite3 must compile its
+  # native binding to open the database at all.
+  lg "cd /opt/pressure/harness && npm ci --no-audit --no-fund >/dev/null 2>&1 && npx prisma generate >/dev/null 2>&1 && touch /opt/pressure/HARNESS_READY" \
+    || die "dependency install failed on the load generator"
+fi
 
 # The clone's AUTH_SECRET was ROTATED during sanitize, so production's secret is
 # useless here — which is the point. Read the new one off the clone.
@@ -170,19 +200,50 @@ log "reading the clone's rotated AUTH_SECRET..."
 CLONE_SECRET="$(sut "sudo cat /opt/pressure/auth-secret")"
 [ -n "$CLONE_SECRET" ] || die "could not read the rotated AUTH_SECRET from the clone"
 
-# The database lives on the clone, and the minter needs to read it. Copy it to
-# the load generator rather than installing Node on the SUT: any extra process on
-# the system under test competes for the CPU being measured.
-log "copying the clone's database to the load generator for session minting..."
-sut "sudo cp /home/ubuntu/app/data/db/prod/prod.db /tmp/mint.db && sudo chown ubuntu:ubuntu /tmp/mint.db"
-lg "scp -o StrictHostKeyChecking=accept-new ubuntu@${SUT_IP}:/tmp/mint.db /opt/pressure/mint.db" >/dev/null
-sut "rm -f /tmp/mint.db"
+MINT_STUDENTS=800
+MINT_TEACHERS=40
+REQUIRED_STUDENTS=0
+MINT_TARGET="${SUITE_STUDENT_COUNT:-$STUDENT_COUNT}"
+if [ -n "$MINT_TARGET" ]; then
+  REQUIRED_STUDENTS="$MINT_TARGET"
+  # exam-day runs a normal cohort and a separate simultaneous-submit cohort.
+  # They must use different identities or the second wave measures attempt
+  # resume/row contention instead of distinct students.
+  if [ "$SCENARIO" = "exam-day" ] || [ "$SUITE_RUN" = "yes" ]; then
+    REQUIRED_STUDENTS=$((MINT_TARGET * 2))
+  fi
+  [ "$REQUIRED_STUDENTS" -le "$MINT_STUDENTS" ] || MINT_STUDENTS="$REQUIRED_STUDENTS"
+  REQUIRED_TEACHERS=$(((MINT_TARGET + 19) / 20 + 5))
+  [ "$REQUIRED_TEACHERS" -le "$MINT_TEACHERS" ] || MINT_TEACHERS="$REQUIRED_TEACHERS"
+fi
 
-log "minting sessions from the real user set..."
-lg "cd /opt/pressure/harness && AUTH_SECRET='${CLONE_SECRET}' npx tsx pressure/tools/mint-sessions.ts \
-      --out /opt/pressure/sessions.json --database-url 'file:/opt/pressure/mint.db' \
-      --students 800 --teachers 40 --admins 2 --secure" \
-  || die "minting sessions failed"
+SESSION_CACHE_KEY="suite-${SUITE_STUDENT_COUNT:-default}"
+if [ "$SUITE_RUN" = "yes" ] && [ "$(lg "cat /opt/pressure/SESSION_CACHE_KEY 2>/dev/null || true")" = "$SESSION_CACHE_KEY" ]; then
+  log "reusing the suite's pre-minted session bundle"
+else
+  # The database lives on the clone, and the minter needs to read it. Copy it to
+  # the generator rather than adding a competing Node process to the SUT.
+  log "copying a consistent clone database backup to the load generator for session minting..."
+  # The escaped quotes must survive both SSH hops so sqlite receives the dot
+  # command as one argument rather than `.backup` and its path as two.
+  sut "sudo rm -f /tmp/mint.db && sudo sqlite3 /home/ubuntu/app/data/db/prod/prod.db \\\".backup /tmp/mint.db\\\" && sudo chown ubuntu:ubuntu /tmp/mint.db"
+  lg "scp -o StrictHostKeyChecking=accept-new ubuntu@${SUT_IP}:/tmp/mint.db /opt/pressure/mint.db" >/dev/null
+  sut "rm -f /tmp/mint.db"
+  [ "$SUITE_RUN" = "yes" ] && lg "cp /opt/pressure/mint.db /opt/pressure/suite-baseline.db"
+
+  log "minting sessions from the real user set (${MINT_STUDENTS} students, ${MINT_TEACHERS} teachers)..."
+  lg "cd /opt/pressure/harness && AUTH_SECRET='${CLONE_SECRET}' npx tsx pressure/tools/mint-sessions.ts \
+        --out /opt/pressure/sessions.json --database-url 'file:/opt/pressure/mint.db' \
+        --students ${MINT_STUDENTS} --teachers ${MINT_TEACHERS} --admins 2 --secure \
+        --credentials-password 'pressure-invalid-${RUN_ID}'" \
+    || die "minting sessions failed"
+  [ "$SUITE_RUN" = "yes" ] && lg "printf '%s' '${SESSION_CACHE_KEY}' > /opt/pressure/SESSION_CACHE_KEY"
+fi
+if [ "$REQUIRED_STUDENTS" -gt 0 ]; then
+  MINTED_STUDENTS="$(lg "jq -r '.students | length' /opt/pressure/sessions.json")"
+  [ "$MINTED_STUDENTS" -ge "$REQUIRED_STUDENTS" ] || \
+    die "requested ${MINT_TARGET} concurrent students, but only ${MINTED_STUDENTS} usable student identities exist (suite requires ${REQUIRED_STUDENTS})"
+fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 3. Start the AI stub, then run
@@ -192,12 +253,32 @@ lg "cd /opt/pressure/harness && AUTH_SECRET='${CLONE_SECRET}' npx tsx pressure/t
 # stub runs on the clone, not the load generator. It is a trivial Node process
 # (an SSE writer) and its cost is far smaller than the network round trip to a
 # hosted provider that it replaces.
-log "starting the AI stub on the clone..."
-lg "tar -C /opt/pressure/harness -czf - pressure/mock-ai pressure/tools \
-    | ssh -o StrictHostKeyChecking=accept-new ubuntu@${SUT_IP} 'mkdir -p /opt/pressure/ai && tar -C /opt/pressure/ai -xzf -'"
-sut "command -v node >/dev/null 2>&1" \
-  || log "WARNING: node is not on the clone; the AI stub cannot start and exam-result generation will fail (recorded as designed worker failures)"
-sut "cd /opt/pressure/ai && (nohup npx --yes tsx pressure/mock-ai/server.ts --port 8099 --host 0.0.0.0 > /tmp/mock-ai.log 2>&1 &) ; sleep 3; curl -fsS http://127.0.0.1:8099/healthz || true"
+if sut "curl -fsS http://127.0.0.1:8099/healthz >/dev/null" 2>/dev/null; then
+  log "AI stub is already running"
+else
+  log "starting the AI stub on the clone..."
+  lg "tar -C /opt/pressure/harness -czf - pressure/mock-ai pressure/tools \
+      | ssh -o StrictHostKeyChecking=accept-new ubuntu@${SUT_IP} 'mkdir -p /opt/pressure/ai && tar -C /opt/pressure/ai -xzf -'"
+  sut "command -v node >/dev/null 2>&1" \
+    || log "WARNING: node is not on the clone; the AI stub cannot start and exam-result generation will fail (recorded as designed worker failures)"
+  sut "cd /opt/pressure/ai && (nohup npx --yes tsx pressure/mock-ai/server.ts --port 8099 --host 0.0.0.0 > /tmp/mock-ai.log 2>&1 &) ; sleep 3; curl -fsS http://127.0.0.1:8099/healthz || true"
+fi
+
+# Every suite scenario starts from the same post-sanitize database. Without
+# this reset, earlier quiz submissions consume attempt limits and later
+# scenarios measure a mutated cohort rather than an independent workload.
+if [ "$SUITE_RUN" = "yes" ] && lg "test -f /opt/pressure/SCENARIO_COMPLETED" 2>/dev/null; then
+  log "restoring the clean post-sanitize database for an independent scenario..."
+  lg "scp -o StrictHostKeyChecking=accept-new /opt/pressure/suite-baseline.db ubuntu@${SUT_IP}:/tmp/suite-baseline.db" >/dev/null
+  sut "cd /home/ubuntu/app \
+       && sudo docker compose -f docker-compose.sut.yml down --timeout 30 \
+       && sudo chown --reference=data/db/prod/prod.db /tmp/suite-baseline.db \
+       && sudo chmod --reference=data/db/prod/prod.db /tmp/suite-baseline.db \
+       && sudo mv /tmp/suite-baseline.db data/db/prod/prod.db \
+       && sudo rm -f data/db/prod/prod.db-wal data/db/prod/prod.db-shm \
+       && sudo docker compose -f docker-compose.sut.yml up -d --wait --wait-timeout 300" \
+    || die "could not restore the suite database baseline"
+fi
 
 RUN_DIR_REMOTE="/opt/pressure/run"
 lg "rm -rf ${RUN_DIR_REMOTE} && mkdir -p ${RUN_DIR_REMOTE}"
@@ -212,9 +293,6 @@ lg "cd /opt/pressure/harness && nohup pressure/collect/metrics.sh \
       --out ${RUN_DIR_REMOTE}/metrics.ndjson --interval 5 \
       --probe-host ${SUT_IP} --probe-ports '9099 9098' > /tmp/sampler.log 2>&1 & echo \$! > /tmp/sampler.pid"
 
-EXTRA_ENV=""
-[ -n "$COHORT" ] && EXTRA_ENV="PRESSURE_COHORT=${COHORT}"
-
 set +e
 lg "cd /opt/pressure/harness && \
     PRESSURE_TIER=ec2-clone \
@@ -223,14 +301,15 @@ lg "cd /opt/pressure/harness && \
     PRESSURE_COOKIE_NAME='__Secure-authjs.session-token' \
     PRESSURE_RUN_LABEL='${RUN_ID}' \
     PRESSURE_SCALE='${SCALE}' \
+    PRESSURE_STUDENTS='${STUDENT_COUNT}' \
     PRESSURE_EXPECT_CLOUDFRONT=1 \
     PRESSURE_FORWARDED_HOST='localhost:3000' \
-    ${EXTRA_ENV} \
     k6 run --summary-export ${RUN_DIR_REMOTE}/summary.json \
       pressure/k6/scenarios/${SCENARIO}.js 2>&1 | tee ${RUN_DIR_REMOTE}/k6.log"
 K6_EXIT=$?
 set -e
 RUN_FINISHED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+[ "$SUITE_RUN" = "yes" ] && lg "touch /opt/pressure/SCENARIO_COMPLETED"
 
 lg "kill \$(cat /tmp/sampler.pid) 2>/dev/null || true"
 lg "cd /opt/pressure/harness && pressure/collect/metrics.sh --probe-once \
@@ -243,18 +322,26 @@ log "collecting logs from the clone..."
 sut "cd /home/ubuntu/app && sudo docker compose -f docker-compose.sut.yml logs --no-color > /tmp/containers.log 2>&1; sudo chown ubuntu:ubuntu /tmp/containers.log"
 lg "scp -o StrictHostKeyChecking=accept-new ubuntu@${SUT_IP}:/tmp/containers.log ${RUN_DIR_REMOTE}/containers.log" >/dev/null || true
 sut "sudo cat /opt/pressure/sanitize-report.json" > /tmp/sanitize-report.json 2>/dev/null || true
+STUDENT_TARGET_JSON="null"
+[ -n "$STUDENT_COUNT" ] && STUDENT_TARGET_JSON="$STUDENT_COUNT"
+SUITE_RUN_JSON="false"
+[ "$SUITE_RUN" = "yes" ] && SUITE_RUN_JSON="true"
 lg "cat > ${RUN_DIR_REMOTE}/meta.json" <<JSON
 {
-  "runId": "${RUN_ID}",
+  "runId": "${RUN_ID}-${SCENARIO}",
+  "infrastructureRunId": "${RUN_ID}",
+  "suiteRun": ${SUITE_RUN_JSON},
   "tier": "ec2-clone",
   "scenario": "${SCENARIO}",
-  "label": "${RUN_ID}",
+  "label": "${RUN_ID}/${SCENARIO}",
   "sutInstance": "${SUT_ID}",
   "sutType": "${SUT_TYPE}",
+  "sutVcpus": ${SUT_VCPUS},
+  "sutMemoryMiB": ${SUT_MEMORY_MIB},
   "productionType": "${SRC_TYPE}",
   "dataset": "prod-snapshot (real data, sanitized)",
   "scale": "${SCALE}",
-  "cohort": "${COHORT}",
+  "studentTarget": ${STUDENT_TARGET_JSON},
   "startedAt": "${RUN_STARTED_AT}",
   "finishedAt": "${RUN_FINISHED_AT}"
 }
@@ -287,7 +374,7 @@ log "artifacts in ${LOCAL_RUN_DIR}"
 if [ "$SKIP_TEARDOWN" = "no" ]; then
   log "tearing down (--teardown-after)..."
   "${PRESSURE_DIR}/ec2/teardown.sh" --run-id "$RUN_ID" --region "$REGION"
-else
+elif [ "$ORCHESTRATED" != "yes" ]; then
   echo
   log "The clone is STILL RUNNING and still holds production data. When you are done:"
   log "  pressure/ec2/teardown.sh --run-id ${RUN_ID} --region ${REGION}"

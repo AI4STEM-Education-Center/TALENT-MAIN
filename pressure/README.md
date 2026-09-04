@@ -131,13 +131,86 @@ Run the default `exam-day` scenario:
 ./pressure/run.sh
 ```
 
+Run the complete suite with one command (about three hours, including the
+two-hour soak). It provisions and sanitizes once, publishes one result per
+scenario, and always tears down at the end:
+
+```bash
+./pressure/run.sh all
+./pressure/run.sh all --students 120
+```
+
 Or select a scenario and scale:
 
 ```bash
+./pressure/run.sh smoke
 ./pressure/run.sh spike-recovery 1
 ./pressure/run.sh ramp-capacity 0.5
 ./pressure/run.sh soak 1
 ```
+
+Or set an exact concurrent/peak student count instead of an abstract scale:
+
+```bash
+./pressure/run.sh exam-day --students 120
+./pressure/run.sh ramp-capacity --students 500
+./pressure/run.sh spike-recovery --students 800
+./pressure/run.sh soak --students 100
+```
+
+`--students` means actively concurrent students, not total enrolled accounts.
+It sets the exam-day cohort, the ramp/spike peak, or the constant soak load and
+overrides `PRESSURE_SCALE` for that student workload. Provisioning mints enough
+distinct sessions for the requested load and fails before k6 starts if the
+production snapshot does not contain enough usable student identities. The
+EC2-clone safety ceiling is 2,000 concurrent students.
+
+### Scenario guide
+
+| Scenario | Default shape | What it answers |
+|---|---:|---|
+| `smoke` | 1 journey, once | Does provisioning, sanitization, authentication, media, and collection work end to end? |
+| `exam-day` | 120-student cohort + separate 120-student submit clump | Can a class work and submit together without lost grades or SQLite lock failures? |
+| `ramp-capacity` | 30 → 75 → 150 → 225 → 300 students | Where is the throughput/latency knee? |
+| `spike-recovery` | 20 → 400 → 20 students | Does the service recover after sudden overload without a lingering queue or restart? |
+| `soak` | 40 students for 2 hours | Do memory, WAL, queue, or resource-dashboard costs drift over time? |
+| `media-signing` | 8 students for 2 minutes | How much event-loop CPU does private-media URL signing consume? |
+| `login-storm` | 10 login VUs for 2 minutes | What is password-hash latency and does the per-IP login throttle behave correctly? |
+| `admin-observability` | 1 admin + 8 students for 3 minutes | How much collateral latency does the synchronous resources dashboard cause? |
+
+The `smoke` shape is intentionally fixed. `login-storm` uses
+`PRESSURE_LOGIN_VUS`, because its pressure unit is concurrent login attempts
+rather than active students. `--students` applies to the other six scenarios.
+
+### EC2 size recommendation
+
+After collecting exact-count `exam-day` results on one or more SUT instance
+types, ask the harness which measured type is proven for a target cohort:
+
+```bash
+./pressure/run.sh recommend-size --students 500
+```
+
+The command reads `pressure/.tmp/ec2-runs/**/result.json`, reports each type's
+highest passing and lowest failing student count, and recommends the smallest
+measured CPU/memory shape that passed at or above the target. It deliberately
+does not extrapolate from CPU percentages or from a lower-count pass. If there
+is not enough evidence, it prints the exact benchmark command to collect it:
+
+```bash
+EC2_SUT_TYPE=m7i.xlarge ./pressure/run.sh exam-day --students 500
+```
+
+The admin pressure-test dashboard shows the infrastructure run, SUT instance
+type, vCPU/memory shape, and requested concurrent-student target for every new
+result. A full-suite run appears as eight separately filterable scenario rows
+linked by the same infrastructure-run identifier.
+
+There is no `--dry-run` mode: every end-to-end scenario needs a temporary AMI.
+Use `smoke` for the shortest provisioning and harness shakedown. AMI creation
+waits up to `PRESSURE_AMI_WAIT_MINUTES` (60 by default), because the AWS CLI's
+built-in waiter stops after 10 minutes even though initial EBS snapshots can
+take substantially longer.
 
 Prerequisites are AWS CLI credentials with EC2/AMI/EBS/security-group access,
 `jq`, `ssh`, `scp`, Node 24, and access to the configured EC2 key. `run.sh`

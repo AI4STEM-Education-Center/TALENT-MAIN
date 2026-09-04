@@ -25,7 +25,18 @@
 // switch in .env.example). The delta in student_quiz_start IS the signing cost.
 // Run it explicitly through pressure/run.sh when signing cost is the question.
 
-import { requireTier, identityFor, BASE_URL, authHeaders, CLOUDFRONT_EXPECTED, RUN_LABEL, SLO, MEDIA_TARGET } from "../lib/config.js";
+import {
+  requireTier,
+  identityFor,
+  studentTarget,
+  SESSIONS,
+  BASE_URL,
+  authHeaders,
+  CLOUDFRONT_EXPECTED,
+  RUN_LABEL,
+  SLO,
+  MEDIA_TARGET,
+} from "../lib/config.js";
 import { thresholds, record, TREND_STATS } from "../lib/metrics.js";
 import { fetchQuizMedia } from "../lib/journeys.js";
 import http from "k6/http";
@@ -33,13 +44,18 @@ import { check } from "k6";
 
 requireTier("media-signing", ["ec2-clone"]);
 
-const VUS = Number(__ENV.PRESSURE_SIGNING_VUS || 8);
+const VUS = studentTarget(Number(__ENV.PRESSURE_SIGNING_VUS || 8));
 const STEPS = ["student_quiz_start", "quiz_media"];
 
 export const options = {
   summaryTrendStats: TREND_STATS,
   scenarios: {
-    signing: { executor: "constant-vus", exec: "startMediaQuiz", vus: VUS, duration: __ENV.PRESSURE_SIGNING_DURATION || "2m" },
+    signing: {
+      executor: "constant-vus",
+      exec: "startMediaQuiz",
+      vus: VUS,
+      duration: __ENV.PRESSURE_SIGNING_DURATION || "2m",
+    },
   },
   thresholds: thresholds(STEPS, SLO),
 };
@@ -53,12 +69,16 @@ export const options = {
  * signing cost from write-lock cost, which is what exam-day measures.
  */
 export function startMediaQuiz() {
-  const identity = identityFor("students", __VU);
+  // Every VU may share this identity safely: this scenario only resumes the
+  // same unfinished attempt to repeat URL signing and never submits a grade.
+  const identity = targetIdentity() || identityFor("students", __VU);
   const headers = authHeaders(identity);
 
   const target = MEDIA_TARGET;
   if (!target.classId || !target.quizId) {
-    console.error("[media-signing] PRESSURE_MEDIA_TARGET must be {\"classId\":…,\"quizId\":…} — the runner sets this from the seed manifest");
+    console.error(
+      '[media-signing] PRESSURE_MEDIA_TARGET must be {"classId":…,"quizId":…} — the runner sets this from the seed manifest',
+    );
     return;
   }
 
@@ -78,7 +98,11 @@ export function startMediaQuiz() {
   for (const q of questions) {
     if (q.figureUrl) {
       signatures++;
-      if (q.figureUrl.indexOf("cloudfront") !== -1 || q.figureUrl.indexOf("Key-Pair-Id") !== -1) cloudFrontUrls++;
+      if (
+        q.figureUrl.indexOf("cloudfront") !== -1 ||
+        q.figureUrl.indexOf("Key-Pair-Id") !== -1
+      )
+        cloudFrontUrls++;
     }
     for (const o of q.options || []) {
       if (o.imageUrl) {
@@ -94,7 +118,9 @@ export function startMediaQuiz() {
     "quiz has signed media to measure": (n) => n > 0,
   });
   if (signatures === 0) {
-    console.error("[media-signing] target quiz has NO figures or image options — this run measures nothing. Reseed with --media-heavy.");
+    console.error(
+      "[media-signing] target quiz has NO figures or image options — this run measures nothing. Reseed with --media-heavy.",
+    );
     return;
   }
 
@@ -102,14 +128,26 @@ export function startMediaQuiz() {
   // run labelled "with CloudFront" that is actually presigning from S3 produces
   // a real-looking number for the wrong configuration.
   check(cloudFrontUrls, {
-    "signed URLs match the expected delivery path": (n) => (CLOUDFRONT_EXPECTED ? n > 0 : n === 0),
+    "signed URLs match the expected delivery path": (n) =>
+      CLOUDFRONT_EXPECTED ? n > 0 : n === 0,
   });
 
   fetchQuizMedia(questions, 8);
 }
 
+function targetIdentity() {
+  if (!MEDIA_TARGET.studentUserId) return null;
+  return (
+    SESSIONS.students.find(
+      (student) => student.userId === MEDIA_TARGET.studentUserId,
+    ) || null
+  );
+}
+
 export function handleSummary(data) {
-  const path = CLOUDFRONT_EXPECTED ? "CloudFront (RSA-SHA1 per URL)" : "S3 presign (HMAC per URL)";
+  const path = CLOUDFRONT_EXPECTED
+    ? "CloudFront (RSA-SHA1 per URL)"
+    : "S3 presign (HMAC per URL)";
   return {
     stdout: `\nmedia-signing complete: delivery=${path} label=${RUN_LABEL}\n`,
   };

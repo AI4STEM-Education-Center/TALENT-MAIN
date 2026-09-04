@@ -25,11 +25,13 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:release": "vitest run --config vitest.release.config.ts",
+    "test:pressure": "vitest run --config vitest.pressure.config.ts",
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
     "test:api:critical": "TEST_PROFILE=critical node pressure/api-test.mjs",
     "test:api:full": "TEST_PROFILE=full node pressure/api-test.mjs",
     "pressure": "pressure/run.sh",
+    "pressure:recommend": "node pressure/recommend-size.mjs",
     "pressure:report": "tsx pressure/collect/summarize.ts"
   },
   "overrides": {

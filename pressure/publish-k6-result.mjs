@@ -14,14 +14,18 @@ function readJson(file) {
 
 function stats(metric) {
   if (!metric || typeof metric !== "object") return {};
-  return metric.values && typeof metric.values === "object" ? metric.values : metric;
+  return metric.values && typeof metric.values === "object"
+    ? metric.values
+    : metric;
 }
 
 const summaryPath = argument("summary");
 const metaPath = argument("meta");
 const outputPath = argument("out");
 if (!summaryPath || !metaPath || !outputPath) {
-  throw new Error("Usage: publish-k6-result.mjs --summary summary.json --meta meta.json --out result.json");
+  throw new Error(
+    "Usage: publish-k6-result.mjs --summary summary.json --meta meta.json --out result.json",
+  );
 }
 
 const summary = readJson(summaryPath);
@@ -35,13 +39,16 @@ const busy = stats(metrics.sqlite_busy).count;
 const thresholdFailures = [];
 for (const [metricName, metric] of Object.entries(metrics)) {
   for (const [threshold, state] of Object.entries(metric.thresholds ?? {})) {
-    const didFail = typeof state === "boolean" ? state === false : state?.ok === false;
+    const didFail =
+      typeof state === "boolean" ? state === false : state?.ok === false;
     if (didFail) thresholdFailures.push(`${metricName} ${threshold}`);
   }
 }
 
 // react-doctor-disable-next-line react-doctor/no-impure-call-at-module-scope -- one-shot result normalizer uses current time only as fallback for legacy artifacts without timestamps
-const startedAt = meta.startedAt ?? new Date(Date.now() - (summary.state?.testRunDurationMs ?? 0)).toISOString();
+const startedAt =
+  meta.startedAt ??
+  new Date(Date.now() - (summary.state?.testRunDurationMs ?? 0)).toISOString();
 // react-doctor-disable-next-line react-doctor/no-impure-call-at-module-scope -- one-shot result normalizer uses current time only as fallback for legacy artifacts without timestamps
 const finishedAt = meta.finishedAt ?? new Date().toISOString();
 const failures = [
@@ -49,7 +56,9 @@ const failures = [
   ...(busy > 0 ? [{ name: "sqlite_busy", count: busy }] : []),
   ...thresholdFailures.map((name) => ({ name })),
 ];
-const failedChecks = Math.round((unexpected ?? 0) + (busy ?? 0) + thresholdFailures.length);
+const failedChecks = Math.round(
+  (unexpected ?? 0) + (busy ?? 0) + thresholdFailures.length,
+);
 const result = {
   schemaVersion: 1,
   runId: meta.runId ?? meta.label,
@@ -58,7 +67,10 @@ const result = {
   environment: "ec2-clone",
   suite: "pressure",
   scenario: meta.scenario ?? "unknown",
-  status: failures.length === 0 && unexpected !== undefined && busy !== undefined ? "PASS" : "FAIL",
+  status:
+    failures.length === 0 && unexpected !== undefined && busy !== undefined
+      ? "PASS"
+      : "FAIL",
   source: "local-aws-cli",
   commitSha: process.env.GIT_SHA || null,
   branch: process.env.GIT_BRANCH || null,
@@ -74,7 +86,7 @@ const result = {
     maxMs: duration.max ?? null,
   },
   requestRate: requests.rate ?? null,
-  virtualUsers: Number(meta.cohort ?? 0) || null,
+  virtualUsers: Number(meta.studentTarget ?? meta.cohort ?? 0) || null,
   errorRate: failed.rate ?? null,
   metadata: meta,
   metrics: {
