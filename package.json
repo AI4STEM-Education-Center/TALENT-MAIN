@@ -95,7 +95,7 @@
     "@vitest/coverage-v8": "^4.1.11",
     "esbuild": "^0.28.2",
     "eslint": "^9",
-    "eslint-config-next": "^16.3.3",
+    "eslint-config-next": "^16.3.4",
     "jsdom": "^30.0.1",
     "postcss": "^8.5.26",
     "prisma": "^7.10.0",
