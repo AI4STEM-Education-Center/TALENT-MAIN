@@ -59,9 +59,12 @@ export function RequestConsentExportDialog({ classId }: { classId: string }) {
     const controller = new AbortController();
     async function load() {
       try {
-        const res = await fetch(`/api/classes/${classId}/consent-export-request`, {
-          signal: controller.signal,
-        });
+        const res = await fetch(
+          `/api/classes/${classId}/consent-export-request`,
+          {
+            signal: controller.signal,
+          },
+        );
         if (!res.ok) throw new Error("Could not load consent export requests.");
         const data = await res.json();
         setAdmins(data.admins ?? []);
@@ -70,7 +73,8 @@ export function RequestConsentExportDialog({ classId }: { classId: string }) {
         if (!(cause instanceof DOMException && cause.name === "AbortError")) {
           await alert({
             title: "Couldn't load requests",
-            description: cause instanceof Error ? cause.message : "Unknown error.",
+            description:
+              cause instanceof Error ? cause.message : "Unknown error.",
           });
         }
       }
@@ -81,25 +85,38 @@ export function RequestConsentExportDialog({ classId }: { classId: string }) {
 
   const pending = requests.find((r) => r.status === "PENDING");
   const points = Number(pointsAwarded);
-  const pointsValid = Number.isFinite(points) && points > 0 && points <= 1_000_000;
+  const pointsValid =
+    Number.isFinite(points) && points > 0 && points <= 1_000_000;
 
   async function submit() {
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/classes/${classId}/consent-export-request`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ gradeColumnName: gradeColumnName.trim(), pointsAwarded: points, reviewerId }),
-      });
+      const res = await fetch(
+        `/api/classes/${classId}/consent-export-request`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            gradeColumnName: gradeColumnName.trim(),
+            pointsAwarded: points,
+            reviewerId,
+          }),
+        },
+      );
       if (!res.ok) {
         const data = await res.json().catch(() => null);
-        await alert({ title: "Couldn't submit request", description: data?.error || "Unknown error." });
+        await alert({
+          title: "Couldn't submit request",
+          description: data?.error || "Unknown error.",
+        });
         return;
       }
       const data = await res.json();
       setRequests((prev) => [data.request, ...prev]);
       setGradeColumnName("");
-      await alert("Request sent. You'll get an email with the credit file once an administrator approves it.");
+      await alert(
+        "Request sent. You'll get an email with the credit file once an administrator approves it.",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -108,7 +125,8 @@ export function RequestConsentExportDialog({ classId }: { classId: string }) {
   return (
     <>
       <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
-        <ShieldCheck className="size-4" /> Research participation credit (admin review)
+        <ShieldCheck className="size-4" /> Research participation credit (admin
+        review)
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
@@ -116,15 +134,22 @@ export function RequestConsentExportDialog({ classId }: { classId: string }) {
           <DialogHeader>
             <DialogTitle>Request research participation credit</DialogTitle>
             <DialogDescription>
-              Request an eLC-ready credit CSV for research participation. An administrator must review and approve
-              this export; you&apos;ll receive it by email without seeing a list of individual consent decisions.
+              Request an eLC-ready credit CSV for research participation. An
+              administrator must review and approve this export; you&apos;ll
+              receive it by email without seeing a list of individual consent
+              decisions.
             </DialogDescription>
           </DialogHeader>
 
           {pending ? (
             <p className="rounded-md bg-muted/50 p-3 text-sm">
-              A request for this class is already pending review ({pending.gradeColumnName}, {pending.pointsAwarded}{" "}
-              points, requested {new Date(pending.requestedAt).toLocaleDateString("en-US", { timeZone: "UTC" })}).
+              A request for this class is already pending review (
+              {pending.gradeColumnName}, {pending.pointsAwarded} points,
+              requested{" "}
+              {new Date(pending.requestedAt).toLocaleDateString("en-US", {
+                timeZone: "UTC",
+              })}
+              ).
             </p>
           ) : (
             <div className="space-y-4">
@@ -153,7 +178,9 @@ export function RequestConsentExportDialog({ classId }: { classId: string }) {
               <div className="space-y-2">
                 <Label>Send to administrator</Label>
                 <Select value={reviewerId} onValueChange={setReviewerId}>
-                  <SelectTrigger><SelectValue placeholder="Choose an administrator" /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose an administrator" />
+                  </SelectTrigger>
                   <SelectContent>
                     {admins.map((a) => (
                       <SelectItem key={a.id} value={a.id}>
@@ -173,7 +200,12 @@ export function RequestConsentExportDialog({ classId }: { classId: string }) {
             {!pending && (
               <Button
                 onClick={submit}
-                disabled={submitting || !gradeColumnName.trim() || !pointsValid || !reviewerId}
+                disabled={
+                  submitting ||
+                  !gradeColumnName.trim() ||
+                  !pointsValid ||
+                  !reviewerId
+                }
               >
                 {submitting ? "Sending…" : "Send request"}
               </Button>

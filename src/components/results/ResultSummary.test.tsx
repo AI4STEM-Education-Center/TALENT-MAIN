@@ -10,7 +10,7 @@ describe("ResultSummary", () => {
         summary="### Focus next\nReview **energy conservation**."
         status={RESULT_STATUS.READY}
         metrics={null}
-      />
+      />,
     );
 
     expect(html).toContain("Summary &amp; next steps");
@@ -20,7 +20,11 @@ describe("ResultSummary", () => {
 
   it("shows a stable failure state when no summary was generated", () => {
     const html = renderToStaticMarkup(
-      <ResultSummary summary={null} status={RESULT_STATUS.FAILED} metrics={null} />
+      <ResultSummary
+        summary={null}
+        status={RESULT_STATUS.FAILED}
+        metrics={null}
+      />,
     );
 
     expect(html).toContain("couldn&#x27;t generate a summary for this attempt");

@@ -10,22 +10,41 @@ import {
 } from "@/app/api/admin/assistants/route";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getAssistantSettings, saveAssistantSettings } from "@/lib/assistant/config";
+import {
+  getAssistantSettings,
+  saveAssistantSettings,
+} from "@/lib/assistant/config";
 import { resolveAssistantSession } from "@/lib/assistant/session";
 import { listSkills, resolveSkills } from "@/lib/assistant/skills";
-import type { AssistantTool, AssistantToolContext } from "@/lib/assistant/types";
-import { resetDb, createTeacher, createStudent, createAdmin, createClass } from "./db";
+import type {
+  AssistantTool,
+  AssistantToolContext,
+} from "@/lib/assistant/types";
+import {
+  resetDb,
+  createTeacher,
+  createStudent,
+  createAdmin,
+  createClass,
+} from "./db";
 
 const mockAuth = vi.mocked(auth);
 
 const asStudent = (userId: string) =>
-  mockAuth.mockResolvedValue({ user: { id: userId, role: "STUDENT" } } as never);
+  mockAuth.mockResolvedValue({
+    user: { id: userId, role: "STUDENT" },
+  } as never);
 const asTeacher = (userId: string) =>
-  mockAuth.mockResolvedValue({ user: { id: userId, role: "TEACHER" } } as never);
+  mockAuth.mockResolvedValue({
+    user: { id: userId, role: "TEACHER" },
+  } as never);
 const asAdmin = (userId: string) =>
   mockAuth.mockResolvedValue({ user: { id: userId, role: "ADMIN" } } as never);
 
-const jsonRequest = (body: unknown, url = "http://localhost/api/assistant/chat") =>
+const jsonRequest = (
+  body: unknown,
+  url = "http://localhost/api/assistant/chat",
+) =>
   new Request(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -46,7 +65,7 @@ async function callTool(
   audience: "student" | "teacher",
   name: string,
   args: unknown,
-  ctx: AssistantToolContext
+  ctx: AssistantToolContext,
 ) {
   const target = tool(audience, name);
   return target.handler(target.input.parse(args) as never, ctx) as Promise<
@@ -54,14 +73,20 @@ async function callTool(
   >;
 }
 
-const studentCtx = (userId: string, studentId: string): AssistantToolContext => ({
+const studentCtx = (
+  userId: string,
+  studentId: string,
+): AssistantToolContext => ({
   userId,
   audience: "student",
   studentId,
   teacherId: null,
 });
 
-const teacherCtx = (userId: string, teacherId: string): AssistantToolContext => ({
+const teacherCtx = (
+  userId: string,
+  teacherId: string,
+): AssistantToolContext => ({
   userId,
   audience: "teacher",
   studentId: null,
@@ -197,7 +222,10 @@ describe("GET /api/assistant/config", () => {
     expect(body.audience).toBe("student");
     expect(body.maxAttachments).toBe(3);
     expect(body.attachmentKinds).toEqual([
-      expect.objectContaining({ kind: "image", accept: expect.stringContaining("image/png") }),
+      expect.objectContaining({
+        kind: "image",
+        accept: expect.stringContaining("image/png"),
+      }),
     ]);
     expect(body.toolCount).toBeGreaterThan(0);
   });
@@ -245,7 +273,9 @@ describe("POST /api/assistant/chat", () => {
     await saveAssistantSettings("student", { enabled: true });
     const { user } = await createStudent();
     asStudent(user.id);
-    const res = await POST_CHAT(jsonRequest({ message: "hi", conversationId: null }));
+    const res = await POST_CHAT(
+      jsonRequest({ message: "hi", conversationId: null }),
+    );
     expect(res.status).toBe(200);
   });
 
@@ -254,7 +284,10 @@ describe("POST /api/assistant/chat", () => {
     const { user } = await createStudent();
     asStudent(user.id);
     const res = await POST_CHAT(
-      new Request("http://localhost/api/assistant/chat", { method: "POST", body: "{oops" })
+      new Request("http://localhost/api/assistant/chat", {
+        method: "POST",
+        body: "{oops",
+      }),
     );
     expect(res.status).toBe(400);
   });
@@ -272,9 +305,13 @@ describe("POST /api/assistant/chat", () => {
       jsonRequest({
         message: "hi",
         attachments: [
-          { name: "big.png", mimeType: "image/png", dataBase64: "A".repeat(512 * 1024) },
+          {
+            name: "big.png",
+            mimeType: "image/png",
+            dataBase64: "A".repeat(512 * 1024),
+          },
         ],
-      })
+      }),
     );
     expect(res.status).toBe(413);
   });
@@ -287,12 +324,18 @@ describe("POST /api/assistant/chat", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toContain("application/x-ndjson");
     const text = await res.text();
-    const events = text.trim().split("\n").map((line) => JSON.parse(line));
+    const events = text
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
     // The transcript is opened before the model is resolved, so even a turn that
     // cannot be answered names the conversation it would have been written to.
     expect(events).toEqual([
       { type: "conversation", id: expect.any(String) },
-      { type: "error", message: expect.stringContaining("no AI model assigned") },
+      {
+        type: "error",
+        message: expect.stringContaining("no AI model assigned"),
+      },
     ]);
   });
 });
@@ -313,12 +356,16 @@ describe("student quiz-result tools", () => {
       completedAt: new Date("2026-02-01T00:00:00Z"),
     });
 
-    const out = await callTool("student", "search_quiz_results", {}, studentCtx(user.id, student.id));
+    const out = await callTool(
+      "student",
+      "search_quiz_results",
+      {},
+      studentCtx(user.id, student.id),
+    );
     expect(out.totalMatches).toBe(2);
-    expect((out.results as Array<{ quizName: string }>).map((r) => r.quizName)).toEqual([
-      "Newer",
-      "Older",
-    ]);
+    expect(
+      (out.results as Array<{ quizName: string }>).map((r) => r.quizName),
+    ).toEqual(["Newer", "Older"]);
   });
 
   it("never returns another student's results", async () => {
@@ -330,21 +377,29 @@ describe("student quiz-result tools", () => {
       "student",
       "search_quiz_results",
       {},
-      studentCtx(mine.user.id, mine.student.id)
+      studentCtx(mine.user.id, mine.student.id),
     );
     expect(out.totalMatches).toBe(0);
   });
 
   it("matches quiz name and topic case-insensitively", async () => {
     const { user, student } = await createStudent();
-    await createResult({ studentId: student.id, quizName: "Newton's Laws", topicName: "Forces" });
-    await createResult({ studentId: student.id, quizName: "Optics Basics", topicName: "Light" });
+    await createResult({
+      studentId: student.id,
+      quizName: "Newton's Laws",
+      topicName: "Forces",
+    });
+    await createResult({
+      studentId: student.id,
+      quizName: "Optics Basics",
+      topicName: "Light",
+    });
 
     const byQuiz = await callTool(
       "student",
       "search_quiz_results",
       { quizName: "newton" },
-      studentCtx(user.id, student.id)
+      studentCtx(user.id, student.id),
     );
     expect(byQuiz.totalMatches).toBe(1);
 
@@ -352,21 +407,33 @@ describe("student quiz-result tools", () => {
       "student",
       "search_quiz_results",
       { topic: "LIGHT" },
-      studentCtx(user.id, student.id)
+      studentCtx(user.id, student.id),
     );
-    expect((byTopic.results as Array<{ quizName: string }>)[0].quizName).toBe("Optics Basics");
+    expect((byTopic.results as Array<{ quizName: string }>)[0].quizName).toBe(
+      "Optics Basics",
+    );
   });
 
   it("combines filters with AND", async () => {
     const { user, student } = await createStudent();
-    await createResult({ studentId: student.id, quizName: "Quiz A", topicName: "Forces", score: 90 });
-    await createResult({ studentId: student.id, quizName: "Quiz A", topicName: "Optics", score: 40 });
+    await createResult({
+      studentId: student.id,
+      quizName: "Quiz A",
+      topicName: "Forces",
+      score: 90,
+    });
+    await createResult({
+      studentId: student.id,
+      quizName: "Quiz A",
+      topicName: "Optics",
+      score: 40,
+    });
 
     const out = await callTool(
       "student",
       "search_quiz_results",
       { quizName: "Quiz A", minScore: 60 },
-      studentCtx(user.id, student.id)
+      studentCtx(user.id, student.id),
     );
     expect(out.totalMatches).toBe(1);
     expect((out.results as Array<{ topic: string }>)[0].topic).toBe("Forces");
@@ -389,20 +456,23 @@ describe("student quiz-result tools", () => {
       "student",
       "search_quiz_results",
       { completedAfter: "2026-02-01" },
-      studentCtx(user.id, student.id)
+      studentCtx(user.id, student.id),
     );
-    expect((out.results as Array<{ quizName: string }>).map((r) => r.quizName)).toEqual(["March"]);
+    expect(
+      (out.results as Array<{ quizName: string }>).map((r) => r.quizName),
+    ).toEqual(["March"]);
   });
 
   it("honours the limit while still reporting the true match count", async () => {
     const { user, student } = await createStudent();
-    for (let i = 0; i < 4; i += 1) await createResult({ studentId: student.id });
+    for (let i = 0; i < 4; i += 1)
+      await createResult({ studentId: student.id });
 
     const out = await callTool(
       "student",
       "search_quiz_results",
       { limit: 2 },
-      studentCtx(user.id, student.id)
+      studentCtx(user.id, student.id),
     );
     expect(out.totalMatches).toBe(4);
     expect(out.returned).toBe(2);
@@ -413,18 +483,27 @@ describe("student quiz-result tools", () => {
     const { user, student } = await createStudent();
     // No ClassQuiz row exists for this result's class/quiz, so nothing further
     // can ever be submitted and the attempt counts as final.
-    const result = await createResult({ studentId: student.id, correct: false, score: 0 });
+    const result = await createResult({
+      studentId: student.id,
+      correct: false,
+      score: 0,
+    });
 
     const out = await callTool(
       "student",
       "get_quiz_result_detail",
       { resultId: result.quizAttemptId },
-      studentCtx(user.id, student.id)
+      studentCtx(user.id, student.id),
     );
     expect(out.found).toBe(true);
     expect(out.attemptState).toBe("final");
     expect(out.questions).toEqual([
-      expect.objectContaining({ number: 1, isCorrect: false, yourAnswer: ["3"], correctAnswer: ["4"] }),
+      expect.objectContaining({
+        number: 1,
+        isCorrect: false,
+        yourAnswer: ["3"],
+        correctAnswer: ["4"],
+      }),
     ]);
   });
 
@@ -437,7 +516,7 @@ describe("student quiz-result tools", () => {
       "student",
       "get_quiz_result_detail",
       { resultId: result.quizAttemptId },
-      studentCtx(mine.user.id, mine.student.id)
+      studentCtx(mine.user.id, mine.student.id),
     );
     expect(out.found).toBe(false);
     expect(out).not.toHaveProperty("questions");
@@ -449,24 +528,40 @@ describe("student quiz-result tools", () => {
       "student",
       "get_quiz_result_detail",
       { resultId: "made-up" },
-      studentCtx(user.id, student.id)
+      studentCtx(user.id, student.id),
     );
     expect(out.found).toBe(false);
   });
 
   it("aggregates by topic, weakest group first", async () => {
     const { user, student } = await createStudent();
-    await createResult({ studentId: student.id, topicName: "Forces", score: 90 });
-    await createResult({ studentId: student.id, topicName: "Forces", score: 70 });
-    await createResult({ studentId: student.id, topicName: "Optics", score: 30 });
+    await createResult({
+      studentId: student.id,
+      topicName: "Forces",
+      score: 90,
+    });
+    await createResult({
+      studentId: student.id,
+      topicName: "Forces",
+      score: 70,
+    });
+    await createResult({
+      studentId: student.id,
+      topicName: "Optics",
+      score: 30,
+    });
 
     const out = await callTool(
       "student",
       "summarize_performance",
       { groupBy: "topic" },
-      studentCtx(user.id, student.id)
+      studentCtx(user.id, student.id),
     );
-    const groups = out.groups as Array<{ name: string; meanScore: number; attempts: number }>;
+    const groups = out.groups as Array<{
+      name: string;
+      meanScore: number;
+      attempts: number;
+    }>;
     expect(groups.map((g) => g.name)).toEqual(["Optics", "Forces"]);
     expect(groups[1]).toMatchObject({ attempts: 2, meanScore: 80 });
   });
@@ -474,26 +569,39 @@ describe("student quiz-result tools", () => {
   it("excludes other students from the aggregate", async () => {
     const mine = await createStudent();
     const theirs = await createStudent();
-    await createResult({ studentId: mine.student.id, topicName: "Forces", score: 100 });
-    await createResult({ studentId: theirs.student.id, topicName: "Forces", score: 0 });
+    await createResult({
+      studentId: mine.student.id,
+      topicName: "Forces",
+      score: 100,
+    });
+    await createResult({
+      studentId: theirs.student.id,
+      topicName: "Forces",
+      score: 0,
+    });
 
     const out = await callTool(
       "student",
       "summarize_performance",
       { groupBy: "topic" },
-      studentCtx(mine.user.id, mine.student.id)
+      studentCtx(mine.user.id, mine.student.id),
     );
     expect((out.groups as Array<{ meanScore: number }>)[0].meanScore).toBe(100);
   });
 
   it("refuses to run without a resolved student", async () => {
     await expect(
-      callTool("student", "search_quiz_results", {}, {
-        userId: "u",
-        audience: "student",
-        studentId: null,
-        teacherId: null,
-      })
+      callTool(
+        "student",
+        "search_quiz_results",
+        {},
+        {
+          userId: "u",
+          audience: "student",
+          studentId: null,
+          teacherId: null,
+        },
+      ),
     ).rejects.toThrow(/only available to students/);
   });
 });
@@ -564,7 +672,7 @@ describe("get_quiz_result_detail — answer-key gating", () => {
           "student",
           "get_quiz_result_detail",
           { resultId: result.quizAttemptId },
-          studentCtx(user.id, student.id)
+          studentCtx(user.id, student.id),
         ),
     };
   }
@@ -573,12 +681,19 @@ describe("get_quiz_result_detail — answer-key gating", () => {
   const future = new Date("2099-01-01T00:00:00Z");
 
   it("withholds the key while the quiz is open with attempts left", async () => {
-    const { detail } = await gatedResult({ maxAttempts: 3, completedAttempts: 1 });
+    const { detail } = await gatedResult({
+      maxAttempts: 3,
+      completedAttempts: 1,
+    });
     const out = await detail();
     expect(out.attemptState).toBe("retake_possible");
     expect(out.answerKeyWithheld).toBe(true);
     const questions = out.questions as Array<Record<string, unknown>>;
-    expect(questions[0]).toEqual({ number: 1, text: "What is 2 + 2?", yourAnswer: ["3"] });
+    expect(questions[0]).toEqual({
+      number: 1,
+      text: "What is 2 + 2?",
+      yourAnswer: ["3"],
+    });
     // isCorrect leaks the key on a short option list, so it goes too.
     expect(questions[0]).not.toHaveProperty("isCorrect");
     expect(questions[0]).not.toHaveProperty("correctAnswer");
@@ -590,7 +705,10 @@ describe("get_quiz_result_detail — answer-key gating", () => {
   });
 
   it("reveals the key once every attempt is used up", async () => {
-    const { detail } = await gatedResult({ maxAttempts: 2, completedAttempts: 2 });
+    const { detail } = await gatedResult({
+      maxAttempts: 2,
+      completedAttempts: 2,
+    });
     const out = await detail();
     expect(out.attemptState).toBe("final");
     expect(out).not.toHaveProperty("answerKeyWithheld");
@@ -631,7 +749,11 @@ describe("get_quiz_result_detail — answer-key gating", () => {
   });
 
   it("withholds the key for an unpublished quiz — a teacher can republish it", async () => {
-    const { detail } = await gatedResult({ published: false, maxAttempts: 1, completedAttempts: 1 });
+    const { detail } = await gatedResult({
+      published: false,
+      maxAttempts: 1,
+      completedAttempts: 1,
+    });
     expect((await detail()).answerKeyWithheld).toBe(true);
   });
 
@@ -640,7 +762,12 @@ describe("get_quiz_result_detail — answer-key gating", () => {
     const out = await detail();
     // Aggregates say how many were right, never which — that is what their own
     // results page already shows them.
-    expect(out).toMatchObject({ found: true, score: 0, correctCount: 0, totalCount: 1 });
+    expect(out).toMatchObject({
+      found: true,
+      score: 0,
+      correctCount: 0,
+      totalCount: 1,
+    });
   });
 });
 
@@ -657,18 +784,27 @@ describe("teacher class-insight tools", () => {
       "teacher",
       "list_classes",
       {},
-      teacherCtx(mine.user.id, mine.teacher.id)
+      teacherCtx(mine.user.id, mine.teacher.id),
     );
-    expect((out.classes as Array<{ name: string }>).map((c) => c.name)).toEqual(["Mine"]);
+    expect((out.classes as Array<{ name: string }>).map((c) => c.name)).toEqual(
+      ["Mine"],
+    );
   });
 
   it("reports enrollment and quiz counts", async () => {
     const { user, teacher } = await createTeacher();
     const cls = await createClass(teacher.id, "Physics");
     const { student } = await createStudent();
-    await prisma.classEnrollment.create({ data: { classId: cls.id, studentId: student.id } });
+    await prisma.classEnrollment.create({
+      data: { classId: cls.id, studentId: student.id },
+    });
 
-    const out = await callTool("teacher", "list_classes", {}, teacherCtx(user.id, teacher.id));
+    const out = await callTool(
+      "teacher",
+      "list_classes",
+      {},
+      teacherCtx(user.id, teacher.id),
+    );
     expect((out.classes as Array<Record<string, number>>)[0]).toMatchObject({
       enrolledStudents: 1,
       assignedQuizzes: 0,
@@ -679,13 +815,15 @@ describe("teacher class-insight tools", () => {
     const { user, teacher } = await createTeacher();
     const cls = await createClass(teacher.id, "Physics");
     const { student } = await createStudent();
-    await prisma.classEnrollment.create({ data: { classId: cls.id, studentId: student.id } });
+    await prisma.classEnrollment.create({
+      data: { classId: cls.id, studentId: student.id },
+    });
 
     const out = await callTool(
       "teacher",
       "get_class_overview",
       { classId: cls.id },
-      teacherCtx(user.id, teacher.id)
+      teacherCtx(user.id, teacher.id),
     );
     expect(out.found).toBe(true);
     expect(out.className).toBe("Physics");
@@ -703,7 +841,7 @@ describe("teacher class-insight tools", () => {
       "teacher",
       "get_class_overview",
       { classId: cls.id },
-      teacherCtx(intruder.user.id, intruder.teacher.id)
+      teacherCtx(intruder.user.id, intruder.teacher.id),
     );
     expect(out.found).toBe(false);
     expect(out).not.toHaveProperty("students");
@@ -712,30 +850,42 @@ describe("teacher class-insight tools", () => {
   it("reports a quiz breakdown for an owned class", async () => {
     const { user, teacher } = await createTeacher();
     const cls = await createClass(teacher.id, "Physics");
-    const quiz = await prisma.quiz.create({ data: { name: "Motion", teacherId: teacher.id } });
-    await prisma.classQuiz.create({ data: { classId: cls.id, quizId: quiz.id, published: true } });
+    const quiz = await prisma.quiz.create({
+      data: { name: "Motion", teacherId: teacher.id },
+    });
+    await prisma.classQuiz.create({
+      data: { classId: cls.id, quizId: quiz.id, published: true },
+    });
 
     const out = await callTool(
       "teacher",
       "get_quiz_breakdown",
       { classId: cls.id, quizId: quiz.id },
-      teacherCtx(user.id, teacher.id)
+      teacherCtx(user.id, teacher.id),
     );
-    expect(out).toMatchObject({ found: true, quizName: "Motion", attemptsTotal: 0 });
+    expect(out).toMatchObject({
+      found: true,
+      quizName: "Motion",
+      attemptsTotal: 0,
+    });
   });
 
   it("refuses a quiz breakdown for a class the teacher does not own", async () => {
     const owner = await createTeacher();
     const intruder = await createTeacher();
     const cls = await createClass(owner.teacher.id, "Theirs");
-    const quiz = await prisma.quiz.create({ data: { name: "Motion", teacherId: owner.teacher.id } });
-    await prisma.classQuiz.create({ data: { classId: cls.id, quizId: quiz.id, published: true } });
+    const quiz = await prisma.quiz.create({
+      data: { name: "Motion", teacherId: owner.teacher.id },
+    });
+    await prisma.classQuiz.create({
+      data: { classId: cls.id, quizId: quiz.id, published: true },
+    });
 
     const out = await callTool(
       "teacher",
       "get_quiz_breakdown",
       { classId: cls.id, quizId: quiz.id },
-      teacherCtx(intruder.user.id, intruder.teacher.id)
+      teacherCtx(intruder.user.id, intruder.teacher.id),
     );
     expect(out.found).toBe(false);
   });
@@ -753,7 +903,7 @@ describe("teacher class-insight tools", () => {
       "teacher",
       "get_student_breakdown",
       { classId: cls.id, studentId: enrolled.student.id },
-      teacherCtx(user.id, teacher.id)
+      teacherCtx(user.id, teacher.id),
     );
     expect(ok.found).toBe(true);
 
@@ -761,22 +911,27 @@ describe("teacher class-insight tools", () => {
       "teacher",
       "get_student_breakdown",
       { classId: cls.id, studentId: outsider.student.id },
-      teacherCtx(user.id, teacher.id)
+      teacherCtx(user.id, teacher.id),
     );
-    expect(denied).toMatchObject({ found: false, message: expect.stringContaining("not enrolled") });
+    expect(denied).toMatchObject({
+      found: false,
+      message: expect.stringContaining("not enrolled"),
+    });
   });
 
   it("flags a student with no completed quizzes and, separately, one below the threshold", async () => {
     const { user, teacher } = await createTeacher();
     const cls = await createClass(teacher.id, "Physics");
     const idle = await createStudent();
-    await prisma.classEnrollment.create({ data: { classId: cls.id, studentId: idle.student.id } });
+    await prisma.classEnrollment.create({
+      data: { classId: cls.id, studentId: idle.student.id },
+    });
 
     const withInactive = await callTool(
       "teacher",
       "find_struggling_students",
       { classId: cls.id },
-      teacherCtx(user.id, teacher.id)
+      teacherCtx(user.id, teacher.id),
     );
     const classes = withInactive.classes as Array<{
       flaggedStudents: Array<{ reason: string }>;
@@ -789,10 +944,11 @@ describe("teacher class-insight tools", () => {
       "teacher",
       "find_struggling_students",
       { classId: cls.id, includeInactive: false },
-      teacherCtx(user.id, teacher.id)
+      teacherCtx(user.id, teacher.id),
     );
     expect(
-      (withoutInactive.classes as Array<{ flaggedStudents: unknown[] }>)[0].flaggedStudents
+      (withoutInactive.classes as Array<{ flaggedStudents: unknown[] }>)[0]
+        .flaggedStudents,
     ).toEqual([]);
   });
 
@@ -806,27 +962,34 @@ describe("teacher class-insight tools", () => {
       "teacher",
       "find_struggling_students",
       {},
-      teacherCtx(mine.user.id, mine.teacher.id)
+      teacherCtx(mine.user.id, mine.teacher.id),
     );
-    expect((all.classes as Array<{ className: string }>).map((c) => c.className)).toEqual(["Mine"]);
+    expect(
+      (all.classes as Array<{ className: string }>).map((c) => c.className),
+    ).toEqual(["Mine"]);
 
     const targeted = await callTool(
       "teacher",
       "find_struggling_students",
       { classId: foreign.id },
-      teacherCtx(mine.user.id, mine.teacher.id)
+      teacherCtx(mine.user.id, mine.teacher.id),
     );
     expect(targeted.found).toBe(false);
   });
 
   it("refuses to run without a resolved teacher", async () => {
     await expect(
-      callTool("teacher", "list_classes", {}, {
-        userId: "u",
-        audience: "teacher",
-        studentId: null,
-        teacherId: null,
-      })
+      callTool(
+        "teacher",
+        "list_classes",
+        {},
+        {
+          userId: "u",
+          audience: "teacher",
+          studentId: null,
+          teacherId: null,
+        },
+      ),
     ).rejects.toThrow(/only available to teachers/);
   });
 });
@@ -837,7 +1000,9 @@ describe("assistant settings", () => {
   it("defaults to disabled with every registered skill for the audience", async () => {
     const settings = await getAssistantSettings("student");
     expect(settings.enabled).toBe(false);
-    expect(settings.enabledSkills).toEqual(listSkills("student").map((s) => s.id));
+    expect(settings.enabledSkills).toEqual(
+      listSkills("student").map((s) => s.id),
+    );
   });
 
   it("round-trips a saved patch", async () => {
@@ -873,9 +1038,15 @@ describe("assistant settings", () => {
   it("drops an unknown skill id and a skill from the other audience", async () => {
     const teacherSkillId = listSkills("teacher")[0].id;
     const settings = await saveAssistantSettings("student", {
-      enabledSkills: ["ghost-skill", teacherSkillId, ...listSkills("student").map((s) => s.id)],
+      enabledSkills: [
+        "ghost-skill",
+        teacherSkillId,
+        ...listSkills("student").map((s) => s.id),
+      ],
     });
-    expect(settings.enabledSkills).toEqual(listSkills("student").map((s) => s.id));
+    expect(settings.enabledSkills).toEqual(
+      listSkills("student").map((s) => s.id),
+    );
   });
 
   it("leaves fields the patch omitted untouched", async () => {
@@ -918,27 +1089,36 @@ describe("assistant settings", () => {
     });
     expect(settings.disabledTools).toEqual(["get_quiz_result_detail"]);
     expect(
-      resolveSkills("student", settings.enabledSkills, settings.disabledTools).tools.has(
-        "get_quiz_result_detail"
-      )
+      resolveSkills(
+        "student",
+        settings.enabledSkills,
+        settings.disabledTools,
+      ).tools.has("get_quiz_result_detail"),
     ).toBe(false);
   });
 
   it("drops a tool name that belongs to the other audience", async () => {
     const teacherTool = listSkills("teacher")[0].tools[0].name;
-    const settings = await saveAssistantSettings("student", { disabledTools: [teacherTool] });
+    const settings = await saveAssistantSettings("student", {
+      disabledTools: [teacherTool],
+    });
     expect(settings.disabledTools).toEqual([]);
   });
 
   it("defaults attachment retention to 30 days and clamps it on save", async () => {
-    expect((await getAssistantSettings("student")).attachmentRetentionDays).toBe(30);
     expect(
-      (await saveAssistantSettings("student", { attachmentRetentionDays: 9999 }))
-        .attachmentRetentionDays
+      (await getAssistantSettings("student")).attachmentRetentionDays,
+    ).toBe(30);
+    expect(
+      (
+        await saveAssistantSettings("student", {
+          attachmentRetentionDays: 9999,
+        })
+      ).attachmentRetentionDays,
     ).toBe(365);
     expect(
       (await saveAssistantSettings("student", { attachmentRetentionDays: 0 }))
-        .attachmentRetentionDays
+        .attachmentRetentionDays,
     ).toBe(1);
   });
 
@@ -965,9 +1145,12 @@ describe("admin assistants API", () => {
     expect(
       (
         await PUT_ADMIN(
-          jsonRequest({ audience: "student", settings: { enabled: true } }, "http://localhost/api/admin/assistants")
+          jsonRequest(
+            { audience: "student", settings: { enabled: true } },
+            "http://localhost/api/admin/assistants",
+          ),
         )
-      ).status
+      ).status,
     ).toBe(403);
   });
 
@@ -975,10 +1158,9 @@ describe("admin assistants API", () => {
     const admin = await createAdmin();
     asAdmin(admin.id);
     const body = await (await GET_ADMIN()).json();
-    expect(body.assistants.map((a: { audience: string }) => a.audience)).toEqual([
-      "student",
-      "teacher",
-    ]);
+    expect(
+      body.assistants.map((a: { audience: string }) => a.audience),
+    ).toEqual(["student", "teacher"]);
     expect(body.assistants[0].useCase).toBe("student_assistant");
     expect(body.assistants[0].availableSkills.length).toBeGreaterThan(0);
     expect(body.attachmentKinds.length).toBeGreaterThan(0);
@@ -1000,8 +1182,8 @@ describe("admin assistants API", () => {
           audience: "student",
           settings: { disabledTools: ["summarize_performance", "bogus"] },
         },
-        "http://localhost/api/admin/assistants"
-      )
+        "http://localhost/api/admin/assistants",
+      ),
     );
     expect(res.status).toBe(200);
     const { settings } = await res.json();
@@ -1014,8 +1196,8 @@ describe("admin assistants API", () => {
     const res = await PUT_ADMIN(
       jsonRequest(
         { audience: "student", settings: { enabled: true, maxToolCalls: 99 } },
-        "http://localhost/api/admin/assistants"
-      )
+        "http://localhost/api/admin/assistants",
+      ),
     );
     expect(res.status).toBe(200);
     const { settings } = await res.json();
@@ -1027,7 +1209,10 @@ describe("admin assistants API", () => {
     const admin = await createAdmin();
     asAdmin(admin.id);
     const res = await PUT_ADMIN(
-      jsonRequest({ audience: "admin", settings: {} }, "http://localhost/api/admin/assistants")
+      jsonRequest(
+        { audience: "admin", settings: {} },
+        "http://localhost/api/admin/assistants",
+      ),
     );
     expect(res.status).toBe(400);
   });

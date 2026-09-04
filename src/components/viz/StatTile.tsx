@@ -37,15 +37,26 @@ export function StatTile({
   className?: string;
 }) {
   return (
-    <div className={cn("surface-card flex flex-col p-[var(--pad-card)]", className)}>
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+    <div
+      className={cn(
+        "surface-card flex flex-col p-[var(--pad-card)]",
+        className,
+      )}
+    >
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
 
       <div className="mt-2 flex items-end justify-between gap-3">
         {/* Proportional figures — see the note in ScoreDial: tabular digits are
             for columns that must align, not for a standalone number. */}
         <p className="text-3xl font-semibold leading-none">{value}</p>
         {trend && (
-          <Sparkline values={trend.values} label={trend.label} className="mb-0.5 shrink-0" />
+          <Sparkline
+            values={trend.values}
+            label={trend.label}
+            className="mb-0.5 shrink-0"
+          />
         )}
       </div>
 
@@ -71,7 +82,11 @@ function DeltaLine({
     <p
       className={cn(
         "mt-1.5 flex items-center gap-1 text-xs font-medium",
-        flat ? "text-muted-foreground" : good ? "text-[var(--viz-good)]" : "text-[var(--viz-critical)]"
+        flat
+          ? "text-muted-foreground"
+          : good
+            ? "text-[var(--viz-good)]"
+            : "text-[var(--viz-critical)]",
       )}
     >
       <Icon className="size-3.5 shrink-0" aria-hidden="true" />

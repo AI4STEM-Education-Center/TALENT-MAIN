@@ -57,11 +57,14 @@ export default function MaterialTitleEdit({
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(`/api/classes/${classId}/materials/${materialId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: trimmed }),
-      });
+      const res = await fetch(
+        `/api/classes/${classId}/materials/${materialId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: trimmed }),
+        },
+      );
 
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));

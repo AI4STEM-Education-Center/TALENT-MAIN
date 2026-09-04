@@ -27,11 +27,25 @@ export default async function TeacherQuizzesPage() {
 
   // Flag which pool quizzes this teacher already imported (depends on the pool ids above).
   const imported = await prisma.quiz.findMany({
-    where: { teacherId: actor.teacherId, sourceQuizId: { in: poolQuizzes.map((q) => q.id) } },
+    where: {
+      teacherId: actor.teacherId,
+      sourceQuizId: { in: poolQuizzes.map((q) => q.id) },
+    },
     select: { sourceQuizId: true },
   });
-  const importedSourceIds = new Set(imported.flatMap((q) => (q.sourceQuizId ? [q.sourceQuizId] : [])));
-  const pool = poolQuizzes.map((q) => ({ ...q, alreadyImported: importedSourceIds.has(q.id) }));
+  const importedSourceIds = new Set(
+    imported.flatMap((q) => (q.sourceQuizId ? [q.sourceQuizId] : [])),
+  );
+  const pool = poolQuizzes.map((q) => ({
+    ...q,
+    alreadyImported: importedSourceIds.has(q.id),
+  }));
 
-  return <TeacherQuizzesClient initialQuizzes={quizzes} initialPool={pool} initialTopics={topics} />;
+  return (
+    <TeacherQuizzesClient
+      initialQuizzes={quizzes}
+      initialPool={pool}
+      initialTopics={topics}
+    />
+  );
 }

@@ -11,7 +11,9 @@ export default async function TeacherMessagesPage() {
   const session = await auth();
   if (!session?.user || session.user.role !== "TEACHER") redirect("/login");
 
-  const teacher = await prisma.teacher.findUnique({ where: { userId: session.user.id } });
+  const teacher = await prisma.teacher.findUnique({
+    where: { userId: session.user.id },
+  });
   if (!teacher) redirect("/login");
 
   const [classes, quota] = await Promise.all([
@@ -33,17 +35,18 @@ export default async function TeacherMessagesPage() {
           <MessageSquare className="size-6" /> Messages
         </h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Pick a class to message. Students get an in-app notification, plus an automated email linking to it if they
-          have an address on file.
+          Pick a class to message. Students get an in-app notification, plus an
+          automated email linking to it if they have an address on file.
         </p>
       </div>
 
       <div className="text-sm rounded-md border bg-muted/30 p-3 flex items-start gap-2">
         <Mail className="size-4 shrink-0 mt-0.5 text-muted-foreground" />
         <span>
-          <strong>Email budget:</strong> {quota.dailyRemaining} left today (of {quota.dailyLimit}) ·{" "}
-          {quota.monthlyRemaining} left this month (of {quota.monthlyLimit}). In-app notifications are unlimited, and
-          a class over budget is still notified in-app.
+          <strong>Email budget:</strong> {quota.dailyRemaining} left today (of{" "}
+          {quota.dailyLimit}) · {quota.monthlyRemaining} left this month (of{" "}
+          {quota.monthlyLimit}). In-app notifications are unlimited, and a class
+          over budget is still notified in-app.
         </span>
       </div>
 
@@ -61,7 +64,8 @@ export default async function TeacherMessagesPage() {
                 <div className="min-w-0">
                   <p className="font-semibold">{c.name}</p>
                   <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                    <Users className="size-3" /> {c._count.enrollments} enrolled · {c._count.studentList} in roster
+                    <Users className="size-3" /> {c._count.enrollments} enrolled
+                    · {c._count.studentList} in roster
                   </p>
                 </div>
                 <Button size="sm" asChild className="shrink-0">

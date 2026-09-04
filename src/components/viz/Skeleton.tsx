@@ -42,9 +42,19 @@ export function StatTileSkeleton({ className }: { className?: string }) {
 }
 
 /** A paragraph's silhouette. The last line is short, as a real one would be. */
-export function TextSkeleton({ lines = 3, className }: { lines?: number; className?: string }) {
+export function TextSkeleton({
+  lines = 3,
+  className,
+}: {
+  lines?: number;
+  className?: string;
+}) {
   return (
-    <div className={cn("space-y-2", className)} role="status" aria-label="Loading">
+    <div
+      className={cn("space-y-2", className)}
+      role="status"
+      aria-label="Loading"
+    >
       {Array.from({ length: lines }, (_, index) => (
         <Skeleton
           key={index}

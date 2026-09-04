@@ -25,7 +25,7 @@ export async function GET() {
     const { tools } = resolveSkills(
       ctx.audience,
       settings.enabledSkills,
-      settings.disabledTools
+      settings.disabledTools,
     );
 
     return NextResponse.json({
@@ -42,6 +42,9 @@ export async function GET() {
     });
   } catch (error) {
     logApiError("ASSISTANT_CONFIG", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }

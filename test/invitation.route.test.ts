@@ -20,12 +20,14 @@ function req(body?: unknown) {
 }
 const ctx = (token: string) => ({ params: Promise.resolve({ token }) });
 
-async function seedInvite(opts: {
-  expiresAt?: Date | null;
-  maxUses?: number | null;
-  usedCount?: number;
-  active?: boolean;
-} = {}) {
+async function seedInvite(
+  opts: {
+    expiresAt?: Date | null;
+    maxUses?: number | null;
+    usedCount?: number;
+    active?: boolean;
+  } = {},
+) {
   const { teacher } = await createTeacher();
   const cls = await createClass(teacher.id, "Chemistry");
   const invitation = await prisma.invitation.create({
@@ -44,9 +46,21 @@ async function seedInvite(opts: {
   return { cls, invitation };
 }
 
-function addRoster(classId: string, orgDefinedId: string, isRegistered = false, email = "") {
+function addRoster(
+  classId: string,
+  orgDefinedId: string,
+  isRegistered = false,
+  email = "",
+) {
   return prisma.classStudentList.create({
-    data: { classId, orgDefinedId, firstName: "Ross", lastName: "Tee", isRegistered, email },
+    data: {
+      classId,
+      orgDefinedId,
+      firstName: "Ross",
+      lastName: "Tee",
+      isRegistered,
+      email,
+    },
   });
 }
 
@@ -78,7 +92,9 @@ describe("GET /api/invitations/[token]", () => {
   });
 
   it("returns 410 for an expired invitation", async () => {
-    const { invitation } = await seedInvite({ expiresAt: new Date("2000-01-01") });
+    const { invitation } = await seedInvite({
+      expiresAt: new Date("2000-01-01"),
+    });
     const res = await GET(req() as never, ctx(invitation.token));
     expect(res.status).toBe(410);
   });
@@ -143,7 +159,11 @@ describe("GET /api/invitations/[token]/lookup", () => {
 });
 
 describe("POST /api/invitations/[token] — signup flow", () => {
-  const signup = { username: "joiner", email: "joiner@example.com", password: "Abcdef1!" };
+  const signup = {
+    username: "joiner",
+    email: "joiner@example.com",
+    password: "Abcdef1!",
+  };
 
   it("requires an 81 number", async () => {
     const { invitation } = await seedInvite();
@@ -153,14 +173,20 @@ describe("POST /api/invitations/[token] — signup flow", () => {
 
   it("rejects an 81 number not on the roster", async () => {
     const { invitation } = await seedInvite();
-    const res = await POST(req({ ...signup, orgDefinedId: "999" }) as never, ctx(invitation.token));
+    const res = await POST(
+      req({ ...signup, orgDefinedId: "999" }) as never,
+      ctx(invitation.token),
+    );
     expect(res.status).toBe(404);
   });
 
   it("rejects an already-registered 81 number", async () => {
     const { cls, invitation } = await seedInvite();
     await addRoster(cls.id, "811947904", true);
-    const res = await POST(req({ ...signup, orgDefinedId: "811947904" }) as never, ctx(invitation.token));
+    const res = await POST(
+      req({ ...signup, orgDefinedId: "811947904" }) as never,
+      ctx(invitation.token),
+    );
     expect(res.status).toBe(409);
   });
 
@@ -169,7 +195,10 @@ describe("POST /api/invitations/[token] — signup flow", () => {
     await addRoster(cls.id, "811947904");
 
     // Leading "#" must be stripped before matching the roster.
-    const res = await POST(req({ ...signup, orgDefinedId: "#811947904" }) as never, ctx(invitation.token));
+    const res = await POST(
+      req({ ...signup, orgDefinedId: "#811947904" }) as never,
+      ctx(invitation.token),
+    );
     expect(res.status).toBe(200);
 
     const user = await prisma.user.findUnique({
@@ -185,10 +214,14 @@ describe("POST /api/invitations/[token] — signup flow", () => {
     });
     expect(enrollment).not.toBeNull();
 
-    const roster = await prisma.classStudentList.findFirst({ where: { classId: cls.id } });
+    const roster = await prisma.classStudentList.findFirst({
+      where: { classId: cls.id },
+    });
     expect(roster?.isRegistered).toBe(true);
 
-    const refreshed = await prisma.invitation.findUnique({ where: { id: invitation.id } });
+    const refreshed = await prisma.invitation.findUnique({
+      where: { id: invitation.id },
+    });
     expect(refreshed?.usedCount).toBe(1);
   });
 
@@ -197,12 +230,18 @@ describe("POST /api/invitations/[token] — signup flow", () => {
     await addRoster(cls.id, "811947904", false, "ross-tee@uga.edu");
 
     const res = await POST(
-      req({ ...signup, email: "Ross-Tee@UGA.edu", orgDefinedId: "811947904" }) as never,
-      ctx(invitation.token)
+      req({
+        ...signup,
+        email: "Ross-Tee@UGA.edu",
+        orgDefinedId: "811947904",
+      }) as never,
+      ctx(invitation.token),
     );
     expect(res.status).toBe(200);
 
-    const roster = await prisma.classStudentList.findFirst({ where: { classId: cls.id } });
+    const roster = await prisma.classStudentList.findFirst({
+      where: { classId: cls.id },
+    });
     expect(roster?.email).toBe("ross-tee@uga.edu");
   });
 
@@ -211,17 +250,25 @@ describe("POST /api/invitations/[token] — signup flow", () => {
     await addRoster(cls.id, "811947904", false, "stale@uga.edu");
 
     const res = await POST(
-      req({ ...signup, email: "ross.tee@gmail.com", orgDefinedId: "811947904" }) as never,
-      ctx(invitation.token)
+      req({
+        ...signup,
+        email: "ross.tee@gmail.com",
+        orgDefinedId: "811947904",
+      }) as never,
+      ctx(invitation.token),
     );
     expect(res.status).toBe(200);
 
     // The registrar export goes stale; teacher notifications have to reach the
     // mailbox the student actually confirmed.
-    const roster = await prisma.classStudentList.findFirst({ where: { classId: cls.id } });
+    const roster = await prisma.classStudentList.findFirst({
+      where: { classId: cls.id },
+    });
     expect(roster?.email).toBe("ross.tee@gmail.com");
     expect(roster?.isRegistered).toBe(true);
-    const user = await prisma.user.findUnique({ where: { email: "ross.tee@gmail.com" } });
+    const user = await prisma.user.findUnique({
+      where: { email: "ross.tee@gmail.com" },
+    });
     expect(user).not.toBeNull();
   });
 
@@ -230,14 +277,22 @@ describe("POST /api/invitations/[token] — signup flow", () => {
     await addRoster(cls.id, "811947904");
 
     const res = await POST(
-      req({ ...signup, email: "ross-tee@uga.view.usg.edu", orgDefinedId: "811947904" }) as never,
-      ctx(invitation.token)
+      req({
+        ...signup,
+        email: "ross-tee@uga.view.usg.edu",
+        orgDefinedId: "811947904",
+      }) as never,
+      ctx(invitation.token),
     );
     expect(res.status).toBe(200);
 
-    const roster = await prisma.classStudentList.findFirst({ where: { classId: cls.id } });
+    const roster = await prisma.classStudentList.findFirst({
+      where: { classId: cls.id },
+    });
     expect(roster?.email).toBe("ross-tee@uga.edu");
-    const user = await prisma.user.findUnique({ where: { email: "ross-tee@uga.edu" } });
+    const user = await prisma.user.findUnique({
+      where: { email: "ross-tee@uga.edu" },
+    });
     expect(user).not.toBeNull();
   });
 
@@ -246,12 +301,18 @@ describe("POST /api/invitations/[token] — signup flow", () => {
     await addRoster(cls.id, "811947904");
 
     const res = await POST(
-      req({ ...signup, email: "not-an-email", orgDefinedId: "811947904" }) as never,
-      ctx(invitation.token)
+      req({
+        ...signup,
+        email: "not-an-email",
+        orgDefinedId: "811947904",
+      }) as never,
+      ctx(invitation.token),
     );
     expect(res.status).toBe(400);
 
-    const roster = await prisma.classStudentList.findFirst({ where: { classId: cls.id } });
+    const roster = await prisma.classStudentList.findFirst({
+      where: { classId: cls.id },
+    });
     expect(roster?.isRegistered).toBe(false);
   });
 
@@ -260,7 +321,7 @@ describe("POST /api/invitations/[token] — signup flow", () => {
     await addRoster(cls.id, "811947904");
     const res = await POST(
       req({ ...signup, password: "weak", orgDefinedId: "811947904" }) as never,
-      ctx(invitation.token)
+      ctx(invitation.token),
     );
     expect(res.status).toBe(400);
   });
@@ -271,9 +332,14 @@ describe("POST /api/invitations/[token] — logged-in student", () => {
     const { cls, invitation } = await seedInvite();
     await addRoster(cls.id, "811947904", false, "student@uga.edu");
     const { user, student } = await createStudent({ email: "student@uga.edu" });
-    mockAuth.mockResolvedValue({ user: { id: user.id, role: "STUDENT" } } as never);
+    mockAuth.mockResolvedValue({
+      user: { id: user.id, role: "STUDENT" },
+    } as never);
 
-    const res = await POST(req({ orgDefinedId: "811947904" }) as never, ctx(invitation.token));
+    const res = await POST(
+      req({ orgDefinedId: "811947904" }) as never,
+      ctx(invitation.token),
+    );
     expect(res.status).toBe(200);
 
     const enrollment = await prisma.classEnrollment.findFirst({
@@ -285,28 +351,44 @@ describe("POST /api/invitations/[token] — logged-in student", () => {
   it("moves the roster email to the signed-in account's address", async () => {
     const { cls, invitation } = await seedInvite();
     await addRoster(cls.id, "811947904", false, "stale@uga.edu");
-    const { user, student } = await createStudent({ email: "real-student@uga.edu" });
-    mockAuth.mockResolvedValue({ user: { id: user.id, role: "STUDENT" } } as never);
+    const { user, student } = await createStudent({
+      email: "real-student@uga.edu",
+    });
+    mockAuth.mockResolvedValue({
+      user: { id: user.id, role: "STUDENT" },
+    } as never);
 
-    const res = await POST(req({ orgDefinedId: "811947904" }) as never, ctx(invitation.token));
+    const res = await POST(
+      req({ orgDefinedId: "811947904" }) as never,
+      ctx(invitation.token),
+    );
     expect(res.status).toBe(200);
 
     // The account the student signs in to owns the mailbox, so the roster
     // follows it rather than keeping the registrar's stale address.
-    const roster = await prisma.classStudentList.findFirst({ where: { classId: cls.id } });
+    const roster = await prisma.classStudentList.findFirst({
+      where: { classId: cls.id },
+    });
     expect(roster?.email).toBe("real-student@uga.edu");
     expect(roster?.isRegistered).toBe(true);
     expect(
-      await prisma.classEnrollment.count({ where: { classId: cls.id, studentId: student.id } })
+      await prisma.classEnrollment.count({
+        where: { classId: cls.id, studentId: student.id },
+      }),
     ).toBe(1);
   });
 
   it("rejects a logged-in non-student with 403", async () => {
     const { cls, invitation } = await seedInvite();
     await addRoster(cls.id, "811947904");
-    mockAuth.mockResolvedValue({ user: { id: "whoever", role: "TEACHER" } } as never);
+    mockAuth.mockResolvedValue({
+      user: { id: "whoever", role: "TEACHER" },
+    } as never);
 
-    const res = await POST(req({ orgDefinedId: "811947904" }) as never, ctx(invitation.token));
+    const res = await POST(
+      req({ orgDefinedId: "811947904" }) as never,
+      ctx(invitation.token),
+    );
     expect(res.status).toBe(403);
   });
 
@@ -316,8 +398,12 @@ describe("POST /api/invitations/[token] — logged-in student", () => {
     const first = await createStudent();
     const second = await createStudent();
     mockAuth
-      .mockResolvedValueOnce({ user: { id: first.user.id, role: "STUDENT" } } as never)
-      .mockResolvedValueOnce({ user: { id: second.user.id, role: "STUDENT" } } as never);
+      .mockResolvedValueOnce({
+        user: { id: first.user.id, role: "STUDENT" },
+      } as never)
+      .mockResolvedValueOnce({
+        user: { id: second.user.id, role: "STUDENT" },
+      } as never);
 
     const [one, two] = await Promise.all([
       POST(req({ orgDefinedId: "811947904" }) as never, ctx(invitation.token)),
@@ -325,9 +411,12 @@ describe("POST /api/invitations/[token] — logged-in student", () => {
     ]);
 
     expect([one.status, two.status].sort()).toEqual([200, 409]);
-    expect(await prisma.classEnrollment.count({ where: { classId: cls.id } })).toBe(1);
     expect(
-      (await prisma.invitation.findUnique({ where: { id: invitation.id } }))?.usedCount
+      await prisma.classEnrollment.count({ where: { classId: cls.id } }),
+    ).toBe(1);
+    expect(
+      (await prisma.invitation.findUnique({ where: { id: invitation.id } }))
+        ?.usedCount,
     ).toBe(1);
   });
 });

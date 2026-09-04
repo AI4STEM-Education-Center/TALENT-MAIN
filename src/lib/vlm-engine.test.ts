@@ -20,7 +20,11 @@ const TODAYS_TIER1_PROMPT =
 const TODAYS_TIER2_PROMPT =
   "Based on these pages from a learning material, provide a cohesive batch summary and a list of overarching key concepts across the document.";
 
-const LABELS = ["Force Vector: Forces", "Newton's 2nd Law", "Kinematics: Velocity"];
+const LABELS = [
+  "Force Vector: Forces",
+  "Newton's 2nd Law",
+  "Kinematics: Velocity",
+];
 
 describe("buildTier1Prompt", () => {
   it("fails closed when the catalog is empty", () => {
@@ -30,7 +34,9 @@ describe("buildTier1Prompt", () => {
   it("appends the concept list instruction and bullets when non-empty", () => {
     const prompt = buildTier1Prompt(LABELS);
     expect(prompt.startsWith(TODAYS_TIER1_PROMPT)).toBe(true);
-    expect(prompt).toContain('Choose key_concept ONLY from this list (use the exact label). If no listed concept fits, use "None".');
+    expect(prompt).toContain(
+      'Choose key_concept ONLY from this list (use the exact label). If no listed concept fits, use "None".',
+    );
     expect(prompt).toContain("- Force Vector: Forces");
     expect(prompt).toContain("- Newton's 2nd Law");
     expect(prompt).toContain("- Kinematics: Velocity");
@@ -53,7 +59,9 @@ describe("buildTier2Prompt", () => {
   it("appends the concept list instruction and bullets when non-empty, with no None escape", () => {
     const prompt = buildTier2Prompt(LABELS);
     expect(prompt.startsWith(TODAYS_TIER2_PROMPT)).toBe(true);
-    expect(prompt).toContain("Choose key concepts ONLY from this list (use the exact labels). Return an empty list if none apply.");
+    expect(prompt).toContain(
+      "Choose key concepts ONLY from this list (use the exact labels). Return an empty list if none apply.",
+    );
     expect(prompt).not.toContain("None");
     expect(prompt).toContain("- Force Vector: Forces");
   });
@@ -82,7 +90,11 @@ describe("buildTier1Schema", () => {
     });
     // Everything else stays intact.
     expect(schema.name).toBe("page_assessment");
-    expect(schema.schema.required).toEqual(["needed", "key_concept", "description"]);
+    expect(schema.schema.required).toEqual([
+      "needed",
+      "key_concept",
+      "description",
+    ]);
     expect(schema.schema.additionalProperties).toBe(false);
   });
 });
@@ -104,7 +116,9 @@ describe("buildTier2Schema", () => {
 
 describe("resolveTier1KeyConcept (post-validation defense in depth)", () => {
   it("fails closed when the catalog is empty", () => {
-    expect(() => resolveTier1KeyConcept("Anything the model said", [])).toThrow("concept catalog is empty");
+    expect(() => resolveTier1KeyConcept("Anything the model said", [])).toThrow(
+      "concept catalog is empty",
+    );
   });
 
   it("maps the None sentinel to null", () => {
@@ -112,7 +126,9 @@ describe("resolveTier1KeyConcept (post-validation defense in depth)", () => {
   });
 
   it("keeps a value that is in the allowed set", () => {
-    expect(resolveTier1KeyConcept("Newton's 2nd Law", LABELS)).toBe("Newton's 2nd Law");
+    expect(resolveTier1KeyConcept("Newton's 2nd Law", LABELS)).toBe(
+      "Newton's 2nd Law",
+    );
   });
 
   it("nulls out a value outside the allowed set (provider ignored the schema)", () => {
@@ -122,12 +138,17 @@ describe("resolveTier1KeyConcept (post-validation defense in depth)", () => {
 
 describe("filterTier2KeyConcepts (post-validation defense in depth)", () => {
   it("fails closed when the catalog is empty", () => {
-    expect(() => filterTier2KeyConcepts(["a", "b"], [])).toThrow("concept catalog is empty");
+    expect(() => filterTier2KeyConcepts(["a", "b"], [])).toThrow(
+      "concept catalog is empty",
+    );
   });
 
   it("filters out values outside the allowed set", () => {
     expect(
-      filterTier2KeyConcepts(["Force Vector: Forces", "Bogus Concept", "Kinematics: Velocity"], LABELS)
+      filterTier2KeyConcepts(
+        ["Force Vector: Forces", "Bogus Concept", "Kinematics: Velocity"],
+        LABELS,
+      ),
     ).toEqual(["Force Vector: Forces", "Kinematics: Velocity"]);
   });
 

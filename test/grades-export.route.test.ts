@@ -13,7 +13,13 @@ import {
 } from "@/lib/grades-csv";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { resetDb, createTeacher, createClass, createPublishedQuiz, createStudent } from "./db";
+import {
+  resetDb,
+  createTeacher,
+  createClass,
+  createPublishedQuiz,
+  createStudent,
+} from "./db";
 
 const mockAuth = vi.mocked(auth);
 
@@ -22,19 +28,26 @@ function asUser(userId: string, role: string) {
 }
 
 function call(classId: string, quizId: string, header?: string) {
-  const qs = header !== undefined ? `?header=${encodeURIComponent(header)}` : "";
+  const qs =
+    header !== undefined ? `?header=${encodeURIComponent(header)}` : "";
   return EXPORT(
-    new NextRequest(`http://localhost/api/classes/${classId}/quizzes/${quizId}/grades-export${qs}`),
-    { params: Promise.resolve({ id: classId, quizId }) }
+    new NextRequest(
+      `http://localhost/api/classes/${classId}/quizzes/${quizId}/grades-export${qs}`,
+    ),
+    { params: Promise.resolve({ id: classId, quizId }) },
   );
 }
 
-function callWithParams(classId: string, quizId: string, params: Record<string, string>) {
+function callWithParams(
+  classId: string,
+  quizId: string,
+  params: Record<string, string>,
+) {
   return EXPORT(
     new NextRequest(
-      `http://localhost/api/classes/${classId}/quizzes/${quizId}/grades-export?${new URLSearchParams(params)}`
+      `http://localhost/api/classes/${classId}/quizzes/${quizId}/grades-export?${new URLSearchParams(params)}`,
     ),
-    { params: Promise.resolve({ id: classId, quizId }) }
+    { params: Promise.resolve({ id: classId, quizId }) },
   );
 }
 
@@ -42,7 +55,7 @@ async function addRoster(
   classId: string,
   orgDefinedId: string,
   lastName: string,
-  firstName: string
+  firstName: string,
 ) {
   return prisma.classStudentList.create({
     data: { classId, orgDefinedId, lastName, firstName },
@@ -53,7 +66,7 @@ async function addCompletedAttempt(
   studentId: string,
   classId: string,
   quizId: string,
-  score: number
+  score: number,
 ) {
   return prisma.quizAttempt.create({
     data: { studentId, classId, quizId, score, completedAt: new Date() },
@@ -72,19 +85,34 @@ afterAll(async () => {
 describe("buildGradesCsv", () => {
   it("reproduces the eLC format: CRLF, # prefixes, custom column before the end marker", () => {
     const csv = buildGradesCsv("Quiz 3 Points Grade <Numeric MaxPoints:100>", [
-      { orgDefinedId: "811947904", lastName: "Nash", firstName: "Aaron", grade: "95" },
-      { orgDefinedId: "811107402", lastName: "Sherer", firstName: "Aaron", grade: "" },
+      {
+        orgDefinedId: "811947904",
+        lastName: "Nash",
+        firstName: "Aaron",
+        grade: "95",
+      },
+      {
+        orgDefinedId: "811107402",
+        lastName: "Sherer",
+        firstName: "Aaron",
+        grade: "",
+      },
     ]);
     expect(csv).toBe(
       "OrgDefinedId,Last Name,First Name,Quiz 3 Points Grade <Numeric MaxPoints:100>,End-of-Line Indicator\r\n" +
         "#811947904,Nash,Aaron,95,#\r\n" +
-        "#811107402,Sherer,Aaron,,#\r\n"
+        "#811107402,Sherer,Aaron,,#\r\n",
     );
   });
 
   it("quotes fields containing commas or quotes", () => {
     const csv = buildGradesCsv('My "special", header', [
-      { orgDefinedId: "1", lastName: "Diaz, Jr.", firstName: "Al", grade: "80" },
+      {
+        orgDefinedId: "1",
+        lastName: "Diaz, Jr.",
+        firstName: "Al",
+        grade: "80",
+      },
     ]);
     const [header, row] = csv.split("\r\n");
     expect(header).toContain('"My ""special"", header"');
@@ -104,18 +132,22 @@ describe("formatGrade", () => {
 describe("grade calculation", () => {
   it("builds the eLC header with the selected maximum", () => {
     expect(buildGradeHeader("Quiz 3", 20)).toBe(
-      "Quiz 3 Points Grade <Numeric MaxPoints:20>"
+      "Quiz 3 Points Grade <Numeric MaxPoints:20>",
     );
   });
 
   it("reads max points from a complete eLC grade column", () => {
     expect(
       parseMaxPointsFromGradeHeader(
-        "Group Project Final Submission Points Grade <Numeric MaxPoints:106 Weight:50.961538462 Category:Group Project CategoryWeight:20>"
-      )
+        "Group Project Final Submission Points Grade <Numeric MaxPoints:106 Weight:50.961538462 Category:Group Project CategoryWeight:20>",
+      ),
     ).toBe(106);
-    expect(parseMaxPointsFromGradeHeader("Group Project Final Submission")).toBeNull();
-    expect(parseMaxPointsFromGradeHeader("Quiz Points Grade <Numeric MaxPoints:0>")).toBeNull();
+    expect(
+      parseMaxPointsFromGradeHeader("Group Project Final Submission"),
+    ).toBeNull();
+    expect(
+      parseMaxPointsFromGradeHeader("Quiz Points Grade <Numeric MaxPoints:0>"),
+    ).toBeNull();
   });
 
   it("scales the best-attempt percentage and supports completion grades", () => {
@@ -126,7 +158,7 @@ describe("grade calculation", () => {
         manualGrade: null,
         mode: "best-attempt",
         maxPoints: 20,
-      })
+      }),
     ).toBe(17.5);
     expect(
       calculateExportGrade({
@@ -135,7 +167,7 @@ describe("grade calculation", () => {
         manualGrade: null,
         mode: "completion",
         maxPoints: 20,
-      })
+      }),
     ).toBe(20);
   });
 
@@ -147,7 +179,7 @@ describe("grade calculation", () => {
         manualGrade: 75,
         mode: "completion",
         maxPoints: 20,
-      })
+      }),
     ).toBe(15);
   });
 });
@@ -200,7 +232,12 @@ describe("GET /api/classes/[id]/quizzes/[quizId]/grades-export", () => {
       data: { firstName: "Aaron", lastName: "Sherer" },
     });
     await prisma.quizAttempt.create({
-      data: { studentId: sherer.id, classId: cls.id, quizId: quiz.id, score: null },
+      data: {
+        studentId: sherer.id,
+        classId: cls.id,
+        quizId: quiz.id,
+        score: null,
+      },
     });
 
     await addRoster(cls.id, "811947904", "Nash", "Aaron");
@@ -208,17 +245,23 @@ describe("GET /api/classes/[id]/quizzes/[quizId]/grades-export", () => {
     await addRoster(cls.id, "811888945", "Boggavarapu", "Abhi"); // no account at all
 
     asUser(user.id, "TEACHER");
-    const res = await call(cls.id, quiz.id, "Quiz 3 Points Grade <Numeric MaxPoints:100>");
+    const res = await call(
+      cls.id,
+      quiz.id,
+      "Quiz 3 Points Grade <Numeric MaxPoints:100>",
+    );
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toContain("text/csv");
-    expect(res.headers.get("Content-Disposition")).toMatch(/attachment; filename=".+\.csv"/);
+    expect(res.headers.get("Content-Disposition")).toMatch(
+      /attachment; filename=".+\.csv"/,
+    );
 
     const body = await res.text();
     expect(body).toBe(
       "OrgDefinedId,Last Name,First Name,Quiz 3 Points Grade <Numeric MaxPoints:100>,End-of-Line Indicator\r\n" +
         "#811888945,Boggavarapu,Abhi,,#\r\n" +
         "#811947904,Nash,Aaron,87.5,#\r\n" +
-        "#811107402,Sherer,Aaron,,#\r\n"
+        "#811107402,Sherer,Aaron,,#\r\n",
     );
   });
 
@@ -230,7 +273,7 @@ describe("GET /api/classes/[id]/quizzes/[quizId]/grades-export", () => {
     asUser(user.id, "TEACHER");
     const body = await (await call(cls.id, quiz.id)).text();
     expect(body.split("\r\n")[0]).toBe(
-      `OrgDefinedId,Last Name,First Name,${quiz.name} Points Grade <Numeric MaxPoints:100>,End-of-Line Indicator`
+      `OrgDefinedId,Last Name,First Name,${quiz.name} Points Grade <Numeric MaxPoints:100>,End-of-Line Indicator`,
     );
   });
 
@@ -253,7 +296,7 @@ describe("GET /api/classes/[id]/quizzes/[quizId]/grades-export", () => {
       maxPoints: "25",
     });
     expect(await best.text()).toContain(
-      "Test 1 Points Grade <Numeric MaxPoints:25>,End-of-Line Indicator\r\n#123,Lovelace,Ada,20,#"
+      "Test 1 Points Grade <Numeric MaxPoints:25>,End-of-Line Indicator\r\n#123,Lovelace,Ada,20,#",
     );
 
     const completion = await callWithParams(cls.id, quiz.id, {
@@ -275,7 +318,12 @@ describe("GET /api/classes/[id]/quizzes/[quizId]/grades-export", () => {
     });
     await addRoster(cls.id, "456", "Hopper", "Grace");
     await prisma.quizProgress.create({
-      data: { studentId: student.id, classId: cls.id, quizId: quiz.id, manualGrade: 90 },
+      data: {
+        studentId: student.id,
+        classId: cls.id,
+        quizId: quiz.id,
+        manualGrade: 90,
+      },
     });
     asUser(user.id, "TEACHER");
 
@@ -308,7 +356,7 @@ describe("GET /api/classes/[id]/quizzes/[quizId]/grades-export", () => {
     });
 
     expect(await response.text()).toContain(
-      `${header},End-of-Line Indicator\r\n#123,Lovelace,Ada,53,#`
+      `${header},End-of-Line Indicator\r\n#123,Lovelace,Ada,53,#`,
     );
   });
 
@@ -318,7 +366,11 @@ describe("GET /api/classes/[id]/quizzes/[quizId]/grades-export", () => {
     const { quiz } = await createPublishedQuiz({ classId: cls.id });
     asUser(user.id, "TEACHER");
 
-    expect((await callWithParams(cls.id, quiz.id, { mode: "latest" })).status).toBe(400);
-    expect((await callWithParams(cls.id, quiz.id, { maxPoints: "0" })).status).toBe(400);
+    expect(
+      (await callWithParams(cls.id, quiz.id, { mode: "latest" })).status,
+    ).toBe(400);
+    expect(
+      (await callWithParams(cls.id, quiz.id, { maxPoints: "0" })).status,
+    ).toBe(400);
   });
 });

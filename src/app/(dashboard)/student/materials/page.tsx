@@ -17,7 +17,9 @@ export default async function StudentMaterialsPage() {
   const session = await auth();
   if (!session?.user || session.user.role !== "STUDENT") redirect("/login");
 
-  const student = await prisma.student.findUnique({ where: { userId: session.user.id } });
+  const student = await prisma.student.findUnique({
+    where: { userId: session.user.id },
+  });
   if (!student) redirect("/login");
 
   const materials = await listStudentMaterials(student.id);
@@ -39,7 +41,8 @@ export default async function StudentMaterialsPage() {
             <FolderOpen className="size-12 text-muted-foreground mb-4" />
             <p className="text-lg font-medium mb-2">No materials yet</p>
             <p className="text-muted-foreground text-sm">
-              Your teachers haven&apos;t shared any course material with your classes yet.
+              Your teachers haven&apos;t shared any course material with your
+              classes yet.
             </p>
           </CardContent>
         </Card>

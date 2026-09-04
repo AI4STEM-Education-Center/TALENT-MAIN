@@ -72,7 +72,8 @@ function objectFile(index: number): string {
 }
 
 function validateManifest(value: unknown): S3BackupManifest {
-  if (!value || typeof value !== "object") throw new Error("Invalid S3 backup manifest");
+  if (!value || typeof value !== "object")
+    throw new Error("Invalid S3 backup manifest");
   const manifest = value as Partial<S3BackupManifest>;
   if (
     manifest.version !== MANIFEST_VERSION ||
@@ -133,7 +134,13 @@ export async function backupS3ToWebdav(
       const { body, contentType } = await getS3Object(bucket, key);
       const file = objectFile(index);
       await putFile(client, joinPath(folder, file), Buffer.from(body));
-      objects.push({ key, file, size: body.byteLength, sha256: sha256(body), contentType });
+      objects.push({
+        key,
+        file,
+        size: body.byteLength,
+        sha256: sha256(body),
+        contentType,
+      });
       totalBytes += body.byteLength;
     }
 
@@ -167,10 +174,12 @@ export async function getS3WebdavBackupSummary(
   databaseBackupName: string,
 ): Promise<S3BackupResult | null> {
   const client = getClient(cfg);
-  if (!(await client.exists(manifestPath(cfg, env, databaseBackupName)))) return null;
+  if (!(await client.exists(manifestPath(cfg, env, databaseBackupName))))
+    return null;
   const manifest = await readManifest(client, cfg, env, databaseBackupName);
   const totalBytes = manifest.objects.reduce((sum, item) => sum + item.size, 0);
-  if (!Number.isSafeInteger(totalBytes)) throw new Error("Invalid S3 backup total size");
+  if (!Number.isSafeInteger(totalBytes))
+    throw new Error("Invalid S3 backup total size");
   return { objectCount: manifest.objects.length, totalBytes };
 }
 
@@ -184,7 +193,8 @@ async function readManifest(
   try {
     return validateManifest(JSON.parse(raw.toString("utf8")));
   } catch (error) {
-    if (error instanceof SyntaxError) throw new Error("Invalid S3 backup manifest JSON");
+    if (error instanceof SyntaxError)
+      throw new Error("Invalid S3 backup manifest JSON");
     throw error;
   }
 }
@@ -196,7 +206,8 @@ export async function restoreS3FromWebdav(
   databaseBackupName: string,
 ): Promise<S3BackupResult | null> {
   const client = getClient(cfg);
-  if (!(await client.exists(manifestPath(cfg, env, databaseBackupName)))) return null;
+  if (!(await client.exists(manifestPath(cfg, env, databaseBackupName))))
+    return null;
 
   const manifest = await readManifest(client, cfg, env, databaseBackupName);
   const current = getS3Config();

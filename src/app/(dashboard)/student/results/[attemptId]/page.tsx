@@ -36,14 +36,16 @@ export default async function ExamResultsPage({
 
   // The ExamResult is the durable source of truth (independent of the quiz rows),
   // so this page works even if the underlying questions or attempt are gone.
-  const examResult = await prisma.examResult.findUnique({ where: { quizAttemptId: attemptId } });
+  const examResult = await prisma.examResult.findUnique({
+    where: { quizAttemptId: attemptId },
+  });
   if (!examResult || examResult.studentId !== student.id) notFound();
 
   // Build the student-safe review before crossing the server/client boundary.
   // The transform keeps missed prompts and submitted responses only; correct
   // answers, unselected choices, grading flags, and raw storage keys stay out.
   const mistakesSource = snapshotToStudentMistakes(
-    parseReviewSnapshot(examResult.reviewSnapshot)
+    parseReviewSnapshot(examResult.reviewSnapshot),
   );
   const recsReady = examResult.recommendationsStatus === RESULT_STATUS.READY;
   const [presigned, mistakes] = await Promise.all([
@@ -99,7 +101,9 @@ export default async function ExamResultsPage({
       backLabel="Exam history"
       actions={
         <Button asChild variant="outline">
-          <Link href={`/student/classes/${examResult.classId}/quiz/${examResult.quizId}`}>
+          <Link
+            href={`/student/classes/${examResult.classId}/quiz/${examResult.quizId}`}
+          >
             <RotateCcw className="size-4" /> Retake quiz
           </Link>
         </Button>

@@ -39,14 +39,21 @@ export function DistributionChart({
   const peakIndex = buckets.findIndex((bucket) => bucket.count === peak);
 
   if (buckets.length === 0) {
-    return <p className={cn("text-sm text-muted-foreground", className)}>No attempts yet.</p>;
+    return (
+      <p className={cn("text-sm text-muted-foreground", className)}>
+        No attempts yet.
+      </p>
+    );
   }
 
   return (
     <figure className={cn("viz-root", className)}>
       <figcaption className="mb-3 text-sm font-medium">{title}</figcaption>
 
-      <div className="relative flex items-end gap-[2px]" style={{ height: PLOT_HEIGHT }}>
+      <div
+        className="relative flex items-end gap-[2px]"
+        style={{ height: PLOT_HEIGHT }}
+      >
         {buckets.map((bucket, index) => {
           const ratio = bucket.count / peak;
           const active = hovered === index;
@@ -76,10 +83,12 @@ export function DistributionChart({
                   maxWidth: "var(--viz-bar-max)",
                   height: `${Math.max(ratio * 100, bucket.count > 0 ? 2 : 0)}%`,
                   background: "var(--viz-series-1)",
-                  borderRadius: "var(--viz-bar-radius) var(--viz-bar-radius) 0 0",
+                  borderRadius:
+                    "var(--viz-bar-radius) var(--viz-bar-radius) 0 0",
                   opacity: hovered === null || active ? 1 : 0.55,
                   transformOrigin: "bottom",
-                  animation: "viz-bar-grow var(--motion-slow) var(--ease-standard)",
+                  animation:
+                    "viz-bar-grow var(--motion-slow) var(--ease-standard)",
                 }}
               />
 
@@ -90,7 +99,8 @@ export function DistributionChart({
                 >
                   <span className="font-medium">{bucket.label}</span>
                   <span className="ml-2 tabular-nums text-muted-foreground">
-                    {bucket.count} · {total > 0 ? Math.round((bucket.count / total) * 100) : 0}%
+                    {bucket.count} ·{" "}
+                    {total > 0 ? Math.round((bucket.count / total) * 100) : 0}%
                   </span>
                 </div>
               )}
@@ -100,7 +110,10 @@ export function DistributionChart({
       </div>
 
       {/* Baseline: the one rule the columns actually sit on. */}
-      <div className="mt-0 h-px w-full" style={{ background: "var(--viz-grid)" }} />
+      <div
+        className="mt-0 h-px w-full"
+        style={{ background: "var(--viz-grid)" }}
+      />
 
       <div className="mt-1.5 flex gap-[2px]">
         {buckets.map((bucket) => (

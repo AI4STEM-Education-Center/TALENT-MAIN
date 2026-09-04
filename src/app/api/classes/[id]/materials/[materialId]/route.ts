@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { deleteS3Objects, listS3Objects, getS3Config, materialPrefixFromStorageKey } from "@/lib/storage";
+import {
+  deleteS3Objects,
+  listS3Objects,
+  getS3Config,
+  materialPrefixFromStorageKey,
+} from "@/lib/storage";
 import { cancelMaterial } from "@/lib/vlm-engine";
 import { materialLinkedToClass } from "@/lib/learning-material";
 
@@ -9,7 +14,7 @@ export const runtime = "nodejs";
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string; materialId: string }> }
+  { params }: { params: Promise<{ id: string; materialId: string }> },
 ) {
   const session = await auth();
   if (!session?.user || session.user.role !== "TEACHER") {
@@ -20,7 +25,8 @@ export async function PATCH(
     params,
     prisma.teacher.findUnique({ where: { userId: session.user.id } }),
   ]);
-  if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
+  if (!teacher)
+    return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
 
   const material = await prisma.learningMaterial.findUnique({
     where: { id: materialId },
@@ -41,11 +47,18 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const data: { batchDescription?: string | null; title?: string | null; topicId?: string | null } = {};
+  const data: {
+    batchDescription?: string | null;
+    title?: string | null;
+    topicId?: string | null;
+  } = {};
 
   if ("batchDescription" in body) {
     if (typeof body.batchDescription !== "string") {
-      return NextResponse.json({ error: "batchDescription must be a string" }, { status: 400 });
+      return NextResponse.json(
+        { error: "batchDescription must be a string" },
+        { status: 400 },
+      );
     }
     const trimmed = body.batchDescription.trim();
     data.batchDescription = trimmed.length > 0 ? trimmed : null;
@@ -53,31 +66,48 @@ export async function PATCH(
 
   if ("title" in body) {
     if (typeof body.title !== "string") {
-      return NextResponse.json({ error: "title must be a string" }, { status: 400 });
+      return NextResponse.json(
+        { error: "title must be a string" },
+        { status: 400 },
+      );
     }
     const trimmed = body.title.trim();
     if (trimmed.length > 255) {
-      return NextResponse.json({ error: "title must be 255 characters or fewer" }, { status: 400 });
+      return NextResponse.json(
+        { error: "title must be 255 characters or fewer" },
+        { status: 400 },
+      );
     }
     data.title = trimmed.length > 0 ? trimmed : null;
   }
 
   if ("topicId" in body) {
     if (body.topicId !== null && typeof body.topicId !== "string") {
-      return NextResponse.json({ error: "topicId must be a string or null" }, { status: 400 });
+      return NextResponse.json(
+        { error: "topicId must be a string or null" },
+        { status: 400 },
+      );
     }
-    const topicId = typeof body.topicId === "string" && body.topicId ? body.topicId : null;
+    const topicId =
+      typeof body.topicId === "string" && body.topicId ? body.topicId : null;
     if (topicId) {
       const topic = await prisma.topic.findFirst({
         where: { id: topicId, teacherId: teacher.id, contentType: "MATERIAL" },
       });
-      if (!topic) return NextResponse.json({ error: "Material tag not found" }, { status: 400 });
+      if (!topic)
+        return NextResponse.json(
+          { error: "Material tag not found" },
+          { status: 400 },
+        );
     }
     data.topicId = topicId;
   }
 
   if (Object.keys(data).length === 0) {
-    return NextResponse.json({ error: "No valid fields provided" }, { status: 400 });
+    return NextResponse.json(
+      { error: "No valid fields provided" },
+      { status: 400 },
+    );
   }
 
   const updated = await prisma.learningMaterial.update({
@@ -97,7 +127,7 @@ export async function PATCH(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string; materialId: string }> }
+  { params }: { params: Promise<{ id: string; materialId: string }> },
 ) {
   const session = await auth();
   if (!session?.user || session.user.role !== "TEACHER") {
@@ -108,7 +138,8 @@ export async function DELETE(
     params,
     prisma.teacher.findUnique({ where: { userId: session.user.id } }),
   ]);
-  if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
+  if (!teacher)
+    return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
 
   const material = await prisma.learningMaterial.findUnique({
     where: { id: materialId },

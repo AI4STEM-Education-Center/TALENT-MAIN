@@ -29,12 +29,15 @@ function clamp(value: number, low: number, high: number): number {
 }
 
 /** The original docked position: bottom-right, 26rem wide, at most 80vh tall. */
-export function defaultPanelRect(viewportWidth: number, viewportHeight: number): PanelRect {
+export function defaultPanelRect(
+  viewportWidth: number,
+  viewportHeight: number,
+): PanelRect {
   const width = Math.min(DEFAULT_WIDTH, viewportWidth - MARGIN * 2);
   const height = Math.min(
     DEFAULT_MAX_HEIGHT,
     Math.round(viewportHeight * 0.8),
-    viewportHeight - MARGIN * 2
+    viewportHeight - MARGIN * 2,
   );
   return {
     x: viewportWidth - width - MARGIN,
@@ -52,23 +55,27 @@ export function defaultPanelRect(viewportWidth: number, viewportHeight: number):
 export function clampPanelRect(
   rect: PanelRect,
   viewportWidth: number,
-  viewportHeight: number
+  viewportHeight: number,
 ): PanelRect {
   const width = clamp(
     rect.width,
     Math.min(MIN_PANEL_WIDTH, viewportWidth),
-    Math.max(MIN_PANEL_WIDTH, viewportWidth - MARGIN * 2)
+    Math.max(MIN_PANEL_WIDTH, viewportWidth - MARGIN * 2),
   );
   const height = clamp(
     rect.height,
     Math.min(MIN_PANEL_HEIGHT, viewportHeight),
-    Math.max(MIN_PANEL_HEIGHT, viewportHeight - MARGIN * 2)
+    Math.max(MIN_PANEL_HEIGHT, viewportHeight - MARGIN * 2),
   );
   return {
     width,
     height,
     x: clamp(rect.x, MARGIN, Math.max(MARGIN, viewportWidth - width - MARGIN)),
-    y: clamp(rect.y, MARGIN, Math.max(MARGIN, viewportHeight - height - MARGIN)),
+    y: clamp(
+      rect.y,
+      MARGIN,
+      Math.max(MARGIN, viewportHeight - height - MARGIN),
+    ),
   };
 }
 
@@ -78,12 +85,12 @@ export function movePanelRect(
   dx: number,
   dy: number,
   viewportWidth: number,
-  viewportHeight: number
+  viewportHeight: number,
 ): PanelRect {
   return clampPanelRect(
     { ...start, x: start.x + dx, y: start.y + dy },
     viewportWidth,
-    viewportHeight
+    viewportHeight,
   );
 }
 
@@ -98,7 +105,7 @@ export function resizePanelRect(
   dx: number,
   dy: number,
   viewportWidth: number,
-  viewportHeight: number
+  viewportHeight: number,
 ): PanelRect {
   let left = start.x;
   let top = start.y;
@@ -108,7 +115,8 @@ export function resizePanelRect(
   if (edge.includes("w")) left = Math.min(left + dx, right - MIN_PANEL_WIDTH);
   if (edge.includes("e")) right = Math.max(right + dx, left + MIN_PANEL_WIDTH);
   if (edge.includes("n")) top = Math.min(top + dy, bottom - MIN_PANEL_HEIGHT);
-  if (edge.includes("s")) bottom = Math.max(bottom + dy, top + MIN_PANEL_HEIGHT);
+  if (edge.includes("s"))
+    bottom = Math.max(bottom + dy, top + MIN_PANEL_HEIGHT);
 
   left = Math.max(left, MARGIN);
   top = Math.max(top, MARGIN);
@@ -118,7 +126,7 @@ export function resizePanelRect(
   return clampPanelRect(
     { x: left, y: top, width: right - left, height: bottom - top },
     viewportWidth,
-    viewportHeight
+    viewportHeight,
   );
 }
 
@@ -155,6 +163,7 @@ function isPanelRect(value: unknown): value is PanelRect {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
   return (["x", "y", "width", "height"] as const).every(
-    (key) => typeof candidate[key] === "number" && Number.isFinite(candidate[key])
+    (key) =>
+      typeof candidate[key] === "number" && Number.isFinite(candidate[key]),
   );
 }

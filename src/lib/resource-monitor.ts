@@ -26,13 +26,13 @@ import {
 
 export const RESOURCE_SAMPLE_INTERVAL_MS = Math.max(
   10_000,
-  Number(process.env.RESOURCE_SAMPLE_INTERVAL_MS) || 60_000
+  Number(process.env.RESOURCE_SAMPLE_INTERVAL_MS) || 60_000,
 );
 
 /** The admin UI charts one week, so keeping more than that is dead weight. */
 export const RESOURCE_SAMPLE_RETENTION_DAYS = Math.max(
   1,
-  Number(process.env.RESOURCE_SAMPLE_RETENTION_DAYS) || 7
+  Number(process.env.RESOURCE_SAMPLE_RETENTION_DAYS) || 7,
 );
 
 const RETENTION_MS = RESOURCE_SAMPLE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
@@ -64,7 +64,7 @@ async function refreshS3UsageBytes(now: number): Promise<number | null> {
   } catch (err: unknown) {
     console.error(
       "[Resources] S3 usage scan failed:",
-      err instanceof Error ? err.message : err
+      err instanceof Error ? err.message : err,
     );
   }
   s3Usage = { bytes, at: now };
@@ -101,7 +101,7 @@ export function startResourceSampler(role: NodeRole): void {
 
   const writer = createSpoolWriter(identity.nodeId, RETENTION_MS);
   console.log(
-    `[Resources] Sampling node ${identity.nodeId} every ${RESOURCE_SAMPLE_INTERVAL_MS}ms -> ${writer.file}`
+    `[Resources] Sampling node ${identity.nodeId} every ${RESOURCE_SAMPLE_INTERVAL_MS}ms -> ${writer.file}`,
   );
 
   let failing = false;
@@ -113,7 +113,7 @@ export function startResourceSampler(role: NodeRole): void {
         identity,
         sampleCpuPercent(readCpuCores()),
         sampleHostCpuPercent(),
-        s3Bytes
+        s3Bytes,
       );
       writer.write(sample, now);
       failing = false;
@@ -122,7 +122,7 @@ export function startResourceSampler(role: NodeRole): void {
         failing = true;
         console.error(
           `[Resources] Sampling ${identity.nodeId} failed (suppressing until it recovers):`,
-          err instanceof Error ? err.message : err
+          err instanceof Error ? err.message : err,
         );
       }
     }
@@ -147,7 +147,9 @@ export function startResourceSampler(role: NodeRole): void {
  * table would make the container refuse to start. Removing the model needs a
  * deliberate, separately-reviewed migration.
  */
-export async function pruneResourceSamples(now: Date = new Date()): Promise<number> {
+export async function pruneResourceSamples(
+  now: Date = new Date(),
+): Promise<number> {
   const cutoff = new Date(now.getTime() - RETENTION_MS);
   const { count } = await prisma.resourceSample.deleteMany({
     where: { createdAt: { lt: cutoff } },
@@ -214,7 +216,10 @@ export interface ResourceReport {
   spool: SpoolStatus;
 }
 
-const reportCache = new Map<ResourceRange, { report: ResourceReport; at: number }>();
+const reportCache = new Map<
+  ResourceRange,
+  { report: ResourceReport; at: number }
+>();
 
 /** Drops the memoized reports. Exists so specs can seed rows and re-read them. */
 export function clearResourceReportCache(): void {
@@ -224,10 +229,15 @@ export function clearResourceReportCache(): void {
 function reportCacheTtlMs(range: ResourceRange): number {
   // Never serve something older than a sample tick on the live view; the wide
   // ranges barely move between polls, so they can cache for longer.
-  return range === "1h" ? Math.min(20_000, RESOURCE_SAMPLE_INTERVAL_MS) : 60_000;
+  return range === "1h"
+    ? Math.min(20_000, RESOURCE_SAMPLE_INTERVAL_MS)
+    : 60_000;
 }
 
-function buildHostSeries(samples: SpooledSample[], bucketMs: number): HostSeries | null {
+function buildHostSeries(
+  samples: SpooledSample[],
+  bucketMs: number,
+): HostSeries | null {
   if (samples.length === 0) return null;
   // Bucketing the union of every node's samples: the host fields agree across
   // nodes, so averaging them within a bucket returns that agreed value while
@@ -252,8 +262,11 @@ function buildHostSeries(samples: SpooledSample[], bucketMs: number): HostSeries
   // otherwise erase the machine's size.
   const reversed = [...samples].reverse();
   return {
-    cpuCores: reversed.find((s) => s.hostCpuCores !== null)?.hostCpuCores ?? null,
-    memTotalBytes: reversed.find((s) => s.hostMemTotalBytes !== null)?.hostMemTotalBytes ?? null,
+    cpuCores:
+      reversed.find((s) => s.hostCpuCores !== null)?.hostCpuCores ?? null,
+    memTotalBytes:
+      reversed.find((s) => s.hostMemTotalBytes !== null)?.hostMemTotalBytes ??
+      null,
     diskTotalBytes: latest.diskTotalBytes,
     diskFreeBytes: latest.diskFreeBytes,
     lastSampleAt: samples[samples.length - 1].createdAt.getTime(),
@@ -270,10 +283,11 @@ function buildHostSeries(samples: SpooledSample[], bucketMs: number): HostSeries
  */
 export async function buildResourceReport(
   range: ResourceRange,
-  now: Date = new Date()
+  now: Date = new Date(),
 ): Promise<ResourceReport> {
   const cached = reportCache.get(range);
-  if (cached && now.getTime() - cached.at < reportCacheTtlMs(range)) return cached.report;
+  if (cached && now.getTime() - cached.at < reportCacheTtlMs(range))
+    return cached.report;
 
   const { windowMs, bucketMs } = rangeConfig(range);
   const { samples, files, error } = readSpool(now.getTime() - windowMs);

@@ -1,4 +1,8 @@
-import { buildGradeHeader, buildGradesCsv, formatGrade } from "@/lib/grades-csv";
+import {
+  buildGradeHeader,
+  buildGradesCsv,
+  formatGrade,
+} from "@/lib/grades-csv";
 
 export type ParticipationMetric = "quizzes-completed" | "completed-attempts";
 
@@ -12,9 +16,11 @@ export interface ParticipationCreditRow {
 
 export function participationCount(
   row: ParticipationCreditRow,
-  metric: ParticipationMetric
+  metric: ParticipationMetric,
 ): number {
-  return metric === "quizzes-completed" ? row.quizzesCompleted : row.completedAttempts;
+  return metric === "quizzes-completed"
+    ? row.quizzesCompleted
+    : row.completedAttempts;
 }
 
 /**
@@ -41,7 +47,9 @@ export function buildParticipationCreditCsv({
       orgDefinedId: row.orgDefinedId,
       lastName: row.lastName,
       firstName: row.firstName,
-      grade: formatGrade(participationCount(row, metric) >= threshold ? pointsAwarded : 0),
-    }))
+      grade: formatGrade(
+        participationCount(row, metric) >= threshold ? pointsAwarded : 0,
+      ),
+    })),
   );
 }

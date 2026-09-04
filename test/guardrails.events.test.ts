@@ -24,7 +24,9 @@ describe("recordGuardrailEvent", () => {
     });
 
     expect(id).toBeTruthy();
-    const row = await prisma.guardrailEvent.findUniqueOrThrow({ where: { id: id! } });
+    const row = await prisma.guardrailEvent.findUniqueOrThrow({
+      where: { id: id! },
+    });
     expect(row.surface).toBe("assistant_chat");
     expect(row.subjectId).toBe("conv-1");
     expect(row.userId).toBe("u1");
@@ -38,7 +40,9 @@ describe("recordGuardrailEvent", () => {
       blocked: false,
       reasons: ["off-topic (0.80)"],
     });
-    const row = await prisma.guardrailEvent.findUniqueOrThrow({ where: { id: id! } });
+    const row = await prisma.guardrailEvent.findUniqueOrThrow({
+      where: { id: id! },
+    });
     expect(row.blocked).toBe(false);
     expect(row.userId).toBeNull();
   });
@@ -77,11 +81,17 @@ describe("submitGuardrailFeedback", () => {
     const { user } = await createStudent();
     const eventId = await eventFor(user.id);
 
-    expect(await submitGuardrailFeedback(eventId, user.id, "  I asked about momentum.  ")).toBe(
-      "saved"
-    );
+    expect(
+      await submitGuardrailFeedback(
+        eventId,
+        user.id,
+        "  I asked about momentum.  ",
+      ),
+    ).toBe("saved");
 
-    const row = await prisma.guardrailFeedback.findUniqueOrThrow({ where: { eventId } });
+    const row = await prisma.guardrailFeedback.findUniqueOrThrow({
+      where: { eventId },
+    });
     expect(row.message).toBe("I asked about momentum.");
     expect(row.status).toBe("NEW");
     expect(row.userId).toBe(user.id);
@@ -91,7 +101,9 @@ describe("submitGuardrailFeedback", () => {
     const { user } = await createStudent();
     const eventId = await eventFor(user.id);
 
-    expect(await submitGuardrailFeedback(eventId, user.id, "   \n ")).toBe("empty");
+    expect(await submitGuardrailFeedback(eventId, user.id, "   \n ")).toBe(
+      "empty",
+    );
     expect(await prisma.guardrailFeedback.count()).toBe(0);
   });
 
@@ -99,8 +111,14 @@ describe("submitGuardrailFeedback", () => {
     const { user } = await createStudent();
     const eventId = await eventFor(user.id);
 
-    await submitGuardrailFeedback(eventId, user.id, "x".repeat(MAX_FEEDBACK_CHARS + 500));
-    const row = await prisma.guardrailFeedback.findUniqueOrThrow({ where: { eventId } });
+    await submitGuardrailFeedback(
+      eventId,
+      user.id,
+      "x".repeat(MAX_FEEDBACK_CHARS + 500),
+    );
+    const row = await prisma.guardrailFeedback.findUniqueOrThrow({
+      where: { eventId },
+    });
     expect(row.message).toHaveLength(MAX_FEEDBACK_CHARS);
   });
 
@@ -111,19 +129,25 @@ describe("submitGuardrailFeedback", () => {
     const { user: other } = await createStudent();
     const eventId = await eventFor(owner.id);
 
-    expect(await submitGuardrailFeedback(eventId, other.id, "let me in")).toBe("not_found");
+    expect(await submitGuardrailFeedback(eventId, other.id, "let me in")).toBe(
+      "not_found",
+    );
     expect(await prisma.guardrailFeedback.count()).toBe(0);
   });
 
   it("reads an unknown id as not_found", async () => {
     const { user } = await createStudent();
-    expect(await submitGuardrailFeedback("nope", user.id, "hello")).toBe("not_found");
+    expect(await submitGuardrailFeedback("nope", user.id, "hello")).toBe(
+      "not_found",
+    );
   });
 
   it("cannot be claimed on an event recorded with no user", async () => {
     const { user } = await createStudent();
     const eventId = await eventFor(null);
-    expect(await submitGuardrailFeedback(eventId, user.id, "mine now")).toBe("not_found");
+    expect(await submitGuardrailFeedback(eventId, user.id, "mine now")).toBe(
+      "not_found",
+    );
   });
 
   it("EDITS an existing report rather than stacking a second one", async () => {
@@ -131,10 +155,16 @@ describe("submitGuardrailFeedback", () => {
     const eventId = await eventFor(user.id);
 
     await submitGuardrailFeedback(eventId, user.id, "first try");
-    await submitGuardrailFeedback(eventId, user.id, "actually, here is more detail");
+    await submitGuardrailFeedback(
+      eventId,
+      user.id,
+      "actually, here is more detail",
+    );
 
     expect(await prisma.guardrailFeedback.count()).toBe(1);
-    const row = await prisma.guardrailFeedback.findUniqueOrThrow({ where: { eventId } });
+    const row = await prisma.guardrailFeedback.findUniqueOrThrow({
+      where: { eventId },
+    });
     expect(row.message).toBe("actually, here is more detail");
   });
 
@@ -144,12 +174,18 @@ describe("submitGuardrailFeedback", () => {
     await submitGuardrailFeedback(eventId, user.id, "first try");
     await prisma.guardrailFeedback.update({
       where: { eventId },
-      data: { status: "REVIEWED", reviewedAt: new Date(), reviewedBy: "admin-1" },
+      data: {
+        status: "REVIEWED",
+        reviewedAt: new Date(),
+        reviewedBy: "admin-1",
+      },
     });
 
     await submitGuardrailFeedback(eventId, user.id, "it happened again");
 
-    const row = await prisma.guardrailFeedback.findUniqueOrThrow({ where: { eventId } });
+    const row = await prisma.guardrailFeedback.findUniqueOrThrow({
+      where: { eventId },
+    });
     expect(row.status).toBe("NEW");
     expect(row.reviewedAt).toBeNull();
     expect(row.reviewedBy).toBeNull();

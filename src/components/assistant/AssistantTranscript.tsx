@@ -50,23 +50,35 @@ export type Bubble = AssistantTurn & {
 };
 
 /** A tool the assistant is running (or just ran) during the pending turn. */
-export type ToolActivity = { name: string; label: string; status: "running" | "done" | "error" };
+export type ToolActivity = {
+  name: string;
+  label: string;
+  status: "running" | "done" | "error";
+};
 
-const MessageBubble = memo(function MessageBubble({ bubble }: { bubble: Bubble }) {
+const MessageBubble = memo(function MessageBubble({
+  bubble,
+}: {
+  bubble: Bubble;
+}) {
   const isUser = bubble.role === "user";
   return (
     <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
       <div
         className={cn(
           "max-w-[85%] rounded-lg px-3 py-2",
-          isUser ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
+          isUser
+            ? "bg-primary text-primary-foreground"
+            : "bg-muted text-foreground",
         )}
       >
         {isUser ? (
           <p className="whitespace-pre-wrap text-sm">{bubble.content}</p>
         ) : (
           <div className={MARKDOWN_CLASS} aria-live="polite">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{bubble.content}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {bubble.content}
+            </ReactMarkdown>
           </div>
         )}
 
@@ -103,7 +115,10 @@ const MessageBubble = memo(function MessageBubble({ bubble }: { bubble: Bubble }
         {bubble.error && (
           <div className="mt-1 space-y-1">
             <p className="text-xs text-destructive">{bubble.error}</p>
-            <GuardrailFeedbackButton eventId={bubble.guardrailEventId} className="text-destructive" />
+            <GuardrailFeedbackButton
+              eventId={bubble.guardrailEventId}
+              className="text-destructive"
+            />
           </div>
         )}
 
@@ -142,14 +157,19 @@ export const AssistantTranscript = memo(function AssistantTranscript({
       {activity.length > 0 && (
         <ul className="space-y-1">
           {activity.map((item) => (
-            <li key={item.name} className="flex items-center gap-2 text-xs text-muted-foreground">
+            <li
+              key={item.name}
+              className="flex items-center gap-2 text-xs text-muted-foreground"
+            >
               {item.status === "running" ? (
                 <Loader2 className="size-3 animate-spin text-primary" />
               ) : (
                 <Wrench
                   className={cn(
                     "size-3",
-                    item.status === "error" ? "text-destructive" : "text-primary"
+                    item.status === "error"
+                      ? "text-destructive"
+                      : "text-primary",
                   )}
                 />
               )}

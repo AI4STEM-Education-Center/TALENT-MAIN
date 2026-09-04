@@ -28,7 +28,12 @@ import {
 } from "@/lib/participation-credit-csv";
 
 function safeFilename(value: string): string {
-  return value.replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "_") || "class";
+  return (
+    value
+      .replace(/[^\w\- ]+/g, "")
+      .trim()
+      .replace(/\s+/g, "_") || "class"
+  );
 }
 
 export function ExportParticipationCreditDialog({
@@ -41,17 +46,24 @@ export function ExportParticipationCreditDialog({
   const [open, setOpen] = useState(false);
   const [gradeColumnName, setGradeColumnName] = useState("Quiz Participation");
   const [pointsAwarded, setPointsAwarded] = useState("5");
-  const [metric, setMetric] = useState<ParticipationMetric>("quizzes-completed");
+  const [metric, setMetric] =
+    useState<ParticipationMetric>("quizzes-completed");
   const [threshold, setThreshold] = useState("1");
 
   const points = Number(pointsAwarded);
   const minimum = Number(threshold);
-  const pointsValid = Number.isFinite(points) && points > 0 && points <= 1_000_000;
-  const thresholdValid = Number.isInteger(minimum) && minimum >= 1 && minimum <= 1_000_000;
+  const pointsValid =
+    Number.isFinite(points) && points > 0 && points <= 1_000_000;
+  const thresholdValid =
+    Number.isInteger(minimum) && minimum >= 1 && minimum <= 1_000_000;
   const studentsReceivingCredit = thresholdValid
     ? rows.filter((row) => participationCount(row, metric) >= minimum).length
     : 0;
-  const canDownload = rows.length > 0 && gradeColumnName.trim().length > 0 && pointsValid && thresholdValid;
+  const canDownload =
+    rows.length > 0 &&
+    gradeColumnName.trim().length > 0 &&
+    pointsValid &&
+    thresholdValid;
 
   function download() {
     if (!canDownload) return;
@@ -63,7 +75,9 @@ export function ExportParticipationCreditDialog({
       threshold: minimum,
       rows,
     });
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const url = URL.createObjectURL(
+      new Blob([csv], { type: "text/csv;charset=utf-8" }),
+    );
     const anchor = document.createElement("a");
     anchor.href = url;
     anchor.download = `${safeFilename(className)}_participation_credit.csv`;
@@ -84,14 +98,17 @@ export function ExportParticipationCreditDialog({
           <DialogHeader>
             <DialogTitle>Download quiz participation credit</DialogTitle>
             <DialogDescription>
-              Create an eLC-ready grade column from completed quiz activity. This download is generated in your
-              browser and does not require administrator approval.
+              Create an eLC-ready grade column from completed quiz activity.
+              This download is generated in your browser and does not require
+              administrator approval.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="participation-grade-column">Grade column name</Label>
+              <Label htmlFor="participation-grade-column">
+                Grade column name
+              </Label>
               <Input
                 id="participation-grade-column"
                 maxLength={200}
@@ -113,14 +130,25 @@ export function ExportParticipationCreditDialog({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="participation-measure">Participation measure</Label>
-              <Select value={metric} onValueChange={(value) => setMetric(value as ParticipationMetric)}>
+              <Label htmlFor="participation-measure">
+                Participation measure
+              </Label>
+              <Select
+                value={metric}
+                onValueChange={(value) =>
+                  setMetric(value as ParticipationMetric)
+                }
+              >
                 <SelectTrigger id="participation-measure">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="quizzes-completed">Different quizzes completed</SelectItem>
-                  <SelectItem value="completed-attempts">Total completed quiz attempts</SelectItem>
+                  <SelectItem value="quizzes-completed">
+                    Different quizzes completed
+                  </SelectItem>
+                  <SelectItem value="completed-attempts">
+                    Total completed quiz attempts
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>

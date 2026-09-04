@@ -13,11 +13,23 @@ type Scope =
 
 function parseScope(body: Record<string, unknown>): Scope | null {
   if (body.scope === "pool") return { scope: "pool" };
-  if (body.scope === "quiz" && typeof body.quizId === "string" && body.quizId.trim()) {
+  if (
+    body.scope === "quiz" &&
+    typeof body.quizId === "string" &&
+    body.quizId.trim()
+  ) {
     return { scope: "quiz", quizId: body.quizId.trim() };
   }
-  if (body.scope === "question" && typeof body.questionId === "string" && body.questionId.trim()) {
-    return { scope: "question", questionId: body.questionId.trim(), force: body.force === true };
+  if (
+    body.scope === "question" &&
+    typeof body.questionId === "string" &&
+    body.questionId.trim()
+  ) {
+    return {
+      scope: "question",
+      questionId: body.questionId.trim(),
+      force: body.force === true,
+    };
   }
   return null;
 }
@@ -40,7 +52,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const limited = rateLimit(req, "admin-sim-generate", 20, 60_000, session.user.id);
+  const limited = rateLimit(
+    req,
+    "admin-sim-generate",
+    20,
+    60_000,
+    session.user.id,
+  );
   if (limited) return limited;
 
   let body: Record<string, unknown>;
@@ -52,8 +70,11 @@ export async function POST(req: NextRequest) {
   const scope = parseScope(body);
   if (!scope) {
     return NextResponse.json(
-      { error: "scope must be 'pool', 'quiz' (with quizId), or 'question' (with questionId)" },
-      { status: 400 }
+      {
+        error:
+          "scope must be 'pool', 'quiz' (with quizId), or 'question' (with questionId)",
+      },
+      { status: 400 },
     );
   }
 
@@ -70,17 +91,24 @@ export async function POST(req: NextRequest) {
       where: { id: scope.quizId },
       include: { questions: { select: { id: true } } },
     });
-    if (!quiz) return NextResponse.json({ error: "Quiz not found" }, { status: 404 });
+    if (!quiz)
+      return NextResponse.json({ error: "Quiz not found" }, { status: 404 });
     questionIds = quiz.questions.map((q) => q.id);
   } else {
-    const question = await prisma.question.findUnique({ where: { id: scope.questionId } });
-    if (!question) return NextResponse.json({ error: "Question not found" }, { status: 404 });
+    const question = await prisma.question.findUnique({
+      where: { id: scope.questionId },
+    });
+    if (!question)
+      return NextResponse.json(
+        { error: "Question not found" },
+        { status: 404 },
+      );
     questionIds = [question.id];
   }
 
   const summary = await triggerSimulations(
     questionIds,
-    scope.scope === "question" && scope.force
+    scope.scope === "question" && scope.force,
   );
   return NextResponse.json({ scope: scope.scope, ...summary }, { status: 202 });
 }

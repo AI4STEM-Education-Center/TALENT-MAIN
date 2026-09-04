@@ -50,10 +50,12 @@ export default async function HomePage() {
             <BookOpen className="size-8 text-primary" />
           </span>
 
-          <h1 className="text-4xl font-semibold sm:text-5xl">Adaptive Learning</h1>
+          <h1 className="text-4xl font-semibold sm:text-5xl">
+            Adaptive Learning
+          </h1>
           <p className="mt-4 max-w-xl text-lg text-muted-foreground">
-            Guided science education for every student — with the reasoning shown, not just the
-            score.
+            Guided science education for every student — with the reasoning
+            shown, not just the score.
           </p>
 
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -66,17 +68,25 @@ export default async function HomePage() {
           </div>
 
           <p className="mt-6 text-sm text-muted-foreground">
-            Students: use the invitation link from your teacher to create an account and join your
-            class.
+            Students: use the invitation link from your teacher to create an
+            account and join your class.
           </p>
         </div>
 
         <ul className="mt-14 grid gap-4 sm:grid-cols-3">
           {FEATURES.map((feature) => (
-            <li key={feature.title} className="surface-card p-[var(--pad-card)]">
-              <feature.icon className="size-5 text-primary" aria-hidden="true" />
+            <li
+              key={feature.title}
+              className="surface-card p-[var(--pad-card)]"
+            >
+              <feature.icon
+                className="size-5 text-primary"
+                aria-hidden="true"
+              />
               <h2 className="mt-3 text-base font-semibold">{feature.title}</h2>
-              <p className="mt-1 text-sm text-muted-foreground">{feature.body}</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {feature.body}
+              </p>
             </li>
           ))}
         </ul>

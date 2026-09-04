@@ -7,12 +7,23 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ArrowLeft, XCircle, RotateCcw, Maximize2 } from "lucide-react";
 import { ExamResultsView } from "@/components/student/ExamResultsView";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { MathText } from "@/components/ui/math-text";
 import { RESULT_STATUS, type StudentMistakeView } from "@/lib/exam-results";
 import { normalizeNumericValue } from "@/lib/quiz-scoring";
 
-interface Option { id: string; text: string; isCorrect?: boolean; imageUrl?: string | null; imageAlt?: string | null }
+interface Option {
+  id: string;
+  text: string;
+  isCorrect?: boolean;
+  imageUrl?: string | null;
+  imageAlt?: string | null;
+}
 interface Question {
   id: string;
   text: string;
@@ -43,7 +54,9 @@ export default function QuizPage() {
   // Raw, unparsed NUMERIC field strings keyed by question id. Kept raw (rather
   // than parsed numbers) so partial input like "-" or "3." types naturally;
   // normalizeNumericValue is applied wherever a real number is needed.
-  const [numericInputs, setNumericInputs] = useState<Record<string, string>>({});
+  const [numericInputs, setNumericInputs] = useState<Record<string, string>>(
+    {},
+  );
   const [result, setResult] = useState<QuizResult | null>(null);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -67,7 +80,11 @@ export default function QuizPage() {
         body: JSON.stringify({ classId, quizId }),
       });
       const data = await res.json();
-      if (!res.ok) { setError(data.error); setPhase("error"); return; }
+      if (!res.ok) {
+        setError(data.error);
+        setPhase("error");
+        return;
+      }
       setAttemptId(data.attemptId);
       setQuestions(data.questions);
       setSelections({});
@@ -128,7 +145,10 @@ export default function QuizPage() {
         questionId: q.id,
         selectedOptionId: selections[q.id]?.[0] || null,
         selectedOptionIds: selections[q.id] ?? [],
-        numericValue: q.answerMode === "NUMERIC" ? normalizeNumericValue(numericInputs[q.id]) : null,
+        numericValue:
+          q.answerMode === "NUMERIC"
+            ? normalizeNumericValue(numericInputs[q.id])
+            : null,
       }));
       const res = await fetch("/api/quiz", {
         method: "PATCH",
@@ -136,7 +156,11 @@ export default function QuizPage() {
         body: JSON.stringify({ attemptId, answers }),
       });
       const data = await res.json();
-      if (!res.ok) { setError(data.error); setPhase("error"); return; }
+      if (!res.ok) {
+        setError(data.error);
+        setPhase("error");
+        return;
+      }
       setResult(data);
       setPhase("results");
     } catch {
@@ -148,7 +172,8 @@ export default function QuizPage() {
   }
 
   const currentQuestion = questions[currentIndex];
-  const allAnswered = questions.length > 0 && questions.every((q) => isAnswered(q));
+  const allAnswered =
+    questions.length > 0 && questions.every((q) => isAnswered(q));
 
   if (phase === "loading") {
     return (
@@ -162,7 +187,9 @@ export default function QuizPage() {
     return (
       <div className="p-4 md:p-6 max-w-xl space-y-4">
         <Button variant="ghost" size="sm" asChild>
-          <Link href={`/student/classes/${classId}`}><ArrowLeft className="size-4" /> Back to class</Link>
+          <Link href={`/student/classes/${classId}`}>
+            <ArrowLeft className="size-4" /> Back to class
+          </Link>
         </Button>
         <Card>
           <CardContent className="flex flex-col items-center py-10 text-center">
@@ -178,49 +205,51 @@ export default function QuizPage() {
 
   if (phase === "results" && result) {
     const incorrectIds = new Set(result.incorrectQuestionIds);
-    const mistakes = questions.flatMap<StudentMistakeView>((question, index) => {
-      if (!incorrectIds.has(question.id)) return [];
+    const mistakes = questions.flatMap<StudentMistakeView>(
+      (question, index) => {
+        if (!incorrectIds.has(question.id)) return [];
 
-      const base = {
-        questionNumber: index + 1,
-        text: question.text,
-        figureUrl: question.figureUrl ?? null,
-        figureAlt: question.figureAlt ?? null,
-      };
-      if (question.answerMode === "NUMERIC") {
+        const base = {
+          questionNumber: index + 1,
+          text: question.text,
+          figureUrl: question.figureUrl ?? null,
+          figureAlt: question.figureAlt ?? null,
+        };
+        if (question.answerMode === "NUMERIC") {
+          return [
+            {
+              ...base,
+              response: {
+                kind: "numeric" as const,
+                value: normalizeNumericValue(numericInputs[question.id]),
+                unit: question.answerUnit ?? null,
+              },
+            },
+          ];
+        }
+
+        const selectedIds = new Set(selections[question.id] ?? []);
         return [
           {
             ...base,
             response: {
-              kind: "numeric" as const,
-              value: normalizeNumericValue(numericInputs[question.id]),
-              unit: question.answerUnit ?? null,
+              kind: "choices" as const,
+              choices: question.options.flatMap((option) =>
+                selectedIds.has(option.id)
+                  ? [
+                      {
+                        text: option.text,
+                        imageUrl: option.imageUrl ?? null,
+                        imageAlt: option.imageAlt ?? null,
+                      },
+                    ]
+                  : [],
+              ),
             },
           },
         ];
-      }
-
-      const selectedIds = new Set(selections[question.id] ?? []);
-      return [
-        {
-          ...base,
-          response: {
-            kind: "choices" as const,
-            choices: question.options.flatMap((option) =>
-              selectedIds.has(option.id)
-                ? [
-                    {
-                      text: option.text,
-                      imageUrl: option.imageUrl ?? null,
-                      imageAlt: option.imageAlt ?? null,
-                    },
-                  ]
-                : []
-            ),
-          },
-        },
-      ];
-    });
+      },
+    );
 
     // AI sections start PENDING and stream in independently. The missed-question
     // review is built only from prompts/responses already held by this client
@@ -260,7 +289,9 @@ export default function QuizPage() {
   return (
     <div className="p-4 md:p-6 max-w-2xl space-y-6">
       <Button variant="ghost" size="sm" asChild>
-        <Link href={`/student/classes/${classId}`}><ArrowLeft className="size-4" /> Back to class</Link>
+        <Link href={`/student/classes/${classId}`}>
+          <ArrowLeft className="size-4" /> Back to class
+        </Link>
       </Button>
 
       {/* Progress */}
@@ -286,7 +317,12 @@ export default function QuizPage() {
             {currentQuestion.figureUrl && (
               <button
                 type="button"
-                onClick={() => setZoom({ url: currentQuestion.figureUrl!, alt: currentQuestion.figureAlt ?? "Question figure" })}
+                onClick={() =>
+                  setZoom({
+                    url: currentQuestion.figureUrl!,
+                    alt: currentQuestion.figureAlt ?? "Question figure",
+                  })
+                }
                 aria-label="Enlarge figure"
                 className="group relative mb-3 block"
               >
@@ -315,7 +351,9 @@ export default function QuizPage() {
                     type="text"
                     inputMode="decimal"
                     value={numericInputs[currentQuestion.id] ?? ""}
-                    onChange={(e) => setNumericInput(currentQuestion.id, e.target.value)}
+                    onChange={(e) =>
+                      setNumericInput(currentQuestion.id, e.target.value)
+                    }
                     placeholder="Your answer"
                     className="max-w-xs"
                     aria-label="Numeric answer"
@@ -328,24 +366,34 @@ export default function QuizPage() {
                 </div>
                 {(() => {
                   const raw = numericInputs[currentQuestion.id] ?? "";
-                  const invalid = raw.trim() !== "" && normalizeNumericValue(raw) === null;
+                  const invalid =
+                    raw.trim() !== "" && normalizeNumericValue(raw) === null;
                   return invalid ? (
-                    <p className="text-xs text-muted-foreground">Enter a number.</p>
+                    <p className="text-xs text-muted-foreground">
+                      Enter a number.
+                    </p>
                   ) : null;
                 })()}
               </div>
             ) : (
               <>
                 {currentQuestion.answerMode === "MULTI_SELECT" && (
-                  <p className="text-xs text-muted-foreground">Select all that apply.</p>
+                  <p className="text-xs text-muted-foreground">
+                    Select all that apply.
+                  </p>
                 )}
                 {currentQuestion.options.map((opt) => {
                   const selectedIds = selections[currentQuestion.id] ?? [];
                   const isSelected = selectedIds.includes(opt.id);
                   return (
                     <div key={opt.id} className="flex items-stretch gap-2">
-                      <button type="button"
-                        onClick={() => currentQuestion.answerMode === "MULTI_SELECT" ? toggleOption(currentQuestion.id, opt.id) : selectOption(currentQuestion.id, opt.id)}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          currentQuestion.answerMode === "MULTI_SELECT"
+                            ? toggleOption(currentQuestion.id, opt.id)
+                            : selectOption(currentQuestion.id, opt.id)
+                        }
                         className={`grow text-left p-3 rounded-lg border transition-all text-sm ${
                           isSelected
                             ? "border-primary bg-primary/10 text-primary font-medium"
@@ -353,13 +401,19 @@ export default function QuizPage() {
                         }`}
                       >
                         <span className="flex items-start gap-2">
-                          <span className={`mt-0.5 flex size-4 shrink-0 items-center justify-center border ${currentQuestion.answerMode === "MULTI_SELECT" ? "rounded" : "rounded-full"} ${isSelected ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground"}`}>
+                          <span
+                            className={`mt-0.5 flex size-4 shrink-0 items-center justify-center border ${currentQuestion.answerMode === "MULTI_SELECT" ? "rounded" : "rounded-full"} ${isSelected ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground"}`}
+                          >
                             {isSelected ? "✓" : ""}
                           </span>
                           {opt.imageUrl ? (
                             <span className="flex flex-col gap-1">
                               {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={opt.imageUrl} alt={opt.imageAlt ?? "Answer choice"} className="max-h-40 w-auto max-w-full rounded border bg-white" />
+                              <img
+                                src={opt.imageUrl}
+                                alt={opt.imageAlt ?? "Answer choice"}
+                                className="max-h-40 w-auto max-w-full rounded border bg-white"
+                              />
                               {opt.text && <MathText text={opt.text} />}
                             </span>
                           ) : (
@@ -370,7 +424,12 @@ export default function QuizPage() {
                       {opt.imageUrl && (
                         <button
                           type="button"
-                          onClick={() => setZoom({ url: opt.imageUrl!, alt: opt.imageAlt ?? "Answer choice" })}
+                          onClick={() =>
+                            setZoom({
+                              url: opt.imageUrl!,
+                              alt: opt.imageAlt ?? "Answer choice",
+                            })
+                          }
                           aria-label="Enlarge choice image"
                           className="flex shrink-0 items-center rounded-lg border px-2 text-muted-foreground hover:bg-muted/50"
                         >
@@ -390,11 +449,17 @@ export default function QuizPage() {
       <Dialog open={!!zoom} onOpenChange={(open) => !open && setZoom(null)}>
         <DialogContent className="max-w-4xl">
           <DialogHeader>
-            <DialogTitle className="text-sm font-normal text-muted-foreground">{zoom?.alt ?? "Image"}</DialogTitle>
+            <DialogTitle className="text-sm font-normal text-muted-foreground">
+              {zoom?.alt ?? "Image"}
+            </DialogTitle>
           </DialogHeader>
           {zoom && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={zoom.url} alt={zoom.alt} className="mx-auto block max-h-[80vh] w-auto max-w-full" />
+            <img
+              src={zoom.url}
+              alt={zoom.alt}
+              className="mx-auto block max-h-[80vh] w-auto max-w-full"
+            />
           )}
         </DialogContent>
       </Dialog>
@@ -404,15 +469,16 @@ export default function QuizPage() {
         {/* Question dot navigation — scrollable on narrow screens */}
         <div className="flex gap-1 overflow-x-auto pb-1">
           {questions.map((q, i) => (
-            <button type="button"
+            <button
+              type="button"
               key={q.id}
               onClick={() => setCurrentIndex(i)}
               className={`size-8 rounded-full text-xs font-medium transition-colors shrink-0 ${
                 i === currentIndex
                   ? "bg-primary text-primary-foreground"
                   : isAnswered(q)
-                  ? "bg-green-100 text-green-700"
-                  : "bg-muted text-muted-foreground"
+                    ? "bg-green-100 text-green-700"
+                    : "bg-muted text-muted-foreground"
               }`}
             >
               {i + 1}
@@ -422,7 +488,11 @@ export default function QuizPage() {
 
         {/* Prev / Next buttons */}
         <div className="flex items-center justify-between gap-2">
-          <Button variant="outline" onClick={() => setCurrentIndex((i) => Math.max(0, i - 1))} disabled={currentIndex === 0}>
+          <Button
+            variant="outline"
+            onClick={() => setCurrentIndex((i) => Math.max(0, i - 1))}
+            disabled={currentIndex === 0}
+          >
             Previous
           </Button>
           {currentIndex < questions.length - 1 ? (

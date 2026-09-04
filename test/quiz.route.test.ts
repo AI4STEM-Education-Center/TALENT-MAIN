@@ -6,7 +6,13 @@ vi.mock("@/lib/queue", () => ({ enqueueExamResult: vi.fn() }));
 import { POST, PATCH } from "@/app/api/quiz/route";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { resetDb, createTeacher, createStudent, createClass, createPublishedQuiz } from "./db";
+import {
+  resetDb,
+  createTeacher,
+  createStudent,
+  createClass,
+  createPublishedQuiz,
+} from "./db";
 
 const mockAuth = vi.mocked(auth);
 
@@ -19,21 +25,31 @@ function jsonReq(body: unknown) {
 }
 
 function asStudent(userId: string) {
-  mockAuth.mockResolvedValue({ user: { id: userId, role: "STUDENT" } } as never);
+  mockAuth.mockResolvedValue({
+    user: { id: userId, role: "STUDENT" },
+  } as never);
 }
 
-async function setup(opts: { published?: boolean; answerMode?: "SINGLE_SELECT" | "MULTI_SELECT" } = {}) {
+async function setup(
+  opts: {
+    published?: boolean;
+    answerMode?: "SINGLE_SELECT" | "MULTI_SELECT";
+  } = {},
+) {
   const { teacher } = await createTeacher();
   const cls = await createClass(teacher.id);
   const { user: studentUser, student } = await createStudent();
-  await prisma.classEnrollment.create({ data: { classId: cls.id, studentId: student.id } });
+  await prisma.classEnrollment.create({
+    data: { classId: cls.id, studentId: student.id },
+  });
   const mod = await createPublishedQuiz({
     classId: cls.id,
     teacherId: teacher.id,
     answerMode: opts.answerMode ?? "SINGLE_SELECT",
     published: opts.published ?? true,
   });
-  const optionId = (text: string) => mod.question.options.find((o) => o.text === text)!.id;
+  const optionId = (text: string) =>
+    mod.question.options.find((o) => o.text === text)!.id;
   return { teacher, cls, studentUser, student, ...mod, optionId };
 }
 
@@ -87,7 +103,9 @@ describe("POST /api/quiz (start attempt)", () => {
     expect(body.questions[0].options[0]).not.toHaveProperty("isCorrect");
 
     // Progress is marked IN_PROGRESS.
-    const progress = await prisma.quizProgress.findFirst({ where: { quizId: quiz.id } });
+    const progress = await prisma.quizProgress.findFirst({
+      where: { quizId: quiz.id },
+    });
     expect(progress?.status).toBe("IN_PROGRESS");
   });
 });
@@ -123,7 +141,10 @@ describe("POST /api/quiz (per-class settings enforcement)", () => {
     const { studentUser, cls, quiz } = await setup();
     await prisma.classQuiz.updateMany({
       where: { classId: cls.id, quizId: quiz.id },
-      data: { availableFrom: new Date(Date.now() - HOUR), availableUntil: new Date(Date.now() + HOUR) },
+      data: {
+        availableFrom: new Date(Date.now() - HOUR),
+        availableUntil: new Date(Date.now() + HOUR),
+      },
     });
     asStudent(studentUser.id);
     const res = await POST(jsonReq({ classId: cls.id, quizId: quiz.id }));
@@ -138,7 +159,13 @@ describe("POST /api/quiz (per-class settings enforcement)", () => {
     });
     // One completed attempt already exists.
     await prisma.quizAttempt.create({
-      data: { studentId: student.id, classId: cls.id, quizId: quiz.id, completedAt: new Date(), score: 50 },
+      data: {
+        studentId: student.id,
+        classId: cls.id,
+        quizId: quiz.id,
+        completedAt: new Date(),
+        score: 50,
+      },
     });
     asStudent(studentUser.id);
     const res = await POST(jsonReq({ classId: cls.id, quizId: quiz.id }));
@@ -165,7 +192,9 @@ describe("POST /api/quiz (per-class settings enforcement)", () => {
     // Reusing the pending attempt is also what stops a student stockpiling
     // attempt IDs to submit one at a time against the correctness feedback.
     expect(
-      await prisma.quizAttempt.count({ where: { studentId: student.id, quizId: quiz.id } })
+      await prisma.quizAttempt.count({
+        where: { studentId: student.id, quizId: quiz.id },
+      }),
     ).toBe(1);
   });
 
@@ -194,13 +223,19 @@ describe("POST /api/quiz (per-class settings enforcement)", () => {
 
     const res = await PATCH(jsonReq({ attemptId: stockpiled.id, answers: [] }));
     expect(res.status).toBe(403);
-    const stored = await prisma.quizAttempt.findUnique({ where: { id: stockpiled.id } });
+    const stored = await prisma.quizAttempt.findUnique({
+      where: { id: stockpiled.id },
+    });
     expect(stored?.completedAt).toBeNull();
   });
 });
 
 describe("PATCH /api/quiz (submit answers)", () => {
-  async function startAttempt(studentId: string, classId: string, quizId: string) {
+  async function startAttempt(
+    studentId: string,
+    classId: string,
+    quizId: string,
+  ) {
     return prisma.quizAttempt.create({ data: { studentId, classId, quizId } });
   }
 
@@ -210,7 +245,12 @@ describe("PATCH /api/quiz (submit answers)", () => {
     const attempt = await startAttempt(s.student.id, s.cls.id, s.quiz.id);
 
     const res = await PATCH(
-      jsonReq({ attemptId: attempt.id, answers: [{ questionId: s.question.id, selectedOptionId: s.optionId("4") }] })
+      jsonReq({
+        attemptId: attempt.id,
+        answers: [
+          { questionId: s.question.id, selectedOptionId: s.optionId("4") },
+        ],
+      }),
     );
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -223,16 +263,22 @@ describe("PATCH /api/quiz (submit answers)", () => {
     expect(body).not.toHaveProperty("answers");
 
     // Regression guard: selectedOptionIds is stored as a JSON string, not a raw array.
-    const saved = await prisma.quizAnswer.findFirst({ where: { quizAttemptId: attempt.id } });
+    const saved = await prisma.quizAnswer.findFirst({
+      where: { quizAttemptId: attempt.id },
+    });
     expect(typeof saved?.selectedOptionIds).toBe("string");
     expect(JSON.parse(saved!.selectedOptionIds)).toEqual([s.optionId("4")]);
     expect(saved?.isCorrect).toBe(true);
 
     // Attempt + progress updated.
-    const updated = await prisma.quizAttempt.findUnique({ where: { id: attempt.id } });
+    const updated = await prisma.quizAttempt.findUnique({
+      where: { id: attempt.id },
+    });
     expect(updated?.score).toBe(100);
     expect(updated?.completedAt).not.toBeNull();
-    const progress = await prisma.quizProgress.findFirst({ where: { quizId: s.quiz.id } });
+    const progress = await prisma.quizProgress.findFirst({
+      where: { quizId: s.quiz.id },
+    });
     expect(progress?.status).toBe("COMPLETED");
     expect(progress?.bestScore).toBe(100);
   });
@@ -242,7 +288,12 @@ describe("PATCH /api/quiz (submit answers)", () => {
     asStudent(s.studentUser.id);
     const attempt = await startAttempt(s.student.id, s.cls.id, s.quiz.id);
     const res = await PATCH(
-      jsonReq({ attemptId: attempt.id, answers: [{ questionId: s.question.id, selectedOptionId: s.optionId("3") }] })
+      jsonReq({
+        attemptId: attempt.id,
+        answers: [
+          { questionId: s.question.id, selectedOptionId: s.optionId("3") },
+        ],
+      }),
     );
     const body = await res.json();
     expect(body.score).toBe(0);
@@ -256,7 +307,15 @@ describe("PATCH /api/quiz (submit answers)", () => {
     // Exact set -> correct.
     const a1 = await startAttempt(s.student.id, s.cls.id, s.quiz.id);
     const exact = await PATCH(
-      jsonReq({ attemptId: a1.id, answers: [{ questionId: s.question.id, selectedOptionIds: [s.optionId("4"), s.optionId("5")] }] })
+      jsonReq({
+        attemptId: a1.id,
+        answers: [
+          {
+            questionId: s.question.id,
+            selectedOptionIds: [s.optionId("4"), s.optionId("5")],
+          },
+        ],
+      }),
     );
     expect(await exact.json()).toMatchObject({
       score: 100,
@@ -266,7 +325,12 @@ describe("PATCH /api/quiz (submit answers)", () => {
     // Partial set -> wrong.
     const a2 = await startAttempt(s.student.id, s.cls.id, s.quiz.id);
     const partial = await PATCH(
-      jsonReq({ attemptId: a2.id, answers: [{ questionId: s.question.id, selectedOptionIds: [s.optionId("4")] }] })
+      jsonReq({
+        attemptId: a2.id,
+        answers: [
+          { questionId: s.question.id, selectedOptionIds: [s.optionId("4")] },
+        ],
+      }),
     );
     expect(await partial.json()).toMatchObject({
       score: 0,
@@ -292,7 +356,7 @@ describe("PATCH /api/quiz (submit answers)", () => {
       jsonReq({
         attemptId: attempt.id,
         answers: [{ questionId: s.question.id, numericValue: 0 }],
-      })
+      }),
     );
     const body = await res.json();
 
@@ -309,12 +373,28 @@ describe("PATCH /api/quiz (submit answers)", () => {
     asStudent(s.studentUser.id);
 
     const good = await startAttempt(s.student.id, s.cls.id, s.quiz.id);
-    await PATCH(jsonReq({ attemptId: good.id, answers: [{ questionId: s.question.id, selectedOptionId: s.optionId("4") }] }));
+    await PATCH(
+      jsonReq({
+        attemptId: good.id,
+        answers: [
+          { questionId: s.question.id, selectedOptionId: s.optionId("4") },
+        ],
+      }),
+    );
 
     const bad = await startAttempt(s.student.id, s.cls.id, s.quiz.id);
-    await PATCH(jsonReq({ attemptId: bad.id, answers: [{ questionId: s.question.id, selectedOptionId: s.optionId("3") }] }));
+    await PATCH(
+      jsonReq({
+        attemptId: bad.id,
+        answers: [
+          { questionId: s.question.id, selectedOptionId: s.optionId("3") },
+        ],
+      }),
+    );
 
-    const progress = await prisma.quizProgress.findFirst({ where: { quizId: s.quiz.id } });
+    const progress = await prisma.quizProgress.findFirst({
+      where: { quizId: s.quiz.id },
+    });
     expect(progress?.bestScore).toBe(100); // not overwritten by the later 0
   });
 
@@ -323,7 +403,14 @@ describe("PATCH /api/quiz (submit answers)", () => {
     const other = await createStudent();
     const attempt = await startAttempt(other.student.id, s.cls.id, s.quiz.id);
     asStudent(s.studentUser.id);
-    const res = await PATCH(jsonReq({ attemptId: attempt.id, answers: [{ questionId: s.question.id, selectedOptionId: s.optionId("4") }] }));
+    const res = await PATCH(
+      jsonReq({
+        attemptId: attempt.id,
+        answers: [
+          { questionId: s.question.id, selectedOptionId: s.optionId("4") },
+        ],
+      }),
+    );
     expect(res.status).toBe(404);
   });
 
@@ -331,7 +418,12 @@ describe("PATCH /api/quiz (submit answers)", () => {
     const s = await setup();
     asStudent(s.studentUser.id);
     const attempt = await startAttempt(s.student.id, s.cls.id, s.quiz.id);
-    const res = await PATCH(jsonReq({ attemptId: attempt.id, answers: [{ questionId: "ghost", selectedOptionId: "x" }] }));
+    const res = await PATCH(
+      jsonReq({
+        attemptId: attempt.id,
+        answers: [{ questionId: "ghost", selectedOptionId: "x" }],
+      }),
+    );
     expect(res.status).toBe(404);
   });
 });
@@ -348,7 +440,12 @@ describe("PATCH /api/quiz (submission integrity)", () => {
     const attempt = await startAttempt(s.student.id, s.cls.id, s.quiz.id);
 
     const first = await PATCH(
-      jsonReq({ attemptId: attempt.id, answers: [{ questionId: s.question.id, selectedOptionId: s.optionId("3") }] })
+      jsonReq({
+        attemptId: attempt.id,
+        answers: [
+          { questionId: s.question.id, selectedOptionId: s.optionId("3") },
+        ],
+      }),
     );
     expect((await first.json()).score).toBe(0);
 
@@ -356,11 +453,18 @@ describe("PATCH /api/quiz (submission integrity)", () => {
     // incorrectQuestionIds into an answer-key oracle, and it sidestepped the
     // per-class maxAttempts cap (which only counts completed attempts).
     const replay = await PATCH(
-      jsonReq({ attemptId: attempt.id, answers: [{ questionId: s.question.id, selectedOptionId: s.optionId("4") }] })
+      jsonReq({
+        attemptId: attempt.id,
+        answers: [
+          { questionId: s.question.id, selectedOptionId: s.optionId("4") },
+        ],
+      }),
     );
     expect(replay.status).toBe(409);
 
-    const stored = await prisma.quizAttempt.findUnique({ where: { id: attempt.id } });
+    const stored = await prisma.quizAttempt.findUnique({
+      where: { id: attempt.id },
+    });
     expect(stored?.score).toBe(0); // the replay did not overwrite the real score
   });
 
@@ -373,21 +477,27 @@ describe("PATCH /api/quiz (submission integrity)", () => {
       PATCH(
         jsonReq({
           attemptId: attempt.id,
-          answers: [{ questionId: s.question.id, selectedOptionId: s.optionId("3") }],
-        })
+          answers: [
+            { questionId: s.question.id, selectedOptionId: s.optionId("3") },
+          ],
+        }),
       ),
       PATCH(
         jsonReq({
           attemptId: attempt.id,
-          answers: [{ questionId: s.question.id, selectedOptionId: s.optionId("4") }],
-        })
+          answers: [
+            { questionId: s.question.id, selectedOptionId: s.optionId("4") },
+          ],
+        }),
       ),
     ]);
 
     expect([one.status, two.status].sort()).toEqual([200, 409]);
-    expect(await prisma.quizAnswer.count({ where: { quizAttemptId: attempt.id } })).toBe(1);
     expect(
-      await prisma.examResult.count({ where: { quizAttemptId: attempt.id } })
+      await prisma.quizAnswer.count({ where: { quizAttemptId: attempt.id } }),
+    ).toBe(1);
+    expect(
+      await prisma.examResult.count({ where: { quizAttemptId: attempt.id } }),
     ).toBe(1);
   });
 
@@ -399,34 +509,55 @@ describe("PATCH /api/quiz (submission integrity)", () => {
         text: "What is 3 + 3?",
         quizId: s.quiz.id,
         answerMode: "SINGLE_SELECT",
-        options: { create: [{ text: "6", isCorrect: true }, { text: "7", isCorrect: false }] },
+        options: {
+          create: [
+            { text: "6", isCorrect: true },
+            { text: "7", isCorrect: false },
+          ],
+        },
       },
     });
     asStudent(s.studentUser.id);
     const attempt = await startAttempt(s.student.id, s.cls.id, s.quiz.id);
 
     const res = await PATCH(
-      jsonReq({ attemptId: attempt.id, answers: [{ questionId: s.question.id, selectedOptionId: s.optionId("4") }] })
+      jsonReq({
+        attemptId: attempt.id,
+        answers: [
+          { questionId: s.question.id, selectedOptionId: s.optionId("4") },
+        ],
+      }),
     );
     // 1 of the quiz's 2 questions correct. Deriving the denominator from the
     // client's array would have scored this 100.
     const body = await res.json();
     expect(body.score).toBe(50);
     expect(body.incorrectQuestionIds).toContain(unanswered.id);
-    expect(await prisma.quizAnswer.count({ where: { quizAttemptId: attempt.id } })).toBe(2);
+    expect(
+      await prisma.quizAnswer.count({ where: { quizAttemptId: attempt.id } }),
+    ).toBe(2);
   });
 
   it("rejects an answer for a question belonging to another quiz", async () => {
     const s = await setup();
-    const other = await createPublishedQuiz({ classId: s.cls.id, teacherId: s.teacher.id });
+    const other = await createPublishedQuiz({
+      classId: s.cls.id,
+      teacherId: s.teacher.id,
+    });
     asStudent(s.studentUser.id);
     const attempt = await startAttempt(s.student.id, s.cls.id, s.quiz.id);
 
     const res = await PATCH(
       jsonReq({
         attemptId: attempt.id,
-        answers: [{ questionId: other.question.id, selectedOptionId: other.question.options.find((o) => o.isCorrect)!.id }],
-      })
+        answers: [
+          {
+            questionId: other.question.id,
+            selectedOptionId: other.question.options.find((o) => o.isCorrect)!
+              .id,
+          },
+        ],
+      }),
     );
     expect(res.status).toBe(404);
   });
@@ -445,7 +576,7 @@ describe("PATCH /api/quiz (submission integrity)", () => {
           { questionId: s.question.id, selectedOptionId: s.optionId("4") },
           { questionId: s.question.id, selectedOptionId: s.optionId("4") },
         ],
-      })
+      }),
     );
     expect(res.status).toBe(400);
   });

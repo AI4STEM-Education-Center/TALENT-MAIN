@@ -28,7 +28,9 @@ function textDelta(delta: string) {
 function completed(outputTokens: number | null) {
   return {
     type: "response.completed",
-    response: { usage: outputTokens === null ? null : { output_tokens: outputTokens } },
+    response: {
+      usage: outputTokens === null ? null : { output_tokens: outputTokens },
+    },
   };
 }
 
@@ -58,7 +60,9 @@ describe("toResponsesRequest", () => {
     });
 
     expect(req.instructions).toBe("be brief");
-    expect(req.input).toEqual([{ role: "user", content: [{ type: "input_text", text: "hi" }] }]);
+    expect(req.input).toEqual([
+      { role: "user", content: [{ type: "input_text", text: "hi" }] },
+    ]);
   });
 
   it("joins multiple system turns rather than dropping all but one", () => {
@@ -81,7 +85,10 @@ describe("toResponsesRequest", () => {
           role: "user",
           content: [
             { type: "text", text: "what is this?" },
-            { type: "image_url", image_url: { url: "data:image/png;base64,AAA" } },
+            {
+              type: "image_url",
+              image_url: { url: "data:image/png;base64,AAA" },
+            },
           ],
         },
       ],
@@ -93,7 +100,11 @@ describe("toResponsesRequest", () => {
         content: [
           { type: "input_text", text: "what is this?" },
           // Not the nested { image_url: { url } } object chat completions uses.
-          { type: "input_image", image_url: "data:image/png;base64,AAA", detail: "auto" },
+          {
+            type: "input_image",
+            image_url: "data:image/png;base64,AAA",
+            detail: "auto",
+          },
         ],
       },
     ]);
@@ -120,9 +131,17 @@ describe("toResponsesRequest", () => {
     });
 
     expect(req.input).toEqual([
-      { role: "user", content: [{ type: "input_text", text: "how did I do?" }] },
+      {
+        role: "user",
+        content: [{ type: "input_text", text: "how did I do?" }],
+      },
       { role: "assistant", content: "let me check" },
-      { type: "function_call", call_id: "call-1", name: "search", arguments: '{"q":1}' },
+      {
+        type: "function_call",
+        call_id: "call-1",
+        name: "search",
+        arguments: '{"q":1}',
+      },
       { type: "function_call_output", call_id: "call-1", output: '{"hits":0}' },
     ]);
   });
@@ -134,7 +153,11 @@ describe("toResponsesRequest", () => {
       tools: [
         {
           type: "function",
-          function: { name: "search", description: "find", parameters: { type: "object" } },
+          function: {
+            name: "search",
+            description: "find",
+            parameters: { type: "object" },
+          },
         },
       ],
       response_format: {
@@ -154,7 +177,12 @@ describe("toResponsesRequest", () => {
       },
     ]);
     expect(req.text).toEqual({
-      format: { type: "json_schema", name: "out", schema: { type: "object" }, strict: true },
+      format: {
+        type: "json_schema",
+        name: "out",
+        schema: { type: "object" },
+        strict: true,
+      },
     });
   });
 
@@ -184,7 +212,10 @@ describe("toResponsesRequest", () => {
   it("never opts into server-side retention", () => {
     // Student work should not persist in OpenAI storage as a side effect of
     // which endpoint we happen to call.
-    const req = toResponsesRequest({ model: "m", messages: [{ role: "user", content: "x" }] });
+    const req = toResponsesRequest({
+      model: "m",
+      messages: [{ role: "user", content: "x" }],
+    });
     expect(req.store).toBe(false);
   });
 });
@@ -200,7 +231,7 @@ describe("streamResponsesCompletion", () => {
     const { text, metrics } = await streamResponsesCompletion(
       client,
       { model: "gpt-x", messages: [] },
-      { now: clock([100, 150, 400]) }
+      { now: clock([100, 150, 400]) },
     );
 
     expect(text).toBe("Hello world");
@@ -223,19 +254,23 @@ describe("streamResponsesCompletion", () => {
     const { metrics } = await streamResponsesCompletion(
       client,
       { model: "m", messages: [] },
-      { now: clock([0, 200, 300]) }
+      { now: clock([0, 200, 300]) },
     );
 
     expect(metrics.ttftMs).toBe(200);
   });
 
   it("estimates tokens from deltas when the provider reports no usage", async () => {
-    const { client } = responsesClient([textDelta("a"), textDelta("b"), completed(null)]);
+    const { client } = responsesClient([
+      textDelta("a"),
+      textDelta("b"),
+      completed(null),
+    ]);
 
     const { metrics } = await streamResponsesCompletion(
       client,
       { model: "m", messages: [] },
-      { now: clock([0, 1, 2]) }
+      { now: clock([0, 1, 2]) },
     );
 
     expect(metrics.completionTokens).toBe(2);
@@ -247,20 +282,35 @@ describe("streamResponsesCompletion", () => {
       {
         type: "response.output_item.added",
         output_index: 0,
-        item: { type: "function_call", call_id: "call-1", name: "search", arguments: "" },
+        item: {
+          type: "function_call",
+          call_id: "call-1",
+          name: "search",
+          arguments: "",
+        },
       },
-      { type: "response.function_call_arguments.delta", output_index: 0, delta: '{"q"' },
-      { type: "response.function_call_arguments.delta", output_index: 0, delta: ":1}" },
+      {
+        type: "response.function_call_arguments.delta",
+        output_index: 0,
+        delta: '{"q"',
+      },
+      {
+        type: "response.function_call_arguments.delta",
+        output_index: 0,
+        delta: ":1}",
+      },
       completed(4),
     ]);
 
     const { toolCalls, finishReason } = await streamResponsesCompletion(
       client,
       { model: "m", messages: [] },
-      { now: clock([0, 1]) }
+      { now: clock([0, 1]) },
     );
 
-    expect(toolCalls).toEqual([{ id: "call-1", name: "search", arguments: '{"q":1}' }]);
+    expect(toolCalls).toEqual([
+      { id: "call-1", name: "search", arguments: '{"q":1}' },
+    ]);
     // Mapped onto the chat-completions vocabulary so callers read one set.
     expect(finishReason).toBe("tool_calls");
   });
@@ -272,15 +322,23 @@ describe("streamResponsesCompletion", () => {
         output_index: 0,
         item: { type: "function_call", call_id: "c", name: "t", arguments: "" },
       },
-      { type: "response.function_call_arguments.delta", output_index: 0, delta: '{"a":' },
-      { type: "response.function_call_arguments.done", output_index: 0, arguments: '{"a":1}' },
+      {
+        type: "response.function_call_arguments.delta",
+        output_index: 0,
+        delta: '{"a":',
+      },
+      {
+        type: "response.function_call_arguments.done",
+        output_index: 0,
+        arguments: '{"a":1}',
+      },
       completed(1),
     ]);
 
     const { toolCalls } = await streamResponsesCompletion(
       client,
       { model: "m", messages: [] },
-      { now: clock([0, 1]) }
+      { now: clock([0, 1]) },
     );
     expect(toolCalls[0].arguments).toBe('{"a":1}');
   });
@@ -300,7 +358,7 @@ describe("streamResponsesCompletion", () => {
     const { finishReason, metrics } = await streamResponsesCompletion(
       client,
       { model: "m", messages: [] },
-      { now: clock([0, 1, 2]) }
+      { now: clock([0, 1, 2]) },
     );
     expect(finishReason).toBe("length");
     expect(metrics.completionTokens).toBe(2);
@@ -308,11 +366,18 @@ describe("streamResponsesCompletion", () => {
 
   it("throws when the response itself fails mid-stream", async () => {
     const { client } = responsesClient([
-      { type: "response.failed", response: { error: { message: "upstream exploded" } } },
+      {
+        type: "response.failed",
+        response: { error: { message: "upstream exploded" } },
+      },
     ]);
 
     await expect(
-      streamResponsesCompletion(client, { model: "m", messages: [] }, { now: clock([0, 1]) })
+      streamResponsesCompletion(
+        client,
+        { model: "m", messages: [] },
+        { now: clock([0, 1]) },
+      ),
     ).rejects.toThrow("upstream exploded");
   });
 });
@@ -320,19 +385,25 @@ describe("streamResponsesCompletion", () => {
 describe("isResponsesUnsupported", () => {
   it("treats a missing endpoint as unsupported", () => {
     expect(isResponsesUnsupported(apiError(404, "Not Found"))).toBe(true);
-    expect(isResponsesUnsupported(apiError(405, "Method Not Allowed"))).toBe(true);
+    expect(isResponsesUnsupported(apiError(405, "Method Not Allowed"))).toBe(
+      true,
+    );
   });
 
   it("does not treat a bad request as a missing endpoint", () => {
     // A 400 means the endpoint exists and we built a bad request — falling back
     // would hide that bug behind a working call on the other transport.
-    expect(isResponsesUnsupported(apiError(400, "invalid schema for tool 'search'"))).toBe(false);
+    expect(
+      isResponsesUnsupported(apiError(400, "invalid schema for tool 'search'")),
+    ).toBe(false);
     expect(isResponsesUnsupported(apiError(500, "internal error"))).toBe(false);
     expect(isResponsesUnsupported(apiError(429, "rate limited"))).toBe(false);
   });
 
   it("matches proxies that spell a missing route as a 400", () => {
-    expect(isResponsesUnsupported(apiError(400, "unknown path /v1/responses"))).toBe(true);
+    expect(
+      isResponsesUnsupported(apiError(400, "unknown path /v1/responses")),
+    ).toBe(true);
   });
 
   it("matches Cloudflare AI Gateway's compat endpoint verbatim", () => {
@@ -350,9 +421,9 @@ describe("isResponsesUnsupported", () => {
       isResponsesUnsupported(
         apiError(
           400,
-          '400 [{"code":2019,"message":"Compatibility endpoint: responses is not supported."}]'
-        )
-      )
+          '400 [{"code":2019,"message":"Compatibility endpoint: responses is not supported."}]',
+        ),
+      ),
     ).toBe(true);
   });
 
@@ -361,16 +432,24 @@ describe("isResponsesUnsupported", () => {
     // the endpoint-noun half of the test is doing real work.
     expect(
       isResponsesUnsupported(
-        apiError(400, "Unsupported parameter: 'max_tokens' is not supported with this model.")
-      )
-    ).toBe(false);
-    expect(
-      isResponsesUnsupported(apiError(400, "Invalid schema for function 'search'."))
+        apiError(
+          400,
+          "Unsupported parameter: 'max_tokens' is not supported with this model.",
+        ),
+      ),
     ).toBe(false);
     expect(
       isResponsesUnsupported(
-        apiError(400, "Provider 'openai' has no BYOK credential named 'default'.")
-      )
+        apiError(400, "Invalid schema for function 'search'."),
+      ),
+    ).toBe(false);
+    expect(
+      isResponsesUnsupported(
+        apiError(
+          400,
+          "Provider 'openai' has no BYOK credential named 'default'.",
+        ),
+      ),
     ).toBe(false);
   });
 });
@@ -382,7 +461,7 @@ describe("streamChatCompletion — transport selection", () => {
       streamOf([
         { choices: [{ delta: { content: text } }] },
         { choices: [{ delta: {} }], usage: { completion_tokens: 5 } },
-      ])
+      ]),
     );
     const responsesCreate = vi.fn(async () => {
       throw apiError(404, "Not Found");
@@ -403,19 +482,20 @@ describe("streamChatCompletion — transport selection", () => {
     await streamChatCompletion(
       client,
       { model: "m", messages: [] },
-      { surface: "chat_completions", now: clock([0, 1, 2]) }
+      { surface: "chat_completions", now: clock([0, 1, 2]) },
     );
     expect(chatCreate).toHaveBeenCalledTimes(1);
     expect(responsesCreate).not.toHaveBeenCalled();
   });
 
   it("falls back to chat completions when the endpoint has no /v1/responses", async () => {
-    const { client, chatCreate, responsesCreate } = chatOnlyClient("fallback text");
+    const { client, chatCreate, responsesCreate } =
+      chatOnlyClient("fallback text");
 
     const { text, metrics } = await streamChatCompletion(
       client,
       { model: "m", messages: [] },
-      { surface: "responses", now: clock([0, 1, 2]) }
+      { surface: "responses", now: clock([0, 1, 2]) },
     );
 
     expect(responsesCreate).toHaveBeenCalledTimes(1);
@@ -442,8 +522,16 @@ describe("streamChatCompletion — transport selection", () => {
     const b = chatOnlyClient("b");
     const options = { surface: "responses" as const, now: clock([0, 1, 2]) };
 
-    await streamChatCompletion(a.client, { model: "m", messages: [] }, { ...options, surfaceKey: "a" });
-    await streamChatCompletion(b.client, { model: "m", messages: [] }, { ...options, surfaceKey: "b" });
+    await streamChatCompletion(
+      a.client,
+      { model: "m", messages: [] },
+      { ...options, surfaceKey: "a" },
+    );
+    await streamChatCompletion(
+      b.client,
+      { model: "m", messages: [] },
+      { ...options, surfaceKey: "b" },
+    );
 
     expect(a.responsesCreate).toHaveBeenCalledTimes(1);
     expect(b.responsesCreate).toHaveBeenCalledTimes(1);
@@ -461,7 +549,7 @@ describe("streamChatCompletion — transport selection", () => {
             throw apiError(404, "Not Found");
           },
         },
-      ])
+      ]),
     );
     const client = {
       baseURL: "https://x/v1",
@@ -479,8 +567,8 @@ describe("streamChatCompletion — transport selection", () => {
           onContent: async (_t, d) => {
             seen.push(d);
           },
-        }
-      )
+        },
+      ),
     ).rejects.toThrow();
 
     expect(seen).toEqual(["half an answer"]);

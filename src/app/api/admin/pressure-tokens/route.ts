@@ -40,7 +40,10 @@ export async function GET() {
     return NextResponse.json({ tokens });
   } catch (error) {
     logApiError("ADMIN_PRESSURE_TOKENS_GET", error);
-    return NextResponse.json({ error: "Could not load ingestion tokens." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Could not load ingestion tokens." },
+      { status: 500 },
+    );
   }
 }
 
@@ -56,9 +59,14 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const parsed = createSchema.safeParse(await request.json().catch(() => null));
+    const parsed = createSchema.safeParse(
+      await request.json().catch(() => null),
+    );
     if (!parsed.success) {
-      return NextResponse.json({ error: "A label of 1-80 characters is required." }, { status: 400 });
+      return NextResponse.json(
+        { error: "A label of 1-80 characters is required." },
+        { status: 400 },
+      );
     }
 
     const token = generatePressureToken();
@@ -72,9 +80,15 @@ export async function POST(request: NextRequest) {
       select: listSelect,
     });
 
-    return NextResponse.json({ token: created, secret: token }, { status: 201 });
+    return NextResponse.json(
+      { token: created, secret: token },
+      { status: 201 },
+    );
   } catch (error) {
     logApiError("ADMIN_PRESSURE_TOKENS_POST", error);
-    return NextResponse.json({ error: "Could not create ingestion token." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Could not create ingestion token." },
+      { status: 500 },
+    );
   }
 }

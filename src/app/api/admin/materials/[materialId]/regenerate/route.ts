@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ materialId: string }> }
+  { params }: { params: Promise<{ materialId: string }> },
 ) {
   const session = await auth();
   if (!session?.user || session.user.role !== "ADMIN") {

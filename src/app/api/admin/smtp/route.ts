@@ -22,7 +22,9 @@ export async function GET() {
   let maskedPassword: string | null = null;
   if (cfg.passwordEnc && cfg.passwordIv && cfg.passwordTag) {
     try {
-      maskedPassword = maskApiKey(decryptApiKey(cfg.passwordEnc, cfg.passwordIv, cfg.passwordTag));
+      maskedPassword = maskApiKey(
+        decryptApiKey(cfg.passwordEnc, cfg.passwordIv, cfg.passwordTag),
+      );
     } catch {
       maskedPassword = "••••(decryption failed)";
     }
@@ -60,31 +62,55 @@ export async function PUT(req: Request) {
 
     const host = typeof body.host === "string" ? body.host.trim() : "";
     const portRaw = Number(body.port);
-    const port = Number.isFinite(portRaw) && portRaw > 0 ? Math.floor(portRaw) : 587;
+    const port =
+      Number.isFinite(portRaw) && portRaw > 0 ? Math.floor(portRaw) : 587;
     const secure = body.secure === true;
-    const username = typeof body.username === "string" ? body.username.trim() || null : null;
-    const fromEmail = typeof body.fromEmail === "string" ? body.fromEmail.trim() : "";
-    const fromName = typeof body.fromName === "string" ? body.fromName.trim() || null : null;
+    const username =
+      typeof body.username === "string" ? body.username.trim() || null : null;
+    const fromEmail =
+      typeof body.fromEmail === "string" ? body.fromEmail.trim() : "";
+    const fromName =
+      typeof body.fromName === "string" ? body.fromName.trim() || null : null;
     const isActive = body.isActive === true;
 
     if (!host) {
-      return NextResponse.json({ error: "SMTP host is required." }, { status: 400 });
+      return NextResponse.json(
+        { error: "SMTP host is required." },
+        { status: 400 },
+      );
     }
     if (!fromEmail) {
-      return NextResponse.json({ error: "From email address is required." }, { status: 400 });
+      return NextResponse.json(
+        { error: "From email address is required." },
+        { status: 400 },
+      );
     }
 
     const existing = await prisma.smtpConfig.findFirst();
 
     // Resolve password encryption fields.
-    let passwordFields: { passwordEnc: string | null; passwordIv: string | null; passwordTag: string | null } | undefined;
+    let passwordFields:
+      | {
+          passwordEnc: string | null;
+          passwordIv: string | null;
+          passwordTag: string | null;
+        }
+      | undefined;
     if (typeof body.password === "string") {
       const raw = body.password.trim();
       if (raw && !raw.startsWith("••••")) {
         const enc = encryptApiKey(raw);
-        passwordFields = { passwordEnc: enc.encrypted, passwordIv: enc.iv, passwordTag: enc.tag };
+        passwordFields = {
+          passwordEnc: enc.encrypted,
+          passwordIv: enc.iv,
+          passwordTag: enc.tag,
+        };
       } else if (raw === "") {
-        passwordFields = { passwordEnc: null, passwordIv: null, passwordTag: null };
+        passwordFields = {
+          passwordEnc: null,
+          passwordIv: null,
+          passwordTag: null,
+        };
       }
       // masked placeholder → leave unchanged (passwordFields stays undefined)
     }
@@ -101,8 +127,13 @@ export async function PUT(req: Request) {
     };
 
     const cfg = existing
-      ? await prisma.smtpConfig.update({ where: { id: existing.id }, data: baseData })
-      : await prisma.smtpConfig.create({ data: { id: SINGLETON_ID, ...baseData } });
+      ? await prisma.smtpConfig.update({
+          where: { id: existing.id },
+          data: baseData,
+        })
+      : await prisma.smtpConfig.create({
+          data: { id: SINGLETON_ID, ...baseData },
+        });
 
     return NextResponse.json({
       config: {
@@ -119,6 +150,9 @@ export async function PUT(req: Request) {
     });
   } catch (error) {
     logApiError("SMTP_PUT", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }

@@ -55,7 +55,7 @@ export function bearerToken(authorization: string | null): string | null {
  */
 export async function verifyPressureToken(
   authorization: string | null,
-  opts?: { ip?: string | null }
+  opts?: { ip?: string | null },
 ): Promise<{ id: string; name: string } | null> {
   const token = bearerToken(authorization);
   if (!token) return null;
@@ -94,7 +94,7 @@ async function recordRevokedTokenUse(
     tokenPrefix: string;
     revokedUseCount: number;
   },
-  ip: string | null
+  ip: string | null,
 ): Promise<void> {
   const usedAt = new Date();
   let useCount = (record.revokedUseCount ?? 0) + 1;
@@ -102,7 +102,11 @@ async function recordRevokedTokenUse(
   try {
     const updated = await prisma.pressureResultToken.update({
       where: { id: record.id },
-      data: { revokedUseCount: { increment: 1 }, lastRevokedUseAt: usedAt, lastRevokedIp: ip },
+      data: {
+        revokedUseCount: { increment: 1 },
+        lastRevokedUseAt: usedAt,
+        lastRevokedIp: ip,
+      },
       select: { revokedUseCount: true },
     });
     useCount = updated.revokedUseCount;
@@ -116,11 +120,16 @@ async function recordRevokedTokenUse(
   // conditional update also ensures concurrent requests cannot all send mail.
   let shouldAlert = false;
   try {
-    const alertCutoff = new Date(usedAt.getTime() - REVOKED_TOKEN_ALERT_THROTTLE_MS);
+    const alertCutoff = new Date(
+      usedAt.getTime() - REVOKED_TOKEN_ALERT_THROTTLE_MS,
+    );
     const claim = await prisma.pressureResultToken.updateMany({
       where: {
         id: record.id,
-        OR: [{ lastRevokedAlertAt: null }, { lastRevokedAlertAt: { lte: alertCutoff } }],
+        OR: [
+          { lastRevokedAlertAt: null },
+          { lastRevokedAlertAt: { lte: alertCutoff } },
+        ],
       },
       data: { lastRevokedAlertAt: usedAt },
     });
@@ -150,7 +159,8 @@ async function recordRevokedTokenUse(
 
   if (shouldAlert) {
     try {
-      const { notifyAdminsOfRevokedTokenUse } = await import("./pressure-token-alert");
+      const { notifyAdminsOfRevokedTokenUse } =
+        await import("./pressure-token-alert");
       // Await completion so a serverless request cannot be torn down while the
       // notification promise is still in flight. Only the hourly claimant pays
       // this cost; every other revoked request returns immediately after logging.

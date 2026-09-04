@@ -16,7 +16,11 @@ import {
 
 describe("cgroup parsing", () => {
   it("reads usage_usec out of a v2 cpu.stat", () => {
-    const stat = ["usage_usec 123456", "user_usec 100000", "system_usec 23456"].join("\n");
+    const stat = [
+      "usage_usec 123456",
+      "user_usec 100000",
+      "system_usec 23456",
+    ].join("\n");
     expect(parseCgroupCpuStat(stat)).toBe(123456);
   });
 
@@ -38,7 +42,9 @@ describe("cgroup parsing", () => {
   });
 
   it("finds inactive_file under either the v2 or the v1 name", () => {
-    expect(parseInactiveFileBytes("anon 100\ninactive_file 4096\nslab 8")).toBe(4096);
+    expect(parseInactiveFileBytes("anon 100\ninactive_file 4096\nslab 8")).toBe(
+      4096,
+    );
     expect(parseInactiveFileBytes("total_inactive_file 8192")).toBe(8192);
     expect(parseInactiveFileBytes("anon 100")).toBe(0);
   });
@@ -56,7 +62,10 @@ describe("host /proc parsing", () => {
   it("sums the aggregate cpu line and counts iowait as idle", () => {
     // A core blocked on the EBS volume is not consuming CPU; calling it busy
     // would make disk pressure look like compute pressure.
-    expect(parseProcStatCpu(PROC_STAT)).toEqual({ totalJiffies: 1010, idleJiffies: 850 });
+    expect(parseProcStatCpu(PROC_STAT)).toEqual({
+      totalJiffies: 1010,
+      idleJiffies: 850,
+    });
   });
 
   it("returns null when there is no aggregate line to read", () => {
@@ -68,7 +77,11 @@ describe("host /proc parsing", () => {
   it("reads meminfo in bytes and treats available (not free) as usable", () => {
     // A healthy Linux box spends every spare page on cache, so MemFree is
     // always near zero — using it would report the machine permanently full.
-    const meminfo = ["MemTotal:        2028112 kB", "MemFree:           82340 kB", "MemAvailable:     996000 kB"].join("\n");
+    const meminfo = [
+      "MemTotal:        2028112 kB",
+      "MemFree:           82340 kB",
+      "MemAvailable:     996000 kB",
+    ].join("\n");
     expect(parseMemInfoBytes(meminfo)).toEqual({
       usedBytes: (2028112 - 996000) * 1024,
       totalBytes: 2028112 * 1024,
@@ -146,7 +159,10 @@ describe("ranges", () => {
 
 describe("bucketSamples", () => {
   const base = new Date("2026-08-17T00:00:00Z").getTime();
-  const sample = (offsetMs: number, over: Partial<BucketableSample> = {}): BucketableSample => ({
+  const sample = (
+    offsetMs: number,
+    over: Partial<BucketableSample> = {},
+  ): BucketableSample => ({
     createdAt: new Date(base + offsetMs),
     cpuPercent: 10,
     memUsedBytes: 1000,
@@ -161,7 +177,7 @@ describe("bucketSamples", () => {
   it("averages rates and keeps the bucket's peak CPU", () => {
     const points = bucketSamples(
       [sample(0, { cpuPercent: 10 }), sample(60_000, { cpuPercent: 90 })],
-      10 * 60_000
+      10 * 60_000,
     );
     expect(points).toHaveLength(1);
     expect(points[0].cpuPercent).toBe(50);
@@ -171,8 +187,11 @@ describe("bucketSamples", () => {
 
   it("takes the newest reading for levels, not an average", () => {
     const points = bucketSamples(
-      [sample(0, { dbBytes: 100, diskFreeBytes: 90 }), sample(1000, { dbBytes: 300, diskFreeBytes: 50 })],
-      60_000
+      [
+        sample(0, { dbBytes: 100, diskFreeBytes: 90 }),
+        sample(1000, { dbBytes: 300, diskFreeBytes: 50 }),
+      ],
+      60_000,
     );
     expect(points[0].dbBytes).toBe(300);
     expect(points[0].diskFreeBytes).toBe(50);
@@ -183,7 +202,7 @@ describe("bucketSamples", () => {
     // naive "latest wins" would erase the worker's figure every other row.
     const points = bucketSamples(
       [sample(0, { s3Bytes: 4096 }), sample(1000, { s3Bytes: null })],
-      60_000
+      60_000,
     );
     expect(points[0].s3Bytes).toBe(4096);
   });
@@ -191,9 +210,13 @@ describe("bucketSamples", () => {
   it("groups by bucket start and returns them oldest first", () => {
     const points = bucketSamples(
       [sample(20 * 60_000), sample(0), sample(10 * 60_000)],
-      10 * 60_000
+      10 * 60_000,
     );
-    expect(points.map((p) => p.t)).toEqual([base, base + 10 * 60_000, base + 20 * 60_000]);
+    expect(points.map((p) => p.t)).toEqual([
+      base,
+      base + 10 * 60_000,
+      base + 20 * 60_000,
+    ]);
   });
 
   it("handles an empty input and a zero bucket width", () => {
@@ -207,11 +230,23 @@ describe("bucketSamples", () => {
     // reports null, which must not be averaged in as zero.
     const points = bucketSamples(
       [
-        sample(0, { hostCpuPercent: 40, hostMemUsedBytes: 1000, hostCpuCores: 2 }),
-        sample(1000, { hostCpuPercent: null, hostMemUsedBytes: null, hostCpuCores: null }),
-        sample(2000, { hostCpuPercent: 60, hostMemUsedBytes: 1200, hostCpuCores: 2 }),
+        sample(0, {
+          hostCpuPercent: 40,
+          hostMemUsedBytes: 1000,
+          hostCpuCores: 2,
+        }),
+        sample(1000, {
+          hostCpuPercent: null,
+          hostMemUsedBytes: null,
+          hostCpuCores: null,
+        }),
+        sample(2000, {
+          hostCpuPercent: 60,
+          hostMemUsedBytes: 1200,
+          hostCpuCores: 2,
+        }),
       ],
-      60_000
+      60_000,
     );
     expect(points[0].hostCpuPercent).toBe(50);
     expect(points[0].hostCpuPeakPercent).toBe(60);

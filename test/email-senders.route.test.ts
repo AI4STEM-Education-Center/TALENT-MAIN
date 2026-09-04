@@ -11,7 +11,9 @@ import { resetDb } from "./db";
 const mockAuth = vi.mocked(auth);
 
 function asAdmin() {
-  mockAuth.mockResolvedValue({ user: { id: "admin-1", role: "ADMIN" } } as never);
+  mockAuth.mockResolvedValue({
+    user: { id: "admin-1", role: "ADMIN" },
+  } as never);
 }
 function asTeacher() {
   mockAuth.mockResolvedValue({ user: { id: "t-1", role: "TEACHER" } } as never);
@@ -23,11 +25,13 @@ function put(body: unknown) {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
-    })
+    }),
   );
 }
 
-async function seedSmtp(overrides: Partial<{ fromEmail: string; senderDomain: string | null }> = {}) {
+async function seedSmtp(
+  overrides: Partial<{ fromEmail: string; senderDomain: string | null }> = {},
+) {
   return prisma.smtpConfig.create({
     data: {
       id: "singleton",
@@ -63,7 +67,10 @@ describe("GET /api/admin/email-senders", () => {
 
     const body = await (await GET()).json();
     const byPurpose = Object.fromEntries(
-      body.senders.map((s: { purpose: string; localPart: string }) => [s.purpose, s.localPart])
+      body.senders.map((s: { purpose: string; localPart: string }) => [
+        s.purpose,
+        s.localPart,
+      ]),
     );
     expect(byPurpose.PASSWORD_RESET).toBe("password-reset");
     expect(byPurpose.NOTIFICATION).toBe("notification");
@@ -85,7 +92,9 @@ describe("GET /api/admin/email-senders", () => {
 describe("PUT /api/admin/email-senders", () => {
   it("403s a non-admin", async () => {
     asTeacher();
-    expect((await put({ senderDomain: "example.com", senders: [] })).status).toBe(403);
+    expect(
+      (await put({ senderDomain: "example.com", senders: [] })).status,
+    ).toBe(403);
   });
 
   it("saves a shared domain and hands each purpose its own address", async () => {
@@ -104,10 +113,12 @@ describe("PUT /api/admin/email-senders", () => {
     const body = await res.json();
     expect(body.senderDomain).toBe("edwarcheng.net");
     const resolved = Object.fromEntries(
-      body.senders.map((s: { purpose: string; resolved: { fromEmail: string } }) => [
-        s.purpose,
-        s.resolved.fromEmail,
-      ])
+      body.senders.map(
+        (s: { purpose: string; resolved: { fromEmail: string } }) => [
+          s.purpose,
+          s.resolved.fromEmail,
+        ],
+      ),
     );
     expect(resolved.PASSWORD_RESET).toBe("password-reset@edwarcheng.net");
     expect(resolved.NOTIFICATION).toBe("notification@edwarcheng.net");
@@ -176,7 +187,10 @@ describe("PUT /api/admin/email-senders", () => {
   it("rejects an unknown purpose", async () => {
     await seedSmtp();
     asAdmin();
-    const res = await put({ senderDomain: "", senders: [{ purpose: "NOT_A_PURPOSE", localPart: "x" }] });
+    const res = await put({
+      senderDomain: "",
+      senders: [{ purpose: "NOT_A_PURPOSE", localPart: "x" }],
+    });
     expect(res.status).toBe(400);
   });
 
@@ -185,7 +199,9 @@ describe("PUT /api/admin/email-senders", () => {
     asAdmin();
     const res = await put({
       senderDomain: "",
-      senders: [{ purpose: "PASSWORD_RESET", localPart: "reset", replyTo: "nope" }],
+      senders: [
+        { purpose: "PASSWORD_RESET", localPart: "reset", replyTo: "nope" },
+      ],
     });
     expect(res.status).toBe(400);
   });
@@ -200,9 +216,14 @@ describe("PUT /api/admin/email-senders", () => {
   it("falls back to the catalog default when the prefix is left blank", async () => {
     await seedSmtp();
     asAdmin();
-    await put({ senderDomain: "edwarcheng.net", senders: [{ purpose: "NOTIFICATION", localPart: "" }] });
+    await put({
+      senderDomain: "edwarcheng.net",
+      senders: [{ purpose: "NOTIFICATION", localPart: "" }],
+    });
 
-    const row = await prisma.emailSender.findUnique({ where: { purpose: "NOTIFICATION" } });
+    const row = await prisma.emailSender.findUnique({
+      where: { purpose: "NOTIFICATION" },
+    });
     expect(row?.localPart).toBe("notification");
   });
 
@@ -212,16 +233,30 @@ describe("PUT /api/admin/email-senders", () => {
     await put({
       senderDomain: "edwarcheng.net",
       senders: [
-        { purpose: "NOTIFICATION", localPart: "notification", subject: "Heads up: {{subjectLine}}", body: "Hi — {{greetingLine}}" },
-        { purpose: "PASSWORD_RESET", localPart: "password-reset", subject: "Reset it", body: "Link: {{resetUrl}}" },
+        {
+          purpose: "NOTIFICATION",
+          localPart: "notification",
+          subject: "Heads up: {{subjectLine}}",
+          body: "Hi — {{greetingLine}}",
+        },
+        {
+          purpose: "PASSWORD_RESET",
+          localPart: "password-reset",
+          subject: "Reset it",
+          body: "Link: {{resetUrl}}",
+        },
       ],
     });
 
-    const notification = await prisma.emailSender.findUnique({ where: { purpose: "NOTIFICATION" } });
+    const notification = await prisma.emailSender.findUnique({
+      where: { purpose: "NOTIFICATION" },
+    });
     expect(notification?.subject).toBe("Heads up: {{subjectLine}}");
     expect(notification?.body).toBe("Hi — {{greetingLine}}");
 
-    const reset = await prisma.emailSender.findUnique({ where: { purpose: "PASSWORD_RESET" } });
+    const reset = await prisma.emailSender.findUnique({
+      where: { purpose: "PASSWORD_RESET" },
+    });
     expect(reset?.subject).toBe("Reset it");
     expect(reset?.body).toBe("Link: {{resetUrl}}");
   });

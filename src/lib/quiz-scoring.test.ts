@@ -50,7 +50,7 @@ describe("normalizeNumericValue", () => {
     expect(normalizeNumericValue(" -769.23 ")).toBe(-769.23);
   });
 
-  it("rejects an empty string (Number(\"\") is 0)", () => {
+  it('rejects an empty string (Number("") is 0)', () => {
     expect(normalizeNumericValue("")).toBeNull();
   });
 
@@ -162,7 +162,11 @@ describe("isNumericAnswerCorrect", () => {
   });
 
   it("is incorrect when the question lacks a finite answerNumeric", () => {
-    const noAnswer: ScorableQuestion = { id: "q", answerMode: "NUMERIC", options: [] };
+    const noAnswer: ScorableQuestion = {
+      id: "q",
+      answerMode: "NUMERIC",
+      options: [],
+    };
     expect(isNumericAnswerCorrect(noAnswer, 42)).toBe(false);
   });
 
@@ -181,20 +185,27 @@ describe("isNumericAnswerCorrect", () => {
 
 describe("normalizeSelectedOptionIds", () => {
   it("uses selectedOptionIds when present", () => {
-    expect(normalizeSelectedOptionIds({ questionId: "q", selectedOptionIds: ["a", "b"] })).toEqual([
-      "a",
-      "b",
-    ]);
+    expect(
+      normalizeSelectedOptionIds({
+        questionId: "q",
+        selectedOptionIds: ["a", "b"],
+      }),
+    ).toEqual(["a", "b"]);
   });
 
   it("filters out non-string entries", () => {
     expect(
-      normalizeSelectedOptionIds({ questionId: "q", selectedOptionIds: ["a", 1, null, "b"] as unknown[] })
+      normalizeSelectedOptionIds({
+        questionId: "q",
+        selectedOptionIds: ["a", 1, null, "b"] as unknown[],
+      }),
     ).toEqual(["a", "b"]);
   });
 
   it("wraps a single selectedOptionId", () => {
-    expect(normalizeSelectedOptionIds({ questionId: "q", selectedOptionId: "a" })).toEqual(["a"]);
+    expect(
+      normalizeSelectedOptionIds({ questionId: "q", selectedOptionId: "a" }),
+    ).toEqual(["a"]);
   });
 
   it("returns [] when nothing is selected", () => {
@@ -203,7 +214,11 @@ describe("normalizeSelectedOptionIds", () => {
 
   it("prefers the array form even when a scalar is also present", () => {
     expect(
-      normalizeSelectedOptionIds({ questionId: "q", selectedOptionIds: ["a"], selectedOptionId: "b" })
+      normalizeSelectedOptionIds({
+        questionId: "q",
+        selectedOptionIds: ["a"],
+        selectedOptionId: "b",
+      }),
     ).toEqual(["a"]);
   });
 });
@@ -303,7 +318,9 @@ describe("scoreQuiz", () => {
     expect(single.selectedOptionIds).toEqual(["a"]);
     expect(multi.selectedOptionId).toBeNull();
     expect(multi.selectedOptionIds).toEqual(["x", "y"]);
-    expect(result.answerRecords.every((r) => r.quizAttemptId === "att1")).toBe(true);
+    expect(result.answerRecords.every((r) => r.quizAttemptId === "att1")).toBe(
+      true,
+    );
   });
 
   it("sets numericValue to null on choice records", () => {
@@ -315,7 +332,9 @@ describe("scoreQuiz", () => {
         { questionId: "q2", selectedOptionIds: ["x", "y"] },
       ],
     });
-    expect(result.answerRecords.every((r) => r.numericValue === null)).toBe(true);
+    expect(result.answerRecords.every((r) => r.numericValue === null)).toBe(
+      true,
+    );
   });
 
   it("throws when an answered question is missing from the lookup", () => {
@@ -324,7 +343,7 @@ describe("scoreQuiz", () => {
         attemptId: "att1",
         questionsById,
         answers: [{ questionId: "ghost", selectedOptionId: "a" }],
-      })
+      }),
     ).toThrow(/Question not found/);
   });
 });

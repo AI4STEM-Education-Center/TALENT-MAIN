@@ -13,12 +13,17 @@ export async function GET(req: NextRequest) {
 
   const url = new URL(req.url);
   const takeRaw = Number(url.searchParams.get("take"));
-  const take = Number.isFinite(takeRaw) ? Math.min(Math.max(Math.floor(takeRaw), 1), 100) : 50;
+  const take = Number.isFinite(takeRaw)
+    ? Math.min(Math.max(Math.floor(takeRaw), 1), 100)
+    : 50;
   const unreadOnly = url.searchParams.get("unreadOnly") === "true";
 
   const [items, unreadCount] = await Promise.all([
     prisma.notification.findMany({
-      where: { userId: session.user.id, ...(unreadOnly ? { readAt: null } : {}) },
+      where: {
+        userId: session.user.id,
+        ...(unreadOnly ? { readAt: null } : {}),
+      },
       orderBy: { createdAt: "desc" },
       take,
       include: {
@@ -34,7 +39,9 @@ export async function GET(req: NextRequest) {
         },
       },
     }),
-    prisma.notification.count({ where: { userId: session.user.id, readAt: null } }),
+    prisma.notification.count({
+      where: { userId: session.user.id, readAt: null },
+    }),
   ]);
 
   const notifications = items.map((n) => ({
@@ -44,7 +51,8 @@ export async function GET(req: NextRequest) {
     messageId: n.message.id,
     subject: n.message.subject,
     body: n.message.body,
-    senderName: `${n.message.sender.firstName} ${n.message.sender.lastName}`.trim(),
+    senderName:
+      `${n.message.sender.firstName} ${n.message.sender.lastName}`.trim(),
     className: n.message.class?.name ?? null,
     createdAt: n.createdAt,
     readAt: n.readAt,

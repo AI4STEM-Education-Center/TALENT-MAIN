@@ -1,19 +1,23 @@
 import { describe, it, expect } from "vitest";
 import { shuffleAnswerChoices, shuffleWithSeed } from "@/lib/quiz-shuffle";
 
-const options = (...texts: string[]) => texts.map((text, i) => ({ id: `o${i}`, text }));
-const texts = (items: Array<{ text: string }>) => items.map((item) => item.text);
+const options = (...texts: string[]) =>
+  texts.map((text, i) => ({ id: `o${i}`, text }));
+const texts = (items: Array<{ text: string }>) =>
+  items.map((item) => item.text);
 
 describe("shuffleWithSeed", () => {
   it("is deterministic for a given seed", () => {
     const items = [1, 2, 3, 4, 5, 6, 7, 8];
-    expect(shuffleWithSeed(items, "attempt-1:q1")).toEqual(shuffleWithSeed(items, "attempt-1:q1"));
+    expect(shuffleWithSeed(items, "attempt-1:q1")).toEqual(
+      shuffleWithSeed(items, "attempt-1:q1"),
+    );
   });
 
   it("gives different seeds different orders", () => {
     const items = [1, 2, 3, 4, 5, 6, 7, 8];
     expect(shuffleWithSeed(items, "attempt-1:q1")).not.toEqual(
-      shuffleWithSeed(items, "attempt-2:q1")
+      shuffleWithSeed(items, "attempt-2:q1"),
     );
   });
 
@@ -31,7 +35,7 @@ describe("shuffleAnswerChoices", () => {
   it("renders the same order for the same attempt and question", () => {
     const choices = options("a", "b", "c", "d", "e");
     expect(texts(shuffleAnswerChoices(choices, "att1:q1"))).toEqual(
-      texts(shuffleAnswerChoices(choices, "att1:q1"))
+      texts(shuffleAnswerChoices(choices, "att1:q1")),
     );
   });
 
@@ -46,7 +50,7 @@ describe("shuffleAnswerChoices", () => {
   it("keeps 'of the above' choices last", () => {
     for (const seed of ["a", "b", "c", "d", "e", "f", "g", "h"]) {
       const shuffled = texts(
-        shuffleAnswerChoices(options("6", "7", "8", "None of the above"), seed)
+        shuffleAnswerChoices(options("6", "7", "8", "None of the above"), seed),
       );
       expect(shuffled[3]).toBe("None of the above");
     }
@@ -54,13 +58,21 @@ describe("shuffleAnswerChoices", () => {
 
   it("keeps multiple anchored choices in their original relative order", () => {
     const shuffled = texts(
-      shuffleAnswerChoices(options("6", "7", "All of the above", "None of the above"), "seed")
+      shuffleAnswerChoices(
+        options("6", "7", "All of the above", "None of the above"),
+        "seed",
+      ),
     );
-    expect(shuffled.slice(2)).toEqual(["All of the above", "None of the above"]);
+    expect(shuffled.slice(2)).toEqual([
+      "All of the above",
+      "None of the above",
+    ]);
   });
 
   it("leaves a single choice alone", () => {
-    expect(texts(shuffleAnswerChoices(options("only"), "seed"))).toEqual(["only"]);
+    expect(texts(shuffleAnswerChoices(options("only"), "seed"))).toEqual([
+      "only",
+    ]);
   });
 
   it("handles a question with no choices (NUMERIC)", () => {

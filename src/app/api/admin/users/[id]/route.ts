@@ -5,7 +5,7 @@ import { logApiError } from "@/lib/system-log";
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const session = await auth();
@@ -19,7 +19,7 @@ export async function DELETE(
     if (session.user.id === id) {
       return NextResponse.json(
         { error: "Cannot delete your own admin account." },
-        { status: 400 }
+        { status: 400 },
       );
     }
 

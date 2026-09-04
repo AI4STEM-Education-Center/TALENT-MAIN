@@ -28,7 +28,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning className={`${inter.variable} ${lexend.variable}`}>
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={`${inter.variable} ${lexend.variable}`}
+    >
       <body>
         {/* Light is the default for everyone; the OS preference is deliberately
             not followed. The sidebar toggle still switches to dark and persists
@@ -39,9 +43,7 @@ export default function RootLayout({
           enableSystem={false}
           disableTransitionOnChange
         >
-          <ConfirmDialogProvider>
-            {children}
-          </ConfirmDialogProvider>
+          <ConfirmDialogProvider>{children}</ConfirmDialogProvider>
         </ThemeProvider>
       </body>
     </html>

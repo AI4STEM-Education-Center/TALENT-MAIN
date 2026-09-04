@@ -3,12 +3,14 @@ import { parseRosterCsv, isValidEmail, normalizeEmail } from "./csv-roster";
 
 describe("normalizeEmail", () => {
   it("rewrites uga.view.usg.edu to uga.edu", () => {
-    expect(normalizeEmail("yue-yin-student@uga.view.usg.edu")).toBe("yue-yin-student@uga.edu");
+    expect(normalizeEmail("yue-yin-student@uga.view.usg.edu")).toBe(
+      "yue-yin-student@uga.edu",
+    );
   });
 
   it("trims and lower-cases", () => {
     expect(normalizeEmail("  Yue-Yin-Student@UGA.View.USG.edu  ")).toBe(
-      "yue-yin-student@uga.edu"
+      "yue-yin-student@uga.edu",
     );
   });
 
@@ -23,14 +25,20 @@ describe("normalizeEmail", () => {
   });
 
   it("rewrites only uga.view.usg.edu, not other view.usg.edu hosts", () => {
-    expect(normalizeEmail("jane.doe@gatech.view.usg.edu")).toBe("jane.doe@gatech.view.usg.edu");
+    expect(normalizeEmail("jane.doe@gatech.view.usg.edu")).toBe(
+      "jane.doe@gatech.view.usg.edu",
+    );
     expect(normalizeEmail("someone@view.usg.edu")).toBe("someone@view.usg.edu");
     // A sub-labelled variant is not the confirmed host either.
-    expect(normalizeEmail("a@mail.uga.view.usg.edu")).toBe("a@mail.uga.view.usg.edu");
+    expect(normalizeEmail("a@mail.uga.view.usg.edu")).toBe(
+      "a@mail.uga.view.usg.edu",
+    );
   });
 
   it("only rewrites the domain, never a look-alike local part", () => {
-    expect(normalizeEmail("uga.view.usg.edu@example.com")).toBe("uga.view.usg.edu@example.com");
+    expect(normalizeEmail("uga.view.usg.edu@example.com")).toBe(
+      "uga.view.usg.edu@example.com",
+    );
   });
 
   it("tolerates nullish input", () => {
@@ -117,7 +125,8 @@ describe("parseRosterCsv", () => {
   });
 
   it("lower-cases emails", () => {
-    const csv = "OrgDefinedId,Last Name,First Name,Email\n1,Doe,Jane,Jane.DOE@UGA.edu";
+    const csv =
+      "OrgDefinedId,Last Name,First Name,Email\n1,Doe,Jane,Jane.DOE@UGA.edu";
     const { students } = parseRosterCsv(csv);
     expect(students[0].email).toBe("jane.doe@uga.edu");
   });
@@ -130,7 +139,8 @@ describe("parseRosterCsv", () => {
       "#810086556,#yue-yin-student,Yue,Yin,yue-yin-student@uga.view.usg.edu,#",
       "",
     ].join("\n");
-    const { students, headerInferred, skipped, normalizedEmails } = parseRosterCsv(csv);
+    const { students, headerInferred, skipped, normalizedEmails } =
+      parseRosterCsv(csv);
     expect(headerInferred).toBe(false);
     expect(skipped).toBe(0);
     expect(normalizedEmails).toBe(1);

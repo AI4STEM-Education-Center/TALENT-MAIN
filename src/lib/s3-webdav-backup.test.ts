@@ -50,23 +50,29 @@ const backupName = "backup-20260813T120000Z.db.gz";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.getS3Config.mockReturnValue({ bucket: "documents", region: "us-east-1" });
+  mocks.getS3Config.mockReturnValue({
+    bucket: "documents",
+    region: "us-east-1",
+  });
   mocks.getS3KeyPrefix.mockReturnValue("dev/");
 });
 
 describe("backupS3ToWebdav", () => {
   it("copies every namespaced object and publishes the manifest last", async () => {
     mocks.listS3Objects.mockResolvedValue(["dev/z.pdf", "dev/a.png"]);
-    mocks.getS3Object.mockImplementation(async (_bucket: string, key: string) => ({
-      body: Buffer.from(key),
-      contentType: key.endsWith(".pdf") ? "application/pdf" : "image/png",
-    }));
+    mocks.getS3Object.mockImplementation(
+      async (_bucket: string, key: string) => ({
+        body: Buffer.from(key),
+        contentType: key.endsWith(".pdf") ? "application/pdf" : "image/png",
+      }),
+    );
 
     const result = await backupS3ToWebdav(webdav, "dev", backupName);
 
     expect(result).toEqual({
       objectCount: 2,
-      totalBytes: Buffer.byteLength("dev/a.png") + Buffer.byteLength("dev/z.pdf"),
+      totalBytes:
+        Buffer.byteLength("dev/a.png") + Buffer.byteLength("dev/z.pdf"),
     });
     expect(mocks.getS3Object.mock.calls.map((call) => call[1])).toEqual([
       "dev/a.png",
@@ -77,7 +83,11 @@ describe("backupS3ToWebdav", () => {
     const [, manifestPath, manifestBytes] = mocks.putFile.mock.calls.at(-1)!;
     expect(manifestPath).toBe(`/backups/dev/${backupName}.s3/manifest.json`);
     const manifest = JSON.parse((manifestBytes as Buffer).toString("utf8"));
-    expect(manifest).toMatchObject({ version: 1, bucket: "documents", prefix: "dev/" });
+    expect(manifest).toMatchObject({
+      version: 1,
+      bucket: "documents",
+      prefix: "dev/",
+    });
     expect(manifest.objects.map((item: { key: string }) => item.key)).toEqual([
       "dev/a.png",
       "dev/z.pdf",
@@ -88,7 +98,9 @@ describe("backupS3ToWebdav", () => {
     mocks.listS3Objects.mockResolvedValue(["dev/missing.pdf"]);
     mocks.getS3Object.mockRejectedValue(new Error("gone"));
 
-    await expect(backupS3ToWebdav(webdav, "dev", backupName)).rejects.toThrow("gone");
+    await expect(backupS3ToWebdav(webdav, "dev", backupName)).rejects.toThrow(
+      "gone",
+    );
     expect(mocks.removePath).toHaveBeenLastCalledWith(
       expect.anything(),
       `/backups/dev/${backupName}.s3`,
@@ -99,7 +111,9 @@ describe("backupS3ToWebdav", () => {
 describe("restoreS3FromWebdav", () => {
   it("returns null for database-only backups", async () => {
     mocks.exists.mockResolvedValue(false);
-    await expect(restoreS3FromWebdav(webdav, "dev", backupName)).resolves.toBeNull();
+    await expect(
+      restoreS3FromWebdav(webdav, "dev", backupName),
+    ).resolves.toBeNull();
   });
 
   it("verifies and restores objects through the matching database restore", async () => {
@@ -114,20 +128,25 @@ describe("restoreS3FromWebdav", () => {
           key: "dev/learning-materials/document.pdf",
           file: "objects/00000001.bin",
           size: body.byteLength,
-          sha256: "0d6f2e630f794b4b2d5a4d2466e0c23f9d6b587967b5895c9c8ad1f0eda93364",
+          sha256:
+            "0d6f2e630f794b4b2d5a4d2466e0c23f9d6b587967b5895c9c8ad1f0eda93364",
           contentType: "application/pdf",
         },
       ],
     };
     // Use the implementation's checksum rather than a hand-maintained fixture.
     const { createHash } = await import("node:crypto");
-    manifest.objects[0].sha256 = createHash("sha256").update(body).digest("hex");
+    manifest.objects[0].sha256 = createHash("sha256")
+      .update(body)
+      .digest("hex");
     mocks.exists.mockResolvedValue(true);
     mocks.getFile
       .mockResolvedValueOnce(Buffer.from(JSON.stringify(manifest)))
       .mockResolvedValueOnce(body);
 
-    await expect(restoreS3FromWebdav(webdav, "dev", backupName)).resolves.toEqual({
+    await expect(
+      restoreS3FromWebdav(webdav, "dev", backupName),
+    ).resolves.toEqual({
       objectCount: 1,
       totalBytes: body.byteLength,
     });
@@ -153,9 +172,9 @@ describe("restoreS3FromWebdav", () => {
       ),
     );
 
-    await expect(restoreS3FromWebdav(webdav, "dev", backupName)).rejects.toThrow(
-      /this deployment uses/,
-    );
+    await expect(
+      restoreS3FromWebdav(webdav, "dev", backupName),
+    ).rejects.toThrow(/this deployment uses/);
     expect(mocks.putS3Object).not.toHaveBeenCalled();
   });
 });
@@ -163,7 +182,9 @@ describe("restoreS3FromWebdav", () => {
 describe("getS3WebdavBackupSummary", () => {
   it("returns null when no completed manifest exists", async () => {
     mocks.exists.mockResolvedValue(false);
-    await expect(getS3WebdavBackupSummary(webdav, "dev", backupName)).resolves.toBeNull();
+    await expect(
+      getS3WebdavBackupSummary(webdav, "dev", backupName),
+    ).resolves.toBeNull();
     expect(mocks.getFile).not.toHaveBeenCalled();
   });
 
@@ -196,10 +217,14 @@ describe("getS3WebdavBackupSummary", () => {
       ),
     );
 
-    await expect(getS3WebdavBackupSummary(webdav, "dev", backupName)).resolves.toEqual({
+    await expect(
+      getS3WebdavBackupSummary(webdav, "dev", backupName),
+    ).resolves.toEqual({
       objectCount: 2,
       totalBytes: 3072,
     });
-    expect(mocks.exists).toHaveBeenCalledWith(`/backups/dev/${backupName}.s3/manifest.json`);
+    expect(mocks.exists).toHaveBeenCalledWith(
+      `/backups/dev/${backupName}.s3/manifest.json`,
+    );
   });
 });

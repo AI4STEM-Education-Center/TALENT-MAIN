@@ -7,7 +7,10 @@ import {
   readReasons,
   GUARDRAIL_FEEDBACK_STATUSES,
 } from "@/lib/guardrail-events";
-import { GUARDRAIL_SURFACE_LABELS, isGuardrailSurface } from "@/lib/guardrail-settings";
+import {
+  GUARDRAIL_SURFACE_LABELS,
+  isGuardrailSurface,
+} from "@/lib/guardrail-settings";
 
 export const runtime = "nodejs";
 
@@ -35,17 +38,34 @@ export async function GET(req: Request) {
       orderBy: { createdAt: "desc" },
       take: PAGE_SIZE,
       include: {
-        event: { select: { surface: true, subjectId: true, blocked: true, reasons: true } },
+        event: {
+          select: {
+            surface: true,
+            subjectId: true,
+            blocked: true,
+            reasons: true,
+          },
+        },
       },
     });
 
     // Names are resolved in one extra query rather than a join: userId carries
     // no FK (an event outlives the account), so Prisma cannot relate it.
-    const userIds = [...new Set(rows.map((row) => row.userId).filter((id): id is string => !!id))];
+    const userIds = [
+      ...new Set(
+        rows.map((row) => row.userId).filter((id): id is string => !!id),
+      ),
+    ];
     const users = userIds.length
       ? await prisma.user.findMany({
           where: { id: { in: userIds } },
-          select: { id: true, firstName: true, lastName: true, email: true, role: true },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            role: true,
+          },
         })
       : [];
     const userById = new Map(users.map((user) => [user.id, user]));
@@ -80,7 +100,10 @@ export async function GET(req: Request) {
     });
   } catch (error) {
     logApiError("ADMIN_GUARDRAIL_FEEDBACK_GET", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }
 
@@ -109,8 +132,10 @@ export async function PATCH(req: Request) {
   }
   if (!isGuardrailFeedbackStatus(status)) {
     return NextResponse.json(
-      { error: `status must be one of: ${GUARDRAIL_FEEDBACK_STATUSES.join(", ")}` },
-      { status: 400 }
+      {
+        error: `status must be one of: ${GUARDRAIL_FEEDBACK_STATUSES.join(", ")}`,
+      },
+      { status: 400 },
     );
   }
 
@@ -131,6 +156,9 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ ok: true });
   } catch (error) {
     logApiError("ADMIN_GUARDRAIL_FEEDBACK_PATCH", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }

@@ -8,7 +8,9 @@ import MaterialImportDialog from "./material-import-dialog";
 import MaterialPoolImportDialog from "./material-pool-import-dialog";
 import { listClassMaterials } from "@/lib/learning-material";
 
-export default async function ClassMaterialsPage(props: { params: Promise<{ id: string }> }) {
+export default async function ClassMaterialsPage(props: {
+  params: Promise<{ id: string }>;
+}) {
   const session = await auth();
   if (!session?.user || session.user.role !== "TEACHER") {
     redirect("/login");
@@ -42,8 +44,12 @@ export default async function ClassMaterialsPage(props: { params: Promise<{ id: 
     <div className="max-w-5xl p-6">
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Learning Materials</h1>
-          <p className="text-gray-600">Upload and manage AI-processed documents for {cls.name}.</p>
+          <h1 className="text-2xl font-bold text-gray-900">
+            Learning Materials
+          </h1>
+          <p className="text-gray-600">
+            Upload and manage AI-processed documents for {cls.name}.
+          </p>
         </div>
         <div className="flex items-center gap-x-6">
           <MaterialPoolImportDialog classId={classId} />
@@ -61,9 +67,15 @@ export default async function ClassMaterialsPage(props: { params: Promise<{ id: 
         <MaterialUploadForm classId={classId} />
       </div>
 
-      <h2 className="text-xl font-semibold text-gray-800 mb-4">Uploaded Documents</h2>
+      <h2 className="text-xl font-semibold text-gray-800 mb-4">
+        Uploaded Documents
+      </h2>
 
-      <MaterialsList classId={classId} initialMaterials={initialMaterials} initialTags={materialTags} />
+      <MaterialsList
+        classId={classId}
+        initialMaterials={initialMaterials}
+        initialTags={materialTags}
+      />
     </div>
   );
 }

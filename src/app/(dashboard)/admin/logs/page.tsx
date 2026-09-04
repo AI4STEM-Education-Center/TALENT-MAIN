@@ -47,7 +47,14 @@ interface LogsResponse {
   };
 }
 
-const CATEGORIES = ["AUTH", "API", "WORKER", "USAGE", "SYSTEM", "GUARDRAIL"] as const;
+const CATEGORIES = [
+  "AUTH",
+  "API",
+  "WORKER",
+  "USAGE",
+  "SYSTEM",
+  "GUARDRAIL",
+] as const;
 const SEVERITIES = ["INFO", "WARNING", "ERROR"] as const;
 const ALL = "ALL";
 
@@ -57,8 +64,9 @@ function severityBadge(severity: string) {
       className={cn(
         "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
         severity === "ERROR" && "bg-red-500/10 text-red-600 dark:text-red-400",
-        severity === "WARNING" && "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-        severity === "INFO" && "bg-muted text-muted-foreground"
+        severity === "WARNING" &&
+          "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+        severity === "INFO" && "bg-muted text-muted-foreground",
       )}
     >
       {severity}
@@ -94,7 +102,9 @@ function SummaryCard({
       <div className="min-w-0">
         <p className="text-2xl font-bold leading-tight">{value}</p>
         <p className="text-xs text-muted-foreground">{label}</p>
-        {detail && <p className="text-xs text-muted-foreground/70 truncate">{detail}</p>}
+        {detail && (
+          <p className="text-xs text-muted-foreground/70 truncate">{detail}</p>
+        )}
       </div>
     </div>
   );
@@ -158,7 +168,8 @@ export default function AdminLogsPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">System Logs</h1>
           <p className="text-muted-foreground mt-1">
-            Persistent operation log: logins, errors, worker jobs, and traffic samples.
+            Persistent operation log: logins, errors, worker jobs, and traffic
+            samples.
           </p>
         </div>
         <Button variant="outline" onClick={fetchLogs} disabled={loading}>
@@ -193,8 +204,8 @@ export default function AdminLogsPage() {
           }
           detail={
             summary?.lastUsage
-              // react-doctor-disable-next-line react-doctor/no-locale-format-in-render -- summary arrives from a client fetch, so this branch renders nothing during SSR and cannot mismatch
-              ? new Date(summary.lastUsage.createdAt).toLocaleString()
+              ? // react-doctor-disable-next-line react-doctor/no-locale-format-in-render -- summary arrives from a client fetch, so this branch renders nothing during SSR and cannot mismatch
+                new Date(summary.lastUsage.createdAt).toLocaleString()
               : "No samples yet"
           }
         />
@@ -220,7 +231,10 @@ export default function AdminLogsPage() {
             setPage(1);
           }}
         >
-          <SelectTrigger className="w-full sm:w-44" aria-label="Filter by category">
+          <SelectTrigger
+            className="w-full sm:w-44"
+            aria-label="Filter by category"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -239,7 +253,10 @@ export default function AdminLogsPage() {
             setPage(1);
           }}
         >
-          <SelectTrigger className="w-full sm:w-44" aria-label="Filter by severity">
+          <SelectTrigger
+            className="w-full sm:w-44"
+            aria-label="Filter by severity"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -269,13 +286,19 @@ export default function AdminLogsPage() {
           <tbody className="divide-y divide-border">
             {loading && !data ? (
               <tr>
-                <td colSpan={7} className="px-6 py-8 text-center text-muted-foreground">
+                <td
+                  colSpan={7}
+                  className="px-6 py-8 text-center text-muted-foreground"
+                >
                   Loading logs…
                 </td>
               </tr>
             ) : logs.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-6 py-8 text-center text-muted-foreground">
+                <td
+                  colSpan={7}
+                  className="px-6 py-8 text-center text-muted-foreground"
+                >
                   {total === 0 && !query && category === ALL && severity === ALL
                     ? "No log entries yet. Events appear here as the system runs."
                     : "No log entries match the current filters."}
@@ -355,7 +378,7 @@ function LogRow({
       <tr
         className={cn(
           "hover:bg-muted/50 transition-colors",
-          hasDetail && "cursor-pointer"
+          hasDetail && "cursor-pointer",
         )}
         onClick={hasDetail ? onToggle : undefined}
       >
@@ -365,7 +388,9 @@ function LogRow({
         </td>
         <td className="px-4 py-3">{severityBadge(log.severity)}</td>
         <td className="px-4 py-3 text-muted-foreground">{log.category}</td>
-        <td className="px-4 py-3 whitespace-nowrap font-mono text-xs">{log.type}</td>
+        <td className="px-4 py-3 whitespace-nowrap font-mono text-xs">
+          {log.type}
+        </td>
         <td className="px-4 py-3 min-w-64">{log.message}</td>
         <td className="px-4 py-3 whitespace-nowrap font-mono text-xs text-muted-foreground">
           {log.ip ?? ""}
@@ -388,7 +413,7 @@ function LogRow({
               <ChevronDown
                 className={cn(
                   "size-4 text-muted-foreground transition-transform",
-                  expanded && "rotate-180"
+                  expanded && "rotate-180",
                 )}
               />
             </button>

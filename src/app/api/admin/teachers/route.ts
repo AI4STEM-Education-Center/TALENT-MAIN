@@ -18,7 +18,11 @@ export async function GET() {
   }
 
   const teachers = await prisma.teacher.findMany({
-    include: { user: { select: { id: true, firstName: true, lastName: true, email: true } } },
+    include: {
+      user: {
+        select: { id: true, firstName: true, lastName: true, email: true },
+      },
+    },
     orderBy: { user: { lastName: "asc" } },
   });
 
@@ -38,7 +42,7 @@ export async function GET() {
         emailMonthlyLimit: t.emailMonthlyLimit,
         quota,
       };
-    })
+    }),
   );
 
   return NextResponse.json({

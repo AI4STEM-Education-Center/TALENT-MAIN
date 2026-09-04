@@ -10,7 +10,10 @@ export const runtime = "nodejs";
  * credential existed and when it was last used; ingestion rejects it from the
  * next request onwards.
  */
-export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
   const session = await auth();
   if (!session?.user || session.user.role !== "ADMIN") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -36,6 +39,9 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     return NextResponse.json({ ok: true });
   } catch (error) {
     logApiError("ADMIN_PRESSURE_TOKEN_DELETE", error);
-    return NextResponse.json({ error: "Could not revoke ingestion token." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Could not revoke ingestion token." },
+      { status: 500 },
+    );
   }
 }

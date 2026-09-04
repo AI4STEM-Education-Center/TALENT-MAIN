@@ -86,14 +86,19 @@ export function GuardrailFeedbackList() {
           <MessageSquareWarning className="h-5 w-5" /> Guardrail reports
         </CardTitle>
         <p className="text-sm text-muted-foreground">
-          Users who were stopped by a safety check and said it was wrong. Read these before
-          switching a check from <em>Report</em> to <em>Block</em> — they are the only signal that
-          says whether a check was <em>right</em>, rather than just how often it fired.
+          Users who were stopped by a safety check and said it was wrong. Read
+          these before switching a check from <em>Report</em> to <em>Block</em>{" "}
+          — they are the only signal that says whether a check was{" "}
+          <em>right</em>, rather than just how often it fired.
         </p>
       </CardHeader>
 
       <CardContent className="space-y-4">
-        <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by status">
+        <div
+          className="flex flex-wrap gap-2"
+          role="group"
+          aria-label="Filter by status"
+        >
           {FILTERS.map((option) => (
             <button
               key={option.value}
@@ -104,7 +109,7 @@ export function GuardrailFeedbackList() {
                 "rounded-md border px-3 py-1.5 text-sm transition-colors",
                 filter === option.value
                   ? "border-primary bg-primary text-primary-foreground"
-                  : "border-input bg-background hover:bg-accent"
+                  : "border-input bg-background hover:bg-accent",
               )}
             >
               {option.label}
@@ -118,14 +123,17 @@ export function GuardrailFeedbackList() {
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : rows.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Nothing here. Either the checks are landing well or nobody has been stopped yet.
+            Nothing here. Either the checks are landing well or nobody has been
+            stopped yet.
           </p>
         ) : (
           <ul className="space-y-3">
             {rows.map((row) => (
               <li key={row.id} className="rounded-md border p-3 text-sm">
                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <span className="font-medium text-foreground">{row.surfaceLabel}</span>
+                  <span className="font-medium text-foreground">
+                    {row.surfaceLabel}
+                  </span>
                   <span>{row.blocked ? "blocked" : "warned"}</span>
                   <span>·</span>
                   <span>{formatDateTime(row.createdAt)}</span>
@@ -133,7 +141,8 @@ export function GuardrailFeedbackList() {
                     <>
                       <span>·</span>
                       <span>
-                        {row.user.name || row.user.email || "unknown"} ({row.user.role})
+                        {row.user.name || row.user.email || "unknown"} (
+                        {row.user.role})
                       </span>
                     </>
                   )}
@@ -143,7 +152,9 @@ export function GuardrailFeedbackList() {
 
                 <p className="mt-2 text-xs text-muted-foreground">
                   Check said:{" "}
-                  {row.reasons.length > 0 ? row.reasons.join(", ") : "no reason recorded"}
+                  {row.reasons.length > 0
+                    ? row.reasons.join(", ")
+                    : "no reason recorded"}
                   {row.subjectId && ` · ${row.subjectId}`}
                 </p>
 
@@ -155,7 +166,9 @@ export function GuardrailFeedbackList() {
                       disabled={busyId === row.id}
                       onClick={() => setStatus(row.id, "REVIEWED")}
                     >
-                      {busyId === row.id && <Loader2 className="mr-2 h-3 w-3 animate-spin" />}
+                      {busyId === row.id && (
+                        <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                      )}
                       Mark reviewed
                     </Button>
                   )}

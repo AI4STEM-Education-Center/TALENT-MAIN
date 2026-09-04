@@ -48,7 +48,7 @@ export type PersistTarget = { userId: string; audience: AssistantAudience };
 export async function persistAttachments(
   target: PersistTarget,
   attachments: DecodedAttachment[],
-  retentionDays: number
+  retentionDays: number,
 ): Promise<StoredAttachmentRef[]> {
   if (attachments.length === 0) return [];
 
@@ -85,12 +85,16 @@ export async function persistAttachments(
       });
       rowId = row.id;
 
-      const storageKey = buildAssistantAttachmentKey(target.userId, row.id, attachment.name);
+      const storageKey = buildAssistantAttachmentKey(
+        target.userId,
+        row.id,
+        attachment.name,
+      );
       await putS3Object(
         bucket,
         storageKey,
         Buffer.from(attachment.dataBase64, "base64"),
-        attachment.mimeType
+        attachment.mimeType,
       );
       await prisma.assistantAttachment.update({
         where: { id: row.id },
@@ -148,7 +152,7 @@ export type StoredAttachmentRow = {
 export async function findUserAttachment(
   userId: string,
   id: string,
-  now = new Date()
+  now = new Date(),
 ): Promise<StoredAttachmentRow | null> {
   const row = await prisma.assistantAttachment.findFirst({
     where: { id, userId, expiresAt: { gt: now }, storageKey: { not: "" } },
@@ -181,12 +185,16 @@ export type ReplayedAttachment = DecodedAttachment & { id: string };
 export async function loadStoredAttachments(
   userId: string,
   ids: string[],
-  limit: number
+  limit: number,
 ): Promise<ReplayedAttachment[]> {
   if (ids.length === 0 || limit <= 0) return [];
 
   const rows = await prisma.assistantAttachment.findMany({
-    where: { id: { in: ids.slice(0, limit * 4) }, userId, expiresAt: { gt: new Date() } },
+    where: {
+      id: { in: ids.slice(0, limit * 4) },
+      userId,
+      expiresAt: { gt: new Date() },
+    },
     select: {
       id: true,
       name: true,
@@ -229,7 +237,9 @@ export async function loadStoredAttachments(
  * delete runs first, because a row left behind is retried next pass while a
  * dropped row would leave the object unreachable forever.
  */
-export async function purgeExpiredAssistantAttachments(now = new Date()): Promise<number> {
+export async function purgeExpiredAssistantAttachments(
+  now = new Date(),
+): Promise<number> {
   const expired = await prisma.assistantAttachment.findMany({
     where: { expiresAt: { lte: now } },
     select: { id: true, bucket: true, storageKey: true },

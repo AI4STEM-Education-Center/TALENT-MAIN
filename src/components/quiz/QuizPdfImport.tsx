@@ -23,7 +23,8 @@ const POLL_MS = 2500;
 // don't offer a Discard that would kill it mid-flight.
 const PENDING_UPLOAD_STALL_MS = 15 * 60 * 1000;
 
-type ExtractionStatus = "PENDING_UPLOAD" | "EXTRACTING" | "AWAITING_REVIEW" | "COMMITTED" | "FAILED";
+type ExtractionStatus =
+  "PENDING_UPLOAD" | "EXTRACTING" | "AWAITING_REVIEW" | "COMMITTED" | "FAILED";
 
 type ListItem = {
   id: string;
@@ -58,8 +59,17 @@ type InitResponse = {
 };
 
 type FiguresResponse = {
-  questionFigures: { questionIndex: number; presignedUrl: string; storageKey: string }[];
-  optionImages: { questionIndex: number; optionIndex: number; presignedUrl: string; storageKey: string }[];
+  questionFigures: {
+    questionIndex: number;
+    presignedUrl: string;
+    storageKey: string;
+  }[];
+  optionImages: {
+    questionIndex: number;
+    optionIndex: number;
+    presignedUrl: string;
+    storageKey: string;
+  }[];
 };
 
 type ImportSummary = {
@@ -69,9 +79,14 @@ type ImportSummary = {
   errors?: { index: number; sourceQuestionId?: string; message: string }[];
 };
 
-type Phase = "idle" | "uploading" | "extracting" | "review" | "failed" | "committing";
+type Phase =
+  "idle" | "uploading" | "extracting" | "review" | "failed" | "committing";
 
-async function putBlob(url: string, contentType: string, body: Blob): Promise<void> {
+async function putBlob(
+  url: string,
+  contentType: string,
+  body: Blob,
+): Promise<void> {
   const res = await fetch(url, {
     method: "PUT",
     headers: { "Content-Type": contentType, "If-None-Match": "*" },
@@ -95,13 +110,14 @@ async function putBlob(url: string, contentType: string, body: Blob): Promise<vo
 async function cropToImageBlob(
   pageUrl: string,
   bbox: FigureBbox,
-  mimeType: PageImageMimeType
+  mimeType: PageImageMimeType,
 ): Promise<Blob> {
   const img = new Image();
   img.crossOrigin = "anonymous";
   await new Promise<void>((resolve, reject) => {
     img.onload = () => resolve();
-    img.onerror = () => reject(new Error("Could not load source page image for cropping"));
+    img.onerror = () =>
+      reject(new Error("Could not load source page image for cropping"));
     img.src = pageUrl;
   });
 
@@ -126,7 +142,7 @@ async function cropToImageBlob(
     // genuine encoder failure and should not be reported as a CORS problem.
     if (e instanceof DOMException && e.name === "SecurityError") {
       throw new Error(
-        "Storage CORS GET required: configure the CloudFront response headers policy (or S3 CORS on the fallback path)."
+        "Storage CORS GET required: configure the CloudFront response headers policy (or S3 CORS on the fallback path).",
       );
     }
     throw e instanceof Error ? e : new Error("Failed to encode figure crop");
@@ -134,7 +150,9 @@ async function cropToImageBlob(
   if (encoded.mimeType !== mimeType) {
     // Only reachable for a crop too large for the WebP container, since the
     // format was probed against this browser before the URLs were signed.
-    throw new Error(`This browser encoded the crop as ${encoded.mimeType}, not ${mimeType}.`);
+    throw new Error(
+      `This browser encoded the crop as ${encoded.mimeType}, not ${mimeType}.`,
+    );
   }
   return encoded.blob;
 }
@@ -242,10 +260,12 @@ export function QuizPdfImport({
         }
       } catch (e) {
         if (!mounted.current) return;
-        setError(e instanceof Error ? e.message : "Failed to load extraction status");
+        setError(
+          e instanceof Error ? e.message : "Failed to load extraction status",
+        );
       }
     },
-    [base, setPhase]
+    [base, setPhase],
   );
 
   // On mount: resume the newest non-committed extraction, if any.
@@ -287,7 +307,10 @@ export function QuizPdfImport({
     const file = e.target.files?.[0];
     e.target.value = ""; // allow re-selecting the same file later
     if (!file) return;
-    if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
+    if (
+      file.type !== "application/pdf" &&
+      !file.name.toLowerCase().endsWith(".pdf")
+    ) {
       setError("Please choose a PDF file.");
       return;
     }
@@ -313,7 +336,10 @@ export function QuizPdfImport({
           })),
         }),
       });
-      if (!initRes.ok) throw new Error((await initRes.json()).error || "Failed to start extraction");
+      if (!initRes.ok)
+        throw new Error(
+          (await initRes.json()).error || "Failed to start extraction",
+        );
       const init: InitResponse = await initRes.json();
 
       setStatusText("Uploading PDF…");
@@ -321,7 +347,9 @@ export function QuizPdfImport({
 
       const byPage = new Map(pageBlobs.map((p) => [p.pageNumber, p]));
       for (const page of init.pages) {
-        setStatusText(`Uploading page ${page.pageNumber}/${init.pages.length}…`);
+        setStatusText(
+          `Uploading page ${page.pageNumber}/${init.pages.length}…`,
+        );
         const blob = byPage.get(page.pageNumber);
         if (!blob) throw new Error(`Missing rendered page ${page.pageNumber}`);
         await putBlob(page.presignedUrl, blob.mimeType, blob.blob);
@@ -331,9 +359,17 @@ export function QuizPdfImport({
       const completeRes = await fetch(`${base}/${init.id}/complete`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pages: init.pages.map((p) => ({ pageNumber: p.pageNumber, storageKey: p.storageKey })) }),
+        body: JSON.stringify({
+          pages: init.pages.map((p) => ({
+            pageNumber: p.pageNumber,
+            storageKey: p.storageKey,
+          })),
+        }),
       });
-      if (!completeRes.ok) throw new Error((await completeRes.json()).error || "Failed to finalize upload");
+      if (!completeRes.ok)
+        throw new Error(
+          (await completeRes.json()).error || "Failed to finalize upload",
+        );
 
       if (!mounted.current) return;
       extractionIdRef.current = init.id;
@@ -350,7 +386,9 @@ export function QuizPdfImport({
     const extractionId = extractionIdRef.current;
     if (!extractionId) return;
     setError(null);
-    const res = await fetch(`${base}/${extractionId}/retry`, { method: "POST" });
+    const res = await fetch(`${base}/${extractionId}/retry`, {
+      method: "POST",
+    });
     if (!res.ok) {
       setError((await res.json()).error || "Retry failed");
       return;
@@ -382,10 +420,12 @@ export function QuizPdfImport({
   // returning questions with figureStorageKey / option.imageStorageKey set.
   async function uploadFigureCrops(): Promise<StagedQuestion[]> {
     const pageImages = detail?.pageImages ?? [];
-    const pageUrlByNumber = new Map(pageImages.map((p) => [p.pageNumber, p.url]));
+    const pageUrlByNumber = new Map(
+      pageImages.map((p) => [p.pageNumber, p.url]),
+    );
 
     const pendingFigures = questions.flatMap((q, index) =>
-      q.hasFigure && !q.figureStorageKey && q.figureBbox ? [{ q, index }] : []
+      q.hasFigure && !q.figureStorageKey && q.figureBbox ? [{ q, index }] : [],
     );
 
     const pendingOptions: { questionIndex: number; optionIndex: number }[] = [];
@@ -397,7 +437,8 @@ export function QuizPdfImport({
       });
     });
 
-    if (pendingFigures.length === 0 && pendingOptions.length === 0) return questions;
+    if (pendingFigures.length === 0 && pendingOptions.length === 0)
+      return questions;
 
     // One format for every crop in this request: the server signs each PUT with
     // it, so it has to be settled before the URLs are minted rather than per
@@ -414,19 +455,30 @@ export function QuizPdfImport({
         contentType: cropMimeType,
       }),
     });
-    if (!figRes.ok) throw new Error((await figRes.json()).error || "Failed to get figure upload URLs");
-    const { questionFigures, optionImages }: FiguresResponse = await figRes.json();
+    if (!figRes.ok)
+      throw new Error(
+        (await figRes.json()).error || "Failed to get figure upload URLs",
+      );
+    const { questionFigures, optionImages }: FiguresResponse =
+      await figRes.json();
     const figByQ = new Map(questionFigures.map((f) => [f.questionIndex, f]));
-    const optByKey = new Map(optionImages.map((f) => [`${f.questionIndex}:${f.optionIndex}`, f]));
+    const optByKey = new Map(
+      optionImages.map((f) => [`${f.questionIndex}:${f.optionIndex}`, f]),
+    );
 
     // Copy so each option can be patched without mutating React state.
-    const next = questions.map((q) => ({ ...q, options: q.options.map((o) => ({ ...o })) }));
+    const next = questions.map((q) => ({
+      ...q,
+      options: q.options.map((o) => ({ ...o })),
+    }));
 
     for (const { q, index } of pendingFigures) {
       const fig = figByQ.get(index);
-      if (!fig) throw new Error(`Missing figure upload URL for question ${index + 1}`);
+      if (!fig)
+        throw new Error(`Missing figure upload URL for question ${index + 1}`);
       const pageUrl = pageUrlByNumber.get(q.figurePage ?? q.sourcePage);
-      if (!pageUrl) throw new Error(`Missing source page image for question ${index + 1}`);
+      if (!pageUrl)
+        throw new Error(`Missing source page image for question ${index + 1}`);
       const blob = await cropToImageBlob(pageUrl, q.figureBbox!, cropMimeType);
       await putBlob(fig.presignedUrl, cropMimeType, blob);
       next[index] = { ...next[index], figureStorageKey: fig.storageKey };
@@ -435,13 +487,19 @@ export function QuizPdfImport({
     for (const { questionIndex, optionIndex } of pendingOptions) {
       const fig = optByKey.get(`${questionIndex}:${optionIndex}`);
       if (!fig) {
-        throw new Error(`Missing image upload URL for question ${questionIndex + 1} option ${optionIndex + 1}`);
+        throw new Error(
+          `Missing image upload URL for question ${questionIndex + 1} option ${optionIndex + 1}`,
+        );
       }
       const q = questions[questionIndex];
       const o = q.options[optionIndex];
-      const pageUrl = pageUrlByNumber.get(o.imagePage ?? q.figurePage ?? q.sourcePage);
+      const pageUrl = pageUrlByNumber.get(
+        o.imagePage ?? q.figurePage ?? q.sourcePage,
+      );
       if (!pageUrl) {
-        throw new Error(`Missing source page image for question ${questionIndex + 1} option ${optionIndex + 1}`);
+        throw new Error(
+          `Missing source page image for question ${questionIndex + 1} option ${optionIndex + 1}`,
+        );
       }
       const blob = await cropToImageBlob(pageUrl, o.imageBbox!, cropMimeType);
       await putBlob(fig.presignedUrl, cropMimeType, blob);
@@ -484,12 +542,16 @@ export function QuizPdfImport({
     }
   }
 
-  const incompleteCount = questions.filter((q) => !isQuestionComplete(q)).length;
+  const incompleteCount = questions.filter(
+    (q) => !isQuestionComplete(q),
+  ).length;
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2"><FileUp className="size-5" /> Import from PDF</CardTitle>
+        <CardTitle className="flex items-center gap-2">
+          <FileUp className="size-5" /> Import from PDF
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         {error && (
@@ -502,7 +564,8 @@ export function QuizPdfImport({
         {phase === "idle" && (
           <>
             <p className="text-sm text-muted-foreground">
-              Upload a quiz PDF (max {MAX_PAGES} pages). Pages are rendered in your browser and questions are extracted by AI for your review.
+              Upload a quiz PDF (max {MAX_PAGES} pages). Pages are rendered in
+              your browser and questions are extracted by AI for your review.
             </p>
             <div className="relative inline-block">
               <input
@@ -512,18 +575,25 @@ export function QuizPdfImport({
                 className="absolute inset-0 size-full cursor-pointer opacity-0"
                 onChange={handleFile}
               />
-              <Button asChild><span><FileUp className="size-4" /> Choose PDF</span></Button>
+              <Button asChild>
+                <span>
+                  <FileUp className="size-4" /> Choose PDF
+                </span>
+              </Button>
             </div>
             {summary && (
               <div className="space-y-1 rounded-md border p-3 text-sm">
                 <p className="font-medium">PDF import complete</p>
                 <p className="text-muted-foreground">
-                  Imported {summary.importedCount}, skipped {summary.skippedCount}, errors {summary.errorCount}.
+                  Imported {summary.importedCount}, skipped{" "}
+                  {summary.skippedCount}, errors {summary.errorCount}.
                 </p>
                 {summary.errors && summary.errors.length > 0 && (
                   <div className="space-y-1 text-destructive">
                     {summary.errors.slice(0, 5).map((e) => (
-                      <p key={e.index}>Question {e.index + 1}: {e.message}</p>
+                      <p key={e.index}>
+                        Question {e.index + 1}: {e.message}
+                      </p>
                     ))}
                   </div>
                 )}
@@ -534,16 +604,20 @@ export function QuizPdfImport({
 
         {phase === "uploading" && (
           <div className="flex items-center gap-3 text-sm text-muted-foreground">
-            <Loader2 className="size-5 animate-spin text-primary" /> {statusText}
+            <Loader2 className="size-5 animate-spin text-primary" />{" "}
+            {statusText}
           </div>
         )}
 
         {phase === "extracting" && (
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 text-sm text-muted-foreground">
-              <Loader2 className="size-5 animate-spin text-primary" /> Extracting questions…
+              <Loader2 className="size-5 animate-spin text-primary" />{" "}
+              Extracting questions…
             </div>
-            <Button size="sm" variant="ghost" onClick={discard}><Trash2 className="size-4" /> Discard</Button>
+            <Button size="sm" variant="ghost" onClick={discard}>
+              <Trash2 className="size-4" /> Discard
+            </Button>
           </div>
         )}
 
@@ -557,9 +631,13 @@ export function QuizPdfImport({
             <div className="flex gap-2">
               {/* No Retry for a half-uploaded PDF — there is nothing to re-run. */}
               {detail?.status !== "PENDING_UPLOAD" && (
-                <Button size="sm" onClick={retry}><RotateCw className="size-4" /> Retry</Button>
+                <Button size="sm" onClick={retry}>
+                  <RotateCw className="size-4" /> Retry
+                </Button>
               )}
-              <Button size="sm" variant="outline" onClick={discard}><Trash2 className="size-4" /> Discard</Button>
+              <Button size="sm" variant="outline" onClick={discard}>
+                <Trash2 className="size-4" /> Discard
+              </Button>
             </div>
           </div>
         )}
@@ -585,7 +663,11 @@ export function QuizPdfImport({
               guardrailEventId={detail.guardrailEventId}
               pageImages={detail.pageImages ?? []}
               questionKeys={questionKeys}
-              onChangeQuestion={(i, next) => setQuestions((prev) => prev.map((q, idx) => (idx === i ? next : q)))}
+              onChangeQuestion={(i, next) =>
+                setQuestions((prev) =>
+                  prev.map((q, idx) => (idx === i ? next : q)),
+                )
+              }
               onRemoveQuestion={(i) => {
                 setQuestions((prev) => prev.filter((_, idx) => idx !== i));
                 setQuestionKeys((prev) => prev.filter((_, idx) => idx !== i));
@@ -594,17 +676,27 @@ export function QuizPdfImport({
             <div className="flex flex-wrap items-center gap-3">
               <Button
                 onClick={commit}
-                disabled={phase === "committing" || questions.length === 0 || incompleteCount > 0}
+                disabled={
+                  phase === "committing" ||
+                  questions.length === 0 ||
+                  incompleteCount > 0
+                }
               >
                 {phase === "committing" ? (
-                  <><Loader2 className="size-4 animate-spin" /> Committing…</>
+                  <>
+                    <Loader2 className="size-4 animate-spin" /> Committing…
+                  </>
                 ) : incompleteCount > 0 ? (
                   `Commit (${incompleteCount} incomplete)`
                 ) : (
                   `Commit ${questions.length} question${questions.length === 1 ? "" : "s"}`
                 )}
               </Button>
-              <Button variant="outline" onClick={discard} disabled={phase === "committing"}>
+              <Button
+                variant="outline"
+                onClick={discard}
+                disabled={phase === "committing"}
+              >
                 <Trash2 className="size-4" /> Discard
               </Button>
             </div>

@@ -10,7 +10,12 @@ import {
 } from "./panel-geometry";
 
 const VIEWPORT = { width: 1440, height: 900 };
-const rect = (x: number, y: number, width: number, height: number): PanelRect => ({
+const rect = (
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): PanelRect => ({
   x,
   y,
   width,
@@ -34,7 +39,11 @@ describe("defaultPanelRect", () => {
 
 describe("clampPanelRect", () => {
   it("pulls a panel dragged past the edge back inside", () => {
-    const panel = clampPanelRect(rect(5000, -200, 400, 500), VIEWPORT.width, VIEWPORT.height);
+    const panel = clampPanelRect(
+      rect(5000, -200, 400, 500),
+      VIEWPORT.width,
+      VIEWPORT.height,
+    );
     expect(panel.x).toBe(VIEWPORT.width - 400 - 16);
     expect(panel.y).toBe(16);
   });
@@ -48,7 +57,11 @@ describe("clampPanelRect", () => {
   });
 
   it("never returns a panel below the usable minimum", () => {
-    const panel = clampPanelRect(rect(100, 100, 10, 10), VIEWPORT.width, VIEWPORT.height);
+    const panel = clampPanelRect(
+      rect(100, 100, 10, 10),
+      VIEWPORT.width,
+      VIEWPORT.height,
+    );
     expect(panel.width).toBe(MIN_PANEL_WIDTH);
     expect(panel.height).toBe(MIN_PANEL_HEIGHT);
   });
@@ -56,7 +69,13 @@ describe("clampPanelRect", () => {
 
 describe("movePanelRect", () => {
   it("applies the pointer delta without changing the size", () => {
-    const panel = movePanelRect(rect(400, 300, 416, 500), -120, 40, VIEWPORT.width, VIEWPORT.height);
+    const panel = movePanelRect(
+      rect(400, 300, 416, 500),
+      -120,
+      40,
+      VIEWPORT.width,
+      VIEWPORT.height,
+    );
     expect(panel).toEqual(rect(280, 340, 416, 500));
   });
 });
@@ -69,7 +88,7 @@ describe("resizePanelRect", () => {
       -100,
       0,
       VIEWPORT.width,
-      VIEWPORT.height
+      VIEWPORT.height,
     );
     expect(panel).toEqual(rect(300, 300, 516, 400));
   });
@@ -81,7 +100,7 @@ describe("resizePanelRect", () => {
       60,
       50,
       VIEWPORT.width,
-      VIEWPORT.height
+      VIEWPORT.height,
     );
     expect(panel).toEqual(rect(200, 200, 460, 350));
   });
@@ -93,7 +112,7 @@ describe("resizePanelRect", () => {
       900,
       0,
       VIEWPORT.width,
-      VIEWPORT.height
+      VIEWPORT.height,
     );
     expect(panel.width).toBe(MIN_PANEL_WIDTH);
     // The right edge stayed put: 400 + 416 = 816.
@@ -107,7 +126,7 @@ describe("resizePanelRect", () => {
       900,
       900,
       VIEWPORT.width,
-      VIEWPORT.height
+      VIEWPORT.height,
     );
     expect(panel.x + panel.width).toBe(VIEWPORT.width - 16);
     expect(panel.y + panel.height).toBe(VIEWPORT.height - 16);

@@ -56,7 +56,7 @@ export type GcRefs = {
 export function classifyForGc(
   key: string,
   refs: GcRefs,
-  keyPrefix = ""
+  keyPrefix = "",
 ): "keep" | "delete" {
   // Never classify an object outside this deployment's namespace. The caller
   // also scopes ListObjects to the prefix; this guard keeps the pure helper
@@ -101,34 +101,39 @@ export function classifyForGc(
  * while missing its just-created question rows, dooming a live figure.
  */
 export async function loadGcRefs(): Promise<GcRefs> {
-  const [materials, extractions, questions, options, simulations, feedback] = await prisma.$transaction([
-    prisma.learningMaterial.findMany({ select: { id: true } }),
-    prisma.quizPdfExtraction.findMany({ select: { id: true, status: true } }),
-    prisma.question.findMany({
-      where: { figureStorageKey: { not: null } },
-      select: { figureStorageKey: true },
-    }),
-    prisma.option.findMany({
-      where: { imageStorageKey: { not: null } },
-      select: { imageStorageKey: true },
-    }),
-    prisma.questionSimulation.findMany({
-      where: { storageKey: { not: null } },
-      select: { storageKey: true },
-    }),
-    prisma.simulationFeedback.findMany({
-      where: { previousStorageKey: { not: null } },
-      select: { previousStorageKey: true },
-    }),
-  ]);
+  const [materials, extractions, questions, options, simulations, feedback] =
+    await prisma.$transaction([
+      prisma.learningMaterial.findMany({ select: { id: true } }),
+      prisma.quizPdfExtraction.findMany({ select: { id: true, status: true } }),
+      prisma.question.findMany({
+        where: { figureStorageKey: { not: null } },
+        select: { figureStorageKey: true },
+      }),
+      prisma.option.findMany({
+        where: { imageStorageKey: { not: null } },
+        select: { imageStorageKey: true },
+      }),
+      prisma.questionSimulation.findMany({
+        where: { storageKey: { not: null } },
+        select: { storageKey: true },
+      }),
+      prisma.simulationFeedback.findMany({
+        where: { previousStorageKey: { not: null } },
+        select: { previousStorageKey: true },
+      }),
+    ]);
 
   const figureKeys = new Set<string>();
-  for (const q of questions) if (q.figureStorageKey) figureKeys.add(q.figureStorageKey);
-  for (const o of options) if (o.imageStorageKey) figureKeys.add(o.imageStorageKey);
+  for (const q of questions)
+    if (q.figureStorageKey) figureKeys.add(q.figureStorageKey);
+  for (const o of options)
+    if (o.imageStorageKey) figureKeys.add(o.imageStorageKey);
 
   const simulationKeys = new Set<string>();
-  for (const s of simulations) if (s.storageKey) simulationKeys.add(s.storageKey);
-  for (const f of feedback) if (f.previousStorageKey) simulationKeys.add(f.previousStorageKey);
+  for (const s of simulations)
+    if (s.storageKey) simulationKeys.add(s.storageKey);
+  for (const f of feedback)
+    if (f.previousStorageKey) simulationKeys.add(f.previousStorageKey);
 
   return {
     materialIds: new Set(materials.map((m) => m.id)),
@@ -148,15 +153,27 @@ export type GcResult = {
  * one's S3 prefix, then delete the row (cascades its page rows). Mirrors the
  * teacher-facing discard endpoint, including its best-effort S3 stance.
  */
-async function discardStaleExtractions(bucket: string, now: Date): Promise<number> {
+async function discardStaleExtractions(
+  bucket: string,
+  now: Date,
+): Promise<number> {
   const cutoff = (ms: number) => new Date(now.getTime() - ms);
   const stale = await prisma.quizPdfExtraction.findMany({
     where: {
       OR: [
-        { status: "PENDING_UPLOAD", updatedAt: { lt: cutoff(STALE_PENDING_UPLOAD_MS) } },
-        { status: "EXTRACTING", updatedAt: { lt: cutoff(STALE_EXTRACTING_MS) } },
+        {
+          status: "PENDING_UPLOAD",
+          updatedAt: { lt: cutoff(STALE_PENDING_UPLOAD_MS) },
+        },
+        {
+          status: "EXTRACTING",
+          updatedAt: { lt: cutoff(STALE_EXTRACTING_MS) },
+        },
         { status: "FAILED", updatedAt: { lt: cutoff(STALE_FAILED_MS) } },
-        { status: "AWAITING_REVIEW", updatedAt: { lt: cutoff(STALE_AWAITING_REVIEW_MS) } },
+        {
+          status: "AWAITING_REVIEW",
+          updatedAt: { lt: cutoff(STALE_AWAITING_REVIEW_MS) },
+        },
       ],
     },
     select: { id: true, status: true, storageKey: true, bucket: true },
@@ -165,19 +182,31 @@ async function discardStaleExtractions(bucket: string, now: Date): Promise<numbe
   let discarded = 0;
   for (const extraction of stale) {
     try {
-      const keys = await listS3Objects(extraction.bucket || bucket, quizExtractionPrefix(extraction.storageKey));
-      if (keys.length > 0) await deleteS3Objects(extraction.bucket || bucket, keys);
+      const keys = await listS3Objects(
+        extraction.bucket || bucket,
+        quizExtractionPrefix(extraction.storageKey),
+      );
+      if (keys.length > 0)
+        await deleteS3Objects(extraction.bucket || bucket, keys);
     } catch (e) {
-      console.error(`[S3 GC] Sweep failed for stale extraction ${extraction.id}:`, e);
+      console.error(
+        `[S3 GC] Sweep failed for stale extraction ${extraction.id}:`,
+        e,
+      );
       // Leave the row so the objects are retried next run rather than orphaned.
       continue;
     }
     try {
       await prisma.quizPdfExtraction.delete({ where: { id: extraction.id } });
       discarded += 1;
-      console.log(`[S3 GC] Discarded stale ${extraction.status} extraction ${extraction.id}`);
+      console.log(
+        `[S3 GC] Discarded stale ${extraction.status} extraction ${extraction.id}`,
+      );
     } catch (e) {
-      console.error(`[S3 GC] Could not delete stale extraction row ${extraction.id}:`, e);
+      console.error(
+        `[S3 GC] Could not delete stale extraction row ${extraction.id}:`,
+        e,
+      );
     }
   }
   return discarded;
@@ -198,13 +227,17 @@ async function reconcileBucket(bucket: string, now: Date): Promise<number> {
   const doomed: string[] = [];
   const families = ["learning-materials/", "quiz-extractions/", "simulations/"];
   const objectGroups = await Promise.all(
-    families.map((family) => listS3ObjectsWithMeta(bucket, `${keyPrefix}${family}`))
+    families.map((family) =>
+      listS3ObjectsWithMeta(bucket, `${keyPrefix}${family}`),
+    ),
   );
   for (const objects of objectGroups) {
     for (const obj of objects) {
       // No LastModified = can't prove it's old enough; leave it for next run.
-      if (!obj.lastModified || obj.lastModified.getTime() > graceCutoff) continue;
-      if (classifyForGc(obj.key, refs, keyPrefix) === "delete") doomed.push(obj.key);
+      if (!obj.lastModified || obj.lastModified.getTime() > graceCutoff)
+        continue;
+      if (classifyForGc(obj.key, refs, keyPrefix) === "delete")
+        doomed.push(obj.key);
     }
   }
 

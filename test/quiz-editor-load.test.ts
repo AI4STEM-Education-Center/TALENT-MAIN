@@ -10,7 +10,7 @@ const TOPICS = [{ id: "t1", name: "Unit 1" }];
 /** Build a fetch stub that answers /api/quizzes/* and /api/topics separately. */
 function stubFetch(
   quiz: { status: number; body: unknown },
-  topics: { status: number; body: unknown }
+  topics: { status: number; body: unknown },
 ) {
   return vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
@@ -28,7 +28,9 @@ const load = (f: typeof fetch, signal = new AbortController().signal) =>
 
 describe("loadQuizEditorData", () => {
   it("returns the quiz and topics when both calls succeed", async () => {
-    const result = await load(stubFetch({ status: 200, body: QUIZ }, { status: 200, body: TOPICS }));
+    const result = await load(
+      stubFetch({ status: 200, body: QUIZ }, { status: 200, body: TOPICS }),
+    );
     expect(result).toEqual({ kind: "ok", quiz: QUIZ, topics: TOPICS });
   });
 
@@ -36,7 +38,10 @@ describe("loadQuizEditorData", () => {
   // written straight into `topics` state and threw on `topics.map(...)`.
   it("reports an error instead of passing a 401 error body through as topics", async () => {
     const result = await load(
-      stubFetch({ status: 200, body: QUIZ }, { status: 401, body: { error: "Unauthorized" } })
+      stubFetch(
+        { status: 200, body: QUIZ },
+        { status: 401, body: { error: "Unauthorized" } },
+      ),
     );
     expect(result.kind).toBe("error");
     expect(result).toMatchObject({ message: expect.stringContaining("401") });
@@ -46,27 +51,40 @@ describe("loadQuizEditorData", () => {
   // with a shape the render cannot consume.
   it("rejects a 200 whose topics body is not an array", async () => {
     const result = await load(
-      stubFetch({ status: 200, body: QUIZ }, { status: 200, body: { error: "nope" } })
+      stubFetch(
+        { status: 200, body: QUIZ },
+        { status: 200, body: { error: "nope" } },
+      ),
     );
     expect(result.kind).toBe("error");
-    expect(result).toMatchObject({ message: expect.stringContaining("unexpected format") });
+    expect(result).toMatchObject({
+      message: expect.stringContaining("unexpected format"),
+    });
   });
 
   it("rejects a 200 whose quiz body is not an object", async () => {
     for (const body of [["not", "a", "quiz"], "a string", null]) {
-      const result = await load(stubFetch({ status: 200, body }, { status: 200, body: TOPICS }));
+      const result = await load(
+        stubFetch({ status: 200, body }, { status: 200, body: TOPICS }),
+      );
       expect(result.kind, `body: ${JSON.stringify(body)}`).toBe("error");
     }
   });
 
   it("distinguishes a missing quiz from a failed load", async () => {
     const missing = await load(
-      stubFetch({ status: 404, body: { error: "Not found" } }, { status: 200, body: TOPICS })
+      stubFetch(
+        { status: 404, body: { error: "Not found" } },
+        { status: 200, body: TOPICS },
+      ),
     );
     expect(missing).toEqual({ kind: "notFound" });
 
     const failed = await load(
-      stubFetch({ status: 500, body: { error: "boom" } }, { status: 200, body: TOPICS })
+      stubFetch(
+        { status: 500, body: { error: "boom" } },
+        { status: 200, body: TOPICS },
+      ),
     );
     expect(failed.kind).toBe("error");
     expect(failed).toMatchObject({ message: expect.stringContaining("500") });
@@ -91,7 +109,9 @@ describe("loadQuizEditorData", () => {
 
     const result = await load(failing);
     expect(result.kind).toBe("error");
-    expect(result).toMatchObject({ message: expect.stringContaining("Check your connection") });
+    expect(result).toMatchObject({
+      message: expect.stringContaining("Check your connection"),
+    });
     expect(result).not.toMatchObject({ message: "Failed to fetch" });
   });
 
@@ -108,6 +128,9 @@ describe("loadQuizEditorData", () => {
     })) as unknown as typeof fetch;
 
     const result = await load(redirected);
-    expect(result).toEqual({ kind: "error", message: "Your session has expired. Please sign in again." });
+    expect(result).toEqual({
+      kind: "error",
+      message: "Your session has expired. Please sign in again.",
+    });
   });
 });

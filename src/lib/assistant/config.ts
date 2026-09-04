@@ -3,7 +3,12 @@
 // exactly like a disabled assistant (the state a fresh install is in).
 
 import { prisma } from "@/lib/prisma";
-import { ATTACHMENT_KINDS, isAttachmentKind, type AssistantAudience, type AttachmentKind } from "./types";
+import {
+  ATTACHMENT_KINDS,
+  isAttachmentKind,
+  type AssistantAudience,
+  type AttachmentKind,
+} from "./types";
 import { allToolNames, listSkills } from "./skills";
 
 export type AssistantSettings = {
@@ -36,7 +41,9 @@ export type AssistantSettings = {
  * admin has to pick a provider/model and turn the assistant on before any
  * student or teacher can talk to it.
  */
-export function defaultSettings(audience: AssistantAudience): AssistantSettings {
+export function defaultSettings(
+  audience: AssistantAudience,
+): AssistantSettings {
   return {
     audience,
     enabled: false,
@@ -78,7 +85,9 @@ function clamp(value: number, bounds: { min: number; max: number }): number {
 function parseStringArray(raw: string): string[] {
   try {
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [];
+    return Array.isArray(parsed)
+      ? parsed.filter((v): v is string => typeof v === "string")
+      : [];
   } catch {
     return [];
   }
@@ -100,7 +109,10 @@ function reconcileSkills(audience: AssistantAudience, ids: string[]): string[] {
  * row forever, and — worse — could later suppress an unrelated new tool that
  * happened to reuse the name.
  */
-function reconcileToolNames(audience: AssistantAudience, names: string[]): string[] {
+function reconcileToolNames(
+  audience: AssistantAudience,
+  names: string[],
+): string[] {
   const known = new Set(allToolNames(audience));
   return names.filter((name) => known.has(name));
 }
@@ -112,27 +124,47 @@ function reconcileKinds(kinds: string[]): AttachmentKind[] {
 }
 
 export async function getAssistantSettings(
-  audience: AssistantAudience
+  audience: AssistantAudience,
 ): Promise<AssistantSettings> {
-  const row = await prisma.assistantConfig.findUnique({ where: { id: audience } });
+  const row = await prisma.assistantConfig.findUnique({
+    where: { id: audience },
+  });
   if (!row) return defaultSettings(audience);
 
   return {
     audience,
     enabled: row.enabled,
-    extraInstructions: (row.extraInstructions ?? "").slice(0, MAX_EXTRA_INSTRUCTIONS_CHARS),
-    enabledSkills: reconcileSkills(audience, parseStringArray(row.enabledSkills)),
-    disabledTools: reconcileToolNames(audience, parseStringArray(row.disabledTools)),
+    extraInstructions: (row.extraInstructions ?? "").slice(
+      0,
+      MAX_EXTRA_INSTRUCTIONS_CHARS,
+    ),
+    enabledSkills: reconcileSkills(
+      audience,
+      parseStringArray(row.enabledSkills),
+    ),
+    disabledTools: reconcileToolNames(
+      audience,
+      parseStringArray(row.disabledTools),
+    ),
     attachmentKinds: reconcileKinds(parseStringArray(row.attachmentKinds)),
     maxAttachments: clamp(row.maxAttachments, SETTINGS_BOUNDS.maxAttachments),
-    maxAttachmentBytes: clamp(row.maxAttachmentBytes, SETTINGS_BOUNDS.maxAttachmentBytes),
+    maxAttachmentBytes: clamp(
+      row.maxAttachmentBytes,
+      SETTINGS_BOUNDS.maxAttachmentBytes,
+    ),
     attachmentRetentionDays: clamp(
       row.attachmentRetentionDays,
-      SETTINGS_BOUNDS.attachmentRetentionDays
+      SETTINGS_BOUNDS.attachmentRetentionDays,
     ),
-    historyRetentionDays: clamp(row.historyRetentionDays, SETTINGS_BOUNDS.historyRetentionDays),
+    historyRetentionDays: clamp(
+      row.historyRetentionDays,
+      SETTINGS_BOUNDS.historyRetentionDays,
+    ),
     maxToolCalls: clamp(row.maxToolCalls, SETTINGS_BOUNDS.maxToolCalls),
-    maxHistoryMessages: clamp(row.maxHistoryMessages, SETTINGS_BOUNDS.maxHistoryMessages),
+    maxHistoryMessages: clamp(
+      row.maxHistoryMessages,
+      SETTINGS_BOUNDS.maxHistoryMessages,
+    ),
     turnsPerHour: clamp(row.turnsPerHour, SETTINGS_BOUNDS.turnsPerHour),
   };
 }
@@ -158,30 +190,44 @@ export type AssistantSettingsPatch = Partial<
  */
 export async function saveAssistantSettings(
   audience: AssistantAudience,
-  patch: AssistantSettingsPatch
+  patch: AssistantSettingsPatch,
 ): Promise<AssistantSettings> {
   const current = await getAssistantSettings(audience);
   const provided = Object.fromEntries(
-    Object.entries(patch).filter(([, value]) => value !== undefined)
+    Object.entries(patch).filter(([, value]) => value !== undefined),
   ) as AssistantSettingsPatch;
   const next = { ...current, ...provided };
 
   const data = {
     audience,
     enabled: next.enabled,
-    extraInstructions: next.extraInstructions.slice(0, MAX_EXTRA_INSTRUCTIONS_CHARS) || null,
-    enabledSkills: JSON.stringify(reconcileSkills(audience, next.enabledSkills)),
-    disabledTools: JSON.stringify(reconcileToolNames(audience, next.disabledTools)),
+    extraInstructions:
+      next.extraInstructions.slice(0, MAX_EXTRA_INSTRUCTIONS_CHARS) || null,
+    enabledSkills: JSON.stringify(
+      reconcileSkills(audience, next.enabledSkills),
+    ),
+    disabledTools: JSON.stringify(
+      reconcileToolNames(audience, next.disabledTools),
+    ),
     attachmentKinds: JSON.stringify(reconcileKinds(next.attachmentKinds)),
     maxAttachments: clamp(next.maxAttachments, SETTINGS_BOUNDS.maxAttachments),
-    maxAttachmentBytes: clamp(next.maxAttachmentBytes, SETTINGS_BOUNDS.maxAttachmentBytes),
+    maxAttachmentBytes: clamp(
+      next.maxAttachmentBytes,
+      SETTINGS_BOUNDS.maxAttachmentBytes,
+    ),
     attachmentRetentionDays: clamp(
       next.attachmentRetentionDays,
-      SETTINGS_BOUNDS.attachmentRetentionDays
+      SETTINGS_BOUNDS.attachmentRetentionDays,
     ),
-    historyRetentionDays: clamp(next.historyRetentionDays, SETTINGS_BOUNDS.historyRetentionDays),
+    historyRetentionDays: clamp(
+      next.historyRetentionDays,
+      SETTINGS_BOUNDS.historyRetentionDays,
+    ),
     maxToolCalls: clamp(next.maxToolCalls, SETTINGS_BOUNDS.maxToolCalls),
-    maxHistoryMessages: clamp(next.maxHistoryMessages, SETTINGS_BOUNDS.maxHistoryMessages),
+    maxHistoryMessages: clamp(
+      next.maxHistoryMessages,
+      SETTINGS_BOUNDS.maxHistoryMessages,
+    ),
     turnsPerHour: clamp(next.turnsPerHour, SETTINGS_BOUNDS.turnsPerHour),
   };
 

@@ -14,7 +14,7 @@ import {
 describe("fenceUntrusted", () => {
   it("wraps content in labelled begin/end markers", () => {
     expect(fenceUntrusted("quiz question", "What is 2 + 2?")).toBe(
-      "[BEGIN UNTRUSTED quiz question]\nWhat is 2 + 2?\n[END UNTRUSTED quiz question]"
+      "[BEGIN UNTRUSTED quiz question]\nWhat is 2 + 2?\n[END UNTRUSTED quiz question]",
     );
   });
 
@@ -62,12 +62,13 @@ describe("fenceUntrusted", () => {
 
   it("falls back to a default label when the label is empty after sanitizing", () => {
     expect(fenceUntrusted("   ", "body")).toBe(
-      "[BEGIN UNTRUSTED content]\nbody\n[END UNTRUSTED content]"
+      "[BEGIN UNTRUSTED content]\nbody\n[END UNTRUSTED content]",
     );
   });
 
   it("leaves ordinary content byte-identical", () => {
-    const text = "A 3 kg block on a 30° incline. $F = ma$\n- option one\n- option two";
+    const text =
+      "A 3 kg block on a 30° incline. $F = ma$\n- option one\n- option two";
     expect(fenceUntrusted("q", text)).toContain(text);
   });
 });
@@ -106,7 +107,9 @@ describe("chunkForModeration", () => {
   });
 
   it("caps the number of chunks rather than growing without bound", () => {
-    const chunks = chunkForModeration("z".repeat(8_000 * (MAX_INPUT_ITEMS + 10)));
+    const chunks = chunkForModeration(
+      "z".repeat(8_000 * (MAX_INPUT_ITEMS + 10)),
+    );
     expect(chunks).toHaveLength(MAX_INPUT_ITEMS);
   });
 });
@@ -114,15 +117,20 @@ describe("chunkForModeration", () => {
 describe("flaggedCategories", () => {
   it("returns nothing when no result is flagged", () => {
     expect(
-      flaggedCategories([{ flagged: false, categories: { violence: false, hate: false } }])
+      flaggedCategories([
+        { flagged: false, categories: { violence: false, hate: false } },
+      ]),
     ).toEqual([]);
   });
 
   it("collects only the categories that tripped", () => {
     expect(
       flaggedCategories([
-        { flagged: true, categories: { violence: true, hate: false, sexual: true } },
-      ])
+        {
+          flagged: true,
+          categories: { violence: true, hate: false, sexual: true },
+        },
+      ]),
     ).toEqual(["violence", "sexual"]);
   });
 
@@ -131,12 +139,17 @@ describe("flaggedCategories", () => {
       flaggedCategories([
         { flagged: true, categories: { violence: true } },
         { flagged: true, categories: { violence: true, hate: true } },
-      ])
+      ]),
     ).toEqual(["violence", "hate"]);
   });
 
   it("ignores a flagged result whose categories are missing or malformed", () => {
-    expect(flaggedCategories([{ flagged: true }, { flagged: true, categories: null }])).toEqual([]);
+    expect(
+      flaggedCategories([
+        { flagged: true },
+        { flagged: true, categories: null },
+      ]),
+    ).toEqual([]);
   });
 
   it("ignores non-object entries rather than throwing", () => {
@@ -144,6 +157,8 @@ describe("flaggedCategories", () => {
   });
 
   it("treats a non-boolean-true flag as not flagged", () => {
-    expect(flaggedCategories([{ flagged: "yes", categories: { hate: true } }])).toEqual([]);
+    expect(
+      flaggedCategories([{ flagged: "yes", categories: { hate: true } }]),
+    ).toEqual([]);
   });
 });

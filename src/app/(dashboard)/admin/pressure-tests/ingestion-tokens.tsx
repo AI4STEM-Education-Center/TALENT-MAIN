@@ -40,18 +40,30 @@ function NewSecret({ secret }: { secret: string }) {
 
   return (
     <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-4">
-      <p className="text-sm font-medium">Copy this token now — it is not shown again.</p>
+      <p className="text-sm font-medium">
+        Copy this token now — it is not shown again.
+      </p>
       <p className="mt-1 text-xs text-muted-foreground">
         Paste it into the GitHub Actions secret for this environment, or into{" "}
-        <code className="font-mono">pressure/.env</code> for local runs. Nothing needs to be added
-        to the server&apos;s <code className="font-mono">.env</code>.
+        <code className="font-mono">pressure/.env</code> for local runs. Nothing
+        needs to be added to the server&apos;s{" "}
+        <code className="font-mono">.env</code>.
       </p>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <code className="min-w-0 flex-1 break-all rounded bg-background px-3 py-2 font-mono text-xs">
           {secret}
         </code>
-        <Button type="button" variant="outline" size="sm" onClick={() => void copy()}>
-          {copied ? <Check className="mr-2 size-4" /> : <Copy className="mr-2 size-4" />}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => void copy()}
+        >
+          {copied ? (
+            <Check className="mr-2 size-4" />
+          ) : (
+            <Copy className="mr-2 size-4" />
+          )}
           {copied ? "Copied" : "Copy"}
         </Button>
       </div>
@@ -59,22 +71,39 @@ function NewSecret({ secret }: { secret: string }) {
   );
 }
 
-function TokenRow({ token, onRevoke }: { token: IngestionToken; onRevoke: (id: string) => void }) {
+function TokenRow({
+  token,
+  onRevoke,
+}: {
+  token: IngestionToken;
+  onRevoke: (id: string) => void;
+}) {
   const revokedUsed = !!token.revokedAt && (token.revokedUseCount ?? 0) > 0;
   return (
-    <tr className={`border-b last:border-0 ${revokedUsed ? "bg-destructive/10" : ""}`}>
+    <tr
+      className={`border-b last:border-0 ${revokedUsed ? "bg-destructive/10" : ""}`}
+    >
       <td className="py-3 pr-4">
         <div className="font-medium flex items-center gap-2">
           {token.name}
-          {revokedUsed && <ShieldAlert className="size-4 text-destructive" aria-label="Possible leak" />}
+          {revokedUsed && (
+            <ShieldAlert
+              className="size-4 text-destructive"
+              aria-label="Possible leak"
+            />
+          )}
         </div>
-        <div className="mt-1 font-mono text-xs text-muted-foreground">{token.tokenPrefix}…</div>
+        <div className="mt-1 font-mono text-xs text-muted-foreground">
+          {token.tokenPrefix}…
+        </div>
         {revokedUsed && (
           <div className="mt-1 text-xs text-destructive">
             Used {token.revokedUseCount}× after revocation
-            {token.lastRevokedUseAt ? ` — last ${formatDate(token.lastRevokedUseAt)}` : ""}
-            {token.lastRevokedIp ? ` from ${token.lastRevokedIp}` : ""}. Possible leak — check where the old
-            value is still stored.
+            {token.lastRevokedUseAt
+              ? ` — last ${formatDate(token.lastRevokedUseAt)}`
+              : ""}
+            {token.lastRevokedIp ? ` from ${token.lastRevokedIp}` : ""}.
+            Possible leak — check where the old value is still stored.
           </div>
         )}
       </td>
@@ -82,17 +111,28 @@ function TokenRow({ token, onRevoke }: { token: IngestionToken; onRevoke: (id: s
         {token.revokedAt ? (
           <span className="flex flex-col gap-1 items-start">
             <Badge variant="destructive">Revoked</Badge>
-            {revokedUsed && <Badge variant="destructive">Used after revoke</Badge>}
+            {revokedUsed && (
+              <Badge variant="destructive">Used after revoke</Badge>
+            )}
           </span>
         ) : (
           <Badge variant="default">Active</Badge>
         )}
       </td>
-      <td className="py-3 pr-4 whitespace-nowrap">{formatDate(token.createdAt)}</td>
-      <td className="py-3 pr-4 whitespace-nowrap">{formatDate(token.lastUsedAt)}</td>
+      <td className="py-3 pr-4 whitespace-nowrap">
+        {formatDate(token.createdAt)}
+      </td>
+      <td className="py-3 pr-4 whitespace-nowrap">
+        {formatDate(token.lastUsedAt)}
+      </td>
       <td className="py-3 text-right">
         {!token.revokedAt && (
-          <Button type="button" variant="ghost" size="sm" onClick={() => onRevoke(token.id)}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => onRevoke(token.id)}
+          >
             Revoke
           </Button>
         )}
@@ -121,19 +161,27 @@ export function IngestionTokens() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch("/api/admin/pressure-tokens", { cache: "no-store" });
+      const response = await fetch("/api/admin/pressure-tokens", {
+        cache: "no-store",
+      });
       if (!response.ok) throw new Error(`Request failed (${response.status})`);
       const body = await response.json();
       setTokens(body.tokens ?? []);
       setError(null);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Could not load ingestion tokens.");
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Could not load ingestion tokens.",
+      );
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const create = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -157,7 +205,11 @@ export function IngestionTokens() {
       setName("");
       await load();
     } catch (createError) {
-      setError(createError instanceof Error ? createError.message : "Could not create token.");
+      setError(
+        createError instanceof Error
+          ? createError.message
+          : "Could not create token.",
+      );
     } finally {
       creatingRef.current = false;
       setCreating(false);
@@ -169,17 +221,25 @@ export function IngestionTokens() {
     revokingRef.current = true;
     setError(null);
     try {
-      const response = await fetch(`/api/admin/pressure-tokens/${id}`, { method: "DELETE" });
+      const response = await fetch(`/api/admin/pressure-tokens/${id}`, {
+        method: "DELETE",
+      });
       if (!response.ok) throw new Error(`Request failed (${response.status})`);
       await load();
     } catch (revokeError) {
-      setError(revokeError instanceof Error ? revokeError.message : "Could not revoke token.");
+      setError(
+        revokeError instanceof Error
+          ? revokeError.message
+          : "Could not revoke token.",
+      );
     } finally {
       revokingRef.current = false;
     }
   };
 
-  const leaked = tokens.filter((t) => t.revokedAt && (t.revokedUseCount ?? 0) > 0);
+  const leaked = tokens.filter(
+    (t) => t.revokedAt && (t.revokedUseCount ?? 0) > 0,
+  );
 
   return (
     <Card>
@@ -189,9 +249,10 @@ export function IngestionTokens() {
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-sm text-muted-foreground">
-          Tokens generated here authorize <code className="font-mono">POST /api/pressure-results</code>{" "}
-          on this deployment only. Generate one on dev and one on production, then store each in the
-          matching GitHub Actions secret.
+          Tokens generated here authorize{" "}
+          <code className="font-mono">POST /api/pressure-results</code> on this
+          deployment only. Generate one on dev and one on production, then store
+          each in the matching GitHub Actions secret.
         </p>
 
         {leaked.length > 0 && (
@@ -203,15 +264,20 @@ export function IngestionTokens() {
             <span>
               {leaked.length === 1 ? (
                 <>
-                  Revoked token <strong>{leaked[0].name}</strong> was used {leaked[0].revokedUseCount}× after
-                  revocation{leaked[0].lastRevokedIp ? ` (last from ${leaked[0].lastRevokedIp})` : ""}. This
-                  may point to a token leak. Remove the old value wherever it is still stored. Check
-                  admin inboxes for the security alert; delivery requires active SMTP.
+                  Revoked token <strong>{leaked[0].name}</strong> was used{" "}
+                  {leaked[0].revokedUseCount}× after revocation
+                  {leaked[0].lastRevokedIp
+                    ? ` (last from ${leaked[0].lastRevokedIp})`
+                    : ""}
+                  . This may point to a token leak. Remove the old value
+                  wherever it is still stored. Check admin inboxes for the
+                  security alert; delivery requires active SMTP.
                 </>
               ) : (
                 <>
-                  {leaked.length} revoked tokens were used after revocation — this may point to a token leak.
-                  Remove the old values wherever they are still stored. Check admin inboxes for security
+                  {leaked.length} revoked tokens were used after revocation —
+                  this may point to a token leak. Remove the old values wherever
+                  they are still stored. Check admin inboxes for security
                   alerts; delivery requires active SMTP.
                 </>
               )}
@@ -220,7 +286,10 @@ export function IngestionTokens() {
         )}
 
         {error && (
-          <div role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+          <div
+            role="alert"
+            className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+          >
             {error}
           </div>
         )}
@@ -257,13 +326,20 @@ export function IngestionTokens() {
             <tbody>
               {!loading && tokens.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-muted-foreground">
+                  <td
+                    colSpan={5}
+                    className="py-8 text-center text-muted-foreground"
+                  >
                     No tokens yet. Generate one to let CI publish results here.
                   </td>
                 </tr>
               )}
               {tokens.map((token) => (
-                <TokenRow key={token.id} token={token} onRevoke={(id) => void revoke(id)} />
+                <TokenRow
+                  key={token.id}
+                  token={token}
+                  onRevoke={(id) => void revoke(id)}
+                />
               ))}
             </tbody>
           </table>

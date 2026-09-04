@@ -1,4 +1,12 @@
-import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  afterAll,
+  vi,
+} from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -9,13 +17,18 @@ vi.mock("@/lib/auth", () => ({ auth: vi.fn() }));
 import { GET as ADMIN_GET } from "@/app/api/admin/resources/route";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { clearResourceReportCache, pruneResourceSamples } from "@/lib/resource-monitor";
+import {
+  clearResourceReportCache,
+  pruneResourceSamples,
+} from "@/lib/resource-monitor";
 import { encodeSample } from "@/lib/resource-spool";
 import type { ResourceSampleInput } from "@/lib/resource-metrics";
 
 const mockAuth = vi.mocked(auth);
-const asAdmin = () => mockAuth.mockResolvedValue({ user: { id: "a", role: "ADMIN" } } as never);
-const asTeacher = () => mockAuth.mockResolvedValue({ user: { id: "t", role: "TEACHER" } } as never);
+const asAdmin = () =>
+  mockAuth.mockResolvedValue({ user: { id: "a", role: "ADMIN" } } as never);
+const asTeacher = () =>
+  mockAuth.mockResolvedValue({ user: { id: "t", role: "TEACHER" } } as never);
 
 let spoolDir: string;
 
@@ -27,7 +40,11 @@ function adminReq(range?: string) {
 }
 
 /** A sample as a node would have written it, `minutesAgo` in the past. */
-function writeSample(nodeId: string, minutesAgo: number, over: Partial<ResourceSampleInput> = {}) {
+function writeSample(
+  nodeId: string,
+  minutesAgo: number,
+  over: Partial<ResourceSampleInput> = {},
+) {
   const [appEnv, role] = nodeId.split("-");
   const at = Date.now() - minutesAgo * 60_000;
   const sample = {
@@ -49,7 +66,10 @@ function writeSample(nodeId: string, minutesAgo: number, over: Partial<ResourceS
     hostMemTotalBytes: 2_048_000_000,
     ...over,
   } as ResourceSampleInput;
-  fs.appendFileSync(path.join(spoolDir, `${nodeId}.ndjson`), encodeSample(sample, at));
+  fs.appendFileSync(
+    path.join(spoolDir, `${nodeId}.ndjson`),
+    encodeSample(sample, at),
+  );
 }
 
 beforeEach(async () => {
@@ -86,11 +106,18 @@ describe("GET /api/admin/resources", () => {
 
     const body = await (await ADMIN_GET(adminReq("1h"))).json();
 
-    expect(body.nodes.map((n: { nodeId: string }) => n.nodeId)).toEqual(["dev-web", "dev-worker"]);
-    const web = body.nodes.find((n: { nodeId: string }) => n.nodeId === "dev-web");
+    expect(body.nodes.map((n: { nodeId: string }) => n.nodeId)).toEqual([
+      "dev-web",
+      "dev-worker",
+    ]);
+    const web = body.nodes.find(
+      (n: { nodeId: string }) => n.nodeId === "dev-web",
+    );
     expect(web.cpuCores).toBe(2);
     expect(web.points.length).toBeGreaterThan(0);
-    expect(web.points.every((p: { cpuPercent: number }) => p.cpuPercent >= 20)).toBe(true);
+    expect(
+      web.points.every((p: { cpuPercent: number }) => p.cpuPercent >= 20),
+    ).toBe(true);
   });
 
   it("charts both deployments from the one shared spool", async () => {
@@ -178,7 +205,9 @@ describe("GET /api/admin/resources", () => {
     writeSample("dev-worker", 6 * 60);
 
     const body = await (await ADMIN_GET(adminReq("1h"))).json();
-    expect(body.nodes.map((n: { nodeId: string }) => n.nodeId)).toEqual(["dev-web"]);
+    expect(body.nodes.map((n: { nodeId: string }) => n.nodeId)).toEqual([
+      "dev-web",
+    ]);
   });
 });
 
@@ -201,7 +230,9 @@ describe("pruneResourceSamples", () => {
       diskFreeBytes: 1,
       s3Bytes: null,
     });
-    await prisma.resourceSample.createMany({ data: [row(60), row(8 * 24 * 60)] });
+    await prisma.resourceSample.createMany({
+      data: [row(60), row(8 * 24 * 60)],
+    });
 
     expect(await pruneResourceSamples()).toBe(1);
     expect(await prisma.resourceSample.findMany()).toHaveLength(1);

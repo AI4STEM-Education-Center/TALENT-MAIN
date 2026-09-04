@@ -26,27 +26,43 @@ export async function GET(req: NextRequest) {
   const fromDate = params.get("fromDate");
   const toDate = params.get("toDate");
   const page = Math.max(1, parseInt(params.get("page") ?? "1", 10) || 1);
-  const pageSize = Math.min(PAGE_SIZE_MAX, Math.max(1, parseInt(params.get("pageSize") ?? "50", 10) || 50));
+  const pageSize = Math.min(
+    PAGE_SIZE_MAX,
+    Math.max(1, parseInt(params.get("pageSize") ?? "50", 10) || 50),
+  );
 
   const where: Record<string, unknown> = {};
   if (role) {
-    if (!isConsentRole(role)) return NextResponse.json({ error: "Invalid role filter." }, { status: 400 });
+    if (!isConsentRole(role))
+      return NextResponse.json(
+        { error: "Invalid role filter." },
+        { status: 400 },
+      );
     where.role = role;
   }
   if (decision) {
-    if (!isConsentDecision(decision)) return NextResponse.json({ error: "Invalid decision filter." }, { status: 400 });
+    if (!isConsentDecision(decision))
+      return NextResponse.json(
+        { error: "Invalid decision filter." },
+        { status: 400 },
+      );
     where.decision = decision;
   }
   if (fromDate || toDate) {
     const signedAt: { gte?: Date; lte?: Date } = {};
     if (fromDate) {
       const d = new Date(fromDate);
-      if (Number.isNaN(d.getTime())) return NextResponse.json({ error: "Invalid fromDate." }, { status: 400 });
+      if (Number.isNaN(d.getTime()))
+        return NextResponse.json(
+          { error: "Invalid fromDate." },
+          { status: 400 },
+        );
       signedAt.gte = d;
     }
     if (toDate) {
       const d = new Date(toDate);
-      if (Number.isNaN(d.getTime())) return NextResponse.json({ error: "Invalid toDate." }, { status: 400 });
+      if (Number.isNaN(d.getTime()))
+        return NextResponse.json({ error: "Invalid toDate." }, { status: 400 });
       signedAt.lte = d;
     }
     where.signedAt = signedAt;

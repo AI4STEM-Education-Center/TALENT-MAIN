@@ -14,7 +14,6 @@ import { DEFAULT_TOPIC_DESCRIPTION } from "@/lib/guardrail-check";
 
 export const runtime = "nodejs";
 
-
 /**
  * Which model each guardrail check is currently running on.
  *
@@ -25,7 +24,11 @@ export const runtime = "nodejs";
  * submission costs one call or two.
  */
 async function guardrailModels() {
-  const useCases = ["moderation", "guardrail_jailbreak", "guardrail_offtopic"] as const;
+  const useCases = [
+    "moderation",
+    "guardrail_jailbreak",
+    "guardrail_offtopic",
+  ] as const;
   const rows = await prisma.aiUseCaseAssignment.findMany({
     where: { useCase: { in: [...useCases] } },
     include: {
@@ -35,7 +38,10 @@ async function guardrailModels() {
   });
 
   const byUseCase = new Map(rows.map((row) => [row.useCase, row]));
-  const summary: Record<string, { label: string; providerActive: boolean } | null> = {};
+  const summary: Record<
+    string,
+    { label: string; providerActive: boolean } | null
+  > = {};
   for (const useCase of useCases) {
     const row = byUseCase.get(useCase);
     summary[useCase] = row
@@ -55,10 +61,10 @@ async function guardrailModels() {
     // one call. Mirrors providerKey() in src/lib/guardrails.ts.
     sharesOneCall: Boolean(
       jailbreak &&
-        offTopic &&
-        jailbreak.providerId === offTopic.providerId &&
-        jailbreak.modelId === offTopic.modelId &&
-        jailbreak.thinkingLevel === offTopic.thinkingLevel
+      offTopic &&
+      jailbreak.providerId === offTopic.providerId &&
+      jailbreak.modelId === offTopic.modelId &&
+      jailbreak.thinkingLevel === offTopic.thinkingLevel,
     ),
   };
 }
@@ -89,7 +95,10 @@ export async function GET() {
     });
   } catch (error) {
     logApiError("ADMIN_GUARDRAILS", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }
 
@@ -113,13 +122,19 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
   if (!body || typeof body !== "object") {
-    return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Invalid request body." },
+      { status: 400 },
+    );
   }
 
   try {
     return NextResponse.json({ settings: await saveGuardrailSettings(body) });
   } catch (error) {
     logApiError("ADMIN_GUARDRAILS", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }

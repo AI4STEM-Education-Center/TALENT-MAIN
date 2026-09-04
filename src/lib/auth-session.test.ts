@@ -24,14 +24,22 @@ describe("auth session lifetime", () => {
   });
 
   it("expires a remembered sign-in after thirty days", () => {
-    expect(sessionExpiresAt(true, NOW_MS)).toBe(NOW_SECONDS + THIRTY_DAYS_SECONDS);
+    expect(sessionExpiresAt(true, NOW_MS)).toBe(
+      NOW_SECONDS + THIRTY_DAYS_SECONDS,
+    );
   });
 
   it("does not let refreshes extend the absolute deadline", () => {
     const expiresAt = sessionExpiresAt(false, NOW_MS);
-    expect(remainingSessionSeconds(expiresAt, NOW_MS + 6 * 60 * 60 * 1000)).toBe(18 * 60 * 60);
-    expect(isSessionExpired(expiresAt, NOW_MS + ONE_DAY_SECONDS * 1000)).toBe(true);
-    expect(remainingSessionSeconds(expiresAt, NOW_MS + 2 * ONE_DAY_SECONDS * 1000)).toBe(0);
+    expect(
+      remainingSessionSeconds(expiresAt, NOW_MS + 6 * 60 * 60 * 1000),
+    ).toBe(18 * 60 * 60);
+    expect(isSessionExpired(expiresAt, NOW_MS + ONE_DAY_SECONDS * 1000)).toBe(
+      true,
+    );
+    expect(
+      remainingSessionSeconds(expiresAt, NOW_MS + 2 * ONE_DAY_SECONDS * 1000),
+    ).toBe(0);
   });
 
   it("fails closed when an older token has no absolute deadline", () => {

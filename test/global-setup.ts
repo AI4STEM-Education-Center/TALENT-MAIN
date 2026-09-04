@@ -32,19 +32,31 @@ export default function setup() {
   // Invoke the installed CLI through node rather than `npx`: Node can't spawn
   // `npx` on Windows (it resolves to npx.cmd, which needs a shell), and going
   // direct skips npx's resolution step on CI too.
-  const prismaCli = path.resolve(process.cwd(), "node_modules", "prisma", "build", "index.js");
+  const prismaCli = path.resolve(
+    process.cwd(),
+    "node_modules",
+    "prisma",
+    "build",
+    "index.js",
+  );
   let lastError: unknown;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      execFileSync(process.execPath, [prismaCli, "db", "push", "--accept-data-loss"], {
-        stdio: "inherit",
-        env,
-      });
+      execFileSync(
+        process.execPath,
+        [prismaCli, "db", "push", "--accept-data-loss"],
+        {
+          stdio: "inherit",
+          env,
+        },
+      );
       return;
     } catch (error) {
       lastError = error;
       if (attempt < 3) {
-        console.warn(`[test setup] Prisma db push failed (attempt ${attempt}/3); retrying.`);
+        console.warn(
+          `[test setup] Prisma db push failed (attempt ${attempt}/3); retrying.`,
+        );
       }
     }
   }
