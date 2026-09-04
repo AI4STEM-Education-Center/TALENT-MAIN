@@ -6,6 +6,12 @@ import {
   sanitizeControlCounts,
 } from "./simulation-telemetry";
 import { MAX_LABEL_LENGTH } from "./teacher-codes";
+import {
+  FEEDBACK_RATING_MAX,
+  FEEDBACK_RATING_MIN,
+  FEEDBACK_SUBJECT_TYPES,
+  MAX_FEEDBACK_COMMENT_CHARS,
+} from "./content-feedback";
 
 /**
  * Centralized request-body validation built on zod. Routes parse untrusted
@@ -258,6 +264,39 @@ export const consentSubmitSchema = z.object({
   initialsStrokeData: z.unknown().optional(),
   signatureTypedName: z.string().trim().min(1).max(200),
   signatureStrokeData: z.unknown().optional(),
+});
+
+// ─── Content feedback (5-point rating + explanation) ────────────────────────
+// Left by a student on a post-quiz material/simulation recommendation, or by a
+// teacher on a simulation generated for them. subjectId is nullable because
+// recommended materials reach the results page as a title snapshot with no
+// material row behind them (see feedbackSubjectKey in content-feedback.ts).
+
+/** Optional free display text: trimmed, capped, and normalized to null. */
+const optionalShortText = (max: number) =>
+  z
+    .string()
+    .max(max)
+    .nullable()
+    .optional()
+    .transform((v) => v?.trim() || null);
+
+export const contentFeedbackSubmitSchema = z.object({
+  subjectType: z.enum(FEEDBACK_SUBJECT_TYPES),
+  subjectId: optionalShortText(64),
+  subjectLabel: z
+    .string()
+    .transform((s) => s.trim())
+    .pipe(z.string().min(1).max(300)),
+  subjectDetail: optionalShortText(300),
+  attemptId: optionalShortText(64),
+  rating: z.number().int().min(FEEDBACK_RATING_MIN).max(FEEDBACK_RATING_MAX),
+  // Required: a bare star tells the panel a recommendation missed, and nothing
+  // about why, which is the only part a teacher can act on.
+  comment: z
+    .string()
+    .transform((s) => s.trim())
+    .pipe(z.string().min(1).max(MAX_FEEDBACK_COMMENT_CHARS)),
 });
 
 export type ParseResult<T> =

@@ -19,11 +19,20 @@ export function HolisticRecommendations({
   status,
   metrics,
   audience = "student",
+  attemptId,
 }: {
   recommendations: PresignedRecommendation[];
   status: ResultStatus;
   metrics: ResultComponentMetrics | null;
   audience?: "student" | "teacher";
+  /**
+   * The attempt that produced these recommendations. Its presence turns on the
+   * rating control, on BOTH surfaces — the student rates their own study
+   * material, and the teacher rates the same cards from the student's stats
+   * page. A verdict is always tied to the attempt that surfaced the card, so
+   * "was this a good recommendation" is answerable (see /api/feedback).
+   */
+  attemptId?: string;
 }) {
   const pending =
     status === RESULT_STATUS.PENDING || status === RESULT_STATUS.GENERATING;
@@ -44,6 +53,8 @@ export function HolisticRecommendations({
             <RecommendationCard
               key={`${rec.materialTitle}-${rec.pageRange.start}-${rec.pageRange.end}`}
               rec={rec}
+              attemptId={attemptId}
+              audience={audience}
             />
           ))}
         </div>
