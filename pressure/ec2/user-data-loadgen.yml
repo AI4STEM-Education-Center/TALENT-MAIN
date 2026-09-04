@@ -12,18 +12,10 @@
 # This instance is plain Ubuntu — no AMI from production, so it never holds
 # production data or credentials.
 
-package_update: true
-
 bootcmd:
   - [ sh, -c, "shutdown -h +300 'benchmark backstop' || true" ]
 
 runcmd:
-  - [ sh, -c, "mkdir -p /opt/pressure /var/log/pressure && chown -R ubuntu:ubuntu /opt/pressure" ]
-  - [ sh, -c, "DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl gnupg jq unzip sqlite3 >> /var/log/pressure/boot.log 2>&1" ]
-  # Node, for the session minter, the AI stub and the report tooling.
-  - [ sh, -c, "curl -fsSL https://deb.nodesource.com/setup_24.x | bash - >> /var/log/pressure/boot.log 2>&1" ]
-  - [ sh, -c, "DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs >> /var/log/pressure/boot.log 2>&1" ]
-  # k6 is installed by tools/install-k6.sh, which pins the version and verifies
-  # the checksum — the same script CI uses, so both tiers measure with the same binary.
-  - [ sh, -c, "chmod +x /opt/pressure/install-k6.sh && /opt/pressure/install-k6.sh --prefix /usr/local/bin >> /var/log/pressure/boot.log 2>&1" ]
-  - [ sh, -c, "touch /opt/pressure/READY" ]
+  # The staged script writes BOOT_STAGE continuously and BOOT_FAILED on error,
+  # so the workstation can report the cause without waiting for a timeout.
+  - [ bash, /opt/pressure/bootstrap-loadgen.sh ]

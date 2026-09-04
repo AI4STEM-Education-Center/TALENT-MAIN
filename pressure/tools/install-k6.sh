@@ -48,13 +48,15 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
 echo "install-k6: downloading ${TARBALL}..."
-curl -fsSL "${BASE_URL}/${TARBALL}" -o "${WORK}/${TARBALL}"
+curl --retry 5 --retry-all-errors --connect-timeout 15 -fsSL \
+  "${BASE_URL}/${TARBALL}" -o "${WORK}/${TARBALL}"
 
 # k6 publishes one checksums file per release. Verify against it rather than
 # against a hash pinned in this repo: a pinned hash would have to be updated by
 # hand for every OS/arch pair, and a stale one fails in a way that tempts people
 # to just delete the check.
-if curl -fsSL "${BASE_URL}/k6-v${K6_VERSION}-checksums.txt" -o "${WORK}/checksums.txt" 2>/dev/null; then
+if curl --retry 5 --retry-all-errors --connect-timeout 15 -fsSL \
+  "${BASE_URL}/k6-v${K6_VERSION}-checksums.txt" -o "${WORK}/checksums.txt" 2>/dev/null; then
   EXPECTED="$(grep " ${TARBALL}\$" "${WORK}/checksums.txt" | awk '{print $1}' | head -1)"
   if [ -n "$EXPECTED" ]; then
     if command -v sha256sum >/dev/null 2>&1; then
