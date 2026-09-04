@@ -305,7 +305,7 @@ export async function verifyAndTest(
         fromEmail: identity.fromEmail,
         purposeLabel: EMAIL_PURPOSE_DEFINITIONS.SYSTEM_TEST.label,
       },
-      override
+      override,
     );
     await transport.sendMail({
       from: formatFromHeader(identity),

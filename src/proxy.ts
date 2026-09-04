@@ -80,7 +80,13 @@ export default auth((req) => {
   // tokens and POST to enroll (signup flow) before they have a session.
   const isApiInvitation = pathname.startsWith("/api/invitations/");
 
-  if (isPublicRoute || isInviteRoute || isApiAuth || isApiInvitation || isPressureResultIngest) {
+  if (
+    isPublicRoute ||
+    isInviteRoute ||
+    isApiAuth ||
+    isApiInvitation ||
+    isPressureResultIngest
+  ) {
     return NextResponse.next();
   }
 

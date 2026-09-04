@@ -15,7 +15,15 @@ import { RateMeter } from "@/components/viz/RateMeter";
 import { StatTile } from "@/components/viz/StatTile";
 
 /** A single headline metric in a card. */
-export function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
+export function StatCard({
+  label,
+  value,
+  sub,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+}) {
   return <StatTile label={label} value={value} sub={sub} />;
 }
 

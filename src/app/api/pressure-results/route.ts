@@ -12,7 +12,8 @@ class BodyTooLargeError extends Error {}
 
 async function readLimitedBody(request: NextRequest): Promise<string> {
   const declared = Number(request.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) throw new BodyTooLargeError();
+  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES)
+    throw new BodyTooLargeError();
   if (!request.body) return "";
 
   const reader = request.body.getReader();
@@ -76,7 +77,9 @@ export async function POST(request: NextRequest) {
       request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
       request.headers.get("x-real-ip")?.trim() ||
       null;
-    if (!(await verifyPressureToken(request.headers.get("authorization"), { ip }))) {
+    if (
+      !(await verifyPressureToken(request.headers.get("authorization"), { ip }))
+    ) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -85,7 +88,10 @@ export async function POST(request: NextRequest) {
       raw = await readLimitedBody(request);
     } catch (error) {
       if (error instanceof BodyTooLargeError) {
-        return NextResponse.json({ error: "Result exceeds 512 KiB." }, { status: 413 });
+        return NextResponse.json(
+          { error: "Result exceeds 512 KiB." },
+          { status: 413 },
+        );
       }
       throw error;
     }
@@ -99,8 +105,11 @@ export async function POST(request: NextRequest) {
     const parsed = resultSchema.safeParse(json);
     if (!parsed.success) {
       return NextResponse.json(
-        { error: "Invalid pressure-test result.", issues: parsed.error.issues.slice(0, 10) },
-        { status: 400 }
+        {
+          error: "Invalid pressure-test result.",
+          issues: parsed.error.issues.slice(0, 10),
+        },
+        { status: 400 },
       );
     }
 
@@ -142,6 +151,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ stored }, { status: 201 });
   } catch (error) {
     logApiError("PRESSURE_RESULT_POST", error);
-    return NextResponse.json({ error: "Could not store result." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Could not store result." },
+      { status: 500 },
+    );
   }
 }

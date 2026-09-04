@@ -25,7 +25,9 @@ export interface RevokedTokenUse {
   ip: string | null;
 }
 
-export async function notifyAdminsOfRevokedTokenUse(use: RevokedTokenUse): Promise<void> {
+export async function notifyAdminsOfRevokedTokenUse(
+  use: RevokedTokenUse,
+): Promise<void> {
   try {
     const admins = await prisma.user.findMany({
       where: { role: "ADMIN" },
@@ -45,7 +47,11 @@ export async function notifyAdminsOfRevokedTokenUse(use: RevokedTokenUse): Promi
         severity: "WARNING",
         message: `Revoked ingestion token "${use.name}" used (SMTP inactive — admin email skipped).`,
         ip: use.ip,
-        metadata: { tokenId: use.id, tokenPrefix: use.tokenPrefix, useCount: use.useCount },
+        metadata: {
+          tokenId: use.id,
+          tokenPrefix: use.tokenPrefix,
+          useCount: use.useCount,
+        },
       });
       return;
     }
@@ -63,12 +69,20 @@ export async function notifyAdminsOfRevokedTokenUse(use: RevokedTokenUse): Promi
         try {
           const result = await sendPurposeEmail("SECURITY_ALERT", to, vars);
           if (result.failed > 0) {
-            console.error("[PressureTokenAlert] Failed to email admin", to, result.errors);
+            console.error(
+              "[PressureTokenAlert] Failed to email admin",
+              to,
+              result.errors,
+            );
           }
         } catch (error) {
-          console.error("[PressureTokenAlert] Failed to email admin", to, error);
+          console.error(
+            "[PressureTokenAlert] Failed to email admin",
+            to,
+            error,
+          );
         }
-      })
+      }),
     );
   } catch (error) {
     console.error("[PressureTokenAlert]", error);

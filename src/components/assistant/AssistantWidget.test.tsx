@@ -182,17 +182,28 @@ describe("moving and resizing the panel", () => {
       const left = parseFloat(panel.style.left);
       const top = parseFloat(panel.style.top);
 
-      await act(async () => header.dispatchEvent(pointer("pointerdown", 500, 200)));
-      await act(async () => window.dispatchEvent(pointer("pointermove", 460, 150)));
+      await act(async () =>
+        header.dispatchEvent(pointer("pointerdown", 500, 200)),
+      );
+      await act(async () =>
+        window.dispatchEvent(pointer("pointermove", 460, 150)),
+      );
       // Let the scheduled frame run.
-      await act(async () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+      await act(
+        async () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => resolve()),
+          ),
+      );
 
       expect(panel.style.transform).toBe("translate3d(-40px, -50px, 0)");
       // Untouched mid-gesture — the transform is doing the moving.
       expect(parseFloat(panel.style.left)).toBe(left);
       expect(parseFloat(panel.style.top)).toBe(top);
 
-      await act(async () => window.dispatchEvent(pointer("pointerup", 460, 150)));
+      await act(async () =>
+        window.dispatchEvent(pointer("pointerup", 460, 150)),
+      );
 
       // Folded back into real geometry, and the transform cleared in the same
       // breath so the panel never flashes at its old position.
@@ -221,9 +232,13 @@ describe("moving and resizing the panel", () => {
     const { panel, cleanup } = await mountOpenPanel();
     try {
       const header = panel.querySelector("header")!;
-      await act(async () => header.dispatchEvent(pointer("pointerdown", 500, 200)));
+      await act(async () =>
+        header.dispatchEvent(pointer("pointerdown", 500, 200)),
+      );
       for (let i = 0; i < 25; i++) {
-        await act(async () => window.dispatchEvent(pointer("pointermove", 500 - i, 200 - i)));
+        await act(async () =>
+          window.dispatchEvent(pointer("pointermove", 500 - i, 200 - i)),
+        );
       }
 
       expect(frames).toHaveLength(1);

@@ -167,8 +167,11 @@ export async function POST(
   const reviewUrl = `${applicationOrigin(req)}/admin/consent-requests?request=${request.id}`;
   try {
     const teacherName =
-      `${teacherUser?.firstName ?? "A teacher"} ${teacherUser?.lastName ?? ""}`.trim() || "A teacher";
-    const override = await getSenderOverride("CONSENT_EXPORT_REQUEST").catch(() => null);
+      `${teacherUser?.firstName ?? "A teacher"} ${teacherUser?.lastName ?? ""}`.trim() ||
+      "A teacher";
+    const override = await getSenderOverride("CONSENT_EXPORT_REQUEST").catch(
+      () => null,
+    );
     const { subject, text } = renderPurposeMessage(
       "CONSENT_EXPORT_REQUEST",
       {
@@ -179,7 +182,7 @@ export async function POST(
         pointsAwarded,
         reviewUrl,
       },
-      override
+      override,
     );
     const deliveryId = await enqueueConsentExportRequestEmail({
       recipient: reviewer.email,

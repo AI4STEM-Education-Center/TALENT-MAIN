@@ -1,7 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 // vi.mock is hoisted above module scope, so the spies have to be too.
-const { findUnique, update, updateMany, sysCreate, userFindMany, smtpFindFirst } = vi.hoisted(() => ({
+const {
+  findUnique,
+  update,
+  updateMany,
+  sysCreate,
+  userFindMany,
+  smtpFindFirst,
+} = vi.hoisted(() => ({
   findUnique: vi.fn(),
   update: vi.fn(),
   updateMany: vi.fn(),
@@ -100,10 +107,12 @@ describe("verifyPressureToken", () => {
       name: "ci",
     });
     expect(findUnique).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { tokenHash: hashPressureToken(token) } })
+      expect.objectContaining({
+        where: { tokenHash: hashPressureToken(token) },
+      }),
     );
     expect(update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: "tok_1" } })
+      expect.objectContaining({ where: { id: "tok_1" } }),
     );
   });
 
@@ -120,7 +129,11 @@ describe("verifyPressureToken", () => {
       lastRevokedUseAt: null,
       lastRevokedAlertAt: null,
     });
-    await expect(verifyPressureToken(`Bearer ${generatePressureToken()}`, { ip: "1.2.3.4" })).resolves.toBeNull();
+    await expect(
+      verifyPressureToken(`Bearer ${generatePressureToken()}`, {
+        ip: "1.2.3.4",
+      }),
+    ).resolves.toBeNull();
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: "tok_1" },
@@ -128,7 +141,7 @@ describe("verifyPressureToken", () => {
           revokedUseCount: { increment: 1 },
           lastRevokedIp: "1.2.3.4",
         }),
-      })
+      }),
     );
     expect(sysCreate).toHaveBeenCalled();
     expect(updateMany).toHaveBeenCalledWith({
@@ -136,7 +149,11 @@ describe("verifyPressureToken", () => {
         id: "tok_1",
         OR: [
           { lastRevokedAlertAt: null },
-          { lastRevokedAlertAt: { lte: new Date(now.getTime() - REVOKED_TOKEN_ALERT_THROTTLE_MS) } },
+          {
+            lastRevokedAlertAt: {
+              lte: new Date(now.getTime() - REVOKED_TOKEN_ALERT_THROTTLE_MS),
+            },
+          },
         ],
       },
       data: { lastRevokedAlertAt: now },
@@ -157,7 +174,9 @@ describe("verifyPressureToken", () => {
     update.mockResolvedValue({ revokedUseCount: 9 });
     updateMany.mockResolvedValue({ count: 0 });
 
-    await expect(verifyPressureToken(`Bearer ${generatePressureToken()}`)).resolves.toBeNull();
+    await expect(
+      verifyPressureToken(`Bearer ${generatePressureToken()}`),
+    ).resolves.toBeNull();
 
     expect(update).toHaveBeenCalled();
     expect(updateMany).toHaveBeenCalled();
@@ -166,7 +185,9 @@ describe("verifyPressureToken", () => {
 
   it("rejects an unknown token without touching lastUsedAt", async () => {
     findUnique.mockResolvedValue(null);
-    await expect(verifyPressureToken(`Bearer ${generatePressureToken()}`)).resolves.toBeNull();
+    await expect(
+      verifyPressureToken(`Bearer ${generatePressureToken()}`),
+    ).resolves.toBeNull();
     expect(update).not.toHaveBeenCalled();
   });
 
@@ -178,7 +199,9 @@ describe("verifyPressureToken", () => {
   it("still authorizes when the lastUsedAt write fails", async () => {
     findUnique.mockResolvedValue({ id: "tok_1", name: "ci", revokedAt: null });
     update.mockRejectedValue(new Error("db is busy"));
-    await expect(verifyPressureToken(`Bearer ${generatePressureToken()}`)).resolves.toEqual({
+    await expect(
+      verifyPressureToken(`Bearer ${generatePressureToken()}`),
+    ).resolves.toEqual({
       id: "tok_1",
       name: "ci",
     });

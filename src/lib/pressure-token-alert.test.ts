@@ -2,9 +2,7 @@ import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 
 import { prisma } from "@/lib/prisma";
 import { resetDb } from "../../test/db";
-import {
-  notifyAdminsOfRevokedTokenUse,
-} from "./pressure-token-alert";
+import { notifyAdminsOfRevokedTokenUse } from "./pressure-token-alert";
 
 beforeEach(async () => {
   await resetDb();
@@ -25,7 +23,7 @@ describe("notifyAdminsOfRevokedTokenUse", () => {
         useCount: 1,
         usedAt: new Date(),
         ip: null,
-      })
+      }),
     ).resolves.toBeUndefined();
   });
 });

@@ -22,12 +22,18 @@ export async function GET(request: NextRequest) {
 
   try {
     const params = request.nextUrl.searchParams;
-    const page = Math.max(1, Number.parseInt(params.get("page") ?? "1", 10) || 1);
+    const page = Math.max(
+      1,
+      Number.parseInt(params.get("page") ?? "1", 10) || 1,
+    );
     const pageSize = Math.min(
       PAGE_SIZE_MAX,
-      Math.max(1, Number.parseInt(params.get("pageSize") ?? "25", 10) || 25)
+      Math.max(1, Number.parseInt(params.get("pageSize") ?? "25", 10) || 25),
     );
-    const days = Math.min(365, Math.max(1, Number.parseInt(params.get("days") ?? "30", 10) || 30));
+    const days = Math.min(
+      365,
+      Math.max(1, Number.parseInt(params.get("days") ?? "30", 10) || 30),
+    );
     const suite = params.get("suite") || undefined;
     const scenario = params.get("scenario") || undefined;
     const status = params.get("status") || undefined;
@@ -75,6 +81,9 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     logApiError("ADMIN_PRESSURE_RESULTS_GET", error);
-    return NextResponse.json({ error: "Could not load pressure-test history." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Could not load pressure-test history." },
+      { status: 500 },
+    );
   }
 }

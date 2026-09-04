@@ -30,7 +30,11 @@ interface SenderRow {
   replyTo: string | null;
   subject: string | null;
   body: string | null;
-  resolved: { fromEmail: string; fromName: string | null; replyTo: string | null };
+  resolved: {
+    fromEmail: string;
+    fromName: string | null;
+    replyTo: string | null;
+  };
 }
 
 interface SendersPayload {
@@ -41,7 +45,11 @@ interface SendersPayload {
 }
 
 /** Live preview of the address a row will send from, before saving. */
-function previewAddress(localPart: string, domain: string, fallback: string): string {
+function previewAddress(
+  localPart: string,
+  domain: string,
+  fallback: string,
+): string {
   const trimmedDomain = domain.trim().replace(/^@/, "");
   const trimmedLocal = localPart.trim();
   if (!trimmedDomain) return fallback || "(set a From Email above)";
@@ -49,9 +57,16 @@ function previewAddress(localPart: string, domain: string, fallback: string): st
 }
 
 /** Client-side twin of renderTemplate() in src/lib/email-purposes.ts. */
-function renderPreview(template: string, vars: Record<string, string | number>): string {
-  return template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (match, name: string) =>
-    Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : match
+function renderPreview(
+  template: string,
+  vars: Record<string, string | number>,
+): string {
+  return template.replace(
+    /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g,
+    (match, name: string) =>
+      Object.prototype.hasOwnProperty.call(vars, name)
+        ? String(vars[name])
+        : match,
   );
 }
 
@@ -81,7 +96,8 @@ const SAMPLE_VARS: Record<string, Record<string, string | number>> = {
     subjectLine: "New message in Biology 101: Field trip on Friday",
     greetingLine: "Jordan Lee has sent you a new message in Biology 101.",
     messageUrl: "https://app.example.com/student/notifications?message=msg_123",
-    messageLinkLine: "Read it here: https://app.example.com/student/notifications?message=msg_123",
+    messageLinkLine:
+      "Read it here: https://app.example.com/student/notifications?message=msg_123",
   },
   CONTACT_TEACHER: {
     appName: "AI4Talent",
@@ -182,7 +198,10 @@ export function EmailSenders() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [banner, setBanner] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [banner, setBanner] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
 
   const applyPayload = useCallback((data: SendersPayload) => {
     setPayload(data);
@@ -205,7 +224,9 @@ export function EmailSenders() {
   }, [load]);
 
   function updateRow(purpose: string, patch: Partial<SenderRow>) {
-    setRows((prev) => prev.map((r) => (r.purpose === purpose ? { ...r, ...patch } : r)));
+    setRows((prev) =>
+      prev.map((r) => (r.purpose === purpose ? { ...r, ...patch } : r)),
+    );
   }
 
   function resetTemplate(purpose: string) {
@@ -237,15 +258,24 @@ export function EmailSenders() {
               fromName: r.fromName,
               replyTo: r.replyTo,
               subject:
-                !subject || (r.subject === null && subject === defaultSubject.trim()) ? null : subject,
-              body: !body || (r.body === null && body === defaultBody.trim()) ? null : body,
+                !subject ||
+                (r.subject === null && subject === defaultSubject.trim())
+                  ? null
+                  : subject,
+              body:
+                !body || (r.body === null && body === defaultBody.trim())
+                  ? null
+                  : body,
             };
           }),
         }),
       });
       const data = await res.json();
       if (!res.ok) {
-        setBanner({ type: "error", text: data.error || "Failed to save sender addresses." });
+        setBanner({
+          type: "error",
+          text: data.error || "Failed to save sender addresses.",
+        });
       } else {
         applyPayload(data as SendersPayload);
         setBanner({ type: "success", text: "Sender addresses saved." });
@@ -305,13 +335,17 @@ export function EmailSenders() {
               />
               <p className="text-xs text-muted-foreground">
                 Every email below is sent from{" "}
-                <span className="font-mono">prefix@{domain.trim().replace(/^@/, "") || "your-domain"}</span>. Your SMTP
-                server must be allowed to send as this domain (SPF/DKIM). Leave it blank to send everything from the
-                single From Email above{fallback ? ` (${fallback})` : ""}.
+                <span className="font-mono">
+                  prefix@{domain.trim().replace(/^@/, "") || "your-domain"}
+                </span>
+                . Your SMTP server must be allowed to send as this domain
+                (SPF/DKIM). Leave it blank to send everything from the single
+                From Email above{fallback ? ` (${fallback})` : ""}.
               </p>
               {!payload?.smtpConfigured && (
                 <p className="text-xs text-amber-600 dark:text-amber-500">
-                  Save the SMTP server settings above first — the domain is stored alongside them.
+                  Save the SMTP server settings above first — the domain is
+                  stored alongside them.
                 </p>
               )}
             </div>
@@ -322,12 +356,21 @@ export function EmailSenders() {
                 // The editor works directly on the effective copy: a saved
                 // override when present, otherwise the built-in default. Saving
                 // persists the edited text; Reset restores the built-in.
-                const effectiveSubject = row.subject ?? row.defaultTemplate?.subject ?? "";
-                const effectiveBody = row.body ?? row.defaultTemplate?.body ?? "";
+                const effectiveSubject =
+                  row.subject ?? row.defaultTemplate?.subject ?? "";
+                const effectiveBody =
+                  row.body ?? row.defaultTemplate?.body ?? "";
                 const customized = row.subject !== null || row.body !== null;
-                const fromPreview = previewAddress(row.localPart, domain, fallback);
+                const fromPreview = previewAddress(
+                  row.localPart,
+                  domain,
+                  fallback,
+                );
                 return (
-                  <div key={row.purpose} className="rounded-lg border border-border">
+                  <div
+                    key={row.purpose}
+                    className="rounded-lg border border-border"
+                  >
                     <button
                       type="button"
                       onClick={() => setExpanded(isOpen ? null : row.purpose)}
@@ -356,27 +399,42 @@ export function EmailSenders() {
 
                     {isOpen && (
                       <div className="px-3 pb-3 pt-1 space-y-3 border-t border-border">
-                        <p className="text-xs text-muted-foreground pt-2">{row.description}</p>
+                        <p className="text-xs text-muted-foreground pt-2">
+                          {row.description}
+                        </p>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div className="space-y-2">
-                            <Label htmlFor={`${row.purpose}-local`}>Address prefix</Label>
+                            <Label htmlFor={`${row.purpose}-local`}>
+                              Address prefix
+                            </Label>
                             <Input
                               id={`${row.purpose}-local`}
                               value={row.localPart}
-                              onChange={(e) => updateRow(row.purpose, { localPart: e.target.value })}
+                              onChange={(e) =>
+                                updateRow(row.purpose, {
+                                  localPart: e.target.value,
+                                })
+                              }
                               placeholder={row.defaultLocalPart}
                               autoComplete="off"
                             />
                           </div>
                           <div className="space-y-2">
                             <Label htmlFor={`${row.purpose}-name`}>
-                              Display name <span className="text-muted-foreground">(optional)</span>
+                              Display name{" "}
+                              <span className="text-muted-foreground">
+                                (optional)
+                              </span>
                             </Label>
                             <Input
                               id={`${row.purpose}-name`}
                               value={row.fromName ?? ""}
-                              onChange={(e) => updateRow(row.purpose, { fromName: e.target.value || null })}
+                              onChange={(e) =>
+                                updateRow(row.purpose, {
+                                  fromName: e.target.value || null,
+                                })
+                              }
                               placeholder="AI4Talent"
                             />
                           </div>
@@ -384,18 +442,26 @@ export function EmailSenders() {
 
                         <div className="space-y-2">
                           <Label htmlFor={`${row.purpose}-reply`}>
-                            Reply-to <span className="text-muted-foreground">(optional)</span>
+                            Reply-to{" "}
+                            <span className="text-muted-foreground">
+                              (optional)
+                            </span>
                           </Label>
                           <Input
                             id={`${row.purpose}-reply`}
                             type="email"
                             value={row.replyTo ?? ""}
-                            onChange={(e) => updateRow(row.purpose, { replyTo: e.target.value || null })}
+                            onChange={(e) =>
+                              updateRow(row.purpose, {
+                                replyTo: e.target.value || null,
+                              })
+                            }
                             placeholder="support@example.net"
                           />
                           <p className="text-xs text-muted-foreground">
-                            Where replies go. Leave blank for a no-reply mailbox. Messages a teacher or student writes
-                            always reply to that person instead.
+                            Where replies go. Leave blank for a no-reply
+                            mailbox. Messages a teacher or student writes always
+                            reply to that person instead.
                           </p>
                         </div>
 
@@ -404,7 +470,9 @@ export function EmailSenders() {
                             <div className="space-y-3 min-w-0">
                               <div className="space-y-2">
                                 <div className="flex items-center justify-between">
-                                  <Label htmlFor={`${row.purpose}-subject`}>Subject</Label>
+                                  <Label htmlFor={`${row.purpose}-subject`}>
+                                    Subject
+                                  </Label>
                                   <Button
                                     type="button"
                                     variant="ghost"
@@ -413,30 +481,45 @@ export function EmailSenders() {
                                     onClick={() => resetTemplate(row.purpose)}
                                     title="Restore the built-in wording"
                                   >
-                                    <RotateCcw className="size-3 mr-1" /> Reset to default
+                                    <RotateCcw className="size-3 mr-1" /> Reset
+                                    to default
                                   </Button>
                                 </div>
                                 <Input
                                   id={`${row.purpose}-subject`}
                                   value={effectiveSubject}
-                                  onChange={(e) => updateRow(row.purpose, { subject: e.target.value })}
+                                  onChange={(e) =>
+                                    updateRow(row.purpose, {
+                                      subject: e.target.value,
+                                    })
+                                  }
                                   placeholder={row.defaultTemplate.subject}
                                 />
                               </div>
                               <div className="space-y-2">
-                                <Label htmlFor={`${row.purpose}-body`}>Message</Label>
+                                <Label htmlFor={`${row.purpose}-body`}>
+                                  Message
+                                </Label>
                                 <Textarea
                                   id={`${row.purpose}-body`}
                                   rows={14}
                                   value={effectiveBody}
-                                  onChange={(e) => updateRow(row.purpose, { body: e.target.value })}
+                                  onChange={(e) =>
+                                    updateRow(row.purpose, {
+                                      body: e.target.value,
+                                    })
+                                  }
                                   placeholder={row.defaultTemplate.body}
                                   className="font-mono text-xs"
                                 />
                                 <p className="text-xs text-muted-foreground">
-                                  Edit the built-in wording directly — it is pre-filled below. Available placeholders:{" "}
+                                  Edit the built-in wording directly — it is
+                                  pre-filled below. Available placeholders:{" "}
                                   {row.variables.map((v) => (
-                                    <span key={v} className="font-mono">{`{{${v}}} `}</span>
+                                    <span
+                                      key={v}
+                                      className="font-mono"
+                                    >{`{{${v}}} `}</span>
                                   ))}
                                 </p>
                               </div>
@@ -453,8 +536,9 @@ export function EmailSenders() {
                           </div>
                         ) : (
                           <p className="text-xs text-muted-foreground">
-                            The subject and message for these emails are written by the teacher or student sending
-                            them, so only the sender identity is configurable here.
+                            The subject and message for these emails are written
+                            by the teacher or student sending them, so only the
+                            sender identity is configurable here.
                           </p>
                         )}
                       </div>
@@ -465,7 +549,11 @@ export function EmailSenders() {
             </div>
 
             <Button type="submit" disabled={saving}>
-              {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+              {saving ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Save className="size-4" />
+              )}
               {saving ? "Saving..." : "Save sender addresses"}
             </Button>
           </form>

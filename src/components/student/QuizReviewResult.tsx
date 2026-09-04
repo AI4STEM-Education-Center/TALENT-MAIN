@@ -46,7 +46,10 @@ export function ScoreBanner({
           className={`size-8 ${passed ? "text-[var(--viz-warning)]" : "text-muted-foreground"}`}
           aria-hidden="true"
         />
-        <Badge variant={passed ? "success" : "destructive"} className="px-3 py-1 text-sm">
+        <Badge
+          variant={passed ? "success" : "destructive"}
+          className="px-3 py-1 text-sm"
+        >
           {passed ? "Passed!" : "Keep practicing"}
         </Badge>
         <p className="text-sm text-muted-foreground">
@@ -71,7 +74,9 @@ function NumericRows({ question }: { question: SnapshotQuestion }) {
   const withUnit = (value: string) => (unit ? `${value} ${unit}` : value);
 
   const submitted =
-    question.submittedNumeric != null ? withUnit(String(question.submittedNumeric)) : null;
+    question.submittedNumeric != null
+      ? withUnit(String(question.submittedNumeric))
+      : null;
 
   const correctValue =
     question.correctNumeric != null ? String(question.correctNumeric) : null;
@@ -80,7 +85,7 @@ function NumericRows({ question }: { question: SnapshotQuestion }) {
       ? withUnit(
           question.tolerance != null
             ? `${correctValue} ± ${question.tolerance}`
-            : correctValue
+            : correctValue,
         )
       : null;
 
@@ -88,7 +93,9 @@ function NumericRows({ question }: { question: SnapshotQuestion }) {
     <>
       <div
         className={`text-sm px-2 py-1 rounded flex items-center gap-2 ${
-          question.isCorrect ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
+          question.isCorrect
+            ? "bg-green-50 text-green-700"
+            : "bg-red-50 text-red-700"
         }`}
       >
         <span className="shrink-0">{question.isCorrect ? "✓" : "✗"}</span>
@@ -100,7 +107,8 @@ function NumericRows({ question }: { question: SnapshotQuestion }) {
       <div className="text-sm px-2 py-1 rounded flex items-center gap-2 bg-green-50 text-green-700">
         <span className="shrink-0">✓</span>
         <span>
-          Correct answer: {correctText != null ? <MathText text={correctText} /> : "—"}
+          Correct answer:{" "}
+          {correctText != null ? <MathText text={correctText} /> : "—"}
         </span>
       </div>
     </>
@@ -119,7 +127,9 @@ function QuestionCard({
   const isNumeric = question.answerMode === "NUMERIC";
 
   return (
-    <Card className={`h-full ${question.isCorrect ? "border-green-200" : "border-red-200"}`}>
+    <Card
+      className={`h-full ${question.isCorrect ? "border-green-200" : "border-red-200"}`}
+    >
       <CardContent className="p-4 space-y-2">
         {question.figureUrl && (
           // Plain <img>: the src is a short-lived presigned S3 URL, which
@@ -154,8 +164,8 @@ function QuestionCard({
                   opt.isCorrect
                     ? "bg-green-50 text-green-700"
                     : opt.selected && !opt.isCorrect
-                    ? "bg-red-50 text-red-700"
-                    : "text-muted-foreground"
+                      ? "bg-red-50 text-red-700"
+                      : "text-muted-foreground"
                 }`}
               >
                 <span className="shrink-0">
@@ -187,8 +197,14 @@ function QuestionCard({
             </p>
             <div className="flex flex-wrap gap-2">
               {misconceptionTags.misconceptions.map((misconception) => (
-                <Badge key={misconception.misconceptionId} variant="outline" className="h-auto whitespace-normal py-1">
-                  <span className="font-mono mr-1">{misconception.misconceptionId}</span>
+                <Badge
+                  key={misconception.misconceptionId}
+                  variant="outline"
+                  className="h-auto whitespace-normal py-1"
+                >
+                  <span className="font-mono mr-1">
+                    {misconception.misconceptionId}
+                  </span>
                   {misconception.statement}
                 </Badge>
               ))}
@@ -214,7 +230,7 @@ export function QuizReviewList({
   errorMisconceptions?: StoredQuestionMisconceptions[];
 }) {
   const misconceptionByQuestionIndex = new Map(
-    errorMisconceptions.map((entry) => [entry.questionIndex, entry])
+    errorMisconceptions.map((entry) => [entry.questionIndex, entry]),
   );
   return (
     <div className="space-y-3">

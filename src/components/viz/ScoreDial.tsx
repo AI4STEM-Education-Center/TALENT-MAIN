@@ -38,7 +38,9 @@ export function ScoreDial({
   const offset = CIRCUMFERENCE * (1 - clamped / 100);
 
   return (
-    <figure className={cn("viz-root flex flex-col items-center gap-2", className)}>
+    <figure
+      className={cn("viz-root flex flex-col items-center gap-2", className)}
+    >
       <div className="relative" style={{ width: SIZE, height: SIZE }}>
         <svg
           width={SIZE}
@@ -74,7 +76,8 @@ export function ScoreDial({
               ["--dial-circumference" as string]: `${CIRCUMFERENCE}`,
               ["--dial-offset" as string]: `${offset}`,
               strokeDashoffset: offset,
-              animation: "viz-dial-sweep var(--motion-slow) var(--ease-standard)",
+              animation:
+                "viz-dial-sweep var(--motion-slow) var(--ease-standard)",
             }}
           />
         </svg>
@@ -105,7 +108,9 @@ export function ScoreDial({
           />
           {band.label}
         </span>
-        {caption && <span className="text-xs text-muted-foreground">{caption}</span>}
+        {caption && (
+          <span className="text-xs text-muted-foreground">{caption}</span>
+        )}
       </figcaption>
     </figure>
   );

@@ -41,7 +41,11 @@ export type ScoreBand = {
 
 export const SCORE_BANDS: Record<ScoreBand["id"], ScoreBand> = {
   strong: { id: "strong", label: "Strong", color: "var(--viz-good)" },
-  developing: { id: "developing", label: "Developing", color: "var(--viz-warning)" },
+  developing: {
+    id: "developing",
+    label: "Developing",
+    color: "var(--viz-warning)",
+  },
   weak: { id: "weak", label: "Needs work", color: "var(--viz-critical)" },
 };
 

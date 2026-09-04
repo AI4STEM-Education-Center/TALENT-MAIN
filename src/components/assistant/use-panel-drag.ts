@@ -37,7 +37,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
  * a browser (it exists to beat a paint), so fall back to the passive effect
  * where there are no paints to beat.
  */
-const useBrowserLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+const useBrowserLayoutEffect =
+  typeof window === "undefined" ? useEffect : useLayoutEffect;
 import {
   movePanelRect,
   resizePanelRect,
@@ -153,7 +154,10 @@ export function usePanelDrag({
     paintRect(el, gesture, gesture.latest);
   }, [panelRef]);
 
-  const handlersRef = useRef<{ move: (e: PointerEvent) => void; end: () => void } | null>(null);
+  const handlersRef = useRef<{
+    move: (e: PointerEvent) => void;
+    end: () => void;
+  } | null>(null);
 
   const detach = useCallback(() => {
     const handlers = handlersRef.current;
@@ -178,7 +182,9 @@ export function usePanelDrag({
     // refreshes — so the final geometry is computed inline rather than trusting
     // whatever the last painted frame happened to be.
     const point = pointerRef.current;
-    const final = point ? rectForPointer(gesture, point.x, point.y) : gesture.latest;
+    const final = point
+      ? rectForPointer(gesture, point.x, point.y)
+      : gesture.latest;
     pointerRef.current = null;
 
     document.body.style.cursor = "";
@@ -199,7 +205,13 @@ export function usePanelDrag({
       // a second button) would otherwise leak the first gesture's listeners.
       detach();
 
-      gestureRef.current = { mode, originX: event.clientX, originY: event.clientY, from, latest: from };
+      gestureRef.current = {
+        mode,
+        originX: event.clientX,
+        originY: event.clientY,
+        from,
+        latest: from,
+      };
       pointerRef.current = { x: event.clientX, y: event.clientY };
       el.style.willChange = mode === "move" ? "transform" : "width, height";
       // Drives the `user-select: none` rule without a React state change, which
@@ -212,7 +224,8 @@ export function usePanelDrag({
         pointerRef.current = { x: moveEvent.clientX, y: moveEvent.clientY };
         // Coalesces a burst of pointer events into the single frame the browser
         // is actually going to paint.
-        if (frameRef.current === null) frameRef.current = requestAnimationFrame(paint);
+        if (frameRef.current === null)
+          frameRef.current = requestAnimationFrame(paint);
       };
       handlersRef.current = { move, end };
       // Tracked on the window rather than the handle so a fast drag that outruns
@@ -222,7 +235,7 @@ export function usePanelDrag({
       window.addEventListener("pointerup", end);
       window.addEventListener("pointercancel", end);
     },
-    [detach, end, paint, panelRef]
+    [detach, end, paint, panelRef],
   );
 
   useBrowserLayoutEffect(() => {

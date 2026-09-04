@@ -39,7 +39,9 @@ export function RateMeter({
         <span className="min-w-0 flex-1">{label}</span>
         <span className="flex shrink-0 items-center gap-2">
           {showBand && (
-            <span className="text-xs font-medium text-muted-foreground">{band.label}</span>
+            <span className="text-xs font-medium text-muted-foreground">
+              {band.label}
+            </span>
           )}
           <span className="tabular-nums font-medium">{percent}%</span>
         </span>

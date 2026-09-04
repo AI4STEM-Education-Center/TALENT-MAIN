@@ -269,7 +269,9 @@ async function buildConsentExportReadyMessage(
     })),
   );
 
-  const override = await getSenderOverride("CONSENT_EXPORT_READY").catch(() => null);
+  const override = await getSenderOverride("CONSENT_EXPORT_READY").catch(
+    () => null,
+  );
   const { subject, text } = renderPurposeMessage(
     "CONSENT_EXPORT_READY",
     {
@@ -278,7 +280,7 @@ async function buildConsentExportReadyMessage(
       gradeColumnName: request.gradeColumnName,
       pointsAwarded: request.pointsAwarded,
     },
-    override
+    override,
   );
 
   const { attachments, note } = await attachmentWithinLimit({
