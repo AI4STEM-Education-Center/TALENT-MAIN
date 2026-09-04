@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 
 import { prisma } from "@/lib/prisma";
-import { resetDb } from "../../test/db";
-import { notifyAdminsOfRevokedTokenUse } from "./pressure-token-alert";
+import { notifyAdminsOfRevokedTokenUse } from "@/lib/pressure-token-alert";
+import { resetDb } from "./db";
 
 beforeEach(async () => {
   await resetDb();
