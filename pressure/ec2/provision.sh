@@ -348,6 +348,7 @@ log "clone launching as ${CREATED_SUT}"
 # Purpose tag from IMDS as one of its three identity checks.
 
 INSTALL_K6_B64="$(base64 < "${PRESSURE_DIR}/tools/install-k6.sh" | tr -d '\n')"
+BOOTSTRAP_LOADGEN_B64="$(base64 < "${SCRIPT_DIR}/bootstrap-loadgen.sh" | tr -d '\n')"
 LOADGEN_USERDATA="${STATE_DIR}/${RUN_ID}-loadgen-userdata.yml"
 {
   cat "${SCRIPT_DIR}/user-data-loadgen.yml"
@@ -358,6 +359,10 @@ write_files:
     permissions: "0700"
     encoding: b64
     content: ${INSTALL_K6_B64}
+  - path: /opt/pressure/bootstrap-loadgen.sh
+    permissions: "0700"
+    encoding: b64
+    content: ${BOOTSTRAP_LOADGEN_B64}
 EOF
 } > "$LOADGEN_USERDATA"
 

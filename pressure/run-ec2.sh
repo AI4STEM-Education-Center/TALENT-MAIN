@@ -82,18 +82,55 @@ lg() { ssh "${SSH_OPTS[@]}" "ubuntu@${LOADGEN_IP}" "$@"; }
 # the load generator.
 sut() { lg "ssh -o StrictHostKeyChecking=accept-new ubuntu@${SUT_IP} \"$*\""; }
 
+loadgen_diagnostics() {
+  log "load-generator bootstrap diagnostics:"
+  lg "printf '%s' '  stage: '; cat /opt/pressure/BOOT_STAGE 2>/dev/null || echo not-started; \
+      printf '%s' '  failure: '; cat /opt/pressure/BOOT_FAILED 2>/dev/null || echo none; \
+      echo '  cloud-init:'; sudo cloud-init status --long 2>&1 | sed 's/^/    /' || true; \
+      echo '  boot log (last 80 lines):'; sudo tail -80 /var/log/pressure/boot.log 2>&1 | sed 's/^/    /' || true; \
+      echo '  cloud-init output (last 40 lines):'; sudo tail -40 /var/log/cloud-init-output.log 2>&1 | sed 's/^/    /' || true" \
+    2>&1 | sed 's/^/    /' || true
+  if command -v aws >/dev/null 2>&1; then
+    log "EC2 instance states:"
+    aws ec2 describe-instances --region "$REGION" --instance-ids "$SUT_ID" "$(jq -r '.loadgen' "$STATE_FILE")" \
+      --query 'Reservations[].Instances[].{id:InstanceId,role:Tags[?Key==`PressureRole`]|[0].Value,state:State.Name,reason:StateTransitionReason}' \
+      --output table 2>&1 | sed 's/^/    /' || true
+  fi
+}
+
+instance_state() {
+  command -v aws >/dev/null 2>&1 || return 0
+  aws ec2 describe-instances --region "$REGION" --instance-ids "$1" \
+    --query 'Reservations[0].Instances[0].State.Name' --output text 2>/dev/null || true
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. Wait for both instances, and REFUSE to proceed unless sanitize succeeded
 # ─────────────────────────────────────────────────────────────────────────────
 log "waiting for the load generator to finish cloud-init (package installation can take several minutes)..."
-for attempt in $(seq 1 60); do
+for attempt in $(seq 1 120); do
   if lg "test -f /opt/pressure/READY" 2>/dev/null; then break; fi
+  if lg "test -f /opt/pressure/BOOT_FAILED" 2>/dev/null; then
+    loadgen_diagnostics
+    die "load-generator bootstrap failed"
+  fi
   if [ $((attempt % 3)) -eq 0 ]; then
-    log "load generator is still initializing ($((attempt * 10))s elapsed)..."
+    SUT_EC2_STATE="$(instance_state "$SUT_ID")"
+    case "$SUT_EC2_STATE" in
+      stopping|stopped|shutting-down|terminated)
+        loadgen_diagnostics
+        die "the SUT entered EC2 state '${SUT_EC2_STATE}' while the load generator was booting"
+        ;;
+    esac
+    BOOT_STAGE="$(lg "cat /opt/pressure/BOOT_STAGE 2>/dev/null || echo cloud-init" 2>/dev/null || echo unreachable)"
+    log "load generator is still initializing: ${BOOT_STAGE} ($((attempt * 10))s elapsed)..."
   fi
   sleep 10
 done
-lg "test -f /opt/pressure/READY" || die "the load generator never became ready; check 'sudo cat /var/log/pressure/boot.log' on ${LOADGEN_IP}"
+if ! lg "test -f /opt/pressure/READY"; then
+  loadgen_diagnostics
+  die "the load generator never became ready after 20 minutes"
+fi
 
 # ── Deliver the sanitize payload and start the app ───────────────────────────
 # The clone booted with Docker MASKED and the application deliberately not

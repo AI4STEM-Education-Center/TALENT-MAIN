@@ -212,6 +212,11 @@ waits up to `PRESSURE_AMI_WAIT_MINUTES` (60 by default), because the AWS CLI's
 built-in waiter stops after 10 minutes even though initial EBS snapshots can
 take substantially longer.
 
+The load generator reports its current bootstrap stage while Node, k6, and the
+support packages are installed. Transient downloads are retried. A failed stage
+prints its marker, cloud-init status, recent boot log, and both EC2 instance
+states automatically; no follow-up SSH command is needed to discover the cause.
+
 Prerequisites are AWS CLI credentials with EC2/AMI/EBS/security-group access,
 `jq`, `ssh`, `scp`, Node 24, and access to the configured EC2 key. `run.sh`
 uses the source instance's VPC, subnet, availability zone, and instance type
