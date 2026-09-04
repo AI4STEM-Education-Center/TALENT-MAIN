@@ -286,7 +286,16 @@ export function ClassQuizzesClient({
                       <SettingsSummary cq={cq} />
                     </div>
                   </div>
-                  <div className="flex gap-2 shrink-0">
+                  <div className="flex flex-wrap gap-2">
+                    {cq.quiz._count.questions > 0 && (
+                      <Button size="sm" variant="outline" asChild>
+                        <Link
+                          href={`/teacher/quizzes/${cq.quizId}/preview?classId=${encodeURIComponent(classId)}`}
+                        >
+                          <Eye className="size-3" /> Preview as student
+                        </Link>
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="outline"
