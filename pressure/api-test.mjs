@@ -103,6 +103,7 @@ class HttpClient {
     const retryStatuses = new Set(options.retry?.statuses || []);
     let response;
     for (let attempt = 1; attempt <= attempts; attempt++) {
+      response = undefined;
       try {
         // react-doctor-disable-next-line react-doctor/no-fetch-response-used-without-status-check -- accepted status is checked below before response.text() is consumed
         response = await fetch(`${targetUrl}${route}`, {
@@ -113,8 +114,17 @@ class HttpClient {
           signal: AbortSignal.timeout(options.timeoutMs || 30_000),
         });
       } catch (error) {
+        const detail = error instanceof Error ? error.message : "request failed";
+        if (options.retry?.onError && attempt < attempts) {
+          const delayMs = retryDelayMs(attempt);
+          console.warn(
+            `↻ ${name} (${method} ${route}) -> ${detail}; retrying in ${delayMs}ms (${attempt}/${attempts})`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          continue;
+        }
         const durationMs = Math.round((performance.now() - before) * 100) / 100;
-        record(name, method, route, null, durationMs, "FAIL", error instanceof Error ? error.message : "request failed");
+        record(name, method, route, null, durationMs, "FAIL", detail);
         throw error;
       }
       if (!retryStatuses.has(response.status) || attempt === attempts) break;
@@ -186,10 +196,15 @@ async function login(role) {
 async function criticalChecks() {
   await anonymous.request("public landing", "/", {
     allowed: [200],
-    // The container health check and the edge route converge independently
-    // after a deploy. Give that brief handoff time to settle, but still fail a
-    // persistent host-validation, WAF, or application rejection.
-    retry: { attempts: 6, statuses: [403, 429, 502, 503, 504] },
+    // The container and edge route can become ready independently. Poll for up
+    // to about one minute on connection errors or temporary HTTP responses,
+    // but still fail a persistent host-validation, WAF, or app rejection.
+    timeoutMs: 10_000,
+    retry: {
+      attempts: 8,
+      onError: true,
+      statuses: [403, 429, 502, 503, 504],
+    },
   });
   await Promise.all([login("STUDENT"), login("TEACHER"), login("ADMIN")]);
 
