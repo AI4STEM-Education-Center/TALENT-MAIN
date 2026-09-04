@@ -133,7 +133,7 @@ function main() {
   if (assessment.types.length === 0) {
     console.log("\nNo student-count exam-day results are available yet.");
     console.log(
-      `Collect one with: EC2_SUT_TYPE=<type> ./run.sh exam-day --students ${requestedStudents}`,
+      `Collect one with: ./run.sh exam-day --students ${requestedStudents} --sut-type <candidate>`,
     );
     process.exitCode = 1;
     return;
@@ -155,7 +155,7 @@ function main() {
       `\nNo tested instance type is proven at ${requestedStudents} students.`,
     );
     console.log(
-      `Run: EC2_SUT_TYPE=<candidate> ./run.sh exam-day --students ${requestedStudents}`,
+      `Run: ./run.sh exam-day --students ${requestedStudents} --sut-type <candidate>`,
     );
     process.exitCode = 1;
     return;

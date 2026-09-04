@@ -198,7 +198,7 @@ does not extrapolate from CPU percentages or from a lower-count pass. If there
 is not enough evidence, it prints the exact benchmark command to collect it:
 
 ```bash
-EC2_SUT_TYPE=m7i.xlarge ./pressure/run.sh exam-day --students 500
+./pressure/run.sh exam-day --students 500 --sut-type m7i.xlarge
 ```
 
 The admin pressure-test dashboard shows the infrastructure run, SUT instance

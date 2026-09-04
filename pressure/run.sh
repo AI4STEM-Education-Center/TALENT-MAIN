@@ -9,7 +9,7 @@ ENV_FILE="${PRESSURE_DIR}/.env"
 die() { echo "pressure: FATAL: $*" >&2; exit 1; }
 usage() {
   cat <<'USAGE'
-Usage: pressure/run.sh [scenario|all] [scale] [--students <count>]
+Usage: pressure/run.sh [scenario|all] [scale] [--students <count>] [--sut-type <type>]
 
 Scenarios: smoke, exam-day, login-storm, media-signing, ramp-capacity,
            soak, spike-recovery, admin-observability
@@ -28,11 +28,15 @@ fixed one-user smoke test or the separately throttled login-storm test.
 Use "recommend-size --students N" to select the smallest measured EC2 type
 that has passed an exam-day run at or above N students. It reads local results
 and does not create AWS resources.
+
+--sut-type deliberately tests a different SUT instance type without editing
+pressure/.env, for example --sut-type m7i.xlarge.
 USAGE
 }
 
 POSITIONAL=()
 STUDENT_COUNT_ARG=""
+SUT_TYPE_ARG=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --students)
@@ -41,6 +45,12 @@ while [ $# -gt 0 ]; do
       shift 2
       ;;
     --students=*) STUDENT_COUNT_ARG="${1#*=}"; shift ;;
+    --sut-type)
+      [ $# -ge 2 ] || die "--sut-type requires an EC2 instance type"
+      SUT_TYPE_ARG="$2"
+      shift 2
+      ;;
+    --sut-type=*) SUT_TYPE_ARG="${1#*=}"; shift ;;
     -h|--help) usage; exit 0 ;;
     --*) die "unknown option '$1'; run with --help for usage" ;;
     *) POSITIONAL+=("$1"); shift ;;
@@ -50,6 +60,7 @@ done
 
 if [ "${POSITIONAL[0]-}" = "recommend-size" ]; then
   [ "${#POSITIONAL[@]}" -eq 1 ] || die "recommend-size accepts --students but no scale"
+  [ -z "$SUT_TYPE_ARG" ] || die "recommend-size reads measured results; --sut-type applies when collecting an exam-day result"
   exec node "${PRESSURE_DIR}/recommend-size.mjs" --students "$STUDENT_COUNT_ARG"
 fi
 
@@ -75,6 +86,7 @@ if [ "$SCENARIO" != "all" ] && [ ! -f "${PRESSURE_DIR}/k6/scenarios/${SCENARIO}.
 fi
 
 STUDENT_COUNT="${STUDENT_COUNT_ARG:-${PRESSURE_STUDENTS:-}}"
+SUT_TYPE="${SUT_TYPE_ARG:-${EC2_SUT_TYPE:-}}"
 # Backwards compatibility for existing workstation .env files. PRESSURE_COHORT
 # was exam-day-only and must not silently change the other scenario defaults.
 if [ -z "$STUDENT_COUNT" ] && [ "$SCENARIO" = "exam-day" ]; then
@@ -133,7 +145,7 @@ provision_args=(
   --ack-real-data
   --orchestrated
 )
-[ -n "${EC2_SUT_TYPE:-}" ] && provision_args+=(--sut-type "$EC2_SUT_TYPE")
+[ -n "$SUT_TYPE" ] && provision_args+=(--sut-type "$SUT_TYPE")
 
 "${PRESSURE_DIR}/ec2/provision.sh" "${provision_args[@]}" | tee "$PROVISION_LOG"
 RUN_ID="$(grep -oE 'run pressure-[0-9]{8}-[0-9]{6}' "$PROVISION_LOG" | tail -1 | awk '{print $2}')"
