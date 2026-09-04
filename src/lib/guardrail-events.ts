@@ -15,9 +15,9 @@
 
 import { prisma } from "@/lib/prisma";
 import { logSystemEvent } from "@/lib/system-log";
+import { MAX_FEEDBACK_CHARS } from "@/lib/guardrail-feedback";
 
-/** Longest report accepted. Long enough for context, short enough to read. */
-export const MAX_FEEDBACK_CHARS = 2_000;
+export { MAX_FEEDBACK_CHARS } from "@/lib/guardrail-feedback";
 
 export const GUARDRAIL_FEEDBACK_STATUSES = [
   "NEW",

@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { MAX_FEEDBACK_CHARS } from "@/lib/guardrail-events";
+import { MAX_FEEDBACK_CHARS } from "@/lib/guardrail-feedback";
 
 /**
  * "Report a problem" on a guardrail result.
