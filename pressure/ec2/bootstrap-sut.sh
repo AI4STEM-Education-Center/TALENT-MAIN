@@ -20,7 +20,14 @@
 # rather than running with production credentials.
 set -euo pipefail
 
-APP_DIR="${APP_DIR:-/home/ubuntu/app}"
+# The application path comes from the production image, which is Debian (cloud
+# user `admin`), not Ubuntu. Detect it rather than hardcoding one distro's
+# layout; an explicit APP_DIR from the runner still wins.
+APP_DIR="${APP_DIR:-}"
+if [ -z "$APP_DIR" ]; then
+  APP_DIR="$(ls -d /home/*/app 2>/dev/null | head -1)"
+fi
+APP_DIR="${APP_DIR:-/home/admin/app}"
 log() { echo "[bootstrap] $*"; }
 die() { echo "[bootstrap] FATAL: $*" >&2; exit 1; }
 
@@ -36,6 +43,7 @@ PRESSURE_SOURCE_INSTANCE_ID="${PRESSURE_SOURCE_INSTANCE_ID:-}" \
 PRESSURE_ACK_REAL_DATA="${PRESSURE_ACK_REAL_DATA:-}" \
 PRESSURE_DEADMAN_MINUTES="${PRESSURE_DEADMAN_MINUTES:-240}" \
 PRESSURE_DB_PATH="${PRESSURE_DB_PATH:-}" \
+APP_DIR="${APP_DIR}" \
   sudo -E /opt/pressure/sanitize-sut.sh 2>&1 | sudo tee -a /var/log/pressure/sanitize.log
 
 # THE GATE. Written as an explicit test rather than relying on the pipeline's
