@@ -2,7 +2,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { percentile, publishResult, saveResult } from "./lib/results.mjs";
+import {
+  percentile,
+  publishResult,
+  saveResult,
+  summarizeChecks,
+} from "./lib/results.mjs";
 
 const PRESSURE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_DIR = path.dirname(PRESSURE_DIR);
@@ -49,6 +54,21 @@ function record(name, method, route, status, durationMs, outcome, detail) {
   console.log(`${mark} ${name} (${method} ${route})${status ? ` -> ${status}` : ""} ${durationMs}ms`);
 }
 
+function responseDiagnostic(response, text) {
+  const details = [];
+  const server = response.headers.get("server");
+  const edgeRequestId = response.headers.get("cf-ray");
+  if (server) details.push(`server=${server}`);
+  if (edgeRequestId) details.push(`cf-ray=${edgeRequestId}`);
+  const body = text.replace(/\s+/g, " ").trim().slice(0, 300);
+  if (body) details.push(`body=${body}`);
+  return details.join("; ");
+}
+
+function retryDelayMs(attempt) {
+  return Math.min(15_000, 1_000 * 2 ** (attempt - 1));
+}
+
 class HttpClient {
   constructor(name) {
     this.name = name;
@@ -79,31 +99,43 @@ class HttpClient {
     if (options.json !== undefined) headers.set("content-type", "application/json");
     headers.set("user-agent", "ai4talent-api-test/1");
     const before = performance.now();
+    const attempts = options.retry?.attempts || 1;
+    const retryStatuses = new Set(options.retry?.statuses || []);
     let response;
-    try {
-      // react-doctor-disable-next-line react-doctor/no-fetch-response-used-without-status-check -- accepted status is checked below before response.text() is consumed
-      response = await fetch(`${targetUrl}${route}`, {
-        method,
-        headers,
-        body: options.json === undefined ? options.body : JSON.stringify(options.json),
-        redirect: options.redirect || "manual",
-        signal: AbortSignal.timeout(options.timeoutMs || 30_000),
-      });
-    } catch (error) {
-      const durationMs = Math.round((performance.now() - before) * 100) / 100;
-      record(name, method, route, null, durationMs, "FAIL", error instanceof Error ? error.message : "request failed");
-      throw error;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        // react-doctor-disable-next-line react-doctor/no-fetch-response-used-without-status-check -- accepted status is checked below before response.text() is consumed
+        response = await fetch(`${targetUrl}${route}`, {
+          method,
+          headers,
+          body: options.json === undefined ? options.body : JSON.stringify(options.json),
+          redirect: options.redirect || "manual",
+          signal: AbortSignal.timeout(options.timeoutMs || 30_000),
+        });
+      } catch (error) {
+        const durationMs = Math.round((performance.now() - before) * 100) / 100;
+        record(name, method, route, null, durationMs, "FAIL", error instanceof Error ? error.message : "request failed");
+        throw error;
+      }
+      if (!retryStatuses.has(response.status) || attempt === attempts) break;
+      await response.body?.cancel();
+      const delayMs = retryDelayMs(attempt);
+      console.warn(
+        `↻ ${name} (${method} ${route}) -> ${response.status}; retrying in ${delayMs}ms (${attempt}/${attempts})`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
+    if (!response) throw new Error(`${name} did not receive a response`);
     const durationMs = Math.round((performance.now() - before) * 100) / 100;
     this.absorbCookies(response.headers);
     const allowed = options.allowed || ((status) => status >= 200 && status < 400);
     const accepted = typeof allowed === "function" ? allowed(response.status) : allowed.includes(response.status);
-    if (!accepted) {
-      await response.body?.cancel();
-      record(name, method, route, response.status, durationMs, "FAIL");
-      throw new Error(`${name} returned unexpected HTTP ${response.status}`);
-    }
     const text = await response.text();
+    if (!accepted) {
+      const detail = responseDiagnostic(response, text);
+      record(name, method, route, response.status, durationMs, "FAIL", detail);
+      throw new Error(`${name} returned unexpected HTTP ${response.status}${detail ? ` (${detail})` : ""}`);
+    }
     let body = null;
     if (text) {
       try {
@@ -152,7 +184,13 @@ async function login(role) {
 }
 
 async function criticalChecks() {
-  await anonymous.request("public landing", "/", { allowed: [200] });
+  await anonymous.request("public landing", "/", {
+    allowed: [200],
+    // The container health check and the edge route converge independently
+    // after a deploy. Give that brief handoff time to settle, but still fail a
+    // persistent host-validation, WAF, or application rejection.
+    retry: { attempts: 6, statuses: [403, 429, 502, 503, 504] },
+  });
   await Promise.all([login("STUDENT"), login("TEACHER"), login("ADMIN")]);
 
   await Promise.all([
@@ -401,6 +439,7 @@ const failures = [
   ...(fatalError ? [{ name: "suite", detail: fatalError }] : []),
 ];
 const durations = checks.filter((check) => check.status).map((check) => check.durationMs);
+const checkSummary = summarizeChecks(checks);
 const result = {
   schemaVersion: 1,
   runId,
@@ -415,9 +454,9 @@ const result = {
   branch: process.env.GITHUB_HEAD_REF || process.env.GITHUB_REF_NAME || process.env.GIT_BRANCH || null,
   targetUrl,
   durationMs: finished.getTime() - started.getTime(),
-  totalChecks: checks.length,
-  passedChecks: checks.filter((check) => check.outcome === "PASS").length,
-  failedChecks: failures.length,
+  totalChecks: checkSummary.totalChecks,
+  passedChecks: checkSummary.passedChecks,
+  failedChecks: checkSummary.failedChecks,
   latency: {
     p50Ms: percentile(durations, 0.5),
     p95Ms: percentile(durations, 0.95),
@@ -426,7 +465,7 @@ const result = {
   },
   requestRate: checks.length / Math.max(1, (finished.getTime() - started.getTime()) / 1000),
   virtualUsers: 1,
-  errorRate: checks.length ? failures.length / checks.length : 1,
+  errorRate: checkSummary.errorRate,
   metadata: { profile, fixtureCleanupFailures: cleanupFailures.length },
   metrics: { checks },
   failures,
