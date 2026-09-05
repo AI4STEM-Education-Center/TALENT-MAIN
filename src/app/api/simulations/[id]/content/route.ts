@@ -6,6 +6,7 @@ import { getS3ObjectAsString } from "@/lib/storage";
 import { SIMULATION_CSP } from "@/lib/simulation";
 import { renderSimulationLatex } from "@/lib/simulation-math";
 import { injectTelemetryScript } from "@/lib/simulation-telemetry";
+import { buildSimulationEditorLayer } from "@/lib/simulation-editor-script";
 
 export const runtime = "nodejs";
 
@@ -99,16 +100,17 @@ export async function GET(
     );
   }
 
+  const editing =
+    (role === "ADMIN" || role === "TEACHER") &&
+    _req.nextUrl.searchParams.get("edit") === "1";
+
   // Generated formula markers contain raw LaTeX. Parse them with KaTeX on the
   // server and emit self-contained MathML, so formulas render correctly inside
   // the no-network sandbox without shipping a runtime or external font assets.
-  html = renderSimulationLatex(html);
-  if (
-    (role === "ADMIN" || role === "TEACHER") &&
-    _req.nextUrl.searchParams.get("edit") === "1"
-  ) {
-    html += `<script>document.addEventListener('dblclick',function(e){const el=e.target;if(!(el instanceof HTMLElement)||el.children.length||!el.textContent.trim()||el.closest('script,style,button,select,textarea,svg,math'))return;const before=el.textContent;el.contentEditable='true';el.focus();el.addEventListener('blur',function(){el.contentEditable='false';if(el.textContent!==before)parent.postMessage({type:'simulation-text-edit',before:before,after:el.textContent},'*');},{once:true});});</script>`;
-  }
+  // Staff editing the document also get the LaTeX source kept on each formula:
+  // MathML has no route back to it, and that is what the equation editor edits.
+  html = renderSimulationLatex(html, { annotate: editing });
+  if (editing) html += buildSimulationEditorLayer();
 
   // Students get the interaction-telemetry snippet injected at serve time (the
   // stored artifact is never modified, and pre-telemetry artifacts report like

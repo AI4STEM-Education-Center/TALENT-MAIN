@@ -10,46 +10,119 @@ import { getAssistantSettings } from "@/lib/assistant/config";
 import { runAssistantTurn } from "@/lib/assistant/agent";
 import type { AssistantTurn } from "@/lib/assistant/types";
 import { simulationEditPlanSchema } from "@/lib/simulation-edit";
-import { getS3ObjectAsString } from "@/lib/storage";
+import {
+  applySimulationPatches,
+  listSimulationFormulas,
+  type SimulationPatch,
+} from "@/lib/simulation-patch";
+import { validateSimulationHtml } from "@/lib/simulation";
+import { resolveProvider } from "@/lib/ai-provider";
+import {
+  buildSimulationKey,
+  getS3Config,
+  getS3ObjectAsString,
+  putS3Object,
+} from "@/lib/storage";
 import { fenceUntrusted } from "@/lib/guardrail-fence";
 import { guardText } from "@/lib/guardrail-runner";
 import { rateLimit } from "@/lib/rate-limit";
 import { enqueueSimulation } from "@/lib/queue";
 
 export const runtime = "nodejs";
+const latexSchema = z.string().trim().min(1).max(500);
+const patchSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("text"),
+    before: z.string().min(1).max(2000),
+    after: z.string().trim().min(1).max(2000),
+  }),
+  z.object({
+    kind: z.literal("formula-edit"),
+    index: z.number().int().nonnegative().max(64),
+    latex: latexSchema,
+  }),
+  z.object({
+    kind: z.literal("formula-delete"),
+    index: z.number().int().nonnegative().max(64),
+  }),
+  z.object({
+    kind: z.literal("formula-add"),
+    latex: latexSchema,
+    display: z.enum(["inline", "block"]),
+  }),
+]);
 const inputSchema = z.object({
-  action: z.enum(["chat", "apply", "restore", "abort", "rename"]),
+  action: z.enum(["chat", "apply", "restore", "abort", "rename", "patch"]),
   version: z.number().int().positive(),
   chatId: z.string().optional(),
   message: z.string().trim().min(1).max(4000).optional(),
-  name: z.string().trim().min(1).max(80).optional(),
+  // Blank is "not supplied": the editor posts its rename box on every action.
+  name: z.string().trim().max(80).optional(),
+  patches: z.array(patchSchema).min(1).max(20).optional(),
 });
+
+/** The teacher-authored words in a patch set — what the guardrails must see. */
+function patchText(patches: SimulationPatch[]): string {
+  return patches
+    .flatMap((patch) => {
+      if (patch.kind === "text") return [patch.after];
+      return patch.kind === "formula-delete" ? [] : [patch.latex];
+    })
+    .join("\n");
+}
 async function access(id: string) {
   const actor = await getContentActor();
   if (!actor) return null;
   const sim = await prisma.questionSimulation.findUnique({
     where: { id },
     include: {
-      question: { select: { quiz: { select: { teacherId: true } } } },
+      question: {
+        select: {
+          id: true,
+          quizId: true,
+          quiz: { select: { teacherId: true } },
+        },
+      },
     },
   });
   return sim && canManage(actor, sim.question.quiz) ? { actor, sim } : null;
 }
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
   const found = await access(id);
   if (!found) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const [versions, chats] = await Promise.all([
+  const [versions, chats, settings, provider] = await Promise.all([
     listSimulationVersions(found.sim),
     prisma.simulationEditChat.findMany({
       where: { simulationId: id, userId: found.actor.userId },
       orderBy: { updatedAt: "desc" },
       take: 30,
     }),
+    getAssistantSettings("simulation"),
+    resolveProvider("simulation_chat"),
   ]);
+
+  // The formulas of whichever version the editor is previewing, so it can offer
+  // real add / edit / remove controls instead of asking a teacher to describe an
+  // equation in prose. Best-effort: a missing artifact must not break the page.
+  const requested = Number(new URL(req.url).searchParams.get("version"));
+  const selected =
+    versions.find((v) => v.number === requested) ??
+    versions.find((v) => v.number === found.sim.version);
+  let formulas: ReturnType<typeof listSimulationFormulas> = [];
+  if (selected?.storageKey && selected.bucket) {
+    try {
+      formulas = listSimulationFormulas(
+        await getS3ObjectAsString(selected.bucket, selected.storageKey),
+      );
+    } catch (error) {
+      console.error(`[Simulation] Could not read formulas for ${id}:`, error);
+    }
+  }
+
   return NextResponse.json({
     versions: versions.map(({ number, name, parentNumber, createdAt }) => ({
       number,
@@ -59,6 +132,12 @@ export async function GET(
     })),
     chats,
     activeVersion: found.sim.version,
+    formulaVersion: selected?.number ?? null,
+    formulas,
+    // Both halves have to be configured before the chat can answer, and they
+    // live on different admin screens — so the editor names each one it is
+    // missing rather than failing with a generic error on the first message.
+    assistant: { enabled: settings.enabled, model: provider?.model ?? null },
   });
 }
 export async function POST(
@@ -115,6 +194,102 @@ export async function POST(
       data: { name: body.name },
     });
     return NextResponse.json({ renamed: true });
+  }
+  if (body.action === "patch") {
+    if (!body.patches)
+      return NextResponse.json(
+        { error: "No changes to apply" },
+        { status: 400 },
+      );
+    if (sim.status !== "READY")
+      return NextResponse.json(
+        { error: "Wait for the current revision to finish" },
+        { status: 409 },
+      );
+    const guard = await guardText(
+      patchText(body.patches),
+      { surface: "simulation_feedback", id, userId: actor.userId },
+      { requestPath: true },
+    );
+    if (guard.blocked)
+      return NextResponse.json(
+        { error: guard.message, guardrailEventId: guard.eventId },
+        { status: 422 },
+      );
+
+    let source: string;
+    let bucket: string;
+    try {
+      [source, bucket] = [
+        await getS3ObjectAsString(base.bucket, base.storageKey),
+        getS3Config().bucket,
+      ];
+    } catch (error) {
+      console.error(
+        `[Simulation] Direct edit of ${id} could not read S3:`,
+        error,
+      );
+      return NextResponse.json(
+        { error: "Could not read this version's artifact." },
+        { status: 502 },
+      );
+    }
+
+    const patched = applySimulationPatches(source, body.patches);
+    if (!patched.ok)
+      return NextResponse.json({ error: patched.problem }, { status: 422 });
+    // The same static validation the generator's output must pass. A direct
+    // edit skips the revision model, so this is the only thing standing between
+    // a teacher's typo and a broken document reaching students.
+    const problems = validateSimulationHtml(patched.html);
+    if (problems.length)
+      return NextResponse.json(
+        { error: `These edits would break the simulation: ${problems[0]}` },
+        { status: 422 },
+      );
+
+    const latest = await prisma.simulationVersion.aggregate({
+      where: { simulationId: id },
+      _max: { number: true },
+    });
+    const number = Math.max(sim.version, latest._max.number ?? 0) + 1;
+    const key = buildSimulationKey(
+      sim.question.quiz.teacherId,
+      sim.question.quizId,
+      sim.question.id,
+      number,
+    );
+    await putS3Object(bucket, key, patched.html, "text/html; charset=utf-8");
+    try {
+      await prisma.$transaction(async (tx) => {
+        await tx.simulationVersion.create({
+          data: {
+            simulationId: id,
+            number,
+            name: body.name || `Direct edit ${number}`,
+            parentNumber: base.number,
+            storageKey: key,
+            bucket,
+          },
+        });
+        const claimed = await tx.questionSimulation.updateMany({
+          where: { id, status: "READY" },
+          data: { version: number, storageKey: key, bucket },
+        });
+        if (!claimed.count) throw new Error("Simulation is not READY");
+      });
+    } catch {
+      // Lost the race for this version number, or a revision started between
+      // the check above and here. Either way nothing was published.
+      return NextResponse.json(
+        {
+          error:
+            "Another change to this simulation landed first. Reload the editor and try again.",
+        },
+        { status: 409 },
+      );
+    }
+    return NextResponse.json({ version: number, showVersion: number });
   }
   let chat = body.chatId
     ? await prisma.simulationEditChat.findFirst({
@@ -225,9 +400,16 @@ export async function POST(
       );
     }
   }
+  // Both halves of the chat's configuration start empty on a fresh install, so
+  // say which one is missing instead of failing later as an opaque model error.
   if (!settings.enabled)
     return NextResponse.json(
       { error: "Enable Simulation editing assistant in AI Config first" },
+      { status: 409 },
+    );
+  if (!(await resolveProvider("simulation_chat")))
+    return NextResponse.json(
+      { error: "Assign a model to Simulation Editing Chat in AI Config first" },
       { status: 409 },
     );
   if (!body.message)
@@ -280,13 +462,11 @@ export async function POST(
         fenceUntrusted(
           "version catalogue",
           JSON.stringify(
-            catalogue
-              .slice(-200)
-              .map(({ number, name, parentNumber }) => ({
-                number,
-                name,
-                parentNumber,
-              })),
+            catalogue.slice(-200).map(({ number, name, parentNumber }) => ({
+              number,
+              name,
+              parentNumber,
+            })),
           ),
         ),
         `Selected version v${base.number}. ${fenceUntrusted("simulation context", JSON.stringify({ name: base.name, topic: sim.topic, goal: sim.learningGoal, html: html.slice(0, 60000) }))}`,

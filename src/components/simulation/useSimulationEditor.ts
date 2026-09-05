@@ -1,6 +1,11 @@
 "use client";
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import type { SimulationEditPlan } from "@/lib/simulation-edit";
+import {
+  describeSimulationPatch,
+  type SimulationFormula,
+  type SimulationPatch,
+} from "@/lib/simulation-patch";
 export type Version = {
   number: number;
   name: string;
@@ -20,6 +25,10 @@ export type EditorProps = {
   revising: boolean;
   onRefresh: () => Promise<void>;
 };
+/** Whether the editing chat can answer at all. Both halves are admin-set. */
+export type AssistantStatus = { enabled: boolean; model: string | null };
+/** A staged patch plus a key that survives removing an earlier one. */
+export type StagedPatch = { id: string; patch: SimulationPatch };
 type State = {
   versions: Version[];
   selected: number;
@@ -32,6 +41,11 @@ type State = {
   error: string;
   eventId: string | null;
   rename: string;
+  /** The previewed version's formulas, in the order they appear on screen. */
+  formulas: SimulationFormula[];
+  /** Edits staged in the preview, applied (or sent to chat) as one batch. */
+  patches: StagedPatch[];
+  assistant: AssistantStatus;
 };
 function reducer(state: State, patch: Partial<State>) {
   return { ...state, ...patch };
@@ -53,6 +67,9 @@ export function useSimulationEditor({
     error: "",
     eventId: null,
     rename: "",
+    formulas: [],
+    patches: [],
+    assistant: { enabled: true, model: null },
   });
   const inFlight = useRef(false);
   if (version !== state.lastLiveVersion)
@@ -62,12 +79,18 @@ export function useSimulationEditor({
       chatId: undefined,
       answers: {},
     });
+  const selected = state.selected;
   const refresh = useCallback(async () => {
-    const res = await fetch(`/api/simulations/${id}/edit`);
+    const res = await fetch(`/api/simulations/${id}/edit?version=${selected}`);
     if (!res.ok) throw new Error("Could not load version history");
     const data = await res.json();
-    update({ versions: data.versions, chats: data.chats });
-  }, [id]);
+    update({
+      versions: data.versions,
+      chats: data.chats,
+      formulas: data.formulas ?? [],
+      assistant: data.assistant ?? { enabled: true, model: null },
+    });
+  }, [id, selected]);
   useEffect(() => {
     refresh().catch((e) => update({ error: e.message }));
   }, [refresh, version, revising]);
@@ -98,7 +121,13 @@ export function useSimulationEditor({
               ? chat?.id
               : undefined,
           message,
-          name: state.rename,
+          // An empty rename box means "leave the name alone" — sending "" would
+          // fail input validation and take the whole request down with it.
+          name: state.rename.trim() || undefined,
+          patches:
+            action === "patch"
+              ? state.patches.map((staged) => staged.patch)
+              : undefined,
         }),
       });
       const data = await res.json();
@@ -115,6 +144,7 @@ export function useSimulationEditor({
       if (action === "chat" || action === "abort")
         update({ draft: "", answers: {} });
       if (action === "abort") update({ chatId: undefined });
+      if (action === "patch") update({ patches: [], rename: "" });
       await Promise.all([refresh(), onRefresh()]);
     } catch (e) {
       update({ error: e instanceof Error ? e.message : "Request failed" });
@@ -123,13 +153,35 @@ export function useSimulationEditor({
       update({ busy: false });
     }
   }
-  function textEdited(before: string, after: string) {
+  function stage(patch: SimulationPatch) {
     update({
-      draft: `${state.draft}${state.draft ? "\n" : ""}Replace text ${JSON.stringify(before)} with ${JSON.stringify(after)}.`,
+      patches: [...state.patches, { id: crypto.randomUUID(), patch }],
+      error: "",
     });
   }
-  function selectVersion(selected: number) {
-    update({ selected, chatId: undefined, answers: {}, draft: "", rename: "" });
+  function unstage(id: string) {
+    update({ patches: state.patches.filter((staged) => staged.id !== id) });
+  }
+  /** Hand the staged edits to the chat instead, for review alongside prose. */
+  function stageToDraft() {
+    const lines = state.patches.map((staged) =>
+      describeSimulationPatch(staged.patch, state.formulas),
+    );
+    update({
+      draft: [state.draft, ...lines].filter(Boolean).join("\n"),
+      patches: [],
+    });
+  }
+  function selectVersion(next: number) {
+    // Staged patches address formulas and text in one specific version, so they
+    // cannot follow the teacher to another branch; the prose draft can.
+    update({
+      selected: next,
+      chatId: undefined,
+      answers: {},
+      rename: "",
+      patches: [],
+    });
   }
   return {
     ...state,
@@ -138,7 +190,11 @@ export function useSimulationEditor({
     turns,
     current: state.versions.find((v) => v.number === state.selected),
     act,
-    textEdited,
+    stage,
+    unstage,
+    stageToDraft,
+    describePatch: (patch: SimulationPatch) =>
+      describeSimulationPatch(patch, state.formulas),
     selectVersion,
     update,
   };

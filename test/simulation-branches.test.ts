@@ -1,12 +1,10 @@
 import { beforeEach, expect, it, vi } from "vitest";
 vi.mock("@/lib/ai-provider", () => ({
-  resolveProvider: vi
-    .fn()
-    .mockResolvedValue({
-      providerType: "local",
-      baseUrl: "http://local",
-      model: "test",
-    }),
+  resolveProvider: vi.fn().mockResolvedValue({
+    providerType: "local",
+    baseUrl: "http://local",
+    model: "test",
+  }),
   createOpenAIClient: vi.fn().mockResolvedValue({}),
   thinkingParams: () => ({}),
 }));

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   extractSimulationLatexMarkers,
+  locateSimulationLatexMarkers,
   renderSimulationLatex,
   validateSimulationLatex,
 } from "./simulation-math";
@@ -55,5 +56,27 @@ describe("simulation LaTeX rendering", () => {
         '<span class="sim-latex" data-display="inline">\\notARealCommand{&lt;x&gt;}</span>',
       ),
     ).toContain('<span class="sim-formula-error">');
+  });
+
+  it("keeps the LaTeX source on each formula when annotating a staff preview", () => {
+    const doc =
+      '<span class="sim-latex" data-display="block">F_s = -kx</span>' +
+      '<span class="sim-latex" data-display="inline">v &lt; c</span>';
+    const plain = renderSimulationLatex(doc);
+    expect(plain).not.toContain("data-sim-latex");
+
+    const annotated = renderSimulationLatex(doc, { annotate: true });
+    // The index must line up with locateSimulationLatexMarkers, which is what
+    // the equation editor addresses formulas by.
+    expect(annotated).toContain(
+      '<span class="sim-formula" data-sim-index="0" data-sim-display="block" data-sim-latex="F_s = -kx">',
+    );
+    expect(annotated).toContain('data-sim-index="1"');
+    // The attribute round-trips an encoded source without re-opening the tag.
+    expect(annotated).toContain('data-sim-latex="v &lt; c"');
+    expect(locateSimulationLatexMarkers(doc).map((m) => m.source)).toEqual([
+      "F_s = -kx",
+      "v < c",
+    ]);
   });
 });
