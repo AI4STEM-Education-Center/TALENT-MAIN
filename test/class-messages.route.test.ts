@@ -45,7 +45,9 @@ describe("POST /api/classes/:id/messages recipient targeting", () => {
     const cls = await createClass(teacher.id);
     const first = await enroll(cls.id);
     const second = await enroll(cls.id);
-    mockAuth.mockResolvedValue({ user: { id: teacherUser.id, role: "TEACHER" } } as never);
+    mockAuth.mockResolvedValue({
+      user: { id: teacherUser.id, role: "TEACHER" },
+    } as never);
 
     const response = await POST(messageRequest([first.user.id]), {
       params: Promise.resolve({ id: cls.id }),
@@ -54,10 +56,18 @@ describe("POST /api/classes/:id/messages recipient targeting", () => {
     expect(response.status).toBe(201);
     expect((await response.json()).inApp.count).toBe(1);
     const notifications = await prisma.notification.findMany();
-    expect(notifications.map((notification) => notification.userId)).toEqual([first.user.id]);
-    expect(notifications.some((notification) => notification.userId === second.user.id)).toBe(false);
+    expect(notifications.map((notification) => notification.userId)).toEqual([
+      first.user.id,
+    ]);
     expect(
-      (await prisma.messageEmailDelivery.findMany()).map((delivery) => delivery.userId)
+      notifications.some(
+        (notification) => notification.userId === second.user.id,
+      ),
+    ).toBe(false);
+    expect(
+      (await prisma.messageEmailDelivery.findMany()).map(
+        (delivery) => delivery.userId,
+      ),
     ).toEqual([first.user.id]);
   });
 
@@ -67,14 +77,21 @@ describe("POST /api/classes/:id/messages recipient targeting", () => {
     const first = await enroll(cls.id);
     const second = await enroll(cls.id);
     const third = await enroll(cls.id);
-    mockAuth.mockResolvedValue({ user: { id: teacherUser.id, role: "TEACHER" } } as never);
+    mockAuth.mockResolvedValue({
+      user: { id: teacherUser.id, role: "TEACHER" },
+    } as never);
 
-    const response = await POST(messageRequest([first.user.id, third.user.id]), {
-      params: Promise.resolve({ id: cls.id }),
-    });
+    const response = await POST(
+      messageRequest([first.user.id, third.user.id]),
+      {
+        params: Promise.resolve({ id: cls.id }),
+      },
+    );
 
     expect(response.status).toBe(201);
-    const recipientIds = (await prisma.notification.findMany()).map((notification) => notification.userId).sort();
+    const recipientIds = (await prisma.notification.findMany())
+      .map((notification) => notification.userId)
+      .sort();
     expect(recipientIds).toEqual([first.user.id, third.user.id].sort());
     expect(recipientIds).not.toContain(second.user.id);
   });
@@ -84,14 +101,18 @@ describe("POST /api/classes/:id/messages recipient targeting", () => {
     const cls = await createClass(teacher.id);
     const first = await enroll(cls.id);
     const second = await enroll(cls.id);
-    mockAuth.mockResolvedValue({ user: { id: teacherUser.id, role: "TEACHER" } } as never);
+    mockAuth.mockResolvedValue({
+      user: { id: teacherUser.id, role: "TEACHER" },
+    } as never);
 
     const response = await POST(messageRequest(), {
       params: Promise.resolve({ id: cls.id }),
     });
 
     expect(response.status).toBe(201);
-    const recipientIds = (await prisma.notification.findMany()).map((notification) => notification.userId).sort();
+    const recipientIds = (await prisma.notification.findMany())
+      .map((notification) => notification.userId)
+      .sort();
     expect(recipientIds).toEqual([first.user.id, second.user.id].sort());
   });
 
@@ -100,7 +121,9 @@ describe("POST /api/classes/:id/messages recipient targeting", () => {
     const cls = await createClass(teacher.id);
     await enroll(cls.id);
     const outsider = await createStudent();
-    mockAuth.mockResolvedValue({ user: { id: teacherUser.id, role: "TEACHER" } } as never);
+    mockAuth.mockResolvedValue({
+      user: { id: teacherUser.id, role: "TEACHER" },
+    } as never);
 
     const response = await POST(messageRequest([outsider.user.id]), {
       params: Promise.resolve({ id: cls.id }),

@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
     const page = Math.max(1, Number(params.get("page")) || 1);
     const pageSize = Math.min(
       PAGE_SIZE_MAX,
-      Math.max(1, Number(params.get("pageSize")) || PAGE_SIZE_DEFAULT)
+      Math.max(1, Number(params.get("pageSize")) || PAGE_SIZE_DEFAULT),
     );
     const category = params.get("category") || undefined;
     const severity = params.get("severity") || undefined;

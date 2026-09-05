@@ -11,13 +11,18 @@ export const runtime = "nodejs";
  * short-lived presigned download URL. The admin's browser never buffers the
  * zip itself; it only ever follows this link.
  */
-export async function GET(_req: Request, { params }: { params: Promise<{ jobId: string }> }) {
+export async function GET(
+  _req: Request,
+  { params }: { params: Promise<{ jobId: string }> },
+) {
   const [session, { jobId }] = await Promise.all([auth(), params]);
   if (!session?.user || session.user.role !== "ADMIN") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const job = await prisma.consentExportJob.findUnique({ where: { id: jobId } });
+  const job = await prisma.consentExportJob.findUnique({
+    where: { id: jobId },
+  });
   if (!job) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   let downloadUrl: string | null = null;

@@ -27,7 +27,9 @@ type GateStatus = "checking" | "clear" | "needs-decision" | "submitted";
 export function ConsentGate() {
   const { data: session, status: sessionStatus } = useSession();
   const [status, setStatus] = useState<GateStatus>("checking");
-  const [activeForm, setActiveForm] = useState<ConsentFormActiveVersion | null>(null);
+  const [activeForm, setActiveForm] = useState<ConsentFormActiveVersion | null>(
+    null,
+  );
 
   const role = session?.user?.role;
 
@@ -40,16 +42,23 @@ export function ConsentGate() {
 
     let cancelled = false;
     fetch("/api/consent")
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error("status check failed"))))
-      .then((data: { needsDecision: boolean; activeForm: ConsentFormActiveVersion | null }) => {
-        if (cancelled) return;
-        if (data.needsDecision && data.activeForm) {
-          setActiveForm(data.activeForm);
-          setStatus("needs-decision");
-        } else {
-          setStatus("clear");
-        }
-      })
+      .then((res) =>
+        res.ok ? res.json() : Promise.reject(new Error("status check failed")),
+      )
+      .then(
+        (data: {
+          needsDecision: boolean;
+          activeForm: ConsentFormActiveVersion | null;
+        }) => {
+          if (cancelled) return;
+          if (data.needsDecision && data.activeForm) {
+            setActiveForm(data.activeForm);
+            setStatus("needs-decision");
+          } else {
+            setStatus("clear");
+          }
+        },
+      )
       .catch(() => {
         // Fail OPEN on a transient network error rather than locking a
         // student out of their whole dashboard over a blip — proxy.ts's
@@ -61,7 +70,11 @@ export function ConsentGate() {
     };
   }, [sessionStatus, role]);
 
-  if (status !== "needs-decision" || !activeForm || (role !== "STUDENT" && role !== "TEACHER")) {
+  if (
+    status !== "needs-decision" ||
+    !activeForm ||
+    (role !== "STUDENT" && role !== "TEACHER")
+  ) {
     return null;
   }
 

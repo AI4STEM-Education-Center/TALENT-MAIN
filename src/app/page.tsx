@@ -1,12 +1,34 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { BookOpen, LineChart, Sparkles } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
+import { Button } from "@/components/ui/button";
 
 export const metadata: Metadata = {
   title: "Adaptive Learning - Guided science education for every student",
-  description: "An adaptive learning platform providing personalized science education with AI-driven insights for teachers and students.",
+  description:
+    "An adaptive learning platform providing personalized science education with AI-driven insights for teachers and students.",
 };
+
+/** What the platform actually does, in the order a visitor cares about it. */
+const FEATURES = [
+  {
+    icon: BookOpen,
+    title: "Quizzes that adapt",
+    body: "Each attempt is marked against the concepts behind the questions, not just the answers.",
+  },
+  {
+    icon: Sparkles,
+    title: "Feedback that explains",
+    body: "Every result comes back with the reasoning, the pages to reread, and a simulation to try.",
+  },
+  {
+    icon: LineChart,
+    title: "Class-level signal",
+    body: "Teachers see the distribution and the per-question weak spots, not a single average.",
+  },
+];
 
 export default async function HomePage() {
   const session = await auth();
@@ -18,40 +40,56 @@ export default async function HomePage() {
   }
 
   return (
-    <main className="min-h-screen bg-linear-to-br from-slate-900 via-blue-950 to-slate-900 flex items-center justify-center px-4">
-      <div className="max-w-2xl w-full text-center space-y-8">
-        <div className="space-y-4">
-          <div className="inline-flex items-center justify-center size-20 rounded-2xl bg-blue-500/20 border border-blue-400/30 mb-4">
-            <svg className="size-10 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.966 8.966 0 00-6 2.292m0-14.25v14.25" />
-            </svg>
-          </div>
-          <h1 className="text-4xl sm:text-5xl font-bold text-white">
-            Adaptive Learning temp temp
+    // Token-driven, so the landing page shares the app's surfaces instead of the
+    // hard-coded slate/blue gradient it used to carry — which matched nothing
+    // else, so signing in changed the palette under you.
+    <main className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-background px-4 py-16">
+      <div className="w-full max-w-3xl">
+        <div className="flex flex-col items-center text-center">
+          <span className="mb-6 flex size-16 items-center justify-center rounded-[var(--radius)] bg-primary/10">
+            <BookOpen className="size-8 text-primary" />
+          </span>
+
+          <h1 className="text-4xl font-semibold sm:text-5xl">
+            Adaptive Learning
           </h1>
-          <p className="text-xl text-slate-300">
-            Guided science education for every student
+          <p className="mt-4 max-w-xl text-lg text-muted-foreground">
+            Guided science education for every student — with the reasoning
+            shown, not just the score.
+          </p>
+
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <Button asChild size="lg">
+              <Link href="/login">Sign in</Link>
+            </Button>
+            <Button asChild size="lg" variant="outline">
+              <Link href="/register">Teacher sign up</Link>
+            </Button>
+          </div>
+
+          <p className="mt-6 text-sm text-muted-foreground">
+            Students: use the invitation link from your teacher to create an
+            account and join your class.
           </p>
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-4 justify-center">
-          <Link
-            href="/login"
-            className="px-8 py-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold transition-colors"
-          >
-            Sign In
-          </Link>
-          <Link
-            href="/register"
-            className="px-8 py-3 rounded-lg border border-slate-500 hover:border-slate-400 text-slate-200 hover:text-white font-semibold transition-colors"
-          >
-            Teacher Sign Up
-          </Link>
-        </div>
-
-        <p className="text-sm text-slate-500">
-          Students: use the invitation link from your teacher to create an account and join your class.
-        </p>
+        <ul className="mt-14 grid gap-4 sm:grid-cols-3">
+          {FEATURES.map((feature) => (
+            <li
+              key={feature.title}
+              className="surface-card p-[var(--pad-card)]"
+            >
+              <feature.icon
+                className="size-5 text-primary"
+                aria-hidden="true"
+              />
+              <h2 className="mt-3 text-base font-semibold">{feature.title}</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {feature.body}
+              </p>
+            </li>
+          ))}
+        </ul>
       </div>
     </main>
   );

@@ -29,7 +29,9 @@ describe("classifyForGc", () => {
     });
 
     it("keeps keys too short to carry a material id", () => {
-      expect(classifyForGc("learning-materials/t1/stray.pdf", refs())).toBe("keep");
+      expect(classifyForGc("learning-materials/t1/stray.pdf", refs())).toBe(
+        "keep",
+      );
     });
   });
 
@@ -40,7 +42,12 @@ describe("classifyForGc", () => {
     const optionCrop = "quiz-extractions/t1/quiz1/ext1/figures/option-0-1.png";
 
     it("keeps the whole prefix while the extraction is not committed", () => {
-      for (const status of ["PENDING_UPLOAD", "EXTRACTING", "AWAITING_REVIEW", "FAILED"]) {
+      for (const status of [
+        "PENDING_UPLOAD",
+        "EXTRACTING",
+        "AWAITING_REVIEW",
+        "FAILED",
+      ]) {
         const r = refs({ extractionStatusById: new Map([["ext1", status]]) });
         expect(classifyForGc(pdf, r)).toBe("keep");
         expect(classifyForGc(page, r)).toBe("keep");
@@ -68,8 +75,11 @@ describe("classifyForGc", () => {
     });
 
     it("works for pool-scoped keys", () => {
-      const poolFigure = "quiz-extractions/pool/quiz9/ext9/figures/figure-2.png";
-      expect(classifyForGc(poolFigure, refs({ figureKeys: new Set([poolFigure]) }))).toBe("keep");
+      const poolFigure =
+        "quiz-extractions/pool/quiz9/ext9/figures/figure-2.png";
+      expect(
+        classifyForGc(poolFigure, refs({ figureKeys: new Set([poolFigure]) })),
+      ).toBe("keep");
       expect(classifyForGc(poolFigure, refs())).toBe("delete");
     });
   });
@@ -92,15 +102,19 @@ describe("classifyForGc", () => {
 
     it("classifies keys inside the active namespace against full stored references", () => {
       expect(
-        classifyForGc(devKey, refs({ simulationKeys: new Set([devKey]) }), "dev/")
+        classifyForGc(
+          devKey,
+          refs({ simulationKeys: new Set([devKey]) }),
+          "dev/",
+        ),
       ).toBe("keep");
       expect(classifyForGc(devKey, refs(), "dev/")).toBe("delete");
     });
 
     it("never deletes an object outside the active namespace", () => {
-      expect(classifyForGc("simulations/t1/quiz1/q1/v1.html", refs(), "dev/")).toBe(
-        "keep"
-      );
+      expect(
+        classifyForGc("simulations/t1/quiz1/q1/v1.html", refs(), "dev/"),
+      ).toBe("keep");
     });
   });
 

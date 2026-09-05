@@ -76,10 +76,11 @@ export interface TeacherLimitOverrides {
 export async function getTeacherEmailQuota(
   teacherUserId: string,
   overrides: TeacherLimitOverrides,
-  now: Date = new Date()
+  now: Date = new Date(),
 ): Promise<QuotaResult> {
   const dailyLimit = overrides.emailDailyLimit ?? DEFAULT_EMAIL_DAILY_LIMIT;
-  const monthlyLimit = overrides.emailMonthlyLimit ?? DEFAULT_EMAIL_MONTHLY_LIMIT;
+  const monthlyLimit =
+    overrides.emailMonthlyLimit ?? DEFAULT_EMAIL_MONTHLY_LIMIT;
 
   const emailFilter = {
     senderUserId: teacherUserId,

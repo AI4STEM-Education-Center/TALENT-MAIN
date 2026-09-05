@@ -2,10 +2,17 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { CheckCircle2, FileUp, Loader2, MinusCircle, Pencil, XCircle } from "lucide-react";
+import {
+  CheckCircle2,
+  FileUp,
+  Loader2,
+  MinusCircle,
+  Pencil,
+  XCircle,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { rasterizePdfToPngBlobs } from "@/lib/pdf-rasterize-client";
+import { rasterizePdfToImageBlobs } from "@/lib/pdf-rasterize-client";
 
 const MAX_PAGES = 20;
 const POLL_MS = 2500;
@@ -16,7 +23,14 @@ type InitResponse = {
   pages: { pageNumber: number; presignedUrl: string; storageKey: string }[];
 };
 
-type ItemStatus = "queued" | "creating" | "uploading" | "extracting" | "ready" | "skipped" | "failed";
+type ItemStatus =
+  | "queued"
+  | "creating"
+  | "uploading"
+  | "extracting"
+  | "ready"
+  | "skipped"
+  | "failed";
 
 type BatchItem = {
   key: string;
@@ -44,7 +58,11 @@ function normalizeName(name: string): string {
   return name.trim().toLowerCase();
 }
 
-async function putBlob(url: string, contentType: string, body: Blob): Promise<void> {
+async function putBlob(
+  url: string,
+  contentType: string,
+  body: Blob,
+): Promise<void> {
   const res = await fetch(url, {
     method: "PUT",
     headers: { "Content-Type": contentType, "If-None-Match": "*" },
@@ -80,7 +98,9 @@ export function PdfBatchUpload({
   const [running, setRunning] = useState(false);
 
   const mounted = useRef(true);
-  const pollTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const pollTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(
+    new Map(),
+  );
 
   useEffect(() => {
     mounted.current = true;
@@ -94,7 +114,9 @@ export function PdfBatchUpload({
 
   const updateItem = useCallback((key: string, patch: Partial<BatchItem>) => {
     if (!mounted.current) return;
-    setItems((prev) => prev.map((it) => (it.key === key ? { ...it, ...patch } : it)));
+    setItems((prev) =>
+      prev.map((it) => (it.key === key ? { ...it, ...patch } : it)),
+    );
   }, []);
 
   // Poll one extraction until it leaves EXTRACTING. Ready/failed both keep the
@@ -103,15 +125,29 @@ export function PdfBatchUpload({
     (key: string, quizId: string, extractionId: string) => {
       const tick = async () => {
         try {
-          const res = await fetch(`/api/quizzes/${quizId}/pdf-extractions/${extractionId}`);
+          const res = await fetch(
+            `/api/quizzes/${quizId}/pdf-extractions/${extractionId}`,
+          );
           if (!res.ok) throw new Error("Failed to load extraction status");
-          const data: { status: string; errorMessage: string | null; questions?: unknown[] } = await res.json();
+          const data: {
+            status: string;
+            errorMessage: string | null;
+            questions?: unknown[];
+          } = await res.json();
           if (!mounted.current) return;
           if (data.status === "AWAITING_REVIEW") {
             const count = data.questions?.length ?? 0;
-            updateItem(key, { status: "ready", note: `${count} question${count === 1 ? "" : "s"} extracted — review and commit.` });
+            updateItem(key, {
+              status: "ready",
+              note: `${count} question${count === 1 ? "" : "s"} extracted — review and commit.`,
+            });
           } else if (data.status === "FAILED") {
-            updateItem(key, { status: "failed", note: data.errorMessage || "Extraction failed. Open the quiz to retry." });
+            updateItem(key, {
+              status: "failed",
+              note:
+                data.errorMessage ||
+                "Extraction failed. Open the quiz to retry.",
+            });
           } else if (data.status === "COMMITTED") {
             updateItem(key, { status: "ready", note: "Questions committed." });
           } else {
@@ -121,20 +157,28 @@ export function PdfBatchUpload({
           if (!mounted.current) return;
           updateItem(key, {
             status: "failed",
-            note: err instanceof Error ? `${err.message} Open the quiz to check on it.` : "Open the quiz to check on it.",
+            note:
+              err instanceof Error
+                ? `${err.message} Open the quiz to check on it.`
+                : "Open the quiz to check on it.",
           });
         }
       };
       tick();
     },
-    [updateItem]
+    [updateItem],
   );
 
   // Create the quiz (server-side name dedupe), upload the PDF + page rasters,
   // then hand off to extraction polling. A failure before extraction is
   // enqueued rolls the shell quiz back so re-running the batch isn't blocked
   // by the dedupe check.
-  async function processFile(key: string, quizName: string, targetTopicId: string, file: File) {
+  async function processFile(
+    key: string,
+    quizName: string,
+    targetTopicId: string,
+    file: File,
+  ) {
     updateItem(key, { status: "creating", note: undefined });
     let quizId: string | null = null;
     let extractionId: string | null = null;
@@ -142,19 +186,31 @@ export function PdfBatchUpload({
       const createRes = await fetch("/api/quizzes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: quizName, topicId: targetTopicId, dedupeByName: true }),
+        body: JSON.stringify({
+          name: quizName,
+          topicId: targetTopicId,
+          dedupeByName: true,
+        }),
       });
       const created = await createRes.json();
       if (createRes.status === 409 && created.duplicate) {
-        updateItem(key, { status: "skipped", note: "A quiz with this name already exists under the topic." });
+        updateItem(key, {
+          status: "skipped",
+          note: "A quiz with this name already exists under the topic.",
+        });
         return;
       }
-      if (!createRes.ok) throw new Error(created.error || "Failed to create quiz");
+      if (!createRes.ok)
+        throw new Error(created.error || "Failed to create quiz");
       quizId = created.id as string;
       onQuizCreated(created as CreatedPoolQuiz);
-      updateItem(key, { quizId: created.id, status: "uploading", note: "Rendering pages…" });
+      updateItem(key, {
+        quizId: created.id,
+        status: "uploading",
+        note: "Rendering pages…",
+      });
 
-      const pageBlobs = await rasterizePdfToPngBlobs(file, MAX_PAGES);
+      const pageBlobs = await rasterizePdfToImageBlobs(file, MAX_PAGES);
 
       updateItem(key, { note: "Requesting upload URLs…" });
       const initRes = await fetch(`/api/quizzes/${quizId}/pdf-extractions`, {
@@ -163,10 +219,17 @@ export function PdfBatchUpload({
         body: JSON.stringify({
           originalName: file.name,
           sizeBytes: file.size,
-          pages: pageBlobs.map((p) => ({ pageNumber: p.pageNumber, sizeBytes: p.sizeBytes })),
+          pages: pageBlobs.map((p) => ({
+            pageNumber: p.pageNumber,
+            sizeBytes: p.sizeBytes,
+            contentType: p.mimeType,
+          })),
         }),
       });
-      if (!initRes.ok) throw new Error((await initRes.json()).error || "Failed to start extraction");
+      if (!initRes.ok)
+        throw new Error(
+          (await initRes.json()).error || "Failed to start extraction",
+        );
       const init: InitResponse = await initRes.json();
       extractionId = init.id;
 
@@ -175,19 +238,32 @@ export function PdfBatchUpload({
 
       const byPage = new Map(pageBlobs.map((p) => [p.pageNumber, p]));
       for (const page of init.pages) {
-        updateItem(key, { note: `Uploading page ${page.pageNumber}/${init.pages.length}…` });
+        updateItem(key, {
+          note: `Uploading page ${page.pageNumber}/${init.pages.length}…`,
+        });
         const blob = byPage.get(page.pageNumber);
         if (!blob) throw new Error(`Missing rendered page ${page.pageNumber}`);
-        await putBlob(page.presignedUrl, "image/png", blob.blob);
+        await putBlob(page.presignedUrl, blob.mimeType, blob.blob);
       }
 
       updateItem(key, { note: "Finalizing…" });
-      const completeRes = await fetch(`/api/quizzes/${quizId}/pdf-extractions/${init.id}/complete`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pages: init.pages.map((p) => ({ pageNumber: p.pageNumber, storageKey: p.storageKey })) }),
-      });
-      if (!completeRes.ok) throw new Error((await completeRes.json()).error || "Failed to finalize upload");
+      const completeRes = await fetch(
+        `/api/quizzes/${quizId}/pdf-extractions/${init.id}/complete`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pages: init.pages.map((p) => ({
+              pageNumber: p.pageNumber,
+              storageKey: p.storageKey,
+            })),
+          }),
+        },
+      );
+      if (!completeRes.ok)
+        throw new Error(
+          (await completeRes.json()).error || "Failed to finalize upload",
+        );
 
       updateItem(key, { status: "extracting", note: undefined });
       pollExtraction(key, quizId, init.id);
@@ -196,9 +272,14 @@ export function PdfBatchUpload({
         // Discard the extraction first — its DELETE route also cleans up the
         // S3 objects, which a bare quiz delete (DB cascade) would orphan.
         if (extractionId) {
-          await fetch(`/api/quizzes/${quizId}/pdf-extractions/${extractionId}`, { method: "DELETE" }).catch(() => null);
+          await fetch(
+            `/api/quizzes/${quizId}/pdf-extractions/${extractionId}`,
+            { method: "DELETE" },
+          ).catch(() => null);
         }
-        const del = await fetch(`/api/quizzes/${quizId}`, { method: "DELETE" }).catch(() => null);
+        const del = await fetch(`/api/quizzes/${quizId}`, {
+          method: "DELETE",
+        }).catch(() => null);
         if (del?.ok) {
           onQuizRemoved(quizId);
           quizId = null;
@@ -222,7 +303,9 @@ export function PdfBatchUpload({
     // this topic, and against earlier files in the same selection. The create
     // call re-checks server-side, so a stale client list can't create dupes.
     const existingNames = new Set(
-      existingQuizzes.filter((q) => q.topicId === targetTopicId).map((q) => normalizeName(q.name))
+      existingQuizzes
+        .filter((q) => q.topicId === targetTopicId)
+        .map((q) => normalizeName(q.name)),
     );
     const inBatch = new Set<string>();
     const batchId = Date.now();
@@ -233,7 +316,9 @@ export function PdfBatchUpload({
         quizName: quizNameFromFile(file.name),
         status: "queued",
       };
-      const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+      const isPdf =
+        file.type === "application/pdf" ||
+        file.name.toLowerCase().endsWith(".pdf");
       const norm = normalizeName(item.quizName);
       if (!isPdf) {
         item.status = "failed";
@@ -268,13 +353,16 @@ export function PdfBatchUpload({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2"><FileUp className="size-5" /> Upload PDF Quizzes</CardTitle>
+        <CardTitle className="flex items-center gap-2">
+          <FileUp className="size-5" /> Upload PDF Quizzes
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-sm text-muted-foreground">
-          Pick a topic, then select one or more quiz PDFs (max {MAX_PAGES} pages each). Each PDF becomes a pool quiz
-          named after its file; files matching an existing quiz under the topic are skipped. Extracted questions wait
-          in each quiz for your review before they are committed.
+          Pick a topic, then select one or more quiz PDFs (max {MAX_PAGES} pages
+          each). Each PDF becomes a pool quiz named after its file; files
+          matching an existing quiz under the topic are skipped. Extracted
+          questions wait in each quiz for your review before they are committed.
         </p>
         <div className="flex flex-col sm:flex-row gap-3">
           <select
@@ -285,7 +373,11 @@ export function PdfBatchUpload({
             aria-label="Topic for uploaded quizzes"
           >
             <option value="">Select a topic…</option>
-            {topics.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            {topics.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
           </select>
           <div className="relative inline-block">
             {pickerEnabled && (
@@ -298,9 +390,16 @@ export function PdfBatchUpload({
                 onChange={handleFiles}
               />
             )}
-            <Button asChild className={pickerEnabled ? "" : "pointer-events-none opacity-50"}>
+            <Button
+              asChild
+              className={pickerEnabled ? "" : "pointer-events-none opacity-50"}
+            >
               <span>
-                {running ? <Loader2 className="size-4 animate-spin" /> : <FileUp className="size-4" />}
+                {running ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <FileUp className="size-4" />
+                )}
                 {running ? "Uploading…" : "Choose PDFs"}
               </span>
             </Button>
@@ -310,39 +409,65 @@ export function PdfBatchUpload({
         {items.length > 0 && (
           <div className="space-y-2">
             {items.map((item) => (
-              <div key={item.key} className="flex items-center justify-between gap-3 rounded-md border p-3">
+              <div
+                key={item.key}
+                className="flex items-center justify-between gap-3 rounded-md border p-3"
+              >
                 <div className="min-w-0 flex-1">
                   <p className="flex items-center gap-2 text-sm font-medium">
-                    {(item.status === "creating" || item.status === "uploading" || item.status === "extracting") && (
+                    {(item.status === "creating" ||
+                      item.status === "uploading" ||
+                      item.status === "extracting") && (
                       <Loader2 className="size-4 shrink-0 animate-spin text-primary" />
                     )}
-                    {item.status === "ready" && <CheckCircle2 className="size-4 shrink-0 text-green-600" />}
-                    {item.status === "skipped" && <MinusCircle className="size-4 shrink-0 text-muted-foreground" />}
-                    {item.status === "failed" && <XCircle className="size-4 shrink-0 text-destructive" />}
+                    {item.status === "ready" && (
+                      <CheckCircle2 className="size-4 shrink-0 text-green-600" />
+                    )}
+                    {item.status === "skipped" && (
+                      <MinusCircle className="size-4 shrink-0 text-muted-foreground" />
+                    )}
+                    {item.status === "failed" && (
+                      <XCircle className="size-4 shrink-0 text-destructive" />
+                    )}
                     <span className="truncate">{item.quizName}</span>
                   </p>
-                  <p className={`mt-0.5 text-xs ${item.status === "failed" ? "text-destructive" : "text-muted-foreground"}`}>
+                  <p
+                    className={`mt-0.5 text-xs ${item.status === "failed" ? "text-destructive" : "text-muted-foreground"}`}
+                  >
                     {item.status === "queued" && "Waiting…"}
                     {item.status === "creating" && "Creating quiz…"}
                     {item.status === "uploading" && (item.note ?? "Uploading…")}
                     {item.status === "extracting" && "Extracting questions…"}
-                    {(item.status === "ready" || item.status === "skipped" || item.status === "failed") && (item.note ?? "")}
+                    {(item.status === "ready" ||
+                      item.status === "skipped" ||
+                      item.status === "failed") &&
+                      (item.note ?? "")}
                   </p>
                 </div>
-                {item.quizId && (item.status === "ready" || item.status === "failed") && (
-                  <Button size="sm" variant="outline" className="shrink-0" asChild>
-                    <Link href={`/admin/quizzes/${item.quizId}`}>
-                      <Pencil className="size-3" /> {item.status === "ready" ? "Review" : "Open"}
-                    </Link>
-                  </Button>
-                )}
+                {item.quizId &&
+                  (item.status === "ready" || item.status === "failed") && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0"
+                      asChild
+                    >
+                      <Link href={`/admin/quizzes/${item.quizId}`}>
+                        <Pencil className="size-3" />{" "}
+                        {item.status === "ready" ? "Review" : "Open"}
+                      </Link>
+                    </Button>
+                  )}
               </div>
             ))}
             {!running && (
               <p className="text-xs text-muted-foreground">
-                {items.filter((i) => i.status === "ready").length} ready for review
-                {" · "}{items.filter((i) => i.status === "skipped").length} skipped
-                {" · "}{items.filter((i) => i.status === "failed").length} failed
+                {items.filter((i) => i.status === "ready").length} ready for
+                review
+                {" · "}
+                {items.filter((i) => i.status === "skipped").length} skipped
+                {" · "}
+                {items.filter((i) => i.status === "failed").length} failed
                 {items.some((i) => i.status === "extracting") &&
                   ` · ${items.filter((i) => i.status === "extracting").length} still extracting`}
               </p>

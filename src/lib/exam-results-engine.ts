@@ -110,16 +110,24 @@ type ExamResultRow = {
 function parseKeyConcepts(raw: string): string[] {
   try {
     const parsed = JSON.parse(raw || "[]");
-    return Array.isArray(parsed) ? parsed.filter((c): c is string => typeof c === "string") : [];
+    return Array.isArray(parsed)
+      ? parsed.filter((c): c is string => typeof c === "string")
+      : [];
   } catch {
     return [];
   }
 }
 
-function providerUsable(provider: ResolvedProvider | null): provider is ResolvedProvider {
+function providerUsable(
+  provider: ResolvedProvider | null,
+): provider is ResolvedProvider {
   if (!provider) return false;
   if (provider.providerType !== "local" && !provider.apiKey) return false;
-  if ((provider.providerType === "local" || provider.providerType === "cloudflare") && !provider.baseUrl) {
+  if (
+    (provider.providerType === "local" ||
+      provider.providerType === "cloudflare") &&
+    !provider.baseUrl
+  ) {
     return false;
   }
   return true;
@@ -135,14 +143,17 @@ async function runChatCompletionText(
   provider: ResolvedProvider,
   messages: ChatMessage[],
   maxTokens: number,
-  onContent?: (text: string, delta: string) => void | Promise<void>
+  onContent?: (text: string, delta: string) => void | Promise<void>,
 ): Promise<{ text: string; metrics: AiCallMetrics }> {
   const client = await createOpenAIClient(provider);
   const transport = transportFor(provider);
   const { isLocal } = transport;
   const serviceTier = provider.serviceTier;
   const tierActive =
-    !isLocal && (serviceTier === "auto" || serviceTier === "default" || serviceTier === "flex");
+    !isLocal &&
+    (serviceTier === "auto" ||
+      serviceTier === "default" ||
+      serviceTier === "flex");
 
   return streamChatCompletion(
     client,
@@ -155,7 +166,7 @@ async function runChatCompletionText(
       // Empty unless an admin pinned a thinking level on the assigned model.
       ...thinkingParams(provider),
     },
-    streamOptionsFor(transport, { onContent })
+    streamOptionsFor(transport, { onContent }),
   );
 }
 
@@ -178,13 +189,17 @@ async function runStructuredStep<T>(
   schemaName: string,
   schema: object,
   thinking: ThinkingParams,
-  transport: AiTransport
+  transport: AiTransport,
 ): Promise<{ value: T; metrics: AiCallMetrics }> {
   return streamJsonCompletion<T>(
     client,
     { model, messages: [{ role: "user", content: prompt }], ...thinking },
-    { name: schemaName, schema: schema as Record<string, unknown>, strict: true },
-    streamOptionsFor(transport)
+    {
+      name: schemaName,
+      schema: schema as Record<string, unknown>,
+      strict: true,
+    },
+    streamOptionsFor(transport),
   );
 }
 
@@ -203,8 +218,11 @@ async function selectPagesForMaterial(
   material: MaterialRow,
   materialReason: string,
   thinking: ThinkingParams,
-  transport: AiTransport
-): Promise<{ recommendation: StoredRecommendation | null; metrics: AiCallMetrics[] }> {
+  transport: AiTransport,
+): Promise<{
+  recommendation: StoredRecommendation | null;
+  metrics: AiCallMetrics[];
+}> {
   const metrics: AiCallMetrics[] = [];
 
   const teachingPages = material.pages.filter((p) => p.needed !== false);
@@ -217,25 +235,27 @@ async function selectPagesForMaterial(
     description: p.description ?? "",
   }));
 
-  const { value: pageSelection, metrics: m } = await runStructuredStep<PageSelection>(
-    client,
-    model,
-    buildPageSelectionPrompt(attempt, chosen.title, catalogPages),
-    "page_selection",
-    PAGE_SELECTION_SCHEMA,
-    thinking,
-    transport
-  );
+  const { value: pageSelection, metrics: m } =
+    await runStructuredStep<PageSelection>(
+      client,
+      model,
+      buildPageSelectionPrompt(attempt, chosen.title, catalogPages),
+      "page_selection",
+      PAGE_SELECTION_SCHEMA,
+      thinking,
+      transport,
+    );
   metrics.push(m);
 
   // The model decided no pages of this material are worth recommending (a soft
   // 0-page outcome): skip it entirely.
-  if (!pageSelection.has_relevant_pages) return { recommendation: null, metrics };
+  if (!pageSelection.has_relevant_pages)
+    return { recommendation: null, metrics };
 
   const range = clampPageRange(
     pageSelection.start_page,
     pageSelection.end_page,
-    usablePages.map((p) => p.pageNumber)
+    usablePages.map((p) => p.pageNumber),
   );
   if (!range) return { recommendation: null, metrics };
 
@@ -249,7 +269,10 @@ async function selectPagesForMaterial(
       materialTitle: chosen.title,
       pageRange: range,
       reason: pageSelection.reasoning?.trim() || materialReason,
-      pages: selectedPages.map((p) => ({ pageNumber: p.pageNumber, storageKey: p.storageKey })),
+      pages: selectedPages.map((p) => ({
+        pageNumber: p.pageNumber,
+        storageKey: p.storageKey,
+      })),
     },
     metrics,
   };
@@ -268,8 +291,11 @@ async function labelMisconceptions(
   model: string,
   thinking: ThinkingParams,
   transport: AiTransport,
-  snapshot: ReviewSnapshot
-): Promise<{ errorMisconceptions: StoredQuestionMisconceptions[]; metrics: AiCallMetrics[] }> {
+  snapshot: ReviewSnapshot,
+): Promise<{
+  errorMisconceptions: StoredQuestionMisconceptions[];
+  metrics: AiCallMetrics[];
+}> {
   const catalog = await getActiveMisconceptions();
   if (catalog.length === 0) {
     throw new Error("The active misconception catalog is empty.");
@@ -287,21 +313,26 @@ async function labelMisconceptions(
           {
             model,
             messages: [
-              { role: "user", content: buildMisconceptionLabelingPrompt([error], catalog) },
+              {
+                role: "user",
+                content: buildMisconceptionLabelingPrompt([error], catalog),
+              },
             ],
             ...thinking,
           },
-          { name: "misconception_labeling", schema: buildMisconceptionSchema(ids), strict: true },
-          streamOptionsFor(transport)
-        )
+          {
+            name: "misconception_labeling",
+            schema: buildMisconceptionSchema(ids),
+            strict: true,
+          },
+          streamOptionsFor(transport),
+        ),
       );
-      const misconceptions: StoredMisconception[] = resolveLabeledMisconceptions(
-        value.misconception_ids ?? [],
-        catalog
-      );
+      const misconceptions: StoredMisconception[] =
+        resolveLabeledMisconceptions(value.misconception_ids ?? [], catalog);
       if (misconceptions.length === 0) {
         throw new Error(
-          `No valid misconception was returned for question index ${error.questionIndex}.`
+          `No valid misconception was returned for question index ${error.questionIndex}.`,
         );
       }
       return {
@@ -312,7 +343,7 @@ async function labelMisconceptions(
         },
         metrics,
       };
-    })
+    }),
   );
   return {
     errorMisconceptions: labeled.map((result) => result.label),
@@ -331,7 +362,7 @@ async function labelMisconceptions(
  * the same signal the material recommendations already give.
  */
 async function collectSimulationRecommendations(
-  snapshot: ReviewSnapshot
+  snapshot: ReviewSnapshot,
 ): Promise<StoredSimulationRecommendation[]> {
   const incorrectIds = snapshot.questions
     .filter((q) => !q.isCorrect && typeof q.questionId === "string")
@@ -339,7 +370,11 @@ async function collectSimulationRecommendations(
   if (incorrectIds.length === 0) return [];
 
   const sims = await prisma.questionSimulation.findMany({
-    where: { questionId: { in: incorrectIds }, status: "READY", storageKey: { not: null } },
+    where: {
+      questionId: { in: incorrectIds },
+      status: "READY",
+      storageKey: { not: null },
+    },
   });
   if (sims.length === 0) return [];
 
@@ -366,9 +401,7 @@ async function collectSimulationRecommendations(
 }
 
 /** Generate the markdown summary from the durable review snapshot. */
-async function generateSummary(
-  examResult: ExamResultRow
-): Promise<{
+async function generateSummary(examResult: ExamResultRow): Promise<{
   summary: string;
   metrics: AiCallMetrics;
   providerType: string;
@@ -377,7 +410,9 @@ async function generateSummary(
 }> {
   const provider = await resolveProvider("description_generation");
   if (!providerUsable(provider)) {
-    throw new Error("No usable AI provider configured for description_generation");
+    throw new Error(
+      "No usable AI provider configured for description_generation",
+    );
   }
 
   const snapshot = parseReviewSnapshot(examResult.reviewSnapshot);
@@ -406,7 +441,10 @@ async function generateSummary(
     } catch (err) {
       // A missed partial checkpoint is non-fatal; the final READY write below
       // remains authoritative.
-      console.warn(`[ExamResults] Could not checkpoint summary ${examResult.id}:`, err);
+      console.warn(
+        `[ExamResults] Could not checkpoint summary ${examResult.id}:`,
+        err,
+      );
     }
   };
 
@@ -414,7 +452,7 @@ async function generateSummary(
     provider,
     [{ role: "user", content: buildQuizReviewPrompt(attempt) }],
     SUMMARY_MAX_TOKENS,
-    checkpoint
+    checkpoint,
   );
   const trimmed = text.trim();
   if (!trimmed) throw new Error("Model returned an empty summary");
@@ -430,9 +468,7 @@ async function generateSummary(
  * rather than an error. None of the generated reasons reveal which questions
  * were wrong (enforced by the prompts in recommendation.ts).
  */
-async function generateRecommendations(
-  examResult: ExamResultRow
-): Promise<{
+async function generateRecommendations(examResult: ExamResultRow): Promise<{
   stored: StoredRecommendations;
   metrics: AiCallMetrics | null;
   providerType: string | null;
@@ -485,13 +521,14 @@ async function generateRecommendations(
   // them whenever there's a usable provider and incorrect answers, even when
   // no materials end up being recommended below (or S3 isn't configured at
   // all). A labeling failure never blocks the material recommendations.
-  const { errorMisconceptions, metrics: labelMetrics } = await labelMisconceptions(
-    client,
-    provider.model,
-    thinking,
-    transport,
-    snapshot
-  );
+  const { errorMisconceptions, metrics: labelMetrics } =
+    await labelMisconceptions(
+      client,
+      provider.model,
+      thinking,
+      transport,
+      snapshot,
+    );
   allMetrics.push(...labelMetrics);
 
   let items: StoredRecommendation[] = [];
@@ -517,7 +554,13 @@ async function generateRecommendations(
             batchDescription: true,
             batchKeyConcepts: true,
             pages: {
-              select: { pageNumber: true, storageKey: true, needed: true, keyConcept: true, description: true },
+              select: {
+                pageNumber: true,
+                storageKey: true,
+                needed: true,
+                keyConcept: true,
+                description: true,
+              },
               orderBy: { pageNumber: "asc" },
             },
           },
@@ -543,18 +586,22 @@ async function generateRecommendations(
       }));
 
       // Step 1 — one call selecting at most 3 materials across the whole attempt.
-      const { value: materialSelection, metrics: mSel } = await runStructuredStep<MaterialSelection>(
-        client,
-        provider.model,
-        buildMaterialSelectionPrompt(holistic, catalog),
-        "material_selection",
-        MATERIAL_SELECTION_SCHEMA,
-        thinking,
-        transport
-      );
+      const { value: materialSelection, metrics: mSel } =
+        await runStructuredStep<MaterialSelection>(
+          client,
+          provider.model,
+          buildMaterialSelectionPrompt(holistic, catalog),
+          "material_selection",
+          MATERIAL_SELECTION_SCHEMA,
+          thinking,
+          transport,
+        );
       allMetrics.push(mSel);
 
-      const { kept, truncated: t } = dedupeSelectedMaterials(materialSelection.materials ?? [], catalog);
+      const { kept, truncated: t } = dedupeSelectedMaterials(
+        materialSelection.materials ?? [],
+        catalog,
+      );
       truncated = t;
 
       // Step 2 — one page-selection call per chosen material (skipped when the
@@ -563,7 +610,8 @@ async function generateRecommendations(
         kept.map(async (sel: SelectedMaterial) => {
           const chosen = resolveSelectedMaterial(sel.material_index, catalog);
           const material = chosen ? materials[chosen.index - 1] : undefined;
-          if (!chosen || !material) return { recommendation: null, metrics: [] as AiCallMetrics[] };
+          if (!chosen || !material)
+            return { recommendation: null, metrics: [] as AiCallMetrics[] };
           try {
             return await selectPagesForMaterial(
               client,
@@ -573,16 +621,21 @@ async function generateRecommendations(
               material,
               sel.reasoning,
               thinking,
-              transport
+              transport,
             );
           } catch (err) {
-            console.error("[ExamResults] Failed to build a recommendation:", err);
+            console.error(
+              "[ExamResults] Failed to build a recommendation:",
+              err,
+            );
             return { recommendation: null, metrics: [] as AiCallMetrics[] };
           }
-        })
+        }),
       );
 
-      items = results.map((r) => r.recommendation).filter((r): r is StoredRecommendation => r !== null);
+      items = results
+        .map((r) => r.recommendation)
+        .filter((r): r is StoredRecommendation => r !== null);
       allMetrics.push(...results.flatMap((r) => r.metrics));
     }
   }
@@ -625,13 +678,24 @@ export async function generateExamResult(examResultId: string): Promise<void> {
   // else's, it just never gets an AI summary, study recommendations, or
   // misconception labels generated for it. "SKIPPED_NO_CONSENT" is distinct
   // from "FAILED" so it's never mistaken for a bug or retried.
-  if (!(await hasResearchConsent(examResult.studentId))) {
+  //
+  // ExamResult.studentId is a Student.id (see src/app/api/quiz/route.ts), while
+  // consent records are keyed by User.id — resolve across before asking, or
+  // every attempt reads as non-consenting and no summary is ever generated.
+  const student = await prisma.student.findUnique({
+    where: { id: examResult.studentId },
+    select: { userId: true },
+  });
+  if (!student || !(await hasResearchConsent(student.userId))) {
     await prisma.examResult.updateMany({
       where: { id: examResult.id, summaryStatus: { not: RESULT_STATUS.READY } },
       data: { summaryStatus: "SKIPPED_NO_CONSENT" },
     });
     await prisma.examResult.updateMany({
-      where: { id: examResult.id, recommendationsStatus: { not: RESULT_STATUS.READY } },
+      where: {
+        id: examResult.id,
+        recommendationsStatus: { not: RESULT_STATUS.READY },
+      },
       data: { recommendationsStatus: "SKIPPED_NO_CONSENT" },
     });
     return;
@@ -676,7 +740,10 @@ export async function generateExamResult(examResultId: string): Promise<void> {
         },
       });
     } catch (err) {
-      console.error(`[ExamResults] Summary generation failed for ${examResult.id}:`, err);
+      console.error(
+        `[ExamResults] Summary generation failed for ${examResult.id}:`,
+        err,
+      );
       await prisma.examResult.update({
         where: { id: examResult.id },
         data: { summaryStatus: RESULT_STATUS.FAILED },
@@ -730,7 +797,10 @@ export async function generateExamResult(examResultId: string): Promise<void> {
         },
       });
     } catch (err) {
-      console.error(`[ExamResults] Recommendation generation failed for ${examResult.id}:`, err);
+      console.error(
+        `[ExamResults] Recommendation generation failed for ${examResult.id}:`,
+        err,
+      );
       await prisma.examResult.update({
         where: { id: examResult.id },
         data: { recommendationsStatus: RESULT_STATUS.FAILED },
@@ -741,7 +811,10 @@ export async function generateExamResult(examResultId: string): Promise<void> {
   // The sections use independent provider assignments and persist independent
   // status/content, so run them together. A slow recommendation workflow no
   // longer delays the first summary token (and vice versa).
-  await Promise.all([generateSummarySection(), generateRecommendationsSection()]);
+  await Promise.all([
+    generateSummarySection(),
+    generateRecommendationsSection(),
+  ]);
 }
 
 /**
@@ -751,14 +824,16 @@ export async function generateExamResult(examResultId: string): Promise<void> {
  * unavailable instead of mounting an iframe that would 404.
  */
 async function annotateSimulationAvailability(
-  simulations: StoredSimulationRecommendation[]
+  simulations: StoredSimulationRecommendation[],
 ): Promise<SimulationRecommendationView[]> {
   const rows = await prisma.questionSimulation.findMany({
     where: { id: { in: simulations.map((s) => s.simulationId) } },
     select: { id: true, storageKey: true, version: true },
   });
   const liveVersions = new Map(
-    rows.filter((row) => row.storageKey !== null).map((row) => [row.id, row.version])
+    rows
+      .filter((row) => row.storageKey !== null)
+      .map((row) => [row.id, row.version]),
   );
   return simulations.map((simulation) => {
     const version = liveVersions.get(simulation.simulationId);
@@ -773,7 +848,7 @@ async function annotateSimulationAvailability(
  * Returns empty when there is nothing stored or S3 is not configured.
  */
 export async function presignStoredRecommendations(
-  raw: string | null
+  raw: string | null,
 ): Promise<PresignedRecommendations> {
   const stored = parseStoredRecommendations(raw);
   // Misconception labels carry no images to presign, so pass them through
@@ -801,7 +876,7 @@ export async function presignStoredRecommendations(
   }
 
   const mapped = await mapPresignedRecommendations(stored, (key) =>
-    signObjectReadUrl(bucket, key)
+    signObjectReadUrl(bucket, key),
   );
   // mapPresignedRecommendations operates on the durable snapshot. Override its
   // raw simulation refs with the live availability/version data resolved above.
@@ -814,7 +889,7 @@ export async function presignStoredRecommendations(
  * figures nor selected image responses retain their raw storage keys.
  */
 export async function presignStudentMistakes(
-  mistakes: StudentMistakeSource[]
+  mistakes: StudentMistakeSource[],
 ): Promise<StudentMistakeView[]> {
   return Promise.all(
     mistakes.map(async (mistake) => {
@@ -841,7 +916,7 @@ export async function presignStudentMistakes(
             imageBucket: null,
           }),
           imageAlt: choice.imageAlt,
-        }))
+        })),
       );
 
       return {
@@ -851,6 +926,6 @@ export async function presignStudentMistakes(
         figureAlt: mistake.figureAlt,
         response: { kind: "choices", choices },
       };
-    })
+    }),
   );
 }

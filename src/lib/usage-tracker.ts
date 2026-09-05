@@ -31,7 +31,13 @@ const globalForUsage = globalThis as unknown as {
 };
 
 function newWindow(now: number): UsageWindow {
-  return { startedAt: now, requests: 0, apiRequests: 0, ips: new Set(), ipsOverflowed: false };
+  return {
+    startedAt: now,
+    requests: 0,
+    apiRequests: 0,
+    ips: new Set(),
+    ipsOverflowed: false,
+  };
 }
 
 export function trackRequest(ip: string, pathname: string): void {
@@ -56,7 +62,10 @@ export function trackRequest(ip: string, pathname: string): void {
 }
 
 function flushWindow(window: UsageWindow, endedAt: number): void {
-  const minutes = Math.max(1, Math.round((endedAt - window.startedAt) / 60_000));
+  const minutes = Math.max(
+    1,
+    Math.round((endedAt - window.startedAt) / 60_000),
+  );
   const ipCount = `${window.ips.size}${window.ipsOverflowed ? "+" : ""}`;
   void logSystemEvent({
     category: "USAGE",

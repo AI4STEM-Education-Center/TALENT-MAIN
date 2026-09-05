@@ -39,6 +39,9 @@ import {
 } from "lucide-react";
 import { formatAiMetrics } from "@/lib/ai-metrics";
 import { AssistantSettings } from "@/components/admin/AssistantSettings";
+import { GuardrailSettings } from "@/components/admin/GuardrailSettings";
+import { GuardrailFeedbackList } from "@/components/admin/GuardrailFeedbackList";
+import { errorMessage } from "@/lib/errors";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -133,12 +136,23 @@ const USE_CASE_LABELS: Record<string, string> = {
   description_generation: "Exam Summary Generation",
   recommendation: "Recommendation",
   quiz_extraction: "Quiz PDF Extraction",
+  simulation_chat: "Simulation Editing Chat",
   simulation_generation: "Question Simulation Generation",
   // The chat assistants take image input, so these two want a vision-capable
   // model. Their behaviour (skills, attachment kinds, limits) is configured in
   // the Chat Assistants section further down the page.
   student_assistant: "Student Chat Assistant",
   teacher_assistant: "Teacher Chat Assistant",
+  // Wants a moderation model (e.g. omni-moderation-latest), not a chat model.
+  // Free to call, and leaving it unassigned turns content moderation off.
+  moderation: "Content Moderation",
+  // The two LLM guardrail checks, assigned separately so they can be costed
+  // separately. Assign both to the SAME model and one call answers both
+  // questions; assign different models and each check makes its own call.
+  // Neither writes anything a user sees, so a small fast model usually wins.
+  // Leaving one unassigned turns that check off.
+  guardrail_jailbreak: "Guardrail — Jailbreak Check",
+  guardrail_offtopic: "Guardrail — Off-Topic Check",
 };
 
 const EMPTY_PROVIDER_FORM: ProviderForm = {
@@ -182,9 +196,12 @@ export default function AiConfigPage() {
 
   // Provider form state
   const [showProviderForm, setShowProviderForm] = useState(false);
-  const [providerForm, setProviderForm] = useState<ProviderForm>(EMPTY_PROVIDER_FORM);
+  const [providerForm, setProviderForm] =
+    useState<ProviderForm>(EMPTY_PROVIDER_FORM);
   const [providerSaving, setProviderSaving] = useState(false);
-  const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
+  const [editingProviderId, setEditingProviderId] = useState<string | null>(
+    null,
+  );
 
   // Expanded provider (for model management)
   const [expandedProvider, setExpandedProvider] = useState<string | null>(null);
@@ -202,7 +219,9 @@ export default function AiConfigPage() {
     available: string[];
     existing: Set<string>;
   } | null>(null);
-  const [selectedDiscover, setSelectedDiscover] = useState<Set<string>>(new Set());
+  const [selectedDiscover, setSelectedDiscover] = useState<Set<string>>(
+    new Set(),
+  );
   const [discoverAdding, setDiscoverAdding] = useState(false);
   // Synchronous re-entry guard for the bulk "add selected models" action.
   const addSelectedInFlight = useRef(false);
@@ -212,8 +231,13 @@ export default function AiConfigPage() {
     providerId: string;
     id: string;
   } | null>(null);
-  const [editModelForm, setEditModelForm] = useState<ModelForm>(EMPTY_MODEL_FORM);
+  const [editModelForm, setEditModelForm] =
+    useState<ModelForm>(EMPTY_MODEL_FORM);
   const [editModelSaving, setEditModelSaving] = useState(false);
+
+  // Bumped after assignments are saved, so the Guardrails panel re-reads which
+  // model each of its checks is running on rather than showing a stale one.
+  const [assignmentsSavedAt, setAssignmentsSavedAt] = useState(0);
 
   // Assignment state
   const [assignmentEdits, setAssignmentEdits] = useState<
@@ -234,8 +258,8 @@ export default function AiConfigPage() {
       if (!res.ok) throw new Error("Failed to load providers");
       const data = await res.json();
       setProviders(data.providers);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(errorMessage(err));
     }
   }, []);
 
@@ -245,8 +269,8 @@ export default function AiConfigPage() {
       if (!res.ok) throw new Error("Failed to load assignments");
       const data = await res.json();
       setAssignments(data.assignments);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(errorMessage(err));
     }
   }, []);
 
@@ -272,7 +296,10 @@ export default function AiConfigPage() {
       // The form holds the timeout in seconds; the API expects milliseconds (or
       // null to fall back to the server default).
       const trimmedTimeout = providerForm.timeoutSec.trim();
-      const timeoutMs = trimmedTimeout === "" ? null : Math.round(Number(trimmedTimeout) * 1000);
+      const timeoutMs =
+        trimmedTimeout === ""
+          ? null
+          : Math.round(Number(trimmedTimeout) * 1000);
 
       const res = await fetch(url, {
         method,
@@ -293,8 +320,8 @@ export default function AiConfigPage() {
       setEditingProviderId(null);
       setProviderForm(EMPTY_PROVIDER_FORM);
       await fetchProviders();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(errorMessage(err));
     } finally {
       setProviderSaving(false);
     }
@@ -323,11 +350,13 @@ export default function AiConfigPage() {
     });
     if (!ok) return;
     try {
-      const res = await fetch(`/api/admin/ai-providers/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/admin/ai-providers/${id}`, {
+        method: "DELETE",
+      });
       if (!res.ok) throw new Error("Failed to delete provider");
       await Promise.all([fetchProviders(), fetchAssignments()]);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(errorMessage(err));
     }
   };
 
@@ -340,8 +369,8 @@ export default function AiConfigPage() {
       });
       if (!res.ok) throw new Error("Failed to update provider");
       await fetchProviders();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(errorMessage(err));
     }
   };
 
@@ -364,14 +393,17 @@ export default function AiConfigPage() {
       setShowModelForm(null);
       setModelForm(EMPTY_MODEL_FORM);
       await fetchProviders();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(errorMessage(err));
     } finally {
       setModelSaving(false);
     }
   };
 
-  const handleDeleteModel = async (providerId: string, modelRecordId: string) => {
+  const handleDeleteModel = async (
+    providerId: string,
+    modelRecordId: string,
+  ) => {
     try {
       const res = await fetch(`/api/admin/ai-providers/${providerId}/models`, {
         method: "DELETE",
@@ -380,8 +412,8 @@ export default function AiConfigPage() {
       });
       if (!res.ok) throw new Error("Failed to delete model");
       await Promise.all([fetchProviders(), fetchAssignments()]);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(errorMessage(err));
     }
   };
 
@@ -391,7 +423,7 @@ export default function AiConfigPage() {
     try {
       const res = await fetch(
         `/api/admin/ai-providers/${providerId}/models/discover`,
-        { method: "POST" }
+        { method: "POST" },
       );
       const data = await res.json();
 
@@ -403,11 +435,11 @@ export default function AiConfigPage() {
         // Open a modal listing the discovered models; the admin chooses which to add.
         const provider = providers.find((p) => p.id === providerId);
         const existing = new Set<string>(
-          provider?.models.map((m) => m.modelId) || []
+          provider?.models.map((m) => m.modelId) || [],
         );
         // Pre-select models that aren't already added.
         const preselected = new Set<string>(
-          (data.models as string[]).filter((m) => !existing.has(m))
+          (data.models as string[]).filter((m) => !existing.has(m)),
         );
         setDiscoverModal({
           providerId,
@@ -419,8 +451,8 @@ export default function AiConfigPage() {
       } else {
         setError("No models were discovered from this endpoint.");
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(errorMessage(err));
     } finally {
       setDiscovering(null);
     }
@@ -455,7 +487,7 @@ export default function AiConfigPage() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ modelId, isDefault: false }),
-          }
+          },
         );
         // 409 means it already exists — safe to ignore.
         if (!res.ok && res.status !== 409) {
@@ -465,8 +497,8 @@ export default function AiConfigPage() {
       }
       await fetchProviders();
       closeDiscoverModal();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(errorMessage(err));
     } finally {
       addSelectedInFlight.current = false;
       setDiscoverAdding(false);
@@ -493,7 +525,7 @@ export default function AiConfigPage() {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: editingModel.id, ...editModelForm }),
-        }
+        },
       );
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -501,8 +533,8 @@ export default function AiConfigPage() {
       }
       setEditingModel(null);
       await Promise.all([fetchProviders(), fetchAssignments()]);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(errorMessage(err));
     } finally {
       setEditModelSaving(false);
     }
@@ -523,7 +555,7 @@ export default function AiConfigPage() {
   const handleAssignmentChange = (
     useCase: string,
     field: keyof AssignmentEdit,
-    value: string
+    value: string,
   ) => {
     setAssignmentEdits((prev) => ({
       ...prev,
@@ -567,8 +599,9 @@ export default function AiConfigPage() {
 
       setAssignmentEdits({});
       await fetchAssignments();
-    } catch (err: any) {
-      setError(err.message);
+      setAssignmentsSavedAt((n) => n + 1);
+    } catch (err: unknown) {
+      setError(errorMessage(err));
     } finally {
       setAssignmentSaving(false);
     }
@@ -626,12 +659,12 @@ export default function AiConfigPage() {
           loading: false,
         },
       }));
-    } catch (err: any) {
+    } catch (err: unknown) {
       setTestResults((prev) => ({
         ...prev,
         [useCase]: {
           success: false,
-          message: err.message,
+          message: errorMessage(err),
           loading: false,
         },
       }));
@@ -679,7 +712,8 @@ export default function AiConfigPage() {
         <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
           <AlertTriangle className="size-4 shrink-0" />
           <span>{error}</span>
-          <button type="button"
+          <button
+            type="button"
             aria-label="Dismiss error"
             onClick={() => setError("")}
             className="ml-auto text-red-500 hover:text-red-700"
@@ -700,7 +734,8 @@ export default function AiConfigPage() {
               Configure API endpoints, keys, and their available models.
             </p>
           </div>
-          <button type="button"
+          <button
+            type="button"
             onClick={() => {
               setProviderForm(EMPTY_PROVIDER_FORM);
               setEditingProviderId(null);
@@ -718,7 +753,12 @@ export default function AiConfigPage() {
             <CardContent className="pt-6">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label htmlFor="provider-name" className="block text-sm font-medium mb-1">Name</label>
+                  <label
+                    htmlFor="provider-name"
+                    className="block text-sm font-medium mb-1"
+                  >
+                    Name
+                  </label>
                   <input
                     id="provider-name"
                     type="text"
@@ -731,7 +771,13 @@ export default function AiConfigPage() {
                   />
                 </div>
                 <div>
-                  <label id="provider-type-label" htmlFor="provider-type" className="block text-sm font-medium mb-1">Type</label>
+                  <label
+                    id="provider-type-label"
+                    htmlFor="provider-type"
+                    className="block text-sm font-medium mb-1"
+                  >
+                    Type
+                  </label>
                   <Select
                     aria-labelledby="provider-type-label"
                     value={providerForm.providerType}
@@ -765,7 +811,10 @@ export default function AiConfigPage() {
                   </Select>
                 </div>
                 <div>
-                  <label htmlFor="provider-url" className="block text-sm font-medium mb-1">
+                  <label
+                    htmlFor="provider-url"
+                    className="block text-sm font-medium mb-1"
+                  >
                     Base URL{" "}
                     <span className="text-muted-foreground font-normal">
                       {providerForm.providerType === "openai"
@@ -778,7 +827,10 @@ export default function AiConfigPage() {
                     type="url"
                     value={providerForm.baseUrl}
                     onChange={(e) =>
-                      setProviderForm((f) => ({ ...f, baseUrl: e.target.value }))
+                      setProviderForm((f) => ({
+                        ...f,
+                        baseUrl: e.target.value,
+                      }))
                     }
                     placeholder={
                       providerForm.providerType === "local"
@@ -791,8 +843,13 @@ export default function AiConfigPage() {
                   />
                 </div>
                 <div>
-                  <label htmlFor="provider-key" className="block text-sm font-medium mb-1">
-                    {providerForm.providerType === "cloudflare" ? "CF_AIG_TOKEN" : "API Key"}{" "}
+                  <label
+                    htmlFor="provider-key"
+                    className="block text-sm font-medium mb-1"
+                  >
+                    {providerForm.providerType === "cloudflare"
+                      ? "CF_AIG_TOKEN"
+                      : "API Key"}{" "}
                     <span className="text-muted-foreground font-normal">
                       {providerForm.providerType === "cloudflare"
                         ? "(required — sent as Authorization: Bearer)"
@@ -818,16 +875,24 @@ export default function AiConfigPage() {
                 </div>
                 {providerForm.providerType === "cloudflare" && (
                   <div>
-                    <label htmlFor="provider-cf-byok" className="block text-sm font-medium mb-1">
+                    <label
+                      htmlFor="provider-cf-byok"
+                      className="block text-sm font-medium mb-1"
+                    >
                       cf-aig-byok-alias{" "}
-                      <span className="text-muted-foreground font-normal">(optional)</span>
+                      <span className="text-muted-foreground font-normal">
+                        (optional)
+                      </span>
                     </label>
                     <input
                       id="provider-cf-byok"
                       type="text"
                       value={providerForm.cfAigByokAlias}
                       onChange={(e) =>
-                        setProviderForm((f) => ({ ...f, cfAigByokAlias: e.target.value }))
+                        setProviderForm((f) => ({
+                          ...f,
+                          cfAigByokAlias: e.target.value,
+                        }))
                       }
                       placeholder="my-stored-key-alias"
                       className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono focus:border-blue-500 focus:outline-hidden focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
@@ -835,7 +900,10 @@ export default function AiConfigPage() {
                   </div>
                 )}
                 <div>
-                  <label htmlFor="provider-surface" className="block text-sm font-medium mb-1">
+                  <label
+                    htmlFor="provider-surface"
+                    className="block text-sm font-medium mb-1"
+                  >
                     API endpoint{" "}
                     <span className="text-muted-foreground font-normal">
                       (leave on the default unless this endpoint misbehaves)
@@ -855,7 +923,9 @@ export default function AiConfigPage() {
                     <option value="">
                       Default — {API_SURFACE_LABELS[DEFAULT_API_SURFACE]}
                     </option>
-                    <option value="responses">{API_SURFACE_LABELS.responses}</option>
+                    <option value="responses">
+                      {API_SURFACE_LABELS.responses}
+                    </option>
                     <option value="chat_completions">
                       {API_SURFACE_LABELS.chat_completions}
                     </option>
@@ -867,7 +937,10 @@ export default function AiConfigPage() {
                   </p>
                 </div>
                 <div>
-                  <label htmlFor="provider-timeout" className="block text-sm font-medium mb-1">
+                  <label
+                    htmlFor="provider-timeout"
+                    className="block text-sm font-medium mb-1"
+                  >
                     Request timeout (seconds){" "}
                     <span className="text-muted-foreground font-normal">
                       (leave empty for the default — {DEFAULT_TIMEOUT_SEC}s)
@@ -880,7 +953,10 @@ export default function AiConfigPage() {
                     max={3600}
                     value={providerForm.timeoutSec}
                     onChange={(e) =>
-                      setProviderForm((f) => ({ ...f, timeoutSec: e.target.value }))
+                      setProviderForm((f) => ({
+                        ...f,
+                        timeoutSec: e.target.value,
+                      }))
                     }
                     placeholder={String(DEFAULT_TIMEOUT_SEC)}
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-hidden focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
@@ -888,7 +964,8 @@ export default function AiConfigPage() {
                 </div>
               </div>
               <div className="flex items-center gap-2 mt-4">
-                <button type="button"
+                <button
+                  type="button"
                   onClick={handleProviderSubmit}
                   disabled={providerSaving || !providerForm.name.trim()}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
@@ -900,7 +977,8 @@ export default function AiConfigPage() {
                   )}
                   {editingProviderId ? "Update" : "Create"} Provider
                 </button>
-                <button type="button"
+                <button
+                  type="button"
                   onClick={() => {
                     setShowProviderForm(false);
                     setEditingProviderId(null);
@@ -931,9 +1009,7 @@ export default function AiConfigPage() {
               <Card
                 key={p.id}
                 className={`transition-colors ${
-                  !p.isActive
-                    ? "opacity-60 border-dashed"
-                    : ""
+                  !p.isActive ? "opacity-60 border-dashed" : ""
                 }`}
               >
                 <CardHeader className="pb-2">
@@ -991,15 +1067,18 @@ export default function AiConfigPage() {
                           className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-1.5 py-0.5 text-xs text-muted-foreground dark:bg-gray-800"
                           title="API endpoint override"
                         >
-                          {p.apiSurface === "responses" ? "responses" : "chat completions"}
+                          {p.apiSurface === "responses"
+                            ? "responses"
+                            : "chat completions"}
                         </span>
                       )}
                     </div>
                     <div className="flex items-center gap-1">
-                      <button type="button"
+                      <button
+                        type="button"
                         onClick={() =>
                           setExpandedProvider(
-                            expandedProvider === p.id ? null : p.id
+                            expandedProvider === p.id ? null : p.id,
                           )
                         }
                         className="rounded-md p-1.5 text-muted-foreground hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
@@ -1011,7 +1090,8 @@ export default function AiConfigPage() {
                           <ChevronDown className="size-4" />
                         )}
                       </button>
-                      <button type="button"
+                      <button
+                        type="button"
                         onClick={() => handleToggleActive(p)}
                         className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
                           p.isActive
@@ -1021,14 +1101,16 @@ export default function AiConfigPage() {
                       >
                         {p.isActive ? "Disable" : "Enable"}
                       </button>
-                      <button type="button"
+                      <button
+                        type="button"
                         onClick={() => handleEditProvider(p)}
                         className="rounded-md p-1.5 text-muted-foreground hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                         title="Edit provider"
                       >
                         <Settings2 className="size-4" />
                       </button>
-                      <button type="button"
+                      <button
+                        type="button"
                         onClick={() => handleDeleteProvider(p.id)}
                         className="rounded-md p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                         title="Delete provider"
@@ -1052,8 +1134,10 @@ export default function AiConfigPage() {
                         Models ({p.models.length})
                       </h4>
                       <div className="flex items-center gap-2">
-                        {(p.providerType === "local" || p.providerType === "cloudflare") && (
-                          <button type="button"
+                        {(p.providerType === "local" ||
+                          p.providerType === "cloudflare") && (
+                          <button
+                            type="button"
                             onClick={() => handleDiscover(p.id)}
                             disabled={discovering === p.id}
                             className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800 disabled:opacity-50 transition-colors"
@@ -1066,7 +1150,8 @@ export default function AiConfigPage() {
                             Discover Models
                           </button>
                         )}
-                        <button type="button"
+                        <button
+                          type="button"
                           onClick={() => {
                             setModelForm(EMPTY_MODEL_FORM);
                             setShowModelForm(p.id);
@@ -1121,7 +1206,9 @@ export default function AiConfigPage() {
                               <SelectValue placeholder="Service Tier" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="none">No Service Tier</SelectItem>
+                              <SelectItem value="none">
+                                No Service Tier
+                              </SelectItem>
                               <SelectItem value="flex">Flex</SelectItem>
                               <SelectItem value="auto">Auto</SelectItem>
                               <SelectItem value="default">Default</SelectItem>
@@ -1145,7 +1232,8 @@ export default function AiConfigPage() {
                             Default model
                           </label>
                           <div className="flex-1" />
-                          <button type="button"
+                          <button
+                            type="button"
                             onClick={() => handleModelSubmit(p.id)}
                             disabled={modelSaving || !modelForm.modelId.trim()}
                             className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
@@ -1157,7 +1245,8 @@ export default function AiConfigPage() {
                             )}
                             Add
                           </button>
-                          <button type="button"
+                          <button
+                            type="button"
                             onClick={() => setShowModelForm(null)}
                             className="rounded-md border border-gray-300 px-3 py-1.5 text-xs hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800 transition-colors"
                           >
@@ -1200,14 +1289,16 @@ export default function AiConfigPage() {
                               )}
                             </div>
                             <div className="flex items-center gap-1">
-                              <button type="button"
+                              <button
+                                type="button"
                                 onClick={() => handleEditModelOpen(p.id, m)}
                                 className="rounded p-1 text-muted-foreground hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                                 title="Edit model"
                               >
                                 <Pencil className="size-3.5" />
                               </button>
-                              <button type="button"
+                              <button
+                                type="button"
                                 onClick={() => handleDeleteModel(p.id, m.id)}
                                 className="rounded p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                                 title="Delete model"
@@ -1235,11 +1326,12 @@ export default function AiConfigPage() {
               <Settings2 className="size-5" /> Use Case Assignments
             </h2>
             <p className="text-sm text-muted-foreground">
-              Assign a provider, model and thinking level to each use case. The same model can
-              run at a different reasoning effort for each one.
+              Assign a provider, model and thinking level to each use case. The
+              same model can run at a different reasoning effort for each one.
             </p>
           </div>
-          <button type="button"
+          <button
+            type="button"
             onClick={handleSaveAssignments}
             disabled={
               assignmentSaving || Object.keys(assignmentEdits).length === 0
@@ -1268,7 +1360,8 @@ export default function AiConfigPage() {
                     <h3 className="font-medium text-sm">{label}</h3>
                     <div className="flex items-center gap-2">
                       {assignments[useCase] && (
-                        <button type="button"
+                        <button
+                          type="button"
                           onClick={() => handleTestConnection(useCase)}
                           disabled={test?.loading}
                           className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800 disabled:opacity-50 transition-colors"
@@ -1291,7 +1384,11 @@ export default function AiConfigPage() {
 
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     <div>
-                      <label id={`provider-label-${useCase}`} htmlFor={`provider-select-${useCase}`} className="block text-xs font-medium text-muted-foreground mb-1">
+                      <label
+                        id={`provider-label-${useCase}`}
+                        htmlFor={`provider-select-${useCase}`}
+                        className="block text-xs font-medium text-muted-foreground mb-1"
+                      >
                         Provider
                       </label>
                       <Select
@@ -1301,15 +1398,21 @@ export default function AiConfigPage() {
                           handleAssignmentChange(
                             useCase,
                             "providerId",
-                            v === "none" ? "" : v
+                            v === "none" ? "" : v,
                           )
                         }
                       >
-                        <SelectTrigger id={`provider-select-${useCase}`} className="h-9">
+                        <SelectTrigger
+                          id={`provider-select-${useCase}`}
+                          className="h-9"
+                        >
                           <SelectValue placeholder="Select a provider" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="none"> -  Not assigned - </SelectItem>
+                          <SelectItem value="none">
+                            {" "}
+                            - Not assigned -{" "}
+                          </SelectItem>
                           {providers.flatMap((p) =>
                             p.isActive
                               ? [
@@ -1326,13 +1429,17 @@ export default function AiConfigPage() {
                                     </span>
                                   </SelectItem>,
                                 ]
-                              : []
+                              : [],
                           )}
                         </SelectContent>
                       </Select>
                     </div>
                     <div>
-                      <label id={`model-label-${useCase}`} htmlFor={`model-select-${useCase}`} className="block text-xs font-medium text-muted-foreground mb-1">
+                      <label
+                        id={`model-label-${useCase}`}
+                        htmlFor={`model-select-${useCase}`}
+                        className="block text-xs font-medium text-muted-foreground mb-1"
+                      >
                         Model
                       </label>
                       <Select
@@ -1342,7 +1449,7 @@ export default function AiConfigPage() {
                           handleAssignmentChange(
                             useCase,
                             "modelId",
-                            v === "none" ? "" : v
+                            v === "none" ? "" : v,
                           )
                         }
                         disabled={!effective.providerId}
@@ -1357,16 +1464,15 @@ export default function AiConfigPage() {
                           />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="none"> -  Not assigned - </SelectItem>
+                          <SelectItem value="none">
+                            {" "}
+                            - Not assigned -{" "}
+                          </SelectItem>
                           {selectedModels.map((m) => (
                             <SelectItem key={m.id} value={m.id}>
                               {m.modelId}
-                              {m.displayName
-                                ? ` (${m.displayName})`
-                                : ""}
-                              {m.serviceTier
-                                ? ` [${m.serviceTier}]`
-                                : ""}
+                              {m.displayName ? ` (${m.displayName})` : ""}
+                              {m.serviceTier ? ` [${m.serviceTier}]` : ""}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -1387,18 +1493,21 @@ export default function AiConfigPage() {
                           handleAssignmentChange(
                             useCase,
                             "thinkingLevel",
-                            v === "unset" ? "" : v
+                            v === "unset" ? "" : v,
                           )
                         }
                         disabled={!effective.modelId}
                       >
-                        <SelectTrigger id={`thinking-select-${useCase}`} className="h-9">
+                        <SelectTrigger
+                          id={`thinking-select-${useCase}`}
+                          className="h-9"
+                        >
                           <SelectValue placeholder="No thinking level" />
                         </SelectTrigger>
                         <SelectContent>
                           {/* Unset is the safe default: models that don't take
                               reasoning_effort reject the field outright. */}
-                          <SelectItem value="unset"> -  Not set - </SelectItem>
+                          <SelectItem value="unset"> - Not set - </SelectItem>
                           {THINKING_LEVEL_OPTIONS.map((level) => (
                             <SelectItem key={level} value={level}>
                               {level}
@@ -1438,11 +1547,15 @@ export default function AiConfigPage() {
         <div className="mb-3">
           <h2 className="text-lg font-semibold">Chat Assistants</h2>
           <p className="text-sm text-muted-foreground">
-            Behaviour of the student and teacher chat bots. Each one talks to the provider and
-            model assigned to its use case above.
+            Behaviour of the student and teacher chat bots. Each one talks to
+            the provider and model assigned to its use case above.
           </p>
         </div>
         <AssistantSettings />
+
+        <GuardrailSettings refreshKey={assignmentsSavedAt} />
+
+        <GuardrailFeedbackList />
       </section>
 
       {/* ─── Discover Models Modal ────────────────────────────────────────── */}
@@ -1471,7 +1584,7 @@ export default function AiConfigPage() {
                     type="button"
                     onClick={() =>
                       setSelectedDiscover(
-                        allNewSelected ? new Set() : new Set(discoverNewModels)
+                        allNewSelected ? new Set() : new Set(discoverNewModels),
                       )
                     }
                     className="font-medium text-blue-600 hover:text-blue-800"
@@ -1533,7 +1646,8 @@ export default function AiConfigPage() {
               ) : (
                 <Plus className="size-4" />
               )}
-              Add{selectedDiscover.size > 0 ? ` ${selectedDiscover.size}` : ""} Model
+              Add{selectedDiscover.size > 0 ? ` ${selectedDiscover.size}` : ""}{" "}
+              Model
               {selectedDiscover.size === 1 ? "" : "s"}
             </button>
           </DialogFooter>
@@ -1551,15 +1665,21 @@ export default function AiConfigPage() {
           <DialogHeader>
             <DialogTitle>Edit Model</DialogTitle>
             <DialogDescription>
-              Update the model identifier, display name, service tier, and thinking
-              level.
+              Update the model identifier, display name, service tier, and
+              thinking level.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3">
             <div>
-              <label htmlFor="edit-model-id" className="block text-sm font-medium mb-1">
-                Model ID <span className="text-muted-foreground font-normal">(name)</span>
+              <label
+                htmlFor="edit-model-id"
+                className="block text-sm font-medium mb-1"
+              >
+                Model ID{" "}
+                <span className="text-muted-foreground font-normal">
+                  (name)
+                </span>
               </label>
               <input
                 id="edit-model-id"
@@ -1573,16 +1693,24 @@ export default function AiConfigPage() {
               />
             </div>
             <div>
-              <label htmlFor="edit-model-name" className="block text-sm font-medium mb-1">
+              <label
+                htmlFor="edit-model-name"
+                className="block text-sm font-medium mb-1"
+              >
                 Display Name{" "}
-                <span className="text-muted-foreground font-normal">(alias, optional)</span>
+                <span className="text-muted-foreground font-normal">
+                  (alias, optional)
+                </span>
               </label>
               <input
                 id="edit-model-name"
                 type="text"
                 value={editModelForm.displayName}
                 onChange={(e) =>
-                  setEditModelForm((f) => ({ ...f, displayName: e.target.value }))
+                  setEditModelForm((f) => ({
+                    ...f,
+                    displayName: e.target.value,
+                  }))
                 }
                 placeholder="Friendly name"
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-hidden focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
@@ -1590,9 +1718,14 @@ export default function AiConfigPage() {
             </div>
             <div>
               {/* react-doctor-disable-next-line react-doctor/label-has-associated-control -- Radix Select is not a native form control, so it is named via aria-labelledby pointing at this label's id */}
-              <label id="edit-model-tier-label" className="block text-sm font-medium mb-1">
+              <label
+                id="edit-model-tier-label"
+                className="block text-sm font-medium mb-1"
+              >
                 Service Tier{" "}
-                <span className="text-muted-foreground font-normal">(service level)</span>
+                <span className="text-muted-foreground font-normal">
+                  (service level)
+                </span>
               </label>
               <Select
                 aria-labelledby="edit-model-tier-label"
@@ -1621,7 +1754,10 @@ export default function AiConfigPage() {
                 aria-label="Default model"
                 checked={editModelForm.isDefault}
                 onChange={(e) =>
-                  setEditModelForm((f) => ({ ...f, isDefault: e.target.checked }))
+                  setEditModelForm((f) => ({
+                    ...f,
+                    isDefault: e.target.checked,
+                  }))
                 }
                 className="rounded"
               />

@@ -4,7 +4,7 @@ import { renderConsentPdf, htmlToPlainTextLines } from "@/lib/consent-pdf";
 describe("htmlToPlainTextLines", () => {
   it("strips tags, decodes entities, and collapses blank-line runs", () => {
     const lines = htmlToPlainTextLines(
-      "<h2>Title</h2><p>Hello &amp; welcome.</p><p></p><p></p><ul><li>One</li><li>Two</li></ul>"
+      "<h2>Title</h2><p>Hello &amp; welcome.</p><p></p><p></p><ul><li>One</li><li>Two</li></ul>",
     );
     expect(lines).toContain("Title");
     expect(lines).toContain("Hello & welcome.");
@@ -15,7 +15,9 @@ describe("htmlToPlainTextLines", () => {
   });
 
   it("sanitizes characters pdf-lib's WinAnsi font can't encode", () => {
-    const lines = htmlToPlainTextLines("<p>&#8216;curly&#8217; and an em—dash and a bullet•</p>");
+    const lines = htmlToPlainTextLines(
+      "<p>&#8216;curly&#8217; and an em—dash and a bullet•</p>",
+    );
     const joined = lines.join(" ");
     expect(joined).not.toMatch(/[‘’—•]/);
   });
@@ -28,7 +30,14 @@ describe("renderConsentPdf", () => {
         role: "STUDENT",
         decision: "AGREE",
         interviewRecordingConsent: true,
-        initialsStrokeData: JSON.stringify([{ points: [{ x: 0, y: 0 }, { x: 10, y: 10 }] }]),
+        initialsStrokeData: JSON.stringify([
+          {
+            points: [
+              { x: 0, y: 0 },
+              { x: 10, y: 10 },
+            ],
+          },
+        ]),
         signatureTypedName: "Ada Lovelace",
         signatureStrokeData: null,
         signedAt: new Date("2026-01-15T12:00:00Z"),
@@ -43,7 +52,7 @@ describe("renderConsentPdf", () => {
         version: "2026-08-06",
         role: "STUDENT",
         bodyHtml: "<h2>Study Purpose</h2><p>This is a test form body.</p>",
-      }
+      },
     );
 
     expect(Buffer.isBuffer(pdf)).toBe(true);
@@ -67,7 +76,12 @@ describe("renderConsentPdf", () => {
         signerNameSnapshot: "Grace Hopper",
         signerEmailSnapshot: "grace@example.com",
       },
-      { title: "Instructor Consent Form", version: "v1", role: "TEACHER", bodyHtml: "<p>Body text.</p>" }
+      {
+        title: "Instructor Consent Form",
+        version: "v1",
+        role: "TEACHER",
+        bodyHtml: "<p>Body text.</p>",
+      },
     );
     expect(pdf.subarray(0, 5).toString("latin1")).toBe("%PDF-");
   });

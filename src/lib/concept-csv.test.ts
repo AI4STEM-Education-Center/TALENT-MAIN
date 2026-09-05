@@ -14,7 +14,7 @@ const CONCEPTS_CSV = [
   "Cleaned_Concept_id,Comments,concept_id,concept_kind,parent_ap_lo,unit,topic,display_name,description,source_lo_code,notes,URL,,Updated June 7,,Reviewed,",
   'F-FV-1,5/20/2026,F-FV-1,detailed_lo,AP-2.2.A,Forces,Force Vector,Force Vector: Forces,"Outcome: Distinguish forces from components of forces\nProvided: graphical or verbal representation of a situation\nTask type: Conc.ID",F-FV-1,,https://example.com/lo3-4,,,,,',
   'N2-N2-1,5/20/2026,N2-N2-1,detailed_lo,AP-2.2.B.2,N2D,"Newton\'s 2nd Law",Newton\'s 2nd Law: External Forces on Object,"Outcome: Correctly identify external forces on an object. Do not include ""force of motion"", ""force of acceleration"" or force not directly applying on the object\nProvided: description of accelerating object\nTask type: Conc.ID",N2-N2-1, ,https://example.com/lo3-4,,,,,',
-  "AP-2.2.A,5/21/2026,AP-2.2.A,ap_lo, ,Forces and Free-Body Diagrams,AP 2.2.A,Describe a force as an interaction between two objects or systems,Describe a force as an interaction between two objects or systems,2.2.A,\"Direct quote from AP Physics C CED, prepared by Jack Bartley.\",https://example.com/doc,,,,,",
+  'AP-2.2.A,5/21/2026,AP-2.2.A,ap_lo, ,Forces and Free-Body Diagrams,AP 2.2.A,Describe a force as an interaction between two objects or systems,Describe a force as an interaction between two objects or systems,2.2.A,"Direct quote from AP Physics C CED, prepared by Jack Bartley.",https://example.com/doc,,,,,',
   ",,,,,,,,,,,,,,,,",
   ",,,,,,,,,,,,,,,,",
   'deprecated,"AP-2.4.A.2 uses term ""Net Force""",F-FV-3,detailed_lo,AP-2.4.A.1,Forces,Force Vector,Force Vector: net force,"Outcome: find the sum of all forces, or sum of forces on one direction\nProvided: multiple forces on an object\nTask type: Proc.app",F-FV-3,,https://example.com/lo3-4,,,,,',
@@ -99,7 +99,9 @@ describe("parseConceptsCsv", () => {
     const { concepts } = parseConceptsCsv(CONCEPTS_CSV);
     const n2 = concepts.find((c) => c.conceptId === "N2-N2-1");
     expect(n2).toBeDefined();
-    expect(n2!.description).toContain("Outcome: Correctly identify external forces");
+    expect(n2!.description).toContain(
+      "Outcome: Correctly identify external forces",
+    );
     expect(n2!.description).toContain('"force of motion"'); // doubled-quote unescaping
     expect(n2!.description).toContain("Task type: Conc.ID");
   });
@@ -165,7 +167,8 @@ describe("parseMisconceptionsCsv", () => {
   });
 
   it("skips fully blank rows silently", () => {
-    const { misconceptions, skipped } = parseMisconceptionsCsv(MISCONCEPTIONS_CSV);
+    const { misconceptions, skipped } =
+      parseMisconceptionsCsv(MISCONCEPTIONS_CSV);
     expect(misconceptions).toHaveLength(3);
     expect(skipped).toHaveLength(0);
   });
@@ -212,7 +215,9 @@ describe("parseMappingsCsv", () => {
 
   it("keeps the last row on duplicate mapping key (last wins)", () => {
     const { mappings } = parseMappingsCsv(MAPPINGS_CSV);
-    const matches = mappings.filter((m) => m.misconceptionId === "MIS-001" && m.conceptId === "F-FV-1");
+    const matches = mappings.filter(
+      (m) => m.misconceptionId === "MIS-001" && m.conceptId === "F-FV-1",
+    );
     expect(matches).toHaveLength(1);
     expect(matches[0].confidence).toBe("High");
     expect(matches[0].notes).toBe("Updated confidence.");

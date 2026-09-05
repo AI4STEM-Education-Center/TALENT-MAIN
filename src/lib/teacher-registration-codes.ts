@@ -44,7 +44,7 @@ export function generateTeacherCode(): string {
 export function toTeacherCodeView(
   row: TeacherRegistrationCode,
   origin: string,
-  now: Date = new Date()
+  now: Date = new Date(),
 ): TeacherCodeView {
   return {
     id: row.id,
@@ -81,7 +81,9 @@ export async function createTeacherCode(input: {
       return await prisma.teacherRegistrationCode.create({
         data: {
           code: generateTeacherCode(),
-          label: input.label?.trim() ? input.label.trim().slice(0, MAX_LABEL_LENGTH) : null,
+          label: input.label?.trim()
+            ? input.label.trim().slice(0, MAX_LABEL_LENGTH)
+            : null,
           expiresAt,
           maxUses: input.maxUses ?? null,
           createdById: input.createdById ?? null,
@@ -92,7 +94,9 @@ export async function createTeacherCode(input: {
       if ((err as { code?: string })?.code !== "P2002") throw err;
     }
   }
-  throw lastError ?? new Error("Could not generate a unique registration code.");
+  throw (
+    lastError ?? new Error("Could not generate a unique registration code.")
+  );
 }
 
 /**
@@ -100,10 +104,14 @@ export async function createTeacherCode(input: {
  * tell "no such code" from "expired" when it decides what to log — the
  * registrant is always told the same thing.
  */
-export async function findTeacherCode(rawCode: string): Promise<TeacherRegistrationCode | null> {
+export async function findTeacherCode(
+  rawCode: string,
+): Promise<TeacherRegistrationCode | null> {
   const normalized = normalizeTeacherCode(rawCode);
   if (!normalized) return null;
-  return prisma.teacherRegistrationCode.findUnique({ where: { code: normalized } });
+  return prisma.teacherRegistrationCode.findUnique({
+    where: { code: normalized },
+  });
 }
 
 /**
@@ -112,9 +120,14 @@ export async function findTeacherCode(rawCode: string): Promise<TeacherRegistrat
  * SQLite cannot compare usedCount to maxUses in a filter, and an exhausted code
  * should read as "wrong code" rather than "server not configured" anyway.
  */
-export async function hasRedeemableTeacherCode(now: Date = new Date()): Promise<boolean> {
+export async function hasRedeemableTeacherCode(
+  now: Date = new Date(),
+): Promise<boolean> {
   const count = await prisma.teacherRegistrationCode.count({
-    where: { active: true, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
+    where: {
+      active: true,
+      OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+    },
   });
   return count > 0;
 }
@@ -140,9 +153,11 @@ export class TeacherCodeUnavailableError extends Error {
 export async function claimTeacherCode(
   tx: Prisma.TransactionClient,
   id: string,
-  now: Date = new Date()
+  now: Date = new Date(),
 ): Promise<void> {
-  const current = await tx.teacherRegistrationCode.findUnique({ where: { id } });
+  const current = await tx.teacherRegistrationCode.findUnique({
+    where: { id },
+  });
   if (!current || teacherCodeStatus(current, now) !== "ACTIVE") {
     throw new TeacherCodeUnavailableError();
   }

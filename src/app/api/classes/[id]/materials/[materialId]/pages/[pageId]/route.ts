@@ -7,7 +7,9 @@ export const runtime = "nodejs";
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string; materialId: string; pageId: string }> }
+  {
+    params,
+  }: { params: Promise<{ id: string; materialId: string; pageId: string }> },
 ) {
   const session = await auth();
   if (!session?.user || session.user.role !== "TEACHER") {
@@ -55,18 +57,28 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const data: { needed?: boolean; keyConcept?: string | null; description?: string | null } = {};
+  const data: {
+    needed?: boolean;
+    keyConcept?: string | null;
+    description?: string | null;
+  } = {};
 
   if ("needed" in body) {
     if (typeof body.needed !== "boolean") {
-      return NextResponse.json({ error: "needed must be a boolean" }, { status: 400 });
+      return NextResponse.json(
+        { error: "needed must be a boolean" },
+        { status: 400 },
+      );
     }
     data.needed = body.needed;
   }
 
   if ("keyConcept" in body) {
     if (typeof body.keyConcept !== "string") {
-      return NextResponse.json({ error: "keyConcept must be a string" }, { status: 400 });
+      return NextResponse.json(
+        { error: "keyConcept must be a string" },
+        { status: 400 },
+      );
     }
     const trimmed = body.keyConcept.trim();
     data.keyConcept = trimmed.length > 0 ? trimmed : null;
@@ -74,14 +86,20 @@ export async function PATCH(
 
   if ("description" in body) {
     if (typeof body.description !== "string") {
-      return NextResponse.json({ error: "description must be a string" }, { status: 400 });
+      return NextResponse.json(
+        { error: "description must be a string" },
+        { status: 400 },
+      );
     }
     const trimmed = body.description.trim();
     data.description = trimmed.length > 0 ? trimmed : null;
   }
 
   if (Object.keys(data).length === 0) {
-    return NextResponse.json({ error: "No valid fields provided" }, { status: 400 });
+    return NextResponse.json(
+      { error: "No valid fields provided" },
+      { status: 400 },
+    );
   }
 
   const updated = await prisma.materialPage.update({

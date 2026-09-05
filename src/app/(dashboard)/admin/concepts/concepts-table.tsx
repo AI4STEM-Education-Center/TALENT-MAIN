@@ -7,16 +7,23 @@ import type { ConceptRow } from "./types";
 const LONG_DESCRIPTION_THRESHOLD = 160;
 
 function ConceptDescription({ description }: { description: string | null }) {
-  if (!description) return <span className="text-xs text-muted-foreground">—</span>;
+  if (!description)
+    return <span className="text-xs text-muted-foreground">—</span>;
   if (description.length <= LONG_DESCRIPTION_THRESHOLD) {
-    return <p className="text-sm text-muted-foreground whitespace-pre-wrap">{description}</p>;
+    return (
+      <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+        {description}
+      </p>
+    );
   }
   return (
     <details className="text-sm">
       <summary className="cursor-pointer select-none text-muted-foreground">
         {description.slice(0, LONG_DESCRIPTION_THRESHOLD)}…
       </summary>
-      <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{description}</p>
+      <p className="mt-1 whitespace-pre-wrap text-muted-foreground">
+        {description}
+      </p>
     </details>
   );
 }
@@ -27,7 +34,11 @@ interface ConceptsTableProps {
   showDeprecated: boolean;
 }
 
-export function ConceptsTable({ concepts, search, showDeprecated }: ConceptsTableProps) {
+export function ConceptsTable({
+  concepts,
+  search,
+  showDeprecated,
+}: ConceptsTableProps) {
   const q = search.trim().toLowerCase();
   const filtered = concepts.filter((c) => {
     if (!showDeprecated && c.deprecated) return false;
@@ -52,7 +63,9 @@ export function ConceptsTable({ concepts, search, showDeprecated }: ConceptsTabl
       </CardHeader>
       <CardContent>
         {filtered.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-6 text-center">No concepts match.</p>
+          <p className="text-sm text-muted-foreground py-6 text-center">
+            No concepts match.
+          </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -69,7 +82,9 @@ export function ConceptsTable({ concepts, search, showDeprecated }: ConceptsTabl
               <tbody className="divide-y">
                 {filtered.map((c) => (
                   <tr key={c.id} className="align-top">
-                    <td className="py-2 pr-3 font-mono text-xs whitespace-nowrap">{c.conceptId}</td>
+                    <td className="py-2 pr-3 font-mono text-xs whitespace-nowrap">
+                      {c.conceptId}
+                    </td>
                     <td className="py-2 pr-3 whitespace-nowrap">{c.kind}</td>
                     <td className="py-2 pr-3 text-muted-foreground whitespace-nowrap">
                       {[c.unit, c.topic].filter(Boolean).join(" / ") || "—"}
@@ -80,7 +95,10 @@ export function ConceptsTable({ concepts, search, showDeprecated }: ConceptsTabl
                     </td>
                     <td className="py-2 pr-3 whitespace-nowrap">
                       {c.deprecated ? (
-                        <Badge variant="warning" title={c.deprecationNote ?? undefined}>
+                        <Badge
+                          variant="warning"
+                          title={c.deprecationNote ?? undefined}
+                        >
                           Deprecated
                         </Badge>
                       ) : (

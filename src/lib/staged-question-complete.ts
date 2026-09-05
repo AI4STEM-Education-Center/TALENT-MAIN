@@ -13,7 +13,12 @@ export function isQuestionComplete(q: StagedQuestion): boolean {
   }
   if (q.options.length < 2) return false;
   if (q.options.some((o) => o.isCorrect === null)) return false;
-  if (q.options.some((o) => o.isImage === true && !(o.imageBbox ?? o.imageStorageKey))) return false;
+  if (
+    q.options.some(
+      (o) => o.isImage === true && !(o.imageBbox ?? o.imageStorageKey),
+    )
+  )
+    return false;
   const correct = q.options.filter((o) => o.isCorrect === true).length;
   if (q.type === "MULTI_SELECT") return correct >= 1;
   return correct === 1; // MULTIPLE_CHOICE / TRUE_FALSE

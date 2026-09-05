@@ -1,4 +1,8 @@
 import {
+  LEGACY_PAGE_IMAGE_EXTENSION,
+  type PageImageExtension,
+} from "./page-image-format";
+import {
   S3Client,
   PutObjectCommand,
   HeadObjectCommand,
@@ -13,7 +17,8 @@ import { getSignedUrl as getS3PresignedUrl } from "@aws-sdk/s3-request-presigner
 import { getSignedUrl as getCloudFrontSignedUrl } from "@aws-sdk/cloudfront-signer";
 
 const DEFAULT_MAX_BYTES = 50 * 1024 * 1024;
-const PRESIGN_EXPIRES_SEC = 3600;
+/** Signed-URL lifetime, shared by teacher and student download routes. */
+export const PRESIGN_EXPIRES_SEC = 3600;
 
 /**
  * Optional namespace for every object this deployment creates. The compose
@@ -30,7 +35,9 @@ export function getS3KeyPrefix(): string {
     segments.length === 0 ||
     segments.some(
       (segment) =>
-        segment === "." || segment === ".." || !/^[a-zA-Z0-9._-]+$/.test(segment)
+        segment === "." ||
+        segment === ".." ||
+        !/^[a-zA-Z0-9._-]+$/.test(segment),
     )
   ) {
     throw new Error("S3_KEY_PREFIX must contain only safe path segments");
@@ -71,7 +78,7 @@ const PER_PAGE_BUDGET_BYTES = 4 * 1024 * 1024;
 export function maxDerivedPageBytes(pageCount: number): number {
   return Math.max(
     getMaxUploadBytes() * DERIVED_BYTES_MULTIPLIER,
-    pageCount * PER_PAGE_BUDGET_BYTES
+    pageCount * PER_PAGE_BUDGET_BYTES,
   );
 }
 
@@ -80,14 +87,32 @@ export function sanitizeFilename(name: string): string {
   return base.slice(0, 200) || "file";
 }
 
-export function buildStorageKey(teacherId: string, classId: string, materialId: string, originalName: string): string {
+export function buildStorageKey(
+  teacherId: string,
+  classId: string,
+  materialId: string,
+  originalName: string,
+): string {
   const safe = sanitizeFilename(originalName);
-  return prefixedS3Key(`learning-materials/${teacherId}/${classId}/${materialId}/${safe}`);
+  return prefixedS3Key(
+    `learning-materials/${teacherId}/${classId}/${materialId}/${safe}`,
+  );
 }
 
-export function buildPageStorageKey(teacherId: string, classId: string, materialId: string, pageNumber: number): string {
+/**
+ * Deterministic key for one rendered page. `extension` is negotiated with the
+ * client at presign time (see src/lib/page-image-format.ts) and defaults to the
+ * legacy `png` so a caller that never negotiated gets the key it always got.
+ */
+export function buildPageStorageKey(
+  teacherId: string,
+  classId: string,
+  materialId: string,
+  pageNumber: number,
+  extension: PageImageExtension = LEGACY_PAGE_IMAGE_EXTENSION,
+): string {
   return prefixedS3Key(
-    `learning-materials/${teacherId}/${classId}/${materialId}/pages/page-${pageNumber}.png`
+    `learning-materials/${teacherId}/${classId}/${materialId}/pages/page-${pageNumber}.${extension}`,
   );
 }
 
@@ -114,11 +139,11 @@ export function buildQuizExtractionPdfKey(
   teacherId: string | null,
   quizId: string,
   extractionId: string,
-  originalName: string
+  originalName: string,
 ): string {
   const safe = sanitizeFilename(originalName);
   return prefixedS3Key(
-    `quiz-extractions/${quizExtractionScope(teacherId)}/${quizId}/${extractionId}/${safe}`
+    `quiz-extractions/${quizExtractionScope(teacherId)}/${quizId}/${extractionId}/${safe}`,
   );
 }
 
@@ -126,10 +151,11 @@ export function buildQuizExtractionPageKey(
   teacherId: string | null,
   quizId: string,
   extractionId: string,
-  pageNumber: number
+  pageNumber: number,
+  extension: PageImageExtension = LEGACY_PAGE_IMAGE_EXTENSION,
 ): string {
   return prefixedS3Key(
-    `quiz-extractions/${quizExtractionScope(teacherId)}/${quizId}/${extractionId}/pages/page-${pageNumber}.png`
+    `quiz-extractions/${quizExtractionScope(teacherId)}/${quizId}/${extractionId}/pages/page-${pageNumber}.${extension}`,
   );
 }
 
@@ -137,10 +163,11 @@ export function buildQuizExtractionFigureKey(
   teacherId: string | null,
   quizId: string,
   extractionId: string,
-  questionIndex: number
+  questionIndex: number,
+  extension: PageImageExtension = LEGACY_PAGE_IMAGE_EXTENSION,
 ): string {
   return prefixedS3Key(
-    `quiz-extractions/${quizExtractionScope(teacherId)}/${quizId}/${extractionId}/figures/figure-${questionIndex}.png`
+    `quiz-extractions/${quizExtractionScope(teacherId)}/${quizId}/${extractionId}/figures/figure-${questionIndex}.${extension}`,
   );
 }
 
@@ -154,10 +181,11 @@ export function buildQuizExtractionOptionImageKey(
   quizId: string,
   extractionId: string,
   questionIndex: number,
-  optionIndex: number
+  optionIndex: number,
+  extension: PageImageExtension = LEGACY_PAGE_IMAGE_EXTENSION,
 ): string {
   return prefixedS3Key(
-    `quiz-extractions/${quizExtractionScope(teacherId)}/${quizId}/${extractionId}/figures/option-${questionIndex}-${optionIndex}.png`
+    `quiz-extractions/${quizExtractionScope(teacherId)}/${quizId}/${extractionId}/figures/option-${questionIndex}-${optionIndex}.${extension}`,
   );
 }
 
@@ -176,10 +204,10 @@ export function buildSimulationKey(
   teacherId: string | null,
   quizId: string,
   questionId: string,
-  version: number
+  version: number,
 ): string {
   return prefixedS3Key(
-    `simulations/${quizExtractionScope(teacherId)}/${quizId}/${questionId}/v${version}.html`
+    `simulations/${quizExtractionScope(teacherId)}/${quizId}/${questionId}/v${version}.html`,
   );
 }
 
@@ -196,10 +224,10 @@ export function buildConsentExportKey(jobId: string): string {
 export function buildAssistantAttachmentKey(
   userId: string,
   attachmentId: string,
-  originalName: string
+  originalName: string,
 ): string {
   return prefixedS3Key(
-    `assistant-attachments/${userId}/${attachmentId}/${sanitizeFilename(originalName)}`
+    `assistant-attachments/${userId}/${attachmentId}/${sanitizeFilename(originalName)}`,
   );
 }
 
@@ -213,8 +241,13 @@ export function buildAssistantAttachmentKey(
  * neighbouring `assistant-attachments/` prefix, and a plain-text object is one
  * an admin can read straight out of the bucket if the app is unavailable.
  */
-export function buildAssistantTranscriptKey(userId: string, conversationId: string): string {
-  return prefixedS3Key(`assistant-transcripts/${userId}/${conversationId}.jsonl`);
+export function buildAssistantTranscriptKey(
+  userId: string,
+  conversationId: string,
+): string {
+  return prefixedS3Key(
+    `assistant-transcripts/${userId}/${conversationId}.jsonl`,
+  );
 }
 
 export function getS3Config(): { bucket: string; region: string } {
@@ -244,11 +277,15 @@ export function getAwsCredentials(): {
   const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY?.trim();
   if (!accessKeyId || !secretAccessKey) {
     throw new Error(
-      "S3 access requires AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in the environment (IAM instance roles are not used)"
+      "S3 access requires AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in the environment (IAM instance roles are not used)",
     );
   }
   const sessionToken = process.env.AWS_SESSION_TOKEN?.trim();
-  return { accessKeyId, secretAccessKey, ...(sessionToken ? { sessionToken } : {}) };
+  return {
+    accessKeyId,
+    secretAccessKey,
+    ...(sessionToken ? { sessionToken } : {}),
+  };
 }
 
 let s3Client: S3Client | null = null;
@@ -287,7 +324,11 @@ export function getS3Client(): S3Client {
 // non-public. Uploads are unaffected: they remain presigned S3 PUTs straight to
 // the bucket, because a CDN adds nothing to writes.
 
-export type CloudFrontConfig = { domain: string; keyPairId: string; privateKey: string };
+export type CloudFrontConfig = {
+  domain: string;
+  keyPairId: string;
+  privateKey: string;
+};
 
 /**
  * A `.env` consumed by Docker Compose's `env_file:` cannot hold real newlines,
@@ -327,7 +368,7 @@ export function getCloudFrontConfig(): CloudFrontConfig | null {
   }
   if (!domain || !keyPairId || !privateKey) {
     throw new Error(
-      "CloudFront delivery needs CLOUDFRONT_DOMAIN, CLOUDFRONT_KEY_PAIR_ID and CLOUDFRONT_PRIVATE_KEY together (leave all three empty to serve from S3)"
+      "CloudFront delivery needs CLOUDFRONT_DOMAIN, CLOUDFRONT_KEY_PAIR_ID and CLOUDFRONT_PRIVATE_KEY together (leave all three empty to serve from S3)",
     );
   }
 
@@ -352,7 +393,7 @@ export async function presignPutUpload(
   bucket: string,
   key: string,
   mimeType: string,
-  _contentLength: number
+  _contentLength: number,
 ): Promise<string> {
   const client = getS3Client();
   const cmd = new PutObjectCommand({
@@ -384,7 +425,7 @@ export async function presignPutUpload(
 export async function signObjectReadUrl(
   bucket: string,
   key: string,
-  expiresIn = PRESIGN_EXPIRES_SEC
+  expiresIn = PRESIGN_EXPIRES_SEC,
 ): Promise<string> {
   const cloudFront = getCloudFrontConfig();
   if (cloudFront && bucket === getS3Config().bucket) {
@@ -408,7 +449,7 @@ export async function signObjectReadUrl(
 export async function presignGetUrl(
   bucket: string,
   key: string,
-  expiresIn = PRESIGN_EXPIRES_SEC
+  expiresIn = PRESIGN_EXPIRES_SEC,
 ): Promise<string> {
   const client = getS3Client();
   const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
@@ -421,12 +462,18 @@ export async function presignGetUrl(
  * providers (Ollama / vLLM / LM Studio / …) which typically can't reach our
  * presigned S3 URLs over the network, so the image bytes are embedded directly
  * in the chat-completions request instead of linked. The MIME type comes from
- * the object's stored Content-Type, defaulting to image/png (every image we
- * store for vision — rasterized pages, figure and option crops — is a PNG).
+ * the object's stored Content-Type, defaulting to image/png for objects
+ * written before Content-Type was recorded (pages and crops are WebP now, but
+ * S3 hands back whatever each object was stored with).
  */
-export async function getS3ObjectAsDataUrl(bucket: string, key: string): Promise<string> {
+export async function getS3ObjectAsDataUrl(
+  bucket: string,
+  key: string,
+): Promise<string> {
   const client = getS3Client();
-  const out = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+  const out = await client.send(
+    new GetObjectCommand({ Bucket: bucket, Key: key }),
+  );
   if (!out.Body) throw new Error(`S3 object ${key} has no body`);
   const bytes = await out.Body.transformToByteArray();
   const base64 = Buffer.from(bytes).toString("base64");
@@ -445,7 +492,7 @@ export async function getS3ObjectAsDataUrl(bucket: string, key: string): Promise
 export async function resolveModelImageUrl(
   bucket: string,
   key: string,
-  opts: { inlineBase64: boolean; expiresIn?: number }
+  opts: { inlineBase64: boolean; expiresIn?: number },
 ): Promise<string> {
   return opts.inlineBase64
     ? getS3ObjectAsDataUrl(bucket, key)
@@ -460,30 +507,48 @@ export async function putS3Object(
   bucket: string,
   key: string,
   body: string | Uint8Array,
-  contentType: string
+  contentType: string,
 ): Promise<void> {
   const client = getS3Client();
   await client.send(
-    new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: contentType })
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+    }),
   );
 }
 
 /** Copy an immutable object inside a bucket without downloading it. */
-export async function copyS3Object(bucket: string, sourceKey: string, targetKey: string): Promise<void> {
+export async function copyS3Object(
+  bucket: string,
+  sourceKey: string,
+  targetKey: string,
+): Promise<void> {
   const client = getS3Client();
   const copySource = `${bucket}/${sourceKey}`
     .split("/")
     .map(encodeURIComponent)
     .join("/");
   await client.send(
-    new CopyObjectCommand({ Bucket: bucket, CopySource: copySource, Key: targetKey })
+    new CopyObjectCommand({
+      Bucket: bucket,
+      CopySource: copySource,
+      Key: targetKey,
+    }),
   );
 }
 
 /** Download an S3 object and decode it as UTF-8 text (simulation HTML artifacts). */
-export async function getS3ObjectAsString(bucket: string, key: string): Promise<string> {
+export async function getS3ObjectAsString(
+  bucket: string,
+  key: string,
+): Promise<string> {
   const client = getS3Client();
-  const out = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+  const out = await client.send(
+    new GetObjectCommand({ Bucket: bucket, Key: key }),
+  );
   if (!out.Body) throw new Error(`S3 object ${key} has no body`);
   return out.Body.transformToString("utf-8");
 }
@@ -491,10 +556,12 @@ export async function getS3ObjectAsString(bucket: string, key: string): Promise<
 /** Download an S3 object for WebDAV backup while preserving its content type. */
 export async function getS3Object(
   bucket: string,
-  key: string
+  key: string,
 ): Promise<{ body: Uint8Array; contentType: string }> {
   const client = getS3Client();
-  const out = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+  const out = await client.send(
+    new GetObjectCommand({ Bucket: bucket, Key: key }),
+  );
   if (!out.Body) throw new Error(`S3 object ${key} has no body`);
   return {
     body: await out.Body.transformToByteArray(),
@@ -502,19 +569,30 @@ export async function getS3Object(
   };
 }
 
-export async function headS3Object(bucket: string, key: string): Promise<{ contentLength: number }> {
+export async function headS3Object(
+  bucket: string,
+  key: string,
+): Promise<{ contentLength: number }> {
   const client = getS3Client();
-  const out = await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+  const out = await client.send(
+    new HeadObjectCommand({ Bucket: bucket, Key: key }),
+  );
   const len = out.ContentLength ?? 0;
   return { contentLength: len };
 }
 
-export async function deleteS3Object(bucket: string, key: string): Promise<void> {
+export async function deleteS3Object(
+  bucket: string,
+  key: string,
+): Promise<void> {
   const client = getS3Client();
   await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
 }
 
-export async function listS3Objects(bucket: string, prefix: string): Promise<string[]> {
+export async function listS3Objects(
+  bucket: string,
+  prefix: string,
+): Promise<string[]> {
   const client = getS3Client();
   let isTruncated = true;
   let continuationToken: string | undefined;
@@ -526,7 +604,7 @@ export async function listS3Objects(bucket: string, prefix: string): Promise<str
         Bucket: bucket,
         Prefix: prefix,
         ContinuationToken: continuationToken,
-      })
+      }),
     );
 
     if (response.Contents) {
@@ -554,7 +632,7 @@ export async function listS3Objects(bucket: string, prefix: string): Promise<str
  */
 export async function sumS3PrefixBytes(
   bucket: string,
-  prefix: string
+  prefix: string,
 ): Promise<{ bytes: number; objects: number }> {
   const client = getS3Client();
   let isTruncated = true;
@@ -568,7 +646,7 @@ export async function sumS3PrefixBytes(
         Bucket: bucket,
         Prefix: prefix,
         ContinuationToken: continuationToken,
-      })
+      }),
     );
 
     for (const item of response.Contents ?? []) {
@@ -590,7 +668,10 @@ export type S3ObjectMeta = { key: string; lastModified: Date | null };
  * garbage collector needs to grant a grace period to freshly-written objects
  * (their DB reference may not be committed yet).
  */
-export async function listS3ObjectsWithMeta(bucket: string, prefix: string): Promise<S3ObjectMeta[]> {
+export async function listS3ObjectsWithMeta(
+  bucket: string,
+  prefix: string,
+): Promise<S3ObjectMeta[]> {
   const client = getS3Client();
   let isTruncated = true;
   let continuationToken: string | undefined;
@@ -602,12 +683,16 @@ export async function listS3ObjectsWithMeta(bucket: string, prefix: string): Pro
         Bucket: bucket,
         Prefix: prefix,
         ContinuationToken: continuationToken,
-      })
+      }),
     );
 
     if (response.Contents) {
       for (const item of response.Contents) {
-        if (item.Key) objects.push({ key: item.Key, lastModified: item.LastModified ?? null });
+        if (item.Key)
+          objects.push({
+            key: item.Key,
+            lastModified: item.LastModified ?? null,
+          });
       }
     }
 
@@ -618,11 +703,18 @@ export async function listS3ObjectsWithMeta(bucket: string, prefix: string): Pro
   return objects;
 }
 
-export async function deleteS3Objects(bucket: string, keys: string[]): Promise<void> {
+export async function deleteS3Objects(
+  bucket: string,
+  keys: string[],
+): Promise<void> {
   const client = getS3Client();
   // AWS limits delete batch to 1000 objects.
   for (let i = 0; i < keys.length; i += 1000) {
     const chunk = keys.slice(i, i + 1000);
-    await Promise.all(chunk.map((key) => client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }))));
+    await Promise.all(
+      chunk.map((key) =>
+        client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key })),
+      ),
+    );
   }
 }

@@ -8,11 +8,30 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { PoolSubmissionDialog } from "@/components/pool-submission-dialog";
-import { Plus, BookOpen, Pencil, Trash2, Check, X, FileQuestion, Globe, Download } from "lucide-react";
+import {
+  Plus,
+  BookOpen,
+  Pencil,
+  Eye,
+  Trash2,
+  Check,
+  X,
+  FileQuestion,
+  Globe,
+  Download,
+} from "lucide-react";
 
-interface Topic { id: string; name: string; order: number; _count: { quizzes: number } }
+interface Topic {
+  id: string;
+  name: string;
+  order: number;
+  _count: { quizzes: number };
+}
 // The topic embedded in a quiz carries only id/name (no per-topic counts).
-interface QuizTopic { id: string; name: string }
+interface QuizTopic {
+  id: string;
+  name: string;
+}
 interface Quiz {
   id: string;
   name: string;
@@ -24,10 +43,16 @@ interface Quiz {
 
 /** Group quizzes under their (optional) topic label; ungrouped quizzes last. */
 function groupByTopic(quizzes: Quiz[]) {
-  const groups = new Map<string, { topicName: string | null; quizzes: Quiz[] }>();
+  const groups = new Map<
+    string,
+    { topicName: string | null; quizzes: Quiz[] }
+  >();
   for (const quiz of quizzes) {
     const key = quiz.topic ? `topic:${quiz.topic.id}` : "ungrouped";
-    const group = groups.get(key) ?? { topicName: quiz.topic?.name ?? null, quizzes: [] };
+    const group = groups.get(key) ?? {
+      topicName: quiz.topic?.name ?? null,
+      quizzes: [],
+    };
     group.quizzes.push(quiz);
     groups.set(key, group);
   }
@@ -66,7 +91,10 @@ export function TeacherQuizzesClient({
     const res = await fetch("/api/quizzes", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newQuizName.trim(), topicId: newQuizTopicId || null }),
+      body: JSON.stringify({
+        name: newQuizName.trim(),
+        topicId: newQuizTopicId || null,
+      }),
     });
     if (res.ok) {
       const quiz = await res.json();
@@ -78,7 +106,8 @@ export function TeacherQuizzesClient({
   async function deleteQuiz(id: string) {
     const ok = await confirm({
       title: "Delete this quiz?",
-      description: "This removes the quiz and its questions. Students' past results are kept.",
+      description:
+        "This removes the quiz and its questions. Students' past results are kept.",
       confirmText: "Delete",
       variant: "destructive",
     });
@@ -109,8 +138,18 @@ export function TeacherQuizzesClient({
       body: JSON.stringify({ id, name: editTopicName.trim() }),
     });
     if (res.ok) {
-      setTopics((prev) => prev.map((t) => (t.id === id ? { ...t, name: editTopicName.trim() } : t)));
-      setQuizzes((prev) => prev.map((q) => (q.topic?.id === id ? { ...q, topic: { ...q.topic, name: editTopicName.trim() } } : q)));
+      setTopics((prev) =>
+        prev.map((t) =>
+          t.id === id ? { ...t, name: editTopicName.trim() } : t,
+        ),
+      );
+      setQuizzes((prev) =>
+        prev.map((q) =>
+          q.topic?.id === id
+            ? { ...q, topic: { ...q.topic, name: editTopicName.trim() } }
+            : q,
+        ),
+      );
       setEditingTopicId(null);
     }
   }
@@ -130,14 +169,20 @@ export function TeacherQuizzesClient({
     });
     if (res.ok) {
       setTopics((prev) => prev.filter((t) => t.id !== id));
-      setQuizzes((prev) => prev.map((q) => (q.topic?.id === id ? { ...q, topicId: null, topic: null } : q)));
+      setQuizzes((prev) =>
+        prev.map((q) =>
+          q.topic?.id === id ? { ...q, topicId: null, topic: null } : q,
+        ),
+      );
     }
   }
 
   async function importFromPool(id: string) {
     setImportBusyId(id);
     try {
-      const res = await fetch(`/api/quizzes/pool/${id}/import`, { method: "POST" });
+      const res = await fetch(`/api/quizzes/pool/${id}/import`, {
+        method: "POST",
+      });
       if (!res.ok) {
         // Status before body; the error payload is read only in this branch.
         const errorBody = await res.json().catch(() => null);
@@ -146,9 +191,14 @@ export function TeacherQuizzesClient({
       }
       const data = await res.json();
       setQuizzes((prev) => [...prev, data]);
-      setPool((prev) => prev.map((q) => (q.id === id ? { ...q, alreadyImported: true } : q)));
+      setPool((prev) =>
+        prev.map((q) => (q.id === id ? { ...q, alreadyImported: true } : q)),
+      );
       if (data.topic && !topics.some((t) => t.id === data.topic.id)) {
-        setTopics((prev) => [...prev, { ...data.topic, _count: { quizzes: 1 } }]);
+        setTopics((prev) => [
+          ...prev,
+          { ...data.topic, _count: { quizzes: 1 } },
+        ]);
       }
       setMsg(`"${data.name}" imported — it's now your own independent copy.`);
     } finally {
@@ -160,7 +210,10 @@ export function TeacherQuizzesClient({
     <div className="p-4 md:p-6 space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Quizzes</h1>
-        <p className="text-muted-foreground text-sm mt-1">Your quizzes are private to you. Import from the global pool to get your own editable copy.</p>
+        <p className="text-muted-foreground text-sm mt-1">
+          Your quizzes are private to you. Import from the global pool to get
+          your own editable copy.
+        </p>
       </div>
 
       {/* Tabs */}
@@ -177,21 +230,34 @@ export function TeacherQuizzesClient({
           onClick={() => setTab("pool")}
           className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === "pool" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
         >
-          <span className="flex items-center gap-1"><Globe className="size-3.5" /> Global Pool ({pool.length})</span>
+          <span className="flex items-center gap-1">
+            <Globe className="size-3.5" /> Global Pool ({pool.length})
+          </span>
         </button>
       </div>
 
-      {msg && <div className="p-3 rounded-md bg-primary/10 text-primary text-sm">{msg}</div>}
+      {msg && (
+        <div className="p-3 rounded-md bg-primary/10 text-primary text-sm">
+          {msg}
+        </div>
+      )}
 
       {tab === "mine" ? (
         <>
           {/* Create Quiz */}
           <Card>
-            <CardHeader><CardTitle>Create New Quiz</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle>Create New Quiz</CardTitle>
+            </CardHeader>
             <CardContent>
               <div className="flex flex-col sm:flex-row gap-3">
-                <Input placeholder="Quiz name (e.g. Newton's Laws Basics)" value={newQuizName} onChange={(e) => setNewQuizName(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && createQuiz()} className="flex-1" />
+                <Input
+                  placeholder="Quiz name (e.g. Newton's Laws Basics)"
+                  value={newQuizName}
+                  onChange={(e) => setNewQuizName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && createQuiz()}
+                  className="flex-1"
+                />
                 <select
                   className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm sm:w-56"
                   value={newQuizTopicId}
@@ -199,9 +265,19 @@ export function TeacherQuizzesClient({
                   aria-label="Topic (optional)"
                 >
                   <option value="">No topic (optional)</option>
-                  {topics.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  {topics.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
                 </select>
-                <Button onClick={createQuiz} disabled={!newQuizName.trim()} className="shrink-0"><Plus className="size-4" /> Create</Button>
+                <Button
+                  onClick={createQuiz}
+                  disabled={!newQuizName.trim()}
+                  className="shrink-0"
+                >
+                  <Plus className="size-4" /> Create
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -211,35 +287,63 @@ export function TeacherQuizzesClient({
             <Card>
               <CardContent className="text-center py-12 text-muted-foreground">
                 <FileQuestion className="size-10 mx-auto mb-3" />
-                <p>No quizzes yet. Create one above, or import from the global pool.</p>
+                <p>
+                  No quizzes yet. Create one above, or import from the global
+                  pool.
+                </p>
               </CardContent>
             </Card>
           ) : (
             <div className="space-y-6">
               {groupByTopic(quizzes).map((group) => (
-                <div key={group.topicName ?? "__ungrouped"} className="space-y-2">
+                <div
+                  key={group.topicName ?? "__ungrouped"}
+                  className="space-y-2"
+                >
                   <h2 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
-                    <BookOpen className="size-4" /> {group.topicName ?? "No topic"}
+                    <BookOpen className="size-4" />{" "}
+                    {group.topicName ?? "No topic"}
                   </h2>
                   {group.quizzes.map((quiz) => (
-                    <Card key={quiz.id} className="hover:shadow-xs transition-shadow">
-                      <CardContent className="flex items-center justify-between gap-3 p-4">
+                    <Card
+                      key={quiz.id}
+                      className="hover:shadow-xs transition-shadow"
+                    >
+                      <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
                         <div className="min-w-0 flex-1">
                           <span className="font-semibold">{quiz.name}</span>
                           <div className="flex gap-2 mt-1">
-                            <Badge variant="outline">{quiz._count.questions} question{quiz._count.questions !== 1 ? "s" : ""}</Badge>
+                            <Badge variant="outline">
+                              {quiz._count.questions} question
+                              {quiz._count.questions !== 1 ? "s" : ""}
+                            </Badge>
                           </div>
                         </div>
-                        <div className="flex gap-1 shrink-0">
+                        <div className="flex flex-wrap gap-1">
+                          {quiz._count.questions > 0 && (
+                            <Button size="sm" variant="ghost" asChild>
+                              <Link
+                                href={`/teacher/quizzes/${quiz.id}/preview`}
+                              >
+                                <Eye className="size-3" /> Preview as student
+                              </Link>
+                            </Button>
+                          )}
                           <PoolSubmissionDialog
                             contentType="QUIZ"
                             contentId={quiz.id}
                             contentName={quiz.name}
                           />
                           <Button size="sm" variant="ghost" asChild>
-                            <Link href={`/teacher/quizzes/${quiz.id}`}><Pencil className="size-3" /> Edit</Link>
+                            <Link href={`/teacher/quizzes/${quiz.id}`}>
+                              <Pencil className="size-3" /> Edit
+                            </Link>
                           </Button>
-                          <Button size="sm" variant="ghost" onClick={() => deleteQuiz(quiz.id)}>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => deleteQuiz(quiz.id)}
+                          >
                             <Trash2 className="size-3 text-destructive" />
                           </Button>
                         </div>
@@ -253,33 +357,84 @@ export function TeacherQuizzesClient({
 
           {/* Topic labels */}
           <Card>
-            <CardHeader><CardTitle className="text-base">Topic Labels</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle className="text-base">Topic Labels</CardTitle>
+            </CardHeader>
             <CardContent className="space-y-3">
-              <p className="text-sm text-muted-foreground">Topics are optional labels for grouping your quizzes.</p>
+              <p className="text-sm text-muted-foreground">
+                Topics are optional labels for grouping your quizzes.
+              </p>
               <div className="flex gap-3">
-                <Input placeholder="New topic name" value={newTopicName} onChange={(e) => setNewTopicName(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && createTopic()} className="flex-1" />
-                <Button variant="outline" onClick={createTopic} disabled={!newTopicName.trim()} className="shrink-0"><Plus className="size-4" /> Add</Button>
+                <Input
+                  placeholder="New topic name"
+                  value={newTopicName}
+                  onChange={(e) => setNewTopicName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && createTopic()}
+                  className="flex-1"
+                />
+                <Button
+                  variant="outline"
+                  onClick={createTopic}
+                  disabled={!newTopicName.trim()}
+                  className="shrink-0"
+                >
+                  <Plus className="size-4" /> Add
+                </Button>
               </div>
               {topics.length > 0 && (
                 <div className="space-y-2">
                   {topics.map((topic) => (
-                    <div key={topic.id} className="flex items-center justify-between gap-2 p-2 rounded-md border">
+                    <div
+                      key={topic.id}
+                      className="flex items-center justify-between gap-2 p-2 rounded-md border"
+                    >
                       {editingTopicId === topic.id ? (
                         <div className="flex items-center gap-2 flex-1">
-                          <Input value={editTopicName} onChange={(e) => setEditTopicName(e.target.value)} className="h-8" autoFocus
-                            onKeyDown={(e) => e.key === "Enter" && renameTopic(topic.id)} />
-                          <Button size="sm" variant="ghost" onClick={() => renameTopic(topic.id)}><Check className="size-3" /></Button>
-                          <Button size="sm" variant="ghost" onClick={() => setEditingTopicId(null)}><X className="size-3" /></Button>
+                          <Input
+                            value={editTopicName}
+                            onChange={(e) => setEditTopicName(e.target.value)}
+                            className="h-8"
+                            autoFocus
+                            onKeyDown={(e) =>
+                              e.key === "Enter" && renameTopic(topic.id)
+                            }
+                          />
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => renameTopic(topic.id)}
+                          >
+                            <Check className="size-3" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setEditingTopicId(null)}
+                          >
+                            <X className="size-3" />
+                          </Button>
                         </div>
                       ) : (
                         <>
-                          <span className="text-sm font-medium">{topic.name}</span>
+                          <span className="text-sm font-medium">
+                            {topic.name}
+                          </span>
                           <div className="flex gap-1">
-                            <Button size="sm" variant="ghost" onClick={() => { setEditingTopicId(topic.id); setEditTopicName(topic.name); }}>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                setEditingTopicId(topic.id);
+                                setEditTopicName(topic.name);
+                              }}
+                            >
                               <Pencil className="size-3" />
                             </Button>
-                            <Button size="sm" variant="ghost" onClick={() => deleteTopic(topic.id)}>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => deleteTopic(topic.id)}
+                            >
                               <Trash2 className="size-3 text-destructive" />
                             </Button>
                           </div>
@@ -292,42 +447,64 @@ export function TeacherQuizzesClient({
             </CardContent>
           </Card>
         </>
+      ) : /* Global pool */
+      pool.length === 0 ? (
+        <Card>
+          <CardContent className="text-center py-12 text-muted-foreground">
+            <Globe className="size-10 mx-auto mb-3" />
+            <p>The global pool is empty.</p>
+          </CardContent>
+        </Card>
       ) : (
-        /* Global pool */
-        pool.length === 0 ? (
-          <Card>
-            <CardContent className="text-center py-12 text-muted-foreground">
-              <Globe className="size-10 mx-auto mb-3" />
-              <p>The global pool is empty.</p>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-6">
-            {groupByTopic(pool).map((group) => (
-              <div key={group.topicName ?? "__ungrouped"} className="space-y-2">
-                <h2 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
-                  <BookOpen className="size-4" /> {group.topicName ?? "No topic"}
-                </h2>
-                {group.quizzes.map((quiz) => (
-                  <Card key={quiz.id} className="hover:shadow-xs transition-shadow">
-                    <CardContent className="flex items-center justify-between gap-3 p-4">
-                      <div className="min-w-0 flex-1">
-                        <Link href={`/teacher/quizzes/${quiz.id}`} className="font-semibold hover:underline">{quiz.name}</Link>
-                        <div className="flex gap-2 mt-1">
-                          <Badge variant="outline">{quiz._count.questions} question{quiz._count.questions !== 1 ? "s" : ""}</Badge>
-                          {quiz.alreadyImported && <Badge variant="secondary">Imported</Badge>}
-                        </div>
+        <div className="space-y-6">
+          {groupByTopic(pool).map((group) => (
+            <div key={group.topicName ?? "__ungrouped"} className="space-y-2">
+              <h2 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
+                <BookOpen className="size-4" /> {group.topicName ?? "No topic"}
+              </h2>
+              {group.quizzes.map((quiz) => (
+                <Card
+                  key={quiz.id}
+                  className="hover:shadow-xs transition-shadow"
+                >
+                  <CardContent className="flex items-center justify-between gap-3 p-4">
+                    <div className="min-w-0 flex-1">
+                      <Link
+                        href={`/teacher/quizzes/${quiz.id}`}
+                        className="font-semibold hover:underline"
+                      >
+                        {quiz.name}
+                      </Link>
+                      <div className="flex gap-2 mt-1">
+                        <Badge variant="outline">
+                          {quiz._count.questions} question
+                          {quiz._count.questions !== 1 ? "s" : ""}
+                        </Badge>
+                        {quiz.alreadyImported && (
+                          <Badge variant="secondary">Imported</Badge>
+                        )}
                       </div>
-                      <Button size="sm" variant="outline" className="shrink-0" disabled={importBusyId === quiz.id} onClick={() => importFromPool(quiz.id)}>
-                        <Download className="size-3" /> {importBusyId === quiz.id ? "Importing…" : quiz.alreadyImported ? "Import again" : "Import"}
-                      </Button>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            ))}
-          </div>
-        )
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0"
+                      disabled={importBusyId === quiz.id}
+                      onClick={() => importFromPool(quiz.id)}
+                    >
+                      <Download className="size-3" />{" "}
+                      {importBusyId === quiz.id
+                        ? "Importing…"
+                        : quiz.alreadyImported
+                          ? "Import again"
+                          : "Import"}
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

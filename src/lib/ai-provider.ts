@@ -6,12 +6,28 @@ export type UseCase =
   | "description_generation"
   | "recommendation"
   | "quiz_extraction"
+  | "simulation_chat"
   | "simulation_generation"
   // The two chat assistants. Separate assignments on purpose: the student and
   // teacher bots are tuned (and costed) independently, and a site may want a
   // cheap local model for one and a hosted vision model for the other.
   | "student_assistant"
-  | "teacher_assistant";
+  | "teacher_assistant"
+  // Content moderation (OpenAI's free /v1/moderations endpoint). Assigned like
+  // any other use case, so leaving it unassigned turns the check off — see
+  // src/lib/guardrails.ts. Wants a moderation model (omni-moderation-latest),
+  // not a chat model.
+  | "moderation"
+  // The two LLM guardrail classifiers, assigned independently so an admin can
+  // spend differently on them — jailbreak is the adversarial one and may want a
+  // stronger model, while off-topic is a blunt relevance question a cheap model
+  // answers well. Point BOTH at the same model and the two questions are asked
+  // in a single call; point them at different models and each is asked its own.
+  // Either way the output is never shown to a user, so a small fast model is
+  // usually right. Leaving one unassigned turns that check off.
+  // See src/lib/guardrail-check.ts.
+  | "guardrail_jailbreak"
+  | "guardrail_offtopic";
 export type ProviderType = "openai" | "local" | "cloudflare";
 
 /**
@@ -30,7 +46,10 @@ export const API_SURFACES = ["responses", "chat_completions"] as const;
 export type ApiSurface = (typeof API_SURFACES)[number];
 
 export function isApiSurface(value: unknown): value is ApiSurface {
-  return typeof value === "string" && (API_SURFACES as readonly string[]).includes(value);
+  return (
+    typeof value === "string" &&
+    (API_SURFACES as readonly string[]).includes(value)
+  );
 }
 
 /**
@@ -43,7 +62,9 @@ export function isApiSurface(value: unknown): value is ApiSurface {
  * endpoint answers "not found", and remembers. An admin who wants to skip that
  * one-time probe can pin "chat_completions" here.
  */
-export function resolveApiSurface(stored: string | null | undefined): ApiSurface {
+export function resolveApiSurface(
+  stored: string | null | undefined,
+): ApiSurface {
   return isApiSurface(stored) ? stored : "responses";
 }
 
@@ -77,7 +98,10 @@ export const THINKING_LEVELS = [
 export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 
 export function isThinkingLevel(value: unknown): value is ThinkingLevel {
-  return typeof value === "string" && (THINKING_LEVELS as readonly string[]).includes(value);
+  return (
+    typeof value === "string" &&
+    (THINKING_LEVELS as readonly string[]).includes(value)
+  );
 }
 
 /**
@@ -88,23 +112,24 @@ export function isThinkingLevel(value: unknown): value is ThinkingLevel {
  */
 export function resolveThinkingLevel(
   assignmentLevel: string | null | undefined,
-  legacyModelLevel: string | null | undefined
+  legacyModelLevel: string | null | undefined,
 ): ThinkingLevel | null {
   if (isThinkingLevel(assignmentLevel)) return assignmentLevel;
-  if (assignmentLevel == null && isThinkingLevel(legacyModelLevel)) return legacyModelLevel;
+  if (assignmentLevel == null && isThinkingLevel(legacyModelLevel))
+    return legacyModelLevel;
   return null;
 }
 
 export interface ResolvedProvider {
   providerType: ProviderType;
   baseUrl: string | null;
-  apiKey: string | null;          // for cloudflare, this holds CF_AIG_TOKEN
+  apiKey: string | null; // for cloudflare, this holds CF_AIG_TOKEN
   model: string;
   serviceTier: string | null;
   /** Reasoning effort for this use case, or null to leave the request field off. */
   thinkingLevel: ThinkingLevel | null;
-  cfAigByokAlias: string | null;  // null unless providerType === "cloudflare"
-  timeoutMs: number;              // per-request timeout, always resolved (provider override or default)
+  cfAigByokAlias: string | null; // null unless providerType === "cloudflare"
+  timeoutMs: number; // per-request timeout, always resolved (provider override or default)
   /** Endpoint to call, always resolved (admin preference or the default). */
   apiSurface: ApiSurface;
 }
@@ -121,6 +146,62 @@ let _cache: Map<UseCase, { data: ResolvedProvider; expiresAt: number }> =
   new Map();
 
 const CACHE_TTL_MS = 60_000; // 60 seconds
+
+let _legacyGuardrailMigration: Promise<void> | null = null;
+
+/**
+ * Phase 4 split the old single `guardrail` assignment into independently
+ * configurable jailbreak and off-topic assignments. Copy an existing value to
+ * both new slots without overwriting either slot if an admin has already made
+ * an explicit choice, then remove the obsolete row.
+ *
+ * The short-lived promise is a process-local mutex: the two checks are usually
+ * resolved concurrently, and both should share one migration attempt.
+ */
+export function carryOverLegacyGuardrailAssignment(): Promise<void> {
+  if (_legacyGuardrailMigration) return _legacyGuardrailMigration;
+
+  _legacyGuardrailMigration = (async () => {
+    const legacy = await prisma.aiUseCaseAssignment.findUnique({
+      where: { useCase: "guardrail" },
+    });
+    if (!legacy) return;
+
+    await prisma.$transaction([
+      prisma.aiUseCaseAssignment.upsert({
+        where: { useCase: "guardrail_jailbreak" },
+        update: {},
+        create: {
+          useCase: "guardrail_jailbreak",
+          providerId: legacy.providerId,
+          modelId: legacy.modelId,
+          thinkingLevel: legacy.thinkingLevel,
+        },
+      }),
+      prisma.aiUseCaseAssignment.upsert({
+        where: { useCase: "guardrail_offtopic" },
+        update: {},
+        create: {
+          useCase: "guardrail_offtopic",
+          providerId: legacy.providerId,
+          modelId: legacy.modelId,
+          thinkingLevel: legacy.thinkingLevel,
+        },
+      }),
+      // deleteMany also succeeds if another server process completed the same
+      // migration between our read and this transaction.
+      prisma.aiUseCaseAssignment.deleteMany({
+        where: { useCase: "guardrail" },
+      }),
+    ]);
+    invalidateProviderCache("guardrail_jailbreak");
+    invalidateProviderCache("guardrail_offtopic");
+  })().finally(() => {
+    _legacyGuardrailMigration = null;
+  });
+
+  return _legacyGuardrailMigration;
+}
 
 /**
  * Invalidate the provider cache for all or a specific use case.
@@ -141,7 +222,7 @@ export function invalidateProviderCache(useCase?: UseCase) {
  * (set by the OpenAI SDK from `apiKey`), matching Cloudflare's compat-mode sample.
  */
 export function buildProviderHeaders(
-  provider: ResolvedProvider
+  provider: ResolvedProvider,
 ): Record<string, string> {
   const headers: Record<string, string> = {};
   if (provider.providerType === "cloudflare" && provider.cfAigByokAlias) {
@@ -164,9 +245,11 @@ export type ThinkingParams = { reasoning_effort?: ThinkingLevel };
  * type: it only ever changes a call an admin explicitly opted in.
  */
 export function thinkingParams(
-  provider: Pick<ResolvedProvider, "thinkingLevel">
+  provider: Pick<ResolvedProvider, "thinkingLevel">,
 ): ThinkingParams {
-  return provider.thinkingLevel ? { reasoning_effort: provider.thinkingLevel } : {};
+  return provider.thinkingLevel
+    ? { reasoning_effort: provider.thinkingLevel }
+    : {};
 }
 
 /**
@@ -179,8 +262,12 @@ export function thinkingParams(
  * For the chat assistants, use "student_assistant" / "teacher_assistant".
  */
 export async function resolveProvider(
-  useCase: UseCase
+  useCase: UseCase,
 ): Promise<ResolvedProvider | null> {
+  if (useCase === "guardrail_jailbreak" || useCase === "guardrail_offtopic") {
+    await carryOverLegacyGuardrailAssignment();
+  }
+
   // Check cache first
   const cached = _cache.get(useCase);
   if (cached && Date.now() < cached.expiresAt) {
@@ -214,12 +301,12 @@ export async function resolveProvider(
       apiKey = decryptApiKey(
         assignment.provider.apiKeyEnc,
         assignment.provider.apiKeyIv,
-        assignment.provider.apiKeyTag
+        assignment.provider.apiKeyTag,
       );
     } catch (err) {
       console.error(
         `[AI Provider] Failed to decrypt API key for provider "${assignment.provider.name}":`,
-        err instanceof Error ? err.message : err
+        err instanceof Error ? err.message : err,
       );
       return null;
     }
@@ -235,8 +322,10 @@ export async function resolveProvider(
     // per-model column and is only consulted for configs saved before the
     // setting moved — the admin assignments route carries those over and
     // clears the model value, so this fallback goes quiet on its own.
-    thinkingLevel:
-      resolveThinkingLevel(assignment.thinkingLevel, assignment.model.thinkingLevel),
+    thinkingLevel: resolveThinkingLevel(
+      assignment.thinkingLevel,
+      assignment.model.thinkingLevel,
+    ),
     cfAigByokAlias: assignment.provider.cfAigByokAlias,
     timeoutMs: assignment.provider.timeoutMs ?? DEFAULT_AI_TIMEOUT_MS,
     apiSurface: resolveApiSurface(assignment.provider.apiSurface),
@@ -265,7 +354,9 @@ export async function createOpenAIClient(provider: ResolvedProvider) {
 
   let baseURL: string | undefined;
   if ((isLocal || isCloudflare) && provider.baseUrl) {
-    baseURL = provider.baseUrl.replace(/\/+$/, "").replace(/\/chat\/completions$/, "");
+    baseURL = provider.baseUrl
+      .replace(/\/+$/, "")
+      .replace(/\/chat\/completions$/, "");
   }
 
   return new OpenAI({

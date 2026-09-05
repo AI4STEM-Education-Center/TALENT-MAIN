@@ -28,7 +28,8 @@ export async function GET() {
     where: { id: session.user.id },
     select: PROFILE_SELECT,
   });
-  if (!user) return NextResponse.json({ error: "Account not found." }, { status: 404 });
+  if (!user)
+    return NextResponse.json({ error: "Account not found." }, { status: 404 });
 
   return NextResponse.json({ profile: user });
 }
@@ -53,12 +54,20 @@ export async function PATCH(req: NextRequest) {
 
     const normalizedEmail = normalizeEmail(email);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
-      return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Enter a valid email address." },
+        { status: 400 },
+      );
     }
 
-    const clash = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+    const clash = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
     if (clash && clash.id !== session.user.id) {
-      return NextResponse.json({ error: "Email already in use." }, { status: 409 });
+      return NextResponse.json(
+        { error: "Email already in use." },
+        { status: 409 },
+      );
     }
 
     const user = await prisma.user.update({
@@ -69,11 +78,23 @@ export async function PATCH(req: NextRequest) {
 
     return NextResponse.json({ profile: user });
   } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      return NextResponse.json({ error: "Email already in use." }, { status: 409 });
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      return NextResponse.json(
+        { error: "Email already in use." },
+        { status: 409 },
+      );
     }
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
-      return NextResponse.json({ error: "Account not found." }, { status: 404 });
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2025"
+    ) {
+      return NextResponse.json(
+        { error: "Account not found." },
+        { status: 404 },
+      );
     }
     logApiError("PROFILE_PATCH", error);
     void logSystemEvent({
@@ -83,6 +104,9 @@ export async function PATCH(req: NextRequest) {
       message: "Profile update failed",
       userId: session.user.id,
     });
-    return NextResponse.json({ error: "Internal server error." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error." },
+      { status: 500 },
+    );
   }
 }

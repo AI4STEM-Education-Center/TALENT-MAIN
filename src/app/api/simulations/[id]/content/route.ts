@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { listSimulationVersions } from "@/lib/simulation-versions";
 import { getS3ObjectAsString } from "@/lib/storage";
 import { SIMULATION_CSP } from "@/lib/simulation";
 import { renderSimulationLatex } from "@/lib/simulation-math";
 import { injectTelemetryScript } from "@/lib/simulation-telemetry";
+import { buildSimulationEditorLayer } from "@/lib/simulation-editor-script";
 
 export const runtime = "nodejs";
 
@@ -21,25 +23,34 @@ export const runtime = "nodejs";
  */
 export async function GET(
   _req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const [session, { id }] = await Promise.all([auth(), params]);
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session?.user)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const sim = await prisma.questionSimulation.findUnique({
     where: { id },
-    include: { question: { select: { quizId: true, quiz: { select: { teacherId: true } } } } },
+    include: {
+      question: {
+        select: { quizId: true, quiz: { select: { teacherId: true } } },
+      },
+    },
   });
   if (!sim) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const { role } = session.user;
   let allowed = role === "ADMIN";
   if (!allowed && role === "TEACHER") {
-    const teacher = await prisma.teacher.findUnique({ where: { userId: session.user.id } });
+    const teacher = await prisma.teacher.findUnique({
+      where: { userId: session.user.id },
+    });
     const ownerId = sim.question.quiz.teacherId;
     allowed = !!teacher && (ownerId === null || ownerId === teacher.id);
   } else if (!allowed && role === "STUDENT") {
-    const student = await prisma.student.findUnique({ where: { userId: session.user.id } });
+    const student = await prisma.student.findUnique({
+      where: { userId: session.user.id },
+    });
     if (student) {
       const assignment = await prisma.classQuiz.findFirst({
         where: {
@@ -51,24 +62,55 @@ export async function GET(
       allowed = !!assignment;
     }
   }
-  if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!allowed)
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   if (!sim.storageKey || !sim.bucket) {
-    return NextResponse.json({ error: "Simulation has no content yet" }, { status: 409 });
+    return NextResponse.json(
+      { error: "Simulation has no content yet" },
+      { status: 409 },
+    );
   }
 
+  const selected = _req.nextUrl.searchParams.get("version");
+  let storageKey = sim.storageKey;
+  let bucket = sim.bucket;
+  if (selected) {
+    if (role !== "ADMIN" && role !== "TEACHER")
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    const number = Number(selected);
+    if (!Number.isSafeInteger(number) || number < 1)
+      return NextResponse.json({ error: "Invalid version" }, { status: 400 });
+    const version = (await listSimulationVersions(sim)).find(
+      (v) => v.number === number,
+    );
+    if (!version && number !== sim.version)
+      return NextResponse.json({ error: "Version not found" }, { status: 404 });
+    storageKey = version?.storageKey ?? sim.storageKey;
+    bucket = version?.bucket ?? sim.bucket;
+  }
   let html: string;
   try {
-    html = await getS3ObjectAsString(sim.bucket, sim.storageKey);
+    html = await getS3ObjectAsString(bucket, storageKey);
   } catch (err) {
     console.error(`[Simulation] Failed to load artifact for ${sim.id}:`, err);
-    return NextResponse.json({ error: "Failed to load simulation" }, { status: 502 });
+    return NextResponse.json(
+      { error: "Failed to load simulation" },
+      { status: 502 },
+    );
   }
+
+  const editing =
+    (role === "ADMIN" || role === "TEACHER") &&
+    _req.nextUrl.searchParams.get("edit") === "1";
 
   // Generated formula markers contain raw LaTeX. Parse them with KaTeX on the
   // server and emit self-contained MathML, so formulas render correctly inside
   // the no-network sandbox without shipping a runtime or external font assets.
-  html = renderSimulationLatex(html);
+  // Staff editing the document also get the LaTeX source kept on each formula:
+  // MathML has no route back to it, and that is what the equation editor edits.
+  html = renderSimulationLatex(html, { annotate: editing });
+  if (editing) html += buildSimulationEditorLayer();
 
   // Students get the interaction-telemetry snippet injected at serve time (the
   // stored artifact is never modified, and pre-telemetry artifacts report like

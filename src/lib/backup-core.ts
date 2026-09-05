@@ -66,12 +66,17 @@ export function backupFolder(cfg: ResolvedWebdavConfig, env: AppEnv): string {
 // backup-YYYYMMDDTHHMMSSZ.db.gz (UTC). The timestamp drives GFS bucketing.
 
 export function backupKeyName(d: Date): string {
-  const stamp = d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+  const stamp = d
+    .toISOString()
+    .replace(/[-:]/g, "")
+    .replace(/\.\d{3}Z$/, "Z");
   return `backup-${stamp}.db.gz`;
 }
 
 export function parseBackupTimestamp(name: string): Date | null {
-  const m = name.match(/^backup-(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z\.db\.gz$/);
+  const m = name.match(
+    /^backup-(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z\.db\.gz$/,
+  );
   if (!m) return null;
   const [, y, mo, d, h, mi, s] = m;
   const t = Date.UTC(+y, +mo - 1, +d, +h, +mi, +s);
@@ -90,7 +95,10 @@ export function createSnapshotGz(): Buffer {
   const src = resolveDbFilePath();
   if (!fs.existsSync(src)) throw new Error(`Database file not found at ${src}`);
 
-  const tmp = path.join(os.tmpdir(), `al-snapshot-${Date.now()}-${process.pid}.db`);
+  const tmp = path.join(
+    os.tmpdir(),
+    `al-snapshot-${Date.now()}-${process.pid}.db`,
+  );
   const db = new Database(src, { fileMustExist: true, timeout: 5000 });
   try {
     db.exec(`VACUUM INTO '${tmp.replace(/'/g, "''")}'`);
@@ -115,13 +123,17 @@ function monthBucket(d: Date): string {
 }
 
 function isoWeekBucket(d: Date): string {
-  const date = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const date = new Date(
+    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()),
+  );
   const dayNum = (date.getUTCDay() + 6) % 7; // Mon=0 … Sun=6
   date.setUTCDate(date.getUTCDate() - dayNum + 3); // Thursday of this ISO week
   const firstThursday = new Date(Date.UTC(date.getUTCFullYear(), 0, 4));
   const firstDayNum = (firstThursday.getUTCDay() + 6) % 7;
   firstThursday.setUTCDate(firstThursday.getUTCDate() - firstDayNum + 3);
-  const week = 1 + Math.round((date.getTime() - firstThursday.getTime()) / (7 * 86_400_000));
+  const week =
+    1 +
+    Math.round((date.getTime() - firstThursday.getTime()) / (7 * 86_400_000));
   return `${date.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
 }
 
@@ -138,7 +150,8 @@ export function selectForRetention(
   const sorted = [...items].sort((a, b) => b.date.getTime() - a.date.getTime());
   const keep = new Set<string>();
 
-  for (const it of sorted.slice(0, Math.max(0, policy.keepRecent))) keep.add(it.key);
+  for (const it of sorted.slice(0, Math.max(0, policy.keepRecent)))
+    keep.add(it.key);
 
   const tier = (bucketOf: (d: Date) => string, limit: number) => {
     if (limit <= 0) return;
@@ -204,7 +217,11 @@ export async function listBackups(
   const client = getClient(cfg);
   const files = await listFiles(client, backupFolder(cfg, env));
   return files
-    .map((f) => ({ name: f.basename, date: parseBackupTimestamp(f.basename), size: f.size }))
+    .map((f) => ({
+      name: f.basename,
+      date: parseBackupTimestamp(f.basename),
+      size: f.size,
+    }))
     .filter((x): x is BackupListItem => x.date !== null)
     .sort((a, b) => b.date.getTime() - a.date.getTime());
 }
@@ -279,7 +296,8 @@ export async function stageRestore(
   const check = new Database(staged, { readonly: true, fileMustExist: true });
   try {
     const result = check.pragma("integrity_check", { simple: true });
-    if (result !== "ok") throw new Error(`integrity_check failed: ${String(result)}`);
+    if (result !== "ok")
+      throw new Error(`integrity_check failed: ${String(result)}`);
   } finally {
     check.close();
   }

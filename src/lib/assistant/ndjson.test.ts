@@ -19,7 +19,7 @@ describe("consumeNdjson", () => {
     expect(first.values).toEqual([{ type: "a" }]);
     expect(first.carry).toBe('{"type":"b"');
 
-    const second = consumeNdjson<Event>(first.carry, '}\n');
+    const second = consumeNdjson<Event>(first.carry, "}\n");
     expect(second.values).toEqual([{ type: "b" }]);
     expect(second.carry).toBe("");
   });
@@ -48,15 +48,23 @@ describe("consumeNdjson", () => {
 
 describe("readNdjson", () => {
   it("yields every event in arrival order across chunk boundaries", async () => {
-    const stream = streamOf(['{"type":"delta","text":"He', 'llo"}\n{"type":"done"}\n']);
+    const stream = streamOf([
+      '{"type":"delta","text":"He',
+      'llo"}\n{"type":"done"}\n',
+    ]);
     const events: Event[] = [];
     for await (const event of readNdjson<Event>(stream)) events.push(event);
-    expect(events).toEqual([{ type: "delta", text: "Hello" }, { type: "done" }]);
+    expect(events).toEqual([
+      { type: "delta", text: "Hello" },
+      { type: "done" },
+    ]);
   });
 
   it("flushes a final line that arrived without a trailing newline", async () => {
     const events: Event[] = [];
-    for await (const event of readNdjson<Event>(streamOf(['{"type":"last"}']))) {
+    for await (const event of readNdjson<Event>(
+      streamOf(['{"type":"last"}']),
+    )) {
       events.push(event);
     }
     expect(events).toEqual([{ type: "last" }]);

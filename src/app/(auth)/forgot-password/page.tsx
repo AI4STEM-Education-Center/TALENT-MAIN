@@ -4,7 +4,13 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { MailCheck } from "lucide-react";
 
 export default function ForgotPasswordPage() {
@@ -25,7 +31,9 @@ export default function ForgotPasswordPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Could not start a password reset. Please try again.");
+        setError(
+          data.error || "Could not start a password reset. Please try again.",
+        );
       } else {
         setSentMessage(data.message as string);
       }
@@ -37,12 +45,15 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen bg-linear-to-br from-slate-900 via-blue-950 to-slate-900 flex items-center justify-center px-4">
+    <div className="min-h-screen auth-shell flex items-center justify-center px-4">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-bold">Forgot your password?</CardTitle>
+          <CardTitle className="text-2xl font-bold">
+            Forgot your password?
+          </CardTitle>
           <CardDescription>
-            Enter your email or username and we&apos;ll send you a link to choose a new password.
+            Enter your email or username and we&apos;ll send you a link to
+            choose a new password.
           </CardDescription>
         </CardHeader>
         <CardContent>

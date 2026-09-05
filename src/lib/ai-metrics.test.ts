@@ -27,13 +27,20 @@ describe("formatAiMetrics", () => {
   it("derives generation time and token rate from total minus TTFT", () => {
     // TTFT 19.438s, total 25.123s -> gen 5.685s; 3077 / 5.685 ≈ 541.2 tok/s
     expect(
-      formatAiMetrics({ model: "openai/gpt-5.5", ttftMs: 19438, totalMs: 25123, tokens: 3077 })
-    ).toBe("openai/gpt-5.5 · TTFT 19.438s · gen 5.685s · total 25.123s · 3077 tokens · 541.2 tok/s");
+      formatAiMetrics({
+        model: "openai/gpt-5.5",
+        ttftMs: 19438,
+        totalMs: 25123,
+        tokens: 3077,
+      }),
+    ).toBe(
+      "openai/gpt-5.5 · TTFT 19.438s · gen 5.685s · total 25.123s · 3077 tokens · 541.2 tok/s",
+    );
   });
 
   it("omits gen/total/rate when total time is missing (legacy rows)", () => {
     expect(formatAiMetrics({ model: "m", ttftMs: 240, tokens: 512 })).toBe(
-      "m · TTFT 240ms · 512 tokens"
+      "m · TTFT 240ms · 512 tokens",
     );
   });
 
@@ -46,9 +53,9 @@ describe("formatAiMetrics", () => {
         ttftMs: 19438,
         totalMs: 25123,
         tokens: 3077,
-      })
+      }),
     ).toBe(
-      "openai/gpt-5.5 · via cloudflare · tier flex · TTFT 19.438s · gen 5.685s · total 25.123s · 3077 tokens · 541.2 tok/s"
+      "openai/gpt-5.5 · via cloudflare · tier flex · TTFT 19.438s · gen 5.685s · total 25.123s · 3077 tokens · 541.2 tok/s",
     );
   });
 
@@ -61,21 +68,33 @@ describe("formatAiMetrics", () => {
         thinkingLevel: "high",
         ttftMs: 240,
         tokens: 512,
-      })
-    ).toBe("gpt-5.1 · via openai · tier flex · think high · TTFT 240ms · 512 tokens");
+      }),
+    ).toBe(
+      "gpt-5.1 · via openai · tier flex · think high · TTFT 240ms · 512 tokens",
+    );
   });
 
   it("omits the thinking level for a model that has none pinned", () => {
     expect(
-      formatAiMetrics({ model: "gpt-5.1", thinkingLevel: null, ttftMs: 240, tokens: 512 })
+      formatAiMetrics({
+        model: "gpt-5.1",
+        thinkingLevel: null,
+        ttftMs: 240,
+        tokens: 512,
+      }),
     ).toBe("gpt-5.1 · TTFT 240ms · 512 tokens");
   });
 
   it("leaves rows written before provider/tier were stored exactly as they were", () => {
     expect(
-      formatAiMetrics({ model: "cloudflare/openai/gpt-5.5", ttftMs: 19438, totalMs: 25123, tokens: 3077 })
+      formatAiMetrics({
+        model: "cloudflare/openai/gpt-5.5",
+        ttftMs: 19438,
+        totalMs: 25123,
+        tokens: 3077,
+      }),
     ).toBe(
-      "cloudflare/openai/gpt-5.5 · TTFT 19.438s · gen 5.685s · total 25.123s · 3077 tokens · 541.2 tok/s"
+      "cloudflare/openai/gpt-5.5 · TTFT 19.438s · gen 5.685s · total 25.123s · 3077 tokens · 541.2 tok/s",
     );
   });
 
@@ -90,9 +109,9 @@ describe("formatAiMetrics", () => {
         ttftMs: 6805,
         totalMs: 6837,
         tokens: 222,
-      })
+      }),
     ).toBe(
-      "openai/gpt-5.5 · via cloudflare · TTFT 6.805s · total 6.837s · 222 tokens · 32.5 tok/s"
+      "openai/gpt-5.5 · via cloudflare · TTFT 6.805s · total 6.837s · 222 tokens · 32.5 tok/s",
     );
   });
 
@@ -105,12 +124,16 @@ describe("formatAiMetrics", () => {
         generationMs: 92,
         totalMs: 40547,
         tokens: 2283,
-      })
-    ).toBe("openai/gpt-5.5 · TTFT 5.779s · total 40.547s · 2283 tokens · 56.3 tok/s");
+      }),
+    ).toBe(
+      "openai/gpt-5.5 · TTFT 5.779s · total 40.547s · 2283 tokens · 56.3 tok/s",
+    );
   });
 
   it("marks estimated token counts with a ~ suffix", () => {
-    expect(formatAiMetrics({ tokens: 512, tokensEstimated: true })).toBe("512~ tokens");
+    expect(formatAiMetrics({ tokens: 512, tokensEstimated: true })).toBe(
+      "512~ tokens",
+    );
   });
 
   it("uses an explicit generation window for aggregated multi-call work", () => {
@@ -121,9 +144,9 @@ describe("formatAiMetrics", () => {
         generationMs: 500,
         totalMs: 900,
         tokens: 50,
-      })
+      }),
     ).toBe(
-      "openai/gpt-5.5 · TTFT 200ms · gen 500ms · total 900ms · 50 tokens · 100.0 tok/s"
+      "openai/gpt-5.5 · TTFT 200ms · gen 500ms · total 900ms · 50 tokens · 100.0 tok/s",
     );
   });
 });

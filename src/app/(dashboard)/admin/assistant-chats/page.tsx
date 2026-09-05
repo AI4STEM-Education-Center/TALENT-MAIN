@@ -67,7 +67,7 @@ function TierBadge({ archived }: { archived: boolean }) {
         "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium",
         archived
           ? "bg-muted text-muted-foreground"
-          : "bg-blue-500/10 text-blue-600 dark:text-blue-400"
+          : "bg-blue-500/10 text-blue-600 dark:text-blue-400",
       )}
       title={
         archived
@@ -75,7 +75,11 @@ function TierBadge({ archived }: { archived: boolean }) {
           : "Live: the transcript is still in the database and is full-text searchable"
       }
     >
-      {archived ? <Archive className="size-3" /> : <Database className="size-3" />}
+      {archived ? (
+        <Archive className="size-3" />
+      ) : (
+        <Database className="size-3" />
+      )}
       {archived ? "Archived" : "Live"}
     </span>
   );
@@ -95,7 +99,9 @@ function TranscriptDialog({
     let cancelled = false;
     void (async () => {
       try {
-        const res = await fetch(`/api/admin/assistants/conversations/${conversationId}`);
+        const res = await fetch(
+          `/api/admin/assistants/conversations/${conversationId}`,
+        );
         if (!res.ok) {
           if (!cancelled) setFailed(true);
           return;
@@ -125,7 +131,9 @@ function TranscriptDialog({
       >
         <header className="flex items-start gap-3 border-b border-border px-4 py-3">
           <div className="min-w-0 flex-1">
-            <p className="truncate font-semibold">{data?.title ?? "Transcript"}</p>
+            <p className="truncate font-semibold">
+              {data?.title ?? "Transcript"}
+            </p>
             {data && (
               <p className="mt-0.5 truncate text-xs text-muted-foreground">
                 {data.userName} · {data.userEmail} · {data.audience} assistant ·{" "}
@@ -146,33 +154,43 @@ function TranscriptDialog({
 
         <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
           {failed && (
-            <p className="text-sm text-destructive">This transcript could not be loaded.</p>
+            <p className="text-sm text-destructive">
+              This transcript could not be loaded.
+            </p>
           )}
-          {!failed && !data && <p className="text-sm text-muted-foreground">Loading…</p>}
+          {!failed && !data && (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          )}
           {data?.transcriptUnavailable && (
             <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
-              The conversation record exists, but its archived transcript could not be read
-              from object storage. This is a storage problem, not an empty conversation.
+              The conversation record exists, but its archived transcript could
+              not be read from object storage. This is a storage problem, not an
+              empty conversation.
             </p>
           )}
           {data?.turns.map((turn, index) => (
             <div
               key={index}
-              className={cn("flex", turn.role === "user" ? "justify-end" : "justify-start")}
+              className={cn(
+                "flex",
+                turn.role === "user" ? "justify-end" : "justify-start",
+              )}
             >
               <div
                 className={cn(
                   "max-w-[85%] rounded-lg px-3 py-2",
                   turn.role === "user"
                     ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-foreground"
+                    : "bg-muted text-foreground",
                 )}
               >
                 {turn.role === "user" ? (
                   <p className="whitespace-pre-wrap text-sm">{turn.content}</p>
                 ) : (
                   <div className={MARKDOWN_CLASS}>
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{turn.content}</ReactMarkdown>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {turn.content}
+                    </ReactMarkdown>
                   </div>
                 )}
                 {turn.attachmentNames && turn.attachmentNames.length > 0 && (
@@ -185,7 +203,9 @@ function TranscriptDialog({
             </div>
           ))}
           {data && !data.transcriptUnavailable && data.turns.length === 0 && (
-            <p className="text-sm text-muted-foreground">This conversation has no turns.</p>
+            <p className="text-sm text-muted-foreground">
+              This conversation has no turns.
+            </p>
           )}
         </div>
       </div>
@@ -243,12 +263,19 @@ export default function AdminAssistantChatsPage() {
     <div className="p-8">
       <div className="mb-8 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Chat Transcripts</h1>
+          <h1 className="text-3xl font-bold tracking-tight">
+            Chat Transcripts
+          </h1>
           <p className="mt-1 text-muted-foreground">
-            Every student and teacher conversation with the AI assistants, kept indefinitely.
+            Every student and teacher conversation with the AI assistants, kept
+            indefinitely.
           </p>
         </div>
-        <Button variant="outline" onClick={() => void fetchConversations()} disabled={loading}>
+        <Button
+          variant="outline"
+          onClick={() => void fetchConversations()}
+          disabled={loading}
+        >
           <RefreshCw className={cn("mr-2 size-4", loading && "animate-spin")} />
           Refresh
         </Button>
@@ -283,7 +310,10 @@ export default function AdminAssistantChatsPage() {
             setPage(0);
           }}
         >
-          <SelectTrigger className="w-full sm:w-44" aria-label="Filter by assistant">
+          <SelectTrigger
+            className="w-full sm:w-44"
+            aria-label="Filter by assistant"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -296,9 +326,10 @@ export default function AdminAssistantChatsPage() {
 
       {query && (
         <p className="mb-4 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-          Text search reads the messages of <strong>Live</strong> conversations and the titles
-          of all of them. Archived transcripts are stored as files, so their message bodies are
-          not searchable — open one to read it.
+          Text search reads the messages of <strong>Live</strong> conversations
+          and the titles of all of them. Archived transcripts are stored as
+          files, so their message bodies are not searchable — open one to read
+          it.
         </p>
       )}
 
@@ -306,7 +337,9 @@ export default function AdminAssistantChatsPage() {
         <table className="w-full text-left text-sm">
           <thead className="border-b border-border bg-muted/50 text-xs uppercase text-muted-foreground">
             <tr>
-              <th className="whitespace-nowrap px-4 py-3 font-medium">Last message</th>
+              <th className="whitespace-nowrap px-4 py-3 font-medium">
+                Last message
+              </th>
               <th className="px-4 py-3 font-medium">User</th>
               <th className="px-4 py-3 font-medium">Assistant</th>
               <th className="w-full px-4 py-3 font-medium">Opening message</th>
@@ -317,13 +350,19 @@ export default function AdminAssistantChatsPage() {
           <tbody className="divide-y divide-border">
             {loading && !data ? (
               <tr>
-                <td colSpan={6} className="px-6 py-8 text-center text-muted-foreground">
+                <td
+                  colSpan={6}
+                  className="px-6 py-8 text-center text-muted-foreground"
+                >
                   Loading transcripts…
                 </td>
               </tr>
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-6 py-8 text-center text-muted-foreground">
+                <td
+                  colSpan={6}
+                  className="px-6 py-8 text-center text-muted-foreground"
+                >
                   {total === 0 && !query && !userQuery && audience === ALL
                     ? "No conversations yet. They appear here as students and teachers use the assistants."
                     : "No conversations match the current filters."}
@@ -341,7 +380,9 @@ export default function AdminAssistantChatsPage() {
                   </td>
                   <td className="px-4 py-3">
                     <span className="block">{row.userName}</span>
-                    <span className="block text-xs text-muted-foreground">{row.userEmail}</span>
+                    <span className="block text-xs text-muted-foreground">
+                      {row.userEmail}
+                    </span>
                   </td>
                   <td className="px-4 py-3 capitalize">{row.audience}</td>
                   <td className="max-w-0 truncate px-4 py-3">{row.title}</td>
@@ -385,7 +426,12 @@ export default function AdminAssistantChatsPage() {
         </div>
       </div>
 
-      {openId && <TranscriptDialog conversationId={openId} onClose={() => setOpenId(null)} />}
+      {openId && (
+        <TranscriptDialog
+          conversationId={openId}
+          onClose={() => setOpenId(null)}
+        />
+      )}
     </div>
   );
 }

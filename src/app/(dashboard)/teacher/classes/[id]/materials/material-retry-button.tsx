@@ -10,7 +10,10 @@ interface MaterialRetryButtonProps {
   materialId: string;
 }
 
-export default function MaterialRetryButton({ classId, materialId }: MaterialRetryButtonProps) {
+export default function MaterialRetryButton({
+  classId,
+  materialId,
+}: MaterialRetryButtonProps) {
   const { refresh } = useRouter();
   const confirm = useConfirm();
   const alert = useAlert();
@@ -23,23 +26,26 @@ export default function MaterialRetryButton({ classId, materialId }: MaterialRet
     if (inFlight.current) return;
     inFlight.current = true;
     try {
-    const ok = await confirm({
-      title: "Retry processing this material?",
-      confirmText: "Retry",
-    });
-    if (!ok) return;
-
-    setIsRetrying(true);
-    try {
-      const res = await fetch(`/api/classes/${classId}/materials/${materialId}/retry`, {
-        method: "POST",
+      const ok = await confirm({
+        title: "Retry processing this material?",
+        confirmText: "Retry",
       });
+      if (!ok) return;
 
-      if (!res.ok) {
-        throw new Error("Failed to retry material");
-      }
+      setIsRetrying(true);
+      try {
+        const res = await fetch(
+          `/api/classes/${classId}/materials/${materialId}/retry`,
+          {
+            method: "POST",
+          },
+        );
 
-      refresh();
+        if (!res.ok) {
+          throw new Error("Failed to retry material");
+        }
+
+        refresh();
       } catch (err) {
         console.error(err);
         await alert("An error occurred while retrying the material.");
@@ -52,7 +58,8 @@ export default function MaterialRetryButton({ classId, materialId }: MaterialRet
   };
 
   return (
-    <button type="button"
+    <button
+      type="button"
       onClick={handleRetry}
       disabled={isRetrying}
       className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors disabled:opacity-50"
@@ -67,4 +74,3 @@ export default function MaterialRetryButton({ classId, materialId }: MaterialRet
     </button>
   );
 }
-

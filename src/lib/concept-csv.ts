@@ -190,7 +190,8 @@ function isBlankRow(row: string[]): boolean {
 function headersMatch(actual: string[], expected: string[]): boolean {
   if (actual.length < expected.length) return false;
   for (let i = 0; i < expected.length; i++) {
-    if (actual[i].trim().toLowerCase() !== expected[i].trim().toLowerCase()) return false;
+    if (actual[i].trim().toLowerCase() !== expected[i].trim().toLowerCase())
+      return false;
   }
   return true;
 }
@@ -215,14 +216,16 @@ const CONCEPTS_HEADER = [
 export function parseConceptsCsv(text: string): ParseConceptsResult {
   const records = parseCsvRecords(text);
   if (records.length === 0) {
-    throw new CsvHeaderError("File is empty — expected the Concepts CSV header row.");
+    throw new CsvHeaderError(
+      "File is empty — expected the Concepts CSV header row.",
+    );
   }
 
   const header = records[0];
   if (!headersMatch(header, CONCEPTS_HEADER)) {
     throw new CsvHeaderError(
       "This doesn't look like the Concepts CSV (expected columns starting with " +
-        `"${CONCEPTS_HEADER.join(",")}"). Check you're uploading the right file.`
+        `"${CONCEPTS_HEADER.join(",")}"). Check you're uploading the right file.`,
     );
   }
 
@@ -295,17 +298,21 @@ const MISCONCEPTIONS_HEADER = [
   "type",
 ];
 
-export function parseMisconceptionsCsv(text: string): ParseMisconceptionsResult {
+export function parseMisconceptionsCsv(
+  text: string,
+): ParseMisconceptionsResult {
   const records = parseCsvRecords(text);
   if (records.length === 0) {
-    throw new CsvHeaderError("File is empty — expected the Misconceptions CSV header row.");
+    throw new CsvHeaderError(
+      "File is empty — expected the Misconceptions CSV header row.",
+    );
   }
 
   const header = records[0];
   if (!headersMatch(header, MISCONCEPTIONS_HEADER)) {
     throw new CsvHeaderError(
       "This doesn't look like the Misconceptions CSV (expected columns starting with " +
-        `"${MISCONCEPTIONS_HEADER.join(",")}"). Check you're uploading the right file.`
+        `"${MISCONCEPTIONS_HEADER.join(",")}"). Check you're uploading the right file.`,
     );
   }
 
@@ -373,14 +380,16 @@ const EXTERNAL_REF_TYPES = new Set(["heuristic", "primary"]);
 export function parseMappingsCsv(text: string): ParseMappingsResult {
   const records = parseCsvRecords(text);
   if (records.length === 0) {
-    throw new CsvHeaderError("File is empty — expected the Concept-Misconception mapping CSV header row.");
+    throw new CsvHeaderError(
+      "File is empty — expected the Concept-Misconception mapping CSV header row.",
+    );
   }
 
   const header = records[0];
   if (!headersMatch(header, MAPPINGS_HEADER)) {
     throw new CsvHeaderError(
       "This doesn't look like the Concept<->Misconception mapping CSV (expected columns starting with " +
-        `"${MAPPINGS_HEADER.join(",")}"). Check you're uploading the right file.`
+        `"${MAPPINGS_HEADER.join(",")}"). Check you're uploading the right file.`,
     );
   }
 
@@ -408,7 +417,10 @@ export function parseMappingsCsv(text: string): ParseMappingsResult {
       // redundant denormalized text kept only for potential validation
       // warnings client-side — not stored.
       if (!col2) {
-        skipped.push({ row: rowNum, reason: `Mapping row for ${col0} is missing mapped_concept_id` });
+        skipped.push({
+          row: rowNum,
+          reason: `Mapping row for ${col0} is missing mapped_concept_id`,
+        });
         continue;
       }
       const parsed: ParsedMapping = {
@@ -431,7 +443,10 @@ export function parseMappingsCsv(text: string): ParseMappingsResult {
     if (EXTERNAL_REF_TYPES.has(col2.toLowerCase())) {
       // External-ref row: { conceptId: col0, refCode: col1, refType: col2, sourceUrl: col3 }
       if (!col0 || !col1) {
-        skipped.push({ row: rowNum, reason: "External-ref row is missing concept id or ref code" });
+        skipped.push({
+          row: rowNum,
+          reason: "External-ref row is missing concept id or ref code",
+        });
         continue;
       }
       const parsed: ParsedExternalRef = {
@@ -451,7 +466,10 @@ export function parseMappingsCsv(text: string): ParseMappingsResult {
       continue;
     }
 
-    skipped.push({ row: rowNum, reason: `Unrecognized row shape (col0="${col0}", col2="${col2}")` });
+    skipped.push({
+      row: rowNum,
+      reason: `Unrecognized row shape (col0="${col0}", col2="${col2}")`,
+    });
   }
 
   return { mappings, externalRefs, skipped };

@@ -16,14 +16,20 @@ export const CONSENT_ROLES = ["STUDENT", "TEACHER"] as const;
 export type ConsentRole = (typeof CONSENT_ROLES)[number];
 
 export function isConsentRole(value: unknown): value is ConsentRole {
-  return typeof value === "string" && (CONSENT_ROLES as readonly string[]).includes(value);
+  return (
+    typeof value === "string" &&
+    (CONSENT_ROLES as readonly string[]).includes(value)
+  );
 }
 
 export const CONSENT_DECISIONS = ["AGREE", "DECLINE"] as const;
 export type ConsentDecision = (typeof CONSENT_DECISIONS)[number];
 
 export function isConsentDecision(value: unknown): value is ConsentDecision {
-  return typeof value === "string" && (CONSENT_DECISIONS as readonly string[]).includes(value);
+  return (
+    typeof value === "string" &&
+    (CONSENT_DECISIONS as readonly string[]).includes(value)
+  );
 }
 
 export const DEVICE_TYPES = ["desktop", "mobile", "tablet", "unknown"] as const;
@@ -35,14 +41,21 @@ export type DeviceType = (typeof DEVICE_TYPES)[number];
  * than a full UA-parsing dependency — this app prefers small custom utilities
  * for narrow needs (see clientIp in src/lib/rate-limit.ts).
  */
-export function parseDeviceType(userAgent: string | null | undefined): DeviceType {
+export function parseDeviceType(
+  userAgent: string | null | undefined,
+): DeviceType {
   if (!userAgent) return "unknown";
   const ua = userAgent.toLowerCase();
   if (!ua.trim()) return "unknown";
-  if (/ipad|tablet|nexus 7|nexus 9|nexus 10|kindle|playbook|(android(?!.*mobile))/.test(ua)) {
+  if (
+    /ipad|tablet|nexus 7|nexus 9|nexus 10|kindle|playbook|(android(?!.*mobile))/.test(
+      ua,
+    )
+  ) {
     return "tablet";
   }
-  if (/mobi|iphone|ipod|android|blackberry|windows phone/.test(ua)) return "mobile";
+  if (/mobi|iphone|ipod|android|blackberry|windows phone/.test(ua))
+    return "mobile";
   if (/windows|macintosh|mac os x|linux|x11|cros/.test(ua)) return "desktop";
   return "unknown";
 }
@@ -120,7 +133,7 @@ export interface ConsentClaim {
  */
 export async function getUserConsentClaim(
   userId: string,
-  role: ConsentRole
+  role: ConsentRole,
 ): Promise<ConsentClaim | null> {
   const active = await getActiveConsentVersion(role);
   if (!active) return { version: null, decision: CONSENT_NOT_REQUIRED };
@@ -150,7 +163,9 @@ export async function getUserConsentClaim(
  * Defaults to false (no active form, or no AGREE decision on file) so a gap
  * or misconfiguration fails closed rather than silently collecting data.
  */
-export async function hasResearchConsent(studentUserId: string): Promise<boolean> {
+export async function hasResearchConsent(
+  studentUserId: string,
+): Promise<boolean> {
   const active = await getActiveConsentVersion("STUDENT");
   if (!active) return false;
 
@@ -164,7 +179,7 @@ export async function hasResearchConsent(studentUserId: string): Promise<boolean
 
 /** Collapse newest-first consent rows to the current decision for each email. */
 export function latestConsentDecisionsByEmail(
-  records: ReadonlyArray<{ signerEmailSnapshot: string; decision: string }>
+  records: ReadonlyArray<{ signerEmailSnapshot: string; decision: string }>,
 ): Map<string, ConsentDecision> {
   const latest = new Map<string, ConsentDecision>();
   for (const record of records) {
@@ -174,18 +189,4 @@ export function latestConsentDecisionsByEmail(
     }
   }
   return latest;
-}
-
-/** Display name for a device type, used in the admin browse/preview UI. */
-export function formatDeviceType(deviceType: string): string {
-  switch (deviceType) {
-    case "desktop":
-      return "Desktop";
-    case "mobile":
-      return "Mobile";
-    case "tablet":
-      return "Tablet";
-    default:
-      return "Unknown";
-  }
 }

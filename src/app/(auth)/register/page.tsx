@@ -5,16 +5,27 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { GraduationCap, Info } from "lucide-react";
-import { PASSWORD_REQUIREMENTS, validatePassword } from "@/lib/account-validation";
+import {
+  PASSWORD_REQUIREMENTS,
+  validatePassword,
+} from "@/lib/account-validation";
 import { formatTeacherCode, normalizeTeacherCode } from "@/lib/teacher-codes";
 
 function RegisterForm() {
   const { push } = useRouter();
   // Codes issued in the admin panel are shared as /register?code=… links, so
   // the invitee only fills in their own details. A hand-typed code still works.
-  const codeFromLink = normalizeTeacherCode(useSearchParams().get("code") ?? "");
+  const codeFromLink = normalizeTeacherCode(
+    useSearchParams().get("code") ?? "",
+  );
   const [form, setForm] = useState({
     firstName: "",
     lastName: "",
@@ -66,14 +77,15 @@ function RegisterForm() {
   }
 
   return (
-    <div className="min-h-screen bg-linear-to-br from-slate-900 via-blue-950 to-slate-900 flex items-center justify-center px-4 py-8">
+    <div className="min-h-screen auth-shell flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-md space-y-4">
-
         {/* Student notice */}
-        <div className="flex items-start gap-3 p-4 rounded-lg bg-blue-500/10 border border-blue-400/20 text-sm text-blue-200">
-          <Info className="size-4 mt-0.5 shrink-0 text-blue-400" />
+        <div className="flex items-start gap-3 rounded-[var(--radius)] border border-primary/25 bg-primary/10 p-4 text-sm text-foreground">
+          <Info className="mt-0.5 size-4 shrink-0 text-primary" />
           <span>
-            <strong>Students:</strong> You cannot sign up here. Ask your teacher for an invitation link: you&apos;ll need your 81 number to verify your identity and create your account.
+            <strong>Students:</strong> You cannot sign up here. Ask your teacher
+            for an invitation link: you&apos;ll need your 81 number to verify
+            your identity and create your account.
           </span>
         </div>
 
@@ -81,7 +93,9 @@ function RegisterForm() {
           <CardHeader className="space-y-1">
             <div className="flex items-center gap-2">
               <GraduationCap className="size-5 text-primary" />
-              <CardTitle className="text-2xl font-bold">Teacher Registration</CardTitle>
+              <CardTitle className="text-2xl font-bold">
+                Teacher Registration
+              </CardTitle>
             </div>
             <CardDescription>
               You need a teacher registration code to create an account.
@@ -172,9 +186,7 @@ function RegisterForm() {
               </div>
 
               <div className="space-y-2 pt-1">
-                <Label htmlFor="teacherToken">
-                  Teacher registration code
-                </Label>
+                <Label htmlFor="teacherToken">Teacher registration code</Label>
                 {/* A code that arrived in the link is already on screen in the
                     URL bar, so masking it would only stop the invitee checking
                     it against what they were sent. */}
@@ -186,7 +198,9 @@ function RegisterForm() {
                   onChange={updateFormField}
                   required
                   placeholder="Enter the code provided by your administrator"
-                  className={codeFromLink ? "font-mono tracking-wider" : undefined}
+                  className={
+                    codeFromLink ? "font-mono tracking-wider" : undefined
+                  }
                 />
                 <p className="text-xs text-muted-foreground">
                   {codeFromLink
@@ -217,7 +231,7 @@ export default function RegisterPage() {
   // useSearchParams needs a Suspense boundary in the App Router; same shape as
   // the login page's ?callbackUrl handling.
   return (
-    <Suspense fallback={<div className="min-h-screen bg-linear-to-br from-slate-900 via-blue-950 to-slate-900" />}>
+    <Suspense fallback={<div className="min-h-screen auth-shell" />}>
       <RegisterForm />
     </Suspense>
   );

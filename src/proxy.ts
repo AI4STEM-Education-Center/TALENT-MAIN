@@ -73,11 +73,20 @@ export default auth((req) => {
   const isPublicRoute = publicRoutes.includes(pathname);
   const isInviteRoute = pathname.startsWith("/invite/");
   const isApiAuth = pathname.startsWith("/api/auth");
+  // Machine-to-machine pressure-result ingestion authenticates with its own
+  // bearer token inside the route. GET history remains under /api/admin/*.
+  const isPressureResultIngest = pathname === "/api/pressure-results";
   // Invitation API must be public: unauthenticated students need to validate
   // tokens and POST to enroll (signup flow) before they have a session.
   const isApiInvitation = pathname.startsWith("/api/invitations/");
 
-  if (isPublicRoute || isInviteRoute || isApiAuth || isApiInvitation) {
+  if (
+    isPublicRoute ||
+    isInviteRoute ||
+    isApiAuth ||
+    isApiInvitation ||
+    isPressureResultIngest
+  ) {
     return NextResponse.next();
   }
 
@@ -97,14 +106,23 @@ export default auth((req) => {
   // Matched exactly rather than by prefix so the public "/admin-register" page
   // can never be swept up by it (that route returns above as a public route
   // today — this keeps the guard correct regardless of that ordering).
-  if ((pathname === "/admin" || pathname.startsWith("/admin/")) && role !== "ADMIN") {
-    return NextResponse.redirect(new URL(role === "TEACHER" ? "/teacher" : "/student", req.url));
+  if (
+    (pathname === "/admin" || pathname.startsWith("/admin/")) &&
+    role !== "ADMIN"
+  ) {
+    return NextResponse.redirect(
+      new URL(role === "TEACHER" ? "/teacher" : "/student", req.url),
+    );
   }
   if (pathname.startsWith("/teacher") && role !== "TEACHER") {
-    return NextResponse.redirect(new URL(role === "ADMIN" ? "/admin" : "/student", req.url));
+    return NextResponse.redirect(
+      new URL(role === "ADMIN" ? "/admin" : "/student", req.url),
+    );
   }
   if (pathname.startsWith("/student") && role !== "STUDENT") {
-    return NextResponse.redirect(new URL(role === "ADMIN" ? "/admin" : "/teacher", req.url));
+    return NextResponse.redirect(
+      new URL(role === "ADMIN" ? "/admin" : "/teacher", req.url),
+    );
   }
 
   // --- IRB consent hard-gate: a teacher must agree to the research consent
@@ -122,16 +140,26 @@ export default auth((req) => {
   // A deployment with no published TEACHER form gates nobody: the claim is
   // stamped NOT_REQUIRED in that case precisely so this never redirects to a
   // page that has no form to show (which looped — see consent-claim.ts).
-  const isConsentRoute = pathname === "/teacher/consent-required" || pathname === "/api/consent";
-  if (role === "TEACHER" && !isConsentRoute && isTeacherConsentBlocked(session.user?.consentDecision)) {
+  const isConsentRoute =
+    pathname === "/teacher/consent-required" || pathname === "/api/consent";
+  if (
+    role === "TEACHER" &&
+    !isConsentRoute &&
+    isTeacherConsentBlocked(session.user?.consentDecision)
+  ) {
     if (pathname.startsWith("/api/")) {
       return NextResponse.json(
-        { error: "You must respond to the research consent form before using this feature." },
-        { status: 403 }
+        {
+          error:
+            "You must respond to the research consent form before using this feature.",
+        },
+        { status: 403 },
       );
     }
     if (pathname.startsWith("/teacher")) {
-      return NextResponse.redirect(new URL("/teacher/consent-required", req.url));
+      return NextResponse.redirect(
+        new URL("/teacher/consent-required", req.url),
+      );
     }
   }
 
@@ -139,7 +167,5 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|public).*)",
-  ],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|public).*)"],
 };

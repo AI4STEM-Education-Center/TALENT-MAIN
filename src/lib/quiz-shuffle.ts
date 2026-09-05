@@ -53,12 +53,13 @@ export function shuffleWithSeed<T>(items: T[], seed: string): T[] {
  * their trailing position (and their order relative to each other) while
  * everything above them is reordered.
  */
-const ANCHORED_LAST = /^\s*\W*\s*(all|none|both|neither)\s+of\s+(the\s+|these\s+)?(above|below|these|them|options)\b/i;
+const ANCHORED_LAST =
+  /^\s*\W*\s*(all|none|both|neither)\s+of\s+(the\s+|these\s+)?(above|below|these|them|options)\b/i;
 
 /** Reorder a question's answer choices for one attempt. */
 export function shuffleAnswerChoices<T extends { text: string }>(
   options: T[],
-  seed: string
+  seed: string,
 ): T[] {
   if (options.length < 2) return options;
 

@@ -36,7 +36,11 @@ export async function getSmtpConfig(): Promise<ResolvedSmtpConfig | null> {
   let password: string | null = null;
   if (cfg.passwordEnc && cfg.passwordIv && cfg.passwordTag) {
     try {
-      password = decryptApiKey(cfg.passwordEnc, cfg.passwordIv, cfg.passwordTag);
+      password = decryptApiKey(
+        cfg.passwordEnc,
+        cfg.passwordIv,
+        cfg.passwordTag,
+      );
     } catch {
       password = null;
     }
@@ -71,7 +75,9 @@ export function createTransport(cfg: ResolvedSmtpConfig): Transporter {
 }
 
 /** Load an admin's overrides for one purpose (null when never customized). */
-export async function getSenderOverride(purpose: EmailPurpose): Promise<SenderOverride | null> {
+export async function getSenderOverride(
+  purpose: EmailPurpose,
+): Promise<SenderOverride | null> {
   const row = await prisma.emailSender.findUnique({ where: { purpose } });
   if (!row) return null;
   return {
@@ -89,7 +95,7 @@ export async function getSenderOverride(purpose: EmailPurpose): Promise<SenderOv
  */
 export async function getSenderIdentity(
   purpose: EmailPurpose,
-  cfg: ResolvedSmtpConfig
+  cfg: ResolvedSmtpConfig,
 ): Promise<SenderIdentity> {
   return resolveSenderIdentity(purpose, cfg, await getSenderOverride(purpose));
 }
@@ -131,12 +137,12 @@ async function requireSendableConfig(): Promise<ResolvedSmtpConfig> {
   const cfg = await getSmtpConfig();
   if (!cfg) {
     throw new SmtpNotConfiguredError(
-      "No SMTP server is configured. An administrator must set one up first."
+      "No SMTP server is configured. An administrator must set one up first.",
     );
   }
   if (!cfg.isActive) {
     throw new SmtpNotConfiguredError(
-      "Email sending is currently disabled. An administrator must enable the SMTP server."
+      "Email sending is currently disabled. An administrator must enable the SMTP server.",
     );
   }
   return cfg;
@@ -211,8 +217,8 @@ export async function sendEmail(opts: SendOptions): Promise<SendResult> {
         replyTo,
         subject: opts.subject,
         text: opts.text,
-      })
-    )
+      }),
+    ),
   );
 
   const errors: string[] = [];
@@ -224,7 +230,9 @@ export async function sendEmail(opts: SendOptions): Promise<SendResult> {
       sent++;
     } else {
       failed++;
-      errors.push(`${recipients[i]}: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`);
+      errors.push(
+        `${recipients[i]}: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`,
+      );
     }
   }
 
@@ -242,11 +250,15 @@ export async function sendEmail(opts: SendOptions): Promise<SendResult> {
 export async function sendPurposeEmail(
   purpose: EmailPurpose,
   to: string,
-  vars: Record<string, string | number>
+  vars: Record<string, string | number>,
 ): Promise<SendResult> {
   const cfg = await requireSendableConfig();
   const override = await getSenderOverride(purpose);
-  const { subject, text } = renderPurposeMessage(purpose, { appName: APP_NAME, ...vars }, override);
+  const { subject, text } = renderPurposeMessage(
+    purpose,
+    { appName: APP_NAME, ...vars },
+    override,
+  );
   const identity = resolveSenderIdentity(purpose, cfg, override);
 
   const transport = createTransport(cfg);
@@ -263,32 +275,43 @@ export async function sendPurposeEmail(
     return {
       sent: 0,
       failed: 1,
-      errors: [`${to}: ${error instanceof Error ? error.message : String(error)}`],
+      errors: [
+        `${to}: ${error instanceof Error ? error.message : String(error)}`,
+      ],
     };
   }
 }
 
 /**
  * Verify SMTP connectivity for a given config (used by the admin "Send test"
- * action). Optionally sends a test email to `testRecipient`.
+ * action). Optionally sends a test email to `testRecipient`, rendered through
+ * the admin-editable SYSTEM_TEST template so the preview in /admin/email
+ * matches what actually arrives.
  */
 export async function verifyAndTest(
   cfg: ResolvedSmtpConfig,
-  testRecipient?: string
+  testRecipient?: string,
 ): Promise<void> {
   const transport = createTransport(cfg);
   await transport.verify();
 
   if (testRecipient) {
-    const identity = await getSenderIdentity("SYSTEM_TEST", cfg);
+    const override = await getSenderOverride("SYSTEM_TEST");
+    const identity = resolveSenderIdentity("SYSTEM_TEST", cfg, override);
+    const { subject, text } = renderPurposeMessage(
+      "SYSTEM_TEST",
+      {
+        appName: APP_NAME,
+        fromEmail: identity.fromEmail,
+        purposeLabel: EMAIL_PURPOSE_DEFINITIONS.SYSTEM_TEST.label,
+      },
+      override,
+    );
     await transport.sendMail({
       from: formatFromHeader(identity),
       to: testRecipient,
-      subject: `${APP_NAME} SMTP test email`,
-      text:
-        `This is a test email confirming your ${APP_NAME} SMTP configuration works correctly.\n\n` +
-        `It was sent from ${identity.fromEmail} — the address configured for ` +
-        `"${EMAIL_PURPOSE_DEFINITIONS.SYSTEM_TEST.label}".`,
+      subject,
+      text,
     });
   }
 }

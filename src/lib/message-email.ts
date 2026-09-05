@@ -1,5 +1,14 @@
 import { prisma } from "@/lib/prisma";
-import { sendEmailToRecipient, SmtpNotConfiguredError } from "@/lib/email";
+import {
+  sendEmailToRecipient,
+  SmtpNotConfiguredError,
+  getSenderOverride,
+} from "@/lib/email";
+import {
+  APP_NAME,
+  renderPurposeMessage,
+  type SenderOverride,
+} from "@/lib/email-purposes";
 import { isValidEmail } from "@/lib/csv-roster";
 
 /**
@@ -73,8 +82,13 @@ export type DeliveryFailureKind = "TRANSIENT" | "PERMANENT";
 export function classifyDeliveryError(error: unknown): DeliveryFailureKind {
   if (error instanceof SmtpNotConfiguredError) return "TRANSIENT";
 
-  const responseCode = (error as { responseCode?: unknown } | null)?.responseCode;
-  if (typeof responseCode === "number" && responseCode >= 500 && responseCode < 600) {
+  const responseCode = (error as { responseCode?: unknown } | null)
+    ?.responseCode;
+  if (
+    typeof responseCode === "number" &&
+    responseCode >= 500 &&
+    responseCode < 600
+  ) {
     return "PERMANENT";
   }
   return "TRANSIENT";
@@ -83,7 +97,10 @@ export function classifyDeliveryError(error: unknown): DeliveryFailureKind {
 /** Readable one-liner for an unknown throwable, trimmed for storage. */
 export function describeDeliveryError(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
-  return raw.replace(/\s+/g, " ").trim().slice(0, MAX_ERROR_LENGTH) || "Unknown error";
+  return (
+    raw.replace(/\s+/g, " ").trim().slice(0, MAX_ERROR_LENGTH) ||
+    "Unknown error"
+  );
 }
 
 export interface RecipientAccount {
@@ -101,7 +118,7 @@ export interface RecipientAccount {
  * and the compose screen (how many will be emailed) so the two never disagree.
  */
 export function selectEmailRecipients(
-  accounts: RecipientAccount[]
+  accounts: RecipientAccount[],
 ): Map<string, string | null> {
   const recipients = new Map<string, string | null>();
   for (const account of accounts) {
@@ -153,30 +170,44 @@ export function messageLink(appUrl: string, messageId: string): string {
  * the platform — where read state, the class it belongs to, and the reply path
  * all are — so the email says who wrote, what it is about, and links straight
  * to it. Message content therefore never sits in an inbox or a mail relay log.
+ *
+ * Rendering goes through the admin-editable NOTIFICATION template: the default
+ * copy reproduces the historical wording exactly, while an override lets the
+ * admin reword the nudge without touching code.
  */
-export function buildMessageEmail(input: MessageEmailInput): { subject: string; text: string } {
+export function buildMessageEmail(
+  input: MessageEmailInput,
+  override?: SenderOverride | null,
+): { subject: string; text: string } {
   const className = input.className?.trim() || null;
   const senderName = input.senderName.trim() || "your teacher";
   const topic = input.subject.trim();
-  const subject = className
+  const subjectLine = className
     ? `New message in ${className}: ${topic}`
     : `New message from ${senderName}: ${topic}`;
 
-  const link = input.appUrl
-    ? `Read it here: ${messageLink(input.appUrl, input.messageId)}`
+  const greetingLine = `${senderName} has sent you a new message${className ? ` in ${className}` : ""}.`;
+  const messageUrl = input.appUrl
+    ? messageLink(input.appUrl, input.messageId)
+    : "";
+  const messageLinkLine = input.appUrl
+    ? `Read it here: ${messageUrl}`
     : "Sign in and open Notifications to read it.";
 
-  const text = [
-    `${senderName} has sent you a new message${className ? ` in ${className}` : ""}.`,
-    "",
-    `Subject: ${topic}`,
-    "",
-    link,
-    "",
-    "This is an automated notification — the message itself is waiting for you in the app.",
-  ].join("\n");
-
-  return { subject, text };
+  return renderPurposeMessage(
+    "NOTIFICATION",
+    {
+      appName: APP_NAME,
+      senderName,
+      className: className ?? "",
+      subject: topic,
+      subjectLine,
+      greetingLine,
+      messageUrl,
+      messageLinkLine,
+    },
+    override ?? null,
+  );
 }
 
 export interface DeliveryCounts {
@@ -210,7 +241,9 @@ export type DeliveryOutcome =
  * every terminal transition so the teacher's history reflects reality without
  * the sender's request having waited for any of it.
  */
-export async function recomputeMessageEmailStatus(messageId: string): Promise<void> {
+export async function recomputeMessageEmailStatus(
+  messageId: string,
+): Promise<void> {
   const rows = await prisma.messageEmailDelivery.groupBy({
     by: ["status"],
     where: { messageId },
@@ -258,7 +291,7 @@ export async function recomputeMessageEmailStatus(messageId: string): Promise<vo
  */
 export async function deliverMessageEmail(
   deliveryId: string,
-  now: Date = new Date()
+  now: Date = new Date(),
 ): Promise<DeliveryOutcome> {
   const leaseCutoff = new Date(now.getTime() - MESSAGE_EMAIL_LEASE_MS);
 
@@ -273,7 +306,10 @@ export async function deliverMessageEmail(
     data: { claimedAt: now, attempts: { increment: 1 } },
   });
   if (claim.count === 0) {
-    return { status: "SKIPPED", reason: "already delivered, given up on, or claimed by another worker" };
+    return {
+      status: "SKIPPED",
+      reason: "already delivered, given up on, or claimed by another worker",
+    };
   }
 
   const delivery = await prisma.messageEmailDelivery.findUnique({
@@ -293,13 +329,18 @@ export async function deliverMessageEmail(
   }
 
   const { message } = delivery;
-  const { subject, text } = buildMessageEmail({
-    subject: message.subject,
-    senderName: `${message.sender.firstName} ${message.sender.lastName}`.trim(),
-    className: message.class?.name ?? null,
-    messageId: message.id,
-    appUrl: resolveAppUrl(),
-  });
+  const override = await getSenderOverride("NOTIFICATION").catch(() => null);
+  const { subject, text } = buildMessageEmail(
+    {
+      subject: message.subject,
+      senderName:
+        `${message.sender.firstName} ${message.sender.lastName}`.trim(),
+      className: message.class?.name ?? null,
+      messageId: message.id,
+      appUrl: resolveAppUrl(),
+    },
+    override,
+  );
 
   try {
     await sendEmailToRecipient({
@@ -351,7 +392,7 @@ export async function deliverMessageEmail(
  */
 export async function findStrandedMessageEmails(
   limit = 200,
-  now: Date = new Date()
+  now: Date = new Date(),
 ): Promise<string[]> {
   const due = new Date(now.getTime() - MESSAGE_EMAIL_SWEEP_GRACE_MS);
   const leaseCutoff = new Date(now.getTime() - MESSAGE_EMAIL_LEASE_MS);
@@ -376,7 +417,9 @@ export async function findStrandedMessageEmails(
  * — a worker dying mid-send on the final try is the way that happens. Without
  * this they would sit "QUEUED" in the teacher's history forever.
  */
-export async function failExhaustedMessageEmails(now: Date = new Date()): Promise<number> {
+export async function failExhaustedMessageEmails(
+  now: Date = new Date(),
+): Promise<number> {
   const leaseCutoff = new Date(now.getTime() - MESSAGE_EMAIL_LEASE_MS);
 
   const stuck = await prisma.messageEmailDelivery.findMany({
@@ -399,7 +442,9 @@ export async function failExhaustedMessageEmails(now: Date = new Date()): Promis
   // recording anything get the generic reason.
   await prisma.messageEmailDelivery.updateMany({
     where: { id: { in: ids }, lastError: null },
-    data: { lastError: `Gave up after ${MESSAGE_EMAIL_MAX_ATTEMPTS} delivery attempts` },
+    data: {
+      lastError: `Gave up after ${MESSAGE_EMAIL_MAX_ATTEMPTS} delivery attempts`,
+    },
   });
 
   for (const messageId of new Set(stuck.map((s) => s.messageId))) {

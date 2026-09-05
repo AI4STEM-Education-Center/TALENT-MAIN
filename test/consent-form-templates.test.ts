@@ -26,7 +26,11 @@ describe("official consent form templates", () => {
     for (const role of ROLES) {
       const raw = OFFICIAL_CONSENT_FORMS[role].bodyHtml;
       const text = (html: string) =>
-        html.replace(/<[^>]*>/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
+        html
+          .replace(/<[^>]*>/g, " ")
+          .replace(/&amp;/g, "&")
+          .replace(/\s+/g, " ")
+          .trim();
       expect(text(sanitizeConsentHtml(raw))).toBe(text(raw));
     }
   });
@@ -34,12 +38,16 @@ describe("official consent form templates", () => {
   it("keeps the clauses the rest of the platform enforces", () => {
     const student = OFFICIAL_CONSENT_FORMS.STUDENT.bodyHtml;
     // The promise the export-approval attestation exists to keep.
-    expect(student).toContain("not be known to your course instructor while you are enrolled");
+    expect(student).toContain(
+      "not be known to your course instructor while you are enrolled",
+    );
     expect(student).toContain("no impact on your grades");
     // Both forms offer interview recording, which the initials capture backs.
     for (const role of ROLES) {
       expect(OFFICIAL_CONSENT_FORMS[role].bodyHtml).toContain("initials");
-      expect(OFFICIAL_CONSENT_FORMS[role].bodyHtml).toContain("xiaoming.zhai@uga.edu");
+      expect(OFFICIAL_CONSENT_FORMS[role].bodyHtml).toContain(
+        "xiaoming.zhai@uga.edu",
+      );
       expect(OFFICIAL_CONSENT_FORMS[role].bodyHtml).toContain("IRB@uga.edu");
     }
   });
@@ -48,7 +56,9 @@ describe("official consent form templates", () => {
     // How this website reacts to a decision (e.g. an instructor's access being
     // held) is UI chrome, not part of the IRB-approved form.
     for (const role of ROLES) {
-      expect(OFFICIAL_CONSENT_FORMS[role].bodyHtml).not.toMatch(/provisioned|AI4Talent pilot platform/);
+      expect(OFFICIAL_CONSENT_FORMS[role].bodyHtml).not.toMatch(
+        /provisioned|AI4Talent pilot platform/,
+      );
     }
   });
 });

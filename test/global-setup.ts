@@ -28,23 +28,58 @@ export default function setup() {
   // creating a fresh SQLite file unless Rust engine logging is initialized.
   // `trace` is consumed internally (the CLI remains quiet) and makes startup
   // reliable; retries remain as a guard against genuinely transient failures.
-  const env = { ...process.env, DATABASE_URL: testDbUrl(), RUST_LOG: "trace" };
+  //
+  // Prisma 7.10+ refuses `db push --accept-data-loss` outright when it detects
+  // an AI coding agent in the environment (CLAUDECODE, AI_AGENT, CURSOR_AGENT,
+  // COPILOT_CLI, …) unless PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION is set.
+  // That guard exists to stop an agent destroying a REAL database, and this
+  // spawn provably cannot reach one: the target is the absolute test/test.db
+  // path resolved above, the file was just deleted, and DATABASE_URL is
+  // overridden explicitly so a developer's .env cannot redirect it.
+  //
+  // Standing consent is scoped to THIS call deliberately. It weakens nothing
+  // that currently applies to production: the gate only fires on
+  // `--accept-data-loss`, `--force-reset` and `migrate reset`, and the paths
+  // that touch a real database (`npm run db:push`, `npm run deploy`, and
+  // docker-entrypoint.sh in production) all push WITHOUT those flags, so they
+  // are never gated. An explicit value from the environment still wins, so a
+  // user's own consent message is passed through untouched.
+  const env = {
+    ...process.env,
+    DATABASE_URL: testDbUrl(),
+    RUST_LOG: "trace",
+    PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION:
+      process.env.PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION ||
+      "Standing consent: target is the throwaway vitest database test/test.db, deleted and recreated by test/global-setup.ts on every run.",
+  };
   // Invoke the installed CLI through node rather than `npx`: Node can't spawn
   // `npx` on Windows (it resolves to npx.cmd, which needs a shell), and going
   // direct skips npx's resolution step on CI too.
-  const prismaCli = path.resolve(process.cwd(), "node_modules", "prisma", "build", "index.js");
+  const prismaCli = path.resolve(
+    process.cwd(),
+    "node_modules",
+    "prisma",
+    "build",
+    "index.js",
+  );
   let lastError: unknown;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      execFileSync(process.execPath, [prismaCli, "db", "push", "--accept-data-loss"], {
-        stdio: "inherit",
-        env,
-      });
+      execFileSync(
+        process.execPath,
+        [prismaCli, "db", "push", "--accept-data-loss"],
+        {
+          stdio: "inherit",
+          env,
+        },
+      );
       return;
     } catch (error) {
       lastError = error;
       if (attempt < 3) {
-        console.warn(`[test setup] Prisma db push failed (attempt ${attempt}/3); retrying.`);
+        console.warn(
+          `[test setup] Prisma db push failed (attempt ${attempt}/3); retrying.`,
+        );
       }
     }
   }

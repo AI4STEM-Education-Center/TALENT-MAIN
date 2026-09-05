@@ -69,7 +69,10 @@ describe("deriveQueueDbPath", () => {
 
 describe("Honker exam-results queue roundtrip", () => {
   // Uses a throwaway temp SQLite file — never the app database.
-  const dbPath = path.join(os.tmpdir(), `honker-exam-test-${process.pid}-${Date.now()}.db`);
+  const dbPath = path.join(
+    os.tmpdir(),
+    `honker-exam-test-${process.pid}-${Date.now()}.db`,
+  );
   let db: ReturnType<typeof honker.open> | null = null;
 
   afterEach(() => {
@@ -92,7 +95,9 @@ describe("Honker exam-results queue roundtrip", () => {
     const job = queue.claimOne("test-worker");
     expect(job).not.toBeNull();
     expect(job!.queue).toBe(EXAM_RESULTS_QUEUE);
-    expect((job!.payload as ExamResultsJobPayload).examResultId).toBe("exam-result-123");
+    expect((job!.payload as ExamResultsJobPayload).examResultId).toBe(
+      "exam-result-123",
+    );
 
     expect(job!.ack()).toBe(true);
 
@@ -119,7 +124,10 @@ describe("Honker exam-results queue roundtrip", () => {
 
 describe("Honker quiz-extractions queue roundtrip", () => {
   // Uses a throwaway temp SQLite file — never the app database.
-  const dbPath = path.join(os.tmpdir(), `honker-quiz-extraction-test-${process.pid}-${Date.now()}.db`);
+  const dbPath = path.join(
+    os.tmpdir(),
+    `honker-quiz-extraction-test-${process.pid}-${Date.now()}.db`,
+  );
   let db: ReturnType<typeof honker.open> | null = null;
 
   afterEach(() => {
@@ -135,14 +143,18 @@ describe("Honker quiz-extractions queue roundtrip", () => {
     db = honker.open(dbPath);
     const queue = db.queue(QUIZ_EXTRACTIONS_QUEUE);
 
-    const payload: QuizExtractionJobPayload = { extractionId: "extraction-123" };
+    const payload: QuizExtractionJobPayload = {
+      extractionId: "extraction-123",
+    };
     const jobId = queue.enqueue(payload);
     expect(typeof jobId).toBe("number");
 
     const job = queue.claimOne("quiz-extraction-worker");
     expect(job).not.toBeNull();
     expect(job!.queue).toBe(QUIZ_EXTRACTIONS_QUEUE);
-    expect((job!.payload as QuizExtractionJobPayload).extractionId).toBe("extraction-123");
+    expect((job!.payload as QuizExtractionJobPayload).extractionId).toBe(
+      "extraction-123",
+    );
 
     expect(job!.ack()).toBe(true);
     expect(queue.claimOne("quiz-extraction-worker")).toBeNull();
@@ -150,11 +162,15 @@ describe("Honker quiz-extractions queue roundtrip", () => {
 
   it("is isolated from the exam-results queue in the same db", () => {
     db = honker.open(dbPath);
-    db.queue(QUIZ_EXTRACTIONS_QUEUE).enqueue({ extractionId: "x" } satisfies QuizExtractionJobPayload);
+    db.queue(QUIZ_EXTRACTIONS_QUEUE).enqueue({
+      extractionId: "x",
+    } satisfies QuizExtractionJobPayload);
 
     expect(db.queue(EXAM_RESULTS_QUEUE).claimOne("test-worker")).toBeNull();
 
-    const job = db.queue(QUIZ_EXTRACTIONS_QUEUE).claimOne("quiz-extraction-worker");
+    const job = db
+      .queue(QUIZ_EXTRACTIONS_QUEUE)
+      .claimOne("quiz-extraction-worker");
     expect(job).not.toBeNull();
     job!.ack();
   });

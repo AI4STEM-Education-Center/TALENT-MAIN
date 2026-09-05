@@ -1,8 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   History,
   Loader2,
@@ -11,10 +9,8 @@ import {
   Send,
   Sparkles,
   SquarePen,
-  Wrench,
   X,
 } from "lucide-react";
-import { AiMetricsLine } from "@/components/ai-metrics-line";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { readNdjson } from "@/lib/assistant/ndjson";
@@ -22,7 +18,6 @@ import type {
   AssistantStreamEvent,
   AssistantTurn,
   ConversationSummary,
-  StoredAttachmentRef,
 } from "@/lib/assistant/types";
 import type { DisplayAiMetrics } from "@/lib/ai-metrics";
 import {
@@ -42,9 +37,12 @@ import {
   type ResizeEdge,
 } from "./panel-geometry";
 import { useAssistant } from "./assistant-context";
-
-const MARKDOWN_CLASS =
-  "text-sm [&_p]:mb-2 [&_p:last-child]:mb-0 [&_h1]:text-base [&_h1]:font-semibold [&_h2]:text-sm [&_h2]:font-semibold [&_h3]:font-semibold [&_h2]:mt-3 [&_h3]:mt-3 [&_ul]:mb-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:mb-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:mb-1 [&_strong]:font-semibold [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-xs [&_table]:w-full [&_table]:text-xs [&_th]:border-b [&_th]:border-border [&_th]:px-1 [&_th]:py-1 [&_th]:text-left [&_td]:border-b [&_td]:border-border/50 [&_td]:px-1 [&_td]:py-1";
+import {
+  AssistantTranscript,
+  type Bubble,
+  type ToolActivity,
+} from "./AssistantTranscript";
+import { usePanelDrag } from "./use-panel-drag";
 
 /**
  * Short timestamp for a history row: a time for today, a weekday inside the last
@@ -55,33 +53,16 @@ function formatWhen(iso: string): string {
   const when = new Date(iso);
   const elapsedMs = Date.now() - when.getTime();
   if (elapsedMs < 24 * 60 * 60 * 1000) {
-    return when.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    return when.toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+    });
   }
   if (elapsedMs < 7 * 24 * 60 * 60 * 1000) {
     return when.toLocaleDateString(undefined, { weekday: "short" });
   }
   return when.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
-
-/** One rendered bubble. `pending` marks the assistant turn currently streaming. */
-type Bubble = AssistantTurn & {
-  pending?: boolean;
-  error?: string | null;
-  /**
-   * User turns: the stored attachments that can be re-rendered inline, kept
-   * pre-filtered so the render pass doesn't re-scan every turn's list.
-   */
-  storedImages?: StoredAttachmentRef[];
-  /**
-   * Assistant turns: the model/timing stats from the turn's `done` event.
-   * Rendered by AiMetricsLine, which draws nothing on the production site — the
-   * numbers are a dev-site aid for checking which model answered and how fast.
-   */
-  stats?: DisplayAiMetrics;
-};
-
-/** A tool the assistant is running (or just ran) during the pending turn. */
-type ToolActivity = { name: string; label: string; status: "running" | "done" | "error" };
 
 /**
  * The eight grab targets around the panel. Edges are thin strips inset past the
@@ -126,16 +107,7 @@ export function AssistantWidget() {
   // across the bottom of the viewport — there is nowhere to drag it to.
   const [rect, setRect] = useState<PanelRect | null>(null);
   const [floating, setFloating] = useState(false);
-  const [dragging, setDragging] = useState(false);
-  const dragRef = useRef<{
-    mode: "move" | ResizeEdge;
-    x: number;
-    y: number;
-    from: PanelRect;
-  } | null>(null);
-  // The live rect, readable from the window-level pointer handlers below without
-  // re-subscribing them on every frame of a drag.
-  const rectRef = useRef<PanelRect | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   // Abort an in-flight turn if the widget unmounts (navigation, sign-out).
   useEffect(() => () => abortRef.current?.abort(), []);
@@ -151,7 +123,11 @@ export function AssistantWidget() {
       if (!wide.matches) return;
       const { innerWidth: vw, innerHeight: vh } = window;
       setRect((prev) =>
-        clampPanelRect(prev ?? readStoredPanelRect() ?? defaultPanelRect(vw, vh), vw, vh)
+        clampPanelRect(
+          prev ?? readStoredPanelRect() ?? defaultPanelRect(vw, vh),
+          vw,
+          vh,
+        ),
       );
     };
     sync();
@@ -162,43 +138,6 @@ export function AssistantWidget() {
       wide.removeEventListener("change", sync);
     };
   }, []);
-
-  useEffect(() => {
-    rectRef.current = rect;
-  }, [rect]);
-
-  // Pointer moves are tracked on the window rather than on the handle, so a fast
-  // drag that outruns the cursor keeps going instead of dropping the gesture the
-  // moment the pointer leaves the 6px strip it started on.
-  useEffect(() => {
-    if (!dragging) return;
-    const onMove = (event: PointerEvent) => {
-      const drag = dragRef.current;
-      if (!drag) return;
-      const dx = event.clientX - drag.x;
-      const dy = event.clientY - drag.y;
-      const { innerWidth: vw, innerHeight: vh } = window;
-      setRect(
-        drag.mode === "move"
-          ? movePanelRect(drag.from, dx, dy, vw, vh)
-          : resizePanelRect(drag.from, drag.mode, dx, dy, vw, vh)
-      );
-    };
-    const onEnd = () => {
-      dragRef.current = null;
-      setDragging(false);
-      // Written once per gesture, not once per frame.
-      if (rectRef.current) storePanelRect(rectRef.current);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onEnd);
-    window.addEventListener("pointercancel", onEnd);
-    return () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onEnd);
-      window.removeEventListener("pointercancel", onEnd);
-    };
-  }, [dragging]);
 
   // Object URLs are created per attachment; revoke them when the tray clears.
   useEffect(() => {
@@ -215,7 +154,9 @@ export function AssistantWidget() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [bubbles, activity]);
 
-  const accept = (config?.attachmentKinds ?? []).map((kind) => kind.accept).join(",");
+  const accept = (config?.attachmentKinds ?? [])
+    .map((kind) => kind.accept)
+    .join(",");
   const attachmentsEnabled = (config?.attachmentKinds?.length ?? 0) > 0;
   const maxAttachments = config?.maxAttachments ?? 0;
 
@@ -224,10 +165,14 @@ export function AssistantWidget() {
       if (!attachmentsEnabled || files.length === 0) return;
       const room = maxAttachments - attachments.length;
       if (room <= 0) {
-        setNotice(`You can attach at most ${maxAttachments} file(s) per message.`);
+        setNotice(
+          `You can attach at most ${maxAttachments} file(s) per message.`,
+        );
         return;
       }
-      const prepared = await Promise.all(files.slice(0, room).map(prepareAttachment));
+      const prepared = await Promise.all(
+        files.slice(0, room).map(prepareAttachment),
+      );
       const limit = config?.maxAttachmentBytes ?? 0;
       const tooBig = prepared.filter((file) => limit > 0 && file.bytes > limit);
       for (const file of tooBig) {
@@ -235,7 +180,7 @@ export function AssistantWidget() {
       }
       if (tooBig.length > 0) {
         setNotice(
-          `${tooBig.map((f) => f.name).join(", ")} exceeded the ${formatBytes(limit)} limit.`
+          `${tooBig.map((f) => f.name).join(", ")} exceeded the ${formatBytes(limit)} limit.`,
         );
       } else if (files.length > room) {
         setNotice(`Only the first ${room} file(s) were attached.`);
@@ -243,21 +188,30 @@ export function AssistantWidget() {
       const kept = prepared.filter((file) => !tooBig.includes(file));
       if (kept.length > 0) setAttachments((prev) => [...prev, ...kept]);
     },
-    [attachments.length, attachmentsEnabled, config?.maxAttachmentBytes, maxAttachments]
+    [
+      attachments.length,
+      attachmentsEnabled,
+      config?.maxAttachmentBytes,
+      maxAttachments,
+    ],
   );
 
-  const beginDrag = useCallback(
-    (mode: "move" | ResizeEdge) => (event: React.PointerEvent) => {
-      const from = rectRef.current;
-      if (!floating || !from || event.button !== 0) return;
-      // Stops the browser from starting a text selection or a touch scroll under
-      // the gesture.
-      event.preventDefault();
-      dragRef.current = { mode, x: event.clientX, y: event.clientY, from };
-      setDragging(true);
-    },
-    [floating]
-  );
+  // The gesture itself runs outside React — see use-panel-drag.ts. The panel is
+  // written once per animation frame instead of once per pointer event, and this
+  // component renders once, here, when the gesture ends.
+  const commitRect = useCallback((next: PanelRect) => {
+    setRect(next);
+    // Written once per gesture, not once per frame.
+    storePanelRect(next);
+  }, []);
+
+  const beginDrag = usePanelDrag({
+    panelRef,
+    rect,
+    enabled: floating,
+    onCommit: commitRect,
+  });
+  const beginMove = useMemo(() => beginDrag("move"), [beginDrag]);
 
   /**
    * The keyboard path to the same two gestures: arrows nudge the panel, Shift
@@ -272,13 +226,12 @@ export function AssistantWidget() {
       ArrowDown: [0, step],
     };
     const delta = deltas[event.key];
-    const from = rectRef.current;
-    if (!delta || !from) return;
+    if (!delta || !rect) return;
     event.preventDefault();
     const { innerWidth: vw, innerHeight: vh } = window;
     const next = event.altKey
-      ? resizePanelRect(from, "se", delta[0], delta[1], vw, vh)
-      : movePanelRect(from, delta[0], delta[1], vw, vh);
+      ? resizePanelRect(rect, "se", delta[0], delta[1], vw, vh)
+      : movePanelRect(rect, delta[0], delta[1], vw, vh);
     setRect(next);
     storePanelRect(next);
   };
@@ -347,7 +300,7 @@ export function AssistantWidget() {
           content: turn.content,
           attachmentNames: turn.attachmentNames,
           attachmentIds: turn.attachmentIds,
-        }))
+        })),
       );
       setConversationId(id);
       setActivity([]);
@@ -383,7 +336,11 @@ export function AssistantWidget() {
       attachmentIds: bubble.attachmentIds,
     }));
 
-    setBubbles((prev) => [...prev, userBubble, { role: "assistant", content: "", pending: true }]);
+    setBubbles((prev) => [
+      ...prev,
+      userBubble,
+      { role: "assistant", content: "", pending: true },
+    ]);
     setDraft("");
     setAttachments([]);
     setActivity([]);
@@ -393,11 +350,18 @@ export function AssistantWidget() {
     const controller = new AbortController();
     abortRef.current = controller;
 
-    const fail = (text: string) =>
+    const fail = (text: string, guardrailEventId?: string | null) =>
       setBubbles((prev) =>
         prev.map((bubble, index) =>
-          index === prev.length - 1 ? { ...bubble, pending: false, error: text } : bubble
-        )
+          index === prev.length - 1
+            ? {
+                ...bubble,
+                pending: false,
+                error: text,
+                guardrailEventId: guardrailEventId ?? null,
+              }
+            : bubble,
+        ),
       );
 
     try {
@@ -431,8 +395,8 @@ export function AssistantWidget() {
             prev.map((bubble, index) =>
               index === prev.length - 1
                 ? { ...bubble, content: bubble.content + event.text }
-                : bubble
-            )
+                : bubble,
+            ),
           );
         } else if (event.type === "tool") {
           setActivity((prev) => {
@@ -448,13 +412,17 @@ export function AssistantWidget() {
           // Attach the ids to the user turn they belong to — the last user
           // bubble, since the pending assistant bubble sits after it.
           setBubbles((prev) => {
-            const index = prev.findLastIndex((bubble) => bubble.role === "user");
+            const index = prev.findLastIndex(
+              (bubble) => bubble.role === "user",
+            );
             if (index === -1) return prev;
             const next = [...prev];
             next[index] = {
               ...next[index],
               attachmentIds: event.stored.map((item) => item.id),
-              storedImages: event.stored.filter((item) => item.kind === "image"),
+              storedImages: event.stored.filter(
+                (item) => item.kind === "image",
+              ),
             };
             return next;
           });
@@ -472,11 +440,11 @@ export function AssistantWidget() {
           };
           setBubbles((prev) =>
             prev.map((bubble, index) =>
-              index === prev.length - 1 ? { ...bubble, stats } : bubble
-            )
+              index === prev.length - 1 ? { ...bubble, stats } : bubble,
+            ),
           );
         } else if (event.type === "error") {
-          fail(event.message);
+          fail(event.message, event.guardrailEventId);
         }
       }
     } catch (error) {
@@ -488,8 +456,8 @@ export function AssistantWidget() {
       setSending(false);
       setBubbles((prev) =>
         prev.map((bubble, index) =>
-          index === prev.length - 1 ? { ...bubble, pending: false } : bubble
-        )
+          index === prev.length - 1 ? { ...bubble, pending: false } : bubble,
+        ),
       );
     }
   };
@@ -504,28 +472,38 @@ export function AssistantWidget() {
     <>
       {open && (
         <div
+          ref={panelRef}
           // react-doctor-disable-next-line react-doctor/prefer-html-dialog -- this is a docked non-modal chat panel, not a modal; <dialog> would change stacking and focus semantics
           role="dialog"
           aria-label={isTeacher ? "Teaching assistant" : "Study assistant"}
           style={
             floatingPanel
-              ? { left: rect.x, top: rect.y, width: rect.width, height: rect.height }
+              ? {
+                  left: rect.x,
+                  top: rect.y,
+                  width: rect.width,
+                  height: rect.height,
+                }
               : undefined
           }
           className={cn(
-            "fixed z-50 flex flex-col overflow-hidden rounded-xl border border-border bg-background shadow-2xl",
+            "fixed z-50 flex flex-col overflow-hidden rounded-[var(--radius)] border-[length:var(--border-width)] border-border bg-background [box-shadow:var(--shadow-overlay)]",
             // Narrow screens keep the old docked strip; anywhere with room, the
             // position and size come from `rect` instead.
-            floatingPanel ? "max-h-none" : "inset-x-2 bottom-2 max-h-[min(80vh,640px)]",
-            // A drag that crosses the transcript must not select it.
-            dragging && "select-none"
+            floatingPanel
+              ? "max-h-none"
+              : "inset-x-2 bottom-2 max-h-[min(80vh,640px)]",
+            // `data-dragging` is set imperatively for the duration of a gesture
+            // (globals.css turns off selection and hit-testing under it), so a
+            // drag never costs a React render just to change a class.
+            floatingPanel && "assistant-panel",
           )}
         >
           <header
             onPointerDown={(event) => {
               // The header buttons keep their clicks; only the bare strip drags.
               if ((event.target as HTMLElement).closest("button")) return;
-              beginDrag("move")(event);
+              beginMove(event);
             }}
             onDoubleClick={(event) => {
               if ((event.target as HTMLElement).closest("button")) return;
@@ -533,7 +511,7 @@ export function AssistantWidget() {
             }}
             className={cn(
               "flex items-center gap-2 border-b border-border px-3 py-2",
-              floatingPanel && "cursor-move touch-none"
+              floatingPanel && "cursor-move touch-none",
             )}
           >
             <div className="flex size-7 items-center justify-center rounded-lg bg-primary/10">
@@ -547,7 +525,7 @@ export function AssistantWidget() {
             {floatingPanel && (
               <button
                 type="button"
-                onPointerDown={beginDrag("move")}
+                onPointerDown={beginMove}
                 onKeyDown={nudge}
                 aria-label="Move or resize the assistant panel"
                 title="Drag to move · drag an edge to resize · arrow keys move, Alt+arrows resize · double-click the header to reset"
@@ -558,12 +536,16 @@ export function AssistantWidget() {
             )}
             <button
               type="button"
-              onClick={() => void (historyOpen ? setHistoryOpen(false) : openHistory())}
+              onClick={() =>
+                void (historyOpen ? setHistoryOpen(false) : openHistory())
+              }
               aria-label="Conversation history"
               aria-pressed={historyOpen}
               className={cn(
                 "rounded-md p-1.5 transition-colors hover:bg-accent hover:text-foreground",
-                historyOpen ? "bg-accent text-foreground" : "text-muted-foreground"
+                historyOpen
+                  ? "bg-accent text-foreground"
+                  : "text-muted-foreground",
               )}
             >
               <History className="size-4" />
@@ -592,7 +574,8 @@ export function AssistantWidget() {
             <div className="flex-1 overflow-y-auto px-3 py-3">
               {history === null || loadingConversation ? (
                 <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="size-3.5 animate-spin text-primary" /> Loading…
+                  <Loader2 className="size-3.5 animate-spin text-primary" />{" "}
+                  Loading…
                 </p>
               ) : history.length === 0 ? (
                 <p className="rounded-lg bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
@@ -607,12 +590,15 @@ export function AssistantWidget() {
                         onClick={() => void openConversation(item.id)}
                         className={cn(
                           "w-full rounded-lg px-3 py-2 text-left transition-colors hover:bg-accent",
-                          item.id === conversationId && "bg-accent"
+                          item.id === conversationId && "bg-accent",
                         )}
                       >
-                        <span className="block truncate text-sm">{item.title}</span>
+                        <span className="block truncate text-sm">
+                          {item.title}
+                        </span>
                         <span className="mt-0.5 block text-xs text-muted-foreground">
-                          {formatWhen(item.lastMessageAt)} · {item.messageCount} message
+                          {formatWhen(item.lastMessageAt)} · {item.messageCount}{" "}
+                          message
                           {item.messageCount === 1 ? "" : "s"}
                         </span>
                       </button>
@@ -621,12 +607,14 @@ export function AssistantWidget() {
                 </ul>
               )}
 
-              {historyDays !== null && history !== null && history.length > 0 && (
-                <p className="mt-3 px-3 text-xs text-muted-foreground">
-                  Conversations are shown for {historyDays} day
-                  {historyDays === 1 ? "" : "s"}.
-                </p>
-              )}
+              {historyDays !== null &&
+                history !== null &&
+                history.length > 0 && (
+                  <p className="mt-3 px-3 text-xs text-muted-foreground">
+                    Conversations are shown for {historyDays} day
+                    {historyDays === 1 ? "" : "s"}.
+                  </p>
+                )}
             </div>
           )}
 
@@ -638,103 +626,14 @@ export function AssistantWidget() {
             ref={scrollRef}
             className={cn(
               "flex-1 space-y-3 overflow-y-auto px-3 py-3",
-              historyOpen && "hidden"
+              historyOpen && "hidden",
             )}
           >
-            {bubbles.length === 0 && (
-              <div className="rounded-lg bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
-                {config.greeting}
-              </div>
-            )}
-
-            {bubbles.map((bubble, index) => (
-              <div
-                // react-doctor-disable-next-line react-doctor/no-array-index-as-key -- bubbles is append-only; entries are never inserted, removed, or reordered
-                key={index}
-                className={cn("flex", bubble.role === "user" ? "justify-end" : "justify-start")}
-              >
-                <div
-                  className={cn(
-                    "max-w-[85%] rounded-lg px-3 py-2",
-                    bubble.role === "user"
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted text-foreground"
-                  )}
-                >
-                  {bubble.role === "user" ? (
-                    <p className="whitespace-pre-wrap text-sm">{bubble.content}</p>
-                  ) : (
-                    <div className={MARKDOWN_CLASS} aria-live="polite">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{bubble.content}</ReactMarkdown>
-                    </div>
-                  )}
-
-                  {bubble.storedImages && bubble.storedImages.length > 0 && (
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {bubble.storedImages.map((item) => (
-                        // eslint-disable-next-line @next/next/no-img-element -- authorized redirect to a signed URL, not a static asset
-                        <img
-                          key={item.id}
-                          src={`/api/assistant/attachments/${item.id}`}
-                          alt={item.name}
-                          title={item.name}
-                          className="size-14 rounded border border-black/10 object-cover"
-                        />
-                      ))}
-                    </div>
-                  )}
-
-                  {bubble.attachmentNames && bubble.attachmentNames.length > 0 && (
-                    <p className="mt-1 text-xs opacity-80">
-                      <Paperclip className="mr-1 inline size-3" />
-                      {bubble.attachmentNames.join(", ")}
-                    </p>
-                  )}
-
-                  {bubble.stats && (
-                    <AiMetricsLine
-                      metrics={bubble.stats}
-                      prefix="Answered by "
-                      className="mt-1 block whitespace-normal text-xs text-muted-foreground"
-                    />
-                  )}
-
-                  {bubble.error && (
-                    <p className="mt-1 text-xs text-destructive">{bubble.error}</p>
-                  )}
-
-                  {bubble.pending && !bubble.content && !bubble.error && (
-                    <span className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Loader2 className="size-3.5 animate-spin text-primary" /> Thinking…
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
-
-            {activity.length > 0 && (
-              <ul className="space-y-1">
-                {activity.map((item) => (
-                  <li
-                    key={item.name}
-                    className="flex items-center gap-2 text-xs text-muted-foreground"
-                  >
-                    {item.status === "running" ? (
-                      <Loader2 className="size-3 animate-spin text-primary" />
-                    ) : (
-                      <Wrench
-                        className={cn(
-                          "size-3",
-                          item.status === "error" ? "text-destructive" : "text-primary"
-                        )}
-                      />
-                    )}
-                    {item.label}
-                    {item.status === "error" && " — failed"}
-                  </li>
-                ))}
-              </ul>
-            )}
+            <AssistantTranscript
+              bubbles={bubbles}
+              activity={activity}
+              greeting={config.greeting}
+            />
           </div>
 
           {notice && (
@@ -760,8 +659,12 @@ export function AssistantWidget() {
                   ) : (
                     <Paperclip className="size-3.5 text-muted-foreground" />
                   )}
-                  <span className="max-w-[8rem] truncate">{attachment.name}</span>
-                  <span className="text-muted-foreground">{formatBytes(attachment.bytes)}</span>
+                  <span className="max-w-[8rem] truncate">
+                    {attachment.name}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {formatBytes(attachment.bytes)}
+                  </span>
                   <button
                     type="button"
                     onClick={() => removeAttachment(index)}
@@ -781,7 +684,7 @@ export function AssistantWidget() {
               // The composer belongs to the transcript, not to the history list:
               // hiding it keeps "which conversation would this send to?" from
               // being a question the user has to answer.
-              historyOpen && "hidden"
+              historyOpen && "hidden",
             )}
             onSubmit={(event) => {
               event.preventDefault();
@@ -835,7 +738,9 @@ export function AssistantWidget() {
               rows={1}
               maxLength={4000}
               placeholder={
-                isTeacher ? "Ask about a class…" : "Ask about your past quizzes…"
+                isTeacher
+                  ? "Ask about a class…"
+                  : "Ask about your past quizzes…"
               }
               aria-label="Message"
               className="max-h-32 min-h-9 flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
@@ -848,7 +753,11 @@ export function AssistantWidget() {
               disabled={sending || draft.trim().length === 0}
               aria-label="Send message"
             >
-              {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+              {sending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Send className="size-4" />
+              )}
             </Button>
           </form>
 

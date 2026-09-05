@@ -3,15 +3,29 @@ import { Upload } from "@aws-sdk/lib-storage";
 import { prisma } from "@/lib/prisma";
 import { renderConsentPdf } from "@/lib/consent-pdf";
 import { getConsentExportSettings } from "@/lib/consent-settings";
-import { getS3Client, getS3Config, buildConsentExportKey, presignGetUrl, deleteS3Object } from "@/lib/storage";
+import {
+  getS3Client,
+  getS3Config,
+  buildConsentExportKey,
+  presignGetUrl,
+  deleteS3Object,
+} from "@/lib/storage";
 import { sendEmail } from "@/lib/email";
-import { isConsentDecision, isConsentRole, type ConsentDecision, type ConsentRole } from "@/lib/consent";
+import {
+  isConsentDecision,
+  isConsentRole,
+  type ConsentDecision,
+  type ConsentRole,
+} from "@/lib/consent";
 
 // @types/archiver@8 dropped the module's callable factory export from its
 // declarations (it only types the Archiver class and options interfaces),
 // even though the actual runtime package is `require("archiver")("zip", …)`.
 // Typed narrowly here rather than fighting the incomplete community .d.ts.
-type CreateArchive = (format: "zip", options?: { zlib?: { level?: number } }) => archiverModule.Archiver;
+type CreateArchive = (
+  format: "zip",
+  options?: { zlib?: { level?: number } },
+) => archiverModule.Archiver;
 const createArchive = archiverModule as unknown as CreateArchive;
 
 /**
@@ -42,13 +56,19 @@ export interface ConsentExportFilter {
 }
 
 /** Shape-check a filter parsed from admin input before it's stored on a job. */
-export function normalizeConsentExportFilter(raw: unknown): ConsentExportFilter | null {
+export function normalizeConsentExportFilter(
+  raw: unknown,
+): ConsentExportFilter | null {
   if (!raw || typeof raw !== "object") return {};
   const input = raw as Record<string, unknown>;
   const filter: ConsentExportFilter = {};
 
   if (input.recordIds !== undefined) {
-    if (!Array.isArray(input.recordIds) || !input.recordIds.every((v) => typeof v === "string")) return null;
+    if (
+      !Array.isArray(input.recordIds) ||
+      !input.recordIds.every((v) => typeof v === "string")
+    )
+      return null;
     filter.recordIds = input.recordIds as string[];
   }
   if (input.role !== undefined) {
@@ -60,11 +80,19 @@ export function normalizeConsentExportFilter(raw: unknown): ConsentExportFilter 
     filter.decision = input.decision;
   }
   if (input.fromDate !== undefined) {
-    if (typeof input.fromDate !== "string" || Number.isNaN(Date.parse(input.fromDate))) return null;
+    if (
+      typeof input.fromDate !== "string" ||
+      Number.isNaN(Date.parse(input.fromDate))
+    )
+      return null;
     filter.fromDate = input.fromDate;
   }
   if (input.toDate !== undefined) {
-    if (typeof input.toDate !== "string" || Number.isNaN(Date.parse(input.toDate))) return null;
+    if (
+      typeof input.toDate !== "string" ||
+      Number.isNaN(Date.parse(input.toDate))
+    )
+      return null;
     filter.toDate = input.toDate;
   }
   return filter;
@@ -72,7 +100,8 @@ export function normalizeConsentExportFilter(raw: unknown): ConsentExportFilter 
 
 export function buildConsentRecordWhere(filter: ConsentExportFilter) {
   const where: Record<string, unknown> = {};
-  if (filter.recordIds && filter.recordIds.length > 0) where.id = { in: filter.recordIds };
+  if (filter.recordIds && filter.recordIds.length > 0)
+    where.id = { in: filter.recordIds };
   if (filter.role) where.role = filter.role;
   if (filter.decision) where.decision = filter.decision;
   if (filter.fromDate || filter.toDate) {
@@ -90,8 +119,13 @@ function sanitizeFilenamePart(value: string): string {
 
 async function markFailed(jobId: string, error: string): Promise<void> {
   await prisma.consentExportJob
-    .update({ where: { id: jobId }, data: { status: "FAILED", error, completedAt: new Date() } })
-    .catch((err) => console.error(`[ConsentExport] Could not mark job ${jobId} FAILED:`, err));
+    .update({
+      where: { id: jobId },
+      data: { status: "FAILED", error, completedAt: new Date() },
+    })
+    .catch((err) =>
+      console.error(`[ConsentExport] Could not mark job ${jobId} FAILED:`, err),
+    );
 }
 
 /**
@@ -103,10 +137,15 @@ async function markFailed(jobId: string, error: string): Promise<void> {
  * tradeoff for a feature this infrequently used.
  */
 export async function runConsentExportJob(jobId: string): Promise<void> {
-  const job = await prisma.consentExportJob.findUnique({ where: { id: jobId } });
+  const job = await prisma.consentExportJob.findUnique({
+    where: { id: jobId },
+  });
   if (!job || job.status !== "PENDING") return;
 
-  await prisma.consentExportJob.update({ where: { id: jobId }, data: { status: "PROCESSING" } });
+  await prisma.consentExportJob.update({
+    where: { id: jobId },
+    data: { status: "PROCESSING" },
+  });
 
   const filter = normalizeConsentExportFilter(JSON.parse(job.filter));
   if (!filter) {
@@ -117,7 +156,10 @@ export async function runConsentExportJob(jobId: string): Promise<void> {
 
   try {
     const totalRecords = await prisma.consentRecord.count({ where });
-    await prisma.consentExportJob.update({ where: { id: jobId }, data: { totalRecords } });
+    await prisma.consentExportJob.update({
+      where: { id: jobId },
+      data: { totalRecords },
+    });
     if (totalRecords === 0) {
       await markFailed(jobId, "No matching consent records were found.");
       return;
@@ -127,7 +169,7 @@ export async function runConsentExportJob(jobId: string): Promise<void> {
     if (totalRecords > settings.bulkExportMaxRecords) {
       await markFailed(
         jobId,
-        `${totalRecords} records match, which exceeds the configured limit of ${settings.bulkExportMaxRecords}. Narrow the filter or raise the limit in Consent Settings.`
+        `${totalRecords} records match, which exceeds the configured limit of ${settings.bulkExportMaxRecords}. Narrow the filter or raise the limit in Consent Settings.`,
       );
       return;
     }
@@ -139,13 +181,21 @@ export async function runConsentExportJob(jobId: string): Promise<void> {
     const archiveFailure = new Promise<never>((_, reject) => {
       archive.on("error", reject);
       archive.on("warning", (warning: Error) =>
-        console.warn(`[ConsentExport] archiver warning for job ${jobId}:`, warning)
+        console.warn(
+          `[ConsentExport] archiver warning for job ${jobId}:`,
+          warning,
+        ),
       );
     });
 
     const upload = new Upload({
       client: getS3Client(),
-      params: { Bucket: bucket, Key: key, Body: archive, ContentType: "application/zip" },
+      params: {
+        Bucket: bucket,
+        Key: key,
+        Body: archive,
+        ContentType: "application/zip",
+      },
       queueSize: 2,
       partSize: 5 * 1024 * 1024,
     });
@@ -181,7 +231,10 @@ export async function runConsentExportJob(jobId: string): Promise<void> {
         processed++;
       }
 
-      await prisma.consentExportJob.update({ where: { id: jobId }, data: { processedRecords: processed } });
+      await prisma.consentExportJob.update({
+        where: { id: jobId },
+        data: { processedRecords: processed },
+      });
       // Yield to the event loop between batches so other worker jobs (queued
       // emails, exam-result generation) sharing this process get a turn.
       await new Promise((resolve) => setImmediate(resolve));
@@ -190,13 +243,24 @@ export async function runConsentExportJob(jobId: string): Promise<void> {
     await archive.finalize();
     await Promise.race([uploadDone, archiveFailure]);
 
-    const expiresAt = new Date(Date.now() + settings.bulkExportRetentionHours * 60 * 60 * 1000);
+    const expiresAt = new Date(
+      Date.now() + settings.bulkExportRetentionHours * 60 * 60 * 1000,
+    );
     await prisma.consentExportJob.update({
       where: { id: jobId },
-      data: { status: "COMPLETE", completedAt: new Date(), resultBucket: bucket, resultKey: key, expiresAt },
+      data: {
+        status: "COMPLETE",
+        completedAt: new Date(),
+        resultBucket: bucket,
+        resultKey: key,
+        expiresAt,
+      },
     });
 
-    const admin = await prisma.user.findUnique({ where: { id: job.requestedById }, select: { email: true } });
+    const admin = await prisma.user.findUnique({
+      where: { id: job.requestedById },
+      select: { email: true },
+    });
     if (admin?.email) {
       try {
         const downloadUrl = await presignGetUrl(bucket, key, 24 * 3600);
@@ -214,12 +278,18 @@ export async function runConsentExportJob(jobId: string): Promise<void> {
       } catch (err) {
         // Best-effort — the job is COMPLETE and the in-app admin UI can
         // surface a fresh download link regardless of whether this email sent.
-        console.error(`[ConsentExport] Failed to email export-ready notice for job ${jobId}:`, err);
+        console.error(
+          `[ConsentExport] Failed to email export-ready notice for job ${jobId}:`,
+          err,
+        );
       }
     }
   } catch (error) {
     console.error(`[ConsentExport] Job ${jobId} failed:`, error);
-    await markFailed(jobId, error instanceof Error ? error.message : String(error));
+    await markFailed(
+      jobId,
+      error instanceof Error ? error.message : String(error),
+    );
   }
 }
 
@@ -230,7 +300,11 @@ export async function runConsentExportJob(jobId: string): Promise<void> {
  */
 export async function sweepExpiredConsentExports(limit = 50): Promise<number> {
   const expired = await prisma.consentExportJob.findMany({
-    where: { status: "COMPLETE", expiresAt: { lt: new Date() }, resultKey: { not: null } },
+    where: {
+      status: "COMPLETE",
+      expiresAt: { lt: new Date() },
+      resultKey: { not: null },
+    },
     select: { id: true, resultBucket: true, resultKey: true },
     take: limit,
   });
@@ -239,11 +313,18 @@ export async function sweepExpiredConsentExports(limit = 50): Promise<number> {
   let cleaned = 0;
   for (const job of expired) {
     try {
-      if (job.resultBucket && job.resultKey) await deleteS3Object(job.resultBucket, job.resultKey);
-      await prisma.consentExportJob.update({ where: { id: job.id }, data: { resultKey: null, resultBucket: null } });
+      if (job.resultBucket && job.resultKey)
+        await deleteS3Object(job.resultBucket, job.resultKey);
+      await prisma.consentExportJob.update({
+        where: { id: job.id },
+        data: { resultKey: null, resultBucket: null },
+      });
       cleaned++;
     } catch (err) {
-      console.error(`[ConsentExport] Failed to clean up expired export ${job.id}:`, err);
+      console.error(
+        `[ConsentExport] Failed to clean up expired export ${job.id}:`,
+        err,
+      );
     }
   }
   return cleaned;

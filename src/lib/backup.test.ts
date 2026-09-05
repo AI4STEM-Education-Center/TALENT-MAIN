@@ -15,7 +15,11 @@ function nyTime(d: Date): string {
 }
 
 describe("computeNextRun", () => {
-  const row = { intervalHours: 24, anchorTime: "02:00", timezone: "America/New_York" };
+  const row = {
+    intervalHours: 24,
+    anchorTime: "02:00",
+    timezone: "America/New_York",
+  };
 
   it("returns the next 02:00 America/New_York strictly after `from`", () => {
     const from = new Date("2026-06-17T10:00:00Z"); // 06:00 EDT
@@ -37,7 +41,9 @@ describe("computeNextRun", () => {
       { intervalHours: 6, anchorTime: "02:00", timezone: "America/New_York" },
       new Date("2026-06-17T10:00:00Z"),
     );
-    expect(next.getTime()).toBeGreaterThan(new Date("2026-06-17T10:00:00Z").getTime());
+    expect(next.getTime()).toBeGreaterThan(
+      new Date("2026-06-17T10:00:00Z").getTime(),
+    );
     expect(nyTime(next).endsWith(":00")).toBe(true);
   });
 });
@@ -51,16 +57,30 @@ describe("isBackupDue", () => {
   });
 
   it("is true when enabled with no nextRunAt", () => {
-    expect(isBackupDue({ ...enabled, nextRunAt: null } as BackupConfig)).toBe(true);
+    expect(isBackupDue({ ...enabled, nextRunAt: null } as BackupConfig)).toBe(
+      true,
+    );
   });
 
   it("compares nextRunAt against now", () => {
     const now = new Date("2026-06-17T12:00:00Z");
     expect(
-      isBackupDue({ ...enabled, nextRunAt: new Date("2026-06-17T11:00:00Z") } as BackupConfig, now),
+      isBackupDue(
+        {
+          ...enabled,
+          nextRunAt: new Date("2026-06-17T11:00:00Z"),
+        } as BackupConfig,
+        now,
+      ),
     ).toBe(true);
     expect(
-      isBackupDue({ ...enabled, nextRunAt: new Date("2026-06-17T13:00:00Z") } as BackupConfig, now),
+      isBackupDue(
+        {
+          ...enabled,
+          nextRunAt: new Date("2026-06-17T13:00:00Z"),
+        } as BackupConfig,
+        now,
+      ),
     ).toBe(false);
   });
 });
@@ -76,7 +96,12 @@ describe("retentionFromRow", () => {
   });
 
   it("reads tier fields from a row", () => {
-    const row = { keepRecent: 1, keepWeekly: 2, keepMonthly: 3, keepYearly: 4 } as BackupConfig;
+    const row = {
+      keepRecent: 1,
+      keepWeekly: 2,
+      keepMonthly: 3,
+      keepYearly: 4,
+    } as BackupConfig;
     expect(retentionFromRow(row)).toEqual({
       keepRecent: 1,
       keepWeekly: 2,

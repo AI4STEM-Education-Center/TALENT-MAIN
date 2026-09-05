@@ -15,7 +15,9 @@ function parseWarnings(json: string | null): string[] {
   if (!json) return [];
   try {
     const parsed = JSON.parse(json);
-    return Array.isArray(parsed) ? parsed.filter((w): w is string => typeof w === "string") : [];
+    return Array.isArray(parsed)
+      ? parsed.filter((w): w is string => typeof w === "string")
+      : [];
   } catch {
     return [];
   }
@@ -25,19 +27,28 @@ function parseWarnings(json: string | null): string[] {
 // staged questions and presigned page-image URLs for the review UI.
 export async function GET(
   _req: NextRequest,
-  { params }: { params: Promise<{ id: string; extractionId: string }> }
+  { params }: { params: Promise<{ id: string; extractionId: string }> },
 ) {
-  const [actor, { id: quizId, extractionId }] = await Promise.all([getContentActor(), params]);
-  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const [actor, { id: quizId, extractionId }] = await Promise.all([
+    getContentActor(),
+    params,
+  ]);
+  if (!actor)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const quiz = await prisma.quiz.findUnique({ where: { id: quizId } });
   if (!quiz || !canManage(actor, quiz)) {
     return NextResponse.json({ error: "Quiz not found" }, { status: 404 });
   }
 
-  const extraction = await prisma.quizPdfExtraction.findUnique({ where: { id: extractionId } });
+  const extraction = await prisma.quizPdfExtraction.findUnique({
+    where: { id: extractionId },
+  });
   if (!extraction || extraction.quizId !== quizId) {
-    return NextResponse.json({ error: "Extraction not found" }, { status: 404 });
+    return NextResponse.json(
+      { error: "Extraction not found" },
+      { status: 404 },
+    );
   }
 
   const base = {
@@ -48,6 +59,7 @@ export async function GET(
     errorMessage: extraction.errorMessage,
     hasAnswerKey: extraction.hasAnswerKey,
     warnings: parseWarnings(extraction.warnings),
+    guardrailEventId: extraction.guardrailEventId,
     createdAt: extraction.createdAt,
     aiModel: extraction.aiModel,
     aiProvider: extraction.aiProvider,
@@ -71,7 +83,7 @@ export async function GET(
     pages.map(async (page) => ({
       pageNumber: page.pageNumber,
       url: await signObjectReadUrl(extraction.bucket, page.storageKey),
-    }))
+    })),
   );
 
   return NextResponse.json({
@@ -85,23 +97,35 @@ export async function GET(
 // Otherwise best-effort S3 cleanup, then remove the row (cascades the pages).
 export async function DELETE(
   _req: NextRequest,
-  { params }: { params: Promise<{ id: string; extractionId: string }> }
+  { params }: { params: Promise<{ id: string; extractionId: string }> },
 ) {
-  const [actor, { id: quizId, extractionId }] = await Promise.all([getContentActor(), params]);
-  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const [actor, { id: quizId, extractionId }] = await Promise.all([
+    getContentActor(),
+    params,
+  ]);
+  if (!actor)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const quiz = await prisma.quiz.findUnique({ where: { id: quizId } });
   if (!quiz || !canManage(actor, quiz)) {
     return NextResponse.json({ error: "Quiz not found" }, { status: 404 });
   }
 
-  const extraction = await prisma.quizPdfExtraction.findUnique({ where: { id: extractionId } });
+  const extraction = await prisma.quizPdfExtraction.findUnique({
+    where: { id: extractionId },
+  });
   if (!extraction || extraction.quizId !== quizId) {
-    return NextResponse.json({ error: "Extraction not found" }, { status: 404 });
+    return NextResponse.json(
+      { error: "Extraction not found" },
+      { status: 404 },
+    );
   }
 
   if (extraction.status === "COMMITTED") {
-    return NextResponse.json({ error: "A committed extraction cannot be discarded" }, { status: 409 });
+    return NextResponse.json(
+      { error: "A committed extraction cannot be discarded" },
+      { status: 409 },
+    );
   }
 
   try {

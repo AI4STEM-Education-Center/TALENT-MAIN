@@ -8,7 +8,11 @@ export default async function AdminMaterialPoolPage() {
   if (!actor || actor.role !== "ADMIN") redirect("/login");
   const [materials, tags] = await Promise.all([
     prisma.learningMaterial.findMany({
-      where: { teacherId: null, uploadStatus: "READY", processingStatus: "SUCCESS" },
+      where: {
+        teacherId: null,
+        uploadStatus: "READY",
+        processingStatus: "SUCCESS",
+      },
       select: {
         id: true,
         title: true,
@@ -26,9 +30,12 @@ export default async function AdminMaterialPoolPage() {
   ]);
   const materialItems = materials.map((material) => ({
     ...material,
-    topic: material.topic?.contentType === "MATERIAL"
-      ? { id: material.topic.id, name: material.topic.name }
-      : null,
+    topic:
+      material.topic?.contentType === "MATERIAL"
+        ? { id: material.topic.id, name: material.topic.name }
+        : null,
   }));
-  return <MaterialPoolClient initialMaterials={materialItems} initialTags={tags} />;
+  return (
+    <MaterialPoolClient initialMaterials={materialItems} initialTags={tags} />
+  );
 }

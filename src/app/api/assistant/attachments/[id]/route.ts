@@ -24,7 +24,7 @@ const READ_URL_EXPIRES_SEC = 300;
  */
 export async function GET(
   _req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await auth();
   if (!session?.user) {
@@ -41,7 +41,7 @@ export async function GET(
     const url = await signObjectReadUrl(
       attachment.bucket,
       attachment.storageKey,
-      READ_URL_EXPIRES_SEC
+      READ_URL_EXPIRES_SEC,
     );
     // 302, not 301: the signed URL expires, so it must never be cached as the
     // permanent location of this id.
@@ -51,6 +51,9 @@ export async function GET(
     });
   } catch (error) {
     logApiError("ASSISTANT_ATTACHMENT_GET", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }

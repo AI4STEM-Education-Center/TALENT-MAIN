@@ -1,17 +1,36 @@
 "use client";
 
 import { useId, useState } from "react";
-import { Image as ImageIcon, ImageOff, ImagePlus, Maximize2, Plus, Trash2, Type, X } from "lucide-react";
+import {
+  Image as ImageIcon,
+  ImageOff,
+  ImagePlus,
+  Maximize2,
+  Plus,
+  Trash2,
+  Type,
+  X,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { MathText } from "@/components/ui/math-text";
 import { normalizeNumericValue } from "@/lib/quiz-scoring";
-import type { FigureBbox, StagedOption, StagedQuestion } from "@/lib/quiz-extraction";
+import type {
+  FigureBbox,
+  StagedOption,
+  StagedQuestion,
+} from "@/lib/quiz-extraction";
 import { MultiBoxCropper, type CropBox } from "./MultiBoxCropper";
 import { isQuestionComplete } from "@/lib/staged-question-complete";
+import { GuardrailFeedbackButton } from "@/components/guardrails/GuardrailFeedbackButton";
 
 export type PageImage = { pageNumber: number; url: string };
 
@@ -34,8 +53,10 @@ function defaultOptionBbox(order: number): FigureBbox {
   return { x: 0.1, y: Math.min(0.05 + order * 0.16, 0.8), w: 0.35, h: 0.14 };
 }
 
-
-function pageImageFor(pages: PageImage[], pageNumber: number | null): string | null {
+function pageImageFor(
+  pages: PageImage[],
+  pageNumber: number | null,
+): string | null {
   if (pageNumber === null) return null;
   return pages.find((p) => p.pageNumber === pageNumber)?.url ?? null;
 }
@@ -46,18 +67,31 @@ function pageImageFor(pages: PageImage[], pageNumber: number | null): string | n
  * (`figurePage ?? sourcePage`; an option's `imagePage` overrides) so a box drawn
  * here is read back against the same page image at commit. Module-scope + pure.
  */
-function cropBoxesByPage(q: StagedQuestion): { page: number; boxes: CropBox[] }[] {
+function cropBoxesByPage(
+  q: StagedQuestion,
+): { page: number; boxes: CropBox[] }[] {
   const figurePage = q.figurePage ?? q.sourcePage;
   const entries: { page: number; box: CropBox }[] = [];
   if (q.hasFigure) {
-    entries.push({ page: figurePage, box: { id: "figure", label: "Figure", bbox: q.figureBbox ?? DEFAULT_FIGURE_BBOX } });
+    entries.push({
+      page: figurePage,
+      box: {
+        id: "figure",
+        label: "Figure",
+        bbox: q.figureBbox ?? DEFAULT_FIGURE_BBOX,
+      },
+    });
   }
   let imageOrder = 0;
   q.options.forEach((o, oi) => {
     if (o.isImage !== true) return;
     entries.push({
       page: o.imagePage ?? figurePage,
-      box: { id: `opt-${oi}`, label: optionLetter(oi), bbox: o.imageBbox ?? defaultOptionBbox(imageOrder) },
+      box: {
+        id: `opt-${oi}`,
+        label: optionLetter(oi),
+        bbox: o.imageBbox ?? defaultOptionBbox(imageOrder),
+      },
     });
     imageOrder += 1;
   });
@@ -74,10 +108,20 @@ function cropBoxesByPage(q: StagedQuestion): { page: number; boxes: CropBox[] }[
  * Rendered-LaTeX preview box, captioned "Preview" so a teacher reads it as a
  * render of the input beside/above it rather than another editable field.
  */
-function MathPreview({ text, className, inline }: { text: string; className?: string; inline?: boolean }) {
+function MathPreview({
+  text,
+  className,
+  inline,
+}: {
+  text: string;
+  className?: string;
+  inline?: boolean;
+}) {
   return (
     <div className={className}>
-      <span className="block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Preview</span>
+      <span className="block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        Preview
+      </span>
       <div
         className={
           inline
@@ -114,30 +158,52 @@ function QuestionCard({
   const [enlarged, setEnlarged] = useState(false);
   // Resolve the active box to one that still exists (boxes come and go as the
   // teacher toggles options); default to the first.
-  const resolvedActiveId = activeBoxId && allBoxIds.includes(activeBoxId) ? activeBoxId : allBoxIds[0] ?? null;
+  const resolvedActiveId =
+    activeBoxId && allBoxIds.includes(activeBoxId)
+      ? activeBoxId
+      : (allBoxIds[0] ?? null);
 
   function setOptionText(oi: number, text: string) {
-    onChange({ ...q, options: q.options.map((o, i) => (i === oi ? { ...o, text } : o)) });
+    onChange({
+      ...q,
+      options: q.options.map((o, i) => (i === oi ? { ...o, text } : o)),
+    });
   }
 
   function setOption(oi: number, patch: Partial<StagedOption>) {
-    onChange({ ...q, options: q.options.map((o, i) => (i === oi ? { ...o, ...patch } : o)) });
+    onChange({
+      ...q,
+      options: q.options.map((o, i) => (i === oi ? { ...o, ...patch } : o)),
+    });
   }
 
   function toggleCorrect(oi: number) {
     if (q.type === "MULTI_SELECT") {
       onChange({
         ...q,
-        options: q.options.map((o, i) => (i === oi ? { ...o, isCorrect: o.isCorrect === true ? false : true } : o)),
+        options: q.options.map((o, i) =>
+          i === oi
+            ? { ...o, isCorrect: o.isCorrect === true ? false : true }
+            : o,
+        ),
       });
     } else {
       // Radio semantics: selecting one clears the others (MULTIPLE_CHOICE / TRUE_FALSE).
-      onChange({ ...q, options: q.options.map((o, i) => ({ ...o, isCorrect: i === oi })) });
+      onChange({
+        ...q,
+        options: q.options.map((o, i) => ({ ...o, isCorrect: i === oi })),
+      });
     }
   }
 
   function addOption() {
-    onChange({ ...q, options: [...q.options, { text: "", isCorrect: q.type === "MULTI_SELECT" ? false : null }] });
+    onChange({
+      ...q,
+      options: [
+        ...q.options,
+        { text: "", isCorrect: q.type === "MULTI_SELECT" ? false : null },
+      ],
+    });
   }
 
   function removeOption(oi: number) {
@@ -147,22 +213,44 @@ function QuestionCard({
   function toggleOptionIsImage(oi: number) {
     const o = q.options[oi];
     if (o.isImage === true) {
-      setOption(oi, { isImage: false, imageBbox: null, imagePage: null, imageStorageKey: null, imageAlt: null });
+      setOption(oi, {
+        isImage: false,
+        imageBbox: null,
+        imagePage: null,
+        imageStorageKey: null,
+        imageAlt: null,
+      });
     } else {
-      const imageOrder = q.options.slice(0, oi).filter((x) => x.isImage === true).length;
-      setOption(oi, { isImage: true, imageBbox: defaultOptionBbox(imageOrder), imageStorageKey: null });
+      const imageOrder = q.options
+        .slice(0, oi)
+        .filter((x) => x.isImage === true).length;
+      setOption(oi, {
+        isImage: true,
+        imageBbox: defaultOptionBbox(imageOrder),
+        imageStorageKey: null,
+      });
     }
   }
 
   function removeFigure() {
-    onChange({ ...q, hasFigure: false, figureBbox: null, figureStorageKey: null });
+    onChange({
+      ...q,
+      hasFigure: false,
+      figureBbox: null,
+      figureStorageKey: null,
+    });
   }
 
   // Flag a figure for a question the extractor missed: drops in a default,
   // draggable crop box (on the source page) for the teacher to position. The
   // inverse of removeFigure; the box is cropped + uploaded during commit.
   function addFigure() {
-    onChange({ ...q, hasFigure: true, figureBbox: q.figureBbox ?? DEFAULT_FIGURE_BBOX, figureStorageKey: null });
+    onChange({
+      ...q,
+      hasFigure: true,
+      figureBbox: q.figureBbox ?? DEFAULT_FIGURE_BBOX,
+      figureStorageKey: null,
+    });
   }
 
   // A crop box moved: route it to the figure or the matching option. Editing a
@@ -208,7 +296,11 @@ function QuestionCard({
                 // Inline: fill the column (matching the plain source-page image).
                 // Enlarged: shrink-to-fit so the page fits the dialog height and
                 // the crop boxes stay aligned to the image.
-                imgClassName={large ? "block max-h-[78vh] w-auto max-w-full" : "block w-full"}
+                imgClassName={
+                  large
+                    ? "block max-h-[78vh] w-auto max-w-full"
+                    : "block w-full"
+                }
                 containerClassName={
                   large
                     ? undefined
@@ -225,18 +317,39 @@ function QuestionCard({
   // Controls that float over the top-right of the source-page preview (the same
   // overlay treatment the plain source-page image uses): enlarge, plus an
   // add/remove-figure toggle so every question can gain or drop a figure crop.
-  const overlayButton = "size-8 bg-background/80 shadow-sm backdrop-blur hover:bg-background";
+  const overlayButton =
+    "size-8 bg-background/80 shadow-sm backdrop-blur hover:bg-background";
   const figureControls = (
     <div className="absolute right-2 top-2 flex items-center gap-1">
-      <Button size="icon" variant="secondary" onClick={() => setEnlarged(true)} aria-label="Enlarge page" className={overlayButton}>
+      <Button
+        size="icon"
+        variant="secondary"
+        onClick={() => setEnlarged(true)}
+        aria-label="Enlarge page"
+        className={overlayButton}
+      >
         <Maximize2 className="size-4" />
       </Button>
       {q.hasFigure ? (
-        <Button size="icon" variant="secondary" onClick={removeFigure} aria-label="Remove figure" title="Remove figure" className={overlayButton}>
+        <Button
+          size="icon"
+          variant="secondary"
+          onClick={removeFigure}
+          aria-label="Remove figure"
+          title="Remove figure"
+          className={overlayButton}
+        >
           <ImageOff className="size-4" />
         </Button>
       ) : (
-        <Button size="icon" variant="secondary" onClick={addFigure} aria-label="Add figure" title="Add figure" className={overlayButton}>
+        <Button
+          size="icon"
+          variant="secondary"
+          onClick={addFigure}
+          aria-label="Add figure"
+          title="Add figure"
+          className={overlayButton}
+        >
           <ImagePlus className="size-4" />
         </Button>
       )}
@@ -244,21 +357,48 @@ function QuestionCard({
   );
 
   return (
-    <div className={`rounded-lg border p-4 space-y-3 ${complete ? "" : "border-amber-300 bg-amber-50/40 dark:border-amber-700/60 dark:bg-amber-950/20"}`}>
+    <div
+      className={`rounded-lg border p-4 space-y-3 ${complete ? "" : "border-amber-300 bg-amber-50/40 dark:border-amber-700/60 dark:bg-amber-950/20"}`}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="font-mono text-sm text-muted-foreground">Q{index + 1}</span>
-          <Badge variant="outline" className="text-xs">{TYPE_LABEL[q.type]}</Badge>
-          {q.needsReview && <Badge variant="warning" className="text-xs">Needs review</Badge>}
-          {q.confidence < 0.7 && <Badge variant="warning" className="text-xs">Low confidence</Badge>}
-          {!complete && <Badge variant="destructive" className="text-xs">Incomplete</Badge>}
+          <span className="font-mono text-sm text-muted-foreground">
+            Q{index + 1}
+          </span>
+          <Badge variant="outline" className="text-xs">
+            {TYPE_LABEL[q.type]}
+          </Badge>
+          {q.needsReview && (
+            <Badge variant="warning" className="text-xs">
+              Needs review
+            </Badge>
+          )}
+          {q.confidence < 0.7 && (
+            <Badge variant="warning" className="text-xs">
+              Low confidence
+            </Badge>
+          )}
+          {!complete && (
+            <Badge variant="destructive" className="text-xs">
+              Incomplete
+            </Badge>
+          )}
         </div>
-        <Button size="sm" variant="ghost" onClick={onRemove} aria-label={`Remove question ${index + 1}`}>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={onRemove}
+          aria-label={`Remove question ${index + 1}`}
+        >
           <Trash2 className="size-4 text-destructive" />
         </Button>
       </div>
 
-      {q.needsReview && q.reviewNote && <p className="text-xs text-amber-700 dark:text-amber-300">{q.reviewNote}</p>}
+      {q.needsReview && q.reviewNote && (
+        <p className="text-xs text-amber-700 dark:text-amber-300">
+          {q.reviewNote}
+        </p>
+      )}
 
       {/* Editing fields on the left; the source page is shown on the right (a
           draggable multi-box cropper when the question has a figure and/or image
@@ -266,8 +406,18 @@ function QuestionCard({
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="min-w-0 space-y-3">
           <div className="space-y-1">
-            <label htmlFor={`${fieldId}-text`} className="text-xs font-medium text-muted-foreground">Question text (LaTeX in $…$)</label>
-            <Textarea id={`${fieldId}-text`} value={q.text} onChange={(e) => onChange({ ...q, text: e.target.value })} rows={3} />
+            <label
+              htmlFor={`${fieldId}-text`}
+              className="text-xs font-medium text-muted-foreground"
+            >
+              Question text (LaTeX in $…$)
+            </label>
+            <Textarea
+              id={`${fieldId}-text`}
+              value={q.text}
+              onChange={(e) => onChange({ ...q, text: e.target.value })}
+              rows={3}
+            />
             <MathPreview text={q.text} />
           </div>
 
@@ -280,7 +430,11 @@ function QuestionCard({
               <legend className="text-xs font-medium text-muted-foreground">
                 Options{" "}
                 <span className="font-normal">
-                  ({q.type === "MULTI_SELECT" ? "check all correct" : "select the one correct"})
+                  (
+                  {q.type === "MULTI_SELECT"
+                    ? "check all correct"
+                    : "select the one correct"}
+                  )
                 </span>
               </legend>
               {q.options.map((opt, oi) => {
@@ -291,7 +445,9 @@ function QuestionCard({
                       <div className="flex h-10 shrink-0 items-center gap-1">
                         <button
                           type="button"
-                          aria-label={opt.isCorrect ? "Marked correct" : "Mark correct"}
+                          aria-label={
+                            opt.isCorrect ? "Marked correct" : "Mark correct"
+                          }
                           aria-pressed={opt.isCorrect === true}
                           onClick={() => toggleCorrect(oi)}
                           className={`size-4 border-2 ${q.type === "MULTI_SELECT" ? "rounded" : "rounded-full"} ${
@@ -302,7 +458,9 @@ function QuestionCard({
                                 : "border-muted-foreground"
                           }`}
                         />
-                        <span className="font-mono text-xs text-muted-foreground">{optionLetter(oi)}</span>
+                        <span className="font-mono text-xs text-muted-foreground">
+                          {optionLetter(oi)}
+                        </span>
                       </div>
 
                       {isImageOpt ? (
@@ -310,13 +468,21 @@ function QuestionCard({
                           <ImageIcon className="size-4 shrink-0 text-muted-foreground" />
                           <Input
                             value={opt.imageAlt ?? ""}
-                            onChange={(e) => setOption(oi, { imageAlt: e.target.value || null })}
+                            onChange={(e) =>
+                              setOption(oi, {
+                                imageAlt: e.target.value || null,
+                              })
+                            }
                             placeholder="Image label / caption (optional)"
                             className="h-8 border-0 bg-transparent px-1 shadow-none focus-visible:ring-0"
                           />
                         </div>
                       ) : (
-                        <Input value={opt.text} onChange={(e) => setOptionText(oi, e.target.value)} placeholder={`Option ${oi + 1}`} />
+                        <Input
+                          value={opt.text}
+                          onChange={(e) => setOptionText(oi, e.target.value)}
+                          placeholder={`Option ${oi + 1}`}
+                        />
                       )}
 
                       {q.type !== "TRUE_FALSE" && (
@@ -325,12 +491,27 @@ function QuestionCard({
                             size="sm"
                             variant="ghost"
                             onClick={() => toggleOptionIsImage(oi)}
-                            aria-label={isImageOpt ? `Make option ${oi + 1} text` : `Make option ${oi + 1} an image`}
-                            title={isImageOpt ? "Switch to text" : "Switch to image"}
+                            aria-label={
+                              isImageOpt
+                                ? `Make option ${oi + 1} text`
+                                : `Make option ${oi + 1} an image`
+                            }
+                            title={
+                              isImageOpt ? "Switch to text" : "Switch to image"
+                            }
                           >
-                            {isImageOpt ? <Type className="size-3" /> : <ImageIcon className="size-3" />}
+                            {isImageOpt ? (
+                              <Type className="size-3" />
+                            ) : (
+                              <ImageIcon className="size-3" />
+                            )}
                           </Button>
-                          <Button size="sm" variant="ghost" onClick={() => removeOption(oi)} aria-label={`Remove option ${oi + 1}`}>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => removeOption(oi)}
+                            aria-label={`Remove option ${oi + 1}`}
+                          >
                             <X className="size-3" />
                           </Button>
                         </div>
@@ -354,24 +535,43 @@ function QuestionCard({
           ) : (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1">
-                <label htmlFor={`${fieldId}-answer`} className="text-xs font-medium text-muted-foreground">Correct answer</label>
+                <label
+                  htmlFor={`${fieldId}-answer`}
+                  className="text-xs font-medium text-muted-foreground"
+                >
+                  Correct answer
+                </label>
                 <Input
                   id={`${fieldId}-answer`}
                   inputMode="decimal"
                   value={q.numericAnswer ?? ""}
-                  onChange={(e) => onChange({ ...q, numericAnswer: normalizeNumericValue(e.target.value) })}
+                  onChange={(e) =>
+                    onChange({
+                      ...q,
+                      numericAnswer: normalizeNumericValue(e.target.value),
+                    })
+                  }
                   placeholder="e.g. 9.81"
                 />
                 {q.numericAnswerText && (
-                  <p className="text-xs text-muted-foreground">Printed answer: {q.numericAnswerText}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Printed answer: {q.numericAnswerText}
+                  </p>
                 )}
               </div>
               <div className="space-y-1">
-                <label htmlFor={`${fieldId}-unit`} className="text-xs font-medium text-muted-foreground">Unit (display only)</label>
+                <label
+                  htmlFor={`${fieldId}-unit`}
+                  className="text-xs font-medium text-muted-foreground"
+                >
+                  Unit (display only)
+                </label>
                 <Input
                   id={`${fieldId}-unit`}
                   value={q.numericUnit ?? ""}
-                  onChange={(e) => onChange({ ...q, numericUnit: e.target.value || null })}
+                  onChange={(e) =>
+                    onChange({ ...q, numericUnit: e.target.value || null })
+                  }
                   placeholder="supports $LaTeX$"
                 />
               </div>
@@ -397,17 +597,25 @@ function QuestionCard({
             </>
           ) : sourceUrl ? (
             <>
-              <span className="text-xs font-medium text-muted-foreground">Source page {q.sourcePage}</span>
+              <span className="text-xs font-medium text-muted-foreground">
+                Source page {q.sourcePage}
+              </span>
               {/* Image fills the column; the controls float over it so they
                   don't steal a row or shrink the page preview. */}
               <div className="relative">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={sourceUrl} alt={`Source page ${q.sourcePage}`} className="block w-full rounded border" />
+                <img
+                  src={sourceUrl}
+                  alt={`Source page ${q.sourcePage}`}
+                  className="block w-full rounded border"
+                />
                 {figureControls}
               </div>
             </>
           ) : (
-            <p className="text-xs text-muted-foreground">No source page image available.</p>
+            <p className="text-xs text-muted-foreground">
+              No source page image available.
+            </p>
           )}
         </div>
       </div>
@@ -422,7 +630,11 @@ function QuestionCard({
               renderCroppers(true)
             ) : sourceUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={sourceUrl} alt={`Source page ${q.sourcePage}`} className="mx-auto block max-h-[78vh] w-auto max-w-full" />
+              <img
+                src={sourceUrl}
+                alt={`Source page ${q.sourcePage}`}
+                className="mx-auto block max-h-[78vh] w-auto max-w-full"
+              />
             ) : null}
           </div>
         </DialogContent>
@@ -441,6 +653,7 @@ export function QuizPdfReview({
   questionKeys,
   hasAnswerKey,
   warnings,
+  guardrailEventId,
   pageImages,
   onChangeQuestion,
   onRemoveQuestion,
@@ -450,6 +663,12 @@ export function QuizPdfReview({
   questionKeys: string[];
   hasAnswerKey: boolean;
   warnings: string[];
+  /**
+   * Set when the post-extraction safety check produced one of the warnings
+   * above. The teacher reading them is the person best placed to say the check
+   * was wrong about their document, so it is worth asking them.
+   */
+  guardrailEventId?: string | null;
   pageImages: PageImage[];
   onChangeQuestion: (index: number, next: StagedQuestion) => void;
   onRemoveQuestion: (index: number) => void;
@@ -462,12 +681,18 @@ export function QuizPdfReview({
         </div>
       )}
       {warnings.length > 0 && (
-        <ul className="list-disc space-y-0.5 pl-5 text-xs text-muted-foreground">
-          {warnings.map((w, i) => (
-            // react-doctor-disable-next-line react-doctor/no-array-index-as-key -- warnings is a static list of strings with no per-item state; index identity is stable enough
-            <li key={i}>{w}</li>
-          ))}
-        </ul>
+        <div className="space-y-1">
+          <ul className="list-disc space-y-0.5 pl-5 text-xs text-muted-foreground">
+            {warnings.map((w, i) => (
+              // react-doctor-disable-next-line react-doctor/no-array-index-as-key -- warnings is a static list of strings with no per-item state; index identity is stable enough
+              <li key={i}>{w}</li>
+            ))}
+          </ul>
+          <GuardrailFeedbackButton
+            eventId={guardrailEventId}
+            className="pl-5 text-muted-foreground"
+          />
+        </div>
       )}
       {questions.map((q, i) => (
         <QuestionCard

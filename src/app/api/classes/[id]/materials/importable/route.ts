@@ -4,7 +4,10 @@ import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
   const session = await auth();
   if (!session?.user || session.user.role !== "TEACHER") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -14,12 +17,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     params,
     prisma.teacher.findUnique({ where: { userId: session.user.id } }),
   ]);
-  if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
+  if (!teacher)
+    return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
 
   const cls = await prisma.class.findFirst({
     where: { id: classId, teacherId: teacher.id },
   });
-  if (!cls) return NextResponse.json({ error: "Class not found" }, { status: 404 });
+  if (!cls)
+    return NextResponse.json({ error: "Class not found" }, { status: 404 });
 
   // Materials already linked to the target class — excluded from the importable list.
   const existing = await prisma.materialClass.findMany({
@@ -43,7 +48,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   });
 
   // Group importable materials under their origin class.
-  const groups = new Map<string, { id: string; name: string; materials: unknown[] }>();
+  const groups = new Map<
+    string,
+    { id: string; name: string; materials: unknown[] }
+  >();
   const UNKNOWN_KEY = "__none__";
 
   for (const m of materials) {
@@ -63,7 +71,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     });
   }
 
-  const classes = Array.from(groups.values()).filter((g) => g.materials.length > 0);
+  const classes = Array.from(groups.values()).filter(
+    (g) => g.materials.length > 0,
+  );
 
   return NextResponse.json({ classes });
 }

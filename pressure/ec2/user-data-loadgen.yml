@@ -1,0 +1,21 @@
+#cloud-config
+# Cloud-init for the load generator.
+#
+# A SEPARATE INSTANCE, ON PURPOSE. The application is single-process and
+# bottlenecked on one CPU: every Prisma query is a synchronous better-sqlite3
+# call, bcryptjs is pure JS, and CloudFront URL signing is RSA on the same
+# thread. Running k6 on the system under test would put the measurement tool in
+# direct competition for exactly the resource being measured, and every reported
+# capacity number would be too low by however much CPU k6 took. Same-AZ private
+# networking keeps the network out of the measurement instead.
+#
+# This instance is plain Ubuntu — no AMI from production, so it never holds
+# production data or credentials.
+
+bootcmd:
+  - [ sh, -c, "shutdown -h +300 'benchmark backstop' || true" ]
+
+runcmd:
+  # The staged script writes BOOT_STAGE continuously and BOOT_FAILED on error,
+  # so the workstation can report the cause without waiting for a timeout.
+  - [ bash, /opt/pressure/bootstrap-loadgen.sh ]

@@ -36,14 +36,60 @@ export function SimulationViewer({
   title,
   version,
   telemetry,
+  selectedVersion,
+  editable,
+  onTextEdit,
+  onFormulaPick,
 }: {
   simulationId: string;
   title: string;
   /** Bump to bust the browser's private cache after a revision lands. */
   version?: number;
   telemetry?: SimulationTelemetryContext;
+  selectedVersion?: number;
+  /**
+   * Serve the in-preview editing layer. Deliberately separate from the
+   * callbacks below: it is part of the iframe's `src`, so deriving it from a
+   * handler that comes and goes with a request in flight would reload — and
+   * restart — the simulation around every chat message.
+   */
+  editable?: boolean;
+  onTextEdit?: (before: string, after: string) => void;
+  onFormulaPick?: (index: number) => void;
 }) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  // Held in a ref so a new inline handler on every parent render does not tear
+  // down and re-add the listener. Only ever read from a user-driven message,
+  // which cannot arrive before the commit that refreshed it.
+  const handlers = useRef({ onTextEdit, onFormulaPick });
+  useEffect(() => {
+    handlers.current = { onTextEdit, onFormulaPick };
+  });
+  useEffect(() => {
+    if (!editable) return;
+    const receive = (event: MessageEvent) => {
+      if (event.source !== iframeRef.current?.contentWindow) return;
+      const data = event.data;
+      if (
+        data?.type === "simulation-text-edit" &&
+        typeof data.before === "string" &&
+        typeof data.after === "string" &&
+        data.before.length <= 2000 &&
+        data.after.length <= 2000
+      ) {
+        handlers.current.onTextEdit?.(data.before, data.after);
+        return;
+      }
+      if (
+        data?.type === "simulation-formula-pick" &&
+        Number.isSafeInteger(data.index) &&
+        data.index >= 0
+      )
+        handlers.current.onFormulaPick?.(data.index);
+    };
+    window.addEventListener("message", receive);
+    return () => window.removeEventListener("message", receive);
+  }, [editable]);
   const attemptId = telemetry?.attemptId ?? null;
   const surface = telemetry?.surface ?? null;
 
@@ -68,26 +114,38 @@ export function SimulationViewer({
     })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (!cancelled && typeof data?.sessionId === "string") sessionId = data.sessionId;
+        if (!cancelled && typeof data?.sessionId === "string")
+          sessionId = data.sessionId;
       })
       .catch(() => {
         // Telemetry is best-effort — the simulation itself is unaffected.
       });
 
     const onMessage = (event: MessageEvent) => {
-      if (!iframeRef.current || event.source !== iframeRef.current.contentWindow) return;
-      const data = event.data as Partial<SimTelemetryTotals> & { type?: string };
+      if (
+        !iframeRef.current ||
+        event.source !== iframeRef.current.contentWindow
+      )
+        return;
+      const data = event.data as Partial<SimTelemetryTotals> & {
+        type?: string;
+      };
       if (!data || data.type !== SIM_TELEMETRY_MESSAGE_TYPE) return;
       totals = {
-        activeMs: typeof data.activeMs === "number" ? data.activeMs : totals.activeMs,
+        activeMs:
+          typeof data.activeMs === "number" ? data.activeMs : totals.activeMs,
         interactionCount:
           typeof data.interactionCount === "number"
             ? data.interactionCount
             : totals.interactionCount,
         paramChanges:
-          typeof data.paramChanges === "number" ? data.paramChanges : totals.paramChanges,
+          typeof data.paramChanges === "number"
+            ? data.paramChanges
+            : totals.paramChanges,
         controls:
-          data.controls && typeof data.controls === "object" ? data.controls : totals.controls,
+          data.controls && typeof data.controls === "object"
+            ? data.controls
+            : totals.controls,
       };
       dirty = true;
     };
@@ -98,9 +156,16 @@ export function SimulationViewer({
       dirty = false;
       if (ended) finalSent = true;
       const url = `/api/simulations/${simulationId}/sessions/${sessionId}`;
-      const body = JSON.stringify({ ...totals, dwellMs: Date.now() - startedAt, ended });
+      const body = JSON.stringify({
+        ...totals,
+        dwellMs: Date.now() - startedAt,
+        ended,
+      });
       if (ended && typeof navigator.sendBeacon === "function") {
-        navigator.sendBeacon(url, new Blob([body], { type: "application/json" }));
+        navigator.sendBeacon(
+          url,
+          new Blob([body], { type: "application/json" }),
+        );
       } else {
         fetch(url, {
           method: "POST",
@@ -126,7 +191,7 @@ export function SimulationViewer({
   return (
     <iframe
       ref={iframeRef}
-      src={`/api/simulations/${simulationId}/content${version ? `?v=${version}` : ""}`}
+      src={`/api/simulations/${simulationId}/content?v=${version ?? 0}${selectedVersion ? `&version=${selectedVersion}` : ""}${editable ? "&edit=1" : ""}`}
       title={title}
       sandbox="allow-scripts"
       className="h-full w-full rounded-md border bg-white"

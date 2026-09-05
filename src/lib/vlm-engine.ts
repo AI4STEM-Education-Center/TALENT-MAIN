@@ -10,6 +10,7 @@ import {
   type ThinkingParams,
 } from "@/lib/ai-provider";
 import { retryWithExponentialBackoff } from "./retry";
+import { errorMessage as getErrorMessage } from "./errors";
 import {
   streamJsonCompletion,
   aggregateMetrics,
@@ -19,6 +20,13 @@ import {
   type AiTransport,
 } from "./ai-streaming";
 import { getActiveConceptLabels } from "./concept-catalog";
+import { fenceUntrusted, UNTRUSTED_CONTENT_RULE } from "./guardrail-fence";
+import { moderateImages } from "./guardrails";
+import { auditText } from "./guardrail-runner";
+import {
+  getGuardrailSettings,
+  moderationEnabledFor,
+} from "./guardrail-settings";
 
 // In-memory set of material IDs whose processing should be aborted.
 const cancelledMaterials = new Set<string>();
@@ -80,7 +88,10 @@ export function buildTier1Schema(allowedConcepts: string[]) {
       ...TIER1_SCHEMA.schema,
       properties: {
         ...TIER1_SCHEMA.schema.properties,
-        key_concept: { type: "string", enum: [...allowedConcepts, NONE_CONCEPT] },
+        key_concept: {
+          type: "string",
+          enum: [...allowedConcepts, NONE_CONCEPT],
+        },
       },
     },
   };
@@ -97,7 +108,10 @@ export function buildTier2Schema(allowedConcepts: string[]) {
       ...TIER2_SCHEMA.schema,
       properties: {
         ...TIER2_SCHEMA.schema.properties,
-        key_concept: { type: "array", items: { type: "string", enum: allowedConcepts } },
+        key_concept: {
+          type: "array",
+          items: { type: "string", enum: allowedConcepts },
+        },
       },
     },
   };
@@ -111,7 +125,7 @@ export function formatConceptBulletList(allowedConcepts: string[]): string {
 function requireActiveConcepts(allowedConcepts: string[]): void {
   if (allowedConcepts.length === 0) {
     throw new Error(
-      "The active concept catalog is empty. Upload concepts in the admin dashboard before generating material descriptions."
+      "The active concept catalog is empty. Upload concepts in the admin dashboard before generating material descriptions.",
     );
   }
 }
@@ -127,7 +141,14 @@ const TIER2_BASE_PROMPT =
  */
 export function buildTier1Prompt(allowedConcepts: string[]): string {
   requireActiveConcepts(allowedConcepts);
-  return `${TIER1_BASE_PROMPT} Choose key_concept ONLY from this list (use the exact label). If no listed concept fits, use "None". The description must discuss only the selected listed concept and must not introduce unlisted concepts.\n${formatConceptBulletList(allowedConcepts)}`;
+  // Concept labels arrive by admin CSV import, so they are fenced like any
+  // other stored text. The response schema already pins key_concept to this
+  // enum; the fence protects the surrounding instructions instead.
+  return `${TIER1_BASE_PROMPT} Choose key_concept ONLY from this list (use the exact label). If no listed concept fits, use "None". The description must discuss only the selected listed concept and must not introduce unlisted concepts.
+
+${UNTRUSTED_CONTENT_RULE}
+
+${fenceUntrusted("concept catalog", formatConceptBulletList(allowedConcepts))}`;
 }
 
 /**
@@ -135,7 +156,11 @@ export function buildTier1Prompt(allowedConcepts: string[]): string {
  */
 export function buildTier2Prompt(allowedConcepts: string[]): string {
   requireActiveConcepts(allowedConcepts);
-  return `${TIER2_BASE_PROMPT} Choose key concepts ONLY from this list (use the exact labels). Return an empty list if none apply. The description must discuss only concepts selected from this list and must not introduce unlisted concepts.\n${formatConceptBulletList(allowedConcepts)}`;
+  return `${TIER2_BASE_PROMPT} Choose key concepts ONLY from this list (use the exact labels). Return an empty list if none apply. The description must discuss only concepts selected from this list and must not introduce unlisted concepts.
+
+${UNTRUSTED_CONTENT_RULE}
+
+${fenceUntrusted("concept catalog", formatConceptBulletList(allowedConcepts))}`;
 }
 
 /**
@@ -144,7 +169,10 @@ export function buildTier2Prompt(allowedConcepts: string[]): string {
  * response_format, so the schema enum alone isn't a guarantee). "None" or any
  * value outside the catalog is nulled out; empty catalogs fail closed.
  */
-export function resolveTier1KeyConcept(value: string, allowedConcepts: string[]): string | null {
+export function resolveTier1KeyConcept(
+  value: string,
+  allowedConcepts: string[],
+): string | null {
   requireActiveConcepts(allowedConcepts);
   if (value === NONE_CONCEPT) return null;
   return allowedConcepts.includes(value) ? value : null;
@@ -154,7 +182,10 @@ export function resolveTier1KeyConcept(value: string, allowedConcepts: string[])
  * Post-validation for tier-2 key_concept array (same defense-in-depth
  * rationale as resolveTier1KeyConcept). Empty catalogs fail closed.
  */
-export function filterTier2KeyConcepts(values: string[], allowedConcepts: string[]): string[] {
+export function filterTier2KeyConcepts(
+  values: string[],
+  allowedConcepts: string[],
+): string[] {
   requireActiveConcepts(allowedConcepts);
   return values.filter((v) => allowedConcepts.includes(v));
 }
@@ -181,7 +212,7 @@ async function getConfiguredOpenAI(): Promise<{
   if (!provider) {
     throw new Error(
       "No AI provider configured for PDF description generation. " +
-        "An admin must configure the 'pdf_description' use case in the AI Config dashboard."
+        "An admin must configure the 'pdf_description' use case in the AI Config dashboard.",
     );
   }
 
@@ -214,7 +245,9 @@ async function processPage(
   serviceTier: string | null,
   thinking: ThinkingParams,
   transport: AiTransport,
-  allowedConcepts: string[]
+  allowedConcepts: string[],
+  /** Free page-image moderation, per the admin's guardrail settings. */
+  moderatePages: boolean,
 ): Promise<AiCallMetrics> {
   // Resolve a model-ready URL for this page: a JIT presigned link for hosted
   // providers, or an inline base64 data URL for local ones that can't reach S3.
@@ -223,10 +256,23 @@ async function processPage(
     expiresIn: 3600,
   });
 
+  // Audit, not a gate: one flagged page must not abandon a teacher's whole
+  // upload, and the description model sees the page either way. The log row is
+  // what an admin acts on. Fire-and-forget so it never adds to page latency.
+  if (moderatePages)
+    void moderateImages([imageUrl], {
+      surface: "material_page",
+      id: materialId,
+    });
+
   const prompt = buildTier1Prompt(allowedConcepts);
 
   const { value, metrics } = await retryWithExponentialBackoff(() =>
-    streamJsonCompletion<{ needed: boolean; key_concept: string; description: string }>(
+    streamJsonCompletion<{
+      needed: boolean;
+      key_concept: string;
+      description: string;
+    }>(
       openai,
       {
         model,
@@ -244,8 +290,8 @@ async function processPage(
         ...thinking,
       },
       buildTier1Schema(allowedConcepts),
-      streamOptionsFor(transport)
-    )
+      streamOptionsFor(transport),
+    ),
   );
 
   await prisma.materialPage.update({
@@ -275,7 +321,8 @@ export async function processMaterial(materialId: string) {
   });
 
   if (!material) throw new Error("Material not found");
-  if (material.pages.length === 0) throw new Error("No pages found for material");
+  if (material.pages.length === 0)
+    throw new Error("No pages found for material");
 
   let bucket: string;
   try {
@@ -287,11 +334,26 @@ export async function processMaterial(materialId: string) {
   // Fail closed before making any AI call: material concept metadata and its
   // prose description must always be grounded in the admin-managed catalog.
   const allowedConcepts = await getActiveConceptLabels();
+  // Read once for the whole job rather than per page: the settings are cached
+  // for 60s anyway, and a mid-document toggle flip should not split a document
+  // into moderated and unmoderated halves.
+  const guardrailSettings = await getGuardrailSettings();
+  const moderatePages = moderationEnabledFor(
+    guardrailSettings,
+    "material_page",
+  );
   requireActiveConcepts(allowedConcepts);
 
   // Resolve provider from DB config
-  const { client: openai, model, providerType, serviceTier, thinkingLevel, isLocal, transport } =
-    await getConfiguredOpenAI();
+  const {
+    client: openai,
+    model,
+    providerType,
+    serviceTier,
+    thinkingLevel,
+    isLocal,
+    transport,
+  } = await getConfiguredOpenAI();
   // Derived once and passed to every call below; empty unless a level is pinned.
   const thinking = thinkingParams({ thinkingLevel });
 
@@ -301,24 +363,43 @@ export async function processMaterial(materialId: string) {
 
   // Tier 1: Process pages in batches of 5
   const CONCURRENCY = 5;
-  const pagesToProcess = material.pages.filter(p => p.description === null); // Support retry
-  
+  const pagesToProcess = material.pages.filter((p) => p.description === null); // Support retry
+
   for (let i = 0; i < pagesToProcess.length; i += CONCURRENCY) {
     if (isCancelled(materialId)) {
-      console.log(`[VLM Engine] Processing cancelled for material ${materialId}`);
+      console.log(
+        `[VLM Engine] Processing cancelled for material ${materialId}`,
+      );
       cancelledMaterials.delete(materialId);
       return;
     }
     const batch = pagesToProcess.slice(i, i + CONCURRENCY);
     await Promise.all(
       batch.map((page) =>
-        processPage(materialId, page.pageNumber, page.storageKey, bucket, openai, model, serviceTier, thinking, transport, allowedConcepts)
-          .then((m) => { callMetrics.push(m); })
-          .catch((err) => {
-            console.error(`[VLM Engine] Failed to process page ${page.pageNumber}:`, err);
-            // Don't fail the whole batch, allow retry mechanism later
+        processPage(
+          materialId,
+          page.pageNumber,
+          page.storageKey,
+          bucket,
+          openai,
+          model,
+          serviceTier,
+          thinking,
+          transport,
+          allowedConcepts,
+          moderatePages,
+        )
+          .then((m) => {
+            callMetrics.push(m);
           })
-      )
+          .catch((err) => {
+            console.error(
+              `[VLM Engine] Failed to process page ${page.pageNumber}:`,
+              err,
+            );
+            // Don't fail the whole batch, allow retry mechanism later
+          }),
+      ),
     );
   }
 
@@ -326,7 +407,9 @@ export async function processMaterial(materialId: string) {
   const MAX_PAGE_RETRIES = 3;
   for (let retryAttempt = 1; retryAttempt <= MAX_PAGE_RETRIES; retryAttempt++) {
     if (isCancelled(materialId)) {
-      console.log(`[VLM Engine] Processing cancelled for material ${materialId} during retry`);
+      console.log(
+        `[VLM Engine] Processing cancelled for material ${materialId} during retry`,
+      );
       cancelledMaterials.delete(materialId);
       return;
     }
@@ -334,7 +417,10 @@ export async function processMaterial(materialId: string) {
     const materialCheck = await prisma.learningMaterial.findUnique({
       where: { id: materialId },
     });
-    if (!materialCheck || materialCheck.processedPages >= materialCheck.totalPages) {
+    if (
+      !materialCheck ||
+      materialCheck.processedPages >= materialCheck.totalPages
+    ) {
       break; // All pages processed successfully
     }
 
@@ -345,7 +431,9 @@ export async function processMaterial(materialId: string) {
 
     if (failedPages.length === 0) break;
 
-    console.log(`[VLM Engine] Retry attempt ${retryAttempt}/${MAX_PAGE_RETRIES}: ${failedPages.length} failed pages for material ${materialId}`);
+    console.log(
+      `[VLM Engine] Retry attempt ${retryAttempt}/${MAX_PAGE_RETRIES}: ${failedPages.length} failed pages for material ${materialId}`,
+    );
 
     for (let i = 0; i < failedPages.length; i += CONCURRENCY) {
       if (isCancelled(materialId)) {
@@ -355,12 +443,29 @@ export async function processMaterial(materialId: string) {
       const batch = failedPages.slice(i, i + CONCURRENCY);
       await Promise.all(
         batch.map((page) =>
-          processPage(materialId, page.pageNumber, page.storageKey, bucket, openai, model, serviceTier, thinking, transport, allowedConcepts)
-            .then((m) => { callMetrics.push(m); })
-            .catch((err) => {
-              console.error(`[VLM Engine] Retry ${retryAttempt} failed for page ${page.pageNumber}:`, err);
+          processPage(
+            materialId,
+            page.pageNumber,
+            page.storageKey,
+            bucket,
+            openai,
+            model,
+            serviceTier,
+            thinking,
+            transport,
+            allowedConcepts,
+            moderatePages,
+          )
+            .then((m) => {
+              callMetrics.push(m);
             })
-        )
+            .catch((err) => {
+              console.error(
+                `[VLM Engine] Retry ${retryAttempt} failed for page ${page.pageNumber}:`,
+                err,
+              );
+            }),
+        ),
       );
     }
   }
@@ -369,7 +474,10 @@ export async function processMaterial(materialId: string) {
   const materialAfterRetries = await prisma.learningMaterial.findUnique({
     where: { id: materialId },
   });
-  if (materialAfterRetries && materialAfterRetries.processedPages < materialAfterRetries.totalPages) {
+  if (
+    materialAfterRetries &&
+    materialAfterRetries.processedPages < materialAfterRetries.totalPages
+  ) {
     await prisma.learningMaterial.update({
       where: { id: materialId },
       data: {
@@ -382,7 +490,9 @@ export async function processMaterial(materialId: string) {
 
   // Check cancellation before Tier 2
   if (isCancelled(materialId)) {
-    console.log(`[VLM Engine] Processing cancelled for material ${materialId} before Tier 2`);
+    console.log(
+      `[VLM Engine] Processing cancelled for material ${materialId} before Tier 2`,
+    );
     cancelledMaterials.delete(materialId);
     return;
   }
@@ -396,8 +506,10 @@ export async function processMaterial(materialId: string) {
 
   if (!updatedMaterial) return;
 
-  const neededPages = updatedMaterial.pages.filter((p) => p.needed === true && p.description !== null);
-  
+  const neededPages = updatedMaterial.pages.filter(
+    (p) => p.needed === true && p.description !== null,
+  );
+
   if (neededPages.length === 0) {
     // Edge case: no pages needed or all failed. Persist whatever Tier 1 metrics
     // we collected so the teacher still sees the model + token usage.
@@ -420,13 +532,29 @@ export async function processMaterial(materialId: string) {
     return;
   }
 
+  // ── Guardrail: one check over what the model actually READ off the PDF. ──
+  // The page images went through free moderation as they were processed; this
+  // asks the classifier whether the extracted prose is trying to steer an
+  // assistant. One call for the whole document, and audit-only — the
+  // descriptions feed recommendations, so a finding is something an admin
+  // should see rather than a reason to discard a processed upload.
+  void auditText(neededPages.map((p) => p.description ?? "").join("\n\n"), {
+    surface: "material_description",
+    id: materialId,
+  });
+
   // Resolve model-ready URLs for Tier 2: presigned links for hosted providers,
   // inline base64 data URLs for local ones that can't reach S3.
   const imageUrls = await Promise.all(
-    neededPages.map((p) => resolveModelImageUrl(bucket, p.storageKey, { inlineBase64: isLocal, expiresIn: 3600 }))
+    neededPages.map((p) =>
+      resolveModelImageUrl(bucket, p.storageKey, {
+        inlineBase64: isLocal,
+        expiresIn: 3600,
+      }),
+    ),
   );
 
-  const contentArray: any[] = [
+  const contentArray: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [
     {
       type: "text",
       text: buildTier2Prompt(allowedConcepts),
@@ -448,8 +576,8 @@ export async function processMaterial(materialId: string) {
           ...thinking,
         },
         buildTier2Schema(allowedConcepts),
-        streamOptionsFor(transport)
-      )
+        streamOptionsFor(transport),
+      ),
     );
     callMetrics.push(metrics);
 
@@ -459,7 +587,9 @@ export async function processMaterial(materialId: string) {
       data: {
         processingStatus: "SUCCESS",
         batchDescription: value.description,
-        batchKeyConcepts: JSON.stringify(filterTier2KeyConcepts(value.key_concept, allowedConcepts)),
+        batchKeyConcepts: JSON.stringify(
+          filterTier2KeyConcepts(value.key_concept, allowedConcepts),
+        ),
         aiModel: agg?.model ?? null,
         aiProvider: agg ? providerType : null,
         aiServiceTier: agg ? serviceTier : null,
@@ -469,13 +599,14 @@ export async function processMaterial(materialId: string) {
         aiTotalMs: agg?.totalMs ?? null,
       },
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error(`[VLM Engine] Tier 2 processing failed:`, err);
     await prisma.learningMaterial.update({
       where: { id: materialId },
       data: {
         processingStatus: "FAILED",
-        errorMessage: err.message || "Failed to generate batch summary",
+        errorMessage:
+          getErrorMessage(err) || "Failed to generate batch summary",
       },
     });
   }

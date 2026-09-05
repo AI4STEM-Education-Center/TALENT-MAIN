@@ -9,10 +9,16 @@ vi.mock("@/lib/email", async (importOriginal) => {
 
 import bcrypt from "bcryptjs";
 import { POST as FORGOT } from "@/app/api/auth/forgot-password/route";
-import { GET as CHECK_TOKEN, POST as RESET } from "@/app/api/auth/reset-password/route";
+import {
+  GET as CHECK_TOKEN,
+  POST as RESET,
+} from "@/app/api/auth/reset-password/route";
 import { prisma } from "@/lib/prisma";
 import { sendPurposeEmail, SmtpNotConfiguredError } from "@/lib/email";
-import { hashResetToken, MAX_RESET_REQUESTS_PER_USER } from "@/lib/password-reset";
+import {
+  hashResetToken,
+  MAX_RESET_REQUESTS_PER_USER,
+} from "@/lib/password-reset";
 import { resetDb, createStudent } from "./db";
 
 const mockSend = vi.mocked(sendPurposeEmail);
@@ -23,7 +29,7 @@ function postForgot(body: unknown) {
       method: "POST",
       headers: { "content-type": "application/json", host: "localhost:3000" },
       body: JSON.stringify(body),
-    }) as never
+    }) as never,
   );
 }
 
@@ -33,14 +39,18 @@ function postReset(body: unknown) {
       method: "POST",
       headers: { "content-type": "application/json", host: "localhost:3000" },
       body: JSON.stringify(body),
-    }) as never
+    }) as never,
   );
 }
 
 function checkToken(token: string) {
   const url = `http://localhost/api/auth/reset-password?token=${encodeURIComponent(token)}`;
   // The route reads req.nextUrl.searchParams; a plain Request has no nextUrl.
-  return CHECK_TOKEN({ nextUrl: new URL(url), headers: new Headers(), url } as never);
+  return CHECK_TOKEN({
+    nextUrl: new URL(url),
+    headers: new Headers(),
+    url,
+  } as never);
 }
 
 /** Pull the raw token out of the reset URL handed to the (mocked) mailer. */
@@ -69,7 +79,10 @@ afterAll(async () => {
 
 describe("POST /api/auth/forgot-password", () => {
   it("emails a single-use link for a known email address", async () => {
-    const { user } = await createStudent({ email: "ada@example.com", username: "ada" });
+    const { user } = await createStudent({
+      email: "ada@example.com",
+      username: "ada",
+    });
 
     const res = await postForgot({ identifier: "Ada@Example.com" });
     expect(res.status).toBe(200);
@@ -80,7 +93,9 @@ describe("POST /api/auth/forgot-password", () => {
     expect(purpose).toBe("PASSWORD_RESET");
     expect(to).toBe("ada@example.com");
 
-    const tokens = await prisma.passwordResetToken.findMany({ where: { userId: user.id } });
+    const tokens = await prisma.passwordResetToken.findMany({
+      where: { userId: user.id },
+    });
     expect(tokens).toHaveLength(1);
     // Only the hash is persisted — the raw token lives in the email.
     expect(tokens[0].tokenHash).toBe(hashResetToken(tokenFromLastEmail()));
@@ -116,7 +131,9 @@ describe("POST /api/auth/forgot-password", () => {
     });
     expect(firstRecord?.usedAt).not.toBeNull();
 
-    const stillValid = await prisma.passwordResetToken.count({ where: { userId: user.id, usedAt: null } });
+    const stillValid = await prisma.passwordResetToken.count({
+      where: { userId: user.id, usedAt: null },
+    });
     expect(stillValid).toBe(1);
   });
 
@@ -134,7 +151,9 @@ describe("POST /api/auth/forgot-password", () => {
 
   it("says so plainly when the server has no email configured", async () => {
     await createStudent({ email: "ada@example.com", username: "ada" });
-    mockSend.mockRejectedValueOnce(new SmtpNotConfiguredError("No SMTP server is configured."));
+    mockSend.mockRejectedValueOnce(
+      new SmtpNotConfiguredError("No SMTP server is configured."),
+    );
 
     const res = await postForgot({ identifier: "ada@example.com" });
     expect(res.status).toBe(503);
@@ -148,7 +167,7 @@ describe("POST /api/auth/forgot-password", () => {
 
     const [, , vars] = mockSend.mock.calls[0];
     expect(vars.resetUrl).toBe(
-      `https://dev.ai4talent.org/reset-password?token=${encodeURIComponent(token)}`
+      `https://dev.ai4talent.org/reset-password?token=${encodeURIComponent(token)}`,
     );
   });
 
@@ -194,7 +213,9 @@ describe("POST /api/auth/reset-password", () => {
     expect(res.status).toBe(200);
 
     const stored = await prisma.user.findUnique({ where: { id: user.id } });
-    expect(await bcrypt.compare(NEW_PASSWORD, stored!.hashedPassword)).toBe(true);
+    expect(await bcrypt.compare(NEW_PASSWORD, stored!.hashedPassword)).toBe(
+      true,
+    );
 
     const record = await prisma.passwordResetToken.findUnique({
       where: { tokenHash: hashResetToken(token) },
@@ -217,17 +238,24 @@ describe("POST /api/auth/reset-password", () => {
     const { user } = await createStudent();
     const token = await requestReset(user.email);
 
-    expect((await postReset({ token, password: NEW_PASSWORD })).status).toBe(200);
+    expect((await postReset({ token, password: NEW_PASSWORD })).status).toBe(
+      200,
+    );
 
     const second = await postReset({ token, password: "Another3#" });
     expect(second.status).toBe(400);
 
     const stored = await prisma.user.findUnique({ where: { id: user.id } });
-    expect(await bcrypt.compare(NEW_PASSWORD, stored!.hashedPassword)).toBe(true);
+    expect(await bcrypt.compare(NEW_PASSWORD, stored!.hashedPassword)).toBe(
+      true,
+    );
   });
 
   it("rejects an unknown token with 400", async () => {
-    const res = await postReset({ token: "not-a-real-token", password: NEW_PASSWORD });
+    const res = await postReset({
+      token: "not-a-real-token",
+      password: NEW_PASSWORD,
+    });
     expect(res.status).toBe(400);
   });
 
@@ -239,10 +267,14 @@ describe("POST /api/auth/reset-password", () => {
       data: { expiresAt: new Date(Date.now() - 1000) },
     });
 
-    expect((await postReset({ token, password: NEW_PASSWORD })).status).toBe(400);
+    expect((await postReset({ token, password: NEW_PASSWORD })).status).toBe(
+      400,
+    );
 
     const stored = await prisma.user.findUnique({ where: { id: user.id } });
-    expect(await bcrypt.compare("Password1!", stored!.hashedPassword)).toBe(true);
+    expect(await bcrypt.compare("Password1!", stored!.hashedPassword)).toBe(
+      true,
+    );
   });
 
   it("keeps the link usable when the chosen password is too weak", async () => {
@@ -255,20 +287,28 @@ describe("POST /api/auth/reset-password", () => {
       where: { tokenHash: hashResetToken(token) },
     });
     expect(record?.usedAt).toBeNull();
-    expect((await postReset({ token, password: NEW_PASSWORD })).status).toBe(200);
+    expect((await postReset({ token, password: NEW_PASSWORD })).status).toBe(
+      200,
+    );
   });
 
   it("voids the account's other outstanding links", async () => {
     const { user } = await createStudent();
     // A stale grant issued out-of-band (the route itself only keeps one live).
     await prisma.passwordResetToken.create({
-      data: { userId: user.id, tokenHash: "sibling-hash", expiresAt: new Date(Date.now() + 60_000) },
+      data: {
+        userId: user.id,
+        tokenHash: "sibling-hash",
+        expiresAt: new Date(Date.now() + 60_000),
+      },
     });
     const token = await requestReset(user.email);
 
     await postReset({ token, password: NEW_PASSWORD });
 
-    const sibling = await prisma.passwordResetToken.findUnique({ where: { tokenHash: "sibling-hash" } });
+    const sibling = await prisma.passwordResetToken.findUnique({
+      where: { tokenHash: "sibling-hash" },
+    });
     expect(sibling?.usedAt).not.toBeNull();
   });
 });

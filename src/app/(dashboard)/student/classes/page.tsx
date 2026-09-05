@@ -5,13 +5,22 @@ import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { GraduationCap, BookOpen, CheckCircle, User, History, ChevronRight } from "lucide-react";
+import {
+  GraduationCap,
+  BookOpen,
+  CheckCircle,
+  User,
+  History,
+  ChevronRight,
+} from "lucide-react";
 
 export default async function StudentClassesPage() {
   const session = await auth();
   if (!session?.user || session.user.role !== "STUDENT") redirect("/login");
 
-  const student = await prisma.student.findUnique({ where: { userId: session.user.id } });
+  const student = await prisma.student.findUnique({
+    where: { userId: session.user.id },
+  });
   if (!student) redirect("/login");
 
   const [enrollments, completedGroups] = await Promise.all([
@@ -20,8 +29,15 @@ export default async function StudentClassesPage() {
       include: {
         class: {
           include: {
-            teacher: { include: { user: { select: { firstName: true, lastName: true } } } },
-            classQuizzes: { where: { published: true }, select: { quizId: true } },
+            teacher: {
+              include: {
+                user: { select: { firstName: true, lastName: true } },
+              },
+            },
+            classQuizzes: {
+              where: { published: true },
+              select: { quizId: true },
+            },
           },
         },
       },
@@ -36,14 +52,17 @@ export default async function StudentClassesPage() {
     }),
   ]);
 
-  const completedByClass = new Map(completedGroups.map((g) => [g.classId, g._count._all]));
+  const completedByClass = new Map(
+    completedGroups.map((g) => [g.classId, g._count._all]),
+  );
 
   return (
     <div className="p-4 md:p-6 space-y-6">
       <div>
         <h1 className="text-3xl font-bold">My Classes</h1>
         <p className="text-muted-foreground mt-1">
-          {enrollments.length} class{enrollments.length !== 1 ? "es" : ""} enrolled
+          {enrollments.length} class{enrollments.length !== 1 ? "es" : ""}{" "}
+          enrolled
         </p>
       </div>
 
@@ -61,11 +80,17 @@ export default async function StudentClassesPage() {
         <div className="grid gap-4">
           {enrollments.map((e) => {
             const totalQuizzes = e.class.classQuizzes.length;
-            const completed = Math.min(completedByClass.get(e.classId) ?? 0, totalQuizzes);
+            const completed = Math.min(
+              completedByClass.get(e.classId) ?? 0,
+              totalQuizzes,
+            );
             const allDone = totalQuizzes > 0 && completed === totalQuizzes;
             const teacher = e.class.teacher.user;
             return (
-              <Card key={e.classId} className="hover:shadow-md transition-shadow">
+              <Card
+                key={e.classId}
+                className="hover:shadow-md transition-shadow"
+              >
                 <CardContent className="flex items-start justify-between gap-3 flex-wrap p-5">
                   <div className="space-y-1 min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -77,7 +102,9 @@ export default async function StudentClassesPage() {
                       )}
                     </div>
                     {e.class.description && (
-                      <p className="text-sm text-muted-foreground">{e.class.description}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {e.class.description}
+                      </p>
                     )}
                     <div className="flex flex-wrap gap-3 text-xs text-muted-foreground pt-1">
                       <span className="flex items-center gap-1">

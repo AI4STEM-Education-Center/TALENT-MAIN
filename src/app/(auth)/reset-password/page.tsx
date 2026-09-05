@@ -5,13 +5,22 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { PASSWORD_REQUIREMENTS, validatePassword } from "@/lib/account-validation";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  PASSWORD_REQUIREMENTS,
+  validatePassword,
+} from "@/lib/account-validation";
 import { CheckCircle2, Loader2 } from "lucide-react";
 
 // react-doctor-disable-next-line react-doctor/no-secrets-in-client-code -- AUTH_BACKDROP is a Tailwind class list, not a credential
 const AUTH_BACKDROP =
-  "min-h-screen bg-linear-to-br from-slate-900 via-blue-950 to-slate-900 flex items-center justify-center px-4";
+  "min-h-screen auth-shell flex items-center justify-center px-4";
 
 function ResetPasswordForm() {
   const { push } = useRouter();
@@ -29,11 +38,15 @@ function ResetPasswordForm() {
   const checkToken = useCallback(async () => {
     if (!token) {
       setTokenValid(false);
-      setTokenError("This link is missing its reset token. Request a new one to continue.");
+      setTokenError(
+        "This link is missing its reset token. Request a new one to continue.",
+      );
       return;
     }
     try {
-      const res = await fetch(`/api/auth/reset-password?token=${encodeURIComponent(token)}`);
+      const res = await fetch(
+        `/api/auth/reset-password?token=${encodeURIComponent(token)}`,
+      );
       // Status before body: fetch resolves on 4xx/5xx, so an HTTP error payload
       // must not be mistaken for a token verdict.
       if (!res.ok) {
@@ -43,7 +56,8 @@ function ResetPasswordForm() {
       }
       const data = await res.json();
       setTokenValid(!!data.valid);
-      if (!data.valid) setTokenError(data.error || "This reset link is no longer valid.");
+      if (!data.valid)
+        setTokenError(data.error || "This reset link is no longer valid.");
     } catch {
       setTokenValid(false);
       setTokenError("We couldn't check this link. Please try again.");
@@ -77,7 +91,9 @@ function ResetPasswordForm() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Could not reset your password. Please try again.");
+        setError(
+          data.error || "Could not reset your password. Please try again.",
+        );
       } else {
         setDone(true);
         // Give the confirmation a beat to register before sending them to sign in.
@@ -93,7 +109,7 @@ function ResetPasswordForm() {
   if (tokenValid === null) {
     return (
       <div className={AUTH_BACKDROP}>
-        <Loader2 className="size-6 animate-spin text-white/70" />
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -102,7 +118,9 @@ function ResetPasswordForm() {
     <div className={AUTH_BACKDROP}>
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-bold">Choose a new password</CardTitle>
+          <CardTitle className="text-2xl font-bold">
+            Choose a new password
+          </CardTitle>
           <CardDescription>
             {tokenValid
               ? "Pick something you haven't used here before."
@@ -123,7 +141,9 @@ function ResetPasswordForm() {
             <div className="space-y-4">
               <div className="p-3 rounded-md bg-green-500/10 text-green-700 dark:text-green-400 text-sm flex items-start gap-2">
                 <CheckCircle2 className="size-4 shrink-0 mt-0.5" />
-                <span>Your password has been reset. Taking you to the sign-in page…</span>
+                <span>
+                  Your password has been reset. Taking you to the sign-in page…
+                </span>
               </div>
               <Button asChild variant="outline" className="w-full">
                 <Link href="/login">Sign in now</Link>
@@ -132,7 +152,9 @@ function ResetPasswordForm() {
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
               {error && (
-                <div className="p-3 rounded-md bg-destructive/10 text-destructive text-sm">{error}</div>
+                <div className="p-3 rounded-md bg-destructive/10 text-destructive text-sm">
+                  {error}
+                </div>
               )}
               <div className="space-y-2">
                 <Label htmlFor="password">New password</Label>
@@ -145,7 +167,9 @@ function ResetPasswordForm() {
                   autoComplete="new-password"
                   placeholder="Create a strong password"
                 />
-                <p className="text-xs text-muted-foreground">{PASSWORD_REQUIREMENTS}</p>
+                <p className="text-xs text-muted-foreground">
+                  {PASSWORD_REQUIREMENTS}
+                </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="confirmPassword">Confirm new password</Label>

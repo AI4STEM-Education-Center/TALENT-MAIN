@@ -19,13 +19,23 @@ export function HolisticRecommendations({
   status,
   metrics,
   audience = "student",
+  attemptId,
 }: {
   recommendations: PresignedRecommendation[];
   status: ResultStatus;
   metrics: ResultComponentMetrics | null;
   audience?: "student" | "teacher";
+  /**
+   * The attempt that produced these recommendations. Its presence turns on the
+   * rating control, on BOTH surfaces — the student rates their own study
+   * material, and the teacher rates the same cards from the student's stats
+   * page. A verdict is always tied to the attempt that surfaced the card, so
+   * "was this a good recommendation" is answerable (see /api/feedback).
+   */
+  attemptId?: string;
 }) {
-  const pending = status === RESULT_STATUS.PENDING || status === RESULT_STATUS.GENERATING;
+  const pending =
+    status === RESULT_STATUS.PENDING || status === RESULT_STATUS.GENERATING;
 
   return (
     /* Container for the card grid below: column count must follow the
@@ -43,18 +53,21 @@ export function HolisticRecommendations({
             <RecommendationCard
               key={`${rec.materialTitle}-${rec.pageRange.start}-${rec.pageRange.end}`}
               rec={rec}
+              attemptId={attemptId}
+              audience={audience}
             />
           ))}
         </div>
       ) : pending ? (
         <div className="flex items-center gap-2 rounded-xl border p-4 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin text-primary" /> Finding study material
+          <Loader2 className="size-4 animate-spin text-primary" /> Finding study
+          material
           {audience === "student" ? " for you" : " for this student"}…
         </div>
       ) : (
         <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
-          No specific study material to recommend right now — review your class materials to keep
-          building on what you know.
+          No specific study material to recommend right now — review your class
+          materials to keep building on what you know.
         </div>
       )}
 

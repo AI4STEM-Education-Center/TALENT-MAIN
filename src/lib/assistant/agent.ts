@@ -26,6 +26,7 @@ import {
   type StreamedToolCall,
 } from "@/lib/ai-streaming";
 import { logSystemEvent } from "@/lib/system-log";
+import { fenceUntrusted } from "@/lib/guardrail-fence";
 import { buildUserContent, type DecodedAttachment } from "./attachments";
 import type { ReplayedAttachment } from "./attachment-store";
 import { buildSystemPrompt } from "./prompt";
@@ -69,7 +70,7 @@ export type AssistantTurnInput = {
    */
   loadHistoryAttachments?: (
     ids: string[],
-    limit: number
+    limit: number,
   ) => Promise<ReplayedAttachment[]>;
   emit: (event: AssistantStreamEvent) => void | Promise<void>;
   /** Aborted when the client disconnects; stops the loop between rounds. */
@@ -89,18 +90,22 @@ type ChatMessages = OpenAI.Chat.Completions.ChatCompletionMessageParam[];
  * advertised contract and the runtime validation can never drift. `$schema` is
  * stripped: OpenAI accepts it but several local servers reject unknown keys.
  */
-export function toolParameterSchema(tool: AssistantTool): Record<string, unknown> {
-  const schema = z.toJSONSchema(tool.input, { target: "draft-7", io: "input" }) as Record<
-    string,
-    unknown
-  >;
+export function toolParameterSchema(
+  tool: AssistantTool,
+): Record<string, unknown> {
+  const schema = z.toJSONSchema(tool.input, {
+    target: "draft-7",
+    io: "input",
+  }) as Record<string, unknown>;
   delete schema.$schema;
   // An empty zod object emits no `properties`; providers expect the key present.
   if (!schema.properties) schema.properties = {};
   return schema;
 }
 
-function toolDefinitions(tools: Map<string, AssistantTool>): OpenAI.Chat.Completions.ChatCompletionTool[] {
+function toolDefinitions(
+  tools: Map<string, AssistantTool>,
+): OpenAI.Chat.Completions.ChatCompletionTool[] {
   return [...tools.values()].map((tool) => ({
     type: "function",
     function: {
@@ -117,7 +122,9 @@ function serializeResult(value: unknown): string {
   try {
     text = JSON.stringify(value ?? null);
   } catch {
-    return JSON.stringify({ error: "Tool returned a value that could not be serialized." });
+    return JSON.stringify({
+      error: "Tool returned a value that could not be serialized.",
+    });
   }
   if (text.length <= MAX_TOOL_RESULT_CHARS) return text;
   return JSON.stringify({
@@ -151,7 +158,7 @@ function rejectsToolsWithThinking(error: unknown): boolean {
 async function runToolCall(
   call: StreamedToolCall,
   tools: Map<string, AssistantTool>,
-  ctx: AssistantToolContext
+  ctx: AssistantToolContext,
 ): Promise<{ content: string; ok: boolean }> {
   const tool = tools.get(call.name);
   if (!tool) {
@@ -169,7 +176,9 @@ async function runToolCall(
   } catch {
     return {
       ok: false,
-      content: JSON.stringify({ error: "Arguments were not valid JSON. Send a JSON object." }),
+      content: JSON.stringify({
+        error: "Arguments were not valid JSON. Send a JSON object.",
+      }),
     };
   }
 
@@ -188,7 +197,12 @@ async function runToolCall(
   }
 
   try {
-    return { ok: true, content: serializeResult(await tool.handler(parsed.data, ctx)) };
+    // Fenced, not raw. A tool result is our own JSON, but the VALUES inside it
+    // are stored text — a question extracted from an uploaded PDF, a class name
+    // a teacher typed. That is the one path by which a poisoned upload reaches
+    // a model that holds tools, so it is marked as data on the way in.
+    const result = serializeResult(await tool.handler(parsed.data, ctx));
+    return { ok: true, content: fenceUntrusted(`${call.name} result`, result) };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     void logSystemEvent({
@@ -218,14 +232,18 @@ async function historyMessages(
   history: AssistantTurn[],
   limit: number,
   attachmentBudget: number,
-  load?: (ids: string[], limit: number) => Promise<ReplayedAttachment[]>
+  load?: (ids: string[], limit: number) => Promise<ReplayedAttachment[]>,
 ): Promise<ChatMessages> {
   const turns = history.slice(-limit);
 
   const replayIds: string[] = [];
   if (load && attachmentBudget > 0) {
     // Newest first, so the budget goes to the files most likely being discussed.
-    for (let i = turns.length - 1; i >= 0 && replayIds.length < attachmentBudget; i -= 1) {
+    for (
+      let i = turns.length - 1;
+      i >= 0 && replayIds.length < attachmentBudget;
+      i -= 1
+    ) {
       const turn = turns[i];
       if (turn.role !== "user") continue;
       for (const id of turn.attachmentIds ?? []) {
@@ -237,7 +255,9 @@ async function historyMessages(
 
   const replayed =
     replayIds.length > 0 && load ? await load(replayIds, attachmentBudget) : [];
-  const byId = new Map(replayed.map((attachment) => [attachment.id, attachment]));
+  const byId = new Map(
+    replayed.map((attachment) => [attachment.id, attachment]),
+  );
 
   return turns.map((turn) => {
     // Filenames are listed even for files that came back, so the model can tell
@@ -250,10 +270,16 @@ async function historyMessages(
 
     const attachments = (turn.attachmentIds ?? [])
       .map((id) => byId.get(id))
-      .filter((attachment): attachment is ReplayedAttachment => attachment !== undefined);
+      .filter(
+        (attachment): attachment is ReplayedAttachment =>
+          attachment !== undefined,
+      );
 
     if (turn.role === "user" && attachments.length > 0) {
-      return { role: "user", content: buildUserContent(text, attachments) as never };
+      return {
+        role: "user",
+        content: buildUserContent(text, attachments) as never,
+      };
     }
     return { role: turn.role, content: text };
   });
@@ -266,7 +292,7 @@ async function historyMessages(
  * (no provider configured, no reply) — the caller reports those to the user.
  */
 export async function runAssistantTurn(
-  input: AssistantTurnInput
+  input: AssistantTurnInput,
 ): Promise<AssistantTurnResult> {
   const { settings, ctx, emit, signal } = input;
 
@@ -283,7 +309,7 @@ export async function runAssistantTurn(
   const { skills, tools } = resolveSkills(
     ctx.audience,
     settings.enabledSkills,
-    settings.disabledTools
+    settings.disabledTools,
   );
   const client = await createOpenAIClient(provider);
   // The endpoint the admin picked for this provider, plus the local-server
@@ -307,16 +333,19 @@ export async function runAssistantTurn(
         ctx.audience,
         skills,
         [...tools.keys()],
-        settings.extraInstructions
+        settings.extraInstructions,
       ),
     },
     ...(await historyMessages(
       input.history,
       settings.maxHistoryMessages,
       settings.maxAttachments,
-      input.loadHistoryAttachments
+      input.loadHistoryAttachments,
     )),
-    { role: "user", content: buildUserContent(userText, input.attachments) as never },
+    {
+      role: "user",
+      content: buildUserContent(userText, input.attachments) as never,
+    },
   ];
 
   const definitions = toolDefinitions(tools);
@@ -342,11 +371,15 @@ export async function runAssistantTurn(
         {
           model: provider.model,
           messages,
-          ...(offerTools ? { tools: definitions, tool_choice: "auto" as const } : {}),
+          ...(offerTools
+            ? { tools: definitions, tool_choice: "auto" as const }
+            : {}),
           max_completion_tokens: !isLocal ? MAX_REPLY_TOKENS : undefined,
           max_tokens: isLocal ? MAX_REPLY_TOKENS : undefined,
           service_tier:
-            !isLocal && provider.serviceTier && ["auto", "default", "flex"].includes(provider.serviceTier)
+            !isLocal &&
+            provider.serviceTier &&
+            ["auto", "default", "flex"].includes(provider.serviceTier)
               ? (provider.serviceTier as "auto" | "default" | "flex")
               : undefined,
           ...effort,
@@ -355,7 +388,7 @@ export async function runAssistantTurn(
           onContent: async (_text, delta) => {
             await emit({ type: "delta", text: delta });
           },
-        })
+        }),
       );
 
     let result;
@@ -364,7 +397,11 @@ export async function runAssistantTurn(
     } catch (error) {
       // The 400 lands before the stream opens, so nothing has been emitted yet
       // and the round is safe to replay without the thinking level.
-      if (!offerTools || !thinking.reasoning_effort || !rejectsToolsWithThinking(error)) {
+      if (
+        !offerTools ||
+        !thinking.reasoning_effort ||
+        !rejectsToolsWithThinking(error)
+      ) {
         throw error;
       }
       void logSystemEvent({
@@ -428,7 +465,8 @@ export async function runAssistantTurn(
   if (!finalText.trim()) {
     await emit({
       type: "error",
-      message: "The model returned an empty response. Try rephrasing your question.",
+      message:
+        "The model returned an empty response. Try rephrasing your question.",
     });
   } else {
     await emit({

@@ -49,6 +49,9 @@ export async function GET(req: NextRequest) {
     });
   } catch (error) {
     logApiError("ADMIN_RESOURCES", error, "Failed to build resource report");
-    return NextResponse.json({ error: "Failed to load resource metrics" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to load resource metrics" },
+      { status: 500 },
+    );
   }
 }

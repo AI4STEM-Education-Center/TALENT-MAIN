@@ -424,6 +424,10 @@ model QuizPdfExtraction {
   id                 String   @id @default(cuid())
   quizId             String   @map("subtopicId")
   teacherId          String?
+  // User who initiated the extraction. Stored without a relation so audit and
+  // guardrail feedback can outlive a deleted account, including admin-owned
+  // global-pool extractions where teacherId is null.
+  createdByUserId    String?
   originalName       String
   sizeBytes          Int
   storageKey         String // original PDF
@@ -434,6 +438,10 @@ model QuizPdfExtraction {
   hasAnswerKey       Boolean? // detected by the model; null until extracted
   extractedQuestions String? // JSON: StagedQuestion[]
   warnings           String   @default("[]") // JSON string[]
+  // Set when the post-extraction guardrail audit flagged this document. Gives
+  // the warning on the review screen an id the teacher can attach a "this is
+  // wrong" report to; null whenever nothing tripped, which is the normal case.
+  guardrailEventId   String?
   questionImportId   String?  @unique // set on commit
 
   // AI generation metrics from the extraction run (all passes aggregated).
@@ -769,6 +777,113 @@ model AiUseCaseAssignment {
 // cases, so assistants share the same provider plumbing (OpenAI / local /
 // Cloudflare AI Gateway) and connection tester as every other AI feature. This
 // row holds only the *behavior* knobs an admin tunes per audience.
+// ─── Guardrails ────────────────────────────────────────────────────────────────
+// Singleton row holding the safety policy applied across every AI path. Which
+// MODEL runs the checks lives in AiUseCaseAssignment ("moderation" and
+// "guardrail"); this row is the behaviour around them — on/off, report vs
+// block, thresholds, and what counts as on-topic.
+//
+// A missing row behaves exactly like the shipped defaults (see
+// src/lib/guardrail-settings.ts), so a fresh install and an upgraded one act
+// the same without a seed step.
+model GuardrailConfig {
+  id String @id @default("singleton") // enforce a single row
+
+  // Free /v1/moderations pass. Independent of the LLM checks below: it costs
+  // nothing, so it stays on unless an admin deliberately turns it off.
+  moderationEnabled Boolean @default(true)
+
+  // "OFF" | "FLAG" | "BLOCK" — see GuardrailMode in src/lib/guardrail-check.ts.
+  // Both ship in report-only mode: enforcing a threshold nobody has calibrated
+  // against this site's own uploads is guesswork, and FLAG writes the same log
+  // rows so an admin can read real traffic before switching to BLOCK.
+  jailbreakMode String @default("FLAG")
+  offTopicMode  String @default("OFF")
+
+  // Minimum confidence (0-1) at which a detection counts.
+  jailbreakThreshold Float @default(0.7)
+  offTopicThreshold  Float @default(0.7)
+
+  // What counts as on-topic, in the admin's own words. Empty = the built-in
+  // STEM-education description in src/lib/guardrail-check.ts.
+  topicDescription String @default("")
+
+  // What happens when a check CANNOT run (no provider, timeout, upstream 5xx).
+  // true  -> allow, and log. A guardrail outage must not stop a class working.
+  // false -> reject request-path submissions. Worker jobs (PDF processing) stay
+  //          fail-open regardless: failing them would strand an upload the
+  //          teacher is waiting on, with no way for them to retry the check.
+  failOpen Boolean @default(true)
+
+  // JSON array of surface keys switched off entirely (see GUARDRAIL_SURFACES in
+  // src/lib/guardrail-settings.ts). An opt-OUT list, matching AssistantConfig's
+  // disabledTools: a surface added in a later release is guarded by default
+  // rather than staying dark until an admin re-saves.
+  disabledSurfaces String @default("[]")
+
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Guardrail findings a user was shown, and their feedback on them ──────────
+// One row per guardrail finding that reached a USER: a submission that was
+// refused, or a warning attached to work they are about to review. This is NOT
+// the audit trail — every check writes that to SystemLog under the GUARDRAIL
+// category whether anyone saw it or not. These rows exist so the notice a user
+// reads can carry an id, which is the only way a false positive travels back to
+// an admin instead of dying as a shrug at the screen.
+//
+// Written only when something actually tripped, so the table stays small.
+
+model GuardrailEvent {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  // Surface key, e.g. "assistant_chat" (see GUARDRAIL_SURFACES).
+  surface   String
+  // Row the content belonged to, when there is one. No FK: the content is
+  // frequently never stored, because the check is what stopped it.
+  subjectId String?
+  // Who saw the notice. No FK, matching SystemLog — an event outlives the
+  // account, and a guardrail record that vanishes on user deletion is worth
+  // less than one that keeps the surface and the reason.
+  userId    String?
+
+  // true  -> the submission was refused.
+  // false -> it went through with a warning the user can read.
+  blocked Boolean @default(true)
+  // JSON array of trip descriptions, e.g. ["jailbreak (0.92)"]. Admin-only:
+  // the user-facing message never names the check that fired.
+  reasons String  @default("[]")
+
+  feedback GuardrailFeedback?
+
+  @@index([createdAt])
+  @@index([userId, createdAt])
+}
+
+model GuardrailFeedback {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  // One report per event: a second submission edits the first rather than
+  // stacking, so a frustrated user cannot flood the review queue.
+  eventId String         @unique
+  event   GuardrailEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  // Who reported it. No FK, for the same reason as GuardrailEvent.userId.
+  userId  String?
+  message String
+
+  // "NEW" | "REVIEWED" | "DISMISSED" — see GUARDRAIL_FEEDBACK_STATUSES in
+  // src/lib/guardrail-events.ts.
+  status     String    @default("NEW")
+  reviewedAt DateTime?
+  reviewedBy String?
+
+  @@index([status, createdAt])
+  @@index([createdAt])
+}
+
 model AssistantConfig {
   id       String @id // "student" | "teacher" — see ASSISTANT_AUDIENCES
   audience String @unique
@@ -1270,6 +1385,8 @@ model QuestionSimulation {
 
   question Question             @relation(fields: [questionId], references: [id], onDelete: Cascade)
   feedback SimulationFeedback[]
+  versions SimulationVersion[]
+  editChats SimulationEditChat[]
 
   @@index([status])
 }
@@ -1289,6 +1406,8 @@ model SimulationFeedback {
   // The storageKey the simulation had when this feedback was applied, kept so
   // staff can compare versions.
   previousStorageKey String?
+  baseVersion Int?
+  versionName String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1328,6 +1447,74 @@ model SimulationSession {
   @@index([studentId, startedAt])
   @@index([quizId, startedAt])
   @@index([classId, startedAt])
+}
+
+// ─── Content feedback (5-point rating + written explanation) ──────────────────
+// One person's verdict on one piece of AI-produced content: a learning material
+// or simulation recommended to a student after a quiz, or a simulation a
+// teacher had generated. This is the QUALITY signal — SimulationSession says
+// how long a student stayed, and only these rows say whether it was any good.
+//
+// Distinct from SimulationFeedback, which is a correction that DRIVES a
+// revision job. Nothing here is fed back into generation; it is read by the
+// consolidated Feedback panel (teacher: rows routed to them, admin: all) and
+// the CSV export.
+//
+// Deliberately RELATION-FREE on every id (like ExamResult / SimulationSession)
+// so a verdict survives deletion of the author's account, the simulation, the
+// quiz, or the class — a research/quality record that vanishes when staff tidy
+// up is worse than no record. Display fields are snapshots for the same reason.
+//
+// audience:    "STUDENT" | "TEACHER"   — which surface it was left on
+// subjectType: "MATERIAL" | "SIMULATION"
+// rating:      1-5, where 5 is best (see FEEDBACK_RATING_LABELS)
+model ContentFeedback {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  audience    String
+  subjectType String
+
+  rating  Int
+  comment String
+
+  // Author identity snapshot. No FK: see the RELATION-FREE note above.
+  authorUserId String
+  authorName   String?
+  authorEmail  String?
+  authorRole   String // "STUDENT" | "TEACHER" | "ADMIN"
+
+  // What it is about. subjectId is null for materials, which reach the student
+  // results page as a title + page range snapshot with no material row behind
+  // them (see StoredRecommendation in src/lib/exam-results.ts).
+  subjectId    String?
+  subjectLabel String
+  subjectDetail String? // "pages 4-8", a learning goal — free display text
+
+  // Re-submitting edits the existing verdict instead of stacking a second one,
+  // so one student cannot swamp a subject's average. Built by
+  // feedbackSubjectKey() in src/lib/content-feedback.ts — a non-null composite
+  // precisely because SQLite treats NULLs in a unique index as distinct, which
+  // would let nullable subjectId/attemptId columns duplicate freely.
+  subjectKey String
+
+  // Routing + reporting context, all plain ids.
+  // routedTeacherId is who, besides an admin, may read the row: the class's
+  // owning teacher for student feedback, and the author for teacher feedback.
+  routedTeacherId String?
+  attemptId       String?
+  quizId          String?
+  quizName        String?
+  classId         String?
+  className       String?
+
+  @@unique([authorUserId, subjectKey])
+  // Panel reads: newest-first, either scoped to one teacher or unscoped (admin).
+  @@index([routedTeacherId, createdAt])
+  @@index([createdAt])
+  @@index([audience, subjectType, createdAt])
+  @@index([subjectType, subjectId])
 }
 
 // ─── System operation log ─────────────────────────────────────────────────────
@@ -1554,4 +1741,97 @@ model ConsentExportSettings {
   bulkExportRetentionHours  Int      @default(48)
   updatedAt                 DateTime @updatedAt
   updatedById               String?
+}
+
+// Historical results from live API checks and isolated EC2 pressure runs.
+// Each deployment stores its own copy so both admin dashboards remain useful
+// when the peer environment is unavailable. Evolving details stay as JSON text;
+// stable filter/chart dimensions have dedicated columns.
+model PressureTestResult {
+  id           String   @id @default(cuid())
+  runId        String   @unique
+  createdAt    DateTime @default(now())
+  startedAt    DateTime
+  finishedAt   DateTime
+  environment  String
+  suite        String
+  scenario     String
+  status       String
+  source       String
+  commitSha    String?
+  branch       String?
+  targetUrl    String?
+  durationMs   Int
+  totalChecks  Int      @default(0)
+  passedChecks Int      @default(0)
+  failedChecks Int      @default(0)
+  p50Ms        Float?
+  p95Ms        Float?
+  p99Ms        Float?
+  maxMs        Float?
+  requestRate  Float?
+  virtualUsers Int?
+  errorRate    Float?
+  metadata     String   @default("{}")
+  metrics      String   @default("{}")
+  failures     String   @default("[]")
+
+  @@index([createdAt])
+  @@index([suite, createdAt])
+  @@index([scenario, createdAt])
+  @@index([status, createdAt])
+  @@index([environment, createdAt])
+}
+
+// Bearer credentials for POST /api/pressure-results, minted in the admin UI at
+// /admin/pressure-tests. Each deployment holds its own tokens in its own
+// database, so nothing about result ingestion lives in server environment
+// config. Only the SHA-256 digest is stored; the plaintext is shown once at
+// creation and is unrecoverable afterwards.
+model PressureResultToken {
+  id          String    @id @default(cuid())
+  name        String
+  tokenHash   String    @unique
+  tokenPrefix String
+  createdAt   DateTime  @default(now())
+  createdById String?
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+
+  // Revoked-use tracking: a call with a revoked token still 401s, but it is
+  // counted here so the admin list can highlight a possible leak, and the
+  // first use (then throttled repeats) emails every admin.
+  revokedUseCount  Int      @default(0)
+  lastRevokedUseAt DateTime?
+  lastRevokedIp    String?
+  lastRevokedAlertAt DateTime?
+
+  @@index([createdAt])
+}
+
+// Immutable artifacts; parentNumber records branches independently of publication.
+model SimulationVersion {
+  id String @id @default(cuid())
+  simulationId String
+  number Int
+  name String
+  parentNumber Int?
+  storageKey String
+  bucket String
+  createdAt DateTime @default(now())
+  simulation QuestionSimulation @relation(fields: [simulationId], references: [id], onDelete: Cascade)
+  @@unique([simulationId, number])
+}
+
+model SimulationEditChat {
+  id String @id @default(cuid())
+  simulationId String
+  userId String
+  baseVersion Int
+  transcript String @default("[]")
+  plan String?
+  state String @default("DISCUSSING")
+  updatedAt DateTime @updatedAt
+  simulation QuestionSimulation @relation(fields: [simulationId], references: [id], onDelete: Cascade)
+  @@index([simulationId, userId])
 }

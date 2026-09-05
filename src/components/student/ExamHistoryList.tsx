@@ -18,7 +18,11 @@ export type ExamHistoryItem = {
 function formatDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  return d.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 /**
@@ -53,15 +57,23 @@ export function ExamHistoryList({
         const pct = Math.round(item.score);
         const passed = pct >= PASS_THRESHOLD;
         return (
-          <Link key={item.attemptId} href={`/student/results/${item.attemptId}`} className="block">
+          <Link
+            key={item.attemptId}
+            href={`/student/results/${item.attemptId}`}
+            className="block"
+          >
             <Card className="transition-colors hover:bg-muted/30">
               <CardContent className="flex items-center justify-between gap-3 p-4">
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium text-sm truncate">{item.quizName}</p>
+                  <p className="font-medium text-sm truncate">
+                    {item.quizName}
+                  </p>
                   <p className="text-xs text-muted-foreground truncate">
                     {showClass && (
                       <>
-                        <span className="font-medium text-foreground/70">{item.className}</span>
+                        <span className="font-medium text-foreground/70">
+                          {item.className}
+                        </span>
                         {" · "}
                       </>
                     )}
@@ -71,7 +83,9 @@ export function ExamHistoryList({
                   </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <Badge variant={passed ? "success" : "destructive"}>{pct}%</Badge>
+                  <Badge variant={passed ? "success" : "destructive"}>
+                    {pct}%
+                  </Badge>
                   <ChevronRight className="size-4 text-muted-foreground" />
                 </div>
               </CardContent>

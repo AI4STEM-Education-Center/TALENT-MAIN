@@ -50,7 +50,9 @@ describe("readBoundedText", () => {
   it("rejects an oversized body that declares no content-length", async () => {
     // The whole point: a chunked sender skips the header check, so the cap has
     // to be enforced while the stream is being read.
-    const req = chunkedRequest(Array.from({ length: 64 }, () => "x".repeat(1024)));
+    const req = chunkedRequest(
+      Array.from({ length: 64 }, () => "x".repeat(1024)),
+    );
     expect(req.headers.get("content-length")).toBeNull();
     expect(await readBoundedText(req, 1024)).toBe(BODY_TOO_LARGE);
   });
