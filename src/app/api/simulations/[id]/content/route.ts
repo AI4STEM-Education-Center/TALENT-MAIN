@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { listSimulationVersions } from "@/lib/simulation-versions";
 import { getS3ObjectAsString } from "@/lib/storage";
 import { SIMULATION_CSP } from "@/lib/simulation";
 import { renderSimulationLatex } from "@/lib/simulation-math";
@@ -70,9 +71,26 @@ export async function GET(
     );
   }
 
+  const selected = _req.nextUrl.searchParams.get("version");
+  let storageKey = sim.storageKey;
+  let bucket = sim.bucket;
+  if (selected) {
+    if (role !== "ADMIN" && role !== "TEACHER")
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    const number = Number(selected);
+    if (!Number.isSafeInteger(number) || number < 1)
+      return NextResponse.json({ error: "Invalid version" }, { status: 400 });
+    const version = (await listSimulationVersions(sim)).find(
+      (v) => v.number === number,
+    );
+    if (!version && number !== sim.version)
+      return NextResponse.json({ error: "Version not found" }, { status: 404 });
+    storageKey = version?.storageKey ?? sim.storageKey;
+    bucket = version?.bucket ?? sim.bucket;
+  }
   let html: string;
   try {
-    html = await getS3ObjectAsString(sim.bucket, sim.storageKey);
+    html = await getS3ObjectAsString(bucket, storageKey);
   } catch (err) {
     console.error(`[Simulation] Failed to load artifact for ${sim.id}:`, err);
     return NextResponse.json(
@@ -85,6 +103,12 @@ export async function GET(
   // server and emit self-contained MathML, so formulas render correctly inside
   // the no-network sandbox without shipping a runtime or external font assets.
   html = renderSimulationLatex(html);
+  if (
+    (role === "ADMIN" || role === "TEACHER") &&
+    _req.nextUrl.searchParams.get("edit") === "1"
+  ) {
+    html += `<script>document.addEventListener('dblclick',function(e){const el=e.target;if(!(el instanceof HTMLElement)||el.children.length||!el.textContent.trim()||el.closest('script,style,button,select,textarea,svg,math'))return;const before=el.textContent;el.contentEditable='true';el.focus();el.addEventListener('blur',function(){el.contentEditable='false';if(el.textContent!==before)parent.postMessage({type:'simulation-text-edit',before:before,after:el.textContent},'*');},{once:true});});</script>`;
+  }
 
   // Students get the interaction-telemetry snippet injected at serve time (the
   // stored artifact is never modified, and pre-telemetry artifacts report like

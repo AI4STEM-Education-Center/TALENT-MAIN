@@ -25,7 +25,7 @@ type KindInfo = {
 type Bound = { min: number; max: number };
 
 type Assistant = {
-  audience: "student" | "teacher";
+  audience: "student" | "teacher" | "simulation";
   useCase: string;
   enabled: boolean;
   extraInstructions: string;
@@ -50,11 +50,14 @@ type Payload = {
 };
 
 const AUDIENCE_LABEL = {
+  simulation: "Simulation editing assistant",
   student: "Student assistant",
   teacher: "Teacher assistant",
 } as const;
 
 const AUDIENCE_BLURB = {
+  simulation:
+    "Plans simulation edits with teachers before handing changes to the revision model.",
   student:
     "Shown to students in the bottom-right of every dashboard page. It can only read that student's own records.",
   teacher:

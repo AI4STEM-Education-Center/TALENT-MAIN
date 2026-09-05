@@ -2,8 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { SimulationEditor } from "./SimulationEditor";
 import {
   Dialog,
   DialogContent,
@@ -15,7 +14,7 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { SimulationViewer } from "@/components/simulation/SimulationViewer";
 import { AiMetricsLine } from "@/components/ai-metrics-line";
 import type { DisplayAiMetrics } from "@/lib/ai-metrics";
-import { Loader2, Send, Trash2 } from "lucide-react";
+import { Loader2, Trash2 } from "lucide-react";
 import { GuardrailFeedbackButton } from "@/components/guardrails/GuardrailFeedbackButton";
 import { FeedbackRatingForm } from "@/components/feedback/FeedbackRatingForm";
 import { MyFeedbackProvider } from "@/components/feedback/my-feedback";
@@ -54,10 +53,9 @@ const SIMULATION_REVISION_POLL_INTERVAL_MS = 5_000;
 
 /**
  * Dialog for interacting with one question's simulation: the sandboxed
- * artifact, its topic/goal, the feedback history, and — when the caller may
- * manage the quiz — a feedback form that sends the simulation into a revision
- * round. Polls while a revision is running so the new version appears in
- * place. Used by the teacher/admin quiz editor.
+ * artifact, its topic/goal, and a conversational editor with named versions
+ * for callers who manage the quiz. Polls during generation to show the result
+ * and any failure. Used by the teacher/admin quiz editor.
  */
 export function SimulationPanel({
   simulationId,
@@ -67,8 +65,6 @@ export function SimulationPanel({
 }: SimulationPanelProps) {
   const confirm = useConfirm();
   const [detail, setDetail] = useState<SimDetail | null>(null);
-  const [draft, setDraft] = useState("");
-  const [sending, setSending] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [msg, setMsgText] = useState("");
   // Paired with `msg`: set only when a safety check refused the feedback, and
@@ -101,31 +97,6 @@ export function SimulationPanel({
     return () => clearInterval(timer);
   }, [open, revising, refresh]);
 
-  async function sendFeedback() {
-    if (!draft.trim()) return;
-    setSending(true);
-    setMsg("");
-    try {
-      const res = await fetch(`/api/simulations/${simulationId}/feedback`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ feedback: draft.trim() }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setMsg(
-          data.error ?? "Failed to send feedback.",
-          data.guardrailEventId ?? null,
-        );
-        return;
-      }
-      setDraft("");
-      await refresh();
-    } finally {
-      setSending(false);
-    }
-  }
-
   async function handleDelete() {
     const ok = await confirm({
       title: "Delete this simulation?",
@@ -154,7 +125,7 @@ export function SimulationPanel({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[85vh] max-w-5xl flex-col">
+      <DialogContent className="flex h-[85vh] max-w-7xl flex-col">
         <DialogHeader>
           <DialogTitle>{detail?.title ?? "Simulation"}</DialogTitle>
           {(detail?.topic || detail?.learningGoal) && (
@@ -199,22 +170,31 @@ export function SimulationPanel({
           </div>
         ) : (
           <>
-            <div className="min-h-0 flex-1">
-              {detail.hasContent ? (
-                // key + ?v= swap in a fresh document when a revision lands.
-                <div key={detail.version} className="h-full">
-                  <SimulationViewer
-                    simulationId={detail.id}
-                    title={detail.title ?? "Simulation"}
-                    version={detail.version}
-                  />
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  This simulation has no content yet.
-                </p>
-              )}
-            </div>
+            {canGiveFeedback && detail.hasContent ? (
+              <SimulationEditor
+                id={simulationId}
+                version={detail.version}
+                revising={revising}
+                onRefresh={refresh}
+              />
+            ) : (
+              <div className="min-h-0 flex-1">
+                {detail.hasContent ? (
+                  // key + ?v= swap in a fresh document when a revision lands.
+                  <div key={detail.version} className="h-full">
+                    <SimulationViewer
+                      simulationId={detail.id}
+                      title={detail.title ?? "Simulation"}
+                      version={detail.version}
+                    />
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    This simulation has no content yet.
+                  </p>
+                )}
+              </div>
+            )}
 
             {revising && (
               <p className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -224,35 +204,37 @@ export function SimulationPanel({
               </p>
             )}
 
-            {detail.feedback.length > 0 && (
+            {detail.feedback.some((f) => f.status === "FAILED") && (
               <div className="max-h-32 space-y-2 overflow-y-auto rounded-md border p-3">
-                {detail.feedback.map((f) => (
-                  <div key={f.id} className="text-sm">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium">
-                        {f.authorName ?? "Reviewer"}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {new Date(f.createdAt).toLocaleString()}
-                      </span>
-                      {f.status === "APPLIED" && (
-                        <Badge variant="success">Applied</Badge>
-                      )}
-                      {f.status === "PENDING" && (
-                        <Badge variant="outline">In progress</Badge>
-                      )}
-                      {f.status === "FAILED" && (
-                        <Badge variant="destructive">Failed</Badge>
+                {detail.feedback
+                  .filter((f) => f.status === "FAILED")
+                  .map((f) => (
+                    <div key={f.id} className="text-sm">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium">
+                          {f.authorName ?? "Reviewer"}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(f.createdAt).toLocaleString()}
+                        </span>
+                        {f.status === "APPLIED" && (
+                          <Badge variant="success">Applied</Badge>
+                        )}
+                        {f.status === "PENDING" && (
+                          <Badge variant="outline">In progress</Badge>
+                        )}
+                        {f.status === "FAILED" && (
+                          <Badge variant="destructive">Failed</Badge>
+                        )}
+                      </div>
+                      <p className="text-muted-foreground">{f.feedback}</p>
+                      {f.status === "FAILED" && f.errorMessage && (
+                        <p className="text-xs text-destructive">
+                          {f.errorMessage}
+                        </p>
                       )}
                     </div>
-                    <p className="text-muted-foreground">{f.feedback}</p>
-                    {f.status === "FAILED" && f.errorMessage && (
-                      <p className="text-xs text-destructive">
-                        {f.errorMessage}
-                      </p>
-                    )}
-                  </div>
-                ))}
+                  ))}
               </div>
             )}
 
@@ -279,37 +261,6 @@ export function SimulationPanel({
                 </MyFeedbackProvider>
               </div>
             )}
-
-            {canGiveFeedback && detail.status === "READY" && (
-              <div className="space-y-2">
-                <Label htmlFor="sim-feedback">
-                  Report a problem — wrong physics/math, layout issues, or
-                  anything to correct
-                </Label>
-                <div className="flex gap-2">
-                  <Textarea
-                    id="sim-feedback"
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    rows={2}
-                    placeholder='e.g. "The period should use T = 2π√(L/g); it currently ignores L."'
-                    className="flex-1"
-                  />
-                  <Button
-                    onClick={sendFeedback}
-                    disabled={sending || !draft.trim()}
-                    className="shrink-0 self-end"
-                  >
-                    {sending ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <Send className="size-4" />
-                    )}
-                    Send
-                  </Button>
-                </div>
-              </div>
-            )}
           </>
         )}
 
@@ -319,7 +270,7 @@ export function SimulationPanel({
               variant="ghost"
               size="sm"
               onClick={handleDelete}
-              disabled={deleting || sending}
+              disabled={deleting || revising}
             >
               {deleting ? (
                 <Loader2 className="size-4 animate-spin" />
