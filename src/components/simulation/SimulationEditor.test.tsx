@@ -45,12 +45,10 @@ beforeEach(() => {
     globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
   ).IS_REACT_ACT_ENVIRONMENT = true;
   vi.stubGlobal("fetch", fetchMock);
-  fetchMock
-    .mockReset()
-    .mockImplementation(async (_url, options) => ({
-      ok: true,
-      json: async () => (options ? { aborted: true } : { versions, chats }),
-    }));
+  fetchMock.mockReset().mockImplementation(async (_url, options) => ({
+    ok: true,
+    json: async () => (options ? { aborted: true } : { versions, chats }),
+  }));
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);

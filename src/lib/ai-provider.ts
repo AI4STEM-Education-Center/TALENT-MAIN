@@ -1,23 +1,29 @@
 import { prisma } from "@/lib/prisma";
 import { decryptApiKey } from "@/lib/crypto";
 
-export type UseCase =
-  | "pdf_description"
-  | "description_generation"
-  | "recommendation"
-  | "quiz_extraction"
-  | "simulation_chat"
-  | "simulation_generation"
+/**
+ * Every use case that can be assigned a provider/model, in the order the admin
+ * page lists them. Single source of truth: the assignment API, the connection
+ * test and `UseCase` all derive from this, so adding a use case here is the
+ * only edit needed to make it assignable and testable.
+ */
+export const USE_CASES = [
+  "pdf_description",
+  "description_generation",
+  "recommendation",
+  "quiz_extraction",
+  "simulation_chat",
+  "simulation_generation",
   // The two chat assistants. Separate assignments on purpose: the student and
   // teacher bots are tuned (and costed) independently, and a site may want a
   // cheap local model for one and a hosted vision model for the other.
-  | "student_assistant"
-  | "teacher_assistant"
+  "student_assistant",
+  "teacher_assistant",
   // Content moderation (OpenAI's free /v1/moderations endpoint). Assigned like
   // any other use case, so leaving it unassigned turns the check off — see
   // src/lib/guardrails.ts. Wants a moderation model (omni-moderation-latest),
   // not a chat model.
-  | "moderation"
+  "moderation",
   // The two LLM guardrail classifiers, assigned independently so an admin can
   // spend differently on them — jailbreak is the adversarial one and may want a
   // stronger model, while off-topic is a blunt relevance question a cheap model
@@ -26,8 +32,27 @@ export type UseCase =
   // Either way the output is never shown to a user, so a small fast model is
   // usually right. Leaving one unassigned turns that check off.
   // See src/lib/guardrail-check.ts.
-  | "guardrail_jailbreak"
-  | "guardrail_offtopic";
+  "guardrail_jailbreak",
+  "guardrail_offtopic",
+] as const;
+
+export type UseCase = (typeof USE_CASES)[number];
+
+/** Narrow an arbitrary string to an assignable use case. */
+export function isUseCase(value: unknown): value is UseCase {
+  return (
+    typeof value === "string" &&
+    (USE_CASES as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * Use cases whose provider is called on OpenAI's /v1/moderations endpoint
+ * rather than a chat endpoint. A chat-shaped request to a moderation model is
+ * rejected by the provider, so the connection test has to ask the right one.
+ */
+export const MODERATION_USE_CASES: readonly UseCase[] = ["moderation"];
+
 export type ProviderType = "openai" | "local" | "cloudflare";
 
 /**

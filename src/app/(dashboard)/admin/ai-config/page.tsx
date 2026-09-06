@@ -38,6 +38,7 @@ import {
   Zap,
 } from "lucide-react";
 import { formatAiMetrics } from "@/lib/ai-metrics";
+import type { UseCase } from "@/lib/ai-provider";
 import { AssistantSettings } from "@/components/admin/AssistantSettings";
 import { GuardrailSettings } from "@/components/admin/GuardrailSettings";
 import { GuardrailFeedbackList } from "@/components/admin/GuardrailFeedbackList";
@@ -131,7 +132,9 @@ const THINKING_LEVEL_OPTIONS = [
 
 // ─── Constants ──────────────────────────────────────────────────────────────────
 
-const USE_CASE_LABELS: Record<string, string> = {
+// Keyed by UseCase rather than string, so a use case added to the canonical
+// list in ai-provider.ts fails to compile until it has a label here.
+const USE_CASE_LABELS: Record<UseCase, string> = {
   pdf_description: "PDF Description Generation",
   description_generation: "Exam Summary Generation",
   recommendation: "Recommendation",

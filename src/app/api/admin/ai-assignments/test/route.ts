@@ -4,7 +4,10 @@ import {
   resolveProvider,
   createOpenAIClient,
   thinkingParams,
-  type UseCase,
+  isUseCase,
+  MODERATION_USE_CASES,
+  USE_CASES,
+  type ResolvedProvider,
 } from "@/lib/ai-provider";
 import {
   streamChatCompletion,
@@ -14,20 +17,46 @@ import {
 import { logApiError } from "@/lib/system-log";
 import { errorMessage } from "@/lib/errors";
 
-const VALID_USE_CASES: UseCase[] = [
-  "pdf_description",
-  "description_generation",
-  "recommendation",
-  "quiz_extraction",
-  "simulation_generation",
-  "simulation_chat",
-  "student_assistant",
-  "teacher_assistant",
-];
+/**
+ * Connection test for a moderation assignment.
+ *
+ * Moderation models live on /v1/moderations and reject a chat-shaped request,
+ * so testing them with a chat completion would report a working assignment as
+ * broken. Sends a benign string and reports whether the endpoint answered, not
+ * what it decided — the reply is a status line rather than model prose.
+ */
+async function testModeration(provider: ResolvedProvider) {
+  const client = await createOpenAIClient(provider);
+  const startedAt = Date.now();
+  const response = await client.moderations.create({
+    model: provider.model,
+    input: "A short, harmless sentence used to test this connection.",
+  });
+  const latencyMs = Date.now() - startedAt;
+  const flagged = (response.results ?? []).some((r) => r.flagged);
+
+  return {
+    success: true,
+    latencyMs,
+    ttftMs: null,
+    generationMs: null,
+    tokens: null,
+    tokensEstimated: false,
+    tokensPerSec: null,
+    reply: `Moderation endpoint answered — benign sample ${
+      flagged ? "flagged (unexpected)" : "not flagged"
+    }.`,
+    model: provider.model,
+    providerType: provider.providerType,
+    serviceTier: provider.serviceTier,
+    thinkingLevel: provider.thinkingLevel,
+  };
+}
 
 /**
  * POST /api/admin/ai-assignments/test
- * Send a minimal chat completion to verify a use-case assignment works.
+ * Send a minimal request to verify a use-case assignment works — a chat
+ * completion, or a moderation call for the use cases served by that endpoint.
  * Body: { useCase: string }
  */
 export async function POST(req: Request) {
@@ -40,16 +69,16 @@ export async function POST(req: Request) {
     const body = await req.json();
     const useCase = typeof body.useCase === "string" ? body.useCase.trim() : "";
 
-    if (!VALID_USE_CASES.includes(useCase as UseCase)) {
+    if (!isUseCase(useCase)) {
       return NextResponse.json(
         {
-          error: `Invalid use case. Must be one of: ${VALID_USE_CASES.join(", ")}`,
+          error: `Invalid use case. Must be one of: ${USE_CASES.join(", ")}`,
         },
         { status: 400 },
       );
     }
 
-    const provider = await resolveProvider(useCase as UseCase);
+    const provider = await resolveProvider(useCase);
 
     if (!provider) {
       return NextResponse.json(
@@ -59,6 +88,10 @@ export async function POST(req: Request) {
         },
         { status: 200 },
       );
+    }
+
+    if (MODERATION_USE_CASES.includes(useCase)) {
+      return NextResponse.json(await testModeration(provider));
     }
 
     const isLocal = provider.providerType === "local";

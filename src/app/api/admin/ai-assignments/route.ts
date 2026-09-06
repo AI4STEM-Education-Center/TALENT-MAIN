@@ -7,22 +7,9 @@ import {
   isThinkingLevel,
   resolveThinkingLevel,
   THINKING_LEVELS,
+  USE_CASES,
 } from "@/lib/ai-provider";
 import { logApiError } from "@/lib/system-log";
-
-const VALID_USE_CASES = [
-  "pdf_description",
-  "description_generation",
-  "recommendation",
-  "quiz_extraction",
-  "simulation_generation",
-  "simulation_chat",
-  "student_assistant",
-  "teacher_assistant",
-  "moderation",
-  "guardrail_jailbreak",
-  "guardrail_offtopic",
-] as const;
 
 /**
  * Move any leftover per-model thinking level onto the assignments that use the
@@ -92,7 +79,7 @@ export async function GET() {
     // Build a map of all use cases, filling in unassigned ones with null
     const assignmentMap: Record<string, unknown> = {};
     const assignmentByUseCase = new Map(assignments.map((a) => [a.useCase, a]));
-    for (const uc of VALID_USE_CASES) {
+    for (const uc of USE_CASES) {
       const assignment = assignmentByUseCase.get(uc);
       assignmentMap[uc] = assignment
         ? {
@@ -149,7 +136,7 @@ export async function PUT(req: Request) {
 
     const results: Record<string, string> = {};
 
-    for (const useCase of VALID_USE_CASES) {
+    for (const useCase of USE_CASES) {
       if (!(useCase in incoming)) continue;
 
       const assignment = incoming[useCase];
