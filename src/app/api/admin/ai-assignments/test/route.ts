@@ -14,8 +14,44 @@ import {
   streamOptionsFor,
   transportFor,
 } from "@/lib/ai-streaming";
+import {
+  isModerationModel,
+  moderationEndpointUnsupported,
+} from "@/lib/guardrail-fence";
 import { logApiError } from "@/lib/system-log";
 import { errorMessage } from "@/lib/errors";
+
+/**
+ * Explain a failed moderation call in terms of what the admin has to change.
+ *
+ * Both failure modes here are configuration rather than faults, and the raw
+ * provider error names neither: a gateway that has no moderations endpoint
+ * needs a different PROVIDER, while a chat model on a provider that does have
+ * one needs a different MODEL. Reported through the connection test because
+ * the runtime path deliberately swallows this — moderation fails open, so an
+ * assignment that can never work is otherwise invisible.
+ */
+function moderationFailure(error: unknown, provider: ResolvedProvider): string {
+  const raw = errorMessage(error) || "the call failed";
+
+  if (moderationEndpointUnsupported(error)) {
+    return (
+      `This provider does not implement the /v1/moderations endpoint, so content ` +
+      `moderation cannot run on it — assign an OpenAI provider with a moderation ` +
+      `model (omni-moderation-latest) instead, or leave this unassigned to turn ` +
+      `the check off. Provider said: ${raw}`
+    );
+  }
+
+  if (!isModerationModel(provider.model)) {
+    return (
+      `${provider.model} is a chat model — /v1/moderations only accepts a ` +
+      `moderation model such as omni-moderation-latest. Provider said: ${raw}`
+    );
+  }
+
+  return raw;
+}
 
 /**
  * Connection test for a moderation assignment.
@@ -28,10 +64,17 @@ import { errorMessage } from "@/lib/errors";
 async function testModeration(provider: ResolvedProvider) {
   const client = await createOpenAIClient(provider);
   const startedAt = Date.now();
-  const response = await client.moderations.create({
-    model: provider.model,
-    input: "A short, harmless sentence used to test this connection.",
-  });
+
+  let response;
+  try {
+    response = await client.moderations.create({
+      model: provider.model,
+      input: "A short, harmless sentence used to test this connection.",
+    });
+  } catch (error) {
+    return { success: false, error: moderationFailure(error, provider) };
+  }
+
   const latencyMs = Date.now() - startedAt;
   const flagged = (response.results ?? []).some((r) => r.flagged);
 
