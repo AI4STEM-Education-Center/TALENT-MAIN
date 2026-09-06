@@ -4,6 +4,8 @@ import {
   neutralizeUntrusted,
   chunkForModeration,
   flaggedCategories,
+  isModerationModel,
+  moderationEndpointUnsupported,
   MAX_FENCED_CHARS,
   MAX_INPUT_ITEMS,
 } from "./guardrail-fence";
@@ -160,5 +162,66 @@ describe("flaggedCategories", () => {
     expect(
       flaggedCategories([{ flagged: "yes", categories: { hate: true } }]),
     ).toEqual([]);
+  });
+});
+
+describe("isModerationModel", () => {
+  it("accepts the moderation families, namespaced or not", () => {
+    expect(
+      [
+        "omni-moderation-latest",
+        "text-moderation-stable",
+        "openai/omni-moderation-latest",
+        "  omni-moderation-2024-09-26  ",
+      ].every(isModerationModel),
+    ).toBe(true);
+  });
+
+  it("rejects chat models, including ones that merely mention moderation", () => {
+    expect(
+      ["gpt-5.1", "openai/gpt-5.6-luna", "llama-guard-3-8b", ""].some(
+        isModerationModel,
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("moderationEndpointUnsupported", () => {
+  it("recognizes Cloudflare AI Gateway's compat-endpoint refusal", () => {
+    const error = Object.assign(
+      new Error(
+        '400 [{"code":2019,"message":"Compatibility endpoint: moderations is not supported."}]',
+      ),
+      { status: 400 },
+    );
+    expect(moderationEndpointUnsupported(error)).toBe(true);
+  });
+
+  it("treats a bare 404 as the endpoint missing", () => {
+    const error = Object.assign(new Error("404 page not found"), {
+      status: 404,
+    });
+    expect(moderationEndpointUnsupported(error)).toBe(true);
+  });
+
+  // A provider that HAS the endpoint but rejects the model needs the admin to
+  // change the model, not the provider — so this must not read as unsupported.
+  it("does not claim a missing endpoint when the model is what was rejected", () => {
+    const error = Object.assign(
+      new Error("404 The model `gpt-5.1` does not exist"),
+      { status: 404 },
+    );
+    expect(moderationEndpointUnsupported(error)).toBe(false);
+  });
+
+  it("leaves ordinary failures alone", () => {
+    expect(
+      [
+        Object.assign(new Error("429 Rate limit reached"), { status: 429 }),
+        Object.assign(new Error("500 Internal server error"), { status: 500 }),
+        new Error("Connection timed out"),
+        null,
+      ].some(moderationEndpointUnsupported),
+    ).toBe(false);
   });
 });

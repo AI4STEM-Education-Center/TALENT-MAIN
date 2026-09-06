@@ -34,7 +34,7 @@ const PROVIDER = {
   model: "gpt-5.1",
   serviceTier: null,
   thinkingLevel: null,
-} as never;
+};
 
 function req(body: unknown) {
   return new Request("http://localhost/api/admin/ai-assignments/test", {
@@ -47,7 +47,7 @@ function req(body: unknown) {
 beforeEach(() => {
   vi.clearAllMocks();
   mockAuth.mockResolvedValue({ user: { id: "a-1", role: "ADMIN" } } as never);
-  mockResolve.mockResolvedValue(PROVIDER);
+  mockResolve.mockResolvedValue(PROVIDER as never);
   chatStream.mockResolvedValue({ text: "ok", metrics: { totalMs: 5 } });
   moderationCreate.mockResolvedValue({ results: [{ flagged: false }] });
 });
@@ -96,6 +96,58 @@ describe("/api/admin/ai-assignments/test", () => {
 
     expect(moderationCreate).not.toHaveBeenCalled();
     expect(chatStream).toHaveBeenCalled();
+  });
+
+  // The provider answers a raw `code 2019` that names neither the fix nor the
+  // fact that moderation silently fails open at runtime.
+  it("explains an unsupported moderations endpoint as a provider change", async () => {
+    mockResolve.mockResolvedValue({
+      ...PROVIDER,
+      model: "omni-moderation-latest",
+    } as never);
+    moderationCreate.mockRejectedValue(
+      Object.assign(
+        new Error(
+          '400 [{"code":2019,"message":"Compatibility endpoint: moderations is not supported."}]',
+        ),
+        { status: 400 },
+      ),
+    );
+
+    const res = await POST(req({ useCase: "moderation" }));
+    const body = await res.json();
+
+    expect(body.success).toBe(false);
+    expect(body.error).toContain("does not implement the /v1/moderations");
+    expect(body.error).toContain("omni-moderation-latest");
+    expect(body.error).toContain("code");
+  });
+
+  it("explains a chat model on the moderation slot as a model change", async () => {
+    moderationCreate.mockRejectedValue(
+      Object.assign(new Error("400 model_not_supported"), { status: 400 }),
+    );
+
+    const res = await POST(req({ useCase: "moderation" }));
+    const body = await res.json();
+
+    expect(body.success).toBe(false);
+    expect(body.error).toContain("gpt-5.1 is a chat model");
+  });
+
+  it("passes an ordinary moderation failure through unembellished", async () => {
+    mockResolve.mockResolvedValue({
+      ...PROVIDER,
+      model: "omni-moderation-latest",
+    } as never);
+    moderationCreate.mockRejectedValue(new Error("429 Rate limit reached"));
+
+    const body = await (await POST(req({ useCase: "moderation" }))).json();
+
+    expect(body).toMatchObject({
+      success: false,
+      error: "429 Rate limit reached",
+    });
   });
 
   it("reports an unassigned use case instead of calling out", async () => {
