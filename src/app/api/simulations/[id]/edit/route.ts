@@ -280,13 +280,11 @@ export async function POST(
         fenceUntrusted(
           "version catalogue",
           JSON.stringify(
-            catalogue
-              .slice(-200)
-              .map(({ number, name, parentNumber }) => ({
-                number,
-                name,
-                parentNumber,
-              })),
+            catalogue.slice(-200).map(({ number, name, parentNumber }) => ({
+              number,
+              name,
+              parentNumber,
+            })),
           ),
         ),
         `Selected version v${base.number}. ${fenceUntrusted("simulation context", JSON.stringify({ name: base.name, topic: sim.topic, goal: sim.learningGoal, html: html.slice(0, 60000) }))}`,
