@@ -37,7 +37,9 @@ export function SimulationViewer({
   version,
   telemetry,
   selectedVersion,
+  editable,
   onTextEdit,
+  onFormulaPick,
 }: {
   simulationId: string;
   title: string;
@@ -45,28 +47,49 @@ export function SimulationViewer({
   version?: number;
   telemetry?: SimulationTelemetryContext;
   selectedVersion?: number;
+  /**
+   * Serve the in-preview editing layer. Deliberately separate from the
+   * callbacks below: it is part of the iframe's `src`, so deriving it from a
+   * handler that comes and goes with a request in flight would reload — and
+   * restart — the simulation around every chat message.
+   */
+  editable?: boolean;
   onTextEdit?: (before: string, after: string) => void;
+  onFormulaPick?: (index: number) => void;
 }) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  // Held in a ref so a new inline handler on every parent render does not tear
+  // down and re-add the listener. Only ever read from a user-driven message,
+  // which cannot arrive before the commit that refreshed it.
+  const handlers = useRef({ onTextEdit, onFormulaPick });
   useEffect(() => {
-    if (!onTextEdit) return;
+    handlers.current = { onTextEdit, onFormulaPick };
+  });
+  useEffect(() => {
+    if (!editable) return;
     const receive = (event: MessageEvent) => {
+      if (event.source !== iframeRef.current?.contentWindow) return;
+      const data = event.data;
       if (
-        event.source !== iframeRef.current?.contentWindow ||
-        event.data?.type !== "simulation-text-edit"
-      )
+        data?.type === "simulation-text-edit" &&
+        typeof data.before === "string" &&
+        typeof data.after === "string" &&
+        data.before.length <= 2000 &&
+        data.after.length <= 2000
+      ) {
+        handlers.current.onTextEdit?.(data.before, data.after);
         return;
+      }
       if (
-        typeof event.data.before === "string" &&
-        typeof event.data.after === "string" &&
-        event.data.before.length <= 2000 &&
-        event.data.after.length <= 2000
+        data?.type === "simulation-formula-pick" &&
+        Number.isSafeInteger(data.index) &&
+        data.index >= 0
       )
-        onTextEdit(event.data.before, event.data.after);
+        handlers.current.onFormulaPick?.(data.index);
     };
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
-  }, [onTextEdit]);
+  }, [editable]);
   const attemptId = telemetry?.attemptId ?? null;
   const surface = telemetry?.surface ?? null;
 
@@ -168,7 +191,7 @@ export function SimulationViewer({
   return (
     <iframe
       ref={iframeRef}
-      src={`/api/simulations/${simulationId}/content?v=${version ?? 0}${selectedVersion ? `&version=${selectedVersion}` : ""}${onTextEdit ? "&edit=1" : ""}`}
+      src={`/api/simulations/${simulationId}/content?v=${version ?? 0}${selectedVersion ? `&version=${selectedVersion}` : ""}${editable ? "&edit=1" : ""}`}
       title={title}
       sandbox="allow-scripts"
       className="h-full w-full rounded-md border bg-white"
