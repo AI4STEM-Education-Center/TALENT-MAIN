@@ -217,3 +217,60 @@ it("names the missing half of the chat setup and keeps direct editing usable", a
   expect(preview.editable).toBe(true);
   expect(host.querySelector('[aria-label="Equations"]')).not.toBeNull();
 });
+
+// The workflow a teacher actually uses: correct several labels in the preview,
+// then save once. Each edit must accumulate rather than replace the last.
+it("stages several text edits and saves them as one batch", async () => {
+  await render();
+  await act(async () => preview.onTextEdit?.("Wave speed", "Wave lab"));
+  await act(async () => preview.onTextEdit?.("Frequency", "Source frequency"));
+  await act(async () => preview.onTextEdit?.("Start", "Begin"));
+
+  expect(
+    host.querySelectorAll('[aria-label="Pending direct edits"] li'),
+  ).toHaveLength(3);
+
+  fetchMock.mockClear();
+  await act(async () => button("Apply as new version").click());
+  const call = fetchMock.mock.calls.find(
+    ([, options]) => options?.method === "POST",
+  );
+  expect(JSON.parse(call?.[1].body)).toMatchObject({
+    action: "patch",
+    version: 1,
+    patches: [
+      { kind: "text", before: "Wave speed", after: "Wave lab" },
+      { kind: "text", before: "Frequency", after: "Source frequency" },
+      { kind: "text", before: "Start", after: "Begin" },
+    ],
+  });
+  // A saved batch is cleared, so the next save cannot resend it.
+  expect(host.querySelector('[aria-label="Pending direct edits"]')).toBeNull();
+});
+
+// Two edits committed in the same React batch must not clobber each other.
+it("keeps both edits when two land before a re-render", async () => {
+  await render();
+  await act(async () => {
+    preview.onTextEdit?.("Wave speed", "Wave lab");
+    preview.onTextEdit?.("Frequency", "Source frequency");
+  });
+  expect(
+    host.querySelectorAll('[aria-label="Pending direct edits"] li'),
+  ).toHaveLength(2);
+});
+
+it("turns several staged edits into one chat prompt", async () => {
+  await render();
+  await act(async () => preview.onTextEdit?.("Wave speed", "Wave lab"));
+  await act(async () => preview.onTextEdit?.("Frequency", "Source frequency"));
+  await act(async () => button("Discuss in chat instead").click());
+  expect(
+    (host.querySelector("#simulation-edit-message") as HTMLTextAreaElement)
+      .value,
+  ).toBe(
+    'Replace text "Wave speed" with "Wave lab".\n' +
+      'Replace text "Frequency" with "Source frequency".',
+  );
+  expect(button("Send message").disabled).toBe(false);
+});

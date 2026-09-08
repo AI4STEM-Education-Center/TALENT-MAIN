@@ -47,8 +47,17 @@ type State = {
   patches: StagedPatch[];
   assistant: AssistantStatus;
 };
-function reducer(state: State, patch: Partial<State>) {
-  return { ...state, ...patch };
+/**
+ * Accepts an updater as well as a patch, so a caller that appends to a list can
+ * read the state it is appending to. Two preview edits committed before React
+ * re-renders would otherwise both build on the same stale array, and the first
+ * would be lost.
+ */
+function reducer(
+  state: State,
+  patch: Partial<State> | ((state: State) => Partial<State>),
+) {
+  return { ...state, ...(typeof patch === "function" ? patch(state) : patch) };
 }
 export function useSimulationEditor({
   id,
@@ -154,23 +163,30 @@ export function useSimulationEditor({
     }
   }
   function stage(patch: SimulationPatch) {
-    update({
-      patches: [...state.patches, { id: crypto.randomUUID(), patch }],
+    const staged = { id: crypto.randomUUID(), patch };
+    update((current) => ({
+      patches: [...current.patches, staged],
       error: "",
-    });
+    }));
   }
   function unstage(id: string) {
-    update({ patches: state.patches.filter((staged) => staged.id !== id) });
+    update((current) => ({
+      patches: current.patches.filter((staged) => staged.id !== id),
+    }));
   }
   /** Hand the staged edits to the chat instead, for review alongside prose. */
   function stageToDraft() {
-    const lines = state.patches.map((staged) =>
-      describeSimulationPatch(staged.patch, state.formulas),
-    );
-    update({
-      draft: [state.draft, ...lines].filter(Boolean).join("\n"),
+    update((current) => ({
+      draft: [
+        current.draft,
+        ...current.patches.map((staged) =>
+          describeSimulationPatch(staged.patch, current.formulas),
+        ),
+      ]
+        .filter(Boolean)
+        .join("\n"),
       patches: [],
-    });
+    }));
   }
   function selectVersion(next: number) {
     // Staged patches address formulas and text in one specific version, so they

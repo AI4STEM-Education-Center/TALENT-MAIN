@@ -186,6 +186,57 @@ describe("text edits", () => {
   it("refuses an empty patch set", () => {
     expect(applySimulationPatches(DOC, [])).toMatchObject({ ok: false });
   });
+
+  // The staging panel exists so a teacher can correct several labels in one
+  // pass and save once. Each patch is resolved against the ORIGINAL document,
+  // so an earlier splice must not shift a later one's offsets.
+  it("applies several text edits from one staged batch", () => {
+    const out = html(
+      { kind: "text", before: "Spring lab", after: "Spring bench" },
+      { kind: "text", before: "Mass", after: "Block mass" },
+      {
+        kind: "text",
+        before: "is the displacement in metres.",
+        after: "is the stretch in metres.",
+      },
+    );
+    expect(out).toContain("<h1>Spring bench</h1>");
+    expect(out).toContain('<label>Block mass <input id="mass"');
+    expect(out).toContain("<b>x</b> is the stretch in metres.");
+    // Untouched controls and the script survive intact.
+    expect(out).toContain('<label>Damping <input id="damping"');
+    expect(out).toContain('k.addEventListener("input", draw);');
+    expect(validateSimulationHtml(out)).toEqual([]);
+  });
+
+  it("applies text and formula edits together, order-independently", () => {
+    const patches: SimulationPatch[] = [
+      { kind: "formula-delete", index: 0 },
+      { kind: "text", before: "Spring lab", after: "Spring bench" },
+      { kind: "formula-add", latex: "T = 2\\pi\\sqrt{m/k}", display: "block" },
+    ];
+    const out = html(...patches);
+    const reversed = html(...[...patches].reverse());
+    expect(out).toBe(reversed);
+    expect(out).toContain("<h1>Spring bench</h1>");
+    expect(listSimulationFormulas(out).map((f) => f.latex)).toEqual([
+      "U_s = \\frac{1}{2}kx^2",
+      "T = 2\\pi\\sqrt{m/k}",
+    ]);
+    expect(validateSimulationHtml(out)).toEqual([]);
+  });
+
+  it("rejects the whole batch when one edit in it cannot be placed", () => {
+    expect(
+      apply(
+        { kind: "text", before: "Spring lab", after: "Spring bench" },
+        { kind: "text", before: "Stiffness", after: "Spring constant" },
+      ),
+    ).toMatchObject({
+      ok: false,
+      problem: expect.stringContaining("more than once"),
+    });
+  });
 });
 
 describe("describeSimulationPatch", () => {
