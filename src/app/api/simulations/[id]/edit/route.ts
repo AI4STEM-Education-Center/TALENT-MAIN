@@ -49,6 +49,8 @@ const patchSchema = z.discriminatedUnion("kind", [
     kind: z.literal("formula-add"),
     latex: latexSchema,
     display: z.enum(["inline", "block"]),
+    // Which formula to insert after; omitted appends to the section.
+    after: z.number().int().nonnegative().max(64).optional(),
   }),
 ]);
 const inputSchema = z.object({

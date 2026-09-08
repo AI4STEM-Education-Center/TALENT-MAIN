@@ -2,6 +2,10 @@
 
 import { useEffect, useRef } from "react";
 import {
+  readPreviewEdit,
+  type SimulationPreviewEdit,
+} from "@/lib/simulation-preview-edit";
+import {
   SIM_TELEMETRY_MESSAGE_TYPE,
   type SimulationSurface,
   type SimTelemetryTotals,
@@ -38,8 +42,8 @@ export function SimulationViewer({
   telemetry,
   selectedVersion,
   editable,
-  onTextEdit,
-  onFormulaPick,
+  editMode,
+  onPreviewEdit,
 }: {
   simulationId: string;
   title: string;
@@ -54,42 +58,57 @@ export function SimulationViewer({
    * restart — the simulation around every chat message.
    */
   editable?: boolean;
-  onTextEdit?: (before: string, after: string) => void;
-  onFormulaPick?: (index: number) => void;
+  /**
+   * Whether the injected layer is armed. Toggled by message rather than by the
+   * `src`, so entering edit mode does not reload — and restart — the running
+   * simulation.
+   */
+  editMode?: boolean;
+  onPreviewEdit?: (edit: SimulationPreviewEdit) => void;
 }) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   // Held in a ref so a new inline handler on every parent render does not tear
   // down and re-add the listener. Only ever read from a user-driven message,
   // which cannot arrive before the commit that refreshed it.
-  const handlers = useRef({ onTextEdit, onFormulaPick });
+  const handlers = useRef({ onPreviewEdit });
   useEffect(() => {
-    handlers.current = { onTextEdit, onFormulaPick };
+    handlers.current = { onPreviewEdit };
   });
   useEffect(() => {
     if (!editable) return;
     const receive = (event: MessageEvent) => {
-      if (event.source !== iframeRef.current?.contentWindow) return;
-      const data = event.data;
-      if (
-        data?.type === "simulation-text-edit" &&
-        typeof data.before === "string" &&
-        typeof data.after === "string" &&
-        data.before.length <= 2000 &&
-        data.after.length <= 2000
-      ) {
-        handlers.current.onTextEdit?.(data.before, data.after);
-        return;
-      }
-      if (
-        data?.type === "simulation-formula-pick" &&
-        Number.isSafeInteger(data.index) &&
-        data.index >= 0
-      )
-        handlers.current.onFormulaPick?.(data.index);
+      const frame = iframeRef.current;
+      if (!frame || event.source !== frame.contentWindow) return;
+      const edit = readPreviewEdit(event.data);
+      if (!edit) return;
+      const ticket = (event.data as { ticket?: unknown }).ticket;
+      handlers.current.onPreviewEdit?.({
+        ...edit,
+        // The sandbox has no KaTeX, so a committed formula stays as its source
+        // until the parent renders it and paints the result back.
+        paint: (html, latex) =>
+          frame.contentWindow?.postMessage(
+            { type: "sim-formula-painted", ticket, html, latex },
+            "*",
+          ),
+      });
     };
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
   }, [editable]);
+  useEffect(() => {
+    if (!editable) return;
+    const frame = iframeRef.current;
+    const send = () =>
+      frame?.contentWindow?.postMessage(
+        { type: "sim-edit-mode", on: !!editMode },
+        "*",
+      );
+    send();
+    // The document may still be loading the first time this runs.
+    frame?.addEventListener("load", send);
+    return () => frame?.removeEventListener("load", send);
+  }, [editable, editMode]);
   const attemptId = telemetry?.attemptId ?? null;
   const surface = telemetry?.surface ?? null;
 

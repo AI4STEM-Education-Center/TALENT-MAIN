@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applySimulationPatches,
+  coalesceSimulationPatches,
   describeSimulationPatch,
   listSimulationFormulas,
   type SimulationPatch,
@@ -251,5 +252,92 @@ describe("describeSimulationPatch", () => {
         formulas,
       ),
     ).toBe('Replace text "Spring lab" with "Spring bench".');
+  });
+});
+
+describe("anchored formula-add", () => {
+  it("inserts after the formula the teacher added from", () => {
+    const out = html({
+      kind: "formula-add",
+      latex: "T = 2\\pi\\sqrt{m/k}",
+      display: "block",
+      after: 0,
+    });
+    expect(listSimulationFormulas(out).map((f) => f.latex)).toEqual([
+      "F_s = -kx",
+      "T = 2\\pi\\sqrt{m/k}",
+      "U_s = \\frac{1}{2}kx^2",
+    ]);
+    expect(validateSimulationHtml(out)).toEqual([]);
+  });
+
+  it("still appends when no anchor is given", () => {
+    const out = html({
+      kind: "formula-add",
+      latex: "T = 2\\pi\\sqrt{m/k}",
+      display: "block",
+    });
+    expect(
+      listSimulationFormulas(out)
+        .map((f) => f.latex)
+        .at(-1),
+    ).toBe("T = 2\\pi\\sqrt{m/k}");
+  });
+
+  it("refuses an anchor that is not in this version", () => {
+    expect(
+      apply({
+        kind: "formula-add",
+        latex: "T = 1",
+        display: "block",
+        after: 7,
+      }),
+    ).toMatchObject({ ok: false });
+  });
+});
+
+describe("coalesceSimulationPatches", () => {
+  const staged = (patch: SimulationPatch, id = "a") => ({ id, patch });
+  const kinds = (list: { patch: SimulationPatch }[]) =>
+    list.map((entry) => entry.patch);
+
+  it("replaces the entry for a target that was edited again", () => {
+    const first = staged({ kind: "text", before: "Spring lab", after: "One" });
+    const again = staged({ kind: "text", before: "Spring lab", after: "Two" });
+    expect(kinds(coalesceSimulationPatches([first], again))).toEqual([
+      { kind: "text", before: "Spring lab", after: "Two" },
+    ]);
+  });
+
+  it("drops the entry when a target is put back as it was", () => {
+    const first = staged({ kind: "text", before: "Spring lab", after: "One" });
+    const undone = staged({
+      kind: "text",
+      before: "Spring lab",
+      after: "Spring lab",
+    });
+    expect(coalesceSimulationPatches([first], undone)).toEqual([]);
+  });
+
+  it("chains a follow-up edit that lost its target id", () => {
+    const first = staged({ kind: "text", before: "Spring lab", after: "One" });
+    const next = staged({ kind: "text", before: "One", after: "Two" }, "b");
+    expect(kinds(coalesceSimulationPatches([first], next))).toEqual([
+      { kind: "text", before: "Spring lab", after: "Two" },
+    ]);
+  });
+
+  it("lets a deletion supersede a pending reword of the same formula", () => {
+    const reword = staged({ kind: "formula-edit", index: 1, latex: "T = 1" });
+    const remove = staged({ kind: "formula-delete", index: 1 }, "b");
+    expect(kinds(coalesceSimulationPatches([reword], remove))).toEqual([
+      { kind: "formula-delete", index: 1 },
+    ]);
+  });
+
+  it("keeps edits to different targets side by side", () => {
+    const one = staged({ kind: "formula-edit", index: 0, latex: "A = 1" });
+    const two = staged({ kind: "formula-edit", index: 1, latex: "B = 2" }, "b");
+    expect(coalesceSimulationPatches([one], two)).toHaveLength(2);
   });
 });

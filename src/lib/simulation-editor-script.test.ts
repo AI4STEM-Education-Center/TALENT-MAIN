@@ -4,14 +4,30 @@ import { buildSimulationEditorLayer } from "./simulation-editor-script";
 
 /**
  * The layer is a string injected into an AI-generated document, so the only way
- * to know it works is to run it against a document shaped like one. The cases
- * that matter are the ones the first implementation silently ignored: text
- * sitting beside inline markup, and a rendered formula.
+ * to know it works is to run it against a document shaped like one — a formula
+ * in a card, a sentence with inline markup in it, and a script-driven control.
  */
 const messages: MessageEvent["data"][] = [];
 
+/**
+ * Only the layer's own outbound traffic. jsdom has no real frame, so `parent`
+ * is this same window and the messages the test sends *in* would otherwise be
+ * recorded alongside the ones the layer sends *out*.
+ */
 function record(event: MessageEvent) {
-  messages.push(event.data);
+  if (typeof event.data?.type === "string")
+    if (event.data.type.startsWith("simulation-")) messages.push(event.data);
+}
+
+/** A message from the parent frame, which in jsdom is this window. */
+function send(data: unknown) {
+  window.dispatchEvent(
+    new MessageEvent("message", { data, source: window as Window }),
+  );
+}
+
+function editMode(on: boolean) {
+  send({ type: "sim-edit-mode", on });
 }
 
 /** jsdom has no hit testing; point the caret at the node a click would hit. */
@@ -25,14 +41,29 @@ function aimCaretAt(node: Node) {
   });
 }
 
-function dblclick(target: Element) {
+function click(target: Element) {
   target.dispatchEvent(
-    new MouseEvent("dblclick", { bubbles: true, clientX: 5, clientY: 5 }),
+    new MouseEvent("click", { bubbles: true, clientX: 5, clientY: 5 }),
   );
 }
-
+function hover(target: Element) {
+  target.dispatchEvent(
+    new MouseEvent("mousemove", { bubbles: true, clientX: 5, clientY: 5 }),
+  );
+}
+function press(el: Element, key: string) {
+  el.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+}
 function editing() {
   return document.querySelector(".sim-edit-active") as HTMLElement | null;
+}
+function barButton(label: string) {
+  return [...document.querySelectorAll(".sim-edit-bar button")].find(
+    (b) => b.textContent === label,
+  ) as HTMLButtonElement;
+}
+function formulas() {
+  return [...document.querySelectorAll("[data-sim-latex]")];
 }
 
 type Registration = [string, EventListenerOrEventListenerObject, unknown];
@@ -42,8 +73,12 @@ beforeEach(() => {
   document.body.innerHTML = `
 <h1>Spring lab</h1>
 <p id="legend">Here <b>x</b> is the displacement in metres.</p>
-<span class="sim-formula" data-sim-index="1" data-sim-display="block"
-      data-sim-latex="U_s = 1"><math><mi>U</mi></math></span>
+<div class="cards">
+<div class="card"><span class="sim-formula" data-sim-index="0" data-sim-display="block"
+      data-sim-latex="F_s = -kx"><math><mi>F</mi></math></span></div>
+<div class="card"><span class="sim-formula" data-sim-index="1" data-sim-display="block"
+      data-sim-latex="U_s = 1"><math><mi>U</mi></math></span></div>
+</div>
 <button id="pause">Pause</button>`;
   const layer = buildSimulationEditorLayer();
   const script = layer.slice(
@@ -82,81 +117,228 @@ async function settle() {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+it("stays inert until the parent turns edit mode on", async () => {
+  const legend = document.getElementById("legend")!;
+  aimCaretAt(legend.lastChild!);
+  click(legend);
+  hover(legend);
+  await settle();
+  expect(editing()).toBeNull();
+  expect(legend.classList.contains("sim-edit-target")).toBe(false);
+  expect(messages).toEqual([]);
+});
+
 it("edits a run of text that sits beside inline markup", async () => {
+  editMode(true);
   const legend = document.getElementById("legend")!;
   const target = legend.lastChild!; // " is the displacement in metres."
   aimCaretAt(target);
-  dblclick(legend);
+  click(legend);
 
   const host = editing();
   expect(host?.textContent).toBe("is the displacement in metres.");
   host!.textContent = "is the displacement from equilibrium.";
-  host!.dispatchEvent(new Event("blur"));
+  press(host!, "Enter");
   await settle();
 
   expect(messages).toEqual([
     {
       type: "simulation-text-edit",
+      token: expect.stringMatching(/^text:/),
       before: "is the displacement in metres.",
       after: "is the displacement from equilibrium.",
     },
   ]);
   // The surrounding markup and the node's own spacing survive the round trip.
-  expect(legend.innerHTML).toBe(
+  expect(legend.innerHTML).toContain(
     "Here <b>x</b> is the displacement from equilibrium.",
   );
   expect(editing()).toBeNull();
 });
 
-it("hands a double-clicked formula to the parent by index", async () => {
-  dblclick(document.querySelector(".sim-formula")!);
-  await settle();
-  expect(messages).toEqual([{ type: "simulation-formula-pick", index: 1 }]);
-  expect(editing()).toBeNull();
-});
-
-it("leaves script-driven controls alone", async () => {
-  const pause = document.getElementById("pause")!;
-  aimCaretAt(pause.firstChild!);
-  dblclick(pause);
-  await settle();
-  expect(editing()).toBeNull();
-  expect(messages).toEqual([]);
-});
-
-it("reports nothing when the text comes back unchanged, and on Escape", async () => {
+// The staged batch is resolved against the original document, so a second edit
+// of one label has to report where it started, not where the first one left it.
+it("reports the original wording every time the same text is re-edited", async () => {
+  editMode(true);
   const title = document.querySelector("h1")!;
-  aimCaretAt(title.firstChild!);
-  dblclick(title);
-  editing()!.dispatchEvent(new Event("blur"));
+  for (const text of ["Spring bench", "Spring bay"]) {
+    aimCaretAt(document.querySelector("h1")!.firstChild!);
+    click(document.querySelector("h1")!);
+    const host = editing()!;
+    host.textContent = text;
+    press(host, "Enter");
+  }
   await settle();
-  expect(messages).toEqual([]);
 
+  expect(messages.map((m) => [m.before, m.after])).toEqual([
+    ["Spring lab", "Spring bench"],
+    ["Spring lab", "Spring bay"],
+  ]);
+  // Both edits are the same target, so they carry the same token and the
+  // parent replaces rather than stacks them.
+  expect(messages[0].token).toBe(messages[1].token);
+  expect(title.textContent).toBe("Spring bay");
+});
+
+it("says so when text is put back the way it was", async () => {
+  editMode(true);
   aimCaretAt(document.querySelector("h1")!.firstChild!);
-  dblclick(document.querySelector("h1")!);
+  click(document.querySelector("h1")!);
   const host = editing()!;
   host.textContent = "Spring bench";
-  host.dispatchEvent(
-    new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
-  );
-  host.dispatchEvent(new Event("blur"));
+  press(host, "Escape");
   await settle();
-  expect(messages).toEqual([]);
+
+  expect(messages).toEqual([
+    { type: "simulation-text-revert", token: expect.any(String) },
+  ]);
   expect(document.querySelector("h1")!.textContent).toBe("Spring lab");
 });
 
-it("outlines what a double-click would reach", () => {
+it("turns a clicked formula into LaTeX and paints the render back", async () => {
+  editMode(true);
+  const formula = document.querySelector('[data-sim-index="1"]')!;
+  click(formula);
+  expect(formula.textContent).toBe("U_s = 1");
+
+  formula.textContent = "U_s = 2";
+  press(formula, "Enter");
+  await settle();
+
+  expect(messages).toEqual([
+    {
+      type: "simulation-formula-edit",
+      token: "formula:1",
+      ticket: expect.any(String),
+      index: 1,
+      after: 0,
+      display: "block",
+      latex: "U_s = 2",
+    },
+  ]);
+
+  send({
+    type: "sim-formula-painted",
+    ticket: messages[0].ticket,
+    html: "<math><mi>U2</mi></math>",
+    latex: "U_s = 2",
+  });
+  expect(formula.innerHTML).toBe("<math><mi>U2</mi></math>");
+  expect(formula.getAttribute("data-sim-latex")).toBe("U_s = 2");
+  expect(formula.classList.contains("sim-edit-bad")).toBe(false);
+});
+
+it("flags a formula the parent could not render", async () => {
+  editMode(true);
+  const formula = document.querySelector('[data-sim-index="1"]')!;
+  click(formula);
+  formula.textContent = "U_s = \\frac{";
+  press(formula, "Enter");
+  await settle();
+
+  send({ type: "sim-formula-painted", ticket: messages[0].ticket, html: null });
+  expect(formula.classList.contains("sim-edit-bad")).toBe(true);
+  // The source stays on screen so it can be corrected in place.
+  expect(formula.textContent).toBe("U_s = \\frac{");
+});
+
+it("adds a formula after the hovered one, in a clone of its card", async () => {
+  editMode(true);
+  const first = document.querySelector('[data-sim-index="0"]')!;
+  hover(first);
+  barButton("+ formula").dispatchEvent(
+    new MouseEvent("mousedown", { bubbles: true }),
+  );
+
+  const made = editing()!;
+  expect(made.getAttribute("data-sim-after")).toBe("0");
+  // It landed in its own card, straight after the anchor's.
+  expect(made.closest(".card")).not.toBe(first.closest(".card"));
+  expect(first.closest(".card")!.nextElementSibling).toBe(
+    made.closest(".card"),
+  );
+
+  made.textContent = "E = K + U_s";
+  press(made, "Enter");
+  await settle();
+
+  expect(messages).toEqual([
+    {
+      type: "simulation-formula-add",
+      token: "new:1",
+      ticket: expect.any(String),
+      index: null,
+      after: 0,
+      display: "block",
+      latex: "E = K + U_s",
+    },
+  ]);
+});
+
+it("drops a new formula that was left empty", async () => {
+  editMode(true);
+  hover(document.querySelector('[data-sim-index="0"]')!);
+  barButton("+ formula").dispatchEvent(
+    new MouseEvent("mousedown", { bubbles: true }),
+  );
+  press(editing()!, "Enter");
+  await settle();
+
+  expect(messages).toEqual([
+    { type: "simulation-formula-drop", token: "new:1" },
+  ]);
+  expect(formulas()).toHaveLength(2);
+});
+
+it("removes a formula in place, but never the last one", async () => {
+  editMode(true);
+  const second = document.querySelector('[data-sim-index="1"]')!;
+  hover(second);
+  barButton("Remove").dispatchEvent(
+    new MouseEvent("mousedown", { bubbles: true }),
+  );
+  await settle();
+
+  expect(messages).toEqual([
+    { type: "simulation-formula-delete", token: "formula:1", index: 1 },
+  ]);
+  expect(formulas()).toHaveLength(1);
+
+  messages.length = 0;
+  const last = document.querySelector('[data-sim-index="0"]')!;
+  hover(last);
+  barButton("Remove").dispatchEvent(
+    new MouseEvent("mousedown", { bubbles: true }),
+  );
+  await settle();
+  expect(messages).toEqual([]);
+  expect(formulas()).toHaveLength(1);
+});
+
+it("leaves script-driven controls alone", async () => {
+  editMode(true);
+  const pause = document.getElementById("pause")!;
+  aimCaretAt(pause.firstChild!);
+  click(pause);
+  await settle();
+  expect(editing()).toBeNull();
+  expect(messages).toEqual([]);
+});
+
+it("outlines what a click would reach, and stops when edit mode ends", () => {
+  editMode(true);
   const legend = document.getElementById("legend")!;
   aimCaretAt(legend.lastChild!);
-  legend.dispatchEvent(
-    new MouseEvent("mousemove", { bubbles: true, clientX: 5, clientY: 5 }),
-  );
+  hover(legend);
   expect(legend.classList.contains("sim-edit-target")).toBe(true);
 
-  const formula = document.querySelector(".sim-formula")!;
-  formula.dispatchEvent(
-    new MouseEvent("mousemove", { bubbles: true, clientX: 5, clientY: 5 }),
-  );
+  const formula = document.querySelector('[data-sim-index="0"]')!;
+  hover(formula);
   expect(formula.classList.contains("sim-edit-target")).toBe(true);
   expect(legend.classList.contains("sim-edit-target")).toBe(false);
+  expect(barButton("Remove")).toBeTruthy();
+
+  editMode(false);
+  expect(formula.classList.contains("sim-edit-target")).toBe(false);
+  expect(document.querySelector(".sim-edit-bar")).toBeNull();
 });
