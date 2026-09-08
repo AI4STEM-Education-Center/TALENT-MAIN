@@ -3,17 +3,29 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SimulationEditor } from "./SimulationEditor";
+import type {
+  SimulationPreviewChange,
+  SimulationPreviewEdit,
+} from "@/lib/simulation-preview-edit";
 let preview: {
   editable?: boolean;
-  onTextEdit?: (before: string, after: string) => void;
-  onFormulaPick?: (index: number) => void;
+  editMode?: boolean;
+  onPreviewEdit?: (edit: SimulationPreviewEdit) => void;
 } = {};
+const painted: (string | null)[] = [];
+/** Feed the editor an edit the way the sandboxed preview would. */
+function commit(change: SimulationPreviewChange) {
+  preview.onPreviewEdit?.({
+    ...change,
+    paint: (html) => painted.push(html),
+  });
+}
 vi.mock("./SimulationViewer", () => ({
   SimulationViewer: (props: {
     selectedVersion: number;
     editable?: boolean;
-    onTextEdit?: (before: string, after: string) => void;
-    onFormulaPick?: (index: number) => void;
+    editMode?: boolean;
+    onPreviewEdit?: (edit: SimulationPreviewEdit) => void;
   }) => {
     preview = props;
     return <div data-preview={props.selectedVersion}>Preview</div>;
@@ -72,6 +84,7 @@ beforeEach(() => {
             assistant: { enabled: true, model: "test-model" },
           },
   }));
+  painted.length = 0;
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -142,96 +155,60 @@ it("aborts the current proposal and follows the new live version after generatio
   expect(host.textContent).toContain("What else would you like to change?");
 });
 
-it("stages a preview text edit and an equation change, then applies them without the model", async () => {
+/** Enter edit mode, which is what arms the preview. */
+async function startEditing() {
+  await act(async () => button("Edit").click());
+}
+
+it("leaves the preview unarmed until Edit is clicked", async () => {
   await render();
   expect(preview.editable).toBe(true);
+  expect(preview.editMode).toBe(false);
+  await startEditing();
+  expect(preview.editMode).toBe(true);
+  expect(button("Save edits").disabled).toBe(true);
+});
 
-  await act(async () => preview.onTextEdit?.("Wave speed", "Wave lab"));
-  await act(async () => preview.onFormulaPick?.(1));
-  const latex = host.querySelector(
-    'input[aria-label="LaTeX for equation 2"]',
-  ) as HTMLInputElement;
-  expect(latex.value).toBe("T = 1/f");
-  await act(async () => type(latex, "T = 1/f + 1"));
-  await act(async () => button("Stage").click());
+// The workflow the redesign is for: correct several things, then save once.
+it("stages several edits of different kinds and saves them as one batch", async () => {
+  await render();
+  await startEditing();
   await act(async () =>
-    host
-      .querySelector<HTMLButtonElement>('[aria-label="Remove equation 1"]')!
-      .click(),
+    commit({
+      kind: "text",
+      token: "text:1",
+      before: "Wave speed",
+      after: "Wave lab",
+    }),
   );
-
-  const staged = [
-    ...host.querySelectorAll('[aria-label="Pending direct edits"] li'),
-  ].map((li) => li.textContent);
-  expect(staged).toHaveLength(3);
-  expect(staged[0]).toContain('Replace text "Wave speed" with "Wave lab".');
-
-  fetchMock.mockClear();
-  await act(async () => button("Apply as new version").click());
-  const call = fetchMock.mock.calls.find(
-    ([, options]) => options?.method === "POST",
+  await act(async () =>
+    commit({
+      kind: "formula-edit",
+      token: "formula:1",
+      index: 1,
+      latex: "T = 2/f",
+      display: "block",
+    }),
   );
-  expect(JSON.parse(call?.[1].body)).toMatchObject({
-    action: "patch",
-    version: 1,
-    patches: [
-      { kind: "text", before: "Wave speed", after: "Wave lab" },
-      { kind: "formula-edit", index: 1, latex: "T = 1/f + 1" },
-      { kind: "formula-delete", index: 0 },
-    ],
-  });
-});
-
-it("hands staged edits to the chat draft when asked instead", async () => {
-  await render();
-  await act(async () => preview.onTextEdit?.("Wave speed", "Wave lab"));
-  await act(async () => button("Discuss in chat instead").click());
-  expect(host.querySelector('[aria-label="Pending direct edits"]')).toBeNull();
-  expect(
-    (host.querySelector("#simulation-edit-message") as HTMLTextAreaElement)
-      .value,
-  ).toBe('Replace text "Wave speed" with "Wave lab".');
-});
-
-it("names the missing half of the chat setup and keeps direct editing usable", async () => {
-  fetchMock.mockImplementation(async (_url, options) => ({
-    ok: true,
-    json: async () =>
-      options
-        ? { aborted: true }
-        : {
-            versions,
-            chats: [],
-            formulas,
-            assistant: { enabled: false, model: null },
-          },
-  }));
-  await render();
-  expect(host.textContent).toContain("Simulation Editing Chat");
-  expect(host.textContent).toContain("Simulation editing assistant");
-  expect(
-    (host.querySelector("#simulation-edit-message") as HTMLTextAreaElement)
-      .disabled,
-  ).toBe(true);
-  // The whole point of the notice: the direct controls still work.
-  expect(preview.editable).toBe(true);
-  expect(host.querySelector('[aria-label="Equations"]')).not.toBeNull();
-});
-
-// The workflow a teacher actually uses: correct several labels in the preview,
-// then save once. Each edit must accumulate rather than replace the last.
-it("stages several text edits and saves them as one batch", async () => {
-  await render();
-  await act(async () => preview.onTextEdit?.("Wave speed", "Wave lab"));
-  await act(async () => preview.onTextEdit?.("Frequency", "Source frequency"));
-  await act(async () => preview.onTextEdit?.("Start", "Begin"));
+  await act(async () =>
+    commit({ kind: "formula-delete", token: "formula:0", index: 0 }),
+  );
+  await act(async () =>
+    commit({
+      kind: "formula-add",
+      token: "new:1",
+      anchor: 1,
+      latex: "E = K + U",
+      display: "block",
+    }),
+  );
 
   expect(
     host.querySelectorAll('[aria-label="Pending direct edits"] li'),
-  ).toHaveLength(3);
+  ).toHaveLength(4);
 
   fetchMock.mockClear();
-  await act(async () => button("Apply as new version").click());
+  await act(async () => button("Save 4 edits").click());
   const call = fetchMock.mock.calls.find(
     ([, options]) => options?.method === "POST",
   );
@@ -240,37 +217,132 @@ it("stages several text edits and saves them as one batch", async () => {
     version: 1,
     patches: [
       { kind: "text", before: "Wave speed", after: "Wave lab" },
-      { kind: "text", before: "Frequency", after: "Source frequency" },
-      { kind: "text", before: "Start", after: "Begin" },
+      { kind: "formula-edit", index: 1, latex: "T = 2/f" },
+      { kind: "formula-delete", index: 0 },
+      { kind: "formula-add", latex: "E = K + U", display: "block", after: 1 },
     ],
   });
-  // A saved batch is cleared, so the next save cannot resend it.
+  // Saving closes edit mode and clears the batch.
+  expect(preview.editMode).toBe(false);
   expect(host.querySelector('[aria-label="Pending direct edits"]')).toBeNull();
 });
 
-// Two edits committed in the same React batch must not clobber each other.
-it("keeps both edits when two land before a re-render", async () => {
+// Every patch resolves against the original document, so a second edit of one
+// target has to replace the first rather than stack a second entry.
+it("replaces a re-edited target instead of stacking it", async () => {
   await render();
-  await act(async () => {
-    preview.onTextEdit?.("Wave speed", "Wave lab");
-    preview.onTextEdit?.("Frequency", "Source frequency");
-  });
+  await startEditing();
+  for (const after of ["Wave lab", "Wave bench"])
+    await act(async () =>
+      commit({ kind: "text", token: "text:1", before: "Wave speed", after }),
+    );
+  for (const latex of ["T = 2/f", "T = 3/f"])
+    await act(async () =>
+      commit({
+        kind: "formula-edit",
+        token: "formula:1",
+        index: 1,
+        latex,
+        display: "block",
+      }),
+    );
+
+  fetchMock.mockClear();
+  await act(async () => button("Save 2 edits").click());
+  const call = fetchMock.mock.calls.find(
+    ([, options]) => options?.method === "POST",
+  );
+  expect(JSON.parse(call?.[1].body).patches).toEqual([
+    { kind: "text", before: "Wave speed", after: "Wave bench" },
+    { kind: "formula-edit", index: 1, latex: "T = 3/f" },
+  ]);
+});
+
+it("drops an edit that was undone in the preview", async () => {
+  await render();
+  await startEditing();
+  await act(async () =>
+    commit({
+      kind: "text",
+      token: "text:1",
+      before: "Wave speed",
+      after: "Wave lab",
+    }),
+  );
+  await act(async () =>
+    commit({
+      kind: "formula-add",
+      token: "new:1",
+      anchor: 0,
+      latex: "E = K",
+      display: "block",
+    }),
+  );
   expect(
     host.querySelectorAll('[aria-label="Pending direct edits"] li'),
   ).toHaveLength(2);
+
+  await act(async () => commit({ kind: "text-revert", token: "text:1" }));
+  await act(async () => commit({ kind: "formula-drop", token: "new:1" }));
+  expect(host.querySelector('[aria-label="Pending direct edits"]')).toBeNull();
+  expect(button("Save edits").disabled).toBe(true);
 });
 
-it("turns several staged edits into one chat prompt", async () => {
+it("renders a committed formula back into the preview", async () => {
   await render();
-  await act(async () => preview.onTextEdit?.("Wave speed", "Wave lab"));
-  await act(async () => preview.onTextEdit?.("Frequency", "Source frequency"));
-  await act(async () => button("Discuss in chat instead").click());
-  expect(
-    (host.querySelector("#simulation-edit-message") as HTMLTextAreaElement)
-      .value,
-  ).toBe(
-    'Replace text "Wave speed" with "Wave lab".\n' +
-      'Replace text "Frequency" with "Source frequency".',
+  await startEditing();
+  await act(async () =>
+    commit({
+      kind: "formula-edit",
+      token: "formula:1",
+      index: 1,
+      latex: "T = 2/f",
+      display: "block",
+    }),
   );
-  expect(button("Send message").disabled).toBe(false);
+  expect(painted).toHaveLength(1);
+  expect(painted[0]).toContain("<math");
+});
+
+it("says so when a committed formula cannot be rendered", async () => {
+  await render();
+  await startEditing();
+  await act(async () =>
+    commit({
+      kind: "formula-edit",
+      token: "formula:1",
+      index: 1,
+      latex: "T = \\frac{",
+      display: "block",
+    }),
+  );
+  expect(painted).toEqual([null]);
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+    "KaTeX cannot render it",
+  );
+  // Still staged, so the teacher can fix or discard it rather than lose it.
+  expect(
+    host.querySelectorAll('[aria-label="Pending direct edits"] li'),
+  ).toHaveLength(1);
+});
+
+it("throws the batch away and remounts the preview on Cancel", async () => {
+  await render();
+  await startEditing();
+  await act(async () =>
+    commit({
+      kind: "text",
+      token: "text:1",
+      before: "Wave speed",
+      after: "Wave lab",
+    }),
+  );
+  const before = host.querySelector("[data-preview]");
+  await act(async () => button("Cancel").click());
+
+  expect(preview.editMode).toBe(false);
+  expect(host.querySelector('[aria-label="Pending direct edits"]')).toBeNull();
+  // A fresh node means the iframe was remounted, discarding on-screen edits.
+  expect(host.querySelector("[data-preview]")).not.toBe(before);
+  expect(button("Edit")).toBeTruthy();
 });

@@ -30,7 +30,16 @@ export type SimulationPatch =
   | { kind: "text"; before: string; after: string }
   | { kind: "formula-edit"; index: number; latex: string }
   | { kind: "formula-delete"; index: number }
-  | { kind: "formula-add"; latex: string; display: "inline" | "block" };
+  | {
+      kind: "formula-add";
+      latex: string;
+      display: "inline" | "block";
+      /** Insert after this formula's card. Omitted means after the last one. */
+      after?: number;
+    };
+
+/** A patch plus a key identifying what it edits, so re-edits can replace it. */
+export type StagedPatch = { id: string; patch: SimulationPatch };
 
 /** Applied patch set, or the first reason the set could not be applied. */
 export type PatchResult =
@@ -245,25 +254,26 @@ export function applySimulationPatches(
     if (patch.kind === "formula-add") {
       const reason = checkSimulationLatex(patch.latex, patch.display);
       if (reason) return { ok: false, problem: reason };
-      const last = markers.at(-1);
+      const anchor = markers[patch.after ?? markers.length - 1];
       const replacement = buildSimulationLatexMarker({
         source: patch.latex.trim(),
         display: patch.display,
       });
-      if (!last) {
+      if (!anchor) {
         return {
           ok: false,
           problem:
             "This version has no formula section to add to. Ask for one in chat.",
         };
       }
-      // Clone the last formula's card so the new one inherits its styling and
-      // lands in the section a reader expects, rather than loose in the body.
-      const card = cardRange(doc, last, markers);
+      // Clone the anchor formula's card so the new one inherits its styling and
+      // lands beside the formula the teacher added it from, rather than loose
+      // in the body.
+      const card = cardRange(doc, anchor, markers);
       const clone =
-        html.slice(card.start, last.start) +
+        html.slice(card.start, anchor.start) +
         replacement +
-        html.slice(last.end, card.end);
+        html.slice(anchor.end, card.end);
       edits.push({ start: card.end, end: card.end, text: clone });
       continue;
     }
@@ -333,4 +343,75 @@ export function describeSimulationPatch(
     case "formula-add":
       return `Add a ${patch.display} formula ${JSON.stringify(patch.latex)} to the formula section, defining every new symbol and unit.`;
   }
+}
+
+/**
+ * Fold a newly committed edit into the staged set.
+ *
+ * Every patch is resolved against the ORIGINAL document, so a batch must hold
+ * at most one entry per thing edited. Editing the same label twice would
+ * otherwise leave a second patch hunting for text the first one replaced, and
+ * `applySimulationPatches` refuses two changes to one formula outright. The
+ * preview gives each editable target a stable id and always reports the
+ * original wording, so a re-edit replaces its own entry.
+ */
+export function coalesceSimulationPatches(
+  staged: StagedPatch[],
+  incoming: StagedPatch,
+): StagedPatch[] {
+  const { patch } = incoming;
+
+  // A text edit that lands back on the original wording is not an edit.
+  if (patch.kind === "text" && patch.before === patch.after)
+    return staged.filter((entry) => entry.id !== incoming.id);
+
+  const sameTarget = staged.findIndex((entry) => entry.id === incoming.id);
+  if (sameTarget !== -1) {
+    const next = staged.slice();
+    next[sameTarget] = incoming;
+    return next;
+  }
+
+  // Fallback for a target that lost its id: chain onto whichever staged edit
+  // produced the text now being replaced, so the batch still points at the
+  // original wording.
+  if (patch.kind === "text") {
+    const chained = staged.findIndex(
+      (entry) =>
+        entry.patch.kind === "text" && entry.patch.after === patch.before,
+    );
+    if (chained === -1) return [...staged, incoming];
+    const first = staged[chained].patch as Extract<
+      SimulationPatch,
+      { kind: "text" }
+    >;
+    const next = staged.slice();
+    if (first.before === patch.after) {
+      next.splice(chained, 1);
+      return next;
+    }
+    next[chained] = {
+      id: staged[chained].id,
+      patch: { kind: "text", before: first.before, after: patch.after },
+    };
+    return next;
+  }
+
+  // Deleting a formula supersedes any pending reword of it.
+  if (patch.kind === "formula-edit" || patch.kind === "formula-delete") {
+    const { index } = patch;
+    return [
+      ...staged.filter(
+        (entry) =>
+          !(
+            (entry.patch.kind === "formula-edit" ||
+              entry.patch.kind === "formula-delete") &&
+            entry.patch.index === index
+          ),
+      ),
+      incoming,
+    ];
+  }
+
+  return [...staged, incoming];
 }

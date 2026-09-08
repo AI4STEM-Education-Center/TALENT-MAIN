@@ -220,3 +220,24 @@ export function renderSimulationLatex(
     },
   );
 }
+
+/**
+ * Render one formula to exactly the MathML the served document carries, or null
+ * when the source is not usable. The in-preview editor calls this to paint a
+ * committed formula back over its own LaTeX box: the sandbox has no KaTeX, so
+ * the parent renders and posts the result in. Sharing `renderSimulationLatex`'s
+ * options is what keeps the preview honest — what a teacher sees on commit is
+ * what the next save will store.
+ */
+export function renderSimulationFormulaHtml(
+  source: string,
+  display: "inline" | "block",
+): string | null {
+  if (checkSimulationLatex(source, display)) return null;
+  return katex.renderToString(source.trim(), {
+    displayMode: display === "block",
+    output: "mathml",
+    throwOnError: true,
+    trust: false,
+  });
+}

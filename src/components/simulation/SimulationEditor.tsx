@@ -1,5 +1,4 @@
 "use client";
-import { useState } from "react";
 import {
   useSimulationEditor,
   type EditorProps,
@@ -10,7 +9,7 @@ import type { SimulationEditPlan } from "@/lib/simulation-edit";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { SimulationViewer } from "./SimulationViewer";
-import { Loader2, Plus, Trash2, X } from "lucide-react";
+import { Loader2, Pencil, X } from "lucide-react";
 import { GuardrailFeedbackButton } from "@/components/guardrails/GuardrailFeedbackButton";
 
 const FIELD_CLASS =
@@ -169,19 +168,19 @@ function ChatPanel({
 }
 
 /**
- * Edits staged from the preview. They are applied straight to the artifact —
- * a rename or a corrected formula is something a teacher can state exactly, so
- * putting it through the revision model would only add a wait and a chance of
- * the model rewriting something nobody asked about. The escape hatch sends the
- * same list to the chat when a change turns out to need judgement after all.
+ * The batch a teacher has built up in edit mode. These apply straight to the
+ * stored document — a rename or a corrected formula is something a teacher can
+ * state exactly, so putting it through the revision model would only add a wait
+ * and a chance of the model rewriting something nobody asked about. Structural
+ * changes still belong in the chat.
  */
 function StagedEdits({ editor }: { editor: EditorController }) {
-  const { patches, busy, act, unstage, stageToDraft, describePatch } = editor;
+  const { patches, busy, unstage, describePatch } = editor;
   if (!patches.length) return null;
   return (
     <section className="space-y-2 rounded border p-2">
       <p className="text-sm font-medium">
-        {patches.length} pending edit{patches.length > 1 ? "s" : ""}
+        {patches.length} unsaved edit{patches.length > 1 ? "s" : ""}
       </p>
       <ul aria-label="Pending direct edits" className="space-y-1 text-xs">
         {patches.map((staged, i) => (
@@ -199,159 +198,6 @@ function StagedEdits({ editor }: { editor: EditorController }) {
           </li>
         ))}
       </ul>
-      <div className="flex flex-wrap gap-2">
-        <Button size="sm" disabled={busy} onClick={() => act("patch")}>
-          {busy && <Loader2 className="size-4 animate-spin" />}Apply as new
-          version
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={busy}
-          onClick={stageToDraft}
-        >
-          Discuss in chat instead
-        </Button>
-      </div>
-    </section>
-  );
-}
-
-/**
- * Add, reword, or remove one of the document's LaTeX formulas. This lives in
- * the parent rather than the preview because KaTeX has already turned the
- * formula into MathML by the time it reaches the iframe, and there is no KaTeX
- * inside the sandbox to render an edit back.
- */
-function EquationEditor({
-  editor,
-  focus,
-}: {
-  editor: EditorController;
-  focus: number | null;
-}) {
-  const { formulas, busy, stage } = editor;
-  const [editing, setEditing] = useState<{ index: number; latex: string }>();
-  const [seenFocus, setSeenFocus] = useState<number | null>(null);
-  const [added, setAdded] = useState({ latex: "", display: "block" });
-  if (focus !== seenFocus) {
-    setSeenFocus(focus);
-    const target = focus === null ? undefined : formulas[focus];
-    setEditing(target && { index: target.index, latex: target.latex });
-  }
-  return (
-    <section className="space-y-2 rounded border p-2">
-      <p className="text-sm font-medium">Equations</p>
-      {!formulas.length && (
-        <p className="text-xs text-muted-foreground">
-          This version has no editable formula markers.
-        </p>
-      )}
-      <ul aria-label="Equations" className="space-y-1">
-        {formulas.map((formula) =>
-          editing?.index === formula.index ? (
-            <li key={formula.index} className="flex items-center gap-2">
-              <input
-                autoFocus
-                aria-label={`LaTeX for equation ${formula.index + 1}`}
-                className={`${FIELD_CLASS} font-mono`}
-                maxLength={500}
-                value={editing.latex}
-                onChange={(e) =>
-                  setEditing({ ...editing, latex: e.target.value })
-                }
-              />
-              <Button
-                size="sm"
-                disabled={busy || !editing.latex.trim()}
-                onClick={() => {
-                  stage({
-                    kind: "formula-edit",
-                    index: formula.index,
-                    latex: editing.latex,
-                  });
-                  setEditing(undefined);
-                }}
-              >
-                Stage
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setEditing(undefined)}
-              >
-                Cancel
-              </Button>
-            </li>
-          ) : (
-            <li key={formula.index} className="flex items-center gap-2">
-              <code className="min-w-0 flex-1 truncate text-xs">
-                {formula.latex}
-              </code>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={busy}
-                onClick={() =>
-                  setEditing({ index: formula.index, latex: formula.latex })
-                }
-              >
-                Edit
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                aria-label={`Remove equation ${formula.index + 1}`}
-                disabled={busy || formulas.length < 2}
-                onClick={() =>
-                  stage({ kind: "formula-delete", index: formula.index })
-                }
-              >
-                <Trash2 className="size-4 text-destructive" />
-              </Button>
-            </li>
-          ),
-        )}
-      </ul>
-      <div className="flex items-center gap-2">
-        <input
-          aria-label="New equation LaTeX"
-          className={`${FIELD_CLASS} font-mono`}
-          maxLength={500}
-          placeholder="E = K + U_s"
-          value={added.latex}
-          onChange={(e) => setAdded({ ...added, latex: e.target.value })}
-        />
-        <select
-          aria-label="New equation placement"
-          className="rounded border bg-background p-1 text-sm"
-          value={added.display}
-          onChange={(e) => setAdded({ ...added, display: e.target.value })}
-        >
-          <option value="block">Block</option>
-          <option value="inline">Inline</option>
-        </select>
-        <Button
-          size="sm"
-          disabled={busy || !added.latex.trim() || formulas.length >= 8}
-          onClick={() => {
-            stage({
-              kind: "formula-add",
-              latex: added.latex,
-              display: added.display === "inline" ? "inline" : "block",
-            });
-            setAdded({ latex: "", display: added.display });
-          }}
-        >
-          <Plus className="size-4" />
-          Add
-        </Button>
-      </div>
-      {formulas.length >= 8 && (
-        <p className="text-xs text-muted-foreground">
-          A simulation shows at most 8 formulas — remove one first.
-        </p>
-      )}
     </section>
   );
 }
@@ -368,12 +214,17 @@ function VersionPreview({
     current,
     busy,
     rename,
+    editing,
+    patches,
+    previewNonce,
     act,
-    stage,
+    applyPreviewEdit,
+    startEditing,
+    cancelEditing,
+    save,
     selectVersion,
     update,
   } = editor;
-  const [focus, setFocus] = useState<number | null>(null);
   return (
     <div className="flex min-h-[360px] flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
@@ -416,25 +267,58 @@ function VersionPreview({
           </Button>
         )}
       </div>
-      <p className="text-xs text-muted-foreground">
-        Double-click text in the preview to rewrite it, or a formula to open it
-        below. Staged edits apply straight to a new version — describe new
-        controls or a different teaching direction in chat.
-      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        {editing ? (
+          <>
+            <Button size="sm" disabled={busy || !patches.length} onClick={save}>
+              {busy && <Loader2 className="size-4 animate-spin" />}Save{" "}
+              {patches.length ? `${patches.length} edit` : "edits"}
+              {patches.length > 1 ? "s" : ""}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy}
+              onClick={cancelEditing}
+            >
+              Cancel
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Click any text or formula to edit it. Enter keeps a change, Escape
+              undoes it. Hover a formula to add one after it or remove it.
+            </p>
+          </>
+        ) : (
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy || revising}
+              onClick={startEditing}
+            >
+              <Pencil className="size-4" />
+              Edit
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Rewrite labels and formulas directly. Describe new controls or a
+              different teaching direction in chat.
+            </p>
+          </>
+        )}
+      </div>
       <div className="min-h-[320px] flex-1">
         <SimulationViewer
-          key={`${selected}-${version}`}
+          key={`${selected}-${version}-${previewNonce}`}
           simulationId={id}
           title={current?.name ?? "Simulation"}
           version={version}
           selectedVersion={versions.length ? selected : undefined}
           editable={!revising}
-          onTextEdit={(before, after) => stage({ kind: "text", before, after })}
-          onFormulaPick={setFocus}
+          editMode={editing}
+          onPreviewEdit={applyPreviewEdit}
         />
       </div>
       <StagedEdits editor={editor} />
-      <EquationEditor editor={editor} focus={focus} />
       <div className="flex gap-2">
         <input
           aria-label="Version name"

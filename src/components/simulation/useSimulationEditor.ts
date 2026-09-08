@@ -2,10 +2,15 @@
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import type { SimulationEditPlan } from "@/lib/simulation-edit";
 import {
+  coalesceSimulationPatches,
   describeSimulationPatch,
   type SimulationFormula,
   type SimulationPatch,
+  type StagedPatch,
 } from "@/lib/simulation-patch";
+import type { SimulationPreviewEdit } from "@/lib/simulation-preview-edit";
+import { renderSimulationFormulaHtml } from "@/lib/simulation-math";
+type Display = "inline" | "block";
 export type Version = {
   number: number;
   name: string;
@@ -27,8 +32,6 @@ export type EditorProps = {
 };
 /** Whether the editing chat can answer at all. Both halves are admin-set. */
 export type AssistantStatus = { enabled: boolean; model: string | null };
-/** A staged patch plus a key that survives removing an earlier one. */
-export type StagedPatch = { id: string; patch: SimulationPatch };
 type State = {
   versions: Version[];
   selected: number;
@@ -43,8 +46,12 @@ type State = {
   rename: string;
   /** The previewed version's formulas, in the order they appear on screen. */
   formulas: SimulationFormula[];
-  /** Edits staged in the preview, applied (or sent to chat) as one batch. */
+  /** Edits staged in the preview, applied as one batch when the teacher saves. */
   patches: StagedPatch[];
+  /** Whether the preview is armed for editing. */
+  editing: boolean;
+  /** Bumped to remount the preview and discard on-screen edits. */
+  previewNonce: number;
   assistant: AssistantStatus;
 };
 /**
@@ -78,6 +85,8 @@ export function useSimulationEditor({
     rename: "",
     formulas: [],
     patches: [],
+    editing: false,
+    previewNonce: 0,
     assistant: { enabled: true, model: null },
   });
   const inFlight = useRef(false);
@@ -153,7 +162,13 @@ export function useSimulationEditor({
       if (action === "chat" || action === "abort")
         update({ draft: "", answers: {} });
       if (action === "abort") update({ chatId: undefined });
-      if (action === "patch") update({ patches: [], rename: "" });
+      if (action === "patch")
+        update((current) => ({
+          patches: [],
+          rename: "",
+          editing: false,
+          previewNonce: current.previewNonce + 1,
+        }));
       await Promise.all([refresh(), onRefresh()]);
     } catch (e) {
       update({ error: e instanceof Error ? e.message : "Request failed" });
@@ -162,10 +177,9 @@ export function useSimulationEditor({
       update({ busy: false });
     }
   }
-  function stage(patch: SimulationPatch) {
-    const staged = { id: crypto.randomUUID(), patch };
+  function stage(id: string, patch: SimulationPatch) {
     update((current) => ({
-      patches: [...current.patches, staged],
+      patches: coalesceSimulationPatches(current.patches, { id, patch }),
       error: "",
     }));
   }
@@ -174,30 +188,90 @@ export function useSimulationEditor({
       patches: current.patches.filter((staged) => staged.id !== id),
     }));
   }
-  /** Hand the staged edits to the chat instead, for review alongside prose. */
-  function stageToDraft() {
+  /**
+   * Render a committed formula and paint it back over the LaTeX the teacher
+   * typed. The sandbox has no KaTeX of its own, and the app bundle already
+   * carries it for the rest of the UI, so rendering here costs nothing extra —
+   * and going through the same helper the server uses is what makes the preview
+   * honest about what a save will store.
+   */
+  function paint(edit: SimulationPreviewEdit, latex: string, display: Display) {
+    const html = renderSimulationFormulaHtml(latex, display);
+    edit.paint(html, latex);
+    if (!html)
+      update({
+        error: `That formula is still staged, but KaTeX cannot render it: ${latex}`,
+      });
+  }
+  /** Turn one committed preview edit into a staged patch. */
+  function applyPreviewEdit(edit: SimulationPreviewEdit) {
+    switch (edit.kind) {
+      // Back to the original wording, or a new formula abandoned before it had
+      // any content — either way there is nothing left to save.
+      case "text-revert":
+      case "formula-drop":
+        unstage(edit.token);
+        return;
+      case "text":
+        stage(edit.token, {
+          kind: "text",
+          before: edit.before,
+          after: edit.after,
+        });
+        return;
+      case "formula-delete":
+        stage(edit.token, { kind: "formula-delete", index: edit.index });
+        return;
+      case "formula-edit":
+        stage(edit.token, {
+          kind: "formula-edit",
+          index: edit.index,
+          latex: edit.latex,
+        });
+        paint(edit, edit.latex, edit.display);
+        return;
+      case "formula-add":
+        stage(edit.token, {
+          kind: "formula-add",
+          latex: edit.latex,
+          display: edit.display,
+          after: edit.anchor,
+        });
+        paint(edit, edit.latex, edit.display);
+    }
+  }
+  function startEditing() {
+    update({ editing: true, patches: [], error: "" });
+  }
+  /**
+   * Leave edit mode and throw the batch away. The preview is remounted rather
+   * than unwound edit by edit: the served document is the source of truth, and
+   * reloading it is the only way to be sure nothing half-applied is left on
+   * screen.
+   */
+  function cancelEditing() {
     update((current) => ({
-      draft: [
-        current.draft,
-        ...current.patches.map((staged) =>
-          describeSimulationPatch(staged.patch, current.formulas),
-        ),
-      ]
-        .filter(Boolean)
-        .join("\n"),
+      editing: false,
       patches: [],
+      error: "",
+      previewNonce: current.previewNonce + 1,
     }));
+  }
+  async function save() {
+    await act("patch");
   }
   function selectVersion(next: number) {
     // Staged patches address formulas and text in one specific version, so they
     // cannot follow the teacher to another branch; the prose draft can.
-    update({
+    update((current) => ({
       selected: next,
       chatId: undefined,
       answers: {},
       rename: "",
       patches: [],
-    });
+      editing: false,
+      previewNonce: current.previewNonce + 1,
+    }));
   }
   return {
     ...state,
@@ -208,7 +282,10 @@ export function useSimulationEditor({
     act,
     stage,
     unstage,
-    stageToDraft,
+    applyPreviewEdit,
+    startEditing,
+    cancelEditing,
+    save,
     describePatch: (patch: SimulationPatch) =>
       describeSimulationPatch(patch, state.formulas),
     selectVersion,
