@@ -68,6 +68,7 @@ function formulas() {
 
 type Registration = [string, EventListenerOrEventListenerObject, unknown];
 let listeners: Registration[] = [];
+let windowListeners: Registration[] = [];
 
 beforeEach(() => {
   document.body.innerHTML = `
@@ -101,12 +102,24 @@ beforeEach(() => {
     listeners.push(args);
     add(args[0], args[1], args[2] as never);
   }) as typeof document.addEventListener);
+  windowListeners = [];
+  const windowAdd = window.addEventListener.bind(window);
+  vi.spyOn(window, "addEventListener").mockImplementation(((
+    ...args: Registration
+  ) => {
+    windowListeners.push(args);
+    windowAdd(args[0], args[1], args[2] as never);
+  }) as typeof window.addEventListener);
   delete (window as unknown as Record<string, unknown>).__simEditorLayer;
   new Function(script)();
   vi.mocked(document.addEventListener).mockRestore();
+  vi.mocked(window.addEventListener).mockRestore();
 });
 
 afterEach(() => {
+  editMode(false);
+  for (const [type, listener, options] of windowListeners)
+    window.removeEventListener(type, listener, options as never);
   for (const [type, listener, options] of listeners)
     document.removeEventListener(type, listener, options as never);
   window.removeEventListener("message", record);
@@ -189,9 +202,7 @@ it("says so when text is put back the way it was", async () => {
   press(host, "Escape");
   await settle();
 
-  expect(messages).toEqual([
-    { type: "simulation-text-revert", token: expect.any(String) },
-  ]);
+  expect(messages).toEqual([]);
   expect(document.querySelector("h1")!.textContent).toBe("Spring lab");
 });
 
@@ -247,7 +258,7 @@ it("adds a formula after the hovered one, in a clone of its card", async () => {
   const first = document.querySelector('[data-sim-index="0"]')!;
   hover(first);
   barButton("+ formula").dispatchEvent(
-    new MouseEvent("mousedown", { bubbles: true }),
+    new MouseEvent("click", { bubbles: true }),
   );
 
   const made = editing()!;
@@ -279,7 +290,7 @@ it("drops a new formula that was left empty", async () => {
   editMode(true);
   hover(document.querySelector('[data-sim-index="0"]')!);
   barButton("+ formula").dispatchEvent(
-    new MouseEvent("mousedown", { bubbles: true }),
+    new MouseEvent("click", { bubbles: true }),
   );
   press(editing()!, "Enter");
   await settle();
@@ -288,28 +299,26 @@ it("drops a new formula that was left empty", async () => {
     { type: "simulation-formula-drop", token: "new:1" },
   ]);
   expect(formulas()).toHaveLength(2);
+  expect(document.querySelectorAll(".card")).toHaveLength(2);
 });
 
 it("removes a formula in place, but never the last one", async () => {
   editMode(true);
   const second = document.querySelector('[data-sim-index="1"]')!;
   hover(second);
-  barButton("Remove").dispatchEvent(
-    new MouseEvent("mousedown", { bubbles: true }),
-  );
+  barButton("Remove").dispatchEvent(new MouseEvent("click", { bubbles: true }));
   await settle();
 
   expect(messages).toEqual([
     { type: "simulation-formula-delete", token: "formula:1", index: 1 },
   ]);
   expect(formulas()).toHaveLength(1);
+  expect(document.querySelectorAll(".card")).toHaveLength(1);
 
   messages.length = 0;
   const last = document.querySelector('[data-sim-index="0"]')!;
   hover(last);
-  barButton("Remove").dispatchEvent(
-    new MouseEvent("mousedown", { bubbles: true }),
-  );
+  barButton("Remove").dispatchEvent(new MouseEvent("click", { bubbles: true }));
   await settle();
   expect(messages).toEqual([]);
   expect(formulas()).toHaveLength(1);
@@ -341,4 +350,91 @@ it("outlines what a click would reach, and stops when edit mode ends", () => {
   editMode(false);
   expect(formula.classList.contains("sim-edit-target")).toBe(false);
   expect(document.querySelector(".sim-edit-bar")).toBeNull();
+});
+
+it("does not invent changes when clicking between text runs in the same legend", async () => {
+  editMode(true);
+  const legend = document.getElementById("legend")!;
+  legend.innerHTML = "<b>F</b>: net force (N); <b>K</b>: kinetic energy (J);";
+  const force = legend.childNodes[1];
+  const energy = legend.childNodes[3];
+  for (const node of [force, energy, force, energy]) {
+    aimCaretAt(node);
+    click(legend);
+  }
+  press(editing()!, "Enter");
+  await settle();
+  expect(messages).toEqual([]);
+  expect(legend.textContent).toBe("F: net force (N); K: kinetic energy (J);");
+});
+
+it("keeps edits and reverts independent for neighboring text runs", async () => {
+  editMode(true);
+  const legend = document.getElementById("legend")!;
+  legend.innerHTML = "<b>F</b>: net force (N); <b>K</b>: kinetic energy (J);";
+  const force = legend.childNodes[1];
+  const energy = legend.childNodes[3];
+  for (const [node, text] of [
+    [force, ": total force (N);"],
+    [energy, ": motion energy (J);"],
+    [force, ": net force (N);"],
+  ] as const) {
+    aimCaretAt(node);
+    click(legend);
+    editing()!.textContent = text;
+    press(editing()!, "Enter");
+  }
+  await settle();
+  expect(messages).toEqual([
+    {
+      type: "simulation-text-edit",
+      token: expect.any(String),
+      before: ": net force (N);",
+      after: ": total force (N);",
+    },
+    {
+      type: "simulation-text-edit",
+      token: expect.any(String),
+      before: ": kinetic energy (J);",
+      after: ": motion energy (J);",
+    },
+    { type: "simulation-text-revert", token: expect.any(String) },
+  ]);
+  expect(messages[0].token).not.toBe(messages[1].token);
+  expect(messages[2].token).toBe(messages[0].token);
+});
+
+it("keeps the toolbar reachable when leaving a formula and crossing onto Remove", async () => {
+  editMode(true);
+  const formula = formulas()[0];
+  hover(formula);
+  const remove = barButton("Remove");
+  formula.dispatchEvent(
+    new MouseEvent("mouseleave", { relatedTarget: document.body }),
+  );
+  hover(document.body); // cross the small gap before reaching the toolbar
+  hover(remove);
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  expect(remove.isConnected).toBe(true);
+  click(remove);
+  await settle();
+  expect(formulas()).toHaveLength(1);
+  expect(messages).toEqual([
+    { type: "simulation-formula-delete", token: "formula:0", index: 0 },
+  ]);
+});
+
+it("does not open another editor while positioning the caret in the active box", async () => {
+  editMode(true);
+  const title = document.querySelector("h1")!;
+  aimCaretAt(title.firstChild!);
+  click(title);
+  const host = editing()!;
+  aimCaretAt(host.firstChild!);
+  click(host);
+  expect(editing()).toBe(host);
+  expect(document.querySelectorAll(".sim-edit-active")).toHaveLength(1);
+  press(host, "Enter");
+  await settle();
+  expect(messages).toEqual([]);
 });

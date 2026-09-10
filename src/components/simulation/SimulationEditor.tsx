@@ -26,9 +26,13 @@ function displayTurn(turn: Turn) {
 export function SimulationEditor(props: EditorProps) {
   const editor = useSimulationEditor(props);
   return (
-    <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto lg:grid-cols-[minmax(0,1fr)_360px]">
+    <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto lg:grid-cols-[minmax(0,1fr)_360px] lg:grid-rows-[minmax(0,1fr)] lg:overflow-hidden">
       <VersionPreview editor={editor} {...props} />
-      <ChatPanel editor={editor} revising={props.revising} />
+      <ChatPanel
+        editor={editor}
+        revising={props.revising}
+        version={props.version}
+      />
     </div>
   );
 }
@@ -67,9 +71,11 @@ function AssistantNotice({ editor }: { editor: EditorController }) {
 function ChatPanel({
   editor,
   revising,
+  version,
 }: {
   editor: EditorController;
   revising: boolean;
+  version: number;
 }) {
   const {
     selected,
@@ -87,7 +93,7 @@ function ChatPanel({
   } = editor;
   const chatReady = assistant.enabled && !!assistant.model;
   return (
-    <div className="flex min-h-0 flex-col gap-3 rounded border p-3">
+    <div className="flex min-h-0 flex-col gap-3 overflow-y-auto rounded border p-3">
       <p className="text-sm font-semibold">
         Edit v{selected} · {current?.name}
       </p>
@@ -102,6 +108,8 @@ function ChatPanel({
                 ? "Review the plan and create a version"
                 : "Describe changes → refine → preview"}
       </p>
+      <VersionDetails editor={editor} version={version} />
+      <StagedEdits editor={editor} />
       <AssistantNotice editor={editor} />
       {error && (
         <p role="alert" className="text-sm text-destructive">
@@ -178,7 +186,7 @@ function StagedEdits({ editor }: { editor: EditorController }) {
   const { patches, busy, unstage, describePatch } = editor;
   if (!patches.length) return null;
   return (
-    <section className="space-y-2 rounded border p-2">
+    <section className="max-h-40 shrink-0 space-y-2 overflow-y-auto rounded border p-2">
       <p className="text-sm font-medium">
         {patches.length} unsaved edit{patches.length > 1 ? "s" : ""}
       </p>
@@ -213,7 +221,6 @@ function VersionPreview({
     versions,
     current,
     busy,
-    rename,
     editing,
     patches,
     previewNonce,
@@ -223,10 +230,9 @@ function VersionPreview({
     cancelEditing,
     save,
     selectVersion,
-    update,
   } = editor;
   return (
-    <div className="flex min-h-[360px] flex-col gap-2">
+    <div className="flex min-h-0 flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
         <label htmlFor="simulation-version" className="text-sm font-medium">
           Preview / edit version
@@ -306,7 +312,7 @@ function VersionPreview({
           </>
         )}
       </div>
-      <div className="min-h-[320px] flex-1">
+      <div className="h-[70dvh] min-h-[320px] lg:h-auto lg:min-h-0 lg:flex-1">
         <SimulationViewer
           key={`${selected}-${version}-${previewNonce}`}
           simulationId={id}
@@ -318,7 +324,29 @@ function VersionPreview({
           onPreviewEdit={applyPreviewEdit}
         />
       </div>
-      <StagedEdits editor={editor} />
+    </div>
+  );
+}
+function VersionDetails({
+  editor,
+  version,
+}: {
+  editor: EditorController;
+  version: number;
+}) {
+  const {
+    rename,
+    current,
+    busy,
+    versions,
+    selected,
+    update,
+    act,
+    selectVersion,
+  } = editor;
+  return (
+    <details className="shrink-0 space-y-2 text-sm">
+      <summary className="cursor-pointer">Version name and history</summary>
       <div className="flex gap-2">
         <input
           aria-label="Version name"
@@ -356,7 +384,7 @@ function VersionPreview({
           </li>
         ))}
       </ol>
-    </div>
+    </details>
   );
 }
 function PlanChoices({ editor }: { editor: EditorController }) {

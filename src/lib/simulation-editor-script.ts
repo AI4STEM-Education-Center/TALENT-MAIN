@@ -36,10 +36,11 @@ export const SIMULATION_EDITOR_STYLE = `
 .sim-edit-latex{font:500 13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap}
 .sim-edit-active:empty{display:inline-block;min-width:8em;min-height:1.2em}
 .sim-edit-hint{position:fixed;left:8px;bottom:8px;z-index:2147483647;font:500 12px/1.4 system-ui,-apple-system,sans-serif;background:#1e293b;color:#fff;padding:4px 8px;border-radius:4px;pointer-events:none;opacity:.85}
-.sim-edit-bar{position:absolute;z-index:2147483646;display:flex;gap:2px;transform:translateY(-100%)}
+.sim-edit-bar{position:fixed;z-index:2147483646;display:flex;gap:2px;padding-bottom:6px}
 .sim-edit-bar button{font:600 12px/1 system-ui,-apple-system,sans-serif;background:#1e293b;color:#fff;border:0;border-radius:4px;padding:4px 7px;cursor:pointer}
 .sim-edit-bar button:hover{background:#2563eb}
 .sim-edit-bar button.sim-edit-del:hover{background:#dc2626}
+.sim-edit-bar button:disabled{opacity:.5;cursor:default}
 .sim-edit-bad{outline:2px solid #dc2626!important;background:#fef2f2!important}
 `;
 
@@ -54,14 +55,18 @@ var active=null;
 var hint=null;
 var bar=null;
 var barFor=null;
+var barTimer=null;
 var seq=0;
 var pending={};
+var textEdits=new WeakMap();
 function post(payload){try{parent.postMessage(payload,'*')}catch(e){}}
 function formulaOf(node){
   var el=node&&node.nodeType===1?node:node&&node.parentElement;
   return el?el.closest('[data-sim-latex]'):null;
 }
 function textNodeAt(event){
+  var target=event.target;
+  if(!target||!target.closest||target.closest(SKIP+',.sim-edit-active'))return null;
   var node=null;
   if(document.caretPositionFromPoint){
     var pos=document.caretPositionFromPoint(event.clientX,event.clientY);
@@ -70,9 +75,8 @@ function textNodeAt(event){
     var range=document.caretRangeFromPoint(event.clientX,event.clientY);
     node=range?range.startContainer:null;
   }
-  if(!node||node.nodeType!==3||!node.data.trim()){
+  if(!node||!target.contains(node)||node.nodeType!==3||!node.data.trim()){
     node=null;
-    var target=event.target;
     if(target&&target.nodeType===1){
       for(var i=0;i<target.childNodes.length;i++){
         var child=target.childNodes[i];
@@ -94,30 +98,41 @@ function highlight(el){
   marked=el;
   if(marked)marked.classList.add('sim-edit-target');
 }
-function hideBar(){if(bar){bar.remove();bar=null;barFor=null}}
+function keepBar(){clearTimeout(barTimer);barTimer=null}
+function hideBar(){keepBar();if(bar){bar.remove();bar=null;barFor=null}}
+function leaveBar(){if(!barTimer)barTimer=setTimeout(function(){hideBar();highlight(null)},200)}
 function showBar(formula){
+  keepBar();
   if(barFor===formula)return;
   hideBar();
   barFor=formula;
   bar=document.createElement('div');
   bar.className='sim-edit-bar';
+  bar.setAttribute('role','toolbar');
+  bar.setAttribute('aria-label','Formula actions');
+  // Prevent pointer focus from closing an editor before the click arrives;
+  // use click for the action so touch and keyboard activation work as well.
+  bar.addEventListener('mousedown',function(e){e.preventDefault()});
   var add=document.createElement('button');
   add.type='button';
   add.textContent='+ formula';
   add.title='Add a formula after this one';
-  add.addEventListener('mousedown',function(e){e.preventDefault();e.stopPropagation();addAfter(formula)});
+  add.disabled=document.querySelectorAll('[data-sim-latex]').length>=8;
+  add.addEventListener('click',function(e){e.stopPropagation();finishActive();addAfter(formula)});
   var del=document.createElement('button');
   del.type='button';
   del.className='sim-edit-del';
   del.textContent='Remove';
   del.title='Remove this formula';
-  del.addEventListener('mousedown',function(e){e.preventDefault();e.stopPropagation();removeFormula(formula)});
+  del.disabled=document.querySelectorAll('[data-sim-latex]').length<2;
+  del.addEventListener('click',function(e){e.stopPropagation();finishActive();removeFormula(formula)});
   bar.appendChild(add);
   bar.appendChild(del);
   document.body.appendChild(bar);
   var box=formula.getBoundingClientRect();
-  bar.style.left=(box.left+window.scrollX)+'px';
-  bar.style.top=(box.top+window.scrollY-4)+'px';
+  var zoom=parseFloat(getComputedStyle(document.documentElement).zoom)||1;
+  bar.style.left=Math.max(0,Math.min(box.left/zoom,window.innerWidth/zoom-bar.offsetWidth))+'px';
+  bar.style.top=(box.top/zoom>=bar.offsetHeight?box.top/zoom-bar.offsetHeight:box.bottom/zoom)+'px';
 }
 function indexOf(formula){
   var raw=formula.getAttribute('data-sim-index');
@@ -129,6 +144,12 @@ function tokenOf(formula){
   var index=indexOf(formula);
   return index===null?null:'formula:'+index;
 }
+function removeCard(formula){
+  var card=formula.parentElement?formula.parentElement.closest('div,li,figure,article,section,td,p,dd'):null;
+  // Match the saved patch: remove the card only if it holds this formula alone.
+  if(card&&card.querySelectorAll('[data-sim-latex]').length===1)card.remove();
+  else formula.remove();
+}
 function removeFormula(formula){
   if(document.querySelectorAll('[data-sim-latex]').length<2)return;
   hideBar();
@@ -138,7 +159,7 @@ function removeFormula(formula){
   var made=formula.getAttribute('data-sim-new');
   if(made)post({type:'simulation-formula-drop',token:token});
   else post({type:'simulation-formula-delete',token:token,index:indexOf(formula)});
-  formula.remove();
+  removeCard(formula);
 }
 function addAfter(formula){
   if(document.querySelectorAll('[data-sim-latex]').length>=8)return;
@@ -174,11 +195,12 @@ function openText(node){
   var lead=raw.match(/^\\s*/)[0];
   var tail=raw.slice(lead.length).match(/\\s*$/)[0];
   var shown=raw.slice(lead.length,raw.length-tail.length);
-  var owner=node.parentElement;
-  var original=owner.getAttribute('data-sim-original');
-  if(original===null){original=shown;owner.setAttribute('data-sim-original',original)}
-  if(!owner.getAttribute('data-sim-token')){seq+=1;owner.setAttribute('data-sim-token','text:'+seq)}
-  var token=owner.getAttribute('data-sim-token');
+  // A legend can contain several text runs in the SAME element. Keep identity
+  // on the text node, and restore that node on close so later edits reuse it.
+  var saved=textEdits.get(node);
+  if(!saved){seq+=1;saved={original:shown,token:'text:'+seq};textEdits.set(node,saved)}
+  var original=saved.original;
+  var token=saved.token;
   var host=document.createElement('span');
   host.className='sim-edit-active';
   host.setAttribute('contenteditable','plaintext-only');
@@ -193,7 +215,10 @@ function openText(node){
     active=null;
     var after=(keep&&host.textContent?host.textContent.trim():shown);
     if(!after||after.length>MAX)after=shown;
-    host.parentNode.replaceChild(document.createTextNode(lead+after+tail),host);
+    node.data=lead+after+tail;
+    host.parentNode.replaceChild(node,host);
+    document.dispatchEvent(new Event('sim-layout-change'));
+    if(after===shown)return;
     if(after!==original)post({type:'simulation-text-edit',token:token,before:original,after:after});
     else post({type:'simulation-text-revert',token:token});
   }
@@ -230,7 +255,7 @@ function openLatex(formula,source){
       // Nothing usable typed: put back exactly what was on screen before.
       if(!latex&&formula.getAttribute('data-sim-new')){
         post({type:'simulation-formula-drop',token:token});
-        formula.remove();
+        removeCard(formula);
         return;
       }
       formula.innerHTML=rendered;
@@ -267,20 +292,25 @@ function select(el){
 }
 document.addEventListener('mousemove',function(e){
   if(!on)return;
+  if(bar&&e.target&&e.target.closest&&e.target.closest('.sim-edit-bar')){keepBar();return}
   var formula=formulaOf(e.target);
-  if(formula&&!formula.isContentEditable){highlight(formula);showBar(formula);return}
-  if(bar&&e.target&&e.target.closest&&e.target.closest('.sim-edit-bar'))return;
-  hideBar();
+  if(formula&&!formula.hasAttribute('contenteditable')){highlight(formula);showBar(formula);return}
+  if(bar){leaveBar();return}
   var node=textNodeAt(e);
   highlight(node?node.parentElement:null);
 },true);
-document.addEventListener('mouseleave',function(){if(on){highlight(null);hideBar()}},true);
+document.addEventListener('mouseleave',function(e){
+  // mouseleave is captured for every descendant, including the formula itself.
+  // Only leaving the document should dismiss the toolbar immediately.
+  if(on&&(e.target===document||e.target===document.documentElement)&&!e.relatedTarget){highlight(null);hideBar()}
+},true);
+document.addEventListener('scroll',hideBar,true);
 document.addEventListener('click',function(e){
   if(!on)return;
   if(e.target&&e.target.closest&&e.target.closest('.sim-edit-bar'))return;
   var formula=formulaOf(e.target);
   if(formula){
-    if(formula.isContentEditable)return;
+    if(formula.hasAttribute('contenteditable'))return;
     e.preventDefault();
     e.stopPropagation();
     openLatex(formula,formula.getAttribute('data-sim-latex')||'');
