@@ -54,6 +54,35 @@ type State = {
   previewNonce: number;
   assistant: AssistantStatus;
 };
+/** What the version-history endpoint returns. */
+type EditorPayload = {
+  versions: Version[];
+  chats: Chat[];
+  formulas?: SimulationFormula[];
+  assistant?: AssistantStatus;
+  error?: string;
+};
+/** What an action returns, on success or as a handled failure. */
+type ActionPayload = {
+  error?: string;
+  guardrailEventId?: string;
+  chatId?: string;
+  showVersion?: number;
+};
+/**
+ * The JSON body, or null when the response is not JSON at all. An editing turn
+ * can outlive the CDN's request timeout, and what reaches the browser then is
+ * the CDN's own HTML error page rather than anything this app wrote — parsing
+ * that as JSON only produces "Unexpected token '<'", which tells a teacher
+ * nothing about what happened or what to do next.
+ */
+async function readJson<T>(res: Response): Promise<T | null> {
+  try {
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
 /**
  * Accepts an updater as well as a patch, so a caller that appends to a list can
  * read the state it is appending to. Two preview edits committed before React
@@ -100,8 +129,13 @@ export function useSimulationEditor({
   const selected = state.selected;
   const refresh = useCallback(async () => {
     const res = await fetch(`/api/simulations/${id}/edit?version=${selected}`);
-    if (!res.ok) throw new Error("Could not load version history");
-    const data = await res.json();
+    const data = await readJson<EditorPayload>(res);
+    // An expired session answers here with a 401 and a sentence worth showing —
+    // it is the difference between "sign in again" and a dead editor.
+    if (!res.ok || !data)
+      throw new Error(
+        data?.error ?? `Could not load version history (HTTP ${res.status})`,
+      );
     update({
       versions: data.versions,
       chats: data.chats,
@@ -148,7 +182,18 @@ export function useSimulationEditor({
               : undefined,
         }),
       });
-      const data = await res.json();
+      const data = await readJson<ActionPayload>(res);
+      // No JSON body means the answer never came from this app — a CDN or
+      // gateway page stands in for it, and whether the edit landed is unknown.
+      // Reload the history rather than guess: a new version appearing in the
+      // list is the teacher's answer.
+      if (!data) {
+        await Promise.all([refresh(), onRefresh()]).catch(() => {});
+        update({
+          error: `The server did not return a usable answer (HTTP ${res.status}). The request may have taken too long — check the version list before trying again.`,
+        });
+        return;
+      }
       if (!res.ok) {
         update({
           error: data.error ?? "Request failed",
