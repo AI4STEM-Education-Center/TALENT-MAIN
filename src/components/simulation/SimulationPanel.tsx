@@ -125,8 +125,8 @@ export function SimulationPanel({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[85vh] max-w-7xl flex-col">
-        <DialogHeader>
+      <DialogContent className="flex h-dvh max-h-dvh max-w-7xl flex-col gap-2 overflow-y-auto p-3 sm:rounded-none lg:overflow-hidden">
+        <DialogHeader className="shrink-0 pr-8">
           <DialogTitle>{detail?.title ?? "Simulation"}</DialogTitle>
           {(detail?.topic || detail?.learningGoal) && (
             <DialogDescription>
@@ -238,34 +238,32 @@ export function SimulationPanel({
               </div>
             )}
 
-            {/* Two different things live below, and keeping them apart matters:
-                this RATING is a quality verdict that goes to the consolidated
-                Feedback panel and the CSV export, and changes nothing about
-                the artifact. The "report a problem" box under it queues a
-                revision job that rewrites the simulation. */}
             {canGiveFeedback && detail.status === "READY" && (
-              <div className="space-y-2 border-t pt-3">
-                <p className="text-sm font-medium">
-                  Rate this simulation — how useful is it for teaching this
-                  topic?
-                </p>
-                <MyFeedbackProvider simulationId={simulationId}>
-                  <FeedbackRatingForm
-                    subjectType="SIMULATION"
-                    subjectId={simulationId}
-                    subjectLabel={detail.title ?? detail.topic ?? "Simulation"}
-                    subjectDetail={detail.learningGoal ?? detail.topic}
-                    prompt="How useful is it?"
-                    commentPlaceholder='In a sentence or two — e.g. "Good visual for the phase relationship, but the damping slider moves too little to be worth showing."'
-                  />
-                </MyFeedbackProvider>
-              </div>
+              <details className="shrink-0 border-t pt-2">
+                <summary className="cursor-pointer text-sm font-medium">
+                  Rate this simulation
+                </summary>
+                <div className="max-h-40 overflow-y-auto py-2">
+                  <MyFeedbackProvider simulationId={simulationId}>
+                    <FeedbackRatingForm
+                      subjectType="SIMULATION"
+                      subjectId={simulationId}
+                      subjectLabel={
+                        detail.title ?? detail.topic ?? "Simulation"
+                      }
+                      subjectDetail={detail.learningGoal ?? detail.topic}
+                      prompt="How useful is it for teaching this topic?"
+                      commentPlaceholder="Share what helped or could be improved…"
+                    />
+                  </MyFeedbackProvider>
+                </div>
+              </details>
             )}
           </>
         )}
 
         {detail && canGiveFeedback && (
-          <div className="flex justify-end border-t pt-3">
+          <div className="flex shrink-0 justify-end">
             <Button
               variant="ghost"
               size="sm"

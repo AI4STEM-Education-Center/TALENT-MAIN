@@ -7,6 +7,7 @@ import { SIMULATION_CSP } from "@/lib/simulation";
 import { renderSimulationLatex } from "@/lib/simulation-math";
 import { injectTelemetryScript } from "@/lib/simulation-telemetry";
 import { buildSimulationEditorLayer } from "@/lib/simulation-editor-script";
+import { buildSimulationLayoutLayer } from "@/lib/simulation-layout";
 
 export const runtime = "nodejs";
 
@@ -110,6 +111,7 @@ export async function GET(
   // Staff editing the document also get the LaTeX source kept on each formula:
   // MathML has no route back to it, and that is what the equation editor edits.
   html = renderSimulationLatex(html, { annotate: editing });
+  html += buildSimulationLayoutLayer();
   if (editing) html += buildSimulationEditorLayer();
 
   // Students get the interaction-telemetry snippet injected at serve time (the
