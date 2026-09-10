@@ -29,6 +29,16 @@ import { rateLimit } from "@/lib/rate-limit";
 import { enqueueSimulation } from "@/lib/queue";
 
 export const runtime = "nodejs";
+/**
+ * How long one editing turn may spend waiting on the model. This is a single
+ * non-streaming POST, so it has to answer inside the CDN's request timeout
+ * (100s on Cloudflare) — past that the browser is served the CDN's own HTML
+ * error page instead of anything written here, and the editor can only report
+ * that it got a page where JSON should have been. Staying under the limit keeps
+ * the failure legible and lets the handler below release the conversation for a
+ * retry.
+ */
+const CHAT_TURN_TIMEOUT_MS = 90_000;
 const latexSchema = z.string().trim().min(1).max(500);
 const patchSchema = z.discriminatedUnion("kind", [
   z.object({
@@ -443,13 +453,17 @@ export async function POST(
       { error: "Conversation is busy or closed; start a new conversation" },
       { status: 409 },
     );
+  // Enforced by racing the turn, not only by handing the signal down: the
+  // signal is checked between tool rounds, so one slow round could still run
+  // past the deadline and lose the response to the CDN.
+  const deadline = AbortSignal.timeout(CHAT_TURN_TIMEOUT_MS);
   try {
     const [html, catalogue] = await Promise.all([
       getS3ObjectAsString(base.bucket, base.storageKey),
       listSimulationVersions(sim),
     ]);
     const history: AssistantTurn[] = JSON.parse(chat.transcript);
-    const result = await runAssistantTurn({
+    const turn = runAssistantTurn({
       settings,
       ctx: {
         audience: "simulation",
@@ -474,8 +488,16 @@ export async function POST(
         `Selected version v${base.number}. ${fenceUntrusted("simulation context", JSON.stringify({ name: base.name, topic: sim.topic, goal: sim.learningGoal, html: html.slice(0, 60000) }))}`,
       ],
       emit: () => {},
-      signal: AbortSignal.timeout(120_000),
+      signal: deadline,
     });
+    const result = await Promise.race([
+      turn,
+      new Promise<never>((_, reject) =>
+        deadline.addEventListener("abort", () =>
+          reject(new Error("Editing turn ran past its time budget")),
+        ),
+      ),
+    ]);
     const plan = simulationEditPlanSchema.parse(
       JSON.parse(result.text.replace(/^```(?:json)?\s*|\s*```$/g, "")),
     );
@@ -508,12 +530,20 @@ export async function POST(
       where: { id: chat.id, state: "THINKING" },
       data: { state: "DISCUSSING" },
     });
-    return NextResponse.json(
-      {
-        error:
-          "The assistant could not prepare a response. Check its model configuration or retry.",
-      },
-      { status: 502 },
-    );
+    return deadline.aborted
+      ? NextResponse.json(
+          {
+            error:
+              "The assistant took too long to answer. Ask for one change at a time, or retry.",
+          },
+          { status: 504 },
+        )
+      : NextResponse.json(
+          {
+            error:
+              "The assistant could not prepare a response. Check its model configuration or retry.",
+          },
+          { status: 502 },
+        );
   }
 }

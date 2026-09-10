@@ -346,3 +346,50 @@ it("throws the batch away and remounts the preview on Cancel", async () => {
   expect(host.querySelector("[data-preview]")).not.toBe(before);
   expect(button("Edit")).toBeTruthy();
 });
+
+// A gateway page or a login redirect answers with HTML, and res.json() on that
+// used to surface as "Unexpected token '<'" — a dead end for a teacher.
+it("explains a response that is not JSON instead of leaking a parse error", async () => {
+  await render();
+  fetchMock.mockImplementation(async (_url, options) =>
+    options
+      ? {
+          ok: false,
+          status: 504,
+          json: async () => {
+            throw new SyntaxError(`Unexpected token '<', "<!DOCTYPE "...`);
+          },
+        }
+      : {
+          ok: true,
+          json: async () => ({
+            versions,
+            chats,
+            formulas,
+            assistant: { enabled: true, model: "test-model" },
+          }),
+        },
+  );
+  await act(async () => button("Abort this edit").click());
+
+  const alert = host.querySelector('[role="alert"]')?.textContent ?? "";
+  expect(alert).toContain("HTTP 504");
+  expect(alert).toContain("check the version list");
+  expect(alert).not.toContain("Unexpected token");
+  // The outcome is unknown, so the history is reloaded rather than guessed at.
+  expect(
+    fetchMock.mock.calls.filter(([, options]) => !options).length,
+  ).toBeGreaterThan(1);
+});
+
+it("shows the server's own message when a version load is refused", async () => {
+  fetchMock.mockImplementation(async () => ({
+    ok: false,
+    status: 401,
+    json: async () => ({ error: "Your session has expired." }),
+  }));
+  await render();
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+    "Your session has expired.",
+  );
+});
