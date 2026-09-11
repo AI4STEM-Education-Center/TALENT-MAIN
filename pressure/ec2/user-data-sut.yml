@@ -48,19 +48,44 @@ bootcmd:
   # that a container is already running, strip the credentials it would need to
   # delete anything in S3. sanitize-sut.sh does this properly and verifiably;
   # this is the version that runs before anything else can.
-  - [ sh, -c, "sed -i 's|^AWS_ACCESS_KEY_ID=.*|AWS_ACCESS_KEY_ID=\"\"|; s|^AWS_SECRET_ACCESS_KEY=.*|AWS_SECRET_ACCESS_KEY=\"\"|; s|^AWS_SESSION_TOKEN=.*|AWS_SESSION_TOKEN=\"\"|' /home/ubuntu/app/.env || true" ]
+  # The application's home directory differs by base image (Debian's cloud user
+  # is `admin`, Ubuntu's is `ubuntu`), and a hardcoded path silently no-ops via
+  # `|| true` — leaving production's real S3 keys intact on the clone. Glob so
+  # this keeps working whichever image production is rebuilt on.
+  - [ sh, -c, "for env in /home/*/app/.env; do [ -f \"$env\" ] || continue; sed -i 's|^AWS_ACCESS_KEY_ID=.*|AWS_ACCESS_KEY_ID=\"\"|; s|^AWS_SECRET_ACCESS_KEY=.*|AWS_SECRET_ACCESS_KEY=\"\"|; s|^AWS_SESSION_TOKEN=.*|AWS_SESSION_TOKEN=\"\"|' \"$env\"; done || true" ]
   # A hard backstop in case cloud-final never completes, or nobody ever drives
   # the run. Paired with --instance-initiated-shutdown-behavior terminate at
   # launch, this guarantees the clone cannot outlive the day.
-  - [ sh, -c, "shutdown -h +300 'benchmark backstop' || true" ]
+  #
+  # NOT `shutdown -h +300`. A *scheduled* shutdown is a systemd-logind operation
+  # (login1.Manager.ScheduleShutdown). bootcmd runs in cloud-init's network
+  # stage, which on the Debian production image is BEFORE systemd-logind has
+  # started, so systemctl cannot schedule and degrades to an immediate poweroff
+  # — which, with shutdown-behavior=terminate, killed the clone ~20s into its
+  # first boot before the runner could ever reach it. `systemd-run --on-active`
+  # arms a transient timer through the service manager's private socket, which
+  # is available that early, so it is not logind-dependent.
+  - [ sh, -c, "systemd-run --on-active=300min --unit=pressure-backstop --description='benchmark backstop' systemctl poweroff || true" ]
 
 runcmd:
-  - [ sh, -c, "mkdir -p /opt/pressure /var/log/pressure && chown ubuntu:ubuntu /opt/pressure" ]
+  # Owned by whichever cloud user this image ships (Debian: admin, Ubuntu:
+  # ubuntu). Hardcoding `ubuntu` made this entry fail outright on the Debian
+  # production image, leaving /opt/pressure root-owned and every later
+  # unprivileged write from the runner failing for a non-obvious reason.
+  - [ sh, -c, "mkdir -p /opt/pressure /var/log/pressure && chown \"$(stat -c %U:%G /home/*/app 2>/dev/null | head -1)\" /opt/pressure 2>/dev/null || chown 1000:1000 /opt/pressure" ]
   # sqlite3 is what sanitize-sut.sh uses to neutralize the configuration held in
   # database rows (SMTP, backups, AI providers). Installed now so a missing
   # package is a clear failure at provision time rather than a mystery later.
-  - [ sh, -c, "DEBIAN_FRONTEND=noninteractive apt-get update -y >> /var/log/pressure/boot.log 2>&1 || true" ]
-  - [ sh, -c, "DEBIAN_FRONTEND=noninteractive apt-get install -y sqlite3 >> /var/log/pressure/boot.log 2>&1" ]
+  #
+  # The clone deliberately gets NO public IP, and the source VPC routes egress
+  # through an internet gateway rather than a NAT, so the clone has no route to
+  # the internet at all. An unbounded `apt-get update` therefore does not fail
+  # fast — it stalls cloud-final on DNS and connect timeouts, delaying (or
+  # preventing) the BOOTED marker the runner waits on. Skip entirely when the
+  # image already ships sqlite3, and bound both calls so an offline clone can
+  # still finish booting.
+  - [ sh, -c, "command -v sqlite3 >/dev/null 2>&1 || DEBIAN_FRONTEND=noninteractive timeout 120 apt-get update -y >> /var/log/pressure/boot.log 2>&1 || true" ]
+  - [ sh, -c, "command -v sqlite3 >/dev/null 2>&1 || DEBIAN_FRONTEND=noninteractive timeout 180 apt-get install -y sqlite3 >> /var/log/pressure/boot.log 2>&1" ]
   - [ sh, -c, "printf 'Docker is MASKED. Real production data is present and the app is NOT running.\\nRun pressure/run-ec2.sh to sanitize and start it.\\n' > /opt/pressure/AWAITING_SANITIZE" ]
   # Signals only that cloud-init finished — NOT that the application is up.
   # run-ec2.sh waits on this before it delivers the sanitize payload.

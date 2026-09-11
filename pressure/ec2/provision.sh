@@ -459,7 +459,7 @@ sanitize wrote its success marker:
 If you never run it, the clone sits with the app stopped until the deadman timer
 terminates it. Watch the sanitize log with:
 
-  ssh -A ubuntu@${LOADGEN_PUBLIC_IP} "ssh ubuntu@${SUT_PRIVATE_IP} 'sudo cat /var/log/pressure/sanitize.log'"
+  ssh -A ubuntu@${LOADGEN_PUBLIC_IP} "ssh admin@${SUT_PRIVATE_IP} 'sudo cat /var/log/pressure/sanitize.log'"
 
 WHEN YOU ARE DONE — this is not optional, these instances cost money:
 

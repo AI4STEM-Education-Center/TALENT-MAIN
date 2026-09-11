@@ -80,7 +80,34 @@ SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ServerAliv
 lg() { ssh "${SSH_OPTS[@]}" "ubuntu@${LOADGEN_IP}" "$@"; }
 # The clone has no public IP by design, so every command to it is proxied through
 # the load generator.
-sut() { lg "ssh -o StrictHostKeyChecking=accept-new ubuntu@${SUT_IP} \"$*\""; }
+sut() { lg "ssh -o StrictHostKeyChecking=accept-new ${SUT_SSH_USER}@${SUT_IP} \"$*\""; }
+
+# The clone's login user and application path come from the PRODUCTION image, not
+# from this repo: Debian cloud images ship `admin`, Ubuntu ships `ubuntu`. These
+# were hardcoded to `ubuntu`, so on the Debian production image every command
+# against the clone failed with a bare "Permission denied (publickey)" and every
+# `/home/ubuntu/app` path silently missed. Detect instead of guessing, and let an
+# operator override when production moves again.
+SUT_SSH_USER="${PRESSURE_SUT_SSH_USER:-}"
+SUT_APP_DIR="${PRESSURE_SUT_APP_DIR:-}"
+
+detect_sut_identity() {
+  local candidate
+  if [ -z "$SUT_SSH_USER" ]; then
+    for candidate in admin ubuntu debian ec2-user; do
+      if lg "ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ConnectTimeout=10 ${candidate}@${SUT_IP} true" >/dev/null 2>&1; then
+        SUT_SSH_USER="$candidate"
+        break
+      fi
+    done
+  fi
+  [ -n "$SUT_SSH_USER" ] || return 1
+  if [ -z "$SUT_APP_DIR" ]; then
+    SUT_APP_DIR="$(sut "ls -d /home/*/app 2>/dev/null | head -1" 2>/dev/null | tr -d '\r')"
+    [ -n "$SUT_APP_DIR" ] || SUT_APP_DIR="/home/${SUT_SSH_USER}/app"
+  fi
+  log "clone identity: user=${SUT_SSH_USER} app-dir=${SUT_APP_DIR}"
+}
 
 loadgen_diagnostics() {
   log "load-generator bootstrap diagnostics:"
@@ -104,11 +131,29 @@ instance_state() {
     --query 'Reservations[0].Instances[0].State.Name' --output text 2>/dev/null || true
 }
 
+# The clone has no public IP and may die before it ever accepts SSH, so the only
+# evidence available is what EC2 itself reports. Console output is included
+# because a clone that powers itself off during cloud-init leaves nothing else.
+sut_diagnostics() {
+  command -v aws >/dev/null 2>&1 || return 0
+  log "clone (SUT) diagnostics:"
+  aws ec2 describe-instances --region "$REGION" --instance-ids "$SUT_ID" \
+    --query 'Reservations[].Instances[].{id:InstanceId,state:State.Name,reason:StateReason.Message,transition:StateTransitionReason}' \
+    --output table 2>&1 | sed 's/^/    /' || true
+  log "  console output (last 40 lines, empty if the image does not log to serial):"
+  aws ec2 get-console-output --region "$REGION" --instance-id "$SUT_ID" \
+    --query Output --output text 2>/dev/null | tail -40 | sed 's/^/    /' || true
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. Wait for both instances, and REFUSE to proceed unless sanitize succeeded
 # ─────────────────────────────────────────────────────────────────────────────
+# 40 minutes, not 20: base-packages alone is now allowed up to two 900s attempts
+# (see ec2/bootstrap-loadgen.sh), and a readiness budget shorter than the
+# bootstrap's own worst case reports "never became ready" while the box is still
+# making progress — which hides the real cause behind a timeout.
 log "waiting for the load generator to finish cloud-init (package installation can take several minutes)..."
-for attempt in $(seq 1 120); do
+for attempt in $(seq 1 240); do
   if lg "test -f /opt/pressure/READY" 2>/dev/null; then break; fi
   if lg "test -f /opt/pressure/BOOT_FAILED" 2>/dev/null; then
     loadgen_diagnostics
@@ -129,7 +174,7 @@ for attempt in $(seq 1 120); do
 done
 if ! lg "test -f /opt/pressure/READY"; then
   loadgen_diagnostics
-  die "the load generator never became ready after 20 minutes"
+  die "the load generator never became ready after 40 minutes"
 fi
 
 # ── Deliver the sanitize payload and start the app ───────────────────────────
@@ -138,6 +183,27 @@ fi
 # sanitize machinery, because EC2 caps user-data at 16 KB and embedding it came
 # to ~47 KB. So it is shipped now, over SSH, through the load generator — the
 # clone has no public IP.
+# sshd on the clone is not up the instant the instance is, so detection has to be
+# as patient as the BOOTED wait below — and has to notice a clone that is dying
+# rather than merely slow, which is what silently ate an entire run before.
+log "waiting for the clone to accept SSH..."
+for attempt in $(seq 1 90); do
+  detect_sut_identity && break
+  SUT_EC2_STATE="$(instance_state "$SUT_ID")"
+  case "$SUT_EC2_STATE" in
+    stopping|stopped|shutting-down|terminated)
+      sut_diagnostics
+      die "the SUT entered EC2 state '${SUT_EC2_STATE}' before it accepted SSH"
+      ;;
+  esac
+  [ $((attempt % 3)) -eq 0 ] && log "clone is not accepting SSH yet ($((attempt * 10))s elapsed)..."
+  sleep 10
+done
+[ -n "$SUT_SSH_USER" ] || {
+  sut_diagnostics
+  die "could not log in to the clone as any known cloud user (tried admin, ubuntu, debian, ec2-user); set PRESSURE_SUT_SSH_USER"
+}
+
 log "waiting for the clone to finish cloud-init..."
 for attempt in $(seq 1 90); do
   if sut "test -f /opt/pressure/BOOTED" 2>/dev/null; then break; fi
@@ -156,12 +222,12 @@ else
   # local machine AND the key forwarded; piping tar over two hops needs neither.
   tar -C "$PRESSURE_DIR" -czf - ec2/sanitize-sut.sh ec2/bootstrap-sut.sh ec2/docker-compose.sut.yml instrument/probe.cjs \
     | lg "cat > /tmp/payload.tgz"
-  lg "scp -o StrictHostKeyChecking=accept-new /tmp/payload.tgz ubuntu@${SUT_IP}:/tmp/payload.tgz" >/dev/null
+  lg "scp -o StrictHostKeyChecking=accept-new /tmp/payload.tgz ${SUT_SSH_USER}@${SUT_IP}:/tmp/payload.tgz" >/dev/null
   sut "mkdir -p /tmp/payload && tar -C /tmp/payload -xzf /tmp/payload.tgz \
        && sudo install -m 0700 /tmp/payload/ec2/sanitize-sut.sh /opt/pressure/sanitize-sut.sh \
        && sudo install -m 0700 /tmp/payload/ec2/bootstrap-sut.sh /opt/pressure/bootstrap-sut.sh \
        && sudo install -m 0644 /tmp/payload/instrument/probe.cjs /opt/pressure/probe.cjs \
-       && install -m 0644 /tmp/payload/ec2/docker-compose.sut.yml /home/ubuntu/app/docker-compose.sut.yml \
+       && install -m 0644 /tmp/payload/ec2/docker-compose.sut.yml ${SUT_APP_DIR}/docker-compose.sut.yml \
        && rm -rf /tmp/payload /tmp/payload.tgz"
 
   log "sanitizing the clone and starting the application..."
@@ -172,6 +238,7 @@ else
   sut "PRESSURE_SOURCE_INSTANCE_ID='$(jq -r '.sourceInstance' "$STATE_FILE")' \
        PRESSURE_ACK_REAL_DATA='yes' \
        PRESSURE_DEADMAN_MINUTES='$(jq -r '.deadmanMinutes // 240' "$STATE_FILE")' \
+       APP_DIR='${SUT_APP_DIR}' \
        /opt/pressure/bootstrap-sut.sh"
   BOOTSTRAP_EXIT=$?
   set -e
@@ -263,8 +330,8 @@ else
   log "copying a consistent clone database backup to the load generator for session minting..."
   # The escaped quotes must survive both SSH hops so sqlite receives the dot
   # command as one argument rather than `.backup` and its path as two.
-  sut "sudo rm -f /tmp/mint.db && sudo sqlite3 /home/ubuntu/app/data/db/prod/prod.db \\\".backup /tmp/mint.db\\\" && sudo chown ubuntu:ubuntu /tmp/mint.db"
-  lg "scp -o StrictHostKeyChecking=accept-new ubuntu@${SUT_IP}:/tmp/mint.db /opt/pressure/mint.db" >/dev/null
+  sut "sudo rm -f /tmp/mint.db && sudo sqlite3 ${SUT_APP_DIR}/data/db/prod/prod.db \\\".backup /tmp/mint.db\\\" && sudo chown ${SUT_SSH_USER}:${SUT_SSH_USER} /tmp/mint.db"
+  lg "scp -o StrictHostKeyChecking=accept-new ${SUT_SSH_USER}@${SUT_IP}:/tmp/mint.db /opt/pressure/mint.db" >/dev/null
   sut "rm -f /tmp/mint.db"
   [ "$SUITE_RUN" = "yes" ] && lg "cp /opt/pressure/mint.db /opt/pressure/suite-baseline.db"
 
@@ -295,7 +362,7 @@ if sut "curl -fsS http://127.0.0.1:8099/healthz >/dev/null" 2>/dev/null; then
 else
   log "starting the AI stub on the clone..."
   lg "tar -C /opt/pressure/harness -czf - pressure/mock-ai pressure/tools \
-      | ssh -o StrictHostKeyChecking=accept-new ubuntu@${SUT_IP} 'mkdir -p /opt/pressure/ai && tar -C /opt/pressure/ai -xzf -'"
+      | ssh -o StrictHostKeyChecking=accept-new ${SUT_SSH_USER}@${SUT_IP} 'mkdir -p /opt/pressure/ai && tar -C /opt/pressure/ai -xzf -'"
   sut "command -v node >/dev/null 2>&1" \
     || log "WARNING: node is not on the clone; the AI stub cannot start and exam-result generation will fail (recorded as designed worker failures)"
   sut "cd /opt/pressure/ai && (nohup npx --yes tsx pressure/mock-ai/server.ts --port 8099 --host 0.0.0.0 > /tmp/mock-ai.log 2>&1 &) ; sleep 3; curl -fsS http://127.0.0.1:8099/healthz || true"
@@ -306,8 +373,8 @@ fi
 # scenarios measure a mutated cohort rather than an independent workload.
 if [ "$SUITE_RUN" = "yes" ] && lg "test -f /opt/pressure/SCENARIO_COMPLETED" 2>/dev/null; then
   log "restoring the clean post-sanitize database for an independent scenario..."
-  lg "scp -o StrictHostKeyChecking=accept-new /opt/pressure/suite-baseline.db ubuntu@${SUT_IP}:/tmp/suite-baseline.db" >/dev/null
-  sut "cd /home/ubuntu/app \
+  lg "scp -o StrictHostKeyChecking=accept-new /opt/pressure/suite-baseline.db ${SUT_SSH_USER}@${SUT_IP}:/tmp/suite-baseline.db" >/dev/null
+  sut "cd ${SUT_APP_DIR} \
        && sudo docker compose -f docker-compose.sut.yml down --timeout 30 \
        && sudo chown --reference=data/db/prod/prod.db /tmp/suite-baseline.db \
        && sudo chmod --reference=data/db/prod/prod.db /tmp/suite-baseline.db \
@@ -356,8 +423,8 @@ lg "cd /opt/pressure/harness && pressure/collect/metrics.sh --probe-once \
 # 4. Collect, scrub, download
 # ─────────────────────────────────────────────────────────────────────────────
 log "collecting logs from the clone..."
-sut "cd /home/ubuntu/app && sudo docker compose -f docker-compose.sut.yml logs --no-color > /tmp/containers.log 2>&1; sudo chown ubuntu:ubuntu /tmp/containers.log"
-lg "scp -o StrictHostKeyChecking=accept-new ubuntu@${SUT_IP}:/tmp/containers.log ${RUN_DIR_REMOTE}/containers.log" >/dev/null || true
+sut "cd ${SUT_APP_DIR} && sudo docker compose -f docker-compose.sut.yml logs --no-color > /tmp/containers.log 2>&1; sudo chown ${SUT_SSH_USER}:${SUT_SSH_USER} /tmp/containers.log"
+lg "scp -o StrictHostKeyChecking=accept-new ${SUT_SSH_USER}@${SUT_IP}:/tmp/containers.log ${RUN_DIR_REMOTE}/containers.log" >/dev/null || true
 sut "sudo cat /opt/pressure/sanitize-report.json" > /tmp/sanitize-report.json 2>/dev/null || true
 STUDENT_TARGET_JSON="null"
 [ -n "$STUDENT_COUNT" ] && STUDENT_TARGET_JSON="$STUDENT_COUNT"
