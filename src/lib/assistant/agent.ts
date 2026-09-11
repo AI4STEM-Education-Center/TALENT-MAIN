@@ -42,6 +42,13 @@ import {
 
 /** Cap on the model's reply length per round. Generous for a chat answer. */
 const MAX_REPLY_TOKENS = 1_500;
+/**
+ * A caller wanting more than a chat answer — structured output alongside prose —
+ * raises it per turn. Worth naming: on a reasoning model this budget also pays
+ * for the thinking, so a cap sized for conversation truncates a long structured
+ * reply into something that no longer parses.
+ */
+const MAX_REPLY_TOKENS_CEILING = 8_000;
 
 /** Longest single user message accepted, in characters. */
 export const MAX_MESSAGE_CHARS = 4_000;
@@ -75,6 +82,11 @@ export type AssistantTurnInput = {
   emit: (event: AssistantStreamEvent) => void | Promise<void>;
   /** Aborted when the client disconnects; stops the loop between rounds. */
   signal?: AbortSignal;
+  /**
+   * Reply budget per round, for a caller whose answer is longer than chat prose.
+   * Clamped to `MAX_REPLY_TOKENS_CEILING`; omitted, the chat default applies.
+   */
+  maxReplyTokens?: number;
 };
 
 export type AssistantTurnResult = {
@@ -295,6 +307,10 @@ export async function runAssistantTurn(
   input: AssistantTurnInput,
 ): Promise<AssistantTurnResult> {
   const { settings, ctx, emit, signal } = input;
+  const replyTokens = Math.min(
+    input.maxReplyTokens ?? MAX_REPLY_TOKENS,
+    MAX_REPLY_TOKENS_CEILING,
+  );
 
   const provider = await resolveProvider(AUDIENCE_USE_CASE[ctx.audience]);
   if (!provider) {
@@ -374,8 +390,8 @@ export async function runAssistantTurn(
           ...(offerTools
             ? { tools: definitions, tool_choice: "auto" as const }
             : {}),
-          max_completion_tokens: !isLocal ? MAX_REPLY_TOKENS : undefined,
-          max_tokens: isLocal ? MAX_REPLY_TOKENS : undefined,
+          max_completion_tokens: !isLocal ? replyTokens : undefined,
+          max_tokens: isLocal ? replyTokens : undefined,
           service_tier:
             !isLocal &&
             provider.serviceTier &&

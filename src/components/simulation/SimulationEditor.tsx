@@ -87,11 +87,14 @@ function ChatPanel({
     error,
     eventId,
     draft,
+    streaming,
+    activity,
     assistant,
     act,
     update,
   } = editor;
   const chatReady = assistant.enabled && !!assistant.model;
+  const canSend = !busy && !revising && chatReady && !!draft.trim();
   return (
     <div className="flex min-h-0 flex-col gap-3 overflow-y-auto rounded border p-3">
       <p className="text-sm font-semibold">
@@ -101,7 +104,7 @@ function ChatPanel({
         {revising
           ? "Building and validating your revision… A new branch will appear here when ready."
           : busy
-            ? "Reviewing your request…"
+            ? (activity ?? "Reviewing your request…")
             : plan?.questions.length
               ? "Clarify the direction"
               : plan
@@ -138,7 +141,13 @@ function ChatPanel({
             <p className="whitespace-pre-wrap">{displayTurn(turn)}</p>
           </div>
         ))}
-        {!revising && editor.versions.length > 1 && (
+        {streaming && (
+          <div className="rounded bg-muted p-2">
+            <strong>Editor</strong>
+            <p className="whitespace-pre-wrap">{streaming}</p>
+          </div>
+        )}
+        {!revising && !streaming && editor.versions.length > 1 && (
           <p>
             Choose a version to inspect the result. What else would you like to
             change?
@@ -161,14 +170,20 @@ function ChatPanel({
         value={draft}
         maxLength={4000}
         onChange={(e) => update({ draft: e.target.value })}
-        placeholder="Change the title, remove the timer, add a speed slider…"
+        onKeyDown={(e) => {
+          // Enter sends, Shift+Enter writes a new line. `isComposing` keeps the
+          // Enter that commits an IME candidate — Korean and Japanese input —
+          // from sending a half-typed word.
+          if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing)
+            return;
+          e.preventDefault();
+          if (canSend) act("chat", draft);
+        }}
+        placeholder="Change the title, remove the timer, add a speed slider… (Enter to send, Shift+Enter for a new line)"
         rows={3}
         disabled={busy || revising || !chatReady}
       />
-      <Button
-        disabled={busy || revising || !chatReady || !draft.trim()}
-        onClick={() => act("chat", draft)}
-      >
+      <Button disabled={!canSend} onClick={() => act("chat", draft)}>
         {busy && <Loader2 className="size-4 animate-spin" />}Send message
       </Button>
     </div>

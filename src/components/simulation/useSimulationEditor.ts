@@ -1,6 +1,10 @@
 "use client";
 import { useCallback, useEffect, useReducer, useRef } from "react";
-import type { SimulationEditPlan } from "@/lib/simulation-edit";
+import type {
+  SimulationEditPlan,
+  SimulationEditStreamEvent,
+} from "@/lib/simulation-edit";
+import { readNdjson } from "@/lib/assistant/ndjson";
 import {
   coalesceSimulationPatches,
   describeSimulationPatch,
@@ -52,8 +56,15 @@ type State = {
   editing: boolean;
   /** Bumped to remount the preview and discard on-screen edits. */
   previewNonce: number;
+  /** The reply being written right now, painted delta by delta. */
+  streaming: string;
+  /** The tool the assistant is running, while it runs one. */
+  activity: string | null;
   assistant: AssistantStatus;
 };
+type Update = (
+  patch: Partial<State> | ((state: State) => Partial<State>),
+) => void;
 /** What the version-history endpoint returns. */
 type EditorPayload = {
   versions: Version[];
@@ -82,6 +93,41 @@ async function readJson<T>(res: Response): Promise<T | null> {
   } catch {
     return null;
   }
+}
+/** What a finished editing turn leaves behind for the caller to act on. */
+type StreamOutcome = {
+  chatId?: string;
+  showVersion?: number | null;
+  error?: string;
+  guardrailEventId?: string | null;
+};
+/**
+ * Drain one editing turn.
+ *
+ * The assistant answers in two halves: prose, which is painted as each delta
+ * lands so the teacher reads it being written, and then the plan the editor
+ * turns into buttons. Only the terminal event is handed back — everything the
+ * teacher sees on the way has already been applied to the state.
+ */
+async function readEditStream(
+  body: ReadableStream<Uint8Array>,
+  update: Update,
+): Promise<StreamOutcome> {
+  const outcome: StreamOutcome = {};
+  for await (const event of readNdjson<SimulationEditStreamEvent>(body)) {
+    if (event.type === "delta")
+      update((current) => ({ streaming: current.streaming + event.text }));
+    else if (event.type === "tool")
+      update({ activity: event.status === "running" ? event.label : null });
+    else if (event.type === "plan") {
+      outcome.chatId = event.chatId;
+      outcome.showVersion = event.showVersion;
+    } else if (event.type === "error") {
+      outcome.error = event.message;
+      outcome.guardrailEventId = event.guardrailEventId;
+    }
+  }
+  return outcome;
 }
 /**
  * Accepts an updater as well as a patch, so a caller that appends to a list can
@@ -116,6 +162,8 @@ export function useSimulationEditor({
     patches: [],
     editing: false,
     previewNonce: 0,
+    streaming: "",
+    activity: null,
     assistant: { enabled: true, model: null },
   });
   const inFlight = useRef(false);
@@ -160,7 +208,13 @@ export function useSimulationEditor({
   async function act(action: string, message?: string) {
     if (inFlight.current) return;
     inFlight.current = true;
-    update({ busy: true, error: "", eventId: null });
+    update({
+      busy: true,
+      error: "",
+      eventId: null,
+      streaming: "",
+      activity: null,
+    });
     try {
       const res = await fetch(`/api/simulations/${id}/edit`, {
         method: "POST",
@@ -182,6 +236,25 @@ export function useSimulationEditor({
               : undefined,
         }),
       });
+      // The chat action answers as a stream — prose first, then the plan.
+      // Every other action is a single JSON object.
+      if (action === "chat" && res.ok && res.body) {
+        const outcome = await readEditStream(res.body, update);
+        if (outcome.chatId) update({ chatId: outcome.chatId });
+        if (outcome.showVersion)
+          update({ selected: outcome.showVersion, chatId: undefined });
+        // A failed turn keeps the draft, so a retry does not mean retyping.
+        if (outcome.error)
+          update({
+            error: outcome.error,
+            eventId: outcome.guardrailEventId ?? null,
+          });
+        else update({ draft: "", answers: {} });
+        // The conversation moved server-side either way — a saved plan, or a
+        // turn released back for another try — so re-read it rather than guess.
+        await Promise.all([refresh(), onRefresh()]);
+        return;
+      }
       const data = await readJson<ActionPayload>(res);
       // No JSON body means the answer never came from this app — a CDN or
       // gateway page stands in for it, and whether the edit landed is unknown.
@@ -219,7 +292,9 @@ export function useSimulationEditor({
       update({ error: e instanceof Error ? e.message : "Request failed" });
     } finally {
       inFlight.current = false;
-      update({ busy: false });
+      // The saved transcript has already been reloaded by here, so dropping the
+      // live copy swaps one rendering of the same words for the other.
+      update({ busy: false, streaming: "", activity: null });
     }
   }
   function stage(id: string, patch: SimulationPatch) {

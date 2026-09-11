@@ -60,6 +60,8 @@ import { guardText } from "@/lib/guardrail-runner";
 import { prisma } from "@/lib/prisma";
 import { resolveProvider } from "@/lib/ai-provider";
 import { getS3ObjectAsString, putS3Object } from "@/lib/storage";
+import { readNdjson } from "@/lib/assistant/ndjson";
+import type { SimulationEditStreamEvent } from "@/lib/simulation-edit";
 import { resetDb, createTeacher } from "./db";
 const plan = {
   message: "Ready to replace the label and remove the timer.",
@@ -77,17 +79,29 @@ function request(body: unknown) {
   }) as never;
 }
 const params = () => ({ params: Promise.resolve({ id }) });
-async function chat() {
-  const res = await POST(
-    request({
-      action: "chat",
-      version: 1,
-      message: "Rename Wave speed to Explore speed and remove the timer.",
-    }),
+/** Run one editing turn and collect everything it streamed. */
+async function turn(message = "Rename Wave speed to Explore speed.") {
+  const res = (await POST(
+    request({ action: "chat", version: 1, message }),
     params(),
-  );
+  )) as unknown as Response;
   expect(res.status).toBe(200);
-  return (await res.json()).chatId as string;
+  const events: SimulationEditStreamEvent[] = [];
+  for await (const event of readNdjson<SimulationEditStreamEvent>(res.body!))
+    events.push(event);
+  return events;
+}
+/** The prose the teacher watched being written, in order. */
+function prose(events: SimulationEditStreamEvent[]) {
+  return events
+    .filter((event) => event.type === "delta")
+    .map((event) => event.text)
+    .join("");
+}
+async function chat() {
+  const planned = (await turn()).find((event) => event.type === "plan");
+  if (!planned) throw new Error("The turn streamed no plan");
+  return planned.chatId;
 }
 beforeEach(async () => {
   await resetDb();
@@ -260,14 +274,10 @@ describe("simulation editing", () => {
       metrics: null,
       toolCallCount: 0,
     });
-    expect(
-      (
-        await POST(
-          request({ action: "chat", version: 1, message: "Change the title" }),
-          params(),
-        )
-      ).status,
-    ).toBe(502);
+    expect((await turn("Change the title")).at(-1)).toMatchObject({
+      type: "error",
+      message: expect.stringContaining("could not prepare a response"),
+    });
     expect((await prisma.simulationEditChat.findFirstOrThrow()).state).toBe(
       "DISCUSSING",
     );
@@ -279,11 +289,8 @@ describe("simulation editing", () => {
       metrics: null,
       toolCallCount: 0,
     });
-    const res = await POST(
-      request({ action: "chat", version: 1, message: "Show Original" }),
-      params(),
-    );
-    expect(await res.json()).toMatchObject({
+    expect((await turn("Show Original")).at(-1)).toMatchObject({
+      type: "plan",
       showVersion: 1,
       plan: { revisionPrompt: "", questions: [] },
     });
@@ -416,11 +423,75 @@ describe("simulation editing", () => {
       message: "Blocked",
       eventId: "guard-1",
     } as never);
+    // Reported inside the stream, because the guardrails are model calls too
+    // and the response is already open by the time they answer.
+    expect((await turn("Blocked input")).at(-1)).toMatchObject({
+      type: "error",
+      message: "Blocked",
+      guardrailEventId: "guard-1",
+    });
+    expect(runAssistantTurn).not.toHaveBeenCalled();
+    expect((await prisma.simulationEditChat.findFirstOrThrow()).state).toBe(
+      "DISCUSSING",
+    );
+  });
+
+  // The reason the endpoint streams at all: a turn on a reasoning model runs
+  // for minutes, and a POST silent that long is answered by the CDN instead.
+  it("streams the prose as it is written and keeps the JSON block off screen", async () => {
+    const tail = {
+      name: "Explore speed",
+      questions: [],
+      revisionPrompt: "Remove the timer and every handler bound to it.",
+    };
+    const full = `Removing the timer.\n\n\`\`\`json\n${JSON.stringify(tail)}\n\`\`\``;
+    vi.mocked(runAssistantTurn).mockImplementation(async (input) => {
+      // Delivered a character at a time, the way a provider splits a stream:
+      // the fence arrives across several deltas and must not leak through.
+      for (const character of full)
+        await input.emit({
+          type: "delta",
+          text: character,
+        });
+      return { text: full, metrics: null, toolCallCount: 0 };
+    });
+
+    const events = await turn("Remove the timer");
+    expect(prose(events)).toBe("Removing the timer.\n\n");
+    expect(prose(events)).not.toContain("revisionPrompt");
+    expect(events.at(-1)).toMatchObject({
+      type: "plan",
+      plan: { message: "Removing the timer.", ...tail },
+    });
+    // The prose leaves before the plan does — that is the whole feature.
+    expect(events.findIndex((event) => event.type === "delta")).toBeLessThan(
+      events.findIndex((event) => event.type === "plan"),
+    );
+    // A reply carrying the revision instructions needs more room than chat prose.
+    expect(
+      vi.mocked(runAssistantTurn).mock.calls[0][0].maxReplyTokens,
+    ).toBeGreaterThan(1500);
+  });
+
+  it("refuses a second turn while one is still running", async () => {
+    await prisma.simulationEditChat.create({
+      data: {
+        id: "busy",
+        simulationId: id,
+        userId: (await prisma.user.findFirstOrThrow()).id,
+        baseVersion: 1,
+        state: "THINKING",
+      },
+    });
     const res = await POST(
-      request({ action: "chat", version: 1, message: "Blocked input" }),
+      request({
+        action: "chat",
+        version: 1,
+        chatId: "busy",
+        message: "Another change",
+      }),
       params(),
     );
-    expect(res.status).toBe(422);
-    expect(runAssistantTurn).not.toHaveBeenCalled();
+    expect(res.status).toBe(409);
   });
 });
