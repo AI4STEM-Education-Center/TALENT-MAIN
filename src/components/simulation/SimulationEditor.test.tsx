@@ -158,6 +158,50 @@ it("offers None of the above and sends selected answers through chat", async () 
     message: "Which direction?: None of the above",
   });
 });
+/** Serve a plan that needs no further input, i.e. one ready to build. */
+function servePlanReadyToBuild() {
+  const ready = {
+    ...plan,
+    questions: [],
+    revisionPrompt: "Stop the motion until Start is clicked.",
+  };
+  fetchMock.mockImplementation(async (_url: string, options?: RequestInit) => ({
+    ok: true,
+    json: async () =>
+      options
+        ? { aborted: true }
+        : {
+            versions,
+            chats: [{ ...chats[0], plan: JSON.stringify(ready) }],
+            formulas,
+            assistant: { enabled: true, model: "test-model" },
+          },
+  }));
+  return ready;
+}
+it("says no decisions are needed and names the version a build would create", async () => {
+  const ready = servePlanReadyToBuild();
+  await render();
+  expect(host.textContent).toContain("No decisions needed");
+  // What the run will do has to be readable without opening the disclosure.
+  expect(host.textContent).toContain(
+    `Builds a new version, \u201C${ready.name}\u201D`,
+  );
+  expect(host.textContent).toContain(ready.revisionPrompt);
+  expect(() => button("Send answers")).toThrow();
+});
+it("applies a ready plan against the selected version", async () => {
+  const ready = servePlanReadyToBuild();
+  await render();
+  await act(async () => button(`Create \u201C${ready.name}\u201D`).click());
+  const call = fetchMock.mock.calls.find(
+    ([, options]) => options?.method === "POST",
+  );
+  expect(JSON.parse(call?.[1].body)).toMatchObject({
+    action: "apply",
+    version: 1,
+  });
+});
 it("aborts the current proposal and follows the new live version after generation", async () => {
   await render();
   await act(async () => button("Abort this edit").click());
@@ -173,7 +217,8 @@ it("aborts the current proposal and follows the new live version after generatio
     host.querySelector("[data-preview]")?.getAttribute("data-preview"),
   ).toBe("2");
   expect((host.querySelector("select") as HTMLSelectElement).value).toBe("2");
-  expect(host.textContent).toContain("What else would you like to change?");
+  // The prompt to keep going now lives in the status line, not the transcript.
+  expect(host.textContent).toContain("Pick a version above to inspect it");
 });
 
 /** Enter edit mode, which is what arms the preview. */
