@@ -26,7 +26,7 @@ function displayTurn(turn: Turn) {
 export function SimulationEditor(props: EditorProps) {
   const editor = useSimulationEditor(props);
   return (
-    <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto lg:grid-cols-[minmax(0,1fr)_360px] lg:grid-rows-[minmax(0,1fr)] lg:overflow-hidden">
+    <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto overflow-x-hidden lg:grid-cols-[minmax(0,1fr)_360px] lg:grid-rows-[minmax(0,1fr)] lg:overflow-hidden">
       <VersionPreview editor={editor} {...props} />
       <ChatPanel
         editor={editor}
@@ -96,8 +96,8 @@ function ChatPanel({
   const chatReady = assistant.enabled && !!assistant.model;
   const canSend = !busy && !revising && chatReady && !!draft.trim();
   return (
-    <div className="flex min-h-0 flex-col gap-3 overflow-y-auto rounded border p-3">
-      <p className="text-sm font-semibold">
+    <div className="flex min-h-0 flex-col gap-3 overflow-hidden rounded border p-3">
+      <p className="text-sm font-semibold break-words">
         Edit v{selected} · {current?.name}
       </p>
       <p role="status" className="text-xs text-muted-foreground">
@@ -109,7 +109,9 @@ function ChatPanel({
               ? "Clarify the direction"
               : plan
                 ? "Review the plan and create a version"
-                : "Describe changes → refine → preview"}
+                : editor.versions.length > 1
+                  ? "Pick a version above to inspect it, or describe another change"
+                  : "Describe changes → refine → preview"}
       </p>
       <VersionDetails editor={editor} version={version} />
       <StagedEdits editor={editor} />
@@ -123,7 +125,7 @@ function ChatPanel({
       <div
         role="log"
         aria-label="Simulation editing conversation"
-        className="min-h-24 flex-1 space-y-3 overflow-y-auto text-sm"
+        className="min-h-24 flex-1 space-y-3 overflow-y-auto overflow-x-hidden text-sm"
       >
         {!turns.length && (
           <p>
@@ -138,20 +140,16 @@ function ChatPanel({
             className={`rounded p-2 ${turn.role === "user" ? "bg-accent" : "bg-muted"}`}
           >
             <strong>{turn.role === "user" ? "You" : "Editor"}</strong>
-            <p className="whitespace-pre-wrap">{displayTurn(turn)}</p>
+            <p className="whitespace-pre-wrap break-words">
+              {displayTurn(turn)}
+            </p>
           </div>
         ))}
         {streaming && (
           <div className="rounded bg-muted p-2">
             <strong>Editor</strong>
-            <p className="whitespace-pre-wrap">{streaming}</p>
+            <p className="whitespace-pre-wrap break-words">{streaming}</p>
           </div>
-        )}
-        {!revising && !streaming && editor.versions.length > 1 && (
-          <p>
-            Choose a version to inspect the result. What else would you like to
-            change?
-          </p>
         )}
       </div>
       {!revising && plan && chat?.state === "DISCUSSING" && (
@@ -201,7 +199,7 @@ function StagedEdits({ editor }: { editor: EditorController }) {
   const { patches, busy, unstage, describePatch } = editor;
   if (!patches.length) return null;
   return (
-    <section className="max-h-40 shrink-0 space-y-2 overflow-y-auto rounded border p-2">
+    <section className="max-h-40 shrink-0 space-y-2 overflow-y-auto overflow-x-hidden rounded border p-2">
       <p className="text-sm font-medium">
         {patches.length} unsaved edit{patches.length > 1 ? "s" : ""}
       </p>
@@ -382,7 +380,7 @@ function VersionDetails({
       </div>
       <ol
         aria-label="Version branches"
-        className="flex max-h-24 flex-wrap gap-2 overflow-y-auto text-xs"
+        className="flex max-h-24 flex-wrap gap-2 overflow-y-auto overflow-x-hidden text-xs"
       >
         {versions.map((v) => (
           <li key={v.number}>
@@ -390,7 +388,7 @@ function VersionDetails({
               disabled={busy}
               onClick={() => selectVersion(v.number)}
               aria-current={v.number === selected ? "true" : undefined}
-              className={`rounded border p-2 ${v.number === selected ? "bg-accent font-semibold" : ""}`}
+              className={`max-w-full whitespace-normal break-words rounded border p-2 text-left ${v.number === selected ? "bg-accent font-semibold" : ""}`}
             >
               {v.parentNumber ? `v${v.parentNumber} → ` : ""}v{v.number}{" "}
               {v.name}
@@ -402,11 +400,29 @@ function VersionDetails({
     </details>
   );
 }
+/**
+ * The proposal a teacher is being asked to accept. The planner either needs
+ * decisions from them or it does not, and which of those it is has to be
+ * legible without opening anything — an empty questions array used to render as
+ * nothing at all, leaving two identical blue buttons and no way to tell whether
+ * a choice was being withheld. The revision prompt runs to thousands of
+ * characters, so it stays behind a disclosure; what the button will actually do
+ * does not.
+ */
 function PlanChoices({ editor }: { editor: EditorController }) {
   const { plan, selected, busy, answers, draft, act, update } = editor;
   if (!plan) return null;
+  const asking = plan.questions.length;
+  const ready = !asking && !!plan.revisionPrompt;
   return (
-    <div className="max-h-64 space-y-3 overflow-y-auto">
+    <section className="max-h-[45%] shrink-0 space-y-3 overflow-y-auto overflow-x-hidden rounded border p-2">
+      <p className="text-sm font-medium">
+        {asking
+          ? `${asking} decision${asking > 1 ? "s" : ""} needed before this can run`
+          : ready
+            ? "No decisions needed — ready to build"
+            : "Nothing to build yet — keep describing the change"}
+      </p>
       {plan.questions.map((q) => (
         <fieldset key={q.question} className="space-y-1">
           <legend className="text-sm font-medium">{q.question}</legend>
@@ -415,7 +431,7 @@ function PlanChoices({ editor }: { editor: EditorController }) {
               key={option}
               size="sm"
               variant={answers[q.question] === option ? "default" : "outline"}
-              className="mr-1 h-auto whitespace-normal text-left"
+              className="mr-1 h-auto max-w-full whitespace-normal break-words text-left"
               disabled={busy}
               onClick={() =>
                 update({ answers: { ...answers, [q.question]: option } })
@@ -426,7 +442,7 @@ function PlanChoices({ editor }: { editor: EditorController }) {
           ))}
         </fieldset>
       ))}
-      {plan.questions.length > 0 && (
+      {asking > 0 && (
         <Button
           disabled={busy || plan.questions.some((q) => !answers[q.question])}
           onClick={() =>
@@ -441,16 +457,27 @@ function PlanChoices({ editor }: { editor: EditorController }) {
           Send answers
         </Button>
       )}
-      {!plan.questions.length && plan.revisionPrompt && (
+      {ready && (
         <>
+          <p className="text-sm">
+            Builds a new version, <strong>“{plan.name}”</strong>, branching from
+            v{selected}. v{selected} itself is not changed. This takes a few
+            minutes; the new version joins the list when it is ready.
+          </p>
           <details>
             <summary className="cursor-pointer text-sm">
-              Revision instructions · {plan.name}
+              See exactly what will change
             </summary>
-            <p className="whitespace-pre-wrap text-xs">{plan.revisionPrompt}</p>
+            <p className="whitespace-pre-wrap break-words text-xs">
+              {plan.revisionPrompt}
+            </p>
           </details>
-          <Button disabled={busy} onClick={() => act("apply")}>
-            Create “{plan.name}” from v{selected}
+          <Button
+            className="h-auto w-full whitespace-normal break-words py-2"
+            disabled={busy}
+            onClick={() => act("apply")}
+          >
+            Create “{plan.name}”
           </Button>
         </>
       )}
@@ -462,6 +489,6 @@ function PlanChoices({ editor }: { editor: EditorController }) {
       >
         Abort this edit
       </Button>
-    </div>
+    </section>
   );
 }
