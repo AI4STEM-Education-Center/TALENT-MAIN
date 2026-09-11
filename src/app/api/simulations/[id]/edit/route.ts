@@ -6,10 +6,18 @@ import {
   snapshotSimulationVersions,
 } from "@/lib/simulation-versions";
 import { canManage, getContentActor } from "@/lib/quiz-access";
-import { getAssistantSettings } from "@/lib/assistant/config";
+import {
+  getAssistantSettings,
+  type AssistantSettings,
+} from "@/lib/assistant/config";
 import { runAssistantTurn } from "@/lib/assistant/agent";
 import type { AssistantTurn } from "@/lib/assistant/types";
-import { simulationEditPlanSchema } from "@/lib/simulation-edit";
+import {
+  createSimulationReplyStream,
+  parseSimulationEditPlan,
+  simulationEditPlanSchema,
+  type SimulationEditStreamEvent,
+} from "@/lib/simulation-edit";
 import {
   applySimulationPatches,
   listSimulationFormulas,
@@ -30,15 +38,22 @@ import { enqueueSimulation } from "@/lib/queue";
 
 export const runtime = "nodejs";
 /**
- * How long one editing turn may spend waiting on the model. This is a single
- * non-streaming POST, so it has to answer inside the CDN's request timeout
- * (100s on Cloudflare) — past that the browser is served the CDN's own HTML
- * error page instead of anything written here, and the editor can only report
- * that it got a page where JSON should have been. Staying under the limit keeps
- * the failure legible and lets the handler below release the conversation for a
- * retry.
+ * How long one editing turn may spend before it is abandoned.
+ *
+ * The turn streams, so this is no longer a race against the CDN: bytes leave
+ * within milliseconds of the request arriving and keep flowing, and no hop in
+ * between ever sees a silent connection. What is left to bound is a model that
+ * never finishes — without a deadline it would hold the conversation in
+ * THINKING and lock the teacher out of their own chat.
  */
-const CHAT_TURN_TIMEOUT_MS = 90_000;
+const CHAT_TURN_TIMEOUT_MS = 300_000;
+/**
+ * Reply budget for an editing turn. Larger than a chat answer because this one
+ * carries the revision instructions as well as the prose: the schema allows a
+ * 12,000-character `revisionPrompt`, and a reply cut off mid-JSON parses as
+ * nothing at all.
+ */
+const PLAN_REPLY_TOKENS = 6_000;
 const latexSchema = z.string().trim().min(1).max(500);
 const patchSchema = z.discriminatedUnion("kind", [
   z.object({
@@ -426,16 +441,6 @@ export async function POST(
     );
   if (!body.message)
     return NextResponse.json({ error: "Message required" }, { status: 400 });
-  const guard = await guardText(
-    body.message,
-    { surface: "simulation_feedback", id, userId: actor.userId },
-    { requestPath: true },
-  );
-  if (guard.blocked)
-    return NextResponse.json(
-      { error: guard.message, guardrailEventId: guard.eventId },
-      { status: 422 },
-    );
   if (!chat)
     chat = await prisma.simulationEditChat.create({
       data: {
@@ -444,6 +449,9 @@ export async function POST(
         baseVersion: base.number,
       },
     });
+  // Claimed before the stream opens, so a second tab asking at the same moment
+  // gets a status it can act on rather than a half-written answer. Everything
+  // from here on is reported inside the stream instead.
   const claimed = await prisma.simulationEditChat.updateMany({
     where: { id: chat.id, state: "DISCUSSING", updatedAt: chat.updatedAt },
     data: { state: "THINKING" },
@@ -453,97 +461,198 @@ export async function POST(
       { error: "Conversation is busy or closed; start a new conversation" },
       { status: 409 },
     );
-  // Enforced by racing the turn, not only by handing the signal down: the
-  // signal is checked between tool rounds, so one slow round could still run
-  // past the deadline and lose the response to the CDN.
+  return streamEditingTurn({
+    actor,
+    base,
+    chat,
+    id,
+    message: body.message,
+    requestSignal: req.signal,
+    settings,
+    sim,
+  });
+}
+
+/**
+ * One editing turn, streamed to the teacher as NDJSON.
+ *
+ * The reply leaves the server while it is being written: prose first, which is
+ * what the teacher reads, and then the JSON tail the editor turns into version
+ * names and answer buttons. Nothing is buffered, and that is the whole point —
+ * a turn on a reasoning model runs for minutes, and a POST that says nothing
+ * for that long is answered by the CDN instead of by this app, leaving the
+ * editor to report a gateway page where its JSON should have been.
+ *
+ * So everything slow belongs in here, behind headers that have already gone
+ * out: the guardrail checks (model calls in their own right), the artifact
+ * read, and the turn itself.
+ */
+function streamEditingTurn(input: {
+  actor: { userId: string };
+  base: { number: number; name: string; bucket: string; storageKey: string };
+  chat: { id: string; transcript: string };
+  id: string;
+  message: string;
+  /** Aborted when the teacher closes the editor mid-turn. */
+  requestSignal: AbortSignal;
+  settings: AssistantSettings;
+  sim: Parameters<typeof listSimulationVersions>[0] & {
+    topic: string | null;
+    learningGoal: string | null;
+  };
+}): Response {
+  const { actor, base, chat, id, message, settings, sim } = input;
+  const encoder = new TextEncoder();
   const deadline = AbortSignal.timeout(CHAT_TURN_TIMEOUT_MS);
-  try {
-    const [html, catalogue] = await Promise.all([
-      getS3ObjectAsString(base.bucket, base.storageKey),
-      listSimulationVersions(sim),
-    ]);
-    const history: AssistantTurn[] = JSON.parse(chat.transcript);
-    const turn = runAssistantTurn({
-      settings,
-      ctx: {
-        audience: "simulation",
-        userId: actor.userId,
-        teacherId: null,
-        studentId: null,
-      },
-      history,
-      message: body.message,
-      attachments: [],
-      notices: [
-        fenceUntrusted(
-          "version catalogue",
-          JSON.stringify(
-            catalogue.slice(-200).map(({ number, name, parentNumber }) => ({
-              number,
-              name,
-              parentNumber,
-            })),
-          ),
-        ),
-        `Selected version v${base.number}. ${fenceUntrusted("simulation context", JSON.stringify({ name: base.name, topic: sim.topic, goal: sim.learningGoal, html: html.slice(0, 60000) }))}`,
-      ],
-      emit: () => {},
-      signal: deadline,
-    });
-    const result = await Promise.race([
-      turn,
-      new Promise<never>((_, reject) =>
-        deadline.addEventListener("abort", () =>
-          reject(new Error("Editing turn ran past its time budget")),
-        ),
-      ),
-    ]);
-    const plan = simulationEditPlanSchema.parse(
-      JSON.parse(result.text.replace(/^```(?:json)?\s*|\s*```$/g, "")),
-    );
-    if (plan.showVersion) {
-      if (!catalogue.some((v) => v.number === plan.showVersion))
-        throw new Error("Assistant selected an unknown version");
-      plan.questions = [];
-      plan.revisionPrompt = "";
-    }
-    const saved = await prisma.simulationEditChat.updateMany({
-      where: { id: chat.id, state: "THINKING" },
-      data: {
-        state: "DISCUSSING",
-        plan: JSON.stringify(plan),
-        transcript: JSON.stringify([
-          ...history.slice(-settings.maxHistoryMessages),
-          { role: "user", content: body.message },
-          { role: "assistant", content: JSON.stringify(plan) },
-        ]),
-      },
-    });
-    return NextResponse.json(
-      saved.count
-        ? { chatId: chat.id, plan, showVersion: plan.showVersion }
-        : { aborted: true },
-    );
-  } catch (error) {
-    console.error("Simulation chat failed", error);
-    await prisma.simulationEditChat.updateMany({
-      where: { id: chat.id, state: "THINKING" },
-      data: { state: "DISCUSSING" },
-    });
-    return deadline.aborted
-      ? NextResponse.json(
-          {
-            error:
-              "The assistant took too long to answer. Ask for one change at a time, or retry.",
-          },
-          { status: 504 },
-        )
-      : NextResponse.json(
-          {
-            error:
-              "The assistant could not prepare a response. Check its model configuration or retry.",
-          },
-          { status: 502 },
-        );
-  }
+  const signal = AbortSignal.any([deadline, input.requestSignal]);
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      let closed = false;
+      const emit = (event: SimulationEditStreamEvent) => {
+        if (closed || input.requestSignal.aborted) return;
+        try {
+          controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+        } catch {
+          // The teacher closed the editor between the check and here. Writing
+          // to a cancelled stream throws, and an unhandled rejection in this
+          // detached task would take the server down with it.
+          closed = true;
+        }
+      };
+      // A turn that ends any way other than a saved plan has to hand the
+      // conversation back, or the teacher's next message is refused as busy.
+      const release = () =>
+        prisma.simulationEditChat.updateMany({
+          where: { id: chat.id, state: "THINKING" },
+          data: { state: "DISCUSSING" },
+        });
+
+      void (async () => {
+        try {
+          const guard = await guardText(
+            message,
+            { surface: "simulation_feedback", id, userId: actor.userId },
+            { requestPath: true },
+          );
+          if (guard.blocked) {
+            await release();
+            emit({
+              type: "error",
+              message: guard.message ?? "This message was blocked.",
+              guardrailEventId: guard.eventId,
+            });
+            return;
+          }
+          const [html, catalogue] = await Promise.all([
+            getS3ObjectAsString(base.bucket, base.storageKey),
+            listSimulationVersions(sim),
+          ]);
+          const history: AssistantTurn[] = JSON.parse(chat.transcript);
+          // Splits the model's two halves as they arrive: the prose goes out
+          // delta by delta, the JSON block is held back so it never flashes up
+          // in the conversation.
+          const reply = createSimulationReplyStream();
+          const result = await runAssistantTurn({
+            settings,
+            ctx: {
+              audience: "simulation",
+              userId: actor.userId,
+              teacherId: null,
+              studentId: null,
+            },
+            history,
+            message,
+            attachments: [],
+            notices: [
+              fenceUntrusted(
+                "version catalogue",
+                JSON.stringify(
+                  catalogue
+                    .slice(-200)
+                    .map(({ number, name, parentNumber }) => ({
+                      number,
+                      name,
+                      parentNumber,
+                    })),
+                ),
+              ),
+              `Selected version v${base.number}. ${fenceUntrusted("simulation context", JSON.stringify({ name: base.name, topic: sim.topic, goal: sim.learningGoal, html: html.slice(0, 60000) }))}`,
+            ],
+            emit: (event) => {
+              if (event.type === "delta") {
+                const text = reply.push(event.text);
+                if (text) emit({ type: "delta", text });
+              } else if (event.type === "tool") {
+                emit({
+                  type: "tool",
+                  label: event.label,
+                  status: event.status,
+                });
+              } else if (event.type === "error") {
+                emit({ type: "error", message: event.message });
+              }
+            },
+            signal,
+            maxReplyTokens: PLAN_REPLY_TOKENS,
+          });
+          const plan = parseSimulationEditPlan(result.text);
+          if (plan.showVersion) {
+            if (!catalogue.some((v) => v.number === plan.showVersion))
+              throw new Error("Assistant selected an unknown version");
+            plan.questions = [];
+            plan.revisionPrompt = "";
+          }
+          const saved = await prisma.simulationEditChat.updateMany({
+            where: { id: chat.id, state: "THINKING" },
+            data: {
+              state: "DISCUSSING",
+              plan: JSON.stringify(plan),
+              transcript: JSON.stringify([
+                ...history.slice(-settings.maxHistoryMessages),
+                { role: "user", content: message },
+                { role: "assistant", content: JSON.stringify(plan) },
+              ]),
+            },
+          });
+          // Aborted from another tab while this ran: the answer is stale, and
+          // overwriting the conversation would undo what the teacher just did.
+          emit(
+            saved.count
+              ? {
+                  type: "plan",
+                  chatId: chat.id,
+                  plan,
+                  showVersion: plan.showVersion,
+                }
+              : { type: "aborted" },
+          );
+        } catch (error) {
+          console.error("Simulation chat failed", error);
+          await release().catch(() => {});
+          emit({
+            type: "error",
+            message: deadline.aborted
+              ? "The assistant took too long to answer. Ask for one change at a time, or retry."
+              : "The assistant could not prepare a response. Check its model configuration or retry.",
+          });
+        } finally {
+          closed = true;
+          try {
+            controller.close();
+          } catch {
+            // Already closed by a client disconnect — nothing to do.
+          }
+        }
+      })();
+    },
+  });
+  return new Response(body, {
+    headers: {
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      "Cache-Control": "no-store",
+      // Caddy and Cloudflare both buffer a response by default; without this the
+      // deltas arrive in one lump at the end and the streaming is undone.
+      "X-Accel-Buffering": "no",
+    },
+  });
 }
