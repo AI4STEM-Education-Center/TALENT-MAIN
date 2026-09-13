@@ -30,10 +30,19 @@ export async function POST(req: NextRequest) {
     if (!parsed.ok) return parsed.response;
     const { currentPassword, newPassword } = parsed.data;
 
-    const user = await prisma.user.findUnique({ where: { id: session.user.id } });
-    if (!user) return NextResponse.json({ error: "Account not found." }, { status: 404 });
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+    });
+    if (!user)
+      return NextResponse.json(
+        { error: "Account not found." },
+        { status: 404 },
+      );
 
-    const currentValid = await bcrypt.compare(currentPassword, user.hashedPassword);
+    const currentValid = await bcrypt.compare(
+      currentPassword,
+      user.hashedPassword,
+    );
     if (!currentValid) {
       await logSystemEvent({
         category: "AUTH",
@@ -43,7 +52,10 @@ export async function POST(req: NextRequest) {
         userId: user.id,
         ip: clientIp(req),
       });
-      return NextResponse.json({ error: "Your current password is incorrect." }, { status: 403 });
+      return NextResponse.json(
+        { error: "Your current password is incorrect." },
+        { status: 403 },
+      );
     }
 
     const passwordError = validatePassword(newPassword);
@@ -53,7 +65,7 @@ export async function POST(req: NextRequest) {
     if (currentPassword === newPassword) {
       return NextResponse.json(
         { error: "Your new password must be different from your current one." },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -78,6 +90,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, notified: emailed });
   } catch (error) {
     logApiError("PROFILE_PASSWORD_POST", error);
-    return NextResponse.json({ error: "Internal server error." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error." },
+      { status: 500 },
+    );
   }
 }

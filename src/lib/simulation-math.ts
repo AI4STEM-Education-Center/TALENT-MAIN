@@ -5,7 +5,8 @@ export type SimulationLatexMarker = {
   display: "inline" | "block";
 };
 
-const LATEX_CLASS_RE = /<span\b(?=[^>]*\bclass\s*=\s*["'][^"']*\bsim-latex\b[^"']*["'])/gi;
+const LATEX_CLASS_RE =
+  /<span\b(?=[^>]*\bclass\s*=\s*["'][^"']*\bsim-latex\b[^"']*["'])/gi;
 
 function markerRegex(): RegExp {
   return /<span\b(?=[^>]*\bclass\s*=\s*["'][^"']*\bsim-latex\b[^"']*["'])([^>]*)>([\s\S]*?)<\/span>/gi;
@@ -21,7 +22,9 @@ function decodeCodePoint(raw: string, radix: number): string {
 function decodeHtmlEntities(value: string): string {
   return value
     .replace(/&#x([0-9a-f]+);/gi, (_, hex: string) => decodeCodePoint(hex, 16))
-    .replace(/&#([0-9]+);/g, (_, decimal: string) => decodeCodePoint(decimal, 10))
+    .replace(/&#([0-9]+);/g, (_, decimal: string) =>
+      decodeCodePoint(decimal, 10),
+    )
     .replace(/&quot;/gi, '"')
     .replace(/&#39;|&apos;/gi, "'")
     .replace(/&lt;/gi, "<")
@@ -38,16 +41,22 @@ function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
-function markerFromMatch(attributes: string, rawSource: string): SimulationLatexMarker | null {
+function markerFromMatch(
+  attributes: string,
+  rawSource: string,
+): SimulationLatexMarker | null {
   if (/<[^>]+>/.test(rawSource)) return null;
   const source = decodeHtmlEntities(rawSource.trim());
   if (!source || source.includes("$")) return null;
-  const rawDisplay = attributes.match(/\bdata-display\s*=\s*["']([^"']+)["']/i)?.[1] ?? "inline";
+  const rawDisplay =
+    attributes.match(/\bdata-display\s*=\s*["']([^"']+)["']/i)?.[1] ?? "inline";
   if (rawDisplay !== "inline" && rawDisplay !== "block") return null;
   return { source, display: rawDisplay };
 }
 
-export function extractSimulationLatexMarkers(html: string): SimulationLatexMarker[] {
+export function extractSimulationLatexMarkers(
+  html: string,
+): SimulationLatexMarker[] {
   const markers: SimulationLatexMarker[] = [];
   for (const match of html.matchAll(markerRegex())) {
     const marker = markerFromMatch(match[1], match[2]);
@@ -67,13 +76,19 @@ export function validateSimulationLatex(html: string): string[] {
   const markers = extractSimulationLatexMarkers(html);
 
   if (markerOpenings < 1) {
-    return ["document must display its formulas with at least one sim-latex marker"];
+    return [
+      "document must display its formulas with at least one sim-latex marker",
+    ];
   }
   if (markerOpenings !== markers.length) {
-    problems.push("every sim-latex marker must contain plain LaTeX and use data-display=\"inline\" or \"block\"");
+    problems.push(
+      'every sim-latex marker must contain plain LaTeX and use data-display="inline" or "block"',
+    );
   }
   if (markerOpenings > 8) {
-    problems.push(`document has too many displayed formulas (found ${markerOpenings}, maximum 8)`);
+    problems.push(
+      `document has too many displayed formulas (found ${markerOpenings}, maximum 8)`,
+    );
   }
 
   for (const marker of markers) {
@@ -93,18 +108,21 @@ export function validateSimulationLatex(html: string): string[] {
 
 /** Replace validated LaTeX markers with self-contained MathML at serve time. */
 export function renderSimulationLatex(html: string): string {
-  return html.replace(markerRegex(), (original, attributes: string, rawSource: string) => {
-    const marker = markerFromMatch(attributes, rawSource);
-    if (!marker) return original;
-    try {
-      return katex.renderToString(marker.source, {
-        displayMode: marker.display === "block",
-        output: "mathml",
-        throwOnError: true,
-        trust: false,
-      });
-    } catch {
-      return `<span class="sim-formula-error">${escapeHtml(marker.source)}</span>`;
-    }
-  });
+  return html.replace(
+    markerRegex(),
+    (original, attributes: string, rawSource: string) => {
+      const marker = markerFromMatch(attributes, rawSource);
+      if (!marker) return original;
+      try {
+        return katex.renderToString(marker.source, {
+          displayMode: marker.display === "block",
+          output: "mathml",
+          throwOnError: true,
+          trust: false,
+        });
+      } catch {
+        return `<span class="sim-formula-error">${escapeHtml(marker.source)}</span>`;
+      }
+    },
+  );
 }

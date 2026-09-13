@@ -52,7 +52,7 @@
   --radius-sm: calc(var(--radius) - 4px);
 
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-heading: var(--font-lexend), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--heading-font);
 }
 
 /*
@@ -74,77 +74,121 @@
 }
 
 @layer base {
-  /* Light theme — cool slate surfaces + a calm teal accent (low-glare, study-focused) */
+  /*
+    ─── Academic Clarity ─────────────────────────────────────────────────────
+
+    Data-ink discipline: separation is done by hairline rules and whitespace,
+    never by shadow. Near-black on near-white for body text, tight radii,
+    minimal motion, and charts drawn thin with direct labels.
+
+    Two groups of tokens live here:
+
+      · colour     — the shadcn set, plus the sidebar scale.
+      · structure  — radius, border weight, the one overlay shadow, card
+                     density, heading face/weight/tracking, motion durations
+                     and easing, and the chart mark weights. Components read
+                     these rather than hard-coding a look, so retuning the
+                     density or the motion is an edit here, not across thirty
+                     files.
+
+    Dark mode is selected, not an automatic flip: its steps were chosen against
+    the dark surface and validated there.
+  */
   :root {
-    --background: 210 40% 98%;
-    --foreground: 222 47% 11%;
+    --background: 0 0% 100%;
+    --foreground: 0 0% 7%;
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 0 0% 7%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
-    --primary: 174 80% 30%;
-    --primary-foreground: 166 80% 97%;
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222 47% 11%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
-    --accent: 168 52% 95%;
-    --accent-foreground: 175 70% 20%;
-    --destructive: 0 72% 51%;
+    --popover-foreground: 0 0% 7%;
+    --primary: 218 90% 34%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 40 6% 95%;
+    --secondary-foreground: 0 0% 12%;
+    --muted: 40 6% 95%;
+    --muted-foreground: 0 0% 34%;
+    --accent: 218 60% 94%;
+    --accent-foreground: 218 90% 26%;
+    --destructive: 0 74% 38%;
     --destructive-foreground: 0 0% 100%;
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 174 80% 30%;
-    --radius: 0.7rem;
-    --chart-1: 174 80% 30%;
-    --chart-2: 199 70% 45%;
-    --chart-3: 222 47% 30%;
-    --chart-4: 152 55% 42%;
-    --chart-5: 38 80% 50%;
-    --sidebar-background: 222 47% 11%;
-    --sidebar-foreground: 210 40% 98%;
-    --sidebar-primary: 174 70% 45%;
-    --sidebar-primary-foreground: 222 47% 11%;
-    --sidebar-accent: 215 28% 17%;
-    --sidebar-accent-foreground: 210 40% 98%;
-    --sidebar-border: 215 28% 20%;
-    --sidebar-ring: 174 70% 45%;
+    --border: 40 5% 78%;
+    --input: 40 5% 68%;
+    --ring: 218 90% 34%;
+    --chart-1: 214 68% 50%;
+    --chart-2: 18 82% 56%;
+    --chart-3: 162 74% 40%;
+    --chart-4: 40 100% 46%;
+    --chart-5: 339 68% 70%;
+    --sidebar-background: 0 0% 10%;
+    --sidebar-foreground: 0 0% 97%;
+    --sidebar-primary: 213 92% 72%;
+    --sidebar-primary-foreground: 0 0% 8%;
+    --sidebar-accent: 0 0% 18%;
+    --sidebar-accent-foreground: 0 0% 98%;
+    --sidebar-border: 0 0% 24%;
+    --sidebar-ring: 213 92% 72%;
+
+    --radius: 0.25rem;
+    /* The border is the primary separator here, so it is the one piece of
+       chrome that carries weight. */
+    --border-width: 1px;
+    /* The only shadow in the system. Things that float free of the document —
+       the chat panel, popovers, dialogs — need to read as detached; nothing
+       sitting in the flow does. */
+    --shadow-overlay: 0 6px 20px -6px hsl(0 0% 0% / 0.22);
+    --pad-card: 1.25rem;
+    /* Headings stay in the body face: a display face reads as decoration in a
+       UI whose whole argument is legibility. */
+    --heading-font: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+    --heading-weight: 700;
+    --heading-tracking: -0.008em;
+    /* The one hero figure per view — the score on a results page. */
+    --hero-size: 2.75rem;
+    --motion-fast: 80ms;
+    --motion-slow: 150ms;
+    --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+
+    /* Chart marks: thin lines, square bars capped short of their band. */
+    --viz-stroke: 1.5px;
+    --viz-bar-radius: 0px;
+    --viz-bar-max: 20px;
   }
 
-  /* Dark theme — deep slate surfaces, brighter teal accent for contrast */
   .dark {
-    --background: 222 40% 8%;
-    --foreground: 210 40% 98%;
-    --card: 222 38% 11%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222 38% 11%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 173 75% 42%;
-    --primary-foreground: 180 90% 8%;
-    --secondary: 215 28% 17%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 215 28% 17%;
-    --muted-foreground: 215 20% 65%;
-    --accent: 215 28% 19%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 63% 50%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 215 25% 20%;
-    --input: 215 25% 22%;
-    --ring: 173 75% 42%;
-    --chart-1: 173 75% 45%;
-    --chart-2: 199 75% 55%;
-    --chart-3: 210 40% 80%;
-    --chart-4: 152 55% 50%;
-    --chart-5: 38 85% 55%;
-    --sidebar-background: 222 47% 6%;
-    --sidebar-foreground: 210 40% 98%;
-    --sidebar-primary: 173 75% 45%;
-    --sidebar-primary-foreground: 222 47% 11%;
-    --sidebar-accent: 215 28% 15%;
-    --sidebar-accent-foreground: 210 40% 98%;
-    --sidebar-border: 215 25% 18%;
-    --sidebar-ring: 173 75% 45%;
+    --background: 0 0% 5%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 8%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 8%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 213 92% 68%;
+    --primary-foreground: 0 0% 6%;
+    --secondary: 0 0% 15%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 72%;
+    --accent: 0 0% 18%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 72% 60%;
+    --destructive-foreground: 0 0% 6%;
+    --border: 0 0% 22%;
+    --input: 0 0% 30%;
+    --ring: 213 92% 68%;
+    --chart-1: 214 76% 56%;
+    --chart-2: 16 72% 50%;
+    --chart-3: 162 72% 36%;
+    --chart-4: 39 100% 39%;
+    --chart-5: 339 60% 58%;
+    --sidebar-background: 0 0% 3%;
+    --sidebar-foreground: 0 0% 98%;
+    --sidebar-primary: 213 92% 72%;
+    --sidebar-primary-foreground: 0 0% 5%;
+    --sidebar-accent: 0 0% 13%;
+    --sidebar-accent-foreground: 0 0% 98%;
+    --sidebar-border: 0 0% 20%;
+    --sidebar-ring: 213 92% 72%;
+
+    --shadow-overlay: 0 6px 20px -6px hsl(0 0% 0% / 0.8);
   }
 }
 
@@ -159,8 +203,9 @@
   h2,
   h3,
   h4 {
-    font-family: var(--font-heading);
-    letter-spacing: -0.011em;
+    font-family: var(--heading-font);
+    font-weight: var(--heading-weight);
+    letter-spacing: var(--heading-tracking);
   }
   ::selection {
     background-color: hsl(var(--primary) / 0.2);
@@ -207,6 +252,34 @@
   /* Marks sit on the card, so dot rings and gaps are painted card-colored. */
   --viz-surface: hsl(var(--card));
   --viz-grid: hsl(var(--border));
+
+  /*
+    Slot 5 extends the same validated set for the student/teacher charts, which
+    are not bound to the four-node scheme above. Both modes were re-validated as
+    a five-slot palette against this theme's card surfaces: worst adjacent CVD
+    ΔE 9.1 light / 8.4 dark, worst adjacent normal-vision ΔE 19.6 light /
+    19.3 dark.
+  */
+  --viz-series-5: #e87ba4; /* magenta */
+
+  /*
+    Status — reserved, never themed, and never reused as "series 5". On the light
+    surface `warning` and `serious` sit below 3:1 by design; every use pairs them
+    with an icon and a word, so the colour never carries the meaning alone.
+  */
+  --viz-good: #0ca30c;
+  --viz-warning: #fab219;
+  --viz-serious: #ec835a;
+  --viz-critical: #d03b3b;
+
+  /* Sequential ramp (one hue, light→dark) for magnitude — mastery heat, density.
+     Ordinal use starts no lighter than step 250, which is the lightest step that
+     still clears 2:1 on a light surface. */
+  --viz-seq-100: #cde2fb;
+  --viz-seq-250: #86b6ef;
+  --viz-seq-400: #3987e5;
+  --viz-seq-550: #1c5cab;
+  --viz-seq-700: #0d366b;
 }
 
 .dark .viz-root {
@@ -214,5 +287,94 @@
   --viz-series-2: #d95926;
   --viz-series-3: #199e70;
   --viz-series-4: #c98500;
+  --viz-series-5: #d55181;
   --viz-total: #94a3b8;
+  /* Same four status steps — all clear 3:1 on the dark surfaces. */
+  --viz-seq-100: #0d366b;
+  --viz-seq-250: #1c5cab;
+  --viz-seq-400: #3987e5;
+  --viz-seq-550: #86b6ef;
+  --viz-seq-700: #cde2fb;
+}
+
+/*
+  The dial sweep. Both endpoints are inline custom properties on the arc, so one
+  keyframe serves every score. The global prefers-reduced-motion block collapses
+  the duration, which lands the arc on its final value without the sweep.
+*/
+@keyframes viz-dial-sweep {
+  from {
+    stroke-dashoffset: var(--dial-circumference);
+  }
+  to {
+    stroke-dashoffset: var(--dial-offset);
+  }
+}
+
+/* Bars grow from the baseline on first paint — the same story the mark tells. */
+@keyframes viz-bar-grow {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes viz-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/*
+  The floating assistant panel.
+
+  `contain` is the load-bearing part: a resize drag changes the panel's width and
+  height every frame, and without containment the browser treats that as a reason
+  to re-check layout for the dashboard behind it. Scoping it here is what keeps a
+  resize cheap on a page with a long table or a chart on it.
+
+  `data-dragging` is set directly on the element by use-panel-drag.ts and never
+  through React state — toggling a class through a render would re-render the
+  transcript at the exact moment the gesture starts, which is what used to make
+  the panel feel like it stuck before it moved.
+*/
+.assistant-panel {
+  contain: layout paint;
+}
+
+/* A drag that crosses the transcript must not select it, and hit-testing every
+   bubble on every frame is work with nothing to show for it. */
+.assistant-panel[data-dragging] {
+  user-select: none;
+}
+
+.assistant-panel[data-dragging] * {
+  pointer-events: none;
+}
+
+/*
+  The card surface. Border and radius rather than a shadow — in this theme a
+  raised card would be the one element claiming to float above a page that is
+  otherwise flat, which is the opposite of what the rules are doing.
+*/
+.surface-card {
+  background-color: hsl(var(--card));
+  color: hsl(var(--card-foreground));
+  border: var(--border-width) solid hsl(var(--border));
+  border-radius: var(--radius);
+}
+
+/*
+  The signed-out shell (landing, login, register, invite, password reset).
+  These pages used to hard-code a slate/blue gradient that matched nothing else,
+  so signing in changed the palette under you.
+*/
+.auth-shell {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
 }

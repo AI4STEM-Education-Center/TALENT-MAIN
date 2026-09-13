@@ -43,7 +43,11 @@ function contentChunk(content: string): Chunk {
 describe("streamChatCompletion", () => {
   it("accumulates text and uses provider usage for the token count", async () => {
     const create = vi.fn(async () =>
-      streamOf([contentChunk("Hello "), contentChunk("world"), { choices: [{ delta: {} }], usage: { completion_tokens: 7 } }])
+      streamOf([
+        contentChunk("Hello "),
+        contentChunk("world"),
+        { choices: [{ delta: {} }], usage: { completion_tokens: 7 } },
+      ]),
     );
     const client = { chat: { completions: { create } } } as unknown as OpenAI;
 
@@ -51,7 +55,7 @@ describe("streamChatCompletion", () => {
     const { text, metrics } = await streamChatCompletion(
       client,
       { model: "gpt-x", messages: [] },
-      { now: clock([100, 150, 400]) }
+      { now: clock([100, 150, 400]) },
     );
 
     expect(text).toBe("Hello world");
@@ -72,7 +76,7 @@ describe("streamChatCompletion", () => {
         contentChunk("a"),
         contentChunk("b"),
         { choices: [{ delta: {} }], usage: { completion_tokens: 222 } },
-      ])
+      ]),
     );
     const client = { chat: { completions: { create } } } as unknown as OpenAI;
 
@@ -81,7 +85,7 @@ describe("streamChatCompletion", () => {
     const { metrics } = await streamChatCompletion(
       client,
       { model: "openai/gpt-5.5", messages: [] },
-      { now: clock([0, 6805, 6837]) }
+      { now: clock([0, 6805, 6837]) },
     );
 
     expect(metrics.ttftMs).toBe(6805);
@@ -92,10 +96,16 @@ describe("streamChatCompletion", () => {
   });
 
   it("estimates token count from streamed deltas when the provider omits usage", async () => {
-    const create = vi.fn(async () => streamOf([contentChunk("a"), contentChunk("b"), contentChunk("c")]));
+    const create = vi.fn(async () =>
+      streamOf([contentChunk("a"), contentChunk("b"), contentChunk("c")]),
+    );
     const client = { chat: { completions: { create } } } as unknown as OpenAI;
 
-    const { metrics } = await streamChatCompletion(client, { model: "local", messages: [] }, { now: clock([0, 10, 60]) });
+    const { metrics } = await streamChatCompletion(
+      client,
+      { model: "local", messages: [] },
+      { now: clock([0, 10, 60]) },
+    );
 
     expect(metrics.completionTokens).toBe(3);
     expect(metrics.tokensEstimated).toBe(true);
@@ -103,7 +113,7 @@ describe("streamChatCompletion", () => {
 
   it("forwards accumulated text as each content delta arrives", async () => {
     const create = vi.fn(async () =>
-      streamOf([contentChunk("First"), contentChunk(" response")])
+      streamOf([contentChunk("First"), contentChunk(" response")]),
     );
     const client = { chat: { completions: { create } } } as unknown as OpenAI;
     const updates: Array<[string, string]> = [];
@@ -116,7 +126,7 @@ describe("streamChatCompletion", () => {
         onContent: (text, delta) => {
           updates.push([text, delta]);
         },
-      }
+      },
     );
 
     expect(updates).toEqual([
@@ -132,7 +142,11 @@ describe("streamChatCompletion", () => {
     await streamChatCompletion(
       client,
       { model: "m", messages: [] },
-      { includeUsage: true, requestOptions: { maxRetries: 0 }, now: clock([0, 1, 2]) }
+      {
+        includeUsage: true,
+        requestOptions: { maxRetries: 0 },
+        now: clock([0, 1, 2]),
+      },
     );
 
     const [params, reqOpts] = create.mock.calls[0] as unknown as [any, any];
@@ -145,16 +159,26 @@ describe("streamChatCompletion", () => {
     const create = vi.fn(async () => streamOf([contentChunk("x")]));
     const client = { chat: { completions: { create } } } as unknown as OpenAI;
 
-    await streamChatCompletion(client, { model: "m", messages: [] }, { now: clock([0, 1, 2]) });
+    await streamChatCompletion(
+      client,
+      { model: "m", messages: [] },
+      { now: clock([0, 1, 2]) },
+    );
 
     expect((create.mock.calls[0] as any[])[0].stream_options).toBeUndefined();
   });
 
   it("reports null TTFT and rate when no content arrives", async () => {
-    const create = vi.fn(async () => streamOf([{ choices: [{ delta: {} }], usage: { completion_tokens: 0 } }]));
+    const create = vi.fn(async () =>
+      streamOf([{ choices: [{ delta: {} }], usage: { completion_tokens: 0 } }]),
+    );
     const client = { chat: { completions: { create } } } as unknown as OpenAI;
 
-    const { text, metrics } = await streamChatCompletion(client, { model: "m", messages: [] }, { now: clock([0, 5]) });
+    const { text, metrics } = await streamChatCompletion(
+      client,
+      { model: "m", messages: [] },
+      { now: clock([0, 5]) },
+    );
 
     expect(text).toBe("");
     expect(metrics.ttftMs).toBeNull();
@@ -180,28 +204,95 @@ describe("streamChatCompletion — tool calls", () => {
     // Providers stream the name in one delta and the JSON arguments in pieces.
     const result = await streamChatCompletion(
       clientFor([
-        { choices: [{ delta: { tool_calls: [{ index: 0, id: "c1", function: { name: "search" } }] } }] },
-        { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{"a"' } }] } }] },
-        { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: ":1}" } }] } }] },
+        {
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  { index: 0, id: "c1", function: { name: "search" } },
+                ],
+              },
+            },
+          ],
+        },
+        {
+          choices: [
+            {
+              delta: {
+                tool_calls: [{ index: 0, function: { arguments: '{"a"' } }],
+              },
+            },
+          ],
+        },
+        {
+          choices: [
+            {
+              delta: {
+                tool_calls: [{ index: 0, function: { arguments: ":1}" } }],
+              },
+            },
+          ],
+        },
         { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
       ]),
-      { model: "gpt-x", messages: [] }
+      { model: "gpt-x", messages: [] },
     );
-    expect(result.toolCalls).toEqual([{ id: "c1", name: "search", arguments: '{"a":1}' }]);
+    expect(result.toolCalls).toEqual([
+      { id: "c1", name: "search", arguments: '{"a":1}' },
+    ]);
     expect(result.finishReason).toBe("tool_calls");
   });
 
   it("keeps parallel calls separate and orders them by index", async () => {
     const result = await streamChatCompletion(
       clientFor([
-        { choices: [{ delta: { tool_calls: [{ index: 1, id: "b", function: { name: "second" } }] } }] },
-        { choices: [{ delta: { tool_calls: [{ index: 0, id: "a", function: { name: "first" } }] } }] },
-        { choices: [{ delta: { tool_calls: [{ index: 1, function: { arguments: "{}" } }] } }] },
-        { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: "{}" } }] } }] },
+        {
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  { index: 1, id: "b", function: { name: "second" } },
+                ],
+              },
+            },
+          ],
+        },
+        {
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  { index: 0, id: "a", function: { name: "first" } },
+                ],
+              },
+            },
+          ],
+        },
+        {
+          choices: [
+            {
+              delta: {
+                tool_calls: [{ index: 1, function: { arguments: "{}" } }],
+              },
+            },
+          ],
+        },
+        {
+          choices: [
+            {
+              delta: {
+                tool_calls: [{ index: 0, function: { arguments: "{}" } }],
+              },
+            },
+          ],
+        },
       ]),
-      { model: "gpt-x", messages: [] }
+      { model: "gpt-x", messages: [] },
     );
-    expect(result.toolCalls.map((call) => call.name)).toEqual(["first", "second"]);
+    expect(result.toolCalls.map((call) => call.name)).toEqual([
+      "first",
+      "second",
+    ]);
   });
 
   it("drops a slot that never received a name", async () => {
@@ -209,10 +300,28 @@ describe("streamChatCompletion — tool calls", () => {
     // would then look up and fail on.
     const result = await streamChatCompletion(
       clientFor([
-        { choices: [{ delta: { tool_calls: [{ index: 0, id: "c1", function: { name: "search" } }] } }] },
-        { choices: [{ delta: { tool_calls: [{ index: 1, function: { arguments: "" } }] } }] },
+        {
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  { index: 0, id: "c1", function: { name: "search" } },
+                ],
+              },
+            },
+          ],
+        },
+        {
+          choices: [
+            {
+              delta: {
+                tool_calls: [{ index: 1, function: { arguments: "" } }],
+              },
+            },
+          ],
+        },
       ]),
-      { model: "gpt-x", messages: [] }
+      { model: "gpt-x", messages: [] },
     );
     expect(result.toolCalls).toHaveLength(1);
     expect(result.toolCalls[0].name).toBe("search");
@@ -222,9 +331,23 @@ describe("streamChatCompletion — tool calls", () => {
     const result = await streamChatCompletion(
       clientFor([
         contentChunk("Let me check. "),
-        { choices: [{ delta: { tool_calls: [{ index: 0, id: "c1", function: { name: "search", arguments: "{}" } }] } }] },
+        {
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: "c1",
+                    function: { name: "search", arguments: "{}" },
+                  },
+                ],
+              },
+            },
+          ],
+        },
       ]),
-      { model: "gpt-x", messages: [] }
+      { model: "gpt-x", messages: [] },
     );
     expect(result.text).toBe("Let me check. ");
     expect(result.toolCalls).toHaveLength(1);
@@ -233,24 +356,40 @@ describe("streamChatCompletion — tool calls", () => {
   it("tolerates a provider that omits the tool-call id", async () => {
     const result = await streamChatCompletion(
       clientFor([
-        { choices: [{ delta: { tool_calls: [{ index: 0, function: { name: "search", arguments: "{}" } }] } }] },
+        {
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  { index: 0, function: { name: "search", arguments: "{}" } },
+                ],
+              },
+            },
+          ],
+        },
       ]),
-      { model: "gpt-x", messages: [] }
+      { model: "gpt-x", messages: [] },
     );
-    expect(result.toolCalls[0]).toEqual({ id: "", name: "search", arguments: "{}" });
+    expect(result.toolCalls[0]).toEqual({
+      id: "",
+      name: "search",
+      arguments: "{}",
+    });
   });
 });
 
 describe("streamJsonCompletion", () => {
   it("parses streamed JSON and returns metrics", async () => {
-    const create = vi.fn(async () => streamOf([contentChunk('{"needed":'), contentChunk('true}')]));
+    const create = vi.fn(async () =>
+      streamOf([contentChunk('{"needed":'), contentChunk("true}")]),
+    );
     const client = { chat: { completions: { create } } } as unknown as OpenAI;
 
     const { value, metrics } = await streamJsonCompletion<{ needed: boolean }>(
       client,
       { model: "m", messages: [] },
       { name: "s", schema: {}, strict: true },
-      { now: clock([0, 2, 12]) }
+      { now: clock([0, 2, 12]) },
     );
 
     expect(value).toEqual({ needed: true });
@@ -268,7 +407,12 @@ describe("streamJsonCompletion", () => {
       .mockResolvedValueOnce(streamOf([contentChunk('{"ok":1}')]));
     const client = { chat: { completions: { create } } } as unknown as OpenAI;
 
-    const { value } = await streamJsonCompletion(client, { model: "m", messages: [] }, { name: "s" }, { now: clock([0, 1, 2]) });
+    const { value } = await streamJsonCompletion(
+      client,
+      { model: "m", messages: [] },
+      { name: "s" },
+      { now: clock([0, 1, 2]) },
+    );
 
     expect(value).toEqual({ ok: 1 });
     expect(create).toHaveBeenCalledTimes(2);
@@ -276,10 +420,17 @@ describe("streamJsonCompletion", () => {
   });
 
   it("tolerates JSON wrapped in prose via parseFirstJsonObject", async () => {
-    const create = vi.fn(async () => streamOf([contentChunk('Sure! {"a": 2} done')]));
+    const create = vi.fn(async () =>
+      streamOf([contentChunk('Sure! {"a": 2} done')]),
+    );
     const client = { chat: { completions: { create } } } as unknown as OpenAI;
 
-    const { value } = await streamJsonCompletion(client, { model: "m", messages: [] }, {}, { now: clock([0, 1, 2]) });
+    const { value } = await streamJsonCompletion(
+      client,
+      { model: "m", messages: [] },
+      {},
+      { now: clock([0, 1, 2]) },
+    );
     expect(value).toEqual({ a: 2 });
   });
 
@@ -288,7 +439,12 @@ describe("streamJsonCompletion", () => {
     const client = { chat: { completions: { create } } } as unknown as OpenAI;
 
     await expect(
-      streamJsonCompletion(client, { model: "m", messages: [] }, {}, { now: clock([0, 1]) })
+      streamJsonCompletion(
+        client,
+        { model: "m", messages: [] },
+        {},
+        { now: clock([0, 1]) },
+      ),
     ).rejects.toThrow(/empty response/);
   });
 });
@@ -334,7 +490,12 @@ describe("aggregateMetrics", () => {
   it("drops the summed window when one contentful call didn't stream", () => {
     const agg = aggregateMetrics([
       m({ ttftMs: 100, completionTokens: 10, totalMs: 300, generationMs: 200 }),
-      m({ ttftMs: 400, completionTokens: 90, totalMs: 410, generationMs: null }),
+      m({
+        ttftMs: 400,
+        completionTokens: 90,
+        totalMs: 410,
+        generationMs: null,
+      }),
     ])!;
     // Summing 200ms would understate a job that spent 710ms generating.
     expect(agg.generationMs).toBeNull();

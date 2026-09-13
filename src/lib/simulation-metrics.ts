@@ -1,8 +1,5 @@
 import type { ProviderType } from "./ai-provider";
-import {
-  aggregateMetrics,
-  type AiCallMetrics,
-} from "./ai-streaming";
+import { aggregateMetrics, type AiCallMetrics } from "./ai-streaming";
 import type { DisplayAiMetrics } from "./ai-metrics";
 
 export type StoredSimulationMetrics = {
@@ -38,7 +35,7 @@ export type MetricsProvider = {
  */
 export function buildSimulationMetrics(
   provider: MetricsProvider,
-  calls: AiCallMetrics[]
+  calls: AiCallMetrics[],
 ): StoredSimulationMetrics {
   const aggregate = aggregateMetrics(calls);
   if (!aggregate) {
@@ -70,7 +67,7 @@ export function buildSimulationMetrics(
 
 /** Convert stored field names into the shared display component's contract. */
 export function simulationMetricsView(
-  stored: StoredSimulationMetrics
+  stored: StoredSimulationMetrics,
 ): DisplayAiMetrics {
   return {
     model: stored.aiModel,

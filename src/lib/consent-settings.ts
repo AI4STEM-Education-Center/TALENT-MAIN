@@ -26,7 +26,9 @@ export const CONSENT_EXPORT_SETTINGS_DEFAULTS: ConsentExportSettingsValue = {
 
 /** Reads the singleton settings row, seeding it with defaults if it doesn't exist yet. */
 export async function getConsentExportSettings(): Promise<ConsentExportSettingsValue> {
-  const row = await prisma.consentExportSettings.findUnique({ where: { id: "singleton" } });
+  const row = await prisma.consentExportSettings.findUnique({
+    where: { id: "singleton" },
+  });
   if (!row) return { ...CONSENT_EXPORT_SETTINGS_DEFAULTS };
   return {
     maxEmailAttachmentBytes: row.maxEmailAttachmentBytes,
@@ -37,7 +39,10 @@ export async function getConsentExportSettings(): Promise<ConsentExportSettingsV
   };
 }
 
-const LIMITS: Record<keyof ConsentExportSettingsValue, { min: number; max: number }> = {
+const LIMITS: Record<
+  keyof ConsentExportSettingsValue,
+  { min: number; max: number }
+> = {
   maxEmailAttachmentBytes: { min: 100_000, max: 25_000_000 },
   bulkExportBatchSize: { min: 1, max: 500 },
   bulkExportInlineThreshold: { min: 0, max: 200 },
@@ -46,7 +51,10 @@ const LIMITS: Record<keyof ConsentExportSettingsValue, { min: number; max: numbe
 };
 
 /** Clamp an admin-submitted value into a sane range for its field. */
-export function clampConsentExportSetting(key: keyof ConsentExportSettingsValue, value: number): number {
+export function clampConsentExportSetting(
+  key: keyof ConsentExportSettingsValue,
+  value: number,
+): number {
   const { min, max } = LIMITS[key];
   if (!Number.isFinite(value)) return CONSENT_EXPORT_SETTINGS_DEFAULTS[key];
   return Math.min(max, Math.max(min, Math.round(value)));
@@ -54,11 +62,13 @@ export function clampConsentExportSetting(key: keyof ConsentExportSettingsValue,
 
 export async function updateConsentExportSettings(
   partial: Partial<ConsentExportSettingsValue>,
-  updatedById: string
+  updatedById: string,
 ): Promise<ConsentExportSettingsValue> {
   const current = await getConsentExportSettings();
   const next: ConsentExportSettingsValue = { ...current };
-  for (const key of Object.keys(LIMITS) as (keyof ConsentExportSettingsValue)[]) {
+  for (const key of Object.keys(
+    LIMITS,
+  ) as (keyof ConsentExportSettingsValue)[]) {
     if (partial[key] !== undefined) {
       next[key] = clampConsentExportSetting(key, partial[key]!);
     }

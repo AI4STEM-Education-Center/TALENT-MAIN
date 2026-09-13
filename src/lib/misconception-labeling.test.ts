@@ -37,7 +37,13 @@ describe("extractIncorrectAnswerEvidence", () => {
 
     const evidence = extractIncorrectAnswerEvidence(snapshot);
     expect(evidence).toEqual<IncorrectAnswerEvidence[]>([
-      { questionId: null, questionIndex: 1, questionText: "Capital of France?", studentAnswer: "Rome", correctAnswer: "Paris" },
+      {
+        questionId: null,
+        questionIndex: 1,
+        questionText: "Capital of France?",
+        studentAnswer: "Rome",
+        correctAnswer: "Paris",
+      },
     ]);
   });
 
@@ -57,7 +63,13 @@ describe("extractIncorrectAnswerEvidence", () => {
 
     const evidence = extractIncorrectAnswerEvidence(snapshot);
     expect(evidence).toEqual([
-      { questionId: null, questionIndex: 0, questionText: "Pick one", studentAnswer: "No answer selected", correctAnswer: "Unknown" },
+      {
+        questionId: null,
+        questionIndex: 0,
+        questionText: "Pick one",
+        studentAnswer: "No answer selected",
+        correctAnswer: "Unknown",
+      },
     ]);
   });
 
@@ -88,8 +100,18 @@ describe("extractIncorrectAnswerEvidence", () => {
           text: "Which diagram?",
           isCorrect: false,
           options: [
-            { text: "", isCorrect: true, selected: false, imageAlt: "Correct diagram" },
-            { text: "", isCorrect: false, selected: true, imageStorageKey: "key.png" },
+            {
+              text: "",
+              isCorrect: true,
+              selected: false,
+              imageAlt: "Correct diagram",
+            },
+            {
+              text: "",
+              isCorrect: false,
+              selected: true,
+              imageStorageKey: "key.png",
+            },
           ],
         },
       ],
@@ -125,8 +147,20 @@ describe("extractIncorrectAnswerEvidence", () => {
 
     const evidence = extractIncorrectAnswerEvidence(snapshot);
     expect(evidence).toEqual([
-      { questionId: null, questionIndex: 0, questionText: "Mass of an electron?", studentAnswer: "1.6 ×10⁻³¹ kg", correctAnswer: "9.1 ×10⁻³¹ kg" },
-      { questionId: null, questionIndex: 1, questionText: "Unanswered numeric", studentAnswer: "No answer", correctAnswer: "Unknown" },
+      {
+        questionId: null,
+        questionIndex: 0,
+        questionText: "Mass of an electron?",
+        studentAnswer: "1.6 ×10⁻³¹ kg",
+        correctAnswer: "9.1 ×10⁻³¹ kg",
+      },
+      {
+        questionId: null,
+        questionIndex: 1,
+        questionText: "Unanswered numeric",
+        studentAnswer: "No answer",
+        correctAnswer: "Unknown",
+      },
     ]);
   });
 });
@@ -134,18 +168,29 @@ describe("extractIncorrectAnswerEvidence", () => {
 // ─── buildMisconceptionLabelingPrompt ────────────────────────────────────────────
 
 const catalog: MisconceptionCatalogEntry[] = [
-  { misconceptionId: "MIS-001", statement: "Believes force is required to sustain motion." },
+  {
+    misconceptionId: "MIS-001",
+    statement: "Believes force is required to sustain motion.",
+  },
   { misconceptionId: "MIS-002", statement: "Confuses mass and weight." },
 ];
 
 const evidence: IncorrectAnswerEvidence[] = [
-  { questionId: "q-force", questionIndex: 0, questionText: "Why does a ball keep rolling?", studentAnswer: "A force keeps pushing it", correctAnswer: "Inertia" },
+  {
+    questionId: "q-force",
+    questionIndex: 0,
+    questionText: "Why does a ball keep rolling?",
+    studentAnswer: "A force keeps pushing it",
+    correctAnswer: "Inertia",
+  },
 ];
 
 describe("buildMisconceptionLabelingPrompt", () => {
   it("includes every catalog entry and every evidence line", () => {
     const prompt = buildMisconceptionLabelingPrompt(evidence, catalog);
-    expect(prompt).toContain("[MIS-001] Believes force is required to sustain motion.");
+    expect(prompt).toContain(
+      "[MIS-001] Believes force is required to sustain motion.",
+    );
     expect(prompt).toContain("[MIS-002] Confuses mass and weight.");
     expect(prompt).toContain("Why does a ball keep rolling?");
     expect(prompt).toContain("A force keeps pushing it");
@@ -165,12 +210,23 @@ describe("buildMisconceptionLabelingPrompt", () => {
 describe("buildMisconceptionSchema", () => {
   it("constrains misconception_ids to 1-3 of the given ids", () => {
     const schema = buildMisconceptionSchema(["MIS-001", "MIS-002"]) as {
-      properties: { misconception_ids: { minItems: number; maxItems: number; items: { enum: string[] } } };
+      properties: {
+        misconception_ids: {
+          minItems: number;
+          maxItems: number;
+          items: { enum: string[] };
+        };
+      };
       required: string[];
     };
     expect(schema.properties.misconception_ids.minItems).toBe(1);
-    expect(schema.properties.misconception_ids.maxItems).toBe(MAX_MISCONCEPTIONS);
-    expect(schema.properties.misconception_ids.items.enum).toEqual(["MIS-001", "MIS-002"]);
+    expect(schema.properties.misconception_ids.maxItems).toBe(
+      MAX_MISCONCEPTIONS,
+    );
+    expect(schema.properties.misconception_ids.items.enum).toEqual([
+      "MIS-001",
+      "MIS-002",
+    ]);
     expect(schema.required).toEqual(["misconception_ids"]);
   });
 });
@@ -179,29 +235,52 @@ describe("buildMisconceptionSchema", () => {
 
 describe("resolveLabeledMisconceptions", () => {
   it("resolves valid ids to their catalog statement, preserving model order", () => {
-    const resolved = resolveLabeledMisconceptions(["MIS-002", "MIS-001"], catalog);
+    const resolved = resolveLabeledMisconceptions(
+      ["MIS-002", "MIS-001"],
+      catalog,
+    );
     expect(resolved).toEqual([
       { misconceptionId: "MIS-002", statement: "Confuses mass and weight." },
-      { misconceptionId: "MIS-001", statement: "Believes force is required to sustain motion." },
+      {
+        misconceptionId: "MIS-001",
+        statement: "Believes force is required to sustain motion.",
+      },
     ]);
   });
 
   it("drops ids that aren't in the catalog (defense in depth against a schema fallback)", () => {
-    const resolved = resolveLabeledMisconceptions(["MIS-999", "MIS-001"], catalog);
-    expect(resolved).toEqual([{ misconceptionId: "MIS-001", statement: "Believes force is required to sustain motion." }]);
+    const resolved = resolveLabeledMisconceptions(
+      ["MIS-999", "MIS-001"],
+      catalog,
+    );
+    expect(resolved).toEqual([
+      {
+        misconceptionId: "MIS-001",
+        statement: "Believes force is required to sustain motion.",
+      },
+    ]);
   });
 
   it("drops duplicate ids", () => {
-    const resolved = resolveLabeledMisconceptions(["MIS-001", "MIS-001"], catalog);
+    const resolved = resolveLabeledMisconceptions(
+      ["MIS-001", "MIS-001"],
+      catalog,
+    );
     expect(resolved).toHaveLength(1);
   });
 
   it("caps at MAX_MISCONCEPTIONS even if the model returns more", () => {
-    const bigCatalog: MisconceptionCatalogEntry[] = Array.from({ length: 5 }, (_, i) => ({
-      misconceptionId: `MIS-00${i}`,
-      statement: `Statement ${i}`,
-    }));
-    const resolved = resolveLabeledMisconceptions(bigCatalog.map((m) => m.misconceptionId), bigCatalog);
+    const bigCatalog: MisconceptionCatalogEntry[] = Array.from(
+      { length: 5 },
+      (_, i) => ({
+        misconceptionId: `MIS-00${i}`,
+        statement: `Statement ${i}`,
+      }),
+    );
+    const resolved = resolveLabeledMisconceptions(
+      bigCatalog.map((m) => m.misconceptionId),
+      bigCatalog,
+    );
     expect(resolved).toHaveLength(MAX_MISCONCEPTIONS);
   });
 

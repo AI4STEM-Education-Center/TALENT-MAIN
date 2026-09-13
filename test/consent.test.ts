@@ -8,7 +8,10 @@ import {
   getUserConsentClaim,
   hasResearchConsent,
 } from "@/lib/consent";
-import { CONSENT_NOT_REQUIRED, isTeacherConsentBlocked } from "@/lib/consent-claim";
+import {
+  CONSENT_NOT_REQUIRED,
+  isTeacherConsentBlocked,
+} from "@/lib/consent-claim";
 import { prisma } from "@/lib/prisma";
 import { resetDb, createStudent } from "./db";
 
@@ -26,15 +29,19 @@ describe("parseDeviceType", () => {
     expect(parseDeviceType("")).toBe("unknown");
     expect(
       parseDeviceType(
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36"
-      )
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+      ),
     ).toBe("desktop");
     expect(
-      parseDeviceType("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15")
+      parseDeviceType(
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
+      ),
     ).toBe("mobile");
-    expect(parseDeviceType("Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15")).toBe(
-      "tablet"
-    );
+    expect(
+      parseDeviceType(
+        "Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
+      ),
+    ).toBe("tablet");
     expect(parseDeviceType("some-unrecognized-bot/1.0")).toBe("unknown");
   });
 });
@@ -47,7 +54,14 @@ describe("normalizeStrokeData", () => {
   });
 
   it("accepts and round-trips a plausible signature_pad point-group array", () => {
-    const data = [{ points: [{ x: 1, y: 2, time: 0 }, { x: 3, y: 4, time: 10 }] }];
+    const data = [
+      {
+        points: [
+          { x: 1, y: 2, time: 0 },
+          { x: 3, y: 4, time: 10 },
+        ],
+      },
+    ];
     const normalized = normalizeStrokeData(data);
     expect(normalized).not.toBeNull();
     expect(JSON.parse(normalized!)).toEqual(data);
@@ -58,7 +72,15 @@ describe("normalizeStrokeData", () => {
   });
 
   it("throws on an oversized payload rather than silently truncating", () => {
-    const huge = [{ points: Array.from({ length: 5000 }, (_, i) => ({ x: i, y: i, time: i })) }];
+    const huge = [
+      {
+        points: Array.from({ length: 5000 }, (_, i) => ({
+          x: i,
+          y: i,
+          time: i,
+        })),
+      },
+    ];
     expect(() => normalizeStrokeData(huge)).toThrow(/too large/i);
   });
 });
@@ -78,7 +100,13 @@ describe("isConsentRole / isConsentDecision", () => {
 
 async function publishVersion(role: "STUDENT" | "TEACHER", version = "v1") {
   return prisma.consentFormVersion.create({
-    data: { role, version, title: `${role} form`, bodyHtml: "<p>hello</p>", isActive: true },
+    data: {
+      role,
+      version,
+      title: `${role} form`,
+      bodyHtml: "<p>hello</p>",
+      isActive: true,
+    },
   });
 }
 
@@ -128,7 +156,10 @@ describe("getActiveConsentVersion / getUserConsentClaim", () => {
       },
     });
 
-    expect(await getUserConsentClaim(user.id, "STUDENT")).toEqual({ version: "v1", decision: "AGREE" });
+    expect(await getUserConsentClaim(user.id, "STUDENT")).toEqual({
+      version: "v1",
+      decision: "AGREE",
+    });
   });
 
   it("goes back to null after a new version is published, even with an old AGREE on file", async () => {
@@ -151,9 +182,18 @@ describe("getActiveConsentVersion / getUserConsentClaim", () => {
 
     // Publishing v2 deactivates v1 — the same transaction the admin publish route runs.
     await prisma.$transaction([
-      prisma.consentFormVersion.updateMany({ where: { role: "STUDENT", isActive: true }, data: { isActive: false } }),
+      prisma.consentFormVersion.updateMany({
+        where: { role: "STUDENT", isActive: true },
+        data: { isActive: false },
+      }),
       prisma.consentFormVersion.create({
-        data: { role: "STUDENT", version: "v2", title: "STUDENT form", bodyHtml: "<p>v2</p>", isActive: true },
+        data: {
+          role: "STUDENT",
+          version: "v2",
+          title: "STUDENT form",
+          bodyHtml: "<p>v2</p>",
+          isActive: true,
+        },
       }),
     ]);
 
@@ -223,10 +263,18 @@ describe("hasResearchConsent", () => {
       signerEmailSnapshot: user.email,
     };
     await prisma.consentRecord.create({
-      data: { ...base, decision: "AGREE", signedAt: new Date("2026-01-01T00:00:00Z") },
+      data: {
+        ...base,
+        decision: "AGREE",
+        signedAt: new Date("2026-01-01T00:00:00Z"),
+      },
     });
     await prisma.consentRecord.create({
-      data: { ...base, decision: "DECLINE", signedAt: new Date("2026-01-02T00:00:00Z") },
+      data: {
+        ...base,
+        decision: "DECLINE",
+        signedAt: new Date("2026-01-02T00:00:00Z"),
+      },
     });
 
     expect(await hasResearchConsent(user.id)).toBe(false);

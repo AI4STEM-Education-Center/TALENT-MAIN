@@ -11,7 +11,9 @@ import { resetDb } from "./db";
 
 const mockAuth = vi.mocked(auth);
 const asAdmin = () =>
-  mockAuth.mockResolvedValue({ user: { id: "admin-1", role: "ADMIN" } } as never);
+  mockAuth.mockResolvedValue({
+    user: { id: "admin-1", role: "ADMIN" },
+  } as never);
 const asTeacher = () =>
   mockAuth.mockResolvedValue({ user: { id: "t-1", role: "TEACHER" } } as never);
 
@@ -58,8 +60,12 @@ describe("/api/admin/ai-assignments", () => {
 
     const res = await PUT(
       putReq({
-        pdf_description: { providerId: provider.id, modelId: model.id, thinkingLevel: "high" },
-      })
+        pdf_description: {
+          providerId: provider.id,
+          modelId: model.id,
+          thinkingLevel: "high",
+        },
+      }),
     );
     expect(res.status).toBe(200);
     expect((await res.json()).results.pdf_description).toBe("saved");
@@ -68,34 +74,61 @@ describe("/api/admin/ai-assignments", () => {
       where: { useCase: "pdf_description" },
     });
     expect(saved?.thinkingLevel).toBe("high");
-    expect((await prisma.aiModel.findUnique({ where: { id: model.id } }))?.thinkingLevel).toBeNull();
-    expect((await resolveProvider("pdf_description"))?.thinkingLevel).toBe("high");
+    expect(
+      (await prisma.aiModel.findUnique({ where: { id: model.id } }))
+        ?.thinkingLevel,
+    ).toBeNull();
+    expect((await resolveProvider("pdf_description"))?.thinkingLevel).toBe(
+      "high",
+    );
   });
 
   it("lets one model run at a different level per use case", async () => {
     const { provider, model } = await seedModel();
     await PUT(
       putReq({
-        quiz_extraction: { providerId: provider.id, modelId: model.id, thinkingLevel: "low" },
-        student_assistant: { providerId: provider.id, modelId: model.id, thinkingLevel: "high" },
-      })
+        quiz_extraction: {
+          providerId: provider.id,
+          modelId: model.id,
+          thinkingLevel: "low",
+        },
+        student_assistant: {
+          providerId: provider.id,
+          modelId: model.id,
+          thinkingLevel: "high",
+        },
+      }),
     );
 
-    expect((await resolveProvider("quiz_extraction"))?.thinkingLevel).toBe("low");
-    expect((await resolveProvider("student_assistant"))?.thinkingLevel).toBe("high");
+    expect((await resolveProvider("quiz_extraction"))?.thinkingLevel).toBe(
+      "low",
+    );
+    expect((await resolveProvider("student_assistant"))?.thinkingLevel).toBe(
+      "high",
+    );
   });
 
   it("clears the level when an empty one is sent", async () => {
     const { provider, model } = await seedModel();
     await PUT(
       putReq({
-        recommendation: { providerId: provider.id, modelId: model.id, thinkingLevel: "high" },
-      })
+        recommendation: {
+          providerId: provider.id,
+          modelId: model.id,
+          thinkingLevel: "high",
+        },
+      }),
     );
     invalidateProviderCache();
 
     await PUT(
-      putReq({ recommendation: { providerId: provider.id, modelId: model.id, thinkingLevel: "" } })
+      putReq({
+        recommendation: {
+          providerId: provider.id,
+          modelId: model.id,
+          thinkingLevel: "",
+        },
+      }),
     );
     expect((await resolveProvider("recommendation"))?.thinkingLevel).toBeNull();
   });
@@ -109,36 +142,57 @@ describe("/api/admin/ai-assignments", () => {
           modelId: model.id,
           thinkingLevel: "ludicrous",
         },
-      })
+      }),
     );
 
-    expect((await res.json()).results.recommendation).toMatch(/thinking level must be one of/);
-    expect(await prisma.aiUseCaseAssignment.findUnique({ where: { useCase: "recommendation" } }))
-      .toBeNull();
+    expect((await res.json()).results.recommendation).toMatch(
+      /thinking level must be one of/,
+    );
+    expect(
+      await prisma.aiUseCaseAssignment.findUnique({
+        where: { useCase: "recommendation" },
+      }),
+    ).toBeNull();
   });
 
   it("carries a pre-move per-model level onto its assignments and clears it", async () => {
     const { provider, model } = await seedModel();
-    await prisma.aiModel.update({ where: { id: model.id }, data: { thinkingLevel: "medium" } });
+    await prisma.aiModel.update({
+      where: { id: model.id },
+      data: { thinkingLevel: "medium" },
+    });
     await prisma.aiUseCaseAssignment.create({
-      data: { useCase: "pdf_description", providerId: provider.id, modelId: model.id },
+      data: {
+        useCase: "pdf_description",
+        providerId: provider.id,
+        modelId: model.id,
+      },
     });
 
     const body = await (await GET()).json();
     expect(body.assignments.pdf_description.thinkingLevel).toBe("medium");
 
     expect(
-      (await prisma.aiUseCaseAssignment.findUnique({ where: { useCase: "pdf_description" } }))
-        ?.thinkingLevel
+      (
+        await prisma.aiUseCaseAssignment.findUnique({
+          where: { useCase: "pdf_description" },
+        })
+      )?.thinkingLevel,
     ).toBe("medium");
     // Cleared, so the carry-over runs once and never resurrects a level the
     // admin later unsets.
-    expect((await prisma.aiModel.findUnique({ where: { id: model.id } }))?.thinkingLevel).toBeNull();
+    expect(
+      (await prisma.aiModel.findUnique({ where: { id: model.id } }))
+        ?.thinkingLevel,
+    ).toBeNull();
   });
 
   it("leaves an explicit per-use-case level alone when carrying a legacy one over", async () => {
     const { provider, model } = await seedModel();
-    await prisma.aiModel.update({ where: { id: model.id }, data: { thinkingLevel: "medium" } });
+    await prisma.aiModel.update({
+      where: { id: model.id },
+      data: { thinkingLevel: "medium" },
+    });
     await prisma.aiUseCaseAssignment.create({
       data: {
         useCase: "pdf_description",
@@ -150,6 +204,9 @@ describe("/api/admin/ai-assignments", () => {
 
     const body = await (await GET()).json();
     expect(body.assignments.pdf_description.thinkingLevel).toBe("none");
-    expect((await prisma.aiModel.findUnique({ where: { id: model.id } }))?.thinkingLevel).toBeNull();
+    expect(
+      (await prisma.aiModel.findUnique({ where: { id: model.id } }))
+        ?.thinkingLevel,
+    ).toBeNull();
   });
 });

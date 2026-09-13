@@ -33,10 +33,12 @@ export type QuizAvailability = {
 export function quizAvailability(
   settings: QuizGateSettings,
   completedAttempts: number,
-  now: Date = new Date()
+  now: Date = new Date(),
 ): QuizAvailability {
-  const notOpenYet = settings.availableFrom != null && now < settings.availableFrom;
-  const closed = settings.availableUntil != null && now > settings.availableUntil;
+  const notOpenYet =
+    settings.availableFrom != null && now < settings.availableFrom;
+  const closed =
+    settings.availableUntil != null && now > settings.availableUntil;
   const attemptsExhausted =
     settings.maxAttempts != null &&
     settings.maxAttempts > 0 &&
@@ -64,7 +66,7 @@ export function quizAvailability(
 export function canAttemptAgain(
   settings: QuizGateSettings | null,
   state: QuizGateState,
-  now: Date = new Date()
+  now: Date = new Date(),
 ): boolean {
   if (state.hasAttemptInProgress) return true;
   if (!settings) return false;

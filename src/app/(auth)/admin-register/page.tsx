@@ -5,9 +5,18 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Shield } from "lucide-react";
-import { PASSWORD_REQUIREMENTS, validatePassword } from "@/lib/account-validation";
+import {
+  PASSWORD_REQUIREMENTS,
+  validatePassword,
+} from "@/lib/account-validation";
 
 export default function AdminRegisterPage() {
   const { push } = useRouter();
@@ -62,14 +71,15 @@ export default function AdminRegisterPage() {
   }
 
   return (
-    <div className="min-h-screen bg-linear-to-br from-slate-900 via-blue-950 to-slate-900 flex items-center justify-center px-4 py-8">
+    <div className="min-h-screen auth-shell flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-md space-y-4">
-
         <Card>
           <CardHeader className="space-y-1">
             <div className="flex items-center gap-2">
               <Shield className="size-5 text-primary" />
-              <CardTitle className="text-2xl font-bold">Admin Registration</CardTitle>
+              <CardTitle className="text-2xl font-bold">
+                Admin Registration
+              </CardTitle>
             </div>
             <CardDescription>
               You need an admin registration code to create an account.
@@ -160,9 +170,7 @@ export default function AdminRegisterPage() {
               </div>
 
               <div className="space-y-2 pt-1">
-                <Label htmlFor="adminToken">
-                  Admin registration code
-                </Label>
+                <Label htmlFor="adminToken">Admin registration code</Label>
                 <Input
                   id="adminToken"
                   name="adminToken"

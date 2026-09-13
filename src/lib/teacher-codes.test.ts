@@ -28,7 +28,9 @@ describe("generateTeacherCode", () => {
 
 describe("normalizeTeacherCode", () => {
   it("upper-cases and strips the separators a code is displayed with", () => {
-    expect(normalizeTeacherCode(" 2b3c-4d5e-6f7g-8h9j ")).toBe("2B3C4D5E6F7G8H9J");
+    expect(normalizeTeacherCode(" 2b3c-4d5e-6f7g-8h9j ")).toBe(
+      "2B3C4D5E6F7G8H9J",
+    );
   });
 
   it("folds the glyphs left out of the alphabet onto what they are mistaken for", () => {
@@ -81,16 +83,25 @@ describe("teacherCodeStatus", () => {
   it("is EXPIRED once expiresAt has been reached", () => {
     expect(teacherCodeStatus({ ...base, expiresAt: NOW }, NOW)).toBe("EXPIRED");
     expect(
-      teacherCodeStatus({ ...base, expiresAt: new Date(NOW.getTime() + 1000) }, NOW)
+      teacherCodeStatus(
+        { ...base, expiresAt: new Date(NOW.getTime() + 1000) },
+        NOW,
+      ),
     ).toBe("ACTIVE");
   });
 
   it("is EXHAUSTED at the use limit but not below it", () => {
-    expect(teacherCodeStatus({ ...base, maxUses: 3, usedCount: 2 }, NOW)).toBe("ACTIVE");
-    expect(teacherCodeStatus({ ...base, maxUses: 3, usedCount: 3 }, NOW)).toBe("EXHAUSTED");
+    expect(teacherCodeStatus({ ...base, maxUses: 3, usedCount: 2 }, NOW)).toBe(
+      "ACTIVE",
+    );
+    expect(teacherCodeStatus({ ...base, maxUses: 3, usedCount: 3 }, NOW)).toBe(
+      "EXHAUSTED",
+    );
   });
 
   it("treats a zero use limit as exhausted, not unlimited", () => {
-    expect(teacherCodeStatus({ ...base, maxUses: 0, usedCount: 0 }, NOW)).toBe("EXHAUSTED");
+    expect(teacherCodeStatus({ ...base, maxUses: 0, usedCount: 0 }, NOW)).toBe(
+      "EXHAUSTED",
+    );
   });
 });

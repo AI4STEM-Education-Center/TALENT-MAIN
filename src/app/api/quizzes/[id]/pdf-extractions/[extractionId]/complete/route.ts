@@ -25,11 +25,21 @@ type CompletePage = { pageNumber: number; storageKey: string };
 // job. The job IS the feature, so an enqueue failure marks the row FAILED.
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string; extractionId: string }> }
+  { params }: { params: Promise<{ id: string; extractionId: string }> },
 ) {
-  const [actor, { id: quizId, extractionId }] = await Promise.all([getContentActor(), params]);
-  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const limited = rateLimit(req, "quiz-extraction-complete", 10, 60_000, actor.userId);
+  const [actor, { id: quizId, extractionId }] = await Promise.all([
+    getContentActor(),
+    params,
+  ]);
+  if (!actor)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const limited = rateLimit(
+    req,
+    "quiz-extraction-complete",
+    10,
+    60_000,
+    actor.userId,
+  );
   if (limited) return limited;
 
   const quiz = await prisma.quiz.findUnique({ where: { id: quizId } });
@@ -37,15 +47,20 @@ export async function POST(
     return NextResponse.json({ error: "Quiz not found" }, { status: 404 });
   }
 
-  const extraction = await prisma.quizPdfExtraction.findUnique({ where: { id: extractionId } });
+  const extraction = await prisma.quizPdfExtraction.findUnique({
+    where: { id: extractionId },
+  });
   if (!extraction || extraction.quizId !== quizId) {
-    return NextResponse.json({ error: "Extraction not found" }, { status: 404 });
+    return NextResponse.json(
+      { error: "Extraction not found" },
+      { status: 404 },
+    );
   }
 
   if (extraction.status !== "PENDING_UPLOAD") {
     return NextResponse.json(
       { error: "Extraction is not awaiting upload" },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
@@ -57,12 +72,15 @@ export async function POST(
   }
 
   if (!Array.isArray(body.pages) || body.pages.length < 1) {
-    return NextResponse.json({ error: "pages array is required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "pages array is required" },
+      { status: 400 },
+    );
   }
   if (body.pages.length > MAX_QUIZ_PDF_PAGES) {
     return NextResponse.json(
       { error: `A quiz PDF may have at most ${MAX_QUIZ_PDF_PAGES} pages` },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
@@ -72,15 +90,22 @@ export async function POST(
   // arbitrary S3 object they do not own.
   const pages: CompletePage[] = [];
   for (let i = 0; i < body.pages.length; i++) {
-    const raw = body.pages[i] as { pageNumber?: unknown; storageKey?: unknown } | null;
+    const raw = body.pages[i] as {
+      pageNumber?: unknown;
+      storageKey?: unknown;
+    } | null;
     if (!raw || typeof raw !== "object") {
-      return NextResponse.json({ error: `pages[${i}] must be an object` }, { status: 400 });
+      return NextResponse.json(
+        { error: `pages[${i}] must be an object` },
+        { status: 400 },
+      );
     }
-    const pageNumber = typeof raw.pageNumber === "number" ? raw.pageNumber : NaN;
+    const pageNumber =
+      typeof raw.pageNumber === "number" ? raw.pageNumber : NaN;
     if (pageNumber !== i + 1) {
       return NextResponse.json(
         { error: "pageNumbers must be contiguous starting at 1" },
-        { status: 400 }
+        { status: 400 },
       );
     }
     // One candidate per supported page-image format — the format was chosen at
@@ -91,13 +116,18 @@ export async function POST(
         extraction.quizId,
         extraction.id,
         pageNumber,
-        extension
-      )
+        extension,
+      ),
     );
-    if (typeof raw.storageKey !== "string" || !expectedKeys.includes(raw.storageKey)) {
+    if (
+      typeof raw.storageKey !== "string" ||
+      !expectedKeys.includes(raw.storageKey)
+    ) {
       return NextResponse.json(
-        { error: `pages[${i}].storageKey does not match the expected upload key` },
-        { status: 400 }
+        {
+          error: `pages[${i}].storageKey does not match the expected upload key`,
+        },
+        { status: 400 },
       );
     }
     pages.push({ pageNumber, storageKey: raw.storageKey });
@@ -110,7 +140,9 @@ export async function POST(
   try {
     [pdfHead, pageHeads] = await Promise.all([
       headS3Object(extraction.bucket, extraction.storageKey),
-      Promise.all(pages.map((p) => headS3Object(extraction.bucket, p.storageKey))),
+      Promise.all(
+        pages.map((p) => headS3Object(extraction.bucket, p.storageKey)),
+      ),
     ]);
   } catch {
     return NextResponse.json({ error: "upload incomplete" }, { status: 400 });
@@ -120,11 +152,16 @@ export async function POST(
   if (
     pdfHead.contentLength < 1 ||
     pdfHead.contentLength > maxBytes ||
-    pageHeads.some((page) => page.contentLength < 1 || page.contentLength > maxBytes) ||
+    pageHeads.some(
+      (page) => page.contentLength < 1 || page.contentLength > maxBytes,
+    ) ||
     pageHeads.reduce((total, page) => total + page.contentLength, 0) >
       maxDerivedPageBytes(pageHeads.length)
   ) {
-    return NextResponse.json({ error: "Uploaded objects exceed size limits" }, { status: 413 });
+    return NextResponse.json(
+      { error: "Uploaded objects exceed size limits" },
+      { status: 413 },
+    );
   }
 
   try {
@@ -140,18 +177,18 @@ export async function POST(
       if (claimed.count !== 1) throw new ExtractionAlreadyClaimedError();
 
       await tx.quizPdfExtractionPage.createMany({
-      data: pages.map((p) => ({
-        extractionId: extraction.id,
-        pageNumber: p.pageNumber,
-        storageKey: p.storageKey,
-      })),
+        data: pages.map((p) => ({
+          extractionId: extraction.id,
+          pageNumber: p.pageNumber,
+          storageKey: p.storageKey,
+        })),
       });
     });
   } catch (error) {
     if (error instanceof ExtractionAlreadyClaimedError) {
       return NextResponse.json(
         { error: "Extraction upload has already been finalized" },
-        { status: 409 }
+        { status: 409 },
       );
     }
     throw error;
@@ -160,15 +197,19 @@ export async function POST(
   try {
     enqueueQuizExtraction(extraction.id);
   } catch (e) {
-    const errorMessage = e instanceof Error ? e.message : "Failed to enqueue extraction";
+    const errorMessage =
+      e instanceof Error ? e.message : "Failed to enqueue extraction";
     await prisma.quizPdfExtraction
-      .update({ where: { id: extraction.id }, data: { status: "FAILED", errorMessage } })
+      .update({
+        where: { id: extraction.id },
+        data: { status: "FAILED", errorMessage },
+      })
       .catch(() => {});
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 
   return NextResponse.json(
     { id: extraction.id, status: "EXTRACTING", totalPages: pages.length },
-    { status: 202 }
+    { status: 202 },
   );
 }

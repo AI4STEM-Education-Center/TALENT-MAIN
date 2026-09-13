@@ -38,7 +38,8 @@ export function ResultSummary({
           </div>
           {isPending(status) && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Loader2 className="size-3.5 animate-spin text-primary" /> Writing the summary…
+              <Loader2 className="size-3.5 animate-spin text-primary" /> Writing
+              the summary…
             </div>
           )}
           {status === RESULT_STATUS.READY && metrics && (
@@ -55,7 +56,8 @@ export function ResultSummary({
         </p>
       ) : (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin text-primary" /> Generating the summary…
+          <Loader2 className="size-4 animate-spin text-primary" /> Generating
+          the summary…
         </div>
       )}
     </div>

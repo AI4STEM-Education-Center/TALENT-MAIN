@@ -141,7 +141,10 @@ function zonedWallToUTC(
   return new Date(result);
 }
 
-function tzYmd(date: Date, timeZone: string): { year: number; month0: number; day: number } {
+function tzYmd(
+  date: Date,
+  timeZone: string,
+): { year: number; month0: number; day: number } {
   const dtf = new Intl.DateTimeFormat("en-US", {
     timeZone,
     year: "numeric",
@@ -172,13 +175,18 @@ export function computeNextRun(
   let anchor = zonedWallToUTC(ymd.year, ymd.month0, ymd.day, hh, mm, tz);
   const stepMs = interval * 3_600_000;
 
-  while (anchor.getTime() > from.getTime()) anchor = new Date(anchor.getTime() - stepMs);
+  while (anchor.getTime() > from.getTime())
+    anchor = new Date(anchor.getTime() - stepMs);
   let next = anchor;
-  while (next.getTime() <= from.getTime()) next = new Date(next.getTime() + stepMs);
+  while (next.getTime() <= from.getTime())
+    next = new Date(next.getTime() + stepMs);
   return next;
 }
 
-export function isBackupDue(row: BackupConfig | null, now: Date = new Date()): boolean {
+export function isBackupDue(
+  row: BackupConfig | null,
+  now: Date = new Date(),
+): row is BackupConfig {
   if (!row || !row.enabled) return false;
   if (!row.nextRunAt) return true;
   return now.getTime() >= row.nextRunAt.getTime();
@@ -192,13 +200,15 @@ export async function claimDueBackup(now: Date = new Date()): Promise<boolean> {
   const row = await getConfigRow();
   if (!isBackupDue(row, now)) return false;
   await prisma.backupConfig.update({
-    where: { id: row!.id },
-    data: { nextRunAt: computeNextRun(row!, now) },
+    where: { id: row.id },
+    data: { nextRunAt: computeNextRun(row, now) },
   });
   return true;
 }
 
-async function updateStatus(data: Prisma.BackupConfigUpdateInput): Promise<void> {
+async function updateStatus(
+  data: Prisma.BackupConfigUpdateInput,
+): Promise<void> {
   const row = await getConfigRow();
   if (!row) return;
   await prisma.backupConfig.update({ where: { id: row.id }, data });

@@ -8,8 +8,8 @@ import { logApiError } from "@/lib/system-log";
 const VALID_TYPES = new Set(["openai", "local", "cloudflare"]);
 
 // Per-request timeout override bounds (ms). Mirrors the create route.
-const MIN_TIMEOUT_MS = 1_000;        // 1s
-const MAX_TIMEOUT_MS = 3_600_000;    // 60min
+const MIN_TIMEOUT_MS = 1_000; // 1s
+const MAX_TIMEOUT_MS = 3_600_000; // 60min
 
 /**
  * PATCH /api/admin/ai-providers/[id]
@@ -19,7 +19,7 @@ const MAX_TIMEOUT_MS = 3_600_000;    // 60min
  */
 export async function PATCH(
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await auth();
   if (!session?.user || session.user.role !== "ADMIN") {
@@ -31,7 +31,10 @@ export async function PATCH(
   try {
     const existing = await prisma.aiProvider.findUnique({ where: { id } });
     if (!existing) {
-      return NextResponse.json({ error: "Provider not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Provider not found" },
+        { status: 404 },
+      );
     }
 
     const body = await req.json();
@@ -49,7 +52,8 @@ export async function PATCH(
     }
 
     if (body.baseUrl !== undefined) {
-      data.baseUrl = typeof body.baseUrl === "string" ? body.baseUrl.trim() || null : null;
+      data.baseUrl =
+        typeof body.baseUrl === "string" ? body.baseUrl.trim() || null : null;
     }
 
     if (typeof body.isActive === "boolean") {
@@ -68,7 +72,7 @@ export async function PATCH(
             {
               error: `timeoutMs must be an integer between ${MIN_TIMEOUT_MS} and ${MAX_TIMEOUT_MS} ms, or null to use the default`,
             },
-            { status: 400 }
+            { status: 400 },
           );
         }
         data.timeoutMs = n;
@@ -85,8 +89,11 @@ export async function PATCH(
         data.apiSurface = raw;
       } else {
         return NextResponse.json(
-          { error: "apiSurface must be 'responses', 'chat_completions', or null" },
-          { status: 400 }
+          {
+            error:
+              "apiSurface must be 'responses', 'chat_completions', or null",
+          },
+          { status: 400 },
         );
       }
     }
@@ -141,7 +148,10 @@ export async function PATCH(
     });
   } catch (error) {
     logApiError("AI_PROVIDER_PATCH", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }
 
@@ -151,7 +161,7 @@ export async function PATCH(
  */
 export async function DELETE(
   _req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await auth();
   if (!session?.user || session.user.role !== "ADMIN") {
@@ -163,7 +173,10 @@ export async function DELETE(
   try {
     const existing = await prisma.aiProvider.findUnique({ where: { id } });
     if (!existing) {
-      return NextResponse.json({ error: "Provider not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Provider not found" },
+        { status: 404 },
+      );
     }
 
     await prisma.aiProvider.delete({ where: { id } });
@@ -173,6 +186,9 @@ export async function DELETE(
     return NextResponse.json({ success: true });
   } catch (error) {
     logApiError("AI_PROVIDER_DELETE", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }

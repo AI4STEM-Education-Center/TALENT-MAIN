@@ -45,7 +45,7 @@ export function TeacherAttemptResources({
     <section
       aria-label="Recommended learning resources"
       className={cn(
-        simOpen ? "max-w-none" : hasSimulations ? "max-w-7xl" : "max-w-6xl"
+        simOpen ? "max-w-none" : hasSimulations ? "max-w-7xl" : "max-w-6xl",
       )}
     >
       <div
@@ -54,7 +54,7 @@ export function TeacherAttemptResources({
           hasSimulations &&
             (simOpen
               ? "lg:grid-cols-[minmax(320px,26rem)_minmax(0,1fr)]"
-              : "lg:grid-cols-[minmax(0,1fr)_minmax(320px,26rem)]")
+              : "lg:grid-cols-[minmax(0,1fr)_minmax(320px,26rem)]"),
         )}
       >
         <div className="min-w-0 space-y-6">

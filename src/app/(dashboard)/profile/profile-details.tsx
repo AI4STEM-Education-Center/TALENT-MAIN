@@ -33,7 +33,10 @@ export function ProfileDetails() {
   const [form, setForm] = useState({ firstName: "", lastName: "", email: "" });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [banner, setBanner] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [banner, setBanner] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -42,7 +45,11 @@ export function ProfileDetails() {
       if (res.ok) {
         const { profile: p } = (await res.json()) as { profile: Profile };
         setProfile(p);
-        setForm({ firstName: p.firstName, lastName: p.lastName, email: p.email });
+        setForm({
+          firstName: p.firstName,
+          lastName: p.lastName,
+          email: p.email,
+        });
       } else {
         setBanner({ type: "error", text: "Could not load your profile." });
       }
@@ -69,7 +76,10 @@ export function ProfileDetails() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setBanner({ type: "error", text: data.error || "Could not save your changes." });
+        setBanner({
+          type: "error",
+          text: data.error || "Could not save your changes.",
+        });
       } else {
         setProfile(data.profile);
         setBanner({ type: "success", text: "Profile updated." });
@@ -129,7 +139,9 @@ export function ProfileDetails() {
                 <Input
                   id="firstName"
                   value={form.firstName}
-                  onChange={(e) => setForm((p) => ({ ...p, firstName: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, firstName: e.target.value }))
+                  }
                   required
                 />
               </div>
@@ -138,7 +150,9 @@ export function ProfileDetails() {
                 <Input
                   id="lastName"
                   value={form.lastName}
-                  onChange={(e) => setForm((p) => ({ ...p, lastName: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, lastName: e.target.value }))
+                  }
                   required
                 />
               </div>
@@ -150,7 +164,9 @@ export function ProfileDetails() {
                 id="email"
                 type="email"
                 value={form.email}
-                onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, email: e.target.value }))
+                }
                 required
                 autoComplete="email"
               />
@@ -162,14 +178,22 @@ export function ProfileDetails() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label htmlFor="username">Username</Label>
-                <Input id="username" value={profile?.username ?? ""} disabled readOnly />
+                <Input
+                  id="username"
+                  value={profile?.username ?? ""}
+                  disabled
+                  readOnly
+                />
                 <p className="text-xs text-muted-foreground">
-                  Your username can&apos;t be changed. Ask an administrator if you need it updated.
+                  Your username can&apos;t be changed. Ask an administrator if
+                  you need it updated.
                 </p>
               </div>
               <div className="space-y-2">
                 <Label>Role</Label>
-                <p className="text-sm capitalize pt-2">{profile?.role.toLowerCase()}</p>
+                <p className="text-sm capitalize pt-2">
+                  {profile?.role.toLowerCase()}
+                </p>
                 {profile && (
                   <p className="text-xs text-muted-foreground">
                     Member since {formatJoined(profile.createdAt)}
@@ -179,7 +203,11 @@ export function ProfileDetails() {
             </div>
 
             <Button type="submit" disabled={saving}>
-              {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+              {saving ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Save className="size-4" />
+              )}
               {saving ? "Saving..." : "Save changes"}
             </Button>
           </form>

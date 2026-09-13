@@ -11,8 +11,10 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 const mockAuth = vi.mocked(auth);
-const asAdmin = () => mockAuth.mockResolvedValue({ user: { id: "a", role: "ADMIN" } } as never);
-const asTeacher = () => mockAuth.mockResolvedValue({ user: { id: "t", role: "TEACHER" } } as never);
+const asAdmin = () =>
+  mockAuth.mockResolvedValue({ user: { id: "a", role: "ADMIN" } } as never);
+const asTeacher = () =>
+  mockAuth.mockResolvedValue({ user: { id: "t", role: "TEACHER" } } as never);
 
 function putReq(body: unknown) {
   return new Request("http://test/api/admin/backup", {
@@ -92,8 +94,20 @@ describe("GET/PUT /api/admin/backup", () => {
 
   it("preserves the saved password when re-sent as the masked placeholder", async () => {
     asAdmin();
-    await PUT(putReq({ webdavUrl: "https://dav.example/files", password: "keepme", enabled: false }));
-    await PUT(putReq({ webdavUrl: "https://dav.example/files", password: "••••••••", enabled: false }));
+    await PUT(
+      putReq({
+        webdavUrl: "https://dav.example/files",
+        password: "keepme",
+        enabled: false,
+      }),
+    );
+    await PUT(
+      putReq({
+        webdavUrl: "https://dav.example/files",
+        password: "••••••••",
+        enabled: false,
+      }),
+    );
     const after = (await (await GET()).json()).config;
     expect(after.hasPassword).toBe(true);
   });

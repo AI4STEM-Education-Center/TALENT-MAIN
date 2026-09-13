@@ -22,15 +22,26 @@ export const runtime = "nodejs";
 /** Maximum number of pages accepted in a single quiz-PDF extraction. */
 export const MAX_QUIZ_PDF_PAGES = 20;
 
-type InitPage = { pageNumber: number; sizeBytes: number; mimeType: PageImageMimeType };
+type InitPage = {
+  pageNumber: number;
+  sizeBytes: number;
+  mimeType: PageImageMimeType;
+};
 
 // POST: initialize a quiz-PDF extraction. Mirrors the materials presigned-upload
 // init: create the row, presign a PUT for the PDF + one per page, and roll the
 // row back if any presign fails. Teachers extract into their own quizzes; admins
 // extract into global-pool quizzes (teacherId null), same as question-imports.
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const [actor, { id: quizId }] = await Promise.all([getContentActor(), params]);
-  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const [actor, { id: quizId }] = await Promise.all([
+    getContentActor(),
+    params,
+  ]);
+  if (!actor)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const quiz = await prisma.quiz.findUnique({ where: { id: quizId } });
   if (!quiz || !canManage(actor, quiz)) {
@@ -43,7 +54,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "S3 not configured" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 
@@ -55,12 +66,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const originalName =
-    typeof body.originalName === "string" ? sanitizeFilename(body.originalName) : "";
+    typeof body.originalName === "string"
+      ? sanitizeFilename(body.originalName)
+      : "";
   if (!originalName) {
-    return NextResponse.json({ error: "originalName is required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "originalName is required" },
+      { status: 400 },
+    );
   }
   if (!originalName.toLowerCase().endsWith(".pdf")) {
-    return NextResponse.json({ error: "Only PDF files are supported" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Only PDF files are supported" },
+      { status: 400 },
+    );
   }
 
   const sizeBytes = typeof body.sizeBytes === "number" ? body.sizeBytes : 0;
@@ -68,17 +87,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (sizeBytes < 1 || sizeBytes > maxBytes) {
     return NextResponse.json(
       { error: `sizeBytes must be between 1 and ${maxBytes}` },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
   if (!Array.isArray(body.pages) || body.pages.length < 1) {
-    return NextResponse.json({ error: "pages array is required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "pages array is required" },
+      { status: 400 },
+    );
   }
   if (body.pages.length > MAX_QUIZ_PDF_PAGES) {
     return NextResponse.json(
       { error: `A quiz PDF may have at most ${MAX_QUIZ_PDF_PAGES} pages` },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
@@ -90,21 +112,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       contentType?: unknown;
     } | null;
     if (!raw || typeof raw !== "object") {
-      return NextResponse.json({ error: `pages[${i}] must be an object` }, { status: 400 });
+      return NextResponse.json(
+        { error: `pages[${i}] must be an object` },
+        { status: 400 },
+      );
     }
-    const pageNumber = typeof raw.pageNumber === "number" ? raw.pageNumber : NaN;
+    const pageNumber =
+      typeof raw.pageNumber === "number" ? raw.pageNumber : NaN;
     // Page numbers must be contiguous starting at 1, in the order posted.
     if (pageNumber !== i + 1) {
       return NextResponse.json(
         { error: "pageNumbers must be contiguous starting at 1" },
-        { status: 400 }
+        { status: 400 },
       );
     }
     const pageSize = typeof raw.sizeBytes === "number" ? raw.sizeBytes : 0;
     if (pageSize < 1 || pageSize > maxBytes) {
       return NextResponse.json(
         { error: `pages[${i}].sizeBytes must be between 1 and ${maxBytes}` },
-        { status: 400 }
+        { status: 400 },
       );
     }
     // The client renders pages as WebP where it can and declares what it
@@ -114,10 +140,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (raw.contentType !== undefined && !requested) {
       return NextResponse.json(
         { error: `pages[${i}].contentType must be image/webp or image/png` },
-        { status: 400 }
+        { status: 400 },
       );
     }
-    pages.push({ pageNumber, sizeBytes: pageSize, mimeType: requested ?? "image/png" });
+    pages.push({
+      pageNumber,
+      sizeBytes: pageSize,
+      mimeType: requested ?? "image/png",
+    });
   }
   if (
     pages.reduce((total, page) => total + page.sizeBytes, 0) >
@@ -125,12 +155,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   ) {
     return NextResponse.json(
       { error: "Rendered pages exceed the aggregate upload limit" },
-      { status: 413 }
+      { status: 413 },
     );
   }
 
   const extractionId = randomUUID();
-  const storageKey = buildQuizExtractionPdfKey(actor.teacherId, quizId, extractionId, originalName);
+  const storageKey = buildQuizExtractionPdfKey(
+    actor.teacherId,
+    quizId,
+    extractionId,
+    originalName,
+  );
 
   const extraction = await prisma.quizPdfExtraction.create({
     data: {
@@ -147,7 +182,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   });
 
   try {
-    const pdfPresignedUrl = await presignPutUpload(bucket, storageKey, "application/pdf", sizeBytes);
+    const pdfPresignedUrl = await presignPutUpload(
+      bucket,
+      storageKey,
+      "application/pdf",
+      sizeBytes,
+    );
     const pagePresigns = await Promise.all(
       pages.map(async (p) => {
         const key = buildQuizExtractionPageKey(
@@ -155,11 +195,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           quizId,
           extractionId,
           p.pageNumber,
-          pageImageExtension(p.mimeType)
+          pageImageExtension(p.mimeType),
         );
-        const presignedUrl = await presignPutUpload(bucket, key, p.mimeType, p.sizeBytes);
-        return { pageNumber: p.pageNumber, presignedUrl, storageKey: key, mimeType: p.mimeType };
-      })
+        const presignedUrl = await presignPutUpload(
+          bucket,
+          key,
+          p.mimeType,
+          p.sizeBytes,
+        );
+        return {
+          pageNumber: p.pageNumber,
+          presignedUrl,
+          storageKey: key,
+          mimeType: p.mimeType,
+        };
+      }),
     );
 
     return NextResponse.json(
@@ -168,22 +218,33 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         pdf: { presignedUrl: pdfPresignedUrl, storageKey },
         pages: pagePresigns,
       },
-      { status: 201 }
+      { status: 201 },
     );
   } catch (e) {
-    await prisma.quizPdfExtraction.delete({ where: { id: extraction.id } }).catch(() => {});
+    await prisma.quizPdfExtraction
+      .delete({ where: { id: extraction.id } })
+      .catch(() => {});
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Failed to create upload URLs" },
-      { status: 500 }
+      {
+        error: e instanceof Error ? e.message : "Failed to create upload URLs",
+      },
+      { status: 500 },
     );
   }
 }
 
 // GET: list extractions for the quiz, newest first, so the UI can resume a
 // pending review.
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const [actor, { id: quizId }] = await Promise.all([getContentActor(), params]);
-  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const [actor, { id: quizId }] = await Promise.all([
+    getContentActor(),
+    params,
+  ]);
+  if (!actor)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const quiz = await prisma.quiz.findUnique({ where: { id: quizId } });
   if (!quiz || !canManage(actor, quiz)) {

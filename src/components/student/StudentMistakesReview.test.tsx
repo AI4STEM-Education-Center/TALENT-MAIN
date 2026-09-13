@@ -24,7 +24,7 @@ describe("StudentMistakesReview", () => {
             },
           },
         ]}
-      />
+      />,
     );
 
     expect(html).toContain("Questions to review");
@@ -57,7 +57,7 @@ describe("StudentMistakesReview", () => {
             response: { kind: "choices", choices: [] },
           },
         ]}
-      />
+      />,
     );
 
     expect(html).toContain("0 m");
@@ -65,6 +65,8 @@ describe("StudentMistakesReview", () => {
   });
 
   it("renders no review section for a perfect attempt", () => {
-    expect(renderToStaticMarkup(<StudentMistakesReview mistakes={[]} />)).toBe("");
+    expect(renderToStaticMarkup(<StudentMistakesReview mistakes={[]} />)).toBe(
+      "",
+    );
   });
 });

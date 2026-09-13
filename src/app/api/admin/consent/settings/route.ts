@@ -43,7 +43,10 @@ export async function PATCH(req: NextRequest) {
     const value = body[key];
     if (value !== undefined) {
       if (typeof value !== "number" || !Number.isFinite(value)) {
-        return NextResponse.json({ error: `${key} must be a number.` }, { status: 400 });
+        return NextResponse.json(
+          { error: `${key} must be a number.` },
+          { status: 400 },
+        );
       }
       partial[key] = value;
     }

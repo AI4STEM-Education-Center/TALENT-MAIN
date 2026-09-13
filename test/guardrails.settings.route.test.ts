@@ -14,7 +14,9 @@ import { resetDb } from "./db";
 
 const mockAuth = vi.mocked(auth);
 const asAdmin = () =>
-  mockAuth.mockResolvedValue({ user: { id: "admin-1", role: "ADMIN" } } as never);
+  mockAuth.mockResolvedValue({
+    user: { id: "admin-1", role: "ADMIN" },
+  } as never);
 const asTeacher = () =>
   mockAuth.mockResolvedValue({ user: { id: "t-1", role: "TEACHER" } } as never);
 
@@ -70,7 +72,7 @@ describe("PUT /api/admin/guardrails", () => {
         topicDescription: "Only physics",
         failOpen: false,
         disabledSurfaces: ["assistant_reply"],
-      })
+      }),
     );
     expect(res.status).toBe(200);
 
@@ -105,7 +107,7 @@ describe("PUT /api/admin/guardrails", () => {
           jailbreakThreshold: 99,
           disabledSurfaces: ["nope"],
           topicDescription: "y".repeat(9_000),
-        })
+        }),
       )
     ).json();
 
@@ -135,17 +137,30 @@ describe("PUT /api/admin/guardrails", () => {
 });
 
 describe("GET /api/admin/guardrails — model read-out", () => {
-  async function assign(useCase: string, modelId: string, thinkingLevel: string | null = null) {
+  async function assign(
+    useCase: string,
+    modelId: string,
+    thinkingLevel: string | null = null,
+  ) {
     const provider =
       (await prisma.aiProvider.findFirst({ where: { name: "Test OpenAI" } })) ??
       (await prisma.aiProvider.create({
         data: { name: "Test OpenAI", providerType: "openai", isActive: true },
       }));
     const model =
-      (await prisma.aiModel.findFirst({ where: { providerId: provider.id, modelId } })) ??
-      (await prisma.aiModel.create({ data: { providerId: provider.id, modelId } }));
+      (await prisma.aiModel.findFirst({
+        where: { providerId: provider.id, modelId },
+      })) ??
+      (await prisma.aiModel.create({
+        data: { providerId: provider.id, modelId },
+      }));
     await prisma.aiUseCaseAssignment.create({
-      data: { useCase, providerId: provider.id, modelId: model.id, thinkingLevel },
+      data: {
+        useCase,
+        providerId: provider.id,
+        modelId: model.id,
+        thinkingLevel,
+      },
     });
     return { provider, model };
   }
@@ -162,7 +177,9 @@ describe("GET /api/admin/guardrails — model read-out", () => {
     await assign("guardrail_jailbreak", "gpt-5-mini");
 
     const body = await (await GET()).json();
-    expect(body.models.guardrail_jailbreak.label).toBe("Test OpenAI — gpt-5-mini");
+    expect(body.models.guardrail_jailbreak.label).toBe(
+      "Test OpenAI — gpt-5-mini",
+    );
     expect(body.models.guardrail_jailbreak.providerActive).toBe(true);
     expect(body.models.guardrail_offtopic).toBeNull();
   });
@@ -192,8 +209,13 @@ describe("GET /api/admin/guardrails — model read-out", () => {
 
   it("flags a check whose provider has been switched off", async () => {
     const { provider } = await assign("guardrail_jailbreak", "gpt-5-mini");
-    await prisma.aiProvider.update({ where: { id: provider.id }, data: { isActive: false } });
+    await prisma.aiProvider.update({
+      where: { id: provider.id },
+      data: { isActive: false },
+    });
 
-    expect((await (await GET()).json()).models.guardrail_jailbreak.providerActive).toBe(false);
+    expect(
+      (await (await GET()).json()).models.guardrail_jailbreak.providerActive,
+    ).toBe(false);
   });
 });

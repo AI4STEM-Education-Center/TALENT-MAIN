@@ -14,7 +14,18 @@ export async function GET(req: NextRequest) {
     where: { teacherId: { not: null } },
     orderBy: { createdAt: "desc" },
     include: {
-      teacher: { select: { user: { select: { username: true, firstName: true, lastName: true, email: true } } } },
+      teacher: {
+        select: {
+          user: {
+            select: {
+              username: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
+          },
+        },
+      },
       class: { select: { name: true } },
     },
   });

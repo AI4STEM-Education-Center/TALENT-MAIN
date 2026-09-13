@@ -5,9 +5,7 @@ import {
 } from "./simulation-metrics";
 import type { AiCallMetrics } from "./ai-streaming";
 
-const call = (
-  overrides: Partial<AiCallMetrics> = {}
-): AiCallMetrics => ({
+const call = (overrides: Partial<AiCallMetrics> = {}): AiCallMetrics => ({
   model: "gpt-5.5",
   ttftMs: 200,
   completionTokens: 20,
@@ -22,7 +20,11 @@ describe("buildSimulationMetrics", () => {
   it("records the provider, tier, and thinking level beside the model, not folded into it", () => {
     expect(
       buildSimulationMetrics(
-        { providerType: "cloudflare", serviceTier: "flex", thinkingLevel: "high" },
+        {
+          providerType: "cloudflare",
+          serviceTier: "flex",
+          thinkingLevel: "high",
+        },
         [
           call({ model: "openai/gpt-5.5" }),
           call({
@@ -33,8 +35,8 @@ describe("buildSimulationMetrics", () => {
             completionTokens: 30,
             tokensEstimated: true,
           }),
-        ]
-      )
+        ],
+      ),
     ).toEqual({
       aiModel: "openai/gpt-5.5",
       aiProvider: "cloudflare",
@@ -49,17 +51,22 @@ describe("buildSimulationMetrics", () => {
   });
 
   it("stores no generation window when a call didn't stream incrementally", () => {
-    const metrics = buildSimulationMetrics({ providerType: "cloudflare", serviceTier: null, thinkingLevel: null }, [
-      call(),
-      call({ ttftMs: 6805, totalMs: 6837, generationMs: null }),
-    ]);
+    const metrics = buildSimulationMetrics(
+      { providerType: "cloudflare", serviceTier: null, thinkingLevel: null },
+      [call(), call({ ttftMs: 6805, totalMs: 6837, generationMs: null })],
+    );
     expect(metrics.aiGenerationMs).toBeNull();
     expect(metrics.aiServiceTier).toBeNull();
     expect(metrics.aiThinkingLevel).toBeNull();
   });
 
   it("returns nullable fields when a job made no model calls", () => {
-    expect(buildSimulationMetrics({ providerType: "local", serviceTier: null, thinkingLevel: null }, [])).toEqual({
+    expect(
+      buildSimulationMetrics(
+        { providerType: "local", serviceTier: null, thinkingLevel: null },
+        [],
+      ),
+    ).toEqual({
       aiModel: null,
       aiProvider: null,
       aiServiceTier: null,
@@ -86,7 +93,7 @@ describe("simulationMetricsView", () => {
         aiTotalMs: 800,
         aiTokens: 50,
         aiTokensEstimated: false,
-      })
+      }),
     ).toEqual({
       model: "openai/gpt-5.5",
       provider: "cloudflare",
@@ -114,7 +121,7 @@ describe("simulationMetricsView", () => {
         aiTotalMs: 800,
         aiTokens: 50,
         aiTokensEstimated: false,
-      })
+      }),
     ).toMatchObject({
       model: "cloudflare/openai/gpt-5.5",
       provider: null,

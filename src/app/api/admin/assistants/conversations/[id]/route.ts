@@ -16,7 +16,7 @@ export const runtime = "nodejs";
  */
 export async function GET(
   _req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await auth();
   if (!session?.user || session.user.role !== "ADMIN") {
@@ -32,6 +32,9 @@ export async function GET(
     return NextResponse.json(conversation);
   } catch (error) {
     logApiError("ADMIN_ASSISTANT_CONVERSATION_GET", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }

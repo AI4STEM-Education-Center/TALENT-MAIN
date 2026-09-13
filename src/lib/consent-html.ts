@@ -19,7 +19,10 @@ export function sanitizeConsentHtml(html: string): string {
   return sanitizeHtml(html, {
     allowedTags: [...CONSENT_ALLOWED_TAGS],
     allowedAttributes: Object.fromEntries(
-      Object.entries(CONSENT_ALLOWED_ATTRIBUTES).map(([tag, attrs]) => [tag, [...attrs]])
+      Object.entries(CONSENT_ALLOWED_ATTRIBUTES).map(([tag, attrs]) => [
+        tag,
+        [...attrs],
+      ]),
     ),
     allowedSchemes: [...CONSENT_ALLOWED_SCHEMES],
     // Spelled out rather than left to sanitize-html's default so the preview

@@ -11,16 +11,26 @@
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { parseReviewSnapshot } from "@/lib/exam-results";
-import { mean, max as maxOf, min as minOf, PASS_THRESHOLD } from "@/lib/quiz-stats";
+import {
+  mean,
+  max as maxOf,
+  min as minOf,
+  PASS_THRESHOLD,
+} from "@/lib/quiz-stats";
 import { canAttemptAgain } from "@/lib/quiz-availability";
-import type { AssistantSkill, AssistantTool, AssistantToolContext } from "../types";
+import type {
+  AssistantSkill,
+  AssistantTool,
+  AssistantToolContext,
+} from "../types";
 
 /** Hard ceiling on rows any single search returns, whatever the model asks for. */
 const MAX_SEARCH_LIMIT = 50;
 const DEFAULT_SEARCH_LIMIT = 20;
 
 function requireStudent(ctx: AssistantToolContext): string {
-  if (!ctx.studentId) throw new Error("This tool is only available to students.");
+  if (!ctx.studentId)
+    throw new Error("This tool is only available to students.");
   return ctx.studentId;
 }
 
@@ -35,36 +45,58 @@ const searchInput = z.object({
     .string()
     .max(200)
     .optional()
-    .describe("Case-insensitive substring of the quiz name. Omit to match every quiz."),
+    .describe(
+      "Case-insensitive substring of the quiz name. Omit to match every quiz.",
+    ),
   topic: z
     .string()
     .max(200)
     .optional()
-    .describe("Case-insensitive substring of the topic name. Omit to match every topic."),
+    .describe(
+      "Case-insensitive substring of the topic name. Omit to match every topic.",
+    ),
   className: z
     .string()
     .max(200)
     .optional()
-    .describe("Case-insensitive substring of the class name. Omit to match every class."),
-  minScore: z.number().min(0).max(100).optional().describe("Only results scoring at least this percentage."),
-  maxScore: z.number().min(0).max(100).optional().describe("Only results scoring at most this percentage."),
+    .describe(
+      "Case-insensitive substring of the class name. Omit to match every class.",
+    ),
+  minScore: z
+    .number()
+    .min(0)
+    .max(100)
+    .optional()
+    .describe("Only results scoring at least this percentage."),
+  maxScore: z
+    .number()
+    .min(0)
+    .max(100)
+    .optional()
+    .describe("Only results scoring at most this percentage."),
   completedAfter: z
     .string()
     .max(40)
     .optional()
-    .describe("ISO-8601 date or datetime; only results completed on or after it."),
+    .describe(
+      "ISO-8601 date or datetime; only results completed on or after it.",
+    ),
   completedBefore: z
     .string()
     .max(40)
     .optional()
-    .describe("ISO-8601 date or datetime; only results completed on or before it."),
+    .describe(
+      "ISO-8601 date or datetime; only results completed on or before it.",
+    ),
   limit: z
     .number()
     .int()
     .min(1)
     .max(MAX_SEARCH_LIMIT)
     .optional()
-    .describe(`Maximum results to return (default ${DEFAULT_SEARCH_LIMIT}, hard cap ${MAX_SEARCH_LIMIT}).`),
+    .describe(
+      `Maximum results to return (default ${DEFAULT_SEARCH_LIMIT}, hard cap ${MAX_SEARCH_LIMIT}).`,
+    ),
 });
 
 /** Parse an ISO date the model supplied; invalid input is ignored rather than fatal. */
@@ -126,7 +158,7 @@ const searchQuizResults: AssistantTool<typeof searchInput> = {
       (row) =>
         matches(row.quizName, args.quizName) &&
         matches(row.topicName, args.topic) &&
-        matches(row.className, args.className)
+        matches(row.className, args.className),
     );
 
     return {
@@ -147,7 +179,11 @@ const searchQuizResults: AssistantTool<typeof searchInput> = {
 };
 
 const detailInput = z.object({
-  resultId: z.string().min(1).max(64).describe("The resultId returned by search_quiz_results."),
+  resultId: z
+    .string()
+    .min(1)
+    .max(64)
+    .describe("The resultId returned by search_quiz_results."),
 });
 
 /**
@@ -158,17 +194,24 @@ const detailInput = z.object({
 async function retakeStillPossible(
   studentId: string,
   classId: string,
-  quizId: string
+  quizId: string,
 ): Promise<boolean> {
   const [classQuiz, completedAttempts, inProgress] = await Promise.all([
     prisma.classQuiz.findUnique({
       where: { classId_quizId: { classId, quizId } },
-      select: { published: true, availableFrom: true, availableUntil: true, maxAttempts: true },
+      select: {
+        published: true,
+        availableFrom: true,
+        availableUntil: true,
+        maxAttempts: true,
+      },
     }),
     prisma.quizAttempt.count({
       where: { studentId, classId, quizId, completedAt: { not: null } },
     }),
-    prisma.quizAttempt.count({ where: { studentId, classId, quizId, completedAt: null } }),
+    prisma.quizAttempt.count({
+      where: { studentId, classId, quizId, completedAt: null },
+    }),
   ]);
 
   // No ClassQuiz row: the quiz was removed from the class (or deleted outright),
@@ -184,7 +227,7 @@ async function retakeStillPossible(
       availableUntil: classQuiz.availableUntil,
       maxAttempts: classQuiz.maxAttempts,
     },
-    { completedAttempts, hasAttemptInProgress: inProgress > 0 }
+    { completedAttempts, hasAttemptInProgress: inProgress > 0 },
   );
 }
 
@@ -208,11 +251,18 @@ const getQuizResultDetail: AssistantTool<typeof detailInput> = {
     // Ownership is re-checked here, not just in the caller: a fabricated
     // resultId must read as "not found", never as another student's attempt.
     if (!row || row.studentId !== studentId) {
-      return { found: false, message: "No result of yours matches that resultId." };
+      return {
+        found: false,
+        message: "No result of yours matches that resultId.",
+      };
     }
 
     const snapshot = parseReviewSnapshot(row.reviewSnapshot);
-    const retakeable = await retakeStillPossible(studentId, row.classId, row.quizId);
+    const retakeable = await retakeStillPossible(
+      studentId,
+      row.classId,
+      row.quizId,
+    );
 
     return {
       found: true,
@@ -240,7 +290,7 @@ const getQuizResultDetail: AssistantTool<typeof detailInput> = {
       questions: snapshot.questions.map((question, index) => {
         const yourAnswer =
           question.answerMode === "NUMERIC"
-            ? question.submittedNumeric ?? null
+            ? (question.submittedNumeric ?? null)
             : question.options.filter((o) => o.selected).map((o) => o.text);
 
         // While a retake is possible the student gets back only what they
@@ -262,7 +312,7 @@ const getQuizResultDetail: AssistantTool<typeof detailInput> = {
           yourAnswer,
           correctAnswer:
             question.answerMode === "NUMERIC"
-              ? question.correctNumeric ?? null
+              ? (question.correctNumeric ?? null)
               : question.options.filter((o) => o.isCorrect).map((o) => o.text),
           ...(question.unit ? { unit: question.unit } : {}),
         };
@@ -275,8 +325,16 @@ const trendInput = z.object({
   groupBy: z
     .enum(["topic", "quiz", "class"])
     .describe("Which dimension to aggregate the student's results over."),
-  topic: z.string().max(200).optional().describe("Optional case-insensitive topic-name filter applied first."),
-  className: z.string().max(200).optional().describe("Optional case-insensitive class-name filter applied first."),
+  topic: z
+    .string()
+    .max(200)
+    .optional()
+    .describe("Optional case-insensitive topic-name filter applied first."),
+  className: z
+    .string()
+    .max(200)
+    .optional()
+    .describe("Optional case-insensitive class-name filter applied first."),
 });
 
 const summarizePerformance: AssistantTool<typeof trendInput> = {
@@ -302,7 +360,9 @@ const summarizePerformance: AssistantTool<typeof trendInput> = {
     });
 
     const filtered = rows.filter(
-      (row) => matches(row.topicName, args.topic) && matches(row.className, args.className)
+      (row) =>
+        matches(row.topicName, args.topic) &&
+        matches(row.className, args.className),
     );
 
     const keyOf = (row: (typeof filtered)[number]): string =>
@@ -335,7 +395,8 @@ const summarizePerformance: AssistantTool<typeof trendInput> = {
           meanScore: Math.round(mean(group.scores) * 10) / 10,
           bestScore: maxOf(group.scores),
           worstScore: minOf(group.scores),
-          passingAttempts: group.scores.filter((s) => s >= PASS_THRESHOLD).length,
+          passingAttempts: group.scores.filter((s) => s >= PASS_THRESHOLD)
+            .length,
           lastAttemptAt: group.latest.toISOString(),
         }))
         .sort((a, b) => a.meanScore - b.meanScore),
@@ -359,11 +420,11 @@ export const studentQuizResultsSkill: AssistantSkill = {
     "These tools only ever return this student's own data. If the student asks about another " +
       "student, a class average, or anyone else's scores, tell them you can only see their own " +
       "results and suggest they ask their teacher.",
-    "get_quiz_result_detail reports attemptState. When it is \"retake_possible\" the response " +
+    'get_quiz_result_detail reports attemptState. When it is "retake_possible" the response ' +
       "carries answerKeyWithheld: you have NOT been given the correct answers or the per-question " +
       "correct/incorrect marks, so you must not state, guess, or narrow down which answer is " +
       "right. Say the quiz is still open to them, then work through the underlying idea. When it " +
-      "is \"final\" the attempt is closed and you may go over the correct answers as review.",
+      'is "final" the attempt is closed and you may go over the correct answers as review.',
     "When you reference a result, name the quiz and the score so the student can find it in their " +
       "Exam History. Never invent a score, a quiz name, or a date that a tool did not return.",
   ].join("\n"),

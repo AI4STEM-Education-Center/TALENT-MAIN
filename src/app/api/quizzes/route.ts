@@ -5,7 +5,8 @@ import { getContentActor, ownScope } from "@/lib/quiz-access";
 // GET: list the caller's quizzes (teacher → their own, admin → the global pool)
 export async function GET() {
   const actor = await getContentActor();
-  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!actor)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const quizzes = await prisma.quiz.findMany({
     where: { teacherId: ownScope(actor) },
@@ -21,14 +22,20 @@ export async function GET() {
 // POST: create a quiz in the caller's scope (optionally grouped under a topic)
 export async function POST(req: NextRequest) {
   const actor = await getContentActor();
-  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!actor)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { name, topicId, order, dedupeByName } = await req.json();
-  if (!name?.trim()) return NextResponse.json({ error: "Quiz name required." }, { status: 400 });
+  if (!name?.trim())
+    return NextResponse.json({ error: "Quiz name required." }, { status: 400 });
 
   if (topicId) {
     const topic = await prisma.topic.findUnique({ where: { id: topicId } });
-    if (!topic || topic.teacherId !== actor.teacherId || topic.contentType !== "QUIZ") {
+    if (
+      !topic ||
+      topic.teacherId !== actor.teacherId ||
+      topic.contentType !== "QUIZ"
+    ) {
       return NextResponse.json({ error: "Topic not found." }, { status: 400 });
     }
   }
@@ -43,11 +50,17 @@ export async function POST(req: NextRequest) {
       where: { teacherId: ownScope(actor), topicId: topicId || null },
       select: { id: true, name: true },
     });
-    const existing = siblings.find((q) => q.name.trim().toLowerCase() === target);
+    const existing = siblings.find(
+      (q) => q.name.trim().toLowerCase() === target,
+    );
     if (existing) {
       return NextResponse.json(
-        { error: `A quiz named "${existing.name}" already exists here.`, duplicate: true, existingQuizId: existing.id },
-        { status: 409 }
+        {
+          error: `A quiz named "${existing.name}" already exists here.`,
+          duplicate: true,
+          existingQuizId: existing.id,
+        },
+        { status: 409 },
       );
     }
   }

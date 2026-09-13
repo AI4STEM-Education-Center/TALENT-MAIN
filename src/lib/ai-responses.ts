@@ -15,7 +15,11 @@ import type OpenAI from "openai";
 import { computeCallMetrics } from "./ai-metrics";
 // Type-only: the runtime dependency runs the other way (ai-streaming imports
 // this module), so importing these as types keeps the cycle off the runtime.
-import type { StreamedCompletion, StreamedToolCall, StreamOptions } from "./ai-streaming";
+import type {
+  StreamedCompletion,
+  StreamedToolCall,
+  StreamOptions,
+} from "./ai-streaming";
 
 type ChatParams = Omit<
   OpenAI.Chat.Completions.ChatCompletionCreateParams,
@@ -34,13 +38,16 @@ type ChatPart =
  * Normalizing to parts first keeps the per-role translation below single-path.
  */
 function toParts(content: unknown): ChatPart[] {
-  if (typeof content === "string") return content ? [{ type: "text", text: content }] : [];
+  if (typeof content === "string")
+    return content ? [{ type: "text", text: content }] : [];
   if (!Array.isArray(content)) return [];
   return content as ChatPart[];
 }
 
 /** Translate user/system content parts into Responses input parts. */
-function toInputContent(parts: ChatPart[]): OpenAI.Responses.ResponseInputContent[] {
+function toInputContent(
+  parts: ChatPart[],
+): OpenAI.Responses.ResponseInputContent[] {
   return parts.map((part) => {
     if (part.type === "image_url") {
       // Responses flattens the nested { image_url: { url } } object into a
@@ -50,7 +57,9 @@ function toInputContent(parts: ChatPart[]): OpenAI.Responses.ResponseInputConten
         type: "input_image",
         image_url: part.image_url.url,
         detail:
-          detail === "low" || detail === "high" || detail === "original" ? detail : "auto",
+          detail === "low" || detail === "high" || detail === "original"
+            ? detail
+            : "auto",
       } satisfies OpenAI.Responses.ResponseInputImage;
     }
     return { type: "input_text", text: part.text };
@@ -85,7 +94,10 @@ export function toResponsesInput(messages: ChatParams["messages"]): {
       input.push({
         type: "function_call_output",
         call_id: message.tool_call_id,
-        output: typeof message.content === "string" ? message.content : JSON.stringify(message.content),
+        output:
+          typeof message.content === "string"
+            ? message.content
+            : JSON.stringify(message.content),
       });
       continue;
     }
@@ -113,22 +125,34 @@ export function toResponsesInput(messages: ChatParams["messages"]): {
     }
 
     if (message.role === "user") {
-      input.push({ role: "user", content: toInputContent(toParts(message.content)) });
+      input.push({
+        role: "user",
+        content: toInputContent(toParts(message.content)),
+      });
       continue;
     }
 
-    throw new Error(`Unsupported message role for the Responses API: "${message.role}"`);
+    throw new Error(
+      `Unsupported message role for the Responses API: "${message.role}"`,
+    );
   }
 
-  return { instructions: instructions.length > 0 ? instructions.join("\n\n") : null, input };
+  return {
+    instructions: instructions.length > 0 ? instructions.join("\n\n") : null,
+    input,
+  };
 }
 
 /** Translate `tools` from the nested chat-completions form to the flat one. */
-function toResponsesTools(tools: ChatParams["tools"]): OpenAI.Responses.Tool[] | undefined {
+function toResponsesTools(
+  tools: ChatParams["tools"],
+): OpenAI.Responses.Tool[] | undefined {
   if (!tools || tools.length === 0) return undefined;
   return tools.map((tool) => {
     if (tool.type !== "function") {
-      throw new Error(`Unsupported tool type for the Responses API: "${tool.type}"`);
+      throw new Error(
+        `Unsupported tool type for the Responses API: "${tool.type}"`,
+      );
     }
     return {
       type: "function",
@@ -144,9 +168,10 @@ function toResponsesTools(tools: ChatParams["tools"]): OpenAI.Responses.Tool[] |
 
 /** Translate `response_format: json_schema` into the `text.format` equivalent. */
 function toResponsesText(
-  responseFormat: ChatParams["response_format"]
+  responseFormat: ChatParams["response_format"],
 ): ResponsesParams["text"] | undefined {
-  if (!responseFormat || responseFormat.type !== "json_schema") return undefined;
+  if (!responseFormat || responseFormat.type !== "json_schema")
+    return undefined;
   const schema = responseFormat.json_schema as {
     name?: string;
     schema?: Record<string, unknown>;
@@ -178,11 +203,15 @@ export function toResponsesRequest(params: ChatParams): ResponsesParams {
   const { instructions, input } = toResponsesInput(params.messages);
 
   const maxOutputTokens =
-    params.max_completion_tokens ?? (params.max_tokens as number | null | undefined) ?? undefined;
+    params.max_completion_tokens ??
+    (params.max_tokens as number | null | undefined) ??
+    undefined;
 
   const toolChoice = params.tool_choice;
   if (toolChoice != null && typeof toolChoice !== "string") {
-    throw new Error("Only string tool_choice values are supported on the Responses API");
+    throw new Error(
+      "Only string tool_choice values are supported on the Responses API",
+    );
   }
 
   return {
@@ -191,12 +220,20 @@ export function toResponsesRequest(params: ChatParams): ResponsesParams {
     ...(instructions ? { instructions } : {}),
     ...(maxOutputTokens != null ? { max_output_tokens: maxOutputTokens } : {}),
     ...(params.tools ? { tools: toResponsesTools(params.tools) } : {}),
-    ...(toolChoice ? { tool_choice: toolChoice as ResponsesParams["tool_choice"] } : {}),
-    ...(params.response_format ? { text: toResponsesText(params.response_format) } : {}),
+    ...(toolChoice
+      ? { tool_choice: toolChoice as ResponsesParams["tool_choice"] }
+      : {}),
+    ...(params.response_format
+      ? { text: toResponsesText(params.response_format) }
+      : {}),
     // reasoning_effort is a flat field on chat completions and a nested object
     // here — and unlike there, it is legal alongside function tools.
-    ...(params.reasoning_effort ? { reasoning: { effort: params.reasoning_effort } } : {}),
-    ...(params.service_tier ? { service_tier: params.service_tier as ResponsesParams["service_tier"] } : {}),
+    ...(params.reasoning_effort
+      ? { reasoning: { effort: params.reasoning_effort } }
+      : {}),
+    ...(params.service_tier
+      ? { service_tier: params.service_tier as ResponsesParams["service_tier"] }
+      : {}),
     store: false,
   };
 }
@@ -245,14 +282,14 @@ export function isResponsesUnsupported(error: unknown): boolean {
 export async function streamResponsesCompletion(
   client: OpenAI,
   params: ChatParams,
-  options: StreamOptions = {}
+  options: StreamOptions = {},
 ): Promise<StreamedCompletion> {
   const now = options.now ?? Date.now;
   const start = now();
 
   const stream = await client.responses.create(
     { ...toResponsesRequest(params), stream: true },
-    options.requestOptions
+    options.requestOptions,
   );
 
   let text = "";
@@ -262,7 +299,10 @@ export async function streamResponsesCompletion(
   let incomplete = false;
   // Function calls arrive as items announced up front and filled in by argument
   // deltas; `output_index` is the stable key across both kinds of event.
-  const calls = new Map<number, { id: string; name: string; arguments: string }>();
+  const calls = new Map<
+    number,
+    { id: string; name: string; arguments: string }
+  >();
 
   for await (const event of stream) {
     switch (event.type) {
@@ -305,18 +345,23 @@ export async function streamResponsesCompletion(
       case "response.completed":
       case "response.incomplete": {
         const usage = event.response.usage;
-        if (usage && typeof usage.output_tokens === "number") usageTokens = usage.output_tokens;
+        if (usage && typeof usage.output_tokens === "number")
+          usageTokens = usage.output_tokens;
         if (event.type === "response.incomplete") incomplete = true;
         break;
       }
 
       case "response.failed": {
         const error = event.response.error;
-        throw new Error(error?.message ?? "The Responses API reported a failed response");
+        throw new Error(
+          error?.message ?? "The Responses API reported a failed response",
+        );
       }
 
       case "error": {
-        throw new Error(event.message ?? "The Responses API returned a stream error");
+        throw new Error(
+          event.message ?? "The Responses API returned a stream error",
+        );
       }
 
       default:
@@ -331,7 +376,8 @@ export async function streamResponsesCompletion(
 
   // Chat completions reports one of stop/length/tool_calls; map onto that so
   // callers reading `finishReason` see one vocabulary regardless of transport.
-  const finishReason = toolCalls.length > 0 ? "tool_calls" : incomplete ? "length" : "stop";
+  const finishReason =
+    toolCalls.length > 0 ? "tool_calls" : incomplete ? "length" : "stop";
 
   return {
     text,

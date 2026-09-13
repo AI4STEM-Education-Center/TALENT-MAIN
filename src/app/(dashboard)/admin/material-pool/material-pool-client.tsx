@@ -17,13 +17,19 @@ interface PoolMaterial {
   topic: { id: string; name: string } | null;
 }
 
-interface MaterialTag { id: string; name: string }
+interface MaterialTag {
+  id: string;
+  name: string;
+}
 
 function groupByTopic(materials: PoolMaterial[]) {
   const groups = new Map<string, { name: string; items: PoolMaterial[] }>();
   for (const material of materials) {
     const key = material.topic?.id ?? "__ungrouped";
-    const group = groups.get(key) ?? { name: material.topic?.name ?? "No topic", items: [] };
+    const group = groups.get(key) ?? {
+      name: material.topic?.name ?? "No topic",
+      items: [],
+    };
     group.items.push(material);
     groups.set(key, group);
   }
@@ -71,19 +77,29 @@ export function MaterialPoolClient({
       return;
     }
     const { material } = await response.json();
-    setMaterials((current) => current.map((item) => item.id === materialId ? { ...item, topic: material.topic } : item));
+    setMaterials((current) =>
+      current.map((item) =>
+        item.id === materialId ? { ...item, topic: material.topic } : item,
+      ),
+    );
   }
 
   async function remove(material: PoolMaterial) {
     const approved = await confirm({
       title: "Delete this material from the global pool?",
-      description: "Teacher copies already imported into classes will not be affected.",
+      description:
+        "Teacher copies already imported into classes will not be affected.",
       confirmText: "Delete",
       variant: "destructive",
     });
     if (!approved) return;
-    const response = await fetch(`/api/admin/materials/${material.id}`, { method: "DELETE" });
-    if (response.ok) setMaterials((current) => current.filter((item) => item.id !== material.id));
+    const response = await fetch(`/api/admin/materials/${material.id}`, {
+      method: "DELETE",
+    });
+    if (response.ok)
+      setMaterials((current) =>
+        current.filter((item) => item.id !== material.id),
+      );
     else setError("Could not delete the material.");
   }
 
@@ -91,43 +107,91 @@ export function MaterialPoolClient({
     <div className="space-y-6 p-4 md:p-6">
       <div>
         <h1 className="text-3xl font-bold">Learning-material pool</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Shared, approved materials organized with material-only tags.</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Shared, approved materials organized with material-only tags.
+        </p>
       </div>
       <Card>
         <CardContent className="flex flex-col gap-3 p-4 sm:flex-row">
-          <Input value={newTag} onChange={(event) => setNewTag(event.target.value)} placeholder="New material tag" onKeyDown={(event) => event.key === "Enter" && createTag()} />
-          <Button variant="outline" onClick={createTag} disabled={!newTag.trim()}><Plus className="size-4" /> Create new tag</Button>
+          <Input
+            value={newTag}
+            onChange={(event) => setNewTag(event.target.value)}
+            placeholder="New material tag"
+            onKeyDown={(event) => event.key === "Enter" && createTag()}
+          />
+          <Button
+            variant="outline"
+            onClick={createTag}
+            disabled={!newTag.trim()}
+          >
+            <Plus className="size-4" /> Create new tag
+          </Button>
         </CardContent>
       </Card>
-      {error && <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
+      {error && (
+        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          {error}
+        </div>
+      )}
       {materials.length === 0 ? (
-        <Card><CardContent className="py-12 text-center text-muted-foreground"><FileText className="mx-auto mb-3 size-10" />No approved learning materials yet.</CardContent></Card>
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            <FileText className="mx-auto mb-3 size-10" />
+            No approved learning materials yet.
+          </CardContent>
+        </Card>
       ) : (
         <div className="space-y-6">
           {groupByTopic(materials).map((group) => (
             <section key={group.name} className="space-y-2">
-              <h2 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground"><BookOpen className="size-4" />{group.name}<Badge variant="secondary">{group.items.length}</Badge></h2>
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+                <BookOpen className="size-4" />
+                {group.name}
+                <Badge variant="secondary">{group.items.length}</Badge>
+              </h2>
               {group.items.map((material) => (
                 <Card key={material.id}>
                   <CardContent className="flex items-center justify-between gap-3 p-4">
                     <div className="min-w-0">
-                      <Link className="font-semibold hover:underline" href={`/admin/materials/${material.id}`}>{material.title || material.originalName}</Link>
-                      <p className="text-sm text-muted-foreground">{material.totalPages} pages</p>
+                      <Link
+                        className="font-semibold hover:underline"
+                        href={`/admin/materials/${material.id}`}
+                      >
+                        {material.title || material.originalName}
+                      </Link>
+                      <p className="text-sm text-muted-foreground">
+                        {material.totalPages} pages
+                      </p>
                     </div>
                     <div className="flex items-center gap-2">
                       <label className="flex items-center gap-2 text-sm text-muted-foreground">
                         <Tags className="size-4" />
-                        <span className="sr-only">Tag {material.title || material.originalName}</span>
+                        <span className="sr-only">
+                          Tag {material.title || material.originalName}
+                        </span>
                         <select
                           className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground"
                           value={material.topic?.id ?? ""}
-                          onChange={(event) => assignTag(material.id, event.target.value)}
+                          onChange={(event) =>
+                            assignTag(material.id, event.target.value)
+                          }
                         >
                           <option value="">No tag</option>
-                          {tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
+                          {tags.map((tag) => (
+                            <option key={tag.id} value={tag.id}>
+                              {tag.name}
+                            </option>
+                          ))}
                         </select>
                       </label>
-                      <Button aria-label={`Delete ${material.title || material.originalName}`} variant="ghost" size="sm" onClick={() => remove(material)}><Trash2 className="size-4 text-destructive" /></Button>
+                      <Button
+                        aria-label={`Delete ${material.title || material.originalName}`}
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => remove(material)}
+                      >
+                        <Trash2 className="size-4 text-destructive" />
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>

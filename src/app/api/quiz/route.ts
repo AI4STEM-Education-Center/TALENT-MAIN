@@ -3,7 +3,10 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { scoreQuiz, type ScorableQuestion } from "@/lib/quiz-scoring";
 import { buildReviewSnapshot } from "@/lib/exam-results";
-import { attachFigureUrls, attachOptionImageUrls } from "@/lib/question-figures";
+import {
+  attachFigureUrls,
+  attachOptionImageUrls,
+} from "@/lib/question-figures";
 import { shuffleAnswerChoices } from "@/lib/quiz-shuffle";
 import { enqueueExamResult } from "@/lib/queue";
 import { logApiError } from "@/lib/system-log";
@@ -18,26 +21,39 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const student = await prisma.student.findUnique({ where: { userId: session.user.id } });
-  if (!student) return NextResponse.json({ error: "Student not found" }, { status: 404 });
+  const student = await prisma.student.findUnique({
+    where: { userId: session.user.id },
+  });
+  if (!student)
+    return NextResponse.json({ error: "Student not found" }, { status: 404 });
 
   const { classId, quizId } = await req.json();
   if (!classId || !quizId) {
-    return NextResponse.json({ error: "classId and quizId required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "classId and quizId required" },
+      { status: 400 },
+    );
   }
 
   // Verify student is enrolled
   const enrollment = await prisma.classEnrollment.findUnique({
     where: { classId_studentId: { classId, studentId: student.id } },
   });
-  if (!enrollment) return NextResponse.json({ error: "Not enrolled in this class" }, { status: 403 });
+  if (!enrollment)
+    return NextResponse.json(
+      { error: "Not enrolled in this class" },
+      { status: 403 },
+    );
 
   // Verify the quiz is published for this class
   const classQuiz = await prisma.classQuiz.findUnique({
     where: { classId_quizId: { classId, quizId } },
   });
   if (!classQuiz?.published) {
-    return NextResponse.json({ error: "This quiz is not yet available." }, { status: 403 });
+    return NextResponse.json(
+      { error: "This quiz is not yet available." },
+      { status: 403 },
+    );
   }
 
   // Enforce the per-class availability window + attempt cap (the source of
@@ -45,10 +61,16 @@ export async function POST(req: NextRequest) {
   // row is already loaded, so the new scalars cost no extra query.
   const now = new Date();
   if (classQuiz.availableFrom && now < classQuiz.availableFrom) {
-    return NextResponse.json({ error: "This quiz isn't open yet." }, { status: 403 });
+    return NextResponse.json(
+      { error: "This quiz isn't open yet." },
+      { status: 403 },
+    );
   }
   if (classQuiz.availableUntil && now > classQuiz.availableUntil) {
-    return NextResponse.json({ error: "This quiz has closed." }, { status: 403 });
+    return NextResponse.json(
+      { error: "This quiz has closed." },
+      { status: 403 },
+    );
   }
   // Get questions for this quiz. SECURITY: students must never receive the
   // grading data — `omit` strips the NUMERIC answer/tolerance scalars, options
@@ -61,13 +83,24 @@ export async function POST(req: NextRequest) {
     where: { quizId },
     omit: { answerNumeric: true, answerTolerance: true },
     include: {
-      options: { select: { id: true, text: true, imageStorageKey: true, imageBucket: true, imageAlt: true } },
+      options: {
+        select: {
+          id: true,
+          text: true,
+          imageStorageKey: true,
+          imageBucket: true,
+          imageAlt: true,
+        },
+      },
     },
     orderBy: { createdAt: "asc" },
   });
 
   if (questionRows.length === 0) {
-    return NextResponse.json({ error: "No questions available for this quiz." }, { status: 404 });
+    return NextResponse.json(
+      { error: "No questions available for this quiz." },
+      { status: 404 },
+    );
   }
 
   // Reserve the attempt before doing optional S3 presigning work. The attempt
@@ -95,7 +128,12 @@ export async function POST(req: NextRequest) {
       if (!claimed) {
         if (classQuiz.maxAttempts && classQuiz.maxAttempts > 0) {
           const usedAttempts = await tx.quizAttempt.count({
-            where: { studentId: student.id, classId, quizId, completedAt: { not: null } },
+            where: {
+              studentId: student.id,
+              classId,
+              quizId,
+              completedAt: { not: null },
+            },
           });
           if (usedAttempts >= classQuiz.maxAttempts) {
             throw new AttemptLimitError();
@@ -108,9 +146,16 @@ export async function POST(req: NextRequest) {
       }
 
       await tx.quizProgress.upsert({
-        where: { studentId_classId_quizId: { studentId: student.id, classId, quizId } },
+        where: {
+          studentId_classId_quizId: { studentId: student.id, classId, quizId },
+        },
         update: { status: "IN_PROGRESS" },
-        create: { studentId: student.id, classId, quizId, status: "IN_PROGRESS" },
+        create: {
+          studentId: student.id,
+          classId,
+          quizId,
+          status: "IN_PROGRESS",
+        },
       });
       return claimed;
     });
@@ -118,7 +163,7 @@ export async function POST(req: NextRequest) {
     if (error instanceof AttemptLimitError) {
       return NextResponse.json(
         { error: `You've used all ${classQuiz.maxAttempts} attempts.` },
-        { status: 403 }
+        { status: 403 },
       );
     }
     throw error;
@@ -129,12 +174,15 @@ export async function POST(req: NextRequest) {
   // Done before presigning so each option's URL rides along with it.
   const orderedRows = questionRows.map((question) => ({
     ...question,
-    options: shuffleAnswerChoices(question.options, `${attempt.id}:${question.id}`),
+    options: shuffleAnswerChoices(
+      question.options,
+      `${attempt.id}:${question.id}`,
+    ),
   }));
 
   // Replace figure + option-image storage keys with transient presigned URLs.
   const questions = await attachFigureUrls(orderedRows).then((rows) =>
-    attachOptionImageUrls(rows)
+    attachOptionImageUrls(rows),
   );
 
   return NextResponse.json({ attemptId: attempt.id, questions });
@@ -147,8 +195,11 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const student = await prisma.student.findUnique({ where: { userId: session.user.id } });
-  if (!student) return NextResponse.json({ error: "Student not found" }, { status: 404 });
+  const student = await prisma.student.findUnique({
+    where: { userId: session.user.id },
+  });
+  if (!student)
+    return NextResponse.json({ error: "Student not found" }, { status: 404 });
 
   let body: { attemptId?: unknown; answers?: unknown };
   try {
@@ -161,10 +212,15 @@ export async function PATCH(req: NextRequest) {
   // | [{ questionId, numericValue }] (NUMERIC). The raw array is handed straight
   // to scoreQuiz, which reads/normalizes the relevant field per question mode.
   if (typeof attemptId !== "string" || !attemptId || !Array.isArray(answers)) {
-    return NextResponse.json({ error: "attemptId and answers required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "attemptId and answers required" },
+      { status: 400 },
+    );
   }
 
-  const attempt = await prisma.quizAttempt.findUnique({ where: { id: attemptId } });
+  const attempt = await prisma.quizAttempt.findUnique({
+    where: { id: attemptId },
+  });
   if (!attempt || attempt.studentId !== student.id) {
     return NextResponse.json({ error: "Attempt not found" }, { status: 404 });
   }
@@ -177,13 +233,16 @@ export async function PATCH(req: NextRequest) {
   if (attempt.completedAt) {
     return NextResponse.json(
       { error: "This attempt has already been submitted." },
-      { status: 409 }
+      { status: 409 },
     );
   }
   // quizId is null only if the quiz was deleted mid-attempt — nothing left to score against.
   const quizId = attempt.quizId;
   if (!quizId) {
-    return NextResponse.json({ error: "This quiz no longer exists." }, { status: 410 });
+    return NextResponse.json(
+      { error: "This quiz no longer exists." },
+      { status: 410 },
+    );
   }
 
   // SECURITY: one answer per question. Repeating a question the student knows
@@ -195,10 +254,13 @@ export async function PATCH(req: NextRequest) {
         !answer ||
         typeof answer !== "object" ||
         typeof (answer as { questionId?: unknown }).questionId !== "string" ||
-        !(answer as { questionId: string }).questionId
+        !(answer as { questionId: string }).questionId,
     )
   ) {
-    return NextResponse.json({ error: "Each answer requires a questionId." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Each answer requires a questionId." },
+      { status: 400 },
+    );
   }
   const submittedAnswers = answers as Array<{
     questionId: string;
@@ -210,7 +272,7 @@ export async function PATCH(req: NextRequest) {
   if (new Set(questionIds).size !== questionIds.length) {
     return NextResponse.json(
       { error: "Each question may be answered only once." },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
@@ -224,7 +286,7 @@ export async function PATCH(req: NextRequest) {
     include: { options: true },
   });
   const questionsById = new Map<string, ScorableQuestion>(
-    quizQuestions.map((q) => [q.id, q])
+    quizQuestions.map((q) => [q.id, q]),
   );
 
   // Any answer referencing a question outside this quiz is rejected.
@@ -236,9 +298,12 @@ export async function PATCH(req: NextRequest) {
   // keeps the score denominator, review snapshot, and missed-question UI in
   // agreement instead of scoring omissions as wrong while silently dropping
   // them from the durable result.
-  const submittedByQuestion = new Map(submittedAnswers.map((answer) => [answer.questionId, answer]));
+  const submittedByQuestion = new Map(
+    submittedAnswers.map((answer) => [answer.questionId, answer]),
+  );
   const completeAnswers = quizQuestions.map(
-    (question) => submittedByQuestion.get(question.id) ?? { questionId: question.id }
+    (question) =>
+      submittedByQuestion.get(question.id) ?? { questionId: question.id },
   );
 
   const { correct, score, answerRecords } = scoreQuiz({
@@ -332,13 +397,13 @@ export async function PATCH(req: NextRequest) {
     if (error instanceof AttemptLimitError) {
       return NextResponse.json(
         { error: "You've used all your attempts for this quiz." },
-        { status: 403 }
+        { status: 403 },
       );
     }
     if (error instanceof AttemptAlreadySubmittedError) {
       return NextResponse.json(
         { error: "This attempt has already been submitted." },
-        { status: 409 }
+        { status: 409 },
       );
     }
     throw error;
@@ -371,7 +436,7 @@ export async function PATCH(req: NextRequest) {
         figureStorageKey: q.figureStorageKey,
         figureAlt: q.figureAlt,
       })),
-      answerRecords
+      answerRecords,
     );
 
     const examResult = await prisma.examResult.create({
@@ -381,7 +446,9 @@ export async function PATCH(req: NextRequest) {
         classId: attempt.classId,
         quizId,
         studentName:
-          [session.user.firstName, session.user.lastName].filter(Boolean).join(" ") || null,
+          [session.user.firstName, session.user.lastName]
+            .filter(Boolean)
+            .join(" ") || null,
         className: names?.class.name ?? "",
         topicName: names?.quiz?.topic?.name ?? "",
         quizName: names?.quiz?.name ?? "",
@@ -398,7 +465,11 @@ export async function PATCH(req: NextRequest) {
     try {
       enqueueExamResult(examResult.id);
     } catch (err) {
-      logApiError("QUIZ_SUBMIT", err, "Failed to enqueue exam-result generation");
+      logApiError(
+        "QUIZ_SUBMIT",
+        err,
+        "Failed to enqueue exam-result generation",
+      );
     }
   } catch (err) {
     logApiError("QUIZ_SUBMIT", err, "Failed to create ExamResult snapshot");
@@ -409,7 +480,7 @@ export async function PATCH(req: NextRequest) {
   // so ids are enough to render them without returning answer keys, option
   // correctness, numeric solutions/tolerances, questions, or answer records.
   const incorrectQuestionIds = answerRecords.flatMap((record) =>
-    record.isCorrect ? [] : [record.questionId]
+    record.isCorrect ? [] : [record.questionId],
   );
   return NextResponse.json({ score, incorrectQuestionIds });
 }

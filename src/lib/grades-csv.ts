@@ -66,12 +66,15 @@ export function calculateExportGrade({
     (hasCompletedAttempt
       ? mode === "completion"
         ? 100
-        : bestScore ?? 0
+        : (bestScore ?? 0)
       : null);
   return percentage === null ? null : (percentage / 100) * maxPoints;
 }
 
-export function buildGradesCsv(gradeHeader: string, rows: GradeExportRow[]): string {
+export function buildGradesCsv(
+  gradeHeader: string,
+  rows: GradeExportRow[],
+): string {
   const lines = [
     [
       "OrgDefinedId",
@@ -87,7 +90,7 @@ export function buildGradesCsv(gradeHeader: string, rows: GradeExportRow[]): str
         csvField(r.firstName),
         csvField(r.grade),
         "#",
-      ].join(",")
+      ].join(","),
     ),
   ];
   return lines.join("\r\n") + "\r\n";

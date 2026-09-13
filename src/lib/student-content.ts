@@ -69,7 +69,9 @@ export type StudentSimulationClass = {
  * pushed to S3 and stays "PENDING" until the upload is confirmed, so listing
  * those would offer students a document that does not exist yet.
  */
-export async function listStudentMaterials(studentId: string): Promise<StudentMaterial[]> {
+export async function listStudentMaterials(
+  studentId: string,
+): Promise<StudentMaterial[]> {
   const links = await prisma.materialClass.findMany({
     where: {
       class: { enrollments: { some: { studentId } } },
@@ -99,14 +101,18 @@ export async function listStudentMaterials(studentId: string): Promise<StudentMa
     const existing = byMaterial.get(material.id);
     if (existing) {
       // Same material, second enrolled class — record the extra grant only.
-      if (!existing.classes.some((c) => c.id === link.class.id)) existing.classes.push(link.class);
+      if (!existing.classes.some((cls) => cls.id === link.class.id))
+        existing.classes.push(link.class);
       continue;
     }
     byMaterial.set(material.id, {
       ...material,
       createdAt: createdAt.toISOString(),
       // Materials share the Topic table with quizzes; only MATERIAL tags label one.
-      topic: topic?.contentType === "MATERIAL" ? { id: topic.id, name: topic.name } : null,
+      topic:
+        topic?.contentType === "MATERIAL"
+          ? { id: topic.id, name: topic.name }
+          : null,
       classes: [link.class],
     });
   }
@@ -119,7 +125,10 @@ export async function listStudentMaterials(studentId: string): Promise<StudentMa
  * Returns null otherwise — callers turn that into a 404, never a 403, so a
  * student cannot probe for material ids outside their classes.
  */
-export async function getStudentMaterial(studentId: string, materialId: string) {
+export async function getStudentMaterial(
+  studentId: string,
+  materialId: string,
+) {
   const material = await prisma.learningMaterial.findFirst({
     where: {
       id: materialId,
@@ -129,7 +138,12 @@ export async function getStudentMaterial(studentId: string, materialId: string) 
     include: {
       pages: {
         orderBy: { pageNumber: "asc" },
-        select: { id: true, pageNumber: true, keyConcept: true, description: true },
+        select: {
+          id: true,
+          pageNumber: true,
+          keyConcept: true,
+          description: true,
+        },
       },
       classLinks: {
         where: { class: { enrollments: { some: { studentId } } } },
@@ -162,7 +176,7 @@ export async function getStudentMaterial(studentId: string, materialId: string) 
  * post-quiz rail dedupes them the same way.
  */
 export async function listStudentSimulations(
-  studentId: string
+  studentId: string,
 ): Promise<StudentSimulationClass[]> {
   const assignments = await prisma.classQuiz.findMany({
     where: {
@@ -170,7 +184,9 @@ export async function listStudentSimulations(
       class: { enrollments: { some: { studentId } } },
       quiz: {
         questions: {
-          some: { simulation: { is: { status: "READY", storageKey: { not: null } } } },
+          some: {
+            simulation: { is: { status: "READY", storageKey: { not: null } } },
+          },
         },
       },
     },
@@ -183,7 +199,11 @@ export async function listStudentSimulations(
           name: true,
           topic: { select: { name: true, contentType: true } },
           questions: {
-            where: { simulation: { is: { status: "READY", storageKey: { not: null } } } },
+            where: {
+              simulation: {
+                is: { status: "READY", storageKey: { not: null } },
+              },
+            },
             orderBy: { createdAt: "asc" },
             select: {
               simulation: {
@@ -237,5 +257,7 @@ export async function listStudentSimulations(
     byClass.set(cls.id, group);
   }
 
-  return Array.from(byClass.values()).toSorted((a, b) => a.className.localeCompare(b.className));
+  return Array.from(byClass.values()).toSorted((a, b) =>
+    a.className.localeCompare(b.className),
+  );
 }

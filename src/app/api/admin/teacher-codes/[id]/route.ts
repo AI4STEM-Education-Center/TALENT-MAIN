@@ -14,7 +14,10 @@ export const runtime = "nodejs";
  * flag instead of deleting the row: the usedCount and the label stay readable
  * as a record of what was handed out.
  */
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
   const session = await auth();
   if (!session?.user || session.user.role !== "ADMIN") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -25,9 +28,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const parsed = parseBody(teacherCodeUpdateSchema, await req.json());
     if (!parsed.ok) return parsed.response;
 
-    const existing = await prisma.teacherRegistrationCode.findUnique({ where: { id } });
+    const existing = await prisma.teacherRegistrationCode.findUnique({
+      where: { id },
+    });
     if (!existing) {
-      return NextResponse.json({ error: "Registration code not found." }, { status: 404 });
+      return NextResponse.json(
+        { error: "Registration code not found." },
+        { status: 404 },
+      );
     }
 
     const row = await prisma.teacherRegistrationCode.update({
@@ -37,7 +45,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     void logSystemEvent({
       category: "AUTH",
-      type: parsed.data.active ? "TEACHER_CODE_RESTORED" : "TEACHER_CODE_REVOKED",
+      type: parsed.data.active
+        ? "TEACHER_CODE_RESTORED"
+        : "TEACHER_CODE_REVOKED",
       message: `Teacher registration code ${parsed.data.active ? "restored" : "revoked"}${
         row.label ? ` (${row.label})` : ""
       }.`,
@@ -48,7 +58,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json(toTeacherCodeView(row, appOrigin(req)));
   } catch (error) {
     logApiError("ADMIN_TEACHER_CODES_PATCH", error);
-    return NextResponse.json({ error: "Internal server error." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error." },
+      { status: 500 },
+    );
   }
 }
 
@@ -57,7 +70,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
  * Teachers already registered with it keep their accounts; only the record of
  * the code goes away, so the panel steers admins to revoke instead.
  */
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
   const session = await auth();
   if (!session?.user || session.user.role !== "ADMIN") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -65,9 +81,14 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
   try {
     const { id } = await params;
-    const deleted = await prisma.teacherRegistrationCode.deleteMany({ where: { id } });
+    const deleted = await prisma.teacherRegistrationCode.deleteMany({
+      where: { id },
+    });
     if (deleted.count === 0) {
-      return NextResponse.json({ error: "Registration code not found." }, { status: 404 });
+      return NextResponse.json(
+        { error: "Registration code not found." },
+        { status: 404 },
+      );
     }
 
     void logSystemEvent({
@@ -81,6 +102,9 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     return NextResponse.json({ success: true });
   } catch (error) {
     logApiError("ADMIN_TEACHER_CODES_DELETE", error);
-    return NextResponse.json({ error: "Internal server error." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error." },
+      { status: 500 },
+    );
   }
 }

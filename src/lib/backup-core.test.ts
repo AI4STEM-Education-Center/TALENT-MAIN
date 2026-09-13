@@ -25,7 +25,12 @@ describe("backup key naming", () => {
 });
 
 describe("selectForRetention (GFS)", () => {
-  const policy: RetentionPolicy = { keepRecent: 2, keepWeekly: 2, keepMonthly: 2, keepYearly: 2 };
+  const policy: RetentionPolicy = {
+    keepRecent: 2,
+    keepWeekly: 2,
+    keepMonthly: 2,
+    keepYearly: 2,
+  };
 
   // key === the date label so assertions are readable.
   const items = [
@@ -43,9 +48,20 @@ describe("selectForRetention (GFS)", () => {
   it("keeps recent + one per recent week/month/year and prunes the rest", () => {
     const keep = selectForRetention(items, policy);
     expect([...keep].sort()).toEqual(
-      ["2025-12-31", "2026-05-20", "2026-06-08", "2026-06-16", "2026-06-17"].sort(),
+      [
+        "2025-12-31",
+        "2026-05-20",
+        "2026-06-08",
+        "2026-06-16",
+        "2026-06-17",
+      ].sort(),
     );
-    for (const dropped of ["2026-06-15", "2026-04-10", "2024-11-11", "2023-01-01"]) {
+    for (const dropped of [
+      "2026-06-15",
+      "2026-04-10",
+      "2024-11-11",
+      "2023-01-01",
+    ]) {
       expect(keep.has(dropped)).toBe(false);
     }
   });

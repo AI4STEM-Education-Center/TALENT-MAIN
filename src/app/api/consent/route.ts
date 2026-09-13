@@ -3,7 +3,12 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { parseBody, consentSubmitSchema } from "@/lib/validation";
-import { getActiveConsentVersion, isConsentRole, normalizeStrokeData, parseDeviceType } from "@/lib/consent";
+import {
+  getActiveConsentVersion,
+  isConsentRole,
+  normalizeStrokeData,
+  parseDeviceType,
+} from "@/lib/consent";
 import { enqueueConsentConfirmationEmail } from "@/lib/consent-email";
 import { enqueueConsentEmails } from "@/lib/queue";
 import { sanitizeConsentHtml } from "@/lib/consent-html";
@@ -21,24 +26,40 @@ export const runtime = "nodejs";
  */
 export async function GET() {
   const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session?.user)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const role = session.user.role;
   if (!isConsentRole(role)) {
-    return NextResponse.json({ needsDecision: false, role: null, activeForm: null, priorDecision: null });
+    return NextResponse.json({
+      needsDecision: false,
+      role: null,
+      activeForm: null,
+      priorDecision: null,
+    });
   }
 
   const activeForm = await getActiveConsentVersion(role);
   if (!activeForm) {
     // No form published yet for this role — nothing to enforce (misconfigured
     // deployment, not a reason to lock anyone out).
-    return NextResponse.json({ needsDecision: false, role, activeForm: null, priorDecision: null });
+    return NextResponse.json({
+      needsDecision: false,
+      role,
+      activeForm: null,
+      priorDecision: null,
+    });
   }
 
   const priorDecision = await prisma.consentRecord.findFirst({
     where: { userId: session.user.id, formVersionId: activeForm.id },
     orderBy: { signedAt: "desc" },
-    select: { decision: true, signedAt: true, interviewRecordingConsent: true, signatureTypedName: true },
+    select: {
+      decision: true,
+      signedAt: true,
+      interviewRecordingConsent: true,
+      signatureTypedName: true,
+    },
   });
 
   return NextResponse.json({
@@ -66,11 +87,15 @@ export async function POST(req: NextRequest) {
   if (limited) return limited;
 
   const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session?.user)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const role = session.user.role;
   if (!isConsentRole(role)) {
-    return NextResponse.json({ error: "This account type does not use a consent form." }, { status: 403 });
+    return NextResponse.json(
+      { error: "This account type does not use a consent form." },
+      { status: 403 },
+    );
   }
 
   let raw: unknown;
@@ -81,18 +106,26 @@ export async function POST(req: NextRequest) {
   }
   const parsed = parseBody(consentSubmitSchema, raw);
   if (!parsed.ok) return parsed.response;
-  const { decision, interviewRecordingConsent, signatureTypedName } = parsed.data;
+  const { decision, interviewRecordingConsent, signatureTypedName } =
+    parsed.data;
 
   if (interviewRecordingConsent && !parsed.data.initialsStrokeData) {
     return NextResponse.json(
-      { error: "Draw your initials to consent to the interview being recorded." },
-      { status: 400 }
+      {
+        error: "Draw your initials to consent to the interview being recorded.",
+      },
+      { status: 400 },
     );
   }
 
   const activeForm = await getActiveConsentVersion(role);
   if (!activeForm) {
-    return NextResponse.json({ error: "No consent form is currently published for your account type." }, { status: 409 });
+    return NextResponse.json(
+      {
+        error: "No consent form is currently published for your account type.",
+      },
+      { status: 409 },
+    );
   }
 
   let initialsStrokeData: string | null;
@@ -102,8 +135,11 @@ export async function POST(req: NextRequest) {
     signatureStrokeData = normalizeStrokeData(parsed.data.signatureStrokeData);
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Invalid signature data." },
-      { status: 400 }
+      {
+        error:
+          error instanceof Error ? error.message : "Invalid signature data.",
+      },
+      { status: 400 },
     );
   }
 
@@ -121,7 +157,8 @@ export async function POST(req: NextRequest) {
       ipAddress: clientIp(req),
       userAgent,
       deviceType: parseDeviceType(userAgent),
-      signerNameSnapshot: `${session.user.firstName} ${session.user.lastName}`.trim(),
+      signerNameSnapshot:
+        `${session.user.firstName} ${session.user.lastName}`.trim(),
       signerEmailSnapshot: session.user.email,
     },
   });
@@ -129,18 +166,35 @@ export async function POST(req: NextRequest) {
   // Best-effort — a queue hiccup must never fail the signature itself; the
   // decision is already durably recorded above.
   try {
-    const deliveryId = await enqueueConsentConfirmationEmail(record.id, session.user.email);
+    const deliveryId = await enqueueConsentConfirmationEmail(
+      record.id,
+      session.user.email,
+    );
     enqueueConsentEmails([deliveryId]);
   } catch (error) {
     console.error("[Consent] Failed to enqueue confirmation email:", error);
-    await prisma.consentRecord.update({
-      where: { id: record.id },
-      data: {
-        emailStatus: "FAILED",
-        emailError: error instanceof Error ? error.message.slice(0, 300) : "Could not queue delivery",
-      },
-    }).catch((auditError) => console.error("[Consent] Failed to update email audit status:", auditError));
+    await prisma.consentRecord
+      .update({
+        where: { id: record.id },
+        data: {
+          emailStatus: "FAILED",
+          emailError:
+            error instanceof Error
+              ? error.message.slice(0, 300)
+              : "Could not queue delivery",
+        },
+      })
+      .catch((auditError) =>
+        console.error(
+          "[Consent] Failed to update email audit status:",
+          auditError,
+        ),
+      );
   }
 
-  return NextResponse.json({ ok: true, decision, formVersion: activeForm.version });
+  return NextResponse.json({
+    ok: true,
+    decision,
+    formVersion: activeForm.version,
+  });
 }

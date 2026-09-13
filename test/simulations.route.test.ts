@@ -25,7 +25,9 @@ function jsonReq(body: unknown) {
 }
 
 function asTeacher(userId: string) {
-  mockAuth.mockResolvedValue({ user: { id: userId, role: "TEACHER" } } as never);
+  mockAuth.mockResolvedValue({
+    user: { id: userId, role: "TEACHER" },
+  } as never);
 }
 function asAdmin(userId = "admin-1") {
   mockAuth.mockResolvedValue({ user: { id: userId, role: "ADMIN" } } as never);
@@ -39,7 +41,9 @@ async function seedQuiz(teacherId: string | null, count = 1) {
   const questions = [];
   for (let i = 0; i < count; i += 1) {
     questions.push(
-      await prisma.question.create({ data: { text: `Q${i + 1}`, quizId: quiz.id } })
+      await prisma.question.create({
+        data: { text: `Q${i + 1}`, quizId: quiz.id },
+      }),
     );
   }
   return { quiz, questions };
@@ -59,7 +63,9 @@ afterAll(async () => {
 describe("POST /api/simulations/generate", () => {
   it("401s a caller who is neither a teacher nor an admin", async () => {
     const { user } = await createStudent();
-    mockAuth.mockResolvedValue({ user: { id: user.id, role: "STUDENT" } } as never);
+    mockAuth.mockResolvedValue({
+      user: { id: user.id, role: "STUDENT" },
+    } as never);
     const res = await GENERATE(jsonReq({ scope: "quiz", quizId: "x" }));
     expect(res.status).toBe(401);
   });
@@ -80,7 +86,12 @@ describe("POST /api/simulations/generate", () => {
     const body = await res.json();
 
     expect(res.status).toBe(202);
-    expect(body).toMatchObject({ scope: "quiz", totalQuestions: 2, created: 2, enqueued: 2 });
+    expect(body).toMatchObject({
+      scope: "quiz",
+      totalQuestions: 2,
+      created: 2,
+      enqueued: 2,
+    });
     const sims = await prisma.questionSimulation.findMany();
     expect(sims).toHaveLength(2);
     expect(sims.every((s) => s.status === "PENDING")).toBe(true);
@@ -91,16 +102,32 @@ describe("POST /api/simulations/generate", () => {
     const { user, teacher } = await createTeacher();
     const { quiz, questions } = await seedQuiz(teacher.id, 3);
     await prisma.questionSimulation.create({
-      data: { questionId: questions[0].id, status: "READY", storageKey: "k", version: 1 },
+      data: {
+        questionId: questions[0].id,
+        status: "READY",
+        storageKey: "k",
+        version: 1,
+      },
     });
     await prisma.questionSimulation.create({
-      data: { questionId: questions[1].id, status: "FAILED", errorMessage: "boom" },
+      data: {
+        questionId: questions[1].id,
+        status: "FAILED",
+        errorMessage: "boom",
+      },
     });
 
     asTeacher(user.id);
-    const body = await (await GENERATE(jsonReq({ scope: "quiz", quizId: quiz.id }))).json();
+    const body = await (
+      await GENERATE(jsonReq({ scope: "quiz", quizId: quiz.id }))
+    ).json();
 
-    expect(body).toMatchObject({ created: 1, retried: 1, skipped: 1, enqueued: 2 });
+    expect(body).toMatchObject({
+      created: 1,
+      retried: 1,
+      skipped: 1,
+      enqueued: 2,
+    });
     const ready = await prisma.questionSimulation.findUniqueOrThrow({
       where: { questionId: questions[0].id },
     });
@@ -126,12 +153,22 @@ describe("POST /api/simulations/generate", () => {
     });
 
     asTeacher(user.id);
-    const plain = await (await GENERATE(jsonReq({ scope: "question", questionId: questions[0].id }))).json();
+    const plain = await (
+      await GENERATE(
+        jsonReq({ scope: "question", questionId: questions[0].id }),
+      )
+    ).json();
     expect(plain).toMatchObject({ skipped: 1, enqueued: 0 });
     expect(mockEnqueue).not.toHaveBeenCalled();
 
     const forced = await (
-      await GENERATE(jsonReq({ scope: "question", questionId: questions[0].id, force: true }))
+      await GENERATE(
+        jsonReq({
+          scope: "question",
+          questionId: questions[0].id,
+          force: true,
+        }),
+      )
     ).json();
     expect(forced).toMatchObject({ retried: 1, enqueued: 1 });
     const sim = await prisma.questionSimulation.findUniqueOrThrow({
@@ -149,9 +186,15 @@ describe("POST /api/simulations/generate", () => {
     const { quiz, questions } = await seedQuiz(null, 1);
 
     asTeacher(user.id);
-    expect((await GENERATE(jsonReq({ scope: "quiz", quizId: quiz.id }))).status).toBe(404);
     expect(
-      (await GENERATE(jsonReq({ scope: "question", questionId: questions[0].id }))).status
+      (await GENERATE(jsonReq({ scope: "quiz", quizId: quiz.id }))).status,
+    ).toBe(404);
+    expect(
+      (
+        await GENERATE(
+          jsonReq({ scope: "question", questionId: questions[0].id }),
+        )
+      ).status,
     ).toBe(404);
     expect(await prisma.questionSimulation.count()).toBe(0);
     expect(mockEnqueue).not.toHaveBeenCalled();
@@ -163,7 +206,9 @@ describe("POST /api/simulations/generate", () => {
     const { quiz } = await seedQuiz(other.teacher.id, 1);
 
     asTeacher(user.id);
-    expect((await GENERATE(jsonReq({ scope: "quiz", quizId: quiz.id }))).status).toBe(404);
+    expect(
+      (await GENERATE(jsonReq({ scope: "quiz", quizId: quiz.id }))).status,
+    ).toBe(404);
   });
 
   it("lets an admin generate on the pool but not inside a teacher's quiz", async () => {
@@ -172,8 +217,12 @@ describe("POST /api/simulations/generate", () => {
     const priv = await seedQuiz(teacher.id, 1);
 
     asAdmin();
-    expect((await GENERATE(jsonReq({ scope: "quiz", quizId: pool.quiz.id }))).status).toBe(202);
-    expect((await GENERATE(jsonReq({ scope: "quiz", quizId: priv.quiz.id }))).status).toBe(404);
+    expect(
+      (await GENERATE(jsonReq({ scope: "quiz", quizId: pool.quiz.id }))).status,
+    ).toBe(202);
+    expect(
+      (await GENERATE(jsonReq({ scope: "quiz", quizId: priv.quiz.id }))).status,
+    ).toBe(404);
     expect(await prisma.questionSimulation.count()).toBe(1);
   });
 
@@ -185,7 +234,9 @@ describe("POST /api/simulations/generate", () => {
     });
 
     asTeacher(user.id);
-    const body = await (await GENERATE(jsonReq({ scope: "quiz", quizId: quiz.id }))).json();
+    const body = await (
+      await GENERATE(jsonReq({ scope: "quiz", quizId: quiz.id }))
+    ).json();
 
     expect(body).toMatchObject({ created: 1, enqueued: 0, enqueueFailed: 1 });
     const sim = await prisma.questionSimulation.findUniqueOrThrow({
@@ -261,8 +312,12 @@ describe("DELETE /api/simulations/[id]", () => {
     expect((await DELETE_SIM({} as never, params(copy.id))).status).toBe(200);
 
     // The teacher's row is gone; the pool's row and the artifact both survive.
-    expect(await prisma.questionSimulation.findUnique({ where: { id: copy.id } })).toBeNull();
-    expect(await prisma.questionSimulation.findUnique({ where: { id: poolSim.id } })).not.toBeNull();
+    expect(
+      await prisma.questionSimulation.findUnique({ where: { id: copy.id } }),
+    ).toBeNull();
+    expect(
+      await prisma.questionSimulation.findUnique({ where: { id: poolSim.id } }),
+    ).not.toBeNull();
     expect(mockDeleteS3).not.toHaveBeenCalled();
   });
 
@@ -270,7 +325,12 @@ describe("DELETE /api/simulations/[id]", () => {
     const { user } = await createTeacher();
     const pool = await seedQuiz(null, 1);
     const sim = await prisma.questionSimulation.create({
-      data: { questionId: pool.questions[0].id, status: "READY", storageKey: "k", bucket: "b" },
+      data: {
+        questionId: pool.questions[0].id,
+        status: "READY",
+        storageKey: "k",
+        bucket: "b",
+      },
     });
 
     asTeacher(user.id);

@@ -54,14 +54,17 @@ export default function AdminConsentSettingsPage() {
     const controller = new AbortController();
     async function load() {
       try {
-        const res = await fetch("/api/admin/consent/settings", { signal: controller.signal });
+        const res = await fetch("/api/admin/consent/settings", {
+          signal: controller.signal,
+        });
         if (!res.ok) throw new Error("Could not load consent export settings.");
         setSettings(await res.json());
       } catch (cause) {
         if (!(cause instanceof DOMException && cause.name === "AbortError")) {
           await alert({
             title: "Couldn't load settings",
-            description: cause instanceof Error ? cause.message : "Unknown error.",
+            description:
+              cause instanceof Error ? cause.message : "Unknown error.",
           });
         }
       }
@@ -81,7 +84,10 @@ export default function AdminConsentSettingsPage() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
-        await alert({ title: "Couldn't save", description: data?.error || "Unknown error." });
+        await alert({
+          title: "Couldn't save",
+          description: data?.error || "Unknown error.",
+        });
         return;
       }
       const data = await res.json();
@@ -97,9 +103,10 @@ export default function AdminConsentSettingsPage() {
       <div>
         <h1 className="text-3xl font-bold">Consent Export Settings</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          These knobs bound how much RAM, CPU time, and storage a consent PDF/zip export can consume — sized for a
-          resource-constrained deployment. Bulk generation always runs in the background worker, never inline in a
-          web request.
+          These knobs bound how much RAM, CPU time, and storage a consent
+          PDF/zip export can consume — sized for a resource-constrained
+          deployment. Bulk generation always runs in the background worker,
+          never inline in a web request.
         </p>
       </div>
 
@@ -118,7 +125,11 @@ export default function AdminConsentSettingsPage() {
                   type="number"
                   value={settings[field.key]}
                   onChange={(e) =>
-                    setSettings((prev) => (prev ? { ...prev, [field.key]: Number(e.target.value) } : prev))
+                    setSettings((prev) =>
+                      prev
+                        ? { ...prev, [field.key]: Number(e.target.value) }
+                        : prev,
+                    )
                   }
                 />
                 <p className="text-xs text-muted-foreground">{field.hint}</p>

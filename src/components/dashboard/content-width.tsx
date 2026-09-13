@@ -8,7 +8,9 @@ import { createContext, use, useEffect } from "react";
  * use this context to ask the layout to lift that cap; the layout provides
  * the setter.
  */
-export const SetContentFullWidthContext = createContext<(fullWidth: boolean) => void>(() => {});
+export const SetContentFullWidthContext = createContext<
+  (fullWidth: boolean) => void
+>(() => {});
 
 /** Lifts the dashboard layout's content-width cap while `fullWidth` is true. */
 export function useContentFullWidth(fullWidth: boolean) {

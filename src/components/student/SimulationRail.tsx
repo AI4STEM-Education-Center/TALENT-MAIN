@@ -34,7 +34,7 @@ function useIsDesktop(): boolean {
     () => window.matchMedia(DESKTOP_QUERY).matches,
     // Server render: nothing is active yet, so both layouts render the same
     // collapsed list and the fallback value never causes a hydration mismatch.
-    () => false
+    () => false,
   );
 }
 
@@ -69,7 +69,7 @@ function SimulationChips({
               "shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
               isActive
                 ? "border-primary bg-primary/10 text-primary"
-                : "text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+                : "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
             )}
           >
             {displayTitle(sim)}
@@ -133,7 +133,9 @@ export function SimulationRail({
               <span className="truncate">{displayTitle(active)}</span>
             </h2>
             {active.learningGoal && (
-              <p className="mt-0.5 text-sm text-muted-foreground">{active.learningGoal}</p>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                {active.learningGoal}
+              </p>
             )}
           </div>
           <button
@@ -145,7 +147,11 @@ export function SimulationRail({
             <X className="size-4" />
           </button>
         </div>
-        <SimulationChips sims={openable} activeId={active.simulationId} onSelect={onActiveChange} />
+        <SimulationChips
+          sims={openable}
+          activeId={active.simulationId}
+          onSelect={onActiveChange}
+        />
         <Card className="min-h-0 flex-1 overflow-hidden p-2">
           {/* Remount per simulation so switching restarts cleanly. */}
           <SimulationViewer
@@ -161,18 +167,24 @@ export function SimulationRail({
   }
 
   return (
-    <section aria-label="Explore with simulations" className="space-y-3 lg:sticky lg:top-4">
+    <section
+      aria-label="Explore with simulations"
+      className="space-y-3 lg:sticky lg:top-4"
+    >
       <h2 className="flex items-center gap-1.5 text-lg font-semibold">
         <Atom className="size-5 text-primary" /> Explore with simulations
       </h2>
       <p className="text-sm text-muted-foreground">
-        Interactive simulations of topics from this quiz — change the parameters and watch what
-        happens.
+        Interactive simulations of topics from this quiz — change the parameters
+        and watch what happens.
       </p>
       <div className="space-y-3">
         {sims.map((sim) =>
           sim.unavailable ? (
-            <Card key={sim.simulationId} className="overflow-hidden border-dashed">
+            <Card
+              key={sim.simulationId}
+              className="overflow-hidden border-dashed"
+            >
               <div className="flex w-full items-center justify-between gap-3 p-4">
                 <span className="min-w-0">
                   <span className="block font-medium text-muted-foreground">
@@ -182,7 +194,10 @@ export function SimulationRail({
                     This simulation is no longer available.
                   </span>
                 </span>
-                <CircleOff aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                <CircleOff
+                  aria-hidden
+                  className="size-4 shrink-0 text-muted-foreground"
+                />
               </div>
             </Card>
           ) : (
@@ -203,7 +218,7 @@ export function SimulationRail({
                 <ChevronRight className="size-4 shrink-0" />
               </button>
             </Card>
-          )
+          ),
         )}
       </div>
 
@@ -214,14 +229,24 @@ export function SimulationRail({
           <DialogContent className="inset-0 left-0 top-0 h-dvh w-full max-w-none translate-x-0 translate-y-0 grid-rows-[auto_minmax(0,1fr)] gap-0 rounded-none border-0 p-0 sm:rounded-none">
             <DialogHeader className="space-y-2 border-b px-4 py-3 pr-12 text-left">
               <div>
-                <DialogTitle className="text-base">{displayTitle(active)}</DialogTitle>
+                <DialogTitle className="text-base">
+                  {displayTitle(active)}
+                </DialogTitle>
                 {active.learningGoal ? (
-                  <DialogDescription className="text-xs">{active.learningGoal}</DialogDescription>
+                  <DialogDescription className="text-xs">
+                    {active.learningGoal}
+                  </DialogDescription>
                 ) : (
-                  <DialogDescription className="sr-only">Interactive simulation</DialogDescription>
+                  <DialogDescription className="sr-only">
+                    Interactive simulation
+                  </DialogDescription>
                 )}
               </div>
-              <SimulationChips sims={openable} activeId={active.simulationId} onSelect={onActiveChange} />
+              <SimulationChips
+                sims={openable}
+                activeId={active.simulationId}
+                onSelect={onActiveChange}
+              />
             </DialogHeader>
             <div className="min-h-0 p-2">
               {/* Remount per simulation so switching restarts cleanly. */}
@@ -230,7 +255,9 @@ export function SimulationRail({
                 simulationId={active.simulationId}
                 title={displayTitle(active)}
                 version={active.version}
-                telemetry={attemptId ? { attemptId, surface: "mobile" } : undefined}
+                telemetry={
+                  attemptId ? { attemptId, surface: "mobile" } : undefined
+                }
               />
             </div>
           </DialogContent>

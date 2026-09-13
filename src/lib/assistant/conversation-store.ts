@@ -30,7 +30,11 @@ import {
   putS3Object,
 } from "@/lib/storage";
 import { logSystemEvent } from "@/lib/system-log";
-import type { AssistantAudience, AssistantTurn, ConversationSummary } from "./types";
+import type {
+  AssistantAudience,
+  AssistantTurn,
+  ConversationSummary,
+} from "./types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -51,7 +55,10 @@ export const MAX_TRANSCRIPT_TURNS = 400;
 /** Serialized transcript format version, written into the archive header. */
 const TRANSCRIPT_FORMAT = 1;
 
-export type ConversationTarget = { userId: string; audience: AssistantAudience };
+export type ConversationTarget = {
+  userId: string;
+  audience: AssistantAudience;
+};
 
 /** The instant before which a conversation is out of its owner's window. */
 export function historyCutoff(retentionDays: number, now = new Date()): Date {
@@ -66,13 +73,17 @@ export function historyCutoff(retentionDays: number, now = new Date()): Date {
 export function deriveTitle(firstMessage: string): string {
   const line = firstMessage.trim().split("\n", 1)[0]?.trim() ?? "";
   if (!line) return "New conversation";
-  return line.length > MAX_TITLE_CHARS ? `${line.slice(0, MAX_TITLE_CHARS - 1)}…` : line;
+  return line.length > MAX_TITLE_CHARS
+    ? `${line.slice(0, MAX_TITLE_CHARS - 1)}…`
+    : line;
 }
 
 function parseIdArray(raw: string): string[] {
   try {
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [];
+    return Array.isArray(parsed)
+      ? parsed.filter((v): v is string => typeof v === "string")
+      : [];
   } catch {
     return [];
   }
@@ -93,7 +104,7 @@ export async function resolveConversation(
   requestedId: string | null,
   firstMessage: string,
   retentionDays: number,
-  now = new Date()
+  now = new Date(),
 ): Promise<string | null> {
   try {
     if (requestedId) {
@@ -145,9 +156,13 @@ export async function resolveConversation(
  */
 export async function appendTurn(
   conversationId: string,
-  userTurn: { content: string; attachmentIds: string[]; attachmentNames: string[] },
+  userTurn: {
+    content: string;
+    attachmentIds: string[];
+    attachmentNames: string[];
+  },
   assistantText: string,
-  now = new Date()
+  now = new Date(),
 ): Promise<void> {
   try {
     await prisma.$transaction(async (tx) => {
@@ -197,7 +212,12 @@ export async function appendTurn(
 }
 
 function rowsToTurns(
-  rows: { role: string; content: string; attachmentIds: string; attachmentNames: string }[]
+  rows: {
+    role: string;
+    content: string;
+    attachmentIds: string;
+    attachmentNames: string;
+  }[],
 ): AssistantTurn[] {
   return rows.map((row) => ({
     role: row.role === "assistant" ? "assistant" : "user",
@@ -217,7 +237,7 @@ function rowsToTurns(
  */
 export async function loadConversationHistory(
   conversationId: string,
-  limit: number
+  limit: number,
 ): Promise<AssistantTurn[]> {
   if (limit <= 0) return [];
   try {
@@ -225,7 +245,12 @@ export async function loadConversationHistory(
       where: { conversationId },
       orderBy: { seq: "desc" },
       take: Math.min(limit, MAX_TRANSCRIPT_TURNS),
-      select: { role: true, content: true, attachmentIds: true, attachmentNames: true },
+      select: {
+        role: true,
+        content: true,
+        attachmentIds: true,
+        attachmentNames: true,
+      },
     });
     return rowsToTurns(rows.reverse());
   } catch {
@@ -241,7 +266,7 @@ export async function loadConversationHistory(
 export async function listUserConversations(
   target: ConversationTarget,
   retentionDays: number,
-  now = new Date()
+  now = new Date(),
 ): Promise<ConversationSummary[]> {
   const rows = await prisma.assistantConversation.findMany({
     where: {
@@ -283,7 +308,7 @@ export async function readUserConversation(
   target: ConversationTarget,
   conversationId: string,
   retentionDays: number,
-  now = new Date()
+  now = new Date(),
 ): Promise<{ summary: ConversationSummary; turns: AssistantTurn[] } | null> {
   const row = await prisma.assistantConversation.findFirst({
     where: {
@@ -307,7 +332,12 @@ export async function readUserConversation(
     where: { conversationId: row.id },
     orderBy: { seq: "asc" },
     take: MAX_TRANSCRIPT_TURNS,
-    select: { role: true, content: true, attachmentIds: true, attachmentNames: true },
+    select: {
+      role: true,
+      content: true,
+      attachmentIds: true,
+      attachmentNames: true,
+    },
   });
 
   return {
@@ -344,7 +374,7 @@ function serializeTranscript(
     attachmentIds: string;
     attachmentNames: string;
     createdAt: Date;
-  }[]
+  }[],
 ): string {
   const lines = [JSON.stringify(header)];
   for (const row of rows) {
@@ -355,7 +385,7 @@ function serializeTranscript(
         attachmentIds: parseIdArray(row.attachmentIds),
         attachmentNames: parseIdArray(row.attachmentNames),
         createdAt: row.createdAt.toISOString(),
-      })
+      }),
     );
   }
   return `${lines.join("\n")}\n`;
@@ -402,12 +432,17 @@ export function parseTranscript(body: string): AssistantTurn[] {
  * deployment with no bucket configured.
  */
 export async function purgeEmptyConversations(
-  cutoffs: { audience: AssistantAudience; cutoff: Date }[]
+  cutoffs: { audience: AssistantAudience; cutoff: Date }[],
 ): Promise<number> {
   let deleted = 0;
   for (const { audience, cutoff } of cutoffs) {
     const { count } = await prisma.assistantConversation.deleteMany({
-      where: { audience, archivedAt: null, messageCount: 0, lastMessageAt: { lt: cutoff } },
+      where: {
+        audience,
+        archivedAt: null,
+        messageCount: 0,
+        lastMessageAt: { lt: cutoff },
+      },
     });
     deleted += count;
   }
@@ -427,7 +462,7 @@ export async function purgeEmptyConversations(
  */
 export async function archiveAgedConversations(
   cutoffs: { audience: AssistantAudience; cutoff: Date }[],
-  now = new Date()
+  now = new Date(),
 ): Promise<number> {
   let bucket: string;
   try {
@@ -475,7 +510,10 @@ export async function archiveAgedConversations(
           },
         });
 
-        const storageKey = buildAssistantTranscriptKey(conversation.userId, conversation.id);
+        const storageKey = buildAssistantTranscriptKey(
+          conversation.userId,
+          conversation.id,
+        );
         const body = serializeTranscript(
           {
             v: TRANSCRIPT_FORMAT,
@@ -487,20 +525,27 @@ export async function archiveAgedConversations(
             lastMessageAt: conversation.lastMessageAt.toISOString(),
             messageCount: conversation.messageCount,
           },
-          rows
+          rows,
         );
 
         // Upload first: see invariant 2 at the top of this file. The key is
         // derived from the id alone, so a retried sweep overwrites rather than
         // duplicating.
-        await putS3Object(bucket, storageKey, body, "application/x-ndjson; charset=utf-8");
+        await putS3Object(
+          bucket,
+          storageKey,
+          body,
+          "application/x-ndjson; charset=utf-8",
+        );
 
         await prisma.$transaction([
           prisma.assistantConversation.update({
             where: { id: conversation.id },
             data: { archivedAt: now, storageKey, bucket },
           }),
-          prisma.assistantMessage.deleteMany({ where: { conversationId: conversation.id } }),
+          prisma.assistantMessage.deleteMany({
+            where: { conversationId: conversation.id },
+          }),
         ]);
         archived += 1;
       } catch (error) {
@@ -553,7 +598,7 @@ export type AdminConversationRow = ConversationSummary & {
  * for both, which is why the title is denormalized onto the conversation row.
  */
 export async function listConversationsForAdmin(
-  filters: AdminConversationFilters
+  filters: AdminConversationFilters,
 ): Promise<{ rows: AdminConversationRow[]; total: number }> {
   const where: Record<string, unknown> = {};
   if (filters.audience) where.audience = filters.audience;
@@ -616,7 +661,9 @@ export async function listConversationsForAdmin(
         userId: row.userId,
         // A deleted user leaves their transcripts behind by design; label them
         // rather than hiding the row.
-        userName: user ? `${user.firstName} ${user.lastName}`.trim() : "(deleted user)",
+        userName: user
+          ? `${user.firstName} ${user.lastName}`.trim()
+          : "(deleted user)",
         userEmail: user?.email ?? "—",
         audience: row.audience,
         title: row.title,
@@ -636,10 +683,11 @@ export async function listConversationsForAdmin(
  * turns rather than failing, so the admin sees that it exists and that the
  * bucket is the problem.
  */
-export async function readConversationForAdmin(
-  conversationId: string
-): Promise<
-  | (AdminConversationRow & { turns: AssistantTurn[]; transcriptUnavailable: boolean })
+export async function readConversationForAdmin(conversationId: string): Promise<
+  | (AdminConversationRow & {
+      turns: AssistantTurn[];
+      transcriptUnavailable: boolean;
+    })
   | null
 > {
   const row = await prisma.assistantConversation.findUnique({
@@ -669,7 +717,9 @@ export async function readConversationForAdmin(
 
   if (row.archivedAt && row.bucket && row.storageKey) {
     try {
-      turns = parseTranscript(await getS3ObjectAsString(row.bucket, row.storageKey));
+      turns = parseTranscript(
+        await getS3ObjectAsString(row.bucket, row.storageKey),
+      );
     } catch {
       transcriptUnavailable = true;
     }
@@ -678,7 +728,12 @@ export async function readConversationForAdmin(
       where: { conversationId: row.id },
       orderBy: { seq: "asc" },
       take: MAX_TRANSCRIPT_TURNS,
-      select: { role: true, content: true, attachmentIds: true, attachmentNames: true },
+      select: {
+        role: true,
+        content: true,
+        attachmentIds: true,
+        attachmentNames: true,
+      },
     });
     turns = rowsToTurns(messages);
   }
@@ -686,7 +741,9 @@ export async function readConversationForAdmin(
   return {
     id: row.id,
     userId: row.userId,
-    userName: user ? `${user.firstName} ${user.lastName}`.trim() : "(deleted user)",
+    userName: user
+      ? `${user.firstName} ${user.lastName}`.trim()
+      : "(deleted user)",
     userEmail: user?.email ?? "—",
     audience: row.audience,
     title: row.title,

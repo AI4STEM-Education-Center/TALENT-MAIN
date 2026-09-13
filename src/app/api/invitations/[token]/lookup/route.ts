@@ -6,7 +6,7 @@ import { rateLimit } from "@/lib/rate-limit";
 // GET: Look up a student's name by orgDefinedId, scoped to the class tied to this invitation token.
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ token: string }> }
+  { params }: { params: Promise<{ token: string }> },
 ) {
   // Throttle 81-number enumeration (this endpoint reveals roster names).
   const limited = rateLimit(req, "invite-lookup", 20, 60_000);
@@ -18,7 +18,10 @@ export async function GET(
   const orgDefinedId = rawId.replace(/^#/, "").trim();
 
   if (!orgDefinedId) {
-    return NextResponse.json({ found: false, error: "81 number is required." }, { status: 400 });
+    return NextResponse.json(
+      { found: false, error: "81 number is required." },
+      { status: 400 },
+    );
   }
 
   // Validate the invitation token
@@ -27,13 +30,22 @@ export async function GET(
   });
 
   if (!invitation || !invitation.active) {
-    return NextResponse.json({ found: false, error: "Invalid invitation." }, { status: 404 });
+    return NextResponse.json(
+      { found: false, error: "Invalid invitation." },
+      { status: 404 },
+    );
   }
   if (invitation.expiresAt && invitation.expiresAt < new Date()) {
-    return NextResponse.json({ found: false, error: "Invitation expired." }, { status: 410 });
+    return NextResponse.json(
+      { found: false, error: "Invitation expired." },
+      { status: 410 },
+    );
   }
   if (invitation.maxUses && invitation.usedCount >= invitation.maxUses) {
-    return NextResponse.json({ found: false, error: "Invitation limit reached." }, { status: 410 });
+    return NextResponse.json(
+      { found: false, error: "Invitation limit reached." },
+      { status: 410 },
+    );
   }
 
   // Look up the orgDefinedId in this class's student list

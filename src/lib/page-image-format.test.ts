@@ -10,7 +10,8 @@ import {
 const originalFormat = process.env.NEXT_PUBLIC_PAGE_IMAGE_FORMAT;
 
 afterEach(() => {
-  if (originalFormat === undefined) delete process.env.NEXT_PUBLIC_PAGE_IMAGE_FORMAT;
+  if (originalFormat === undefined)
+    delete process.env.NEXT_PUBLIC_PAGE_IMAGE_FORMAT;
   else process.env.NEXT_PUBLIC_PAGE_IMAGE_FORMAT = originalFormat;
 });
 
@@ -32,7 +33,16 @@ describe("parsePageImageMimeType", () => {
   });
 
   it("rejects anything else a client might post", () => {
-    for (const value of ["image/jpeg", "image/svg+xml", "text/html", "", 7, null, undefined, {}]) {
+    for (const value of [
+      "image/jpeg",
+      "image/svg+xml",
+      "text/html",
+      "",
+      7,
+      null,
+      undefined,
+      {},
+    ]) {
       expect(parsePageImageMimeType(value)).toBeNull();
     }
   });
@@ -62,11 +72,17 @@ describe("preferredPageImageMimeType", () => {
 
 describe("suffixPageImageKey", () => {
   it("inserts the suffix before the extension", () => {
-    expect(suffixPageImageKey("a/b/figure-0.webp", "-uuid")).toBe("a/b/figure-0-uuid.webp");
-    expect(suffixPageImageKey("a/b/option-0-1.png", "-uuid")).toBe("a/b/option-0-1-uuid.png");
+    expect(suffixPageImageKey("a/b/figure-0.webp", "-uuid")).toBe(
+      "a/b/figure-0-uuid.webp",
+    );
+    expect(suffixPageImageKey("a/b/option-0-1.png", "-uuid")).toBe(
+      "a/b/option-0-1-uuid.png",
+    );
   });
 
   it("appends when there is no extension to split on", () => {
-    expect(suffixPageImageKey("a/b/figure-0", "-uuid")).toBe("a/b/figure-0-uuid");
+    expect(suffixPageImageKey("a/b/figure-0", "-uuid")).toBe(
+      "a/b/figure-0-uuid",
+    );
   });
 });

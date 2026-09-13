@@ -11,10 +11,14 @@ import { resetDb, createTeacher, createStudent, createClass } from "./db";
 const mockAuth = vi.mocked(auth);
 
 function asTeacher(userId: string) {
-  mockAuth.mockResolvedValue({ user: { id: userId, role: "TEACHER" } } as never);
+  mockAuth.mockResolvedValue({
+    user: { id: userId, role: "TEACHER" },
+  } as never);
 }
 function asStudent(userId: string) {
-  mockAuth.mockResolvedValue({ user: { id: userId, role: "STUDENT" } } as never);
+  mockAuth.mockResolvedValue({
+    user: { id: userId, role: "STUDENT" },
+  } as never);
 }
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
 

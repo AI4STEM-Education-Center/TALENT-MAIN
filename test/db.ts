@@ -9,6 +9,8 @@ import { prisma } from "@/lib/prisma";
 export async function resetDb() {
   // Children first, parents last.
   await prisma.systemLog.deleteMany();
+  await prisma.pressureResultToken.deleteMany();
+  await prisma.pressureTestResult.deleteMany();
   await prisma.consentExportJob.deleteMany();
   await prisma.consentEmailDelivery.deleteMany();
   await prisma.consentExportRequest.deleteMany();
@@ -75,7 +77,9 @@ function uniq(prefix: string) {
   return `${prefix}-${seq}`;
 }
 
-export async function createTeacher(overrides: Partial<{ email: string; username: string }> = {}) {
+export async function createTeacher(
+  overrides: Partial<{ email: string; username: string }> = {},
+) {
   const tag = uniq("teacher");
   const user = await prisma.user.create({
     data: {
@@ -92,7 +96,9 @@ export async function createTeacher(overrides: Partial<{ email: string; username
   return { user, teacher: user.teacher! };
 }
 
-export async function createStudent(overrides: Partial<{ email: string; username: string }> = {}) {
+export async function createStudent(
+  overrides: Partial<{ email: string; username: string }> = {},
+) {
   const tag = uniq("student");
   const user = await prisma.user.create({
     data: {
@@ -109,7 +115,9 @@ export async function createStudent(overrides: Partial<{ email: string; username
   return { user, student: user.student! };
 }
 
-export async function createAdmin(overrides: Partial<{ email: string; username: string }> = {}) {
+export async function createAdmin(
+  overrides: Partial<{ email: string; username: string }> = {},
+) {
   const tag = uniq("admin");
   return prisma.user.create({
     data: {
@@ -137,12 +145,25 @@ export async function createPublishedQuiz(opts: {
   answerMode?: "SINGLE_SELECT" | "MULTI_SELECT";
   published?: boolean;
 }) {
-  const { classId, teacherId, answerMode = "SINGLE_SELECT", published = true } = opts;
-  const topic = await prisma.topic.create({ data: { name: uniq("topic"), teacherId: teacherId ?? null } });
-  const quiz = await prisma.quiz.create({
-    data: { name: uniq("quiz"), topicId: topic.id, teacherId: teacherId ?? null },
+  const {
+    classId,
+    teacherId,
+    answerMode = "SINGLE_SELECT",
+    published = true,
+  } = opts;
+  const topic = await prisma.topic.create({
+    data: { name: uniq("topic"), teacherId: teacherId ?? null },
   });
-  await prisma.classQuiz.create({ data: { classId, quizId: quiz.id, published } });
+  const quiz = await prisma.quiz.create({
+    data: {
+      name: uniq("quiz"),
+      topicId: topic.id,
+      teacherId: teacherId ?? null,
+    },
+  });
+  await prisma.classQuiz.create({
+    data: { classId, quizId: quiz.id, published },
+  });
 
   const question = await prisma.question.create({
     data: {

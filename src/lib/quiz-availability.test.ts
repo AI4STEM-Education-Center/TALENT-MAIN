@@ -19,22 +19,30 @@ describe("quizAvailability", () => {
   });
 
   it("locks before the open date and unlocks after it", () => {
-    expect(quizAvailability({ ...open, availableFrom: LATER }, 0, NOW)).toMatchObject({
+    expect(
+      quizAvailability({ ...open, availableFrom: LATER }, 0, NOW),
+    ).toMatchObject({
       notOpenYet: true,
       locked: true,
     });
-    expect(quizAvailability({ ...open, availableFrom: EARLIER }, 0, NOW)).toMatchObject({
+    expect(
+      quizAvailability({ ...open, availableFrom: EARLIER }, 0, NOW),
+    ).toMatchObject({
       notOpenYet: false,
       locked: false,
     });
   });
 
   it("locks after the close date", () => {
-    expect(quizAvailability({ ...open, availableUntil: EARLIER }, 0, NOW)).toMatchObject({
+    expect(
+      quizAvailability({ ...open, availableUntil: EARLIER }, 0, NOW),
+    ).toMatchObject({
       closed: true,
       locked: true,
     });
-    expect(quizAvailability({ ...open, availableUntil: LATER }, 0, NOW)).toMatchObject({
+    expect(
+      quizAvailability({ ...open, availableUntil: LATER }, 0, NOW),
+    ).toMatchObject({
       closed: false,
       locked: false,
     });
@@ -48,7 +56,9 @@ describe("quizAvailability", () => {
   });
 
   it("treats maxAttempts 0 as unlimited, matching the schema's null/0 convention", () => {
-    expect(quizAvailability({ ...open, maxAttempts: 0 }, 99, NOW).attemptsExhausted).toBe(false);
+    expect(
+      quizAvailability({ ...open, maxAttempts: 0 }, 99, NOW).attemptsExhausted,
+    ).toBe(false);
   });
 });
 
@@ -59,12 +69,18 @@ describe("canAttemptAgain", () => {
 
   it("is false once the attempt cap is used up", () => {
     expect(
-      canAttemptAgain({ ...open, maxAttempts: 1 }, { ...fresh, completedAttempts: 1 }, NOW)
+      canAttemptAgain(
+        { ...open, maxAttempts: 1 },
+        { ...fresh, completedAttempts: 1 },
+        NOW,
+      ),
     ).toBe(false);
   });
 
   it("is false after the quiz closes", () => {
-    expect(canAttemptAgain({ ...open, availableUntil: EARLIER }, fresh, NOW)).toBe(false);
+    expect(
+      canAttemptAgain({ ...open, availableUntil: EARLIER }, fresh, NOW),
+    ).toBe(false);
   });
 
   it("is false when the quiz is no longer offered to the class", () => {
@@ -72,15 +88,21 @@ describe("canAttemptAgain", () => {
   });
 
   it("is true while the window has not opened yet — it will", () => {
-    expect(canAttemptAgain({ ...open, availableFrom: LATER }, fresh, NOW)).toBe(true);
+    expect(canAttemptAgain({ ...open, availableFrom: LATER }, fresh, NOW)).toBe(
+      true,
+    );
   });
 
   it("is true for an unfinished attempt even past the cap or the close date", () => {
     const inProgress = { completedAttempts: 5, hasAttemptInProgress: true };
     // POST /api/quiz resumes an unfinished attempt rather than allocating one, so
     // these answers can still be graded however locked a new attempt would be.
-    expect(canAttemptAgain({ ...open, maxAttempts: 1 }, inProgress, NOW)).toBe(true);
-    expect(canAttemptAgain({ ...open, availableUntil: EARLIER }, inProgress, NOW)).toBe(true);
+    expect(canAttemptAgain({ ...open, maxAttempts: 1 }, inProgress, NOW)).toBe(
+      true,
+    );
+    expect(
+      canAttemptAgain({ ...open, availableUntil: EARLIER }, inProgress, NOW),
+    ).toBe(true);
     // Even with the quiz pulled from the class entirely.
     expect(canAttemptAgain(null, inProgress, NOW)).toBe(true);
   });

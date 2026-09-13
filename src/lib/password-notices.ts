@@ -12,14 +12,21 @@ import { logSystemEvent } from "@/lib/system-log";
  */
 export async function sendPasswordChangedNotice(
   req: Request,
-  user: { id: string; email: string; username: string; firstName: string; lastName: string }
+  user: {
+    id: string;
+    email: string;
+    username: string;
+    firstName: string;
+    lastName: string;
+  },
 ): Promise<boolean> {
   try {
     const result = await sendPurposeEmail("PASSWORD_CHANGED", user.email, {
       firstName: user.firstName,
       lastName: user.lastName,
       username: user.username,
-      changedAt: new Date().toISOString().replace("T", " ").slice(0, 16) + " UTC",
+      changedAt:
+        new Date().toISOString().replace("T", " ").slice(0, 16) + " UTC",
       resetRequestUrl: `${appOrigin(req)}/forgot-password`,
     });
     if (result.sent > 0) return true;

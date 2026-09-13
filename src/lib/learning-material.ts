@@ -1,7 +1,10 @@
 import { prisma } from "@/lib/prisma";
 
 /** True when the material is linked to the given class via the MaterialClass junction. */
-export async function materialLinkedToClass(materialId: string, classId: string): Promise<boolean> {
+export async function materialLinkedToClass(
+  materialId: string,
+  classId: string,
+): Promise<boolean> {
   const link = await prisma.materialClass.findUnique({
     where: { materialId_classId: { materialId, classId } },
   });
@@ -50,10 +53,18 @@ export async function listClassMaterials(classId: string) {
   });
 
   return links.map((link) => {
-    const { classId: originClassId, createdAt, topic, ...material } = link.material;
+    const {
+      classId: originClassId,
+      createdAt,
+      topic,
+      ...material
+    } = link.material;
     return {
       ...material,
-      topic: topic?.contentType === "MATERIAL" ? { id: topic.id, name: topic.name } : null,
+      topic:
+        topic?.contentType === "MATERIAL"
+          ? { id: topic.id, name: topic.name }
+          : null,
       createdAt: createdAt.toISOString(),
       isImported: originClassId !== classId,
     };

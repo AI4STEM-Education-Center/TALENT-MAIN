@@ -20,7 +20,12 @@ import {
   type ResolvedProvider,
   type ThinkingParams,
 } from "./ai-provider";
-import { getS3Config, putS3Object, getS3ObjectAsString, buildSimulationKey } from "./storage";
+import {
+  getS3Config,
+  putS3Object,
+  getS3ObjectAsString,
+  buildSimulationKey,
+} from "./storage";
 import { retryWithExponentialBackoff } from "./retry";
 import {
   streamChatCompletion,
@@ -44,10 +49,16 @@ import {
   type SiblingSimulation,
 } from "./simulation";
 
-function providerUsable(provider: ResolvedProvider | null): provider is ResolvedProvider {
+function providerUsable(
+  provider: ResolvedProvider | null,
+): provider is ResolvedProvider {
   if (!provider) return false;
   if (provider.providerType !== "local" && !provider.apiKey) return false;
-  if ((provider.providerType === "local" || provider.providerType === "cloudflare") && !provider.baseUrl) {
+  if (
+    (provider.providerType === "local" ||
+      provider.providerType === "cloudflare") &&
+    !provider.baseUrl
+  ) {
     return false;
   }
   return true;
@@ -70,13 +81,18 @@ type CallContext = {
   transport: AiTransport;
 };
 
-async function buildCallContext(provider: ResolvedProvider): Promise<CallContext> {
+async function buildCallContext(
+  provider: ResolvedProvider,
+): Promise<CallContext> {
   const client = await createOpenAIClient(provider);
   const isLocal = provider.providerType === "local";
   const transport = transportFor(provider);
   const serviceTier = provider.serviceTier;
   const tierActive =
-    !isLocal && (serviceTier === "auto" || serviceTier === "default" || serviceTier === "flex");
+    !isLocal &&
+    (serviceTier === "auto" ||
+      serviceTier === "default" ||
+      serviceTier === "flex");
   return {
     client,
     model: provider.model,
@@ -101,14 +117,19 @@ function tierParam(ctx: CallContext) {
  */
 async function callTextModel(
   ctx: CallContext,
-  messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[]
+  messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
 ): Promise<{ text: string; metrics: AiCallMetrics }> {
   const result = await retryWithExponentialBackoff(() =>
     streamChatCompletion(
       ctx.client,
-      { model: ctx.model, messages, service_tier: tierParam(ctx), ...ctx.thinking },
-      streamOptionsFor(ctx.transport)
-    )
+      {
+        model: ctx.model,
+        messages,
+        service_tier: tierParam(ctx),
+        ...ctx.thinking,
+      },
+      streamOptionsFor(ctx.transport),
+    ),
   );
   if (!result.text.trim()) throw new Error("Model returned an empty response");
   return result;
@@ -123,7 +144,7 @@ async function callTextModel(
 async function generateValidatedHtml(
   ctx: CallContext,
   prompt: string,
-  callMetrics: AiCallMetrics[]
+  callMetrics: AiCallMetrics[],
 ): Promise<string> {
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: "user", content: prompt },
@@ -135,7 +156,9 @@ async function generateValidatedHtml(
   let problems = validateSimulationHtml(html);
   if (problems.length === 0) return html;
 
-  console.warn(`[Simulation] Generated document failed validation (${problems.join("; ")}); repairing`);
+  console.warn(
+    `[Simulation] Generated document failed validation (${problems.join("; ")}); repairing`,
+  );
   const repair = await callTextModel(ctx, [
     ...messages,
     { role: "assistant", content: first.text },
@@ -146,7 +169,9 @@ async function generateValidatedHtml(
   html = extractHtmlDocument(repair.text);
   problems = validateSimulationHtml(html);
   if (problems.length > 0) {
-    throw new Error(`Generated document failed validation after repair: ${problems.join("; ")}`);
+    throw new Error(
+      `Generated document failed validation after repair: ${problems.join("; ")}`,
+    );
   }
   return html;
 }
@@ -162,7 +187,10 @@ async function generateValidatedHtml(
  * artifact keeps serving) and the function RETURNS — it never rethrows, so the
  * worker can ack unconditionally.
  */
-export async function runSimulationJob(simulationId: string, feedbackId?: string): Promise<void> {
+export async function runSimulationJob(
+  simulationId: string,
+  feedbackId?: string,
+): Promise<void> {
   const sim = await prisma.questionSimulation.findUnique({
     where: { id: simulationId },
     include: {
@@ -176,7 +204,9 @@ export async function runSimulationJob(simulationId: string, feedbackId?: string
   });
 
   if (!sim) {
-    console.warn(`[Simulation] Simulation ${simulationId} not found; nothing to do`);
+    console.warn(
+      `[Simulation] Simulation ${simulationId} not found; nothing to do`,
+    );
     return;
   }
 
@@ -211,7 +241,9 @@ function questionInput(sim: LoadedSimulation): SimulationQuestionInput {
 
 async function runFirstGeneration(sim: LoadedSimulation): Promise<void> {
   if (sim.status !== "PENDING") {
-    console.log(`[Simulation] ${sim.id} is in status ${sim.status}, not PENDING; skipping`);
+    console.log(
+      `[Simulation] ${sim.id} is in status ${sim.status}, not PENDING; skipping`,
+    );
     return;
   }
 
@@ -251,13 +283,18 @@ async function runFirstGeneration(sim: LoadedSimulation): Promise<void> {
         ctx.client,
         {
           model: ctx.model,
-          messages: [{ role: "user", content: buildTriagePrompt(questionInput(sim), siblings) }],
+          messages: [
+            {
+              role: "user",
+              content: buildTriagePrompt(questionInput(sim), siblings),
+            },
+          ],
           service_tier: tierParam(ctx),
           ...ctx.thinking,
         },
         SIMULATION_TRIAGE_SCHEMA,
-        streamOptionsFor(ctx.transport)
-      )
+        streamOptionsFor(ctx.transport),
+      ),
     );
     callMetrics.push(triage.metrics);
     const plan = validateTriagePlan(triage.value, siblings.length);
@@ -295,12 +332,18 @@ async function runFirstGeneration(sim: LoadedSimulation): Promise<void> {
           ...buildSimulationMetrics(ctx, callMetrics),
         },
       });
-      console.log(`[Simulation] ${sim.id} reuses sibling ${source.id} (${source.topic})`);
+      console.log(
+        `[Simulation] ${sim.id} reuses sibling ${source.id} (${source.topic})`,
+      );
       return;
     }
 
     // ── Build: generate the artifact from the spec only. ──
-    const html = await generateValidatedHtml(ctx, buildSimulationHtmlPrompt(plan), callMetrics);
+    const html = await generateValidatedHtml(
+      ctx,
+      buildSimulationHtmlPrompt(plan),
+      callMetrics,
+    );
 
     const { bucket } = getS3Config();
     const version = sim.version + 1;
@@ -308,7 +351,7 @@ async function runFirstGeneration(sim: LoadedSimulation): Promise<void> {
       sim.question.quiz.teacherId,
       sim.question.quizId,
       sim.questionId,
-      version
+      version,
     );
     await putS3Object(bucket, key, html, "text/html; charset=utf-8");
 
@@ -328,24 +371,38 @@ async function runFirstGeneration(sim: LoadedSimulation): Promise<void> {
         ...buildSimulationMetrics(ctx, callMetrics),
       },
     });
-    console.log(`[Simulation] ${sim.id} ready: "${plan.title}" (${plan.topic}) v${version}`);
+    console.log(
+      `[Simulation] ${sim.id} ready: "${plan.title}" (${plan.topic}) v${version}`,
+    );
   } catch (err) {
-    const message = err instanceof Error ? err.message.trim() : String(err).trim();
+    const message =
+      err instanceof Error ? err.message.trim() : String(err).trim();
     console.error(`[Simulation] Generation for ${sim.id} failed:`, message);
     try {
       await prisma.questionSimulation.update({
         where: { id: sim.id },
-        data: { status: "FAILED", errorMessage: message || "Unknown error during simulation generation" },
+        data: {
+          status: "FAILED",
+          errorMessage: message || "Unknown error during simulation generation",
+        },
       });
     } catch (dbErr) {
-      console.error(`[Simulation] Could not mark simulation ${sim.id} FAILED:`, dbErr);
+      console.error(
+        `[Simulation] Could not mark simulation ${sim.id} FAILED:`,
+        dbErr,
+      );
     }
   }
 }
 
-async function runRevision(sim: LoadedSimulation, feedbackId: string): Promise<void> {
+async function runRevision(
+  sim: LoadedSimulation,
+  feedbackId: string,
+): Promise<void> {
   if (sim.status !== "REVISING") {
-    console.log(`[Simulation] ${sim.id} is in status ${sim.status}, not REVISING; skipping revision`);
+    console.log(
+      `[Simulation] ${sim.id} is in status ${sim.status}, not REVISING; skipping revision`,
+    );
     return;
   }
 
@@ -353,37 +410,56 @@ async function runRevision(sim: LoadedSimulation, feedbackId: string): Promise<v
   // so the sim goes BACK to READY (it keeps serving) and the failure is
   // recorded on the feedback row.
   const failRevision = async (message: string) => {
-    console.error(`[Simulation] Revision ${feedbackId} for ${sim.id} failed:`, message);
+    console.error(
+      `[Simulation] Revision ${feedbackId} for ${sim.id} failed:`,
+      message,
+    );
     try {
       await prisma.simulationFeedback.updateMany({
         where: { id: feedbackId, simulationId: sim.id },
-        data: { status: "FAILED", errorMessage: message || "Unknown error during revision" },
+        data: {
+          status: "FAILED",
+          errorMessage: message || "Unknown error during revision",
+        },
       });
       await prisma.questionSimulation.update({
         where: { id: sim.id },
         data: { status: sim.storageKey ? "READY" : "FAILED" },
       });
     } catch (dbErr) {
-      console.error(`[Simulation] Could not record revision failure for ${sim.id}:`, dbErr);
+      console.error(
+        `[Simulation] Could not record revision failure for ${sim.id}:`,
+        dbErr,
+      );
     }
   };
 
   try {
-    const feedback = await prisma.simulationFeedback.findUnique({ where: { id: feedbackId } });
+    const feedback = await prisma.simulationFeedback.findUnique({
+      where: { id: feedbackId },
+    });
     if (!feedback || feedback.simulationId !== sim.id) {
       await failRevision("Feedback row not found for this simulation");
       return;
     }
     if (feedback.status !== "PENDING") {
       // Stale redelivery of an already-applied/failed round; put the sim back.
-      console.log(`[Simulation] Feedback ${feedbackId} is ${feedback.status}, not PENDING; skipping`);
+      console.log(
+        `[Simulation] Feedback ${feedbackId} is ${feedback.status}, not PENDING; skipping`,
+      );
       await prisma.questionSimulation.update({
         where: { id: sim.id },
         data: { status: sim.storageKey ? "READY" : "FAILED" },
       });
       return;
     }
-    if (!sim.storageKey || !sim.bucket || !sim.simSpec || !sim.topic || !sim.title) {
+    if (
+      !sim.storageKey ||
+      !sim.bucket ||
+      !sim.simSpec ||
+      !sim.topic ||
+      !sim.title
+    ) {
       await failRevision("Simulation has no artifact/spec to revise");
       return;
     }
@@ -409,7 +485,12 @@ async function runRevision(sim: LoadedSimulation, feedbackId: string): Promise<v
       spec: sim.simSpec,
     };
     const priorFeedback = applied.map((f) => f.feedback);
-    const prompt = buildRevisionPrompt(plan, currentHtml, priorFeedback, feedback.feedback);
+    const prompt = buildRevisionPrompt(
+      plan,
+      currentHtml,
+      priorFeedback,
+      feedback.feedback,
+    );
     // One quality-focused generation call replaces the former generate +
     // independent confirmation flow. The prompt carries the full integrity
     // checklist; deterministic HTML validation (and its one repair fallback)
@@ -422,7 +503,7 @@ async function runRevision(sim: LoadedSimulation, feedbackId: string): Promise<v
       sim.question.quiz.teacherId,
       sim.question.quizId,
       sim.questionId,
-      version
+      version,
     );
     await putS3Object(bucket, key, html, "text/html; charset=utf-8");
 
@@ -440,12 +521,19 @@ async function runRevision(sim: LoadedSimulation, feedbackId: string): Promise<v
       }),
       prisma.simulationFeedback.update({
         where: { id: feedback.id },
-        data: { status: "APPLIED", errorMessage: null, previousStorageKey: sim.storageKey },
+        data: {
+          status: "APPLIED",
+          errorMessage: null,
+          previousStorageKey: sim.storageKey,
+        },
       }),
     ]);
-    console.log(`[Simulation] ${sim.id} revised to v${version} (feedback ${feedback.id})`);
+    console.log(
+      `[Simulation] ${sim.id} revised to v${version} (feedback ${feedback.id})`,
+    );
   } catch (err) {
-    const message = err instanceof Error ? err.message.trim() : String(err).trim();
+    const message =
+      err instanceof Error ? err.message.trim() : String(err).trim();
     await failRevision(message);
   }
 }

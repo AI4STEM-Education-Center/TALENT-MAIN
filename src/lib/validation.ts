@@ -112,7 +112,10 @@ const optionalText = (max: number) =>
 
 export const emailSenderRowSchema = z.object({
   purpose: z.string().min(1).max(64),
-  localPart: z.string().max(64).transform((s) => s.trim()),
+  localPart: z
+    .string()
+    .max(64)
+    .transform((s) => s.trim()),
   fromName: optionalText(200),
   replyTo: optionalText(320),
   subject: optionalText(300),
@@ -122,7 +125,11 @@ export const emailSenderRowSchema = z.object({
 export const emailSendersUpdateSchema = z.object({
   // Empty string clears the shared domain (every purpose falls back to the
   // SMTP config's single From address).
-  senderDomain: z.string().max(253).transform((s) => s.trim()).nullish(),
+  senderDomain: z
+    .string()
+    .max(253)
+    .transform((s) => s.trim())
+    .nullish(),
   senders: z.array(emailSenderRowSchema).max(50),
 });
 
@@ -172,7 +179,10 @@ export const misconceptionImportRowSchema = z.object({
 });
 
 export const misconceptionsImportSchema = z.object({
-  misconceptions: z.array(misconceptionImportRowSchema).min(1).max(MAX_IMPORT_ROWS),
+  misconceptions: z
+    .array(misconceptionImportRowSchema)
+    .min(1)
+    .max(MAX_IMPORT_ROWS),
 });
 
 export const mappingImportRowSchema = z.object({
@@ -251,19 +261,24 @@ export const consentSubmitSchema = z.object({
 });
 
 export type ParseResult<T> =
-  | { ok: true; data: T }
-  | { ok: false; response: NextResponse };
+  { ok: true; data: T } | { ok: false; response: NextResponse };
 
 /**
  * Validate `data` against `schema`. On success returns the parsed (and
  * transformed) value; on failure returns a ready-to-return 400 response.
  */
-export function parseBody<T>(schema: z.ZodType<T>, data: unknown): ParseResult<T> {
+export function parseBody<T>(
+  schema: z.ZodType<T>,
+  data: unknown,
+): ParseResult<T> {
   const result = schema.safeParse(data);
   if (!result.success) {
     return {
       ok: false,
-      response: NextResponse.json({ error: "All fields are required." }, { status: 400 }),
+      response: NextResponse.json(
+        { error: "All fields are required." },
+        { status: 400 },
+      ),
     };
   }
   return { ok: true, data: result.data };

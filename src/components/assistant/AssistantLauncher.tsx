@@ -8,11 +8,16 @@ import { useAssistant } from "./assistant-context";
  * says an assistant exists for this role, so the rail never shows a button that
  * would open an empty panel.
  */
-export function AssistantLauncher({ onOpen }: { onOpen?: () => void }) {
+interface AssistantLauncherProps {
+  onOpen?: () => void;
+}
+
+export function AssistantLauncher({ onOpen }: AssistantLauncherProps) {
   const { config, open, setOpen } = useAssistant();
   if (!config?.available) return null;
 
-  const label = config.audience === "teacher" ? "Teaching assistant" : "Study assistant";
+  const label =
+    config.audience === "teacher" ? "Teaching assistant" : "Study assistant";
 
   return (
     <button

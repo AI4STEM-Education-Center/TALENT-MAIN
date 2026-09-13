@@ -13,13 +13,23 @@ function parseNumericPayload(body: {
   answerNumeric?: unknown;
   answerTolerance?: unknown;
   answerUnit?: unknown;
-}): { error: string } | { answerNumeric: number; answerTolerance: number | null; answerUnit: string | null } {
+}):
+  | { error: string }
+  | {
+      answerNumeric: number;
+      answerTolerance: number | null;
+      answerUnit: string | null;
+    } {
   const answerNumeric = normalizeNumericValue(body.answerNumeric);
   if (answerNumeric === null) {
     return { error: "A finite numeric answer is required." };
   }
   let answerTolerance: number | null = null;
-  if (body.answerTolerance !== undefined && body.answerTolerance !== null && body.answerTolerance !== "") {
+  if (
+    body.answerTolerance !== undefined &&
+    body.answerTolerance !== null &&
+    body.answerTolerance !== ""
+  ) {
     const tol = normalizeNumericValue(body.answerTolerance);
     if (tol === null || tol <= 0) {
       return { error: "Tolerance must be a positive number." };
@@ -27,18 +37,22 @@ function parseNumericPayload(body: {
     answerTolerance = tol;
   }
   const answerUnit =
-    typeof body.answerUnit === "string" && body.answerUnit.trim() ? body.answerUnit.trim() : null;
+    typeof body.answerUnit === "string" && body.answerUnit.trim()
+      ? body.answerUnit.trim()
+      : null;
   return { answerNumeric, answerTolerance, answerUnit };
 }
 
 export async function GET(req: NextRequest) {
   const actor = await getContentActor();
-  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!actor)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
   const quizId = searchParams.get("quizId");
   const difficulty = searchParams.get("difficulty");
-  if (!quizId) return NextResponse.json({ error: "quizId required" }, { status: 400 });
+  if (!quizId)
+    return NextResponse.json({ error: "quizId required" }, { status: 400 });
 
   const quiz = await prisma.quiz.findUnique({ where: { id: quizId } });
   if (!quiz || !canRead(actor, quiz)) {
@@ -55,32 +69,57 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const actor = await getContentActor();
-  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!actor)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json();
   const { text, quizId, difficultyLevel, answerMode, options } = body;
   const isNumeric = answerMode === "NUMERIC";
-  const normalizedAnswerMode = isNumeric ? "NUMERIC" : answerMode === "MULTI_SELECT" ? "MULTI_SELECT" : "SINGLE_SELECT";
+  const normalizedAnswerMode = isNumeric
+    ? "NUMERIC"
+    : answerMode === "MULTI_SELECT"
+      ? "MULTI_SELECT"
+      : "SINGLE_SELECT";
 
   if (!text?.trim() || !quizId) {
-    return NextResponse.json({ error: "text and quizId are required." }, { status: 400 });
+    return NextResponse.json(
+      { error: "text and quizId are required." },
+      { status: 400 },
+    );
   }
 
   // NUMERIC questions carry no options; choice questions require valid options.
-  let numeric: { answerNumeric: number; answerTolerance: number | null; answerUnit: string | null } | null = null;
+  let numeric: {
+    answerNumeric: number;
+    answerTolerance: number | null;
+    answerUnit: string | null;
+  } | null = null;
   if (isNumeric) {
     const parsed = parseNumericPayload(body);
-    if ("error" in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 });
+    if ("error" in parsed)
+      return NextResponse.json({ error: parsed.error }, { status: 400 });
     numeric = parsed;
   } else {
     if (!options || options.length < 2) {
-      return NextResponse.json({ error: "At least 2 options are required." }, { status: 400 });
+      return NextResponse.json(
+        { error: "At least 2 options are required." },
+        { status: 400 },
+      );
     }
     if (!options.some((o: { isCorrect: boolean }) => o.isCorrect)) {
-      return NextResponse.json({ error: "At least one option must be marked as correct." }, { status: 400 });
+      return NextResponse.json(
+        { error: "At least one option must be marked as correct." },
+        { status: 400 },
+      );
     }
-    if (normalizedAnswerMode === "SINGLE_SELECT" && options.filter((o: { isCorrect: boolean }) => o.isCorrect).length > 1) {
-      return NextResponse.json({ error: "Single-select questions can only have one correct option." }, { status: 400 });
+    if (
+      normalizedAnswerMode === "SINGLE_SELECT" &&
+      options.filter((o: { isCorrect: boolean }) => o.isCorrect).length > 1
+    ) {
+      return NextResponse.json(
+        { error: "Single-select questions can only have one correct option." },
+        { status: 400 },
+      );
     }
   }
 
@@ -93,20 +132,23 @@ export async function POST(req: NextRequest) {
   // where the text was pasted out of a document that carried a payload. Both
   // guardrails fail open, and off-topic is OFF by default here — a physics
   // question IS the topic, so running it would be pure false positives.
-  const authored = [text, ...(options ?? []).map((o: { text?: string }) => o?.text ?? "")]
+  const authored = [
+    text,
+    ...(options ?? []).map((o: { text?: string }) => o?.text ?? ""),
+  ]
     .filter(Boolean)
     .join("\n");
   const guard = await guardText(
     authored,
     { surface: "question_authoring", id: quizId, userId: actor.userId },
-    { requestPath: true }
+    { requestPath: true },
   );
   if (guard.blocked) {
     // The id lets the client offer "report a problem" on the refusal. The
     // message stays vague about WHY on purpose; the reasons are admin-only.
     return NextResponse.json(
       { error: guard.message, guardrailEventId: guard.eventId },
-      { status: 422 }
+      { status: 422 },
     );
   }
 
@@ -118,8 +160,21 @@ export async function POST(req: NextRequest) {
       answerMode: normalizedAnswerMode,
       createdById: actor.teacherId,
       ...(numeric
-        ? { answerNumeric: numeric.answerNumeric, answerTolerance: numeric.answerTolerance, answerUnit: numeric.answerUnit }
-        : { options: { create: options.map((o: { text: string; isCorrect: boolean }) => ({ text: o.text.trim(), isCorrect: o.isCorrect })) } }),
+        ? {
+            answerNumeric: numeric.answerNumeric,
+            answerTolerance: numeric.answerTolerance,
+            answerUnit: numeric.answerUnit,
+          }
+        : {
+            options: {
+              create: options.map(
+                (o: { text: string; isCorrect: boolean }) => ({
+                  text: o.text.trim(),
+                  isCorrect: o.isCorrect,
+                }),
+              ),
+            },
+          }),
     },
     include: { options: true, quiz: true },
   });
@@ -128,35 +183,65 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   const actor = await getContentActor();
-  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!actor)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json();
   const { id, text, difficultyLevel, answerMode, options } = body;
-  if (!id) return NextResponse.json({ error: "Question id required." }, { status: 400 });
+  if (!id)
+    return NextResponse.json(
+      { error: "Question id required." },
+      { status: 400 },
+    );
   const isNumeric = answerMode === "NUMERIC";
-  const normalizedAnswerMode =
-    isNumeric ? "NUMERIC" : answerMode === "MULTI_SELECT" ? "MULTI_SELECT" : answerMode === "SINGLE_SELECT" ? "SINGLE_SELECT" : undefined;
+  const normalizedAnswerMode = isNumeric
+    ? "NUMERIC"
+    : answerMode === "MULTI_SELECT"
+      ? "MULTI_SELECT"
+      : answerMode === "SINGLE_SELECT"
+        ? "SINGLE_SELECT"
+        : undefined;
 
   // NUMERIC: validate the numeric payload (and ignore options). Choice modes:
   // validate options when present, exactly as before.
-  let numeric: { answerNumeric: number; answerTolerance: number | null; answerUnit: string | null } | null = null;
+  let numeric: {
+    answerNumeric: number;
+    answerTolerance: number | null;
+    answerUnit: string | null;
+  } | null = null;
   if (isNumeric) {
     const parsed = parseNumericPayload(body);
-    if ("error" in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 });
+    if ("error" in parsed)
+      return NextResponse.json({ error: parsed.error }, { status: 400 });
     numeric = parsed;
   } else if (options) {
     if (options.length < 2) {
-      return NextResponse.json({ error: "At least 2 options are required." }, { status: 400 });
+      return NextResponse.json(
+        { error: "At least 2 options are required." },
+        { status: 400 },
+      );
     }
     if (!options.some((o: { isCorrect: boolean }) => o.isCorrect)) {
-      return NextResponse.json({ error: "At least one option must be marked as correct." }, { status: 400 });
+      return NextResponse.json(
+        { error: "At least one option must be marked as correct." },
+        { status: 400 },
+      );
     }
-    if (normalizedAnswerMode === "SINGLE_SELECT" && options.filter((o: { isCorrect: boolean }) => o.isCorrect).length > 1) {
-      return NextResponse.json({ error: "Single-select questions can only have one correct option." }, { status: 400 });
+    if (
+      normalizedAnswerMode === "SINGLE_SELECT" &&
+      options.filter((o: { isCorrect: boolean }) => o.isCorrect).length > 1
+    ) {
+      return NextResponse.json(
+        { error: "Single-select questions can only have one correct option." },
+        { status: 400 },
+      );
     }
   }
 
-  const existing = await prisma.question.findUnique({ where: { id }, include: { quiz: true } });
+  const existing = await prisma.question.findUnique({
+    where: { id },
+    include: { quiz: true },
+  });
   if (!existing || !canManage(actor, existing.quiz)) {
     return NextResponse.json({ error: "Question not found" }, { status: 404 });
   }
@@ -173,7 +258,11 @@ export async function PATCH(req: NextRequest) {
       difficultyLevel,
       answerMode: normalizedAnswerMode,
       ...(isNumeric && numeric
-        ? { answerNumeric: numeric.answerNumeric, answerTolerance: numeric.answerTolerance, answerUnit: numeric.answerUnit }
+        ? {
+            answerNumeric: numeric.answerNumeric,
+            answerTolerance: numeric.answerTolerance,
+            answerUnit: numeric.answerUnit,
+          }
         : switchingToChoice
           ? { answerNumeric: null, answerTolerance: null, answerUnit: null }
           : {}),
@@ -191,30 +280,39 @@ export async function PATCH(req: NextRequest) {
     const priorById = new Map(prior.map((o) => [o.id, o]));
     await prisma.option.deleteMany({ where: { questionId: id } });
     await prisma.option.createMany({
-      data: options.map((o: { id?: string; text: string; isCorrect: boolean }) => {
-        const carried = o.id ? priorById.get(o.id) : undefined;
-        return {
-          questionId: id,
-          text: o.text.trim(),
-          isCorrect: o.isCorrect,
-          imageStorageKey: carried?.imageStorageKey ?? null,
-          imageBucket: carried?.imageBucket ?? null,
-          imageAlt: carried?.imageAlt ?? null,
-        };
-      }),
+      data: options.map(
+        (o: { id?: string; text: string; isCorrect: boolean }) => {
+          const carried = o.id ? priorById.get(o.id) : undefined;
+          return {
+            questionId: id,
+            text: o.text.trim(),
+            isCorrect: o.isCorrect,
+            imageStorageKey: carried?.imageStorageKey ?? null,
+            imageBucket: carried?.imageBucket ?? null,
+            imageAlt: carried?.imageAlt ?? null,
+          };
+        },
+      ),
     });
   }
 
-  const updated = await prisma.question.findUnique({ where: { id }, include: { options: true } });
+  const updated = await prisma.question.findUnique({
+    where: { id },
+    include: { options: true },
+  });
   return NextResponse.json(updated);
 }
 
 export async function DELETE(req: NextRequest) {
   const actor = await getContentActor();
-  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!actor)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await req.json();
-  const existing = await prisma.question.findUnique({ where: { id }, include: { quiz: true } });
+  const existing = await prisma.question.findUnique({
+    where: { id },
+    include: { quiz: true },
+  });
   if (!existing || !canManage(actor, existing.quiz)) {
     return NextResponse.json({ error: "Question not found" }, { status: 404 });
   }

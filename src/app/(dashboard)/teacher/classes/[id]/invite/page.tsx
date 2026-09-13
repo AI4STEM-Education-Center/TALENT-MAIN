@@ -4,14 +4,22 @@ import { redirect, notFound } from "next/navigation";
 import { headers } from "next/headers";
 import { InviteClient } from "./invite-client";
 
-export default async function InvitePage({ params }: { params: Promise<{ id: string }> }) {
+export default async function InvitePage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const session = await auth();
   if (!session?.user || session.user.role !== "TEACHER") redirect("/login");
   const { id } = await params;
 
   // Only the owning teacher can manage this class's invitations.
-  const teacher = await prisma.teacher.findUnique({ where: { userId: session.user.id } });
-  const cls = await prisma.class.findFirst({ where: { id, teacherId: teacher?.id } });
+  const teacher = await prisma.teacher.findUnique({
+    where: { userId: session.user.id },
+  });
+  const cls = await prisma.class.findFirst({
+    where: { id, teacherId: teacher?.id },
+  });
   if (!cls) notFound();
 
   // Build invite URLs from the request host, mirroring POST /api/invitations so

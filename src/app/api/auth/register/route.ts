@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { normalizeEmail, normalizeUsername, validatePassword } from "@/lib/account-validation";
+import {
+  normalizeEmail,
+  normalizeUsername,
+  validatePassword,
+} from "@/lib/account-validation";
 import { rateLimit } from "@/lib/rate-limit";
 import { parseBody, registerSchema } from "@/lib/validation";
 import { logApiError, logSystemEvent } from "@/lib/system-log";
@@ -34,19 +38,21 @@ export async function POST(req: NextRequest) {
     // set so upgrading a deployment doesn't lock its admins out of onboarding
     // teachers before they mint their first code.
     const envToken = process.env.TEACHER_SIGNUP_TOKEN;
-    const submitted = typeof body?.teacherToken === "string" ? body.teacherToken : "";
+    const submitted =
+      typeof body?.teacherToken === "string" ? body.teacherToken : "";
 
     if (!envToken && !(await hasRedeemableTeacherCode())) {
       return NextResponse.json(
         { error: "Teacher registration is not configured on this server." },
-        { status: 503 }
+        { status: 503 },
       );
     }
 
     const envTokenMatches = !!envToken && submitted === envToken;
     // Only look the code up when the env var didn't already authorize it, so a
     // deployment still on the env var does no extra query per attempt.
-    const code = envTokenMatches || !submitted ? null : await findTeacherCode(submitted);
+    const code =
+      envTokenMatches || !submitted ? null : await findTeacherCode(submitted);
 
     if (!envTokenMatches && (!code || teacherCodeStatus(code) !== "ACTIVE")) {
       void logSystemEvent({
@@ -77,14 +83,20 @@ export async function POST(req: NextRequest) {
       where: { email: normalizedEmail },
     });
     if (existingEmail) {
-      return NextResponse.json({ error: "Email already in use." }, { status: 409 });
+      return NextResponse.json(
+        { error: "Email already in use." },
+        { status: 409 },
+      );
     }
 
     const existingUsername = await prisma.user.findUnique({
       where: { username: normalizedUsername },
     });
     if (existingUsername) {
-      return NextResponse.json({ error: "Username already taken." }, { status: 409 });
+      return NextResponse.json(
+        { error: "Username already taken." },
+        { status: 409 },
+      );
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
@@ -117,13 +129,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: INVALID_CODE }, { status: 403 });
     }
 
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-      const target = Array.isArray(err.meta?.target) ? err.meta.target.join(", ") : "";
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === "P2002"
+    ) {
+      const target = Array.isArray(err.meta?.target)
+        ? err.meta.target.join(", ")
+        : "";
       const field = target.includes("username") ? "Username" : "Email";
-      return NextResponse.json({ error: `${field} already in use.` }, { status: 409 });
+      return NextResponse.json(
+        { error: `${field} already in use.` },
+        { status: 409 },
+      );
     }
 
     logApiError("REGISTER", err);
-    return NextResponse.json({ error: "Internal server error." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error." },
+      { status: 500 },
+    );
   }
 }

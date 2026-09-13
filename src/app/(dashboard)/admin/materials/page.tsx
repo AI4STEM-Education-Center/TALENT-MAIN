@@ -57,7 +57,8 @@ function groupMaterials(materials: Material[]): Record<string, TeacherGroup> {
     const username = mat.teacher?.user?.username ?? "unknown";
     const firstName = mat.teacher?.user?.firstName ?? "";
     const lastName = mat.teacher?.user?.lastName ?? "";
-    const displayName = firstName || lastName ? `${firstName} ${lastName}`.trim() : username;
+    const displayName =
+      firstName || lastName ? `${firstName} ${lastName}`.trim() : username;
     const className = mat.class?.name ?? "Unknown Class";
     if (!groups[username]) {
       groups[username] = { username, displayName, classes: {} };
@@ -71,7 +72,10 @@ function groupMaterials(materials: Material[]): Record<string, TeacherGroup> {
 }
 
 function totalMaterialCount(group: TeacherGroup): number {
-  return Object.values(group.classes).reduce((sum, mats) => sum + mats.length, 0);
+  return Object.values(group.classes).reduce(
+    (sum, mats) => sum + mats.length,
+    0,
+  );
 }
 
 export default function AdminMaterialsPage() {
@@ -104,7 +108,7 @@ export default function AdminMaterialsPage() {
       selectedTeacher && selectedClass
         ? (groups[selectedTeacher]?.classes[selectedClass] ?? [])
         : [],
-    [groups, selectedTeacher, selectedClass]
+    [groups, selectedTeacher, selectedClass],
   );
 
   // Depend on the boolean, not on `currentClassMaterials`. The array was rebuilt
@@ -112,7 +116,7 @@ export default function AdminMaterialsPage() {
   // time — including on every poll response, which reset the polling clock — and
   // captured a fresh `fetchMaterials` closure each pass.
   const hasActiveMaterial = currentClassMaterials.some(
-    (m) => m.processingStatus === "PROCESSING" || m.processingStatus === "IDLE"
+    (m) => m.processingStatus === "PROCESSING" || m.processingStatus === "IDLE",
   );
 
   useEffect(() => {
@@ -123,7 +127,9 @@ export default function AdminMaterialsPage() {
 
   const handleRetry = async (materialId: string) => {
     try {
-      await fetch(`/api/admin/materials/${materialId}/retry`, { method: "POST" });
+      await fetch(`/api/admin/materials/${materialId}/retry`, {
+        method: "POST",
+      });
       fetchMaterials();
     } catch (err) {
       console.error(err);
@@ -138,7 +144,9 @@ export default function AdminMaterialsPage() {
     });
     if (!ok) return;
     try {
-      await fetch(`/api/admin/materials/${materialId}/regenerate`, { method: "POST" });
+      await fetch(`/api/admin/materials/${materialId}/regenerate`, {
+        method: "POST",
+      });
       fetchMaterials();
     } catch (err) {
       console.error(err);
@@ -148,7 +156,8 @@ export default function AdminMaterialsPage() {
   const handleDelete = async (materialId: string) => {
     const ok = await confirm({
       title: "Delete this material?",
-      description: "This permanently deletes the material and all of its files. This cannot be undone.",
+      description:
+        "This permanently deletes the material and all of its files. This cannot be undone.",
       confirmText: "Delete",
       variant: "destructive",
     });
@@ -161,13 +170,16 @@ export default function AdminMaterialsPage() {
     }
   };
 
-
-  const teacherDisplayName = selectedTeacher ? (groups[selectedTeacher]?.displayName ?? selectedTeacher) : null;
+  const teacherDisplayName = selectedTeacher
+    ? (groups[selectedTeacher]?.displayName ?? selectedTeacher)
+    : null;
 
   return (
     <div className="p-8">
       <div className="mb-6">
-        <h1 className="text-3xl font-bold tracking-tight">Materials Processing</h1>
+        <h1 className="text-3xl font-bold tracking-tight">
+          Materials Processing
+        </h1>
         <p className="text-muted-foreground mt-1">
           Browse and manage uploaded materials by teacher and class.
         </p>
@@ -176,8 +188,15 @@ export default function AdminMaterialsPage() {
       <nav className="flex items-center gap-1 text-sm mb-8 text-muted-foreground">
         <button
           type="button"
-          onClick={() => { setSelectedTeacher(null); setSelectedClass(null); }}
-          className={selectedTeacher ? "hover:text-foreground transition-colors" : "text-foreground font-medium cursor-default"}
+          onClick={() => {
+            setSelectedTeacher(null);
+            setSelectedClass(null);
+          }}
+          className={
+            selectedTeacher
+              ? "hover:text-foreground transition-colors"
+              : "text-foreground font-medium cursor-default"
+          }
         >
           Materials
         </button>
@@ -187,7 +206,11 @@ export default function AdminMaterialsPage() {
             <button
               type="button"
               onClick={() => setSelectedClass(null)}
-              className={selectedClass ? "hover:text-foreground transition-colors" : "text-foreground font-medium cursor-default"}
+              className={
+                selectedClass
+                  ? "hover:text-foreground transition-colors"
+                  : "text-foreground font-medium cursor-default"
+              }
             >
               {teacherDisplayName}
             </button>
@@ -217,7 +240,9 @@ export default function AdminMaterialsPage() {
       ) : !selectedTeacher ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Object.keys(groups).length === 0 ? (
-            <p className="text-muted-foreground col-span-full">No materials found.</p>
+            <p className="text-muted-foreground col-span-full">
+              No materials found.
+            </p>
           ) : (
             Object.values(groups).map((group) => (
               <button
@@ -237,7 +262,10 @@ export default function AdminMaterialsPage() {
                   </CardHeader>
                   <CardContent>
                     <p className="text-sm text-muted-foreground">
-                      {totalMaterialCount(group)} material{totalMaterialCount(group) !== 1 ? "s" : ""} across {Object.keys(group.classes).length} class{Object.keys(group.classes).length !== 1 ? "es" : ""}
+                      {totalMaterialCount(group)} material
+                      {totalMaterialCount(group) !== 1 ? "s" : ""} across{" "}
+                      {Object.keys(group.classes).length} class
+                      {Object.keys(group.classes).length !== 1 ? "es" : ""}
                     </p>
                   </CardContent>
                 </Card>
@@ -256,29 +284,36 @@ export default function AdminMaterialsPage() {
             Back to teachers
           </button>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {Object.keys(groups[selectedTeacher]?.classes ?? {}).length === 0 ? (
-              <p className="text-muted-foreground col-span-full">No classes found.</p>
+            {Object.keys(groups[selectedTeacher]?.classes ?? {}).length ===
+            0 ? (
+              <p className="text-muted-foreground col-span-full">
+                No classes found.
+              </p>
             ) : (
-              Object.entries(groups[selectedTeacher].classes).map(([className, mats]) => (
-                <button
-                  key={className}
-                  type="button"
-                  onClick={() => setSelectedClass(className)}
-                  className="text-left h-full"
-                >
-                  <Card className="hover:bg-accent/50 transition-colors cursor-pointer h-full">
-                    <CardHeader className="flex flex-row items-center gap-3 gap-y-0 pb-2">
-                      <FolderOpen className="size-5 text-amber-500 shrink-0" />
-                      <CardTitle className="text-base font-semibold">{className}</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-sm text-muted-foreground">
-                        {mats.length} material{mats.length !== 1 ? "s" : ""}
-                      </p>
-                    </CardContent>
-                  </Card>
-                </button>
-              ))
+              Object.entries(groups[selectedTeacher].classes).map(
+                ([className, mats]) => (
+                  <button
+                    key={className}
+                    type="button"
+                    onClick={() => setSelectedClass(className)}
+                    className="text-left h-full"
+                  >
+                    <Card className="hover:bg-accent/50 transition-colors cursor-pointer h-full">
+                      <CardHeader className="flex flex-row items-center gap-3 gap-y-0 pb-2">
+                        <FolderOpen className="size-5 text-amber-500 shrink-0" />
+                        <CardTitle className="text-base font-semibold">
+                          {className}
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-sm text-muted-foreground">
+                          {mats.length} material{mats.length !== 1 ? "s" : ""}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  </button>
+                ),
+              )
             )}
           </div>
         </>
@@ -296,22 +331,38 @@ export default function AdminMaterialsPage() {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Document</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Progress</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Document
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Status
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Progress
+                  </th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {currentClassMaterials.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="px-6 py-4 text-center text-sm text-gray-500">No materials found.</td>
+                    <td
+                      colSpan={4}
+                      className="px-6 py-4 text-center text-sm text-gray-500"
+                    >
+                      No materials found.
+                    </td>
                   </tr>
                 ) : (
                   currentClassMaterials.map((mat) => (
                     <tr key={mat.id}>
                       <td className="px-6 py-4 text-sm font-medium text-gray-900">
-                        <Link href={`/admin/materials/${mat.id}`} className="flex items-center gap-2 hover:text-blue-600 hover:underline">
+                        <Link
+                          href={`/admin/materials/${mat.id}`}
+                          className="flex items-center gap-2 hover:text-blue-600 hover:underline"
+                        >
                           <FileText className="size-4 text-gray-400 shrink-0" />
                           {mat.title || mat.originalName}
                         </Link>
@@ -337,17 +388,23 @@ export default function AdminMaterialsPage() {
                           </span>
                         )}
                         {mat.processingStatus === "FAILED" && (
-                          <span className="inline-flex items-center text-red-600" title={mat.errorMessage ?? undefined}>
+                          <span
+                            className="inline-flex items-center text-red-600"
+                            title={mat.errorMessage ?? undefined}
+                          >
                             <AlertTriangle className="size-4 mr-1" /> Failed
                           </span>
                         )}
                         {mat.processingStatus === "PROCESSING" && (
                           <span className="inline-flex items-center text-blue-600">
-                            <RefreshCw className="size-4 mr-1 animate-spin" /> Processing
+                            <RefreshCw className="size-4 mr-1 animate-spin" />{" "}
+                            Processing
                           </span>
                         )}
                         {mat.processingStatus === "IDLE" && (
-                          <span className="inline-flex items-center text-gray-500">Idle</span>
+                          <span className="inline-flex items-center text-gray-500">
+                            Idle
+                          </span>
                         )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">

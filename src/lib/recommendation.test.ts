@@ -23,10 +23,30 @@ const attempt: HolisticAttempt = {
 };
 
 const materials: CatalogMaterial[] = [
-  { index: 1, title: "Forces.pdf", description: "Intro to forces", keyConcepts: ["force", "friction"] },
-  { index: 2, title: "Newtons Laws.pdf", description: "All three laws", keyConcepts: ["inertia", "action-reaction"] },
-  { index: 3, title: "Kinematics.pdf", description: "Motion", keyConcepts: ["velocity"] },
-  { index: 4, title: "Energy.pdf", description: "Work & energy", keyConcepts: ["work"] },
+  {
+    index: 1,
+    title: "Forces.pdf",
+    description: "Intro to forces",
+    keyConcepts: ["force", "friction"],
+  },
+  {
+    index: 2,
+    title: "Newtons Laws.pdf",
+    description: "All three laws",
+    keyConcepts: ["inertia", "action-reaction"],
+  },
+  {
+    index: 3,
+    title: "Kinematics.pdf",
+    description: "Motion",
+    keyConcepts: ["velocity"],
+  },
+  {
+    index: 4,
+    title: "Energy.pdf",
+    description: "Work & energy",
+    keyConcepts: ["work"],
+  },
 ];
 
 describe("buildMaterialSelectionPrompt", () => {
@@ -61,8 +81,16 @@ describe("buildMaterialSelectionPrompt", () => {
 
 describe("buildPageSelectionPrompt", () => {
   const pages: CatalogPage[] = [
-    { pageNumber: 21, keyConcept: "third law", description: "equal and opposite forces" },
-    { pageNumber: 22, keyConcept: "free body diagram", description: "drawing forces" },
+    {
+      pageNumber: 21,
+      keyConcept: "third law",
+      description: "equal and opposite forces",
+    },
+    {
+      pageNumber: 22,
+      keyConcept: "free body diagram",
+      description: "drawing forces",
+    },
   ];
 
   it("includes the selected material title, each page, and the holistic context", () => {
@@ -78,7 +106,9 @@ describe("buildPageSelectionPrompt", () => {
 
 describe("resolveSelectedMaterial", () => {
   it("returns the matching material for a valid index", () => {
-    expect(resolveSelectedMaterial(2, materials)?.title).toBe("Newtons Laws.pdf");
+    expect(resolveSelectedMaterial(2, materials)?.title).toBe(
+      "Newtons Laws.pdf",
+    );
   });
 
   it("returns null for an out-of-range index", () => {
@@ -88,17 +118,26 @@ describe("resolveSelectedMaterial", () => {
 });
 
 describe("dedupeSelectedMaterials", () => {
-  const sel = (i: number): SelectedMaterial => ({ material_index: i, reasoning: `r${i}` });
+  const sel = (i: number): SelectedMaterial => ({
+    material_index: i,
+    reasoning: `r${i}`,
+  });
 
   it("caps at MAX_MATERIALS (3), preserving order, and reports truncation", () => {
-    const { kept, truncated } = dedupeSelectedMaterials([sel(1), sel(2), sel(3), sel(4)], materials);
+    const { kept, truncated } = dedupeSelectedMaterials(
+      [sel(1), sel(2), sel(3), sel(4)],
+      materials,
+    );
     expect(kept.map((k) => k.material_index)).toEqual([1, 2, 3]);
     expect(kept).toHaveLength(MAX_MATERIALS);
     expect(truncated).toBe(true);
   });
 
   it("drops duplicate indices, keeping the first occurrence", () => {
-    const { kept, truncated } = dedupeSelectedMaterials([sel(2), sel(2), sel(1)], materials);
+    const { kept, truncated } = dedupeSelectedMaterials(
+      [sel(2), sel(2), sel(1)],
+      materials,
+    );
     expect(kept.map((k) => k.material_index)).toEqual([2, 1]);
     expect(truncated).toBe(false);
   });
@@ -109,7 +148,10 @@ describe("dedupeSelectedMaterials", () => {
   });
 
   it("returns an empty list for no selections", () => {
-    expect(dedupeSelectedMaterials([], materials)).toEqual({ kept: [], truncated: false });
+    expect(dedupeSelectedMaterials([], materials)).toEqual({
+      kept: [],
+      truncated: false,
+    });
   });
 });
 
@@ -139,6 +181,9 @@ describe("clampPageRange", () => {
   });
 
   it("handles non-finite model output by falling back to the available bounds", () => {
-    expect(clampPageRange(Number.NaN, Number.NaN, available)).toEqual({ start: 10, end: 10 });
+    expect(clampPageRange(Number.NaN, Number.NaN, available)).toEqual({
+      start: 10,
+      end: 10,
+    });
   });
 });

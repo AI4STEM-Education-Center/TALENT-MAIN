@@ -57,7 +57,8 @@ export function ExamResultsView({
   // Owned here (not in SimulationRail) because an active simulation reshapes
   // the whole page: the grid flips so the simulation takes the wide side.
   const [activeSimId, setActiveSimId] = useState<string | null>(null);
-  const needPoll = isPending(ai.summaryStatus) || isPending(ai.recommendationsStatus);
+  const needPoll =
+    isPending(ai.summaryStatus) || isPending(ai.recommendationsStatus);
 
   useEffect(() => {
     if (!needPoll) return;
@@ -69,12 +70,15 @@ export function ExamResultsView({
     const applyUpdate = (data: AiState) => {
       if (!active) return;
       receivedTerminal =
-        !isPending(data.summaryStatus) && !isPending(data.recommendationsStatus);
+        !isPending(data.summaryStatus) &&
+        !isPending(data.recommendationsStatus);
       setAi({
         summary: data.summary ?? null,
         summaryStatus: data.summaryStatus,
         summaryMetrics: data.summaryMetrics ?? null,
-        recommendations: Array.isArray(data.recommendations) ? data.recommendations : [],
+        recommendations: Array.isArray(data.recommendations)
+          ? data.recommendations
+          : [],
         simulations: Array.isArray(data.simulations) ? data.simulations : [],
         recommendationsStatus: data.recommendationsStatus,
         recommendationMetrics: data.recommendationMetrics ?? null,
@@ -87,9 +91,10 @@ export function ExamResultsView({
         try {
           const res = await fetch(
             `/api/student/attempts/${attemptId}/results?stream=1`,
-            { signal: abort.signal }
+            { signal: abort.signal },
           );
-          if (!res.ok || !res.body) throw new Error("Result stream unavailable");
+          if (!res.ok || !res.body)
+            throw new Error("Result stream unavailable");
 
           const reader = res.body.getReader();
           const decoder = new TextDecoder();
@@ -106,7 +111,9 @@ export function ExamResultsView({
             if (done) {
               if (buffered.trim()) applyUpdate(JSON.parse(buffered));
               if (receivedTerminal) return;
-              throw new Error("Result stream ended before generation completed");
+              throw new Error(
+                "Result stream ended before generation completed",
+              );
             }
           }
         } catch {
@@ -136,7 +143,7 @@ export function ExamResultsView({
     <div
       className={cn(
         "p-4 md:p-6 space-y-6",
-        simOpen ? "max-w-none" : hasSimulations ? "max-w-7xl" : "max-w-6xl"
+        simOpen ? "max-w-none" : hasSimulations ? "max-w-7xl" : "max-w-6xl",
       )}
     >
       {backHref && (
@@ -157,7 +164,7 @@ export function ExamResultsView({
           hasSimulations &&
             (simOpen
               ? "lg:grid-cols-[minmax(320px,26rem)_minmax(0,1fr)]"
-              : "lg:grid-cols-[minmax(0,1fr)_minmax(320px,26rem)]")
+              : "lg:grid-cols-[minmax(0,1fr)_minmax(320px,26rem)]"),
         )}
       >
         <div className="min-w-0 space-y-6">

@@ -33,16 +33,30 @@ describe("evaluateQuota", () => {
   });
 
   it("allows a request that fits within remaining", () => {
-    expect(evaluateQuota({ ...base, dailyUsed: 90, monthlyUsed: 0, requested: 10 }).allowed).toBe(true);
-    expect(evaluateQuota({ ...base, dailyUsed: 90, monthlyUsed: 0, requested: 11 }).allowed).toBe(false);
+    expect(
+      evaluateQuota({ ...base, dailyUsed: 90, monthlyUsed: 0, requested: 10 })
+        .allowed,
+    ).toBe(true);
+    expect(
+      evaluateQuota({ ...base, dailyUsed: 90, monthlyUsed: 0, requested: 11 })
+        .allowed,
+    ).toBe(false);
   });
 
   it("treats a missing request as 0 (always allowed)", () => {
-    expect(evaluateQuota({ ...base, dailyUsed: 100, monthlyUsed: 3000 }).allowed).toBe(true);
+    expect(
+      evaluateQuota({ ...base, dailyUsed: 100, monthlyUsed: 3000 }).allowed,
+    ).toBe(true);
   });
 
   it("respects per-teacher override limits", () => {
-    const q = evaluateQuota({ dailyLimit: 5, monthlyLimit: 20, dailyUsed: 4, monthlyUsed: 4, requested: 2 });
+    const q = evaluateQuota({
+      dailyLimit: 5,
+      monthlyLimit: 20,
+      dailyUsed: 4,
+      monthlyUsed: 4,
+      requested: 2,
+    });
     expect(q.remaining).toBe(1);
     expect(q.allowed).toBe(false);
   });

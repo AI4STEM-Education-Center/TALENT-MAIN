@@ -36,7 +36,9 @@ export async function POST(req: NextRequest) {
     const payloadIds = deduped.map((c) => c.conceptId);
 
     const result = await prisma.$transaction(async (tx) => {
-      const existing = await tx.concept.findMany({ select: { conceptId: true } });
+      const existing = await tx.concept.findMany({
+        select: { conceptId: true },
+      });
       const existingIds = new Set(existing.map((e) => e.conceptId));
 
       let created = 0;

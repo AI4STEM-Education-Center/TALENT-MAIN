@@ -1,0 +1,19 @@
+# Dependencies and build output
+node_modules
+.next
+out
+build
+dist
+coverage
+
+# Generated / vendored artifacts (never hand-edited)
+/docs/site
+package-lock.json
+benchmark/*.json
+benchmark/*.log
+*.png
+
+# Local databases (also gitignored)
+test/test.db*
+prisma/*.db*
+data/

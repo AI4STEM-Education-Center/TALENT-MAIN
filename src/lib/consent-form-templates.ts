@@ -136,19 +136,20 @@ export interface OfficialConsentForm {
   bodyHtml: string;
 }
 
-export const OFFICIAL_CONSENT_FORMS: Record<ConsentRole, OfficialConsentForm> = {
-  STUDENT: {
-    role: "STUDENT",
-    version: OFFICIAL_CONSENT_VERSION,
-    title:
-      "Teacher-Involved Adaptive Learning with Explainable Generative AI — Student Consent Form",
-    bodyHtml: STUDENT_FORM_HTML,
-  },
-  TEACHER: {
-    role: "TEACHER",
-    version: OFFICIAL_CONSENT_VERSION,
-    title:
-      "Teacher-Involved Adaptive Learning with Explainable Generative AI — Instructor Consent Form",
-    bodyHtml: TEACHER_FORM_HTML,
-  },
-};
+export const OFFICIAL_CONSENT_FORMS: Record<ConsentRole, OfficialConsentForm> =
+  {
+    STUDENT: {
+      role: "STUDENT",
+      version: OFFICIAL_CONSENT_VERSION,
+      title:
+        "Teacher-Involved Adaptive Learning with Explainable Generative AI — Student Consent Form",
+      bodyHtml: STUDENT_FORM_HTML,
+    },
+    TEACHER: {
+      role: "TEACHER",
+      version: OFFICIAL_CONSENT_VERSION,
+      title:
+        "Teacher-Involved Adaptive Learning with Explainable Generative AI — Instructor Consent Form",
+      bodyHtml: TEACHER_FORM_HTML,
+    },
+  };

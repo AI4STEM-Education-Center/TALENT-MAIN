@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { normalizeConsentExportFilter, buildConsentRecordWhere } from "@/lib/consent-export";
+import {
+  normalizeConsentExportFilter,
+  buildConsentRecordWhere,
+} from "@/lib/consent-export";
 
 describe("normalizeConsentExportFilter", () => {
   it("defaults to an empty (match-everything) filter", () => {
@@ -8,7 +11,9 @@ describe("normalizeConsentExportFilter", () => {
   });
 
   it("accepts a valid explicit-ids filter", () => {
-    expect(normalizeConsentExportFilter({ recordIds: ["a", "b"] })).toEqual({ recordIds: ["a", "b"] });
+    expect(normalizeConsentExportFilter({ recordIds: ["a", "b"] })).toEqual({
+      recordIds: ["a", "b"],
+    });
   });
 
   it("rejects an invalid role/decision", () => {
@@ -21,18 +26,26 @@ describe("normalizeConsentExportFilter", () => {
   });
 
   it("rejects a non-array recordIds", () => {
-    expect(normalizeConsentExportFilter({ recordIds: "not-an-array" })).toBeNull();
+    expect(
+      normalizeConsentExportFilter({ recordIds: "not-an-array" }),
+    ).toBeNull();
   });
 });
 
 describe("buildConsentRecordWhere", () => {
   it("builds an id-in clause for explicit record ids", () => {
-    expect(buildConsentRecordWhere({ recordIds: ["a", "b"] })).toEqual({ id: { in: ["a", "b"] } });
+    expect(buildConsentRecordWhere({ recordIds: ["a", "b"] })).toEqual({
+      id: { in: ["a", "b"] },
+    });
   });
 
   it("combines role/decision/date-range filters", () => {
     expect(
-      buildConsentRecordWhere({ role: "STUDENT", decision: "AGREE", fromDate: "2026-01-01" })
+      buildConsentRecordWhere({
+        role: "STUDENT",
+        decision: "AGREE",
+        fromDate: "2026-01-01",
+      }),
     ).toEqual({
       role: "STUDENT",
       decision: "AGREE",

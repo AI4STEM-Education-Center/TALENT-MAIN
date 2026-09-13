@@ -26,7 +26,7 @@ export type TriggerSummary = {
  */
 export async function triggerSimulations(
   questionIds: string[],
-  force = false
+  force = false,
 ): Promise<TriggerSummary> {
   const existing = await prisma.questionSimulation.findMany({
     where: { questionId: { in: questionIds } },
@@ -45,7 +45,9 @@ export async function triggerSimulations(
       // row between the read above and here, so treat a unique violation as a
       // skip rather than failing the whole batch.
       try {
-        const row = await prisma.questionSimulation.create({ data: { questionId } });
+        const row = await prisma.questionSimulation.create({
+          data: { questionId },
+        });
         created += 1;
         toEnqueue.push(row.id);
       } catch {
@@ -96,9 +98,13 @@ export async function triggerSimulations(
       enqueueSimulation(simulationId);
     } catch (e) {
       enqueueFailed += 1;
-      const errorMessage = e instanceof Error ? e.message : "Failed to enqueue simulation job";
+      const errorMessage =
+        e instanceof Error ? e.message : "Failed to enqueue simulation job";
       await prisma.questionSimulation
-        .update({ where: { id: simulationId }, data: { status: "FAILED", errorMessage } })
+        .update({
+          where: { id: simulationId },
+          data: { status: "FAILED", errorMessage },
+        })
         .catch(() => {});
     }
   }

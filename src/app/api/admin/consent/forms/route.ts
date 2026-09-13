@@ -21,7 +21,14 @@ export async function GET() {
   }
   const versions = await prisma.consentFormVersion.findMany({
     orderBy: [{ role: "asc" }, { createdAt: "desc" }],
-    select: { id: true, role: true, version: true, title: true, isActive: true, createdAt: true },
+    select: {
+      id: true,
+      role: true,
+      version: true,
+      title: true,
+      isActive: true,
+      createdAt: true,
+    },
   });
   return NextResponse.json({ versions, official: OFFICIAL_CONSENT_FORMS });
 }
@@ -41,7 +48,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { role?: unknown; version?: unknown; title?: unknown; bodyHtml?: unknown };
+  let body: {
+    role?: unknown;
+    version?: unknown;
+    title?: unknown;
+    bodyHtml?: unknown;
+  };
   try {
     body = await req.json();
   } catch {
@@ -51,32 +63,64 @@ export async function POST(req: NextRequest) {
   const role = isConsentRole(body.role) ? body.role : null;
   const version = typeof body.version === "string" ? body.version.trim() : "";
   const title = typeof body.title === "string" ? body.title.trim() : "";
-  const rawBodyHtml = typeof body.bodyHtml === "string" ? body.bodyHtml.trim() : "";
+  const rawBodyHtml =
+    typeof body.bodyHtml === "string" ? body.bodyHtml.trim() : "";
 
-  if (!role) return NextResponse.json({ error: "A valid role (STUDENT or TEACHER) is required." }, { status: 400 });
+  if (!role)
+    return NextResponse.json(
+      { error: "A valid role (STUDENT or TEACHER) is required." },
+      { status: 400 },
+    );
   if (!version || version.length > 40) {
-    return NextResponse.json({ error: "A version label (1-40 characters) is required." }, { status: 400 });
+    return NextResponse.json(
+      { error: "A version label (1-40 characters) is required." },
+      { status: 400 },
+    );
   }
   if (!title || title.length > 300) {
-    return NextResponse.json({ error: "A title (1-300 characters) is required." }, { status: 400 });
+    return NextResponse.json(
+      { error: "A title (1-300 characters) is required." },
+      { status: 400 },
+    );
   }
   if (!rawBodyHtml || rawBodyHtml.length > 200_000) {
-    return NextResponse.json({ error: "Form text is required and must be under 200,000 characters." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Form text is required and must be under 200,000 characters." },
+      { status: 400 },
+    );
   }
   const bodyHtml = sanitizeConsentHtml(rawBodyHtml);
   if (!bodyHtml.replace(/<[^>]*>/g, "").trim()) {
-    return NextResponse.json({ error: "Form text must contain readable content." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Form text must contain readable content." },
+      { status: 400 },
+    );
   }
 
-  const existing = await prisma.consentFormVersion.findUnique({ where: { role_version: { role, version } } });
+  const existing = await prisma.consentFormVersion.findUnique({
+    where: { role_version: { role, version } },
+  });
   if (existing) {
-    return NextResponse.json({ error: `Version "${version}" already exists for ${role}.` }, { status: 409 });
+    return NextResponse.json(
+      { error: `Version "${version}" already exists for ${role}.` },
+      { status: 409 },
+    );
   }
 
   const [, created] = await prisma.$transaction([
-    prisma.consentFormVersion.updateMany({ where: { role, isActive: true }, data: { isActive: false } }),
+    prisma.consentFormVersion.updateMany({
+      where: { role, isActive: true },
+      data: { isActive: false },
+    }),
     prisma.consentFormVersion.create({
-      data: { role, version, title, bodyHtml, isActive: true, createdById: session.user.id },
+      data: {
+        role,
+        version,
+        title,
+        bodyHtml,
+        isActive: true,
+        createdById: session.user.id,
+      },
     }),
   ]);
 

@@ -41,21 +41,32 @@ export async function POST(req: NextRequest) {
         tx.misconception.findMany({ select: { misconceptionId: true } }),
       ]);
       const conceptIds = new Set(concepts.map((c) => c.conceptId));
-      const misconceptionIds = new Set(misconceptions.map((m) => m.misconceptionId));
+      const misconceptionIds = new Set(
+        misconceptions.map((m) => m.misconceptionId),
+      );
 
-      const skipped: { misconceptionId: string; conceptId: string; reason: string }[] = [];
+      const skipped: {
+        misconceptionId: string;
+        conceptId: string;
+        reason: string;
+      }[] = [];
       const validMappings = new Map<string, (typeof mappings)[number]>();
 
       for (const m of mappings) {
         const missingConcept = !conceptIds.has(m.conceptId);
         const missingMisconception = !misconceptionIds.has(m.misconceptionId);
         if (missingConcept || missingMisconception) {
-          const reason = missingConcept && missingMisconception
-            ? "Unknown conceptId and misconceptionId"
-            : missingConcept
-              ? "Unknown conceptId"
-              : "Unknown misconceptionId";
-          skipped.push({ misconceptionId: m.misconceptionId, conceptId: m.conceptId, reason });
+          const reason =
+            missingConcept && missingMisconception
+              ? "Unknown conceptId and misconceptionId"
+              : missingConcept
+                ? "Unknown conceptId"
+                : "Unknown misconceptionId";
+          skipped.push({
+            misconceptionId: m.misconceptionId,
+            conceptId: m.conceptId,
+            reason,
+          });
           continue;
         }
         // De-dupe by natural key (last wins) — defense in depth, mirroring the
@@ -67,7 +78,10 @@ export async function POST(req: NextRequest) {
         return { ok: false as const, skipped };
       }
 
-      const dedupedExternalRefs = new Map<string, (typeof externalRefs)[number]>();
+      const dedupedExternalRefs = new Map<
+        string,
+        (typeof externalRefs)[number]
+      >();
       for (const r of externalRefs) {
         dedupedExternalRefs.set(`${r.conceptId}|${r.refCode}|${r.refType}`, r);
       }
@@ -114,7 +128,7 @@ export async function POST(req: NextRequest) {
           error: `Import cancelled: ${result.skipped.length} mapping row(s) reference unknown concepts or misconceptions. No data was changed.`,
           skipped: result.skipped,
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 

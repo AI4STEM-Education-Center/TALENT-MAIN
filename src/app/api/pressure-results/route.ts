@@ -1,7 +1,7 @@
-import { createHash, timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { verifyPressureToken } from "@/lib/pressure-token";
 import { logApiError } from "@/lib/system-log";
 
 export const runtime = "nodejs";
@@ -12,7 +12,8 @@ class BodyTooLargeError extends Error {}
 
 async function readLimitedBody(request: NextRequest): Promise<string> {
   const declared = Number(request.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) throw new BodyTooLargeError();
+  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES)
+    throw new BodyTooLargeError();
   if (!request.body) return "";
 
   const reader = request.body.getReader();
@@ -64,31 +65,33 @@ const resultSchema = z.object({
   failures: z.array(z.unknown()).max(500).default([]),
 });
 
-function tokenMatches(request: NextRequest): boolean {
-  const expected = process.env.PRESSURE_RESULTS_TOKEN;
-  const authorization = request.headers.get("authorization");
-  if (!expected || !authorization?.startsWith("Bearer ")) return false;
-
-  // Compare fixed-size hashes so even different-length tokens take the same
-  // timingSafeEqual path. The plaintext token is never logged or persisted.
-  const expectedHash = createHash("sha256").update(expected).digest();
-  const suppliedHash = createHash("sha256").update(authorization.slice(7)).digest();
-  return timingSafeEqual(expectedHash, suppliedHash);
-}
-
-/** Authenticated machine-to-machine ingestion used by GitHub and local runs. */
+/**
+ * Authenticated machine-to-machine ingestion used by GitHub and local runs.
+ * The accepted tokens are the ones an admin minted in this deployment's own
+ * web UI, so dev and production each authorize themselves with no shared
+ * secret and no server environment variable.
+ */
 export async function POST(request: NextRequest) {
-  if (!tokenMatches(request)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   try {
+    const ip =
+      request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+      request.headers.get("x-real-ip")?.trim() ||
+      null;
+    if (
+      !(await verifyPressureToken(request.headers.get("authorization"), { ip }))
+    ) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     let raw: string;
     try {
       raw = await readLimitedBody(request);
     } catch (error) {
       if (error instanceof BodyTooLargeError) {
-        return NextResponse.json({ error: "Result exceeds 512 KiB." }, { status: 413 });
+        return NextResponse.json(
+          { error: "Result exceeds 512 KiB." },
+          { status: 413 },
+        );
       }
       throw error;
     }
@@ -102,8 +105,11 @@ export async function POST(request: NextRequest) {
     const parsed = resultSchema.safeParse(json);
     if (!parsed.success) {
       return NextResponse.json(
-        { error: "Invalid pressure-test result.", issues: parsed.error.issues.slice(0, 10) },
-        { status: 400 }
+        {
+          error: "Invalid pressure-test result.",
+          issues: parsed.error.issues.slice(0, 10),
+        },
+        { status: 400 },
       );
     }
 
@@ -145,6 +151,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ stored }, { status: 201 });
   } catch (error) {
     logApiError("PRESSURE_RESULT_POST", error);
-    return NextResponse.json({ error: "Could not store result." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Could not store result." },
+      { status: 500 },
+    );
   }
 }

@@ -31,10 +31,14 @@ export function ManualGradesTable({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [grade, setGrade] = useState("");
   const [saving, setSaving] = useState(false);
-  const selected = students.find((student) => student.studentId === selectedId) ?? null;
+  const selected =
+    students.find((student) => student.studentId === selectedId) ?? null;
   const numericGrade = Number(grade);
   const gradeIsValid =
-    grade.trim() !== "" && Number.isFinite(numericGrade) && numericGrade >= 0 && numericGrade <= 100;
+    grade.trim() !== "" &&
+    Number.isFinite(numericGrade) &&
+    numericGrade >= 0 &&
+    numericGrade <= 100;
 
   function openEditor(student: QuizStudentRow) {
     setSelectedId(student.studentId);
@@ -55,7 +59,7 @@ export function ManualGradesTable({
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ grade: numericGrade }),
-        }
+        },
       );
       if (!res.ok) {
         const data = await res.json().catch(() => null);
@@ -65,14 +69,15 @@ export function ManualGradesTable({
         current.map((student) =>
           student.studentId === selected.studentId
             ? { ...student, manualGrade: numericGrade }
-            : student
-        )
+            : student,
+        ),
       );
       setSelectedId(null);
     } catch (error) {
       await alert({
         title: "Couldn't save grade",
-        description: error instanceof Error ? error.message : "Something went wrong.",
+        description:
+          error instanceof Error ? error.message : "Something went wrong.",
       });
     } finally {
       setSaving(false);
@@ -85,7 +90,7 @@ export function ManualGradesTable({
     try {
       const res = await fetch(
         `/api/classes/${classId}/quizzes/${quizId}/manual-grades/${selected.studentId}`,
-        { method: "DELETE" }
+        { method: "DELETE" },
       );
       if (!res.ok) {
         const data = await res.json().catch(() => null);
@@ -95,14 +100,15 @@ export function ManualGradesTable({
         current.map((student) =>
           student.studentId === selected.studentId
             ? { ...student, manualGrade: null }
-            : student
-        )
+            : student,
+        ),
       );
       setSelectedId(null);
     } catch (error) {
       await alert({
         title: "Couldn't clear grade",
-        description: error instanceof Error ? error.message : "Something went wrong.",
+        description:
+          error instanceof Error ? error.message : "Something went wrong.",
       });
     } finally {
       setSaving(false);
@@ -110,7 +116,11 @@ export function ManualGradesTable({
   }
 
   if (students.length === 0) {
-    return <p className="text-sm text-muted-foreground">No students are enrolled in this class.</p>;
+    return (
+      <p className="text-sm text-muted-foreground">
+        No students are enrolled in this class.
+      </p>
+    );
   }
 
   return (
@@ -123,12 +133,17 @@ export function ManualGradesTable({
               <th className="px-3 py-2 text-right font-medium">Best attempt</th>
               <th className="px-3 py-2 text-right font-medium">Manual grade</th>
               <th className="px-3 py-2 text-right font-medium">Attempts</th>
-              <th className="py-2 pl-3"><span className="sr-only">Actions</span></th>
+              <th className="py-2 pl-3">
+                <span className="sr-only">Actions</span>
+              </th>
             </tr>
           </thead>
           <tbody>
             {students.map((student) => (
-              <tr key={student.studentId} className="border-b last:border-0 hover:bg-muted/30">
+              <tr
+                key={student.studentId}
+                className="border-b last:border-0 hover:bg-muted/30"
+              >
                 <td className="py-2 pr-3">
                   <Link
                     href={`/teacher/classes/${classId}/students/${student.studentId}/stats`}
@@ -138,15 +153,25 @@ export function ManualGradesTable({
                   </Link>
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">
-                  {student.bestScore === null ? "—" : `${Math.round(student.bestScore * 100) / 100}%`}
+                  {student.bestScore === null
+                    ? "—"
+                    : `${Math.round(student.bestScore * 100) / 100}%`}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">
-                  {student.manualGrade === null ? "—" : `${Math.round(student.manualGrade * 100) / 100}%`}
+                  {student.manualGrade === null
+                    ? "—"
+                    : `${Math.round(student.manualGrade * 100) / 100}%`}
                 </td>
-                <td className="px-3 py-2 text-right tabular-nums">{student.attempts}</td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  {student.attempts}
+                </td>
                 <td className="py-2 pl-3 text-right">
                   {student.canEditManualGrade && (
-                    <Button variant="ghost" size="sm" onClick={() => openEditor(student)}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => openEditor(student)}
+                    >
                       <Pencil className="size-3.5" />
                       {student.manualGrade === null ? "Set grade" : "Edit"}
                     </Button>
@@ -158,13 +183,16 @@ export function ManualGradesTable({
         </table>
       </div>
 
-      <Dialog open={selected !== null} onOpenChange={(open) => !open && closeEditor()}>
+      <Dialog
+        open={selected !== null}
+        onOpenChange={(open) => !open && closeEditor()}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Manual grade for {selected?.name}</DialogTitle>
             <DialogDescription>
-              Enter a percentage from 0 to 100. It will override the calculated grade for this test
-              when grades are exported.
+              Enter a percentage from 0 to 100. It will override the calculated
+              grade for this test when grades are exported.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -184,13 +212,19 @@ export function ManualGradesTable({
           <DialogFooter className="gap-2 sm:justify-between">
             <div>
               {selected?.manualGrade !== null && (
-                <Button variant="outline" onClick={clearGrade} disabled={saving}>
+                <Button
+                  variant="outline"
+                  onClick={clearGrade}
+                  disabled={saving}
+                >
                   Clear manual grade
                 </Button>
               )}
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={closeEditor} disabled={saving}>Cancel</Button>
+              <Button variant="outline" onClick={closeEditor} disabled={saving}>
+                Cancel
+              </Button>
               <Button onClick={saveGrade} disabled={saving || !gradeIsValid}>
                 {saving ? "Saving…" : "Save grade"}
               </Button>

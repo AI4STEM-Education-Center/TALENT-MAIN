@@ -4,7 +4,11 @@ import { appOrigin } from "@/lib/app-url";
 import { normalizeEmail, normalizeUsername } from "@/lib/account-validation";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { parseBody, forgotPasswordSchema } from "@/lib/validation";
-import { issueResetToken, resetRequestsExhausted, RESET_TOKEN_TTL_MINUTES } from "@/lib/password-reset";
+import {
+  issueResetToken,
+  resetRequestsExhausted,
+  RESET_TOKEN_TTL_MINUTES,
+} from "@/lib/password-reset";
 import { sendPurposeEmail, SmtpNotConfiguredError } from "@/lib/email";
 import { logApiError, logSystemEvent } from "@/lib/system-log";
 
@@ -39,7 +43,10 @@ export async function POST(req: NextRequest) {
     const identifier = parsed.data.identifier;
     const user = await prisma.user.findFirst({
       where: {
-        OR: [{ email: normalizeEmail(identifier) }, { username: normalizeUsername(identifier) }],
+        OR: [
+          { email: normalizeEmail(identifier) },
+          { username: normalizeUsername(identifier) },
+        ],
       },
     });
 
@@ -88,7 +95,10 @@ export async function POST(req: NextRequest) {
           : `Password reset link could not be emailed to ${user.username}`,
       userId: user.id,
       ip,
-      metadata: result.errors.length > 0 ? { errors: result.errors.slice(0, 3) } : undefined,
+      metadata:
+        result.errors.length > 0
+          ? { errors: result.errors.slice(0, 3) }
+          : undefined,
     });
 
     return NextResponse.json(GENERIC_RESPONSE);
@@ -108,11 +118,14 @@ export async function POST(req: NextRequest) {
           error:
             "Password reset emails are unavailable right now. Please contact your administrator.",
         },
-        { status: 503 }
+        { status: 503 },
       );
     }
 
     logApiError("AUTH_FORGOT_PASSWORD", error);
-    return NextResponse.json({ error: "Internal server error." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error." },
+      { status: 500 },
+    );
   }
 }

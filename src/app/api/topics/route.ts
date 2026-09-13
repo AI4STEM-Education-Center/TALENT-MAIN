@@ -13,9 +13,11 @@ function contentType(value: unknown): TopicContentType | null {
 
 export async function GET(req?: NextRequest) {
   const actor = await getContentActor();
-  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!actor)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const requestedType = contentType(req?.nextUrl.searchParams.get("contentType")) ?? "QUIZ";
+  const requestedType =
+    contentType(req?.nextUrl.searchParams.get("contentType")) ?? "QUIZ";
 
   const topics = await prisma.topic.findMany({
     where: { teacherId: ownScope(actor), contentType: requestedType },
@@ -27,22 +29,38 @@ export async function GET(req?: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const actor = await getContentActor();
-  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!actor)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { name, order, contentType: rawContentType } = await req.json();
-  if (!name?.trim()) return NextResponse.json({ error: "Topic name required." }, { status: 400 });
-  const requestedType = rawContentType === undefined ? "QUIZ" : contentType(rawContentType);
-  if (!requestedType) return NextResponse.json({ error: "Invalid content type." }, { status: 400 });
+  if (!name?.trim())
+    return NextResponse.json(
+      { error: "Topic name required." },
+      { status: 400 },
+    );
+  const requestedType =
+    rawContentType === undefined ? "QUIZ" : contentType(rawContentType);
+  if (!requestedType)
+    return NextResponse.json(
+      { error: "Invalid content type." },
+      { status: 400 },
+    );
 
   const topic = await prisma.topic.create({
-    data: { name: name.trim(), order: order ?? 0, contentType: requestedType, teacherId: ownScope(actor) },
+    data: {
+      name: name.trim(),
+      order: order ?? 0,
+      contentType: requestedType,
+      teacherId: ownScope(actor),
+    },
   });
   return NextResponse.json(topic, { status: 201 });
 }
 
 export async function PATCH(req: NextRequest) {
   const actor = await getContentActor();
-  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!actor)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id, name, order } = await req.json();
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
@@ -54,7 +72,10 @@ export async function PATCH(req: NextRequest) {
 
   const updated = await prisma.topic.update({
     where: { id },
-    data: { ...(name && { name: name.trim() }), ...(order !== undefined && { order }) },
+    data: {
+      ...(name && { name: name.trim() }),
+      ...(order !== undefined && { order }),
+    },
   });
   return NextResponse.json(updated);
 }
@@ -63,7 +84,8 @@ export async function PATCH(req: NextRequest) {
 // the SetNull relations and their content is never deleted.
 export async function DELETE(req: NextRequest) {
   const actor = await getContentActor();
-  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!actor)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await req.json();
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });

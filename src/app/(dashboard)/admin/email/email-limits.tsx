@@ -30,11 +30,17 @@ type Draft = { daily: string; monthly: string };
 
 export function EmailLimits() {
   const [teachers, setTeachers] = useState<TeacherRow[]>([]);
-  const [defaults, setDefaults] = useState<Defaults>({ emailDailyLimit: 0, emailMonthlyLimit: 0 });
+  const [defaults, setDefaults] = useState<Defaults>({
+    emailDailyLimit: 0,
+    emailMonthlyLimit: 0,
+  });
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
-  const [banner, setBanner] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [banner, setBanner] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -53,8 +59,8 @@ export function EmailLimits() {
                 daily: t.emailDailyLimit?.toString() ?? "",
                 monthly: t.emailMonthlyLimit?.toString() ?? "",
               },
-            ])
-          )
+            ]),
+          ),
         );
       }
     } finally {
@@ -79,13 +85,18 @@ export function EmailLimits() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          emailDailyLimit: draft.daily.trim() === "" ? null : Number(draft.daily),
-          emailMonthlyLimit: draft.monthly.trim() === "" ? null : Number(draft.monthly),
+          emailDailyLimit:
+            draft.daily.trim() === "" ? null : Number(draft.daily),
+          emailMonthlyLimit:
+            draft.monthly.trim() === "" ? null : Number(draft.monthly),
         }),
       });
       const data = await res.json();
       if (!res.ok) {
-        setBanner({ type: "error", text: data.error || "Failed to save limits." });
+        setBanner({
+          type: "error",
+          text: data.error || "Failed to save limits.",
+        });
       } else {
         setBanner({ type: "success", text: "Limits saved." });
         await load();
@@ -112,8 +123,10 @@ export function EmailLimits() {
           <Gauge className="size-6" /> Email Limits
         </h2>
         <p className="text-muted-foreground text-sm mt-1">
-          Per-teacher email sending caps, counted per recipient. Leave a field blank to use the default
-          ({defaults.emailDailyLimit}/day, {defaults.emailMonthlyLimit}/month). In-app notifications are unlimited.
+          Per-teacher email sending caps, counted per recipient. Leave a field
+          blank to use the default ({defaults.emailDailyLimit}/day,{" "}
+          {defaults.emailMonthlyLimit}/month). In-app notifications are
+          unlimited.
         </p>
       </div>
 
@@ -149,7 +162,10 @@ export function EmailLimits() {
           <tbody className="divide-y divide-border">
             {teachers.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+                <td
+                  colSpan={6}
+                  className="px-4 py-8 text-center text-muted-foreground"
+                >
                   No teachers yet.
                 </td>
               </tr>
@@ -157,13 +173,18 @@ export function EmailLimits() {
               teachers.map((t) => {
                 const draft = drafts[t.id] ?? { daily: "", monthly: "" };
                 return (
-                  <tr key={t.id} className="hover:bg-muted/40 transition-colors">
+                  <tr
+                    key={t.id}
+                    className="hover:bg-muted/40 transition-colors"
+                  >
                     <td className="px-4 py-3">
                       <div className="flex flex-col">
                         <span className="font-medium text-foreground">
                           {t.firstName} {t.lastName}
                         </span>
-                        <span className="text-xs text-muted-foreground">{t.email}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {t.email}
+                        </span>
                       </div>
                     </td>
                     <td className="px-4 py-3 text-muted-foreground tabular-nums">
@@ -177,7 +198,9 @@ export function EmailLimits() {
                         type="number"
                         min={1}
                         value={draft.daily}
-                        onChange={(e) => setDraft(t.id, "daily", e.target.value)}
+                        onChange={(e) =>
+                          setDraft(t.id, "daily", e.target.value)
+                        }
                         placeholder={`${defaults.emailDailyLimit} (default)`}
                         className="w-32"
                       />
@@ -187,14 +210,25 @@ export function EmailLimits() {
                         type="number"
                         min={1}
                         value={draft.monthly}
-                        onChange={(e) => setDraft(t.id, "monthly", e.target.value)}
+                        onChange={(e) =>
+                          setDraft(t.id, "monthly", e.target.value)
+                        }
                         placeholder={`${defaults.emailMonthlyLimit} (default)`}
                         className="w-32"
                       />
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <Button size="sm" variant="outline" onClick={() => handleSave(t.id)} disabled={savingId === t.id}>
-                        {savingId === t.id ? <Loader2 className="size-4 animate-spin" /> : "Save"}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleSave(t.id)}
+                        disabled={savingId === t.id}
+                      >
+                        {savingId === t.id ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          "Save"
+                        )}
                       </Button>
                     </td>
                   </tr>
