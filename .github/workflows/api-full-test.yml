@@ -1,0 +1,47 @@
+name: Full Dev API Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: full-dev-api-test
+  cancel-in-progress: false
+
+jobs:
+  full-api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run full deterministic API suite
+        env:
+          TEST_PROFILE: full
+          TARGET_URL: https://dev.ai4talent.org
+          TARGET_ENVIRONMENT: dev
+          RESULT_OUTPUT: pressure/.tmp/api/full.json
+          REQUIRE_RESULT_PUBLISH: "true"
+          REQUIRED_RESULT_SINKS: dev
+          DEV_TEST_STUDENT_LOGIN: ${{ secrets.DEV_TEST_STUDENT_LOGIN }}
+          DEV_TEST_STUDENT_PASSWORD: ${{ secrets.DEV_TEST_STUDENT_PASSWORD }}
+          DEV_TEST_TEACHER_LOGIN: ${{ secrets.DEV_TEST_TEACHER_LOGIN }}
+          DEV_TEST_TEACHER_PASSWORD: ${{ secrets.DEV_TEST_TEACHER_PASSWORD }}
+          DEV_TEST_ADMIN_LOGIN: ${{ secrets.DEV_TEST_ADMIN_LOGIN }}
+          DEV_TEST_ADMIN_PASSWORD: ${{ secrets.DEV_TEST_ADMIN_PASSWORD }}
+          DEV_RESULTS_URL: https://dev.ai4talent.org
+          DEV_PRESSURE_RESULTS_TOKEN: ${{ secrets.DEV_PRESSURE_RESULTS_TOKEN }}
+          PROD_RESULTS_URL: https://ai4talent.org
+          PROD_PRESSURE_RESULTS_TOKEN: ${{ secrets.PROD_PRESSURE_RESULTS_TOKEN }}
+        run: node pressure/api-test.mjs
+
+      - name: Upload full-suite result
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: full-dev-api-${{ github.run_id }}
+          path: pressure/.tmp/api/*.json
+          if-no-files-found: warn
+          retention-days: 90
