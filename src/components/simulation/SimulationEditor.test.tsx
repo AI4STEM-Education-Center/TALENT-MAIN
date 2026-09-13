@@ -107,12 +107,33 @@ async function render(version = 1) {
   );
 }
 /** React tracks the last value it wrote, so set through the native setter. */
-function type(input: HTMLInputElement, value: string) {
+function type(input: HTMLInputElement | HTMLTextAreaElement, value: string) {
   Object.getOwnPropertyDescriptor(
-    HTMLInputElement.prototype,
+    input instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype
+      : HTMLInputElement.prototype,
     "value",
   )!.set!.call(input, value);
   input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+/** The chat box, which sends on Enter. */
+function messageBox() {
+  const box = host.querySelector<HTMLTextAreaElement>(
+    "#simulation-edit-message",
+  );
+  if (!box) throw new Error("Missing message box");
+  return box;
+}
+/** Returns the event so a caller can check whether the editor claimed it. */
+function pressEnter(box: HTMLTextAreaElement, shiftKey = false) {
+  const event = new KeyboardEvent("keydown", {
+    key: "Enter",
+    shiftKey,
+    bubbles: true,
+    cancelable: true,
+  });
+  box.dispatchEvent(event);
+  return event;
 }
 function button(text: string) {
   const result = [...host.querySelectorAll("button")].find(
@@ -137,6 +158,50 @@ it("offers None of the above and sends selected answers through chat", async () 
     message: "Which direction?: None of the above",
   });
 });
+/** Serve a plan that needs no further input, i.e. one ready to build. */
+function servePlanReadyToBuild() {
+  const ready = {
+    ...plan,
+    questions: [],
+    revisionPrompt: "Stop the motion until Start is clicked.",
+  };
+  fetchMock.mockImplementation(async (_url: string, options?: RequestInit) => ({
+    ok: true,
+    json: async () =>
+      options
+        ? { aborted: true }
+        : {
+            versions,
+            chats: [{ ...chats[0], plan: JSON.stringify(ready) }],
+            formulas,
+            assistant: { enabled: true, model: "test-model" },
+          },
+  }));
+  return ready;
+}
+it("says no decisions are needed and names the version a build would create", async () => {
+  const ready = servePlanReadyToBuild();
+  await render();
+  expect(host.textContent).toContain("No decisions needed");
+  // What the run will do has to be readable without opening the disclosure.
+  expect(host.textContent).toContain(
+    `Builds a new version, \u201C${ready.name}\u201D`,
+  );
+  expect(host.textContent).toContain(ready.revisionPrompt);
+  expect(() => button("Send answers")).toThrow();
+});
+it("applies a ready plan against the selected version", async () => {
+  const ready = servePlanReadyToBuild();
+  await render();
+  await act(async () => button(`Create \u201C${ready.name}\u201D`).click());
+  const call = fetchMock.mock.calls.find(
+    ([, options]) => options?.method === "POST",
+  );
+  expect(JSON.parse(call?.[1].body)).toMatchObject({
+    action: "apply",
+    version: 1,
+  });
+});
 it("aborts the current proposal and follows the new live version after generation", async () => {
   await render();
   await act(async () => button("Abort this edit").click());
@@ -152,7 +217,8 @@ it("aborts the current proposal and follows the new live version after generatio
     host.querySelector("[data-preview]")?.getAttribute("data-preview"),
   ).toBe("2");
   expect((host.querySelector("select") as HTMLSelectElement).value).toBe("2");
-  expect(host.textContent).toContain("What else would you like to change?");
+  // The prompt to keep going now lives in the status line, not the transcript.
+  expect(host.textContent).toContain("Pick a version above to inspect it");
 });
 
 /** Enter edit mode, which is what arms the preview. */
@@ -392,4 +458,136 @@ it("shows the server's own message when a version load is refused", async () => 
   expect(host.querySelector('[role="alert"]')?.textContent).toContain(
     "Your session has expired.",
   );
+});
+
+// Teachers write these as quick one-liners, so Enter sends. Shift+Enter has to
+// stay with the textarea, or a multi-line instruction can never be typed.
+it("sends on Enter and leaves Shift+Enter to the textarea", async () => {
+  await render();
+  const box = messageBox();
+
+  // An empty box has nothing to send; Enter must not post an invalid request.
+  expect(pressEnter(box).defaultPrevented).toBe(true);
+  type(box, "Stop the motion until I press start");
+
+  const newline = pressEnter(box, true);
+  expect(newline.defaultPrevented).toBe(false);
+  expect(
+    fetchMock.mock.calls.some(([, options]) => options?.method === "POST"),
+  ).toBe(false);
+
+  await act(async () => void pressEnter(box));
+  const call = fetchMock.mock.calls.find(
+    ([, options]) => options?.method === "POST",
+  );
+  expect(JSON.parse(call?.[1].body)).toMatchObject({
+    action: "chat",
+    message: "Stop the motion until I press start",
+  });
+});
+
+/** An NDJSON body the test drives one event at a time, as the server does. */
+function openStream() {
+  const encoder = new TextEncoder();
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  const body = new ReadableStream<Uint8Array>({
+    start: (c) => {
+      controller = c;
+    },
+  });
+  return {
+    body,
+    push: (event: unknown) =>
+      controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`)),
+    close: () => controller.close(),
+  };
+}
+
+// The reply is written a token at a time over minutes, so it has to appear as
+// it is written rather than all at once when the turn finally lands.
+it("paints the reply while it streams, then hands over to the transcript", async () => {
+  await render();
+  const stream = openStream();
+  fetchMock.mockImplementation(async (_url, options) =>
+    options
+      ? { ok: true, status: 200, body: stream.body }
+      : {
+          ok: true,
+          json: async () => ({
+            versions,
+            chats,
+            formulas,
+            assistant: { enabled: true, model: "test-model" },
+          }),
+        },
+  );
+
+  type(messageBox(), "Remove the timer");
+  await act(async () => void pressEnter(messageBox()));
+
+  await act(async () => stream.push({ type: "delta", text: "Removing " }));
+  await act(async () => stream.push({ type: "delta", text: "the timer." }));
+  expect(host.querySelector('[role="log"]')?.textContent).toContain(
+    "Removing the timer.",
+  );
+  // Tool activity is what fills the gap while the model works with no prose.
+  await act(async () =>
+    stream.push({
+      type: "tool",
+      label: "Reviewing revision plan",
+      status: "running",
+    }),
+  );
+  expect(host.querySelector('[role="status"]')?.textContent).toContain(
+    "Reviewing revision plan",
+  );
+
+  await act(async () => {
+    stream.push({
+      type: "plan",
+      chatId: "chat1",
+      plan: { ...plan, message: "Removing the timer." },
+    });
+    stream.close();
+  });
+  // The saved transcript has taken over, so the live copy is not left behind
+  // to be rendered twice.
+  expect(host.querySelector('[role="log"]')?.textContent).not.toContain(
+    "Removing the timer.",
+  );
+  expect(messageBox().value).toBe("");
+});
+
+it("reports an error the stream carried instead of leaving the box spinning", async () => {
+  await render();
+  const stream = openStream();
+  fetchMock.mockImplementation(async (_url, options) =>
+    options
+      ? { ok: true, status: 200, body: stream.body }
+      : {
+          ok: true,
+          json: async () => ({
+            versions,
+            chats,
+            formulas,
+            assistant: { enabled: true, model: "test-model" },
+          }),
+        },
+  );
+
+  type(messageBox(), "Remove the timer");
+  await act(async () => void pressEnter(messageBox()));
+  await act(async () => {
+    stream.push({
+      type: "error",
+      message: "The assistant took too long to answer.",
+      guardrailEventId: null,
+    });
+    stream.close();
+  });
+
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+    "took too long",
+  );
+  expect(button("Send message").disabled).toBe(false);
 });
