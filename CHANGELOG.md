@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.0.21 - 2026-09-11
+
+- Added AI guardrails end to end: untrusted text is fenced, free content moderation, jailbreak and off-topic checks, an administrator panel with enforcement switched on, per-check model assignments, and user feedback on flagged content.
+- Added connection testing for guardrail and moderation assignments, with plain explanations when a moderation model cannot run at all.
+- Added conversational simulation editing with named version branches, and a single edit mode that saves text and formula changes in one batch.
+- Improved the simulation editor with a streaming chat that sends on Enter, previews that fit their frame, usable inline controls, a panel readable without side-scrolling, and real error messages in place of an HTML parse failure.
+- Added a student materials library and a class-scoped simulations page.
+- Added a teacher quiz preview that shows a quiz exactly as students see it.
+- Added 5-point ratings on AI-generated content, gathered in one panel with CSV export.
+- Added result-ingestion tokens minted in the web interface, alerts for revoked-token leaks, and editable email templates with a receiver preview.
+- Added a three-tier pressure-test harness with capacity sizing and simplified live API testing.
+- Improved reliability: startup connection failures retry, the post-deploy API check is stable, out-of-order material uploads finalize correctly, and page renders are stored as WebP.
+- Improved chat panel gestures and rebuilt the frontend.
+- Improved readability across the repository through a formatting, typed-error, and dead-code removal pass.
+- Fixed the exam-result consent gate to key on the user record rather than the student record.
+- Refreshed the validated production and development dependency sets and cleared outstanding security alerts.
+
 ## v0.0.20 - 2026-08-28
 
 - Added student and teacher AI chat assistants with streaming replies, file attachments, per-tool administrator configuration, and an answer key gated behind quiz availability.
