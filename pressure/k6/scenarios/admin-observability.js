@@ -29,9 +29,19 @@
 // a single admin opens a tab, that is a one-request-blocks-everyone problem, not
 // a slow-endpoint problem.
 
-import { requireTier, identityFor, RUN_LABEL, SLO } from "../lib/config.js";
+import {
+  requireTier,
+  identityFor,
+  studentTarget,
+  RUN_LABEL,
+  SLO,
+} from "../lib/config.js";
 import { thresholds, TREND_STATS } from "../lib/metrics.js";
-import { adminObservabilityJourney, studentQuizJourney, publicLanding } from "../lib/journeys.js";
+import {
+  adminObservabilityJourney,
+  studentQuizJourney,
+  publicLanding,
+} from "../lib/journeys.js";
 import { sleep } from "k6";
 
 requireTier("admin-observability", ["ec2-clone"]);
@@ -39,11 +49,17 @@ requireTier("admin-observability", ["ec2-clone"]);
 // The widest range parses the most lines. Default to the worst realistic case.
 const RANGE = __ENV.PRESSURE_RESOURCE_RANGE || "7d";
 // "0" runs the admin poll in isolation; >0 adds the collateral-damage measurement.
-const STUDENTS = Number(__ENV.PRESSURE_COLLATERAL_STUDENTS || 8);
+const STUDENTS = studentTarget(Number(__ENV.PRESSURE_COLLATERAL_STUDENTS || 8));
 
 const STEPS = [
-  "admin_resources", "admin_stats", "admin_logs",
-  "student_dashboard", "class_quizzes", "student_quiz_start", "student_quiz_submit", "student_results",
+  "admin_resources",
+  "admin_stats",
+  "admin_logs",
+  "student_dashboard",
+  "class_quizzes",
+  "student_quiz_start",
+  "student_quiz_submit",
+  "student_results",
   "static_page",
 ];
 
@@ -86,7 +102,10 @@ export function admin() {
 }
 
 export function student() {
-  studentQuizJourney(identityFor("students", __VU), { fetchMedia: false, thinkPerQuestion: [1, 3] });
+  studentQuizJourney(identityFor("students", __VU), {
+    fetchMedia: false,
+    thinkPerQuestion: [1, 3],
+  });
 }
 
 export function beat() {

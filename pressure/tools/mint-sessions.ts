@@ -48,7 +48,13 @@ type Bundle = {
   students: Identity[];
   teachers: Identity[];
   admins: Identity[];
-  /** Real identifier/password pairs for login-storm. Only synthetic bench users. */
+  /** A published media-bearing quiz and one minted student enrolled in it. */
+  mediaTarget: {
+    classId: string;
+    quizId: string;
+    studentUserId: string;
+  } | null;
+  /** Real identifiers paired with the runner's deliberately invalid password. */
   credentials: Array<{ identifier: string; password: string }>;
   warnings: string[];
 };
@@ -69,9 +75,9 @@ async function main() {
         "  --admins <n>           how many admin identities    (default 1)",
         "  --secure               use the __Secure- cookie name (any NODE_ENV=production target)",
         "  --ttl-hours <n>        session lifetime             (default 12)",
-        "  --credentials-for <p>  emit login-storm credentials for users whose username starts with <p>",
-        "  --credentials-password <pw>  the known password those users were seeded with",
-      ].join("\n")
+        "  --credentials-for <p>  optional username prefix for login-storm identities",
+        "  --credentials-password <pw>  password attempted by login-storm (a random invalid value on EC2)",
+      ].join("\n"),
     );
     return;
   }
@@ -81,19 +87,24 @@ async function main() {
   if (!secret) {
     throw new Error(
       "AUTH_SECRET is required (--secret or $AUTH_SECRET). It must be the TARGET's secret — " +
-        "a token minted with a different secret decodes to nothing and every request is a redirect to /login."
+        "a token minted with a different secret decodes to nothing and every request is a redirect to /login.",
     );
   }
 
   const databaseUrl = str(args, "database-url", process.env.DATABASE_URL ?? "");
-  if (!databaseUrl) throw new Error("DATABASE_URL is required (--database-url or $DATABASE_URL)");
+  if (!databaseUrl)
+    throw new Error(
+      "DATABASE_URL is required (--database-url or $DATABASE_URL)",
+    );
 
   // The cookie NAME is also the JWE salt (see src/lib/auth.ts: `salt` defaults to
   // the cookie name in Auth.js). Getting it wrong produces a token that decodes
   // to null, which the app reports as "not signed in" — indistinguishable from a
   // bad secret. The production image sets NODE_ENV=production, so it expects the
   // __Secure- prefixed name.
-  const cookieName = bool(args, "secure") ? "__Secure-authjs.session-token" : "authjs.session-token";
+  const cookieName = bool(args, "secure")
+    ? "__Secure-authjs.session-token"
+    : "authjs.session-token";
 
   const ttlHours = num(args, "ttl-hours", 12);
   const expiresAt = Math.floor(Date.now() / 1000) + Math.round(ttlHours * 3600);
@@ -116,8 +127,14 @@ async function main() {
   const activeStudentForm = await getActiveForm(prisma, "STUDENT");
 
   async function consentClaimFor(userId: string, role: string) {
-    const active = role === "TEACHER" ? activeTeacherForm : role === "STUDENT" ? activeStudentForm : null;
-    if (role !== "TEACHER" && role !== "STUDENT") return { version: null, decision: null };
+    const active =
+      role === "TEACHER"
+        ? activeTeacherForm
+        : role === "STUDENT"
+          ? activeStudentForm
+          : null;
+    if (role !== "TEACHER" && role !== "STUDENT")
+      return { version: null, decision: null };
     if (!active) return { version: null, decision: CONSENT_NOT_REQUIRED };
     const record = await prisma.consentRecord.findFirst({
       where: { userId, formVersionId: active.id },
@@ -136,13 +153,20 @@ async function main() {
       // identities — otherwise "the same" run compares different students.
       orderBy: { id: "asc" },
       take: limit,
-      select: { id: true, email: true, username: true, firstName: true, lastName: true, role: true },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        firstName: true,
+        lastName: true,
+        role: true,
+      },
     });
 
     if (users.length < limit) {
       warnings.push(
         `requested ${limit} ${role} identities but the database only has ${users.length}; ` +
-          `scenarios will reuse identities, which concentrates write contention on fewer rows`
+          `scenarios will reuse identities, which concentrates write contention on fewer rows`,
       );
     }
 
@@ -151,7 +175,11 @@ async function main() {
 
     for (const user of users) {
       const claim = await consentClaimFor(user.id, user.role);
-      if (user.role === "TEACHER" && claim.decision !== "AGREE" && claim.decision !== CONSENT_NOT_REQUIRED) {
+      if (
+        user.role === "TEACHER" &&
+        claim.decision !== "AGREE" &&
+        claim.decision !== CONSENT_NOT_REQUIRED
+      ) {
         gatedTeachers++;
       }
 
@@ -175,7 +203,12 @@ async function main() {
         maxAge: expiresAt - Math.floor(Date.now() / 1000),
       });
 
-      identities.push({ userId: user.id, username: user.username, role: user.role, token });
+      identities.push({
+        userId: user.id,
+        username: user.username,
+        role: user.role,
+        token,
+      });
     }
 
     if (gatedTeachers > 0) {
@@ -183,7 +216,7 @@ async function main() {
         `${gatedTeachers} of ${users.length} teacher identities are CONSENT-GATED: an active TEACHER ` +
           `consent form is published and these accounts have not recorded an AGREE. src/proxy.ts will 403 ` +
           `every /api/ request from them. Teacher steps in the report will be designed_refusals, not load. ` +
-          `Either seed AGREE records for the bench teachers or read teacher metrics as invalid for this run.`
+          `Either seed AGREE records for the bench teachers or read teacher metrics as invalid for this run.`,
       );
     }
 
@@ -200,16 +233,28 @@ async function main() {
   if (students.length + teachers.length + admins.length === 0) {
     throw new Error(
       "no identities were minted — the target database has no users in the requested roles. " +
-        "Did the seed run, or is --database-url pointing at an empty file?"
+        "Did the seed run, or is --database-url pointing at an empty file?",
     );
   }
   const sample = students[0] ?? teachers[0] ?? admins[0];
-  const decoded = await decode({ token: sample.token, secret, salt: cookieName });
+  const decoded = await decode({
+    token: sample.token,
+    secret,
+    salt: cookieName,
+  });
   if (!decoded || decoded.id !== sample.userId) {
-    throw new Error("self-check FAILED: a freshly minted token did not decode back to its own user");
+    throw new Error(
+      "self-check FAILED: a freshly minted token did not decode back to its own user",
+    );
   }
 
   const credentials = buildCredentials(args, students, teachers);
+  const mediaTarget = await findMediaTarget(prisma, students);
+  if (!mediaTarget) {
+    warnings.push(
+      "no published media-bearing quiz is accessible to the minted students; smoke will skip deterministic media coverage and media-signing will fail clearly",
+    );
+  }
 
   const bundle: Bundle = {
     mintedAt: new Date().toISOString(),
@@ -218,6 +263,7 @@ async function main() {
     students,
     teachers,
     admins,
+    mediaTarget,
     credentials,
     warnings,
   };
@@ -229,9 +275,11 @@ async function main() {
   fs.writeFileSync(outPath, JSON.stringify(bundle, null, 2), { mode: 0o600 });
 
   console.log(
-    `minted ${students.length} students, ${teachers.length} teachers, ${admins.length} admins -> ${outPath}`
+    `minted ${students.length} students, ${teachers.length} teachers, ${admins.length} admins -> ${outPath}`,
   );
-  console.log(`cookie: ${cookieName}  expires: ${new Date(expiresAt * 1000).toISOString()}`);
+  console.log(
+    `cookie: ${cookieName}  expires: ${new Date(expiresAt * 1000).toISOString()}`,
+  );
   for (const warning of warnings) console.warn(`WARNING: ${warning}`);
 
   await prisma.$disconnect();
@@ -256,26 +304,78 @@ async function getActiveForm(prisma: PrismaClient, role: string) {
 }
 
 /**
- * login-storm needs real passwords, which cannot be recovered from a bcrypt
- * hash. So credentials are only emitted for accounts the BENCH seed created
- * with a known password — identified by a username prefix. Never for real users.
+ * login-storm needs identifiers that reach bcrypt, but it does not need a
+ * successful sign-in: a deliberately invalid password incurs the same bcrypt
+ * comparison cost and then exercises the designed rejection/throttle path.
+ * The EC2 runner supplies a unique random-looking invalid password per run.
  */
 function buildCredentials(
   args: ReturnType<typeof parseArgs>,
   students: Identity[],
-  teachers: Identity[]
+  teachers: Identity[],
 ): Array<{ identifier: string; password: string }> {
-  const prefix = args.opts["credentials-for"];
   const password = args.opts["credentials-password"];
-  if (typeof prefix !== "string" || typeof password !== "string") return [];
+  const prefix = args.opts["credentials-for"];
+  if (typeof password !== "string") return [];
+  const normalizedPrefix = typeof prefix === "string" ? prefix : "";
 
   return [...students, ...teachers]
-    .filter((identity) => identity.username.startsWith(prefix))
+    .filter((identity) => identity.username.startsWith(normalizedPrefix))
     .slice(0, 50)
     .map((identity) => ({ identifier: identity.username, password }));
 }
 
+/** Find deterministic media coverage that one of the minted students can open. */
+async function findMediaTarget(
+  prisma: PrismaClient,
+  students: Identity[],
+): Promise<{ classId: string; quizId: string; studentUserId: string } | null> {
+  const userIds = students.map((student) => student.userId);
+  if (userIds.length === 0) return null;
+
+  const target = await prisma.classQuiz.findFirst({
+    where: {
+      published: true,
+      class: {
+        enrollments: {
+          some: { student: { userId: { in: userIds } } },
+        },
+      },
+      quiz: {
+        questions: {
+          some: {
+            OR: [
+              { figureStorageKey: { not: null } },
+              { options: { some: { imageStorageKey: { not: null } } } },
+            ],
+          },
+        },
+      },
+    },
+    orderBy: { id: "asc" },
+    select: {
+      classId: true,
+      quizId: true,
+      class: {
+        select: {
+          enrollments: {
+            where: { student: { userId: { in: userIds } } },
+            orderBy: { id: "asc" },
+            take: 1,
+            select: { student: { select: { userId: true } } },
+          },
+        },
+      },
+    },
+  });
+  const studentUserId = target?.class.enrollments[0]?.student.userId;
+  if (!target || !studentUserId) return null;
+  return { classId: target.classId, quizId: target.quizId, studentUserId };
+}
+
 main().catch((error) => {
-  console.error(`mint-sessions failed: ${error instanceof Error ? error.message : error}`);
+  console.error(
+    `mint-sessions failed: ${error instanceof Error ? error.message : error}`,
+  );
   process.exit(1);
 });

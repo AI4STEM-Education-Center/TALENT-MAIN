@@ -4,7 +4,14 @@
 // This is the scenario to run first after changing anything, and the one CI
 // runs on a pull request.
 
-import { requireTier, SESSIONS, identityFor, RUN_LABEL, SLO, MEDIA_TARGET } from "../lib/config.js";
+import {
+  requireTier,
+  SESSIONS,
+  identityFor,
+  RUN_LABEL,
+  SLO,
+  MEDIA_TARGET,
+} from "../lib/config.js";
 import { thresholds, requireSteps, TREND_STATS } from "../lib/metrics.js";
 import {
   studentQuizJourney,
@@ -34,7 +41,12 @@ const STEPS = [
 export const options = {
   summaryTrendStats: TREND_STATS,
   scenarios: {
-    smoke: { executor: "shared-iterations", vus: 1, iterations: 1, maxDuration: "3m" },
+    smoke: {
+      executor: "shared-iterations",
+      vus: 1,
+      iterations: 1,
+      maxDuration: "3m",
+    },
   },
   // Latency thresholds pass trivially on a step with ZERO samples, so a journey
   // that bailed out early reports every remaining step as a clean 0.0ms row and
@@ -51,13 +63,18 @@ export const options = {
       "student_quiz_submit",
       "teacher_dashboard",
       "admin_resources",
-    ])
+    ]),
   ),
 };
 
 export default function () {
   publicLanding();
-  studentQuizJourney(identityFor("students", 1), {
+  const mediaStudent = MEDIA_TARGET.studentUserId
+    ? SESSIONS.students.find(
+        (student) => student.userId === MEDIA_TARGET.studentUserId,
+      )
+    : null;
+  studentQuizJourney(mediaStudent || identityFor("students", 1), {
     fetchMedia: true,
     // Pinned to the media-heavy quiz. Random discovery hits it only about a
     // quarter of the time, so smoke's coverage of the RSA signing path — one of
@@ -71,7 +88,9 @@ export default function () {
   if (SESSIONS.admins && SESSIONS.admins.length > 0) {
     adminObservabilityJourney(identityFor("admins", 1), "24h");
   } else {
-    console.warn("[smoke] no admin identity in the session bundle — admin steps skipped");
+    console.warn(
+      "[smoke] no admin identity in the session bundle — admin steps skipped",
+    );
   }
 }
 

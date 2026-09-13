@@ -118,6 +118,7 @@ export default async function TeacherAttemptDetailPage({
       </Card>
 
       <TeacherAttemptResources
+        attemptId={attemptId}
         summary={examResult.summary}
         summaryStatus={examResult.summaryStatus as ResultStatus}
         summaryMetrics={
