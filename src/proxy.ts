@@ -73,11 +73,14 @@ export default auth((req) => {
   const isPublicRoute = publicRoutes.includes(pathname);
   const isInviteRoute = pathname.startsWith("/invite/");
   const isApiAuth = pathname.startsWith("/api/auth");
+  // Machine-to-machine pressure-result ingestion authenticates with its own
+  // bearer token inside the route. GET history remains under /api/admin/*.
+  const isPressureResultIngest = pathname === "/api/pressure-results";
   // Invitation API must be public: unauthenticated students need to validate
   // tokens and POST to enroll (signup flow) before they have a session.
   const isApiInvitation = pathname.startsWith("/api/invitations/");
 
-  if (isPublicRoute || isInviteRoute || isApiAuth || isApiInvitation) {
+  if (isPublicRoute || isInviteRoute || isApiAuth || isApiInvitation || isPressureResultIngest) {
     return NextResponse.next();
   }
 
