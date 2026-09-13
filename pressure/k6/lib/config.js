@@ -24,7 +24,9 @@ export const TIERS = TIER_CONFIG.tiers;
 export const TIER = __ENV.PRESSURE_TIER || "";
 
 /** Base URL of the system under test. */
-export const BASE_URL = (__ENV.PRESSURE_BASE_URL || "http://127.0.0.1:3100").replace(/\/+$/, "");
+export const BASE_URL = (
+  __ENV.PRESSURE_BASE_URL || "http://127.0.0.1:3100"
+).replace(/\/+$/, "");
 
 /** Scale knob: multiplies VU counts in every scenario that declares a shape. */
 export const SCALE = Number(__ENV.PRESSURE_SCALE || 1);
@@ -42,7 +44,7 @@ export function requireTier(scenarioName, allowedTiers) {
   if (!TIER) {
     fail(
       `[tier guard] PRESSURE_TIER is not set. Run '${scenarioName}' through pressure/run.sh ` +
-        `rather than invoking k6 directly.`
+        `rather than invoking k6 directly.`,
     );
   }
   if (allowedTiers.indexOf(TIER) === -1) {
@@ -50,7 +52,7 @@ export function requireTier(scenarioName, allowedTiers) {
       `[tier guard] Scenario '${scenarioName}' is only valid on tier(s) ` +
         `[${allowedTiers.join(", ")}], but PRESSURE_TIER=${TIER}. ` +
         `Refusing to run: the number this would produce is not the number you think it is. ` +
-        `See pressure/config/tiers.json.`
+        `See pressure/config/tiers.json.`,
     );
   }
 }
@@ -72,6 +74,35 @@ export function cappedVus(requested) {
 
 export function scaled(baseVus) {
   return cappedVus(Math.max(1, Math.round(baseVus * SCALE)));
+}
+
+/** Whether the operator requested an exact student concurrency/peak. */
+export function hasStudentTarget() {
+  return (
+    __ENV.PRESSURE_STUDENTS !== undefined && __ENV.PRESSURE_STUDENTS !== ""
+  );
+}
+
+/**
+ * Resolve a student workload. An explicit count is exact; otherwise the
+ * scenario's established default continues to honor PRESSURE_SCALE.
+ */
+export function studentTarget(defaultStudents) {
+  if (!hasStudentTarget()) return scaled(defaultStudents);
+
+  const requested = Number(__ENV.PRESSURE_STUDENTS);
+  if (!Number.isInteger(requested) || requested <= 0) {
+    fail(
+      `[config] PRESSURE_STUDENTS must be a positive whole number, got '${__ENV.PRESSURE_STUDENTS}'`,
+    );
+  }
+  const max = TIER_MAX_VUS[TIER];
+  if (max !== undefined && requested > max) {
+    fail(
+      `[config] PRESSURE_STUDENTS=${requested} exceeds the ${TIER} safety ceiling of ${max}`,
+    );
+  }
+  return requested;
 }
 
 // ─── Pre-minted sessions ─────────────────────────────────────────────────────
@@ -96,7 +127,7 @@ function loadSessions() {
   if (!SESSION_FILE) {
     fail(
       "[sessions] PRESSURE_SESSION_FILE is not set. Every scenario needs pre-minted sessions; " +
-        "generate them with `tsx pressure/tools/mint-sessions.ts` or let the runner scripts do it."
+        "generate them with `tsx pressure/tools/mint-sessions.ts` or let the runner scripts do it.",
     );
   }
   let parsed;
@@ -105,11 +136,19 @@ function loadSessions() {
   } catch (e) {
     fail(`[sessions] could not read or parse ${SESSION_FILE}: ${e}`);
   }
-  if (!parsed || !Array.isArray(parsed.students) || !Array.isArray(parsed.teachers)) {
-    fail(`[sessions] ${SESSION_FILE} is not a session bundle (expected .students / .teachers arrays)`);
+  if (
+    !parsed ||
+    !Array.isArray(parsed.students) ||
+    !Array.isArray(parsed.teachers)
+  ) {
+    fail(
+      `[sessions] ${SESSION_FILE} is not a session bundle (expected .students / .teachers arrays)`,
+    );
   }
   if (parsed.students.length === 0 && parsed.teachers.length === 0) {
-    fail(`[sessions] ${SESSION_FILE} contains no identities — the seed or the mint step produced nothing`);
+    fail(
+      `[sessions] ${SESSION_FILE} contains no identities — the seed or the mint step produced nothing`,
+    );
   }
   return parsed;
 }
@@ -131,12 +170,13 @@ export const COOKIE_NAME = __ENV.PRESSURE_COOKIE_NAME || "authjs.session-token";
  */
 export function identityFor(pool, n) {
   const list = SESSIONS[pool];
-  if (!list || list.length === 0) fail(`[sessions] no '${pool}' identities in the session bundle`);
+  if (!list || list.length === 0)
+    fail(`[sessions] no '${pool}' identities in the session bundle`);
   if (list.length < __VU) {
     // Not fatal, but it silently changes what is being measured, so say so.
     console.warn(
       `[sessions] only ${list.length} '${pool}' identities for ${__VU}+ VUs — identities will be reused ` +
-        `and write contention will be concentrated. Re-mint with a larger --count.`
+        `and write contention will be concentrated. Re-mint with a larger --count.`,
     );
   }
   return list[(n - 1) % list.length];
@@ -200,12 +240,14 @@ export function authHeaders(identity) {
  */
 export const MEDIA_TARGET = (function () {
   const raw = __ENV.PRESSURE_MEDIA_TARGET;
-  if (!raw) return {};
-  try {
-    return JSON.parse(raw);
-  } catch (e) {
-    fail(`[config] PRESSURE_MEDIA_TARGET is not valid JSON: ${raw}`);
+  if (raw) {
+    try {
+      return JSON.parse(raw);
+    } catch (e) {
+      fail(`[config] PRESSURE_MEDIA_TARGET is not valid JSON: ${raw}`);
+    }
   }
+  return SESSIONS.mediaTarget || {};
 })();
 
 /** `true` when the target has CloudFront configured, so signing cost is in play. */

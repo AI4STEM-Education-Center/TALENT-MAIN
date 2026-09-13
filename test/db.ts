@@ -32,6 +32,9 @@ export async function resetDb() {
   await prisma.simulationFeedback.deleteMany();
   await prisma.questionSimulation.deleteMany();
   await prisma.simulationSession.deleteMany();
+  // Relation-free (see schema): a rating outlives the account, simulation and
+  // class it is about, so nothing cascades it away.
+  await prisma.contentFeedback.deleteMany();
   await prisma.question.deleteMany();
   await prisma.questionImport.deleteMany();
   await prisma.classQuiz.deleteMany();

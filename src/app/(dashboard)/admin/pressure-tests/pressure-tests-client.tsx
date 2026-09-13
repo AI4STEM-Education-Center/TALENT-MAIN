@@ -37,6 +37,14 @@ interface PressureResult {
   requestRate: number | null;
   virtualUsers: number | null;
   errorRate: number | null;
+  metadata: {
+    infrastructureRunId?: string;
+    suiteRun?: boolean;
+    studentTarget?: number | null;
+    sutType?: string;
+    sutVcpus?: number;
+    sutMemoryMiB?: number;
+  };
   failures: Array<{ name?: string; detail?: string; count?: number }>;
 }
 
@@ -159,6 +167,52 @@ function SummaryCards({
   );
 }
 
+function SuiteRunDetails({ result }: { result: PressureResult }) {
+  if (!result.metadata.suiteRun || !result.metadata.infrastructureRunId)
+    return null;
+  return (
+    <div className="mt-1 text-xs text-muted-foreground">
+      Full suite: {result.metadata.infrastructureRunId}
+    </div>
+  );
+}
+
+function SuiteBadge({ suiteRun }: { suiteRun?: boolean }) {
+  if (!suiteRun) return null;
+  return (
+    <Badge variant="secondary" className="mt-1">
+      all scenarios
+    </Badge>
+  );
+}
+
+function TargetLoad({ result }: { result: PressureResult }) {
+  const studentTarget = result.metadata.studentTarget;
+  const hardware =
+    result.metadata.sutVcpus && result.metadata.sutMemoryMiB
+      ? `${result.metadata.sutVcpus} vCPU / ${(result.metadata.sutMemoryMiB / 1024).toFixed(1)} GiB`
+      : null;
+  let load: string | null = null;
+  if (studentTarget !== null && studentTarget !== undefined) {
+    load = `${studentTarget} concurrent students`;
+  } else if (result.virtualUsers !== null) {
+    load = `${result.virtualUsers} VUs`;
+  }
+
+  return (
+    <>
+      <Badge variant="outline">{result.environment}</Badge>
+      {result.metadata.sutType && (
+        <div className="mt-1 font-medium">{result.metadata.sutType}</div>
+      )}
+      {hardware && (
+        <div className="text-xs text-muted-foreground">{hardware}</div>
+      )}
+      {load && <div className="mt-1 text-xs text-muted-foreground">{load}</div>}
+    </>
+  );
+}
+
 function RunResultRow({ result }: { result: PressureResult }) {
   return (
     <tr className="border-b align-top last:border-0">
@@ -167,6 +221,7 @@ function RunResultRow({ result }: { result: PressureResult }) {
         <div className="mt-1 font-mono text-xs text-muted-foreground">
           {result.runId}
         </div>
+        <SuiteRunDetails result={result} />
       </td>
       <td className="py-4 pr-4">
         <Badge variant={result.status === "PASS" ? "default" : "destructive"}>
@@ -196,14 +251,10 @@ function RunResultRow({ result }: { result: PressureResult }) {
       <td className="py-4 pr-4">
         <div className="font-medium">{result.suite}</div>
         <div className="text-muted-foreground">{result.scenario}</div>
+        <SuiteBadge suiteRun={result.metadata.suiteRun} />
       </td>
       <td className="py-4 pr-4">
-        <Badge variant="outline">{result.environment}</Badge>
-        {result.virtualUsers !== null && (
-          <div className="mt-1 text-xs text-muted-foreground">
-            {result.virtualUsers} VUs
-          </div>
-        )}
+        <TargetLoad result={result} />
       </td>
       <td className="py-4 pr-4 text-right tabular-nums">
         <span className="text-emerald-600">{result.passedChecks}</span> /{" "}
@@ -268,7 +319,7 @@ function RunHistory({
                 <th className="py-3 pr-4">When</th>
                 <th className="py-3 pr-4">Result</th>
                 <th className="py-3 pr-4">Suite / scenario</th>
-                <th className="py-3 pr-4">Target</th>
+                <th className="py-3 pr-4">Target / load</th>
                 <th className="py-3 pr-4 text-right">Checks</th>
                 <th className="py-3 pr-4 text-right">p95 / p99</th>
                 <th className="py-3 pr-4 text-right">Duration</th>

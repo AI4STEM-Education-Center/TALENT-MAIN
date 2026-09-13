@@ -21,7 +21,13 @@
 // IPs — see the note in the report output.
 
 import http from "k6/http";
-import { requireTier, BASE_URL, SESSIONS, RUN_LABEL, SLO } from "../lib/config.js";
+import {
+  requireTier,
+  BASE_URL,
+  SESSIONS,
+  RUN_LABEL,
+  SLO,
+} from "../lib/config.js";
 import { thresholds, record, TREND_STATS } from "../lib/metrics.js";
 
 requireTier("login-storm", ["ec2-clone"]);
@@ -31,7 +37,12 @@ const VUS = Number(__ENV.PRESSURE_LOGIN_VUS || 10);
 export const options = {
   summaryTrendStats: TREND_STATS,
   scenarios: {
-    logins: { executor: "constant-vus", exec: "login", vus: VUS, duration: __ENV.PRESSURE_LOGIN_DURATION || "2m" },
+    logins: {
+      executor: "constant-vus",
+      exec: "login",
+      vus: VUS,
+      duration: __ENV.PRESSURE_LOGIN_DURATION || "2m",
+    },
   },
   thresholds: thresholds(["login"], SLO),
 };
@@ -42,7 +53,9 @@ export const options = {
  * failure that looks like a wrong password.
  */
 export function login() {
-  const csrfRes = http.get(`${BASE_URL}/api/auth/csrf`, { tags: { step: "csrf" } });
+  const csrfRes = http.get(`${BASE_URL}/api/auth/csrf`, {
+    tags: { step: "csrf" },
+  });
   if (!record("csrf", csrfRes, [200])) return;
 
   let csrfToken;
@@ -54,19 +67,26 @@ export function login() {
 
   const creds = SESSIONS.credentials || [];
   if (creds.length === 0) {
-    console.error("[login-storm] session bundle has no `credentials` entries — mint with --with-credentials");
+    console.error(
+      "[login-storm] session bundle has no `credentials` entries — mint with --credentials-password",
+    );
     return;
   }
   const who = creds[(__VU - 1) % creds.length];
 
   const res = http.post(
     `${BASE_URL}/api/auth/callback/credentials`,
-    { identifier: who.identifier, password: who.password, csrfToken: csrfToken, redirect: "false" },
+    {
+      identifier: who.identifier,
+      password: who.password,
+      csrfToken: csrfToken,
+      redirect: "false",
+    },
     {
       headers: { Origin: BASE_URL, Cookie: cookieHeader(csrfRes) },
       redirects: 0,
       tags: { step: "login" },
-    }
+    },
   );
   // 200 and 302 are both success shapes depending on redirect handling; 401 is
   // the designed response for a throttled OR wrong-password attempt.
@@ -75,7 +95,9 @@ export function login() {
 
 function cookieHeader(res) {
   const jar = res.cookies || {};
-  return Object.keys(jar).map((name) => `${name}=${jar[name][0].value}`).join("; ");
+  return Object.keys(jar)
+    .map((name) => `${name}=${jar[name][0].value}`)
+    .join("; ");
 }
 
 export function handleSummary(data) {

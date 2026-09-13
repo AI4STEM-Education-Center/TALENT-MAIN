@@ -17,6 +17,8 @@ import { AiMetricsLine } from "@/components/ai-metrics-line";
 import type { DisplayAiMetrics } from "@/lib/ai-metrics";
 import { Loader2, Send, Trash2 } from "lucide-react";
 import { GuardrailFeedbackButton } from "@/components/guardrails/GuardrailFeedbackButton";
+import { FeedbackRatingForm } from "@/components/feedback/FeedbackRatingForm";
+import { MyFeedbackProvider } from "@/components/feedback/my-feedback";
 
 interface FeedbackRound {
   id: string;
@@ -251,6 +253,30 @@ export function SimulationPanel({
                     )}
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* Two different things live below, and keeping them apart matters:
+                this RATING is a quality verdict that goes to the consolidated
+                Feedback panel and the CSV export, and changes nothing about
+                the artifact. The "report a problem" box under it queues a
+                revision job that rewrites the simulation. */}
+            {canGiveFeedback && detail.status === "READY" && (
+              <div className="space-y-2 border-t pt-3">
+                <p className="text-sm font-medium">
+                  Rate this simulation — how useful is it for teaching this
+                  topic?
+                </p>
+                <MyFeedbackProvider simulationId={simulationId}>
+                  <FeedbackRatingForm
+                    subjectType="SIMULATION"
+                    subjectId={simulationId}
+                    subjectLabel={detail.title ?? detail.topic ?? "Simulation"}
+                    subjectDetail={detail.learningGoal ?? detail.topic}
+                    prompt="How useful is it?"
+                    commentPlaceholder='In a sentence or two — e.g. "Good visual for the phase relationship, but the damping slider moves too little to be worth showing."'
+                  />
+                </MyFeedbackProvider>
               </div>
             )}
 
