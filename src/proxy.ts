@@ -11,6 +11,18 @@ const ALLOWED_HOSTS = [
   "localhost:3000",
 ];
 
+/**
+ * Whether the request is a page load rather than a data call. Only a navigation
+ * or an explicit request for HTML can make use of a redirect to the login form;
+ * a `fetch` asks for any content type and reports a cors/same-origin mode.
+ */
+function wantsDocument(req: { headers: { get(name: string): string | null } }) {
+  return (
+    req.headers.get("sec-fetch-mode") === "navigate" ||
+    (req.headers.get("accept") ?? "").includes("text/html")
+  );
+}
+
 export default auth((req) => {
   // --- Host validation: reject requests from unknown domains ---
   const host = (
@@ -92,6 +104,16 @@ export default auth((req) => {
 
   // Not authenticated — redirect to login
   if (!session) {
+    // A data request gets an answer it can read. Redirecting a `fetch` sends it
+    // to the login page, which it follows and then parses as JSON: the caller
+    // reports "Unexpected token '<'" and the teacher has no way to tell that
+    // their session simply expired. Navigations still get the login form.
+    if (pathname.startsWith("/api/") && !wantsDocument(req)) {
+      return NextResponse.json(
+        { error: "Your session has expired. Sign in again to continue." },
+        { status: 401 },
+      );
+    }
     const loginUrl = new URL("/login", req.url);
     loginUrl.searchParams.set("callbackUrl", pathname);
     return NextResponse.redirect(loginUrl);

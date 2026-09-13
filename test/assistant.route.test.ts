@@ -1154,13 +1154,13 @@ describe("admin assistants API", () => {
     ).toBe(403);
   });
 
-  it("returns both assistants plus the code-derived catalogs", async () => {
+  it("returns all assistants plus the code-derived catalogs", async () => {
     const admin = await createAdmin();
     asAdmin(admin.id);
     const body = await (await GET_ADMIN()).json();
     expect(
       body.assistants.map((a: { audience: string }) => a.audience),
-    ).toEqual(["student", "teacher"]);
+    ).toEqual(["student", "teacher", "simulation"]);
     expect(body.assistants[0].useCase).toBe("student_assistant");
     expect(body.assistants[0].availableSkills.length).toBeGreaterThan(0);
     expect(body.attachmentKinds.length).toBeGreaterThan(0);

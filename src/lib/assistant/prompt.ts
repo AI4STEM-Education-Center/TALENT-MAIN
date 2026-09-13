@@ -1,3 +1,4 @@
+import { SIMULATION_CHAT_RULES } from "../simulation-edit";
 // Pure system-prompt assembly for the assistants. Kept free of Prisma/SDK
 // imports so the exact prompt text is unit-testable (like `chat-prompt.ts`).
 
@@ -20,6 +21,8 @@ const SHARED_RULES = [
 ];
 
 const AUDIENCE_ROLE: Record<AssistantAudience, string> = {
+  simulation:
+    "Help teachers plan simulation revisions. You prepare plans; the application applies them only after teacher confirmation.",
   student:
     "You are talking to a student. Be encouraging and concrete. You can see only this student's " +
     "own records — never another student's work, and never a class ranking or class average.",
@@ -72,6 +75,7 @@ export function buildSystemPrompt(
   extraInstructions: string,
 ): string {
   const sections = [SHARED_RULES.join("\n"), AUDIENCE_ROLE[audience]];
+  if (audience === "simulation") sections.push(SIMULATION_CHAT_RULES);
 
   if (audience === "student") sections.push(STUDENT_HONESTY_RULES);
 

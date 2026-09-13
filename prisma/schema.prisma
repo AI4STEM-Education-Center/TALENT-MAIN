@@ -1385,6 +1385,8 @@ model QuestionSimulation {
 
   question Question             @relation(fields: [questionId], references: [id], onDelete: Cascade)
   feedback SimulationFeedback[]
+  versions SimulationVersion[]
+  editChats SimulationEditChat[]
 
   @@index([status])
 }
@@ -1404,6 +1406,8 @@ model SimulationFeedback {
   // The storageKey the simulation had when this feedback was applied, kept so
   // staff can compare versions.
   previousStorageKey String?
+  baseVersion Int?
+  versionName String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1803,4 +1807,31 @@ model PressureResultToken {
   lastRevokedAlertAt DateTime?
 
   @@index([createdAt])
+}
+
+// Immutable artifacts; parentNumber records branches independently of publication.
+model SimulationVersion {
+  id String @id @default(cuid())
+  simulationId String
+  number Int
+  name String
+  parentNumber Int?
+  storageKey String
+  bucket String
+  createdAt DateTime @default(now())
+  simulation QuestionSimulation @relation(fields: [simulationId], references: [id], onDelete: Cascade)
+  @@unique([simulationId, number])
+}
+
+model SimulationEditChat {
+  id String @id @default(cuid())
+  simulationId String
+  userId String
+  baseVersion Int
+  transcript String @default("[]")
+  plan String?
+  state String @default("DISCUSSING")
+  updatedAt DateTime @updatedAt
+  simulation QuestionSimulation @relation(fields: [simulationId], references: [id], onDelete: Cascade)
+  @@index([simulationId, userId])
 }

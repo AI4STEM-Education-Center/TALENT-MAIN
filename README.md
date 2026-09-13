@@ -273,6 +273,18 @@ For LLM or parsing pipelines, load the row by id and read bytes or location:
 - `resolveLearningMaterialLocation(materialId)` — returns `{ material, location }` with S3 bucket and key.
 - `readLearningMaterialBytes(materialId)` — returns a `Buffer` from S3.
 
+## Conversational simulation editing
+
+Open a ready simulation from the quiz editor to edit it alongside a chat. Editing runs on two tracks.
+
+**Direct edits, applied without a model.** Double-click any on-screen text — including a phrase sitting beside bold symbols, which the preview outlines on hover — rewrite it, and click away. The **Equations** panel below the preview lists the document's LaTeX formulas: edit one, remove one, or add one, and double-clicking a rendered formula opens it there. Each change is staged in a pending list you can discard from. **Apply as new version** rewrites the stored artifact directly, re-runs the same static validation a generated document must pass, and publishes a branched version — no model call and no wait. An edit is refused rather than guessed at when the text is ambiguous, is written by the simulation's own code at run time, is invalid LaTeX, or would leave the document with no formulas. **Discuss in chat instead** moves the same list into the chat draft.
+
+**Conversational edits, for everything structural.** Describe functions to add or remove and changes to the teaching direction. The assistant asks clarification questions with answer buttons, supports free text and “None of the above,” and prepares a detailed revision plan. “Abort this edit” discards a proposal before generation. Confirm the plan to create a named version; the worker validates the HTML before publishing it and the preview updates automatically. Until an admin has done both setup steps below, the chat panel says which one is missing; direct edits work regardless.
+
+Versions record their parent. Select any version (or ask the chat to show it by name) to preview or edit it, rename it, or choose “Use this version” to restore it for students. Editing an older version creates a new branch; later versions remain available. Previous artifacts from the older feedback workflow are included when their retained storage keys are available. Restoring a version is unavailable during generation. Failed revisions retain the live artifact and show an error in the editor.
+
+After applying the schema with the existing `npm run db:push` deployment step, deploy both the app and worker. In **Admin → AI Config**, assign a model to `simulation_chat` and enable **Simulation editing assistant**. This model plans edits independently of `simulation_generation`, which continues to generate/revise HTML. The new assistant uses the shared skill/tool toggles, extra instructions, tool-call budget, history replay limit, and hourly limit. It starts disabled. Simulation editing is text-only; attachment settings apply to the floating assistants. Chat conversations are private to their author; artifact branches belong to the managed simulation.
+
 ## Chat assistants
 
 Two floating chat bots, one per audience, mounted from `src/app/(dashboard)/layout.tsx` as a

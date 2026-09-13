@@ -15,14 +15,20 @@ function makeReq({
   path,
   session = null,
   proto = "https",
+  headers: extra = {},
 }: {
   host: string;
   path: string;
   session?: Session;
   proto?: string;
+  /** Request headers beyond Host, lower-cased, e.g. a navigation's Accept. */
+  headers?: Record<string, string>;
 }) {
   const url = `${proto}://${host}${path}`;
-  const headers = new Map<string, string>([["host", host]]);
+  const headers = new Map<string, string>([
+    ["host", host],
+    ...Object.entries(extra),
+  ]);
   return {
     headers: { get: (k: string) => headers.get(k.toLowerCase()) ?? null },
     nextUrl: { pathname: path },
@@ -95,6 +101,36 @@ describe("middleware auth + routing", () => {
     const location = res.headers.get("location")!;
     expect(location).toContain("/login");
     expect(location).toContain("callbackUrl=%2Fteacher");
+  });
+
+  it("answers an anonymous API fetch with JSON, not the login page", async () => {
+    const res = run(
+      makeReq({ host: "dev.ai4talent.org", path: "/api/simulations/abc/edit" }),
+    );
+    expect(res.status).toBe(401);
+    expect(res.headers.get("location")).toBeNull();
+    await expect(res.json()).resolves.toMatchObject({
+      error: expect.stringContaining("session has expired"),
+    });
+  });
+
+  it("still sends an anonymous API navigation to the login page", () => {
+    // A download link opened in a tab can use the form; a fetch cannot.
+    const navigations: Record<string, string>[] = [
+      { "sec-fetch-mode": "navigate" },
+      { accept: "text/html,application/xhtml+xml" },
+    ];
+    for (const headers of navigations) {
+      const res = run(
+        makeReq({
+          host: "dev.ai4talent.org",
+          path: "/api/quizzes/abc/export",
+          headers,
+        }),
+      );
+      expect(res.status).toBe(307);
+      expect(res.headers.get("location")).toContain("/login");
+    }
   });
 
   it("redirects a STUDENT away from /teacher to /student", () => {

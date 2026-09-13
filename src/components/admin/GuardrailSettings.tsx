@@ -26,7 +26,12 @@ type Settings = {
   disabledSurfaces: string[];
 };
 
-type ModelInfo = { label: string; providerActive: boolean } | null;
+type ModelInfo = {
+  label: string;
+  providerActive: boolean;
+  /** Why this assignment cannot run, when the server can tell in advance. */
+  warning?: string | null;
+} | null;
 
 interface ModelReadoutProps {
   model: ModelInfo;
@@ -57,7 +62,10 @@ type Payload = {
 /**
  * What a check is currently running on. Unassigned is not an error state — it
  * is how a check is switched off — so it reads as a plain statement rather than
- * a warning, and only an INACTIVE provider is called out in red.
+ * a warning. Red is reserved for an assignment that is switched ON but cannot
+ * run: a disabled provider, or a `warning` the server worked out from the
+ * assignment itself (a provider with no moderations endpoint, a chat model on
+ * a check that needs a moderation one).
  */
 function ModelReadout({ model }: ModelReadoutProps) {
   if (!model) {
@@ -69,15 +77,20 @@ function ModelReadout({ model }: ModelReadoutProps) {
     );
   }
   return (
-    <p className="text-sm text-muted-foreground">
-      Model: <strong>{model.label}</strong>
-      {!model.providerActive && (
-        <span className="text-destructive">
-          {" "}
-          — provider is disabled, so this check cannot run
-        </span>
+    <>
+      <p className="text-sm text-muted-foreground">
+        Model: <strong>{model.label}</strong>
+        {!model.providerActive && (
+          <span className="text-destructive">
+            {" "}
+            — provider is disabled, so this check cannot run
+          </span>
+        )}
+      </p>
+      {model.warning && (
+        <p className="text-sm text-destructive">{model.warning}</p>
       )}
-    </p>
+    </>
   );
 }
 
