@@ -4,8 +4,12 @@
 
 import type { z } from "zod";
 
-/** The two audiences an assistant can serve. The id doubles as the AssistantConfig row id. */
-export const ASSISTANT_AUDIENCES = ["student", "teacher"] as const;
+/** The audiences an assistant can serve. The id doubles as the AssistantConfig row id. */
+export const ASSISTANT_AUDIENCES = [
+  "student",
+  "teacher",
+  "simulation",
+] as const;
 export type AssistantAudience = (typeof ASSISTANT_AUDIENCES)[number];
 
 export function isAssistantAudience(
@@ -19,6 +23,7 @@ export function isAssistantAudience(
 
 /** The AI use case each audience resolves its provider/model through. */
 export const AUDIENCE_USE_CASE = {
+  simulation: "simulation_chat",
   student: "student_assistant",
   teacher: "teacher_assistant",
 } as const;

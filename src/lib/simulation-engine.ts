@@ -13,6 +13,7 @@
 import type OpenAI from "openai";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
+import { snapshotSimulationVersions } from "./simulation-versions";
 import {
   resolveProvider,
   createOpenAIClient,
@@ -472,7 +473,24 @@ async function runRevision(
     const ctx = await buildCallContext(provider);
     const callMetrics: AiCallMetrics[] = [];
 
-    const currentHtml = await getS3ObjectAsString(sim.bucket, sim.storageKey);
+    await snapshotSimulationVersions(sim);
+    const base =
+      feedback.baseVersion != null
+        ? await prisma.simulationVersion.findUnique({
+            where: {
+              simulationId_number: {
+                simulationId: sim.id,
+                number: feedback.baseVersion,
+              },
+            },
+          })
+        : null;
+    if (feedback.baseVersion != null && !base)
+      throw new Error("Base version no longer exists");
+    const currentHtml = await getS3ObjectAsString(
+      base?.bucket ?? sim.bucket,
+      base?.storageKey ?? sim.storageKey,
+    );
     const applied = await prisma.simulationFeedback.findMany({
       where: { simulationId: sim.id, status: "APPLIED" },
       orderBy: { createdAt: "asc" },
@@ -484,7 +502,8 @@ async function runRevision(
       learningGoal: sim.learningGoal ?? "",
       spec: sim.simSpec,
     };
-    const priorFeedback = applied.map((f) => f.feedback);
+    const priorFeedback =
+      feedback.baseVersion != null ? [] : applied.map((f) => f.feedback);
     const prompt = buildRevisionPrompt(
       plan,
       currentHtml,
@@ -498,7 +517,11 @@ async function runRevision(
     const html = await generateValidatedHtml(ctx, prompt, callMetrics);
 
     const { bucket } = getS3Config();
-    const version = sim.version + 1;
+    const latest = await prisma.simulationVersion.aggregate({
+      where: { simulationId: sim.id },
+      _max: { number: true },
+    });
+    const version = Math.max(sim.version, latest._max.number ?? 0) + 1;
     const key = buildSimulationKey(
       sim.question.quiz.teacherId,
       sim.question.quizId,
@@ -508,6 +531,16 @@ async function runRevision(
     await putS3Object(bucket, key, html, "text/html; charset=utf-8");
 
     await prisma.$transaction([
+      prisma.simulationVersion.create({
+        data: {
+          simulationId: sim.id,
+          number: version,
+          name: feedback.versionName ?? `Revision ${version}`,
+          parentNumber: base?.number ?? sim.version,
+          storageKey: key,
+          bucket,
+        },
+      }),
       prisma.questionSimulation.update({
         where: { id: sim.id },
         data: {

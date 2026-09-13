@@ -11,8 +11,37 @@ import {
   THRESHOLD_BOUNDS,
 } from "@/lib/guardrail-settings";
 import { DEFAULT_TOPIC_DESCRIPTION } from "@/lib/guardrail-check";
+import { isModerationModel } from "@/lib/guardrail-fence";
 
 export const runtime = "nodejs";
+
+/**
+ * Why an assigned moderation model cannot actually run, or null when it can.
+ *
+ * Checked from the assignment alone rather than by calling out, so the panel is
+ * honest on load. It has to be said somewhere: moderation fails open by design,
+ * so an assignment that can never work looks identical to one that never finds
+ * anything — the check silently does nothing while the panel shows it enabled.
+ */
+function moderationWarning(
+  providerType: string,
+  modelId: string,
+): string | null {
+  if (providerType === "cloudflare") {
+    return (
+      "Cloudflare AI Gateway's compatibility endpoint does not implement " +
+      "/v1/moderations, so this check cannot run. Assign an OpenAI provider " +
+      "with omni-moderation-latest, or untick the box above."
+    );
+  }
+  if (!isModerationModel(modelId)) {
+    return (
+      `${modelId} is a chat model. /v1/moderations only accepts a moderation ` +
+      "model such as omni-moderation-latest, so this check cannot run."
+    );
+  }
+  return null;
+}
 
 /**
  * Which model each guardrail check is currently running on.
@@ -32,7 +61,7 @@ async function guardrailModels() {
   const rows = await prisma.aiUseCaseAssignment.findMany({
     where: { useCase: { in: [...useCases] } },
     include: {
-      provider: { select: { name: true, isActive: true } },
+      provider: { select: { name: true, isActive: true, providerType: true } },
       model: { select: { modelId: true, displayName: true } },
     },
   });
@@ -40,7 +69,7 @@ async function guardrailModels() {
   const byUseCase = new Map(rows.map((row) => [row.useCase, row]));
   const summary: Record<
     string,
-    { label: string; providerActive: boolean } | null
+    { label: string; providerActive: boolean; warning: string | null } | null
   > = {};
   for (const useCase of useCases) {
     const row = byUseCase.get(useCase);
@@ -48,6 +77,10 @@ async function guardrailModels() {
       ? {
           label: `${row.provider.name} — ${row.model.displayName || row.model.modelId}`,
           providerActive: row.provider.isActive,
+          warning:
+            useCase === "moderation"
+              ? moderationWarning(row.provider.providerType, row.model.modelId)
+              : null,
         }
       : null;
   }

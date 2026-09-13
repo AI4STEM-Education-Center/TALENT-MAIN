@@ -4,29 +4,102 @@ import {
   resolveProvider,
   createOpenAIClient,
   thinkingParams,
-  type UseCase,
+  isUseCase,
+  MODERATION_USE_CASES,
+  USE_CASES,
+  type ResolvedProvider,
 } from "@/lib/ai-provider";
 import {
   streamChatCompletion,
   streamOptionsFor,
   transportFor,
 } from "@/lib/ai-streaming";
+import {
+  isModerationModel,
+  moderationEndpointUnsupported,
+} from "@/lib/guardrail-fence";
 import { logApiError } from "@/lib/system-log";
 import { errorMessage } from "@/lib/errors";
 
-const VALID_USE_CASES: UseCase[] = [
-  "pdf_description",
-  "description_generation",
-  "recommendation",
-  "quiz_extraction",
-  "simulation_generation",
-  "student_assistant",
-  "teacher_assistant",
-];
+/**
+ * Explain a failed moderation call in terms of what the admin has to change.
+ *
+ * Both failure modes here are configuration rather than faults, and the raw
+ * provider error names neither: a gateway that has no moderations endpoint
+ * needs a different PROVIDER, while a chat model on a provider that does have
+ * one needs a different MODEL. Reported through the connection test because
+ * the runtime path deliberately swallows this — moderation fails open, so an
+ * assignment that can never work is otherwise invisible.
+ */
+function moderationFailure(error: unknown, provider: ResolvedProvider): string {
+  const raw = errorMessage(error) || "the call failed";
+
+  if (moderationEndpointUnsupported(error)) {
+    return (
+      `This provider does not implement the /v1/moderations endpoint, so content ` +
+      `moderation cannot run on it — assign an OpenAI provider with a moderation ` +
+      `model (omni-moderation-latest) instead, or leave this unassigned to turn ` +
+      `the check off. Provider said: ${raw}`
+    );
+  }
+
+  if (!isModerationModel(provider.model)) {
+    return (
+      `${provider.model} is a chat model — /v1/moderations only accepts a ` +
+      `moderation model such as omni-moderation-latest. Provider said: ${raw}`
+    );
+  }
+
+  return raw;
+}
+
+/**
+ * Connection test for a moderation assignment.
+ *
+ * Moderation models live on /v1/moderations and reject a chat-shaped request,
+ * so testing them with a chat completion would report a working assignment as
+ * broken. Sends a benign string and reports whether the endpoint answered, not
+ * what it decided — the reply is a status line rather than model prose.
+ */
+async function testModeration(provider: ResolvedProvider) {
+  const client = await createOpenAIClient(provider);
+  const startedAt = Date.now();
+
+  let response;
+  try {
+    response = await client.moderations.create({
+      model: provider.model,
+      input: "A short, harmless sentence used to test this connection.",
+    });
+  } catch (error) {
+    return { success: false, error: moderationFailure(error, provider) };
+  }
+
+  const latencyMs = Date.now() - startedAt;
+  const flagged = (response.results ?? []).some((r) => r.flagged);
+
+  return {
+    success: true,
+    latencyMs,
+    ttftMs: null,
+    generationMs: null,
+    tokens: null,
+    tokensEstimated: false,
+    tokensPerSec: null,
+    reply: `Moderation endpoint answered — benign sample ${
+      flagged ? "flagged (unexpected)" : "not flagged"
+    }.`,
+    model: provider.model,
+    providerType: provider.providerType,
+    serviceTier: provider.serviceTier,
+    thinkingLevel: provider.thinkingLevel,
+  };
+}
 
 /**
  * POST /api/admin/ai-assignments/test
- * Send a minimal chat completion to verify a use-case assignment works.
+ * Send a minimal request to verify a use-case assignment works — a chat
+ * completion, or a moderation call for the use cases served by that endpoint.
  * Body: { useCase: string }
  */
 export async function POST(req: Request) {
@@ -39,16 +112,16 @@ export async function POST(req: Request) {
     const body = await req.json();
     const useCase = typeof body.useCase === "string" ? body.useCase.trim() : "";
 
-    if (!VALID_USE_CASES.includes(useCase as UseCase)) {
+    if (!isUseCase(useCase)) {
       return NextResponse.json(
         {
-          error: `Invalid use case. Must be one of: ${VALID_USE_CASES.join(", ")}`,
+          error: `Invalid use case. Must be one of: ${USE_CASES.join(", ")}`,
         },
         { status: 400 },
       );
     }
 
-    const provider = await resolveProvider(useCase as UseCase);
+    const provider = await resolveProvider(useCase);
 
     if (!provider) {
       return NextResponse.json(
@@ -58,6 +131,10 @@ export async function POST(req: Request) {
         },
         { status: 200 },
       );
+    }
+
+    if (MODERATION_USE_CASES.includes(useCase)) {
+      return NextResponse.json(await testModeration(provider));
     }
 
     const isLocal = provider.providerType === "local";

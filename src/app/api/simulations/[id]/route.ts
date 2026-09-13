@@ -79,6 +79,7 @@ export async function DELETE(
     include: {
       question: { select: { quiz: { select: { teacherId: true } } } },
       feedback: { select: { previousStorageKey: true } },
+      versions: true,
     },
   });
   if (!sim || !canManage(actor, sim.question.quiz)) {
@@ -87,18 +88,20 @@ export async function DELETE(
 
   // Every S3 key this row is responsible for: the current artifact plus each
   // version snapshotted on a feedback round.
-  const bucket = sim.bucket;
-  const candidateKeys = new Set<string>();
-  if (sim.storageKey) candidateKeys.add(sim.storageKey);
+  const candidateKeys = new Map<string, string>();
+  if (sim.storageKey && sim.bucket)
+    candidateKeys.set(sim.storageKey, sim.bucket);
   for (const f of sim.feedback)
-    if (f.previousStorageKey) candidateKeys.add(f.previousStorageKey);
+    if (f.previousStorageKey && sim.bucket)
+      candidateKeys.set(f.previousStorageKey, sim.bucket);
+  for (const v of sim.versions) candidateKeys.set(v.storageKey, v.bucket);
 
   await prisma.questionSimulation.delete({ where: { id: sim.id } });
 
   // With the row gone, an artifact is safe to remove only when nothing else
   // points at it (a deep-copied sibling, or another sibling's version history).
-  if (bucket) {
-    for (const key of candidateKeys) {
+  {
+    for (const [key, bucket] of candidateKeys) {
       try {
         const [stillUsed, stillReferenced] = await Promise.all([
           prisma.questionSimulation.count({ where: { storageKey: key } }),
@@ -106,7 +109,13 @@ export async function DELETE(
             where: { previousStorageKey: key },
           }),
         ]);
-        if (stillUsed === 0 && stillReferenced === 0) {
+        if (
+          stillUsed === 0 &&
+          stillReferenced === 0 &&
+          (await prisma.simulationVersion.count({
+            where: { storageKey: key },
+          })) === 0
+        ) {
           await deleteS3Object(bucket, key);
         }
       } catch (e) {

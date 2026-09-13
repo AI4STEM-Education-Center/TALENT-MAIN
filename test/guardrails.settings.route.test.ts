@@ -184,6 +184,55 @@ describe("GET /api/admin/guardrails — model read-out", () => {
     expect(body.models.guardrail_offtopic).toBeNull();
   });
 
+  // Moderation fails open, so an assignment that can never work is invisible
+  // at runtime — the panel has to say so from the assignment alone.
+  it("warns that a Cloudflare provider has no moderations endpoint", async () => {
+    const provider = await prisma.aiProvider.create({
+      data: { name: "cf", providerType: "cloudflare", isActive: true },
+    });
+    const model = await prisma.aiModel.create({
+      data: {
+        providerId: provider.id,
+        modelId: "openai/omni-moderation-latest",
+      },
+    });
+    await prisma.aiUseCaseAssignment.create({
+      data: {
+        useCase: "moderation",
+        providerId: provider.id,
+        modelId: model.id,
+      },
+    });
+
+    const body = await (await GET()).json();
+    expect(body.models.moderation.warning).toContain("/v1/moderations");
+    expect(body.models.moderation.warning).toContain("Cloudflare");
+  });
+
+  it("warns when a chat model is assigned to moderation", async () => {
+    await assign("moderation", "gpt-5.1");
+
+    expect((await (await GET()).json()).models.moderation.warning).toContain(
+      "chat model",
+    );
+  });
+
+  it("has no warning for a moderation model on a provider that serves it", async () => {
+    await assign("moderation", "omni-moderation-latest");
+
+    expect((await (await GET()).json()).models.moderation.warning).toBeNull();
+  });
+
+  // Only moderation uses /v1/moderations; the LLM checks are chat calls, so a
+  // chat model there is exactly right.
+  it("never warns about the models the LLM checks run on", async () => {
+    await assign("guardrail_jailbreak", "gpt-5-mini");
+
+    expect(
+      (await (await GET()).json()).models.guardrail_jailbreak.warning,
+    ).toBeNull();
+  });
+
   it("reports sharesOneCall when both checks land on the same model", async () => {
     await assign("guardrail_jailbreak", "gpt-5-mini");
     await assign("guardrail_offtopic", "gpt-5-mini");

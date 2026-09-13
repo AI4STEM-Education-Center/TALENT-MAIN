@@ -2,6 +2,10 @@
 
 import { useEffect, useRef } from "react";
 import {
+  readPreviewEdit,
+  type SimulationPreviewEdit,
+} from "@/lib/simulation-preview-edit";
+import {
   SIM_TELEMETRY_MESSAGE_TYPE,
   type SimulationSurface,
   type SimTelemetryTotals,
@@ -36,14 +40,75 @@ export function SimulationViewer({
   title,
   version,
   telemetry,
+  selectedVersion,
+  editable,
+  editMode,
+  onPreviewEdit,
 }: {
   simulationId: string;
   title: string;
   /** Bump to bust the browser's private cache after a revision lands. */
   version?: number;
   telemetry?: SimulationTelemetryContext;
+  selectedVersion?: number;
+  /**
+   * Serve the in-preview editing layer. Deliberately separate from the
+   * callbacks below: it is part of the iframe's `src`, so deriving it from a
+   * handler that comes and goes with a request in flight would reload — and
+   * restart — the simulation around every chat message.
+   */
+  editable?: boolean;
+  /**
+   * Whether the injected layer is armed. Toggled by message rather than by the
+   * `src`, so entering edit mode does not reload — and restart — the running
+   * simulation.
+   */
+  editMode?: boolean;
+  onPreviewEdit?: (edit: SimulationPreviewEdit) => void;
 }) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  // Held in a ref so a new inline handler on every parent render does not tear
+  // down and re-add the listener. Only ever read from a user-driven message,
+  // which cannot arrive before the commit that refreshed it.
+  const handlers = useRef({ onPreviewEdit });
+  useEffect(() => {
+    handlers.current = { onPreviewEdit };
+  });
+  useEffect(() => {
+    if (!editable) return;
+    const receive = (event: MessageEvent) => {
+      const frame = iframeRef.current;
+      if (!frame || event.source !== frame.contentWindow) return;
+      const edit = readPreviewEdit(event.data);
+      if (!edit) return;
+      const ticket = (event.data as { ticket?: unknown }).ticket;
+      handlers.current.onPreviewEdit?.({
+        ...edit,
+        // The sandbox has no KaTeX, so a committed formula stays as its source
+        // until the parent renders it and paints the result back.
+        paint: (html, latex) =>
+          frame.contentWindow?.postMessage(
+            { type: "sim-formula-painted", ticket, html, latex },
+            "*",
+          ),
+      });
+    };
+    window.addEventListener("message", receive);
+    return () => window.removeEventListener("message", receive);
+  }, [editable]);
+  useEffect(() => {
+    if (!editable) return;
+    const frame = iframeRef.current;
+    const send = () =>
+      frame?.contentWindow?.postMessage(
+        { type: "sim-edit-mode", on: !!editMode },
+        "*",
+      );
+    send();
+    // The document may still be loading the first time this runs.
+    frame?.addEventListener("load", send);
+    return () => frame?.removeEventListener("load", send);
+  }, [editable, editMode]);
   const attemptId = telemetry?.attemptId ?? null;
   const surface = telemetry?.surface ?? null;
 
@@ -145,7 +210,7 @@ export function SimulationViewer({
   return (
     <iframe
       ref={iframeRef}
-      src={`/api/simulations/${simulationId}/content${version ? `?v=${version}` : ""}`}
+      src={`/api/simulations/${simulationId}/content?v=${version ?? 0}${selectedVersion ? `&version=${selectedVersion}` : ""}${editable ? "&edit=1" : ""}`}
       title={title}
       sandbox="allow-scripts"
       className="h-full w-full rounded-md border bg-white"

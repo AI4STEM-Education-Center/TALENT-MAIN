@@ -127,3 +127,43 @@ export function flaggedCategories(results: readonly unknown[]): string[] {
   }
   return [...names];
 }
+
+// ─── Endpoint support ────────────────────────────────────────────────────────
+
+/**
+ * Model ids that serve /v1/moderations.
+ *
+ * The endpoint takes a moderation model and nothing else — a chat model is
+ * rejected — so an admin who assigns the same model they use everywhere else
+ * gets a check that never runs. Matched on the family name so a provider that
+ * namespaces its ids (`openai/omni-moderation-latest`) still reads as one.
+ */
+export function isModerationModel(modelId: string): boolean {
+  return /(?:^|\/)(?:omni|text)-moderation/i.test(modelId.trim());
+}
+
+const UNSUPPORTED_RE =
+  /not supported|unsupported|not implemented|does not (?:support|exist)|no such (?:endpoint|route)|unknown (?:endpoint|route|path)/i;
+
+/**
+ * True when a moderation failure means the provider does not implement
+ * /v1/moderations at all, rather than that this particular call went wrong.
+ *
+ * Worth separating because the two need different answers from an admin: a
+ * transient failure is worth retrying, while a missing endpoint means the
+ * check can never run on this provider no matter what model is assigned.
+ * Cloudflare AI Gateway's compat endpoint is the case in hand — it answers
+ * `{"code":2019,"message":"Compatibility endpoint: moderations is not
+ * supported."}` — and most local OpenAI-compatible servers 404 instead.
+ */
+export function moderationEndpointUnsupported(error: unknown): boolean {
+  const status = (error as { status?: unknown } | null)?.status;
+  const message = error instanceof Error ? error.message : String(error ?? "");
+
+  // A 404 from the moderations path is the endpoint missing rather than the
+  // model: a server that implements the endpoint answers an unknown model with
+  // an error that names the model, which the second clause excludes.
+  if (status === 404 && !/model/i.test(message)) return true;
+
+  return UNSUPPORTED_RE.test(message) && /moderation/i.test(message);
+}

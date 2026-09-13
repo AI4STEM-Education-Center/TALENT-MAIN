@@ -133,6 +133,7 @@ interface QuizEditorProps {
   quizId: string;
   backHref: string;
   backLabel: string;
+  previewHref?: string;
 }
 
 /**
@@ -141,7 +142,12 @@ interface QuizEditorProps {
  * action) when the caller can't manage the quiz — e.g. a teacher previewing a
  * global-pool quiz.
  */
-export function QuizEditor({ quizId, backHref, backLabel }: QuizEditorProps) {
+export function QuizEditor({
+  quizId,
+  backHref,
+  backLabel,
+  previewHref,
+}: QuizEditorProps) {
   const confirm = useConfirm();
   const router = useRouter();
 
@@ -907,10 +913,18 @@ export function QuizEditor({ quizId, backHref, backLabel }: QuizEditorProps) {
             )}
           </div>
         </div>
-        {/* Adding a question is inline (a trigger at the end of the list), so
-            the header only carries the "import a copy" action (read-only) or
-            the whole-quiz simulation trigger. */}
-        <div className="flex gap-2 shrink-0">
+        <div className="flex flex-wrap gap-2">
+          {previewHref && quiz.questions.length > 0 && (
+            <Button variant="outline" asChild>
+              <Link
+                href={previewHref}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <Eye className="size-4" /> Preview as student
+              </Link>
+            </Button>
+          )}
           {readOnly ? (
             <Button onClick={importPoolCopy} disabled={poolImportBusy}>
               <Download className="size-4" />{" "}

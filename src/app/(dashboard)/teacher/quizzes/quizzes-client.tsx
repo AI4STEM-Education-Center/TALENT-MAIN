@@ -12,6 +12,7 @@ import {
   Plus,
   BookOpen,
   Pencil,
+  Eye,
   Trash2,
   Check,
   X,
@@ -308,7 +309,7 @@ export function TeacherQuizzesClient({
                       key={quiz.id}
                       className="hover:shadow-xs transition-shadow"
                     >
-                      <CardContent className="flex items-center justify-between gap-3 p-4">
+                      <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
                         <div className="min-w-0 flex-1">
                           <span className="font-semibold">{quiz.name}</span>
                           <div className="flex gap-2 mt-1">
@@ -318,7 +319,16 @@ export function TeacherQuizzesClient({
                             </Badge>
                           </div>
                         </div>
-                        <div className="flex gap-1 shrink-0">
+                        <div className="flex flex-wrap gap-1">
+                          {quiz._count.questions > 0 && (
+                            <Button size="sm" variant="ghost" asChild>
+                              <Link
+                                href={`/teacher/quizzes/${quiz.id}/preview`}
+                              >
+                                <Eye className="size-3" /> Preview as student
+                              </Link>
+                            </Button>
+                          )}
                           <PoolSubmissionDialog
                             contentType="QUIZ"
                             contentId={quiz.id}

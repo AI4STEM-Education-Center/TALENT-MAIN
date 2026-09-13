@@ -22,7 +22,10 @@ import type {
 import { studentQuizResultsSkill } from "./student-quiz-results";
 import { teacherClassInsightsSkill } from "./teacher-class-insights";
 
+import { simulationEditingSkill } from "./simulation-editing";
+
 const REGISTRY: AssistantSkill[] = [
+  simulationEditingSkill,
   studentQuizResultsSkill,
   teacherClassInsightsSkill,
 ];
