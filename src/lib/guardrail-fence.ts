@@ -70,11 +70,7 @@ export function neutralizeUntrusted(text: string): string {
  * itself neutralized, because some callers derive it from a filename.
  */
 export function fenceUntrusted(label: string, text: string): string {
-  const safeLabel =
-    label
-      .replace(HIDDEN_CHAR_RE, "")
-      .replace(/[[\]\n]/g, " ")
-      .trim() || "content";
+  const safeLabel = label.replace(HIDDEN_CHAR_RE, "").replace(/[[\]\n]/g, " ").trim() || "content";
   return `[BEGIN UNTRUSTED ${safeLabel}]\n${neutralizeUntrusted(text)}\n[END UNTRUSTED ${safeLabel}]`;
 }
 
@@ -93,11 +89,7 @@ export const MAX_INPUT_ITEMS = 16;
 /** Split text into endpoint-sized chunks, bounded by MAX_INPUT_ITEMS. */
 export function chunkForModeration(text: string): string[] {
   const chunks: string[] = [];
-  for (
-    let i = 0;
-    i < text.length && chunks.length < MAX_INPUT_ITEMS;
-    i += MAX_CHARS_PER_ITEM
-  ) {
+  for (let i = 0; i < text.length && chunks.length < MAX_INPUT_ITEMS; i += MAX_CHARS_PER_ITEM) {
     chunks.push(text.slice(i, i + MAX_CHARS_PER_ITEM));
   }
   return chunks;

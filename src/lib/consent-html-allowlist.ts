@@ -40,9 +40,4 @@ export const CONSENT_ALLOWED_SCHEMES = ["http", "https", "mailto"] as const;
  * preview applies it by removing the subtree — without it, a pasted
  * `<script>alert(1)</script>` would surface as the literal text "alert(1)".
  */
-export const CONSENT_NON_TEXT_TAGS = [
-  "script",
-  "style",
-  "textarea",
-  "option",
-] as const;
+export const CONSENT_NON_TEXT_TAGS = ["script", "style", "textarea", "option"] as const;

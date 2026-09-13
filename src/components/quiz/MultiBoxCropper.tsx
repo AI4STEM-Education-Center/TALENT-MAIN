@@ -39,12 +39,7 @@ export function MultiBoxCropper({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const modeRef = useRef<DragMode | null>(null);
-  const startRef = useRef<{
-    px: number;
-    py: number;
-    box: FigureBbox;
-    id: string;
-  } | null>(null);
+  const startRef = useRef<{ px: number; py: number; box: FigureBbox; id: string } | null>(null);
 
   const normalizedPoint = useCallback((clientX: number, clientY: number) => {
     const el = containerRef.current;
@@ -66,7 +61,7 @@ export function MultiBoxCropper({
       startRef.current = { px, py, box: box.bbox, id: box.id };
       modeRef.current = nextMode;
     },
-    [normalizedPoint, onSelect],
+    [normalizedPoint, onSelect]
   );
 
   const onPointerMove = useCallback(
@@ -89,7 +84,7 @@ export function MultiBoxCropper({
         onChange(id, { x: box.x, y: box.y, w, h });
       }
     },
-    [normalizedPoint, onChange],
+    [normalizedPoint, onChange]
   );
 
   const endDrag = useCallback(() => {
@@ -102,10 +97,7 @@ export function MultiBoxCropper({
   return (
     <div
       ref={containerRef}
-      className={
-        containerClassName ??
-        "relative inline-block max-w-full touch-none select-none overflow-hidden rounded border"
-      }
+      className={containerClassName ?? "relative inline-block max-w-full touch-none select-none overflow-hidden rounded border"}
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
@@ -122,20 +114,12 @@ export function MultiBoxCropper({
 
       {boxes.map((b) => {
         const active = b.id === activeId;
-        const ring =
-          active && dimExterior
-            ? " shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]"
-            : "";
+        const ring = active && dimExterior ? " shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]" : "";
         return (
           <div
             key={b.id}
             className={`absolute cursor-move border-2 ${active ? "border-sky-500" : "border-amber-400/90"}${ring}`}
-            style={{
-              left: pct(b.bbox.x),
-              top: pct(b.bbox.y),
-              width: pct(b.bbox.w),
-              height: pct(b.bbox.h),
-            }}
+            style={{ left: pct(b.bbox.x), top: pct(b.bbox.y), width: pct(b.bbox.w), height: pct(b.bbox.h) }}
             onPointerDown={onPointerDown(b, "move")}
           >
             <span

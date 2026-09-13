@@ -49,11 +49,7 @@ const DialogContext = React.createContext<DialogContextValue | null>(null);
  * replacements for the native `window.confirm` / `window.alert`, so every
  * confirmation popup matches the site's design system.
  */
-export function ConfirmDialogProvider({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export function ConfirmDialogProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = React.useState<DialogState | null>(null);
   const [open, setOpen] = React.useState(false);
   const resolverRef = React.useRef<((value: boolean) => void) | null>(null);
@@ -72,24 +68,25 @@ export function ConfirmDialogProvider({
         setState({ kind: "confirm", ...options });
         setOpen(true);
       }),
-    [],
+    []
   );
 
-  const alert = React.useCallback((options: AlertOptions | string = {}) => {
-    const opts =
-      typeof options === "string" ? { description: options } : options;
-    return new Promise<void>((resolve) => {
-      resolverRef.current = () => resolve();
-      setState({ kind: "alert", ...opts });
-      setOpen(true);
-    });
-  }, []);
+  const alert = React.useCallback(
+    (options: AlertOptions | string = {}) => {
+      const opts = typeof options === "string" ? { description: options } : options;
+      return new Promise<void>((resolve) => {
+        resolverRef.current = () => resolve();
+        setState({ kind: "alert", ...opts });
+        setOpen(true);
+      });
+    },
+    []
+  );
 
   const value = React.useMemo(() => ({ confirm, alert }), [confirm, alert]);
 
   const isAlert = state?.kind === "alert";
-  const variant =
-    state?.kind === "confirm" ? (state.variant ?? "default") : "default";
+  const variant = state?.kind === "confirm" ? state.variant ?? "default" : "default";
 
   return (
     <DialogContext.Provider value={value}>
@@ -116,11 +113,7 @@ export function ConfirmDialogProvider({
                 {(state?.kind === "confirm" && state.cancelText) || "Cancel"}
               </Button>
             )}
-            <Button
-              variant={variant}
-              onClick={() => settle(true)}
-              autoFocus={isAlert}
-            >
+            <Button variant={variant} onClick={() => settle(true)} autoFocus={isAlert}>
               {state?.confirmText ?? (isAlert ? "OK" : "Confirm")}
             </Button>
           </DialogFooter>
@@ -133,9 +126,7 @@ export function ConfirmDialogProvider({
 function useDialogContext() {
   const ctx = React.use(DialogContext);
   if (!ctx) {
-    throw new Error(
-      "useConfirm/useAlert must be used within a ConfirmDialogProvider",
-    );
+    throw new Error("useConfirm/useAlert must be used within a ConfirmDialogProvider");
   }
   return ctx;
 }

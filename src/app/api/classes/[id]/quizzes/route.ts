@@ -4,13 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { getTeacherClass, canReadClass } from "@/lib/class-access";
 
 // GET: list quizzes assigned to this class (with published status)
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
-  if (!session?.user)
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
 
   // Owning teacher or an enrolled student may read the assigned-quiz list.
@@ -36,22 +32,17 @@ export async function GET(
 }
 
 // POST: assign one of the teacher's own quizzes to their class
-export async function POST(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user || session.user.role !== "TEACHER") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const [{ quizId }, { id }] = await Promise.all([req.json(), params]);
-  if (!quizId)
-    return NextResponse.json({ error: "quizId required" }, { status: 400 });
+  if (!quizId) return NextResponse.json({ error: "quizId required" }, { status: 400 });
 
   const cls = await getTeacherClass(session.user.id, id);
-  if (!cls)
-    return NextResponse.json({ error: "Class not found" }, { status: 404 });
+  if (!cls) return NextResponse.json({ error: "Class not found" }, { status: 404 });
 
   const quiz = await prisma.quiz.findUnique({ where: { id: quizId } });
   if (!quiz || quiz.teacherId !== cls.teacherId) {
@@ -65,10 +56,7 @@ export async function POST(
     });
     return NextResponse.json(cq, { status: 201 });
   } catch {
-    return NextResponse.json(
-      { error: "Quiz already assigned to this class." },
-      { status: 409 },
-    );
+    return NextResponse.json({ error: "Quiz already assigned to this class." }, { status: 409 });
   }
 }
 
@@ -96,24 +84,18 @@ function parseMaxAttempts(value: unknown): number | null | undefined {
 }
 
 // PATCH: update published and/or the per-class availability + attempt settings.
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user || session.user.role !== "TEACHER") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const [body, { id }] = await Promise.all([req.json(), params]);
-  const { quizId, published, availableFrom, availableUntil, maxAttempts } =
-    body;
-  if (!quizId)
-    return NextResponse.json({ error: "quizId required" }, { status: 400 });
+  const { quizId, published, availableFrom, availableUntil, maxAttempts } = body;
+  if (!quizId) return NextResponse.json({ error: "quizId required" }, { status: 400 });
 
   const cls = await getTeacherClass(session.user.id, id);
-  if (!cls)
-    return NextResponse.json({ error: "Class not found" }, { status: 404 });
+  if (!cls) return NextResponse.json({ error: "Class not found" }, { status: 404 });
 
   // Build the update from only the fields actually present in the body, so the
   // existing publish toggle (which sends just { quizId, published }) is
@@ -150,10 +132,7 @@ export async function PATCH(
 // importable ghost. S3 assets are not touched here: figure/simulation objects
 // can be shared by deep copies, so the worker's S3 GC reference-checks and
 // sweeps them once nothing references them.
-export async function DELETE(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user || session.user.role !== "TEACHER") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -162,20 +141,14 @@ export async function DELETE(
   const [{ quizId }, { id }] = await Promise.all([req.json(), params]);
 
   const cls = await getTeacherClass(session.user.id, id);
-  if (!cls)
-    return NextResponse.json({ error: "Class not found" }, { status: 404 });
+  if (!cls) return NextResponse.json({ error: "Class not found" }, { status: 404 });
 
-  const removed = await prisma.classQuiz.deleteMany({
-    where: { classId: id, quizId },
-  });
+  const removed = await prisma.classQuiz.deleteMany({ where: { classId: id, quizId } });
 
   let quizDeleted = false;
   // Only a request that actually unlinked something may escalate to deleting
   // the quiz — otherwise a DELETE naming a never-assigned quiz would erase it.
-  if (
-    removed.count > 0 &&
-    (await prisma.classQuiz.count({ where: { quizId } })) === 0
-  ) {
+  if (removed.count > 0 && (await prisma.classQuiz.count({ where: { quizId } })) === 0) {
     const quiz = await prisma.quiz.findUnique({ where: { id: quizId } });
     // Owner check is belt-and-braces: assignment (POST above) only ever links
     // the class teacher's own quizzes, and pool quizzes are never linked.

@@ -23,18 +23,11 @@ export const runtime = "nodejs";
  * the follow-up telemetry-update endpoint, so no row is ever created for
  * this student going forward. The simulation itself is unaffected either way.
  */
-export async function POST(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const [session, { id }] = await Promise.all([auth(), params]);
-  if (!session?.user)
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (session.user.role !== "STUDENT") {
-    return NextResponse.json(
-      { error: "Only student sessions are recorded" },
-      { status: 403 },
-    );
+    return NextResponse.json({ error: "Only student sessions are recorded" }, { status: 403 });
   }
 
   let raw: unknown;
@@ -57,8 +50,7 @@ export async function POST(
       include: { question: { select: { quizId: true } } },
     }),
   ]);
-  if (!student || !sim)
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!student || !sim) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const assignment = await prisma.classQuiz.findFirst({
     where: {
@@ -67,8 +59,7 @@ export async function POST(
     },
     select: { id: true },
   });
-  if (!assignment)
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!assignment) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   // Resolve class/attempt context from the attempt row, keeping it only when
   // it really is this student's attempt.

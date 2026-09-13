@@ -45,9 +45,7 @@ export function ExportGradesDialog({
   const [downloading, setDownloading] = useState(false);
   const parsedMaxPoints = Number(maxPoints);
   const maxPointsValid =
-    Number.isFinite(parsedMaxPoints) &&
-    parsedMaxPoints > 0 &&
-    parsedMaxPoints <= 1_000_000;
+    Number.isFinite(parsedMaxPoints) && parsedMaxPoints > 0 && parsedMaxPoints <= 1_000_000;
 
   function handleGradeHeaderChange(value: string) {
     setGradeHeader(value);
@@ -63,9 +61,7 @@ export function ExportGradesDialog({
         mode,
         maxPoints,
       });
-      const res = await fetch(
-        `/api/classes/${classId}/quizzes/${quizId}/grades-export?${query}`,
-      );
+      const res = await fetch(`/api/classes/${classId}/quizzes/${quizId}/grades-export?${query}`);
       if (!res.ok) {
         const data = await res.json().catch(() => null);
         await alert({
@@ -75,9 +71,8 @@ export function ExportGradesDialog({
         return;
       }
       const filename =
-        res.headers
-          .get("Content-Disposition")
-          ?.match(/filename="([^"]+)"/)?.[1] ?? "grades.csv";
+        res.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] ??
+        "grades.csv";
       const url = URL.createObjectURL(await res.blob());
       const anchor = document.createElement("a");
       anchor.href = url;
@@ -106,8 +101,7 @@ export function ExportGradesDialog({
           <DialogHeader>
             <DialogTitle>Export grades (eLC CSV)</DialogTitle>
             <DialogDescription>
-              Enter the exact eLC grade column, then choose how completed work
-              is graded.
+              Enter the exact eLC grade column, then choose how completed work is graded.
             </DialogDescription>
           </DialogHeader>
 
@@ -117,9 +111,7 @@ export function ExportGradesDialog({
               <Input
                 id="grade-item-name"
                 value={gradeHeader}
-                onChange={(event) =>
-                  handleGradeHeaderChange(event.target.value)
-                }
+                onChange={(event) => handleGradeHeaderChange(event.target.value)}
                 placeholder={`${quizName} Points Grade <Numeric MaxPoints:100>`}
               />
             </div>
@@ -127,10 +119,7 @@ export function ExportGradesDialog({
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="grade-calculation">Grade calculation</Label>
-                <Select
-                  value={mode}
-                  onValueChange={(value) => setMode(value as GradeExportMode)}
-                >
+                <Select value={mode} onValueChange={(value) => setMode(value as GradeExportMode)}>
                   <SelectTrigger id="grade-calculation">
                     <SelectValue />
                   </SelectTrigger>
@@ -158,40 +147,33 @@ export function ExportGradesDialog({
             <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground">
               {mode === "best-attempt" ? (
                 <p>
-                  The highest completed-attempt percentage is scaled to the
-                  maximum points. For example, 80% is{" "}
-                  {maxPointsValid
+                  The highest completed-attempt percentage is scaled to the maximum points. For
+                  example, 80% is {maxPointsValid
                     ? (parsedMaxPoints * 0.8).toFixed(2).replace(/\.00$/, "")
-                    : "—"}{" "}
-                  points.
+                    : "—"} points.
                 </p>
               ) : (
                 <p>
-                  Any completed attempt receives full points; students with no
-                  completed attempt are left blank.
+                  Any completed attempt receives full points; students with no completed attempt
+                  are left blank.
                 </p>
               )}
               <p className="mt-2">
-                A teacher-entered manual grade overrides either calculation.
-                Roster students are matched to accounts by name.
+                A teacher-entered manual grade overrides either calculation. Roster students are
+                matched to accounts by name.
               </p>
             </div>
 
             <p className="text-xs text-muted-foreground">
               Exported column:{" "}
               <span className="font-medium text-foreground">
-                {gradeHeader.trim() ||
-                  "Enter the complete grade item column above"}
+                {gradeHeader.trim() || "Enter the complete grade item column above"}
               </span>
             </p>
           </div>
 
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setOpen(false)}
-              disabled={downloading}
-            >
+            <Button variant="outline" onClick={() => setOpen(false)} disabled={downloading}>
               Cancel
             </Button>
             <Button

@@ -54,9 +54,7 @@ describe("buildReviewSnapshot", () => {
       ],
     });
     expect(snapshot.questions[1].isCorrect).toBe(false);
-    expect(
-      snapshot.questions[1].options.find((o) => o.text === "Rome")?.selected,
-    ).toBe(true);
+    expect(snapshot.questions[1].options.find((o) => o.text === "Rome")?.selected).toBe(true);
   });
 
   it("treats a question with no answer record as incorrect with nothing selected", () => {
@@ -78,11 +76,9 @@ describe("buildReviewSnapshot", () => {
           ],
         },
       ],
-      [{ questionId: "q1", selectedOptionIds: ["a", "c"], isCorrect: true }],
+      [{ questionId: "q1", selectedOptionIds: ["a", "c"], isCorrect: true }]
     );
-    const selected = snapshot.questions[0].options
-      .filter((o) => o.selected)
-      .map((o) => o.text);
+    const selected = snapshot.questions[0].options.filter((o) => o.selected).map((o) => o.text);
     expect(selected).toEqual(["2", "4"]);
   });
 
@@ -99,14 +95,7 @@ describe("buildReviewSnapshot", () => {
           answerUnit: "m/s^2",
         },
       ],
-      [
-        {
-          questionId: "n1",
-          selectedOptionIds: [],
-          isCorrect: false,
-          numericValue: 9.5,
-        },
-      ],
+      [{ questionId: "n1", selectedOptionIds: [], isCorrect: false, numericValue: 9.5 }]
     );
     expect(snapshot.questions[0]).toEqual({
       questionId: "n1",
@@ -123,16 +112,8 @@ describe("buildReviewSnapshot", () => {
 
   it("records a null submittedNumeric when the student left a NUMERIC question blank", () => {
     const snapshot = buildReviewSnapshot(
-      [
-        {
-          id: "n1",
-          text: "Q",
-          options: [],
-          answerMode: "NUMERIC",
-          answerNumeric: 5,
-        },
-      ],
-      [],
+      [{ id: "n1", text: "Q", options: [], answerMode: "NUMERIC", answerNumeric: 5 }],
+      []
     );
     expect(snapshot.questions[0].submittedNumeric).toBeNull();
     expect(snapshot.questions[0].correctNumeric).toBe(5);
@@ -161,7 +142,7 @@ describe("buildReviewSnapshot", () => {
           figureAlt: "A series circuit",
         },
       ],
-      [{ questionId: "f1", selectedOptionIds: ["a"], isCorrect: true }],
+      [{ questionId: "f1", selectedOptionIds: ["a"], isCorrect: true }]
     );
     expect(snapshot.questions[0].figureStorageKey).toBe("figs/abc.png");
     expect(snapshot.questions[0].figureAlt).toBe("A series circuit");
@@ -174,13 +155,7 @@ describe("buildReviewSnapshot", () => {
 describe("parseReviewSnapshot", () => {
   it("round-trips a serialized snapshot", () => {
     const snap: ReviewSnapshot = {
-      questions: [
-        {
-          text: "q",
-          isCorrect: true,
-          options: [{ text: "a", isCorrect: true, selected: true }],
-        },
-      ],
+      questions: [{ text: "q", isCorrect: true, options: [{ text: "a", isCorrect: true, selected: true }] }],
     };
     expect(parseReviewSnapshot(JSON.stringify(snap))).toEqual(snap);
   });
@@ -206,11 +181,7 @@ describe("parseReviewSnapshot", () => {
         { text: "4", isCorrect: true, selected: true },
       ],
     });
-    expect(Object.keys(parsed.questions[0])).toEqual([
-      "text",
-      "isCorrect",
-      "options",
-    ]);
+    expect(Object.keys(parsed.questions[0])).toEqual(["text", "isCorrect", "options"]);
   });
 });
 
@@ -311,9 +282,7 @@ describe("snapshotToStudentMistakes", () => {
 
   it("fails closed for empty or malformed stored snapshots", () => {
     expect(snapshotToStudentMistakes(parseReviewSnapshot(null))).toEqual([]);
-    expect(snapshotToStudentMistakes(parseReviewSnapshot("not json"))).toEqual(
-      [],
-    );
+    expect(snapshotToStudentMistakes(parseReviewSnapshot("not json"))).toEqual([]);
     expect(snapshotToStudentMistakes(parseReviewSnapshot("{}"))).toEqual([]);
   });
 });
@@ -357,13 +326,7 @@ describe("snapshotToHolisticInput", () => {
 
   it("reports zero incorrect for a perfect score", () => {
     const perfect: ReviewSnapshot = {
-      questions: [
-        {
-          text: "q",
-          isCorrect: true,
-          options: [{ text: "a", isCorrect: true, selected: true }],
-        },
-      ],
+      questions: [{ text: "q", isCorrect: true, options: [{ text: "a", isCorrect: true, selected: true }] }],
     };
     const holistic = snapshotToHolisticInput(perfect);
     expect(holistic.incorrectCount).toBe(0);
@@ -394,9 +357,7 @@ describe("snapshotToHolisticInput", () => {
       ],
     };
     const holistic = snapshotToHolisticInput(numeric);
-    expect(holistic.questions).toEqual([
-      { questionText: "Acceleration of gravity?", isCorrect: false },
-    ]);
+    expect(holistic.questions).toEqual([{ questionText: "Acceleration of gravity?", isCorrect: false }]);
     expect(holistic.incorrectCount).toBe(1);
   });
 });
@@ -432,30 +393,20 @@ describe("snapshotToSummaryAttempt", () => {
     const attempt = snapshotToSummaryAttempt(snapshot, meta);
     expect(attempt.class.name).toBe("Physics 101");
     expect(attempt.quiz?.topic?.name).toBe("Forces");
-    expect(attempt.answers[0].selectedOption).toEqual({
-      text: "Forces vanish",
-    });
+    expect(attempt.answers[0].selectedOption).toEqual({ text: "Forces vanish" });
     expect(attempt.answers[0].isCorrect).toBe(false);
   });
 
   it("sets selectedOption to null when nothing was selected", () => {
     const noSelection: ReviewSnapshot = {
-      questions: [
-        {
-          text: "q",
-          isCorrect: false,
-          options: [{ text: "a", isCorrect: true, selected: false }],
-        },
-      ],
+      questions: [{ text: "q", isCorrect: false, options: [{ text: "a", isCorrect: true, selected: false }] }],
     };
     const attempt = snapshotToSummaryAttempt(noSelection, meta);
     expect(attempt.answers[0].selectedOption).toBeNull();
   });
 
   it("produces a prompt the summary generator can use", () => {
-    const prompt = buildQuizReviewPrompt(
-      snapshotToSummaryAttempt(snapshot, meta),
-    );
+    const prompt = buildQuizReviewPrompt(snapshotToSummaryAttempt(snapshot, meta));
     expect(prompt).toContain("Class: Physics 101");
     expect(prompt).toContain("Topic: Forces");
     expect(prompt).toContain("Quiz: Newton's Laws");
@@ -509,58 +460,32 @@ describe("parseStoredRecommendations", () => {
   });
 
   it("falls back to empty for null/invalid/odd shapes", () => {
-    expect(parseStoredRecommendations(null)).toEqual({
-      items: [],
-      truncated: false,
-    });
-    expect(parseStoredRecommendations("nope")).toEqual({
-      items: [],
-      truncated: false,
-    });
-    expect(parseStoredRecommendations('{"items":"x"}')).toEqual({
-      items: [],
-      truncated: false,
-    });
+    expect(parseStoredRecommendations(null)).toEqual({ items: [], truncated: false });
+    expect(parseStoredRecommendations("nope")).toEqual({ items: [], truncated: false });
+    expect(parseStoredRecommendations('{"items":"x"}')).toEqual({ items: [], truncated: false });
   });
 
   it("parses teacher-only misconception labels for an individual error", () => {
     const stored: StoredRecommendations = {
       items: [],
       truncated: false,
-      errorMisconceptions: [
-        {
-          questionId: "q1",
-          questionIndex: 0,
-          misconceptions: [
-            {
-              misconceptionId: "MIS-001",
-              statement: "Confuses mass and weight.",
-            },
-          ],
-        },
-      ],
+      errorMisconceptions: [{
+        questionId: "q1",
+        questionIndex: 0,
+        misconceptions: [{ misconceptionId: "MIS-001", statement: "Confuses mass and weight." }],
+      }],
     };
     expect(parseStoredRecommendations(JSON.stringify(stored))).toEqual(stored);
   });
 
   it("drops malformed or attempt-level misconception entries", () => {
     expect(
-      parseStoredRecommendations(
-        JSON.stringify({
-          items: [],
-          truncated: false,
-          errorMisconceptions: "nope",
-        }),
-      ),
+      parseStoredRecommendations(JSON.stringify({ items: [], truncated: false, errorMisconceptions: "nope" }))
     ).toEqual({ items: [], truncated: false });
     expect(
       parseStoredRecommendations(
-        JSON.stringify({
-          items: [],
-          truncated: false,
-          misconceptions: [{ misconceptionId: "MIS-001", statement: "legacy" }],
-        }),
-      ),
+        JSON.stringify({ items: [], truncated: false, misconceptions: [{ misconceptionId: "MIS-001", statement: "legacy" }] })
+      )
     ).toEqual({ items: [], truncated: false });
   });
 });
@@ -584,19 +509,14 @@ describe("mapPresignedRecommendations", () => {
   };
 
   it("replaces each storageKey with a presigned URL", async () => {
-    const result = await mapPresignedRecommendations(
-      stored,
-      async (key) => `https://signed/${key}`,
-    );
+    const result = await mapPresignedRecommendations(stored, async (key) => `https://signed/${key}`);
     expect(result.truncated).toBe(true);
     expect(result.items[0].pages).toEqual([
       { pageNumber: 1, imageUrl: "https://signed/good-1" },
       { pageNumber: 2, imageUrl: "https://signed/bad-2" },
     ]);
     // storageKey must not leak into the presigned shape
-    expect(
-      (result.items[0].pages[0] as Record<string, unknown>).storageKey,
-    ).toBeUndefined();
+    expect((result.items[0].pages[0] as Record<string, unknown>).storageKey).toBeUndefined();
   });
 
   it("drops only the pages whose presign fails", async () => {
@@ -604,16 +524,11 @@ describe("mapPresignedRecommendations", () => {
       if (key.startsWith("bad")) throw new Error("gone");
       return `https://signed/${key}`;
     });
-    expect(result.items[0].pages).toEqual([
-      { pageNumber: 1, imageUrl: "https://signed/good-1" },
-    ]);
+    expect(result.items[0].pages).toEqual([{ pageNumber: 1, imageUrl: "https://signed/good-1" }]);
   });
 
   it("returns empty items when there is nothing stored", async () => {
-    const result = await mapPresignedRecommendations(
-      { items: [], truncated: false },
-      async () => "x",
-    );
+    const result = await mapPresignedRecommendations({ items: [], truncated: false }, async () => "x");
     expect(result).toEqual({ items: [], truncated: false });
   });
 });
@@ -623,7 +538,7 @@ describe("mapPresignedRecommendations", () => {
 const sim = (
   id: string,
   title: string | null,
-  topic: string | null = null,
+  topic: string | null = null
 ): StoredSimulationRecommendation => ({
   simulationId: id,
   title,
@@ -633,25 +548,23 @@ const sim = (
 
 describe("simulationDisplayKey", () => {
   it("normalizes case and whitespace in title + topic", () => {
-    expect(
-      simulationDisplayKey(sim("a", "  Friction   Explorer ", "Forces")),
-    ).toBe(simulationDisplayKey(sim("b", "friction explorer", " FORCES ")));
+    expect(simulationDisplayKey(sim("a", "  Friction   Explorer ", "Forces"))).toBe(
+      simulationDisplayKey(sim("b", "friction explorer", " FORCES "))
+    );
   });
 
   it("distinguishes simulations that differ in title or topic", () => {
-    expect(
-      simulationDisplayKey(sim("a", "Friction Explorer", "Forces")),
-    ).not.toBe(simulationDisplayKey(sim("b", "Friction Explorer", "Energy")));
+    expect(simulationDisplayKey(sim("a", "Friction Explorer", "Forces"))).not.toBe(
+      simulationDisplayKey(sim("b", "Friction Explorer", "Energy"))
+    );
     expect(simulationDisplayKey(sim("a", "Friction Explorer"))).not.toBe(
-      simulationDisplayKey(sim("b", "Projectile Lab")),
+      simulationDisplayKey(sim("b", "Projectile Lab"))
     );
   });
 
   it("falls back to the id when there is no title and no topic", () => {
     expect(simulationDisplayKey(sim("a", null))).toBe("a");
-    expect(simulationDisplayKey(sim("a", null))).not.toBe(
-      simulationDisplayKey(sim("b", null)),
-    );
+    expect(simulationDisplayKey(sim("a", null))).not.toBe(simulationDisplayKey(sim("b", null)));
   });
 });
 

@@ -11,11 +11,7 @@
 // than persisted — a chat attachment is scratch input, and not storing it keeps
 // student-uploaded imagery out of the bucket and out of backups.
 
-import {
-  ATTACHMENT_KINDS,
-  type AttachmentKind,
-  type IncomingAttachment,
-} from "./types";
+import { ATTACHMENT_KINDS, type AttachmentKind, type IncomingAttachment } from "./types";
 
 /** An OpenAI chat content part. Narrowed locally so this module stays SDK-free. */
 export type ContentPart =
@@ -48,8 +44,7 @@ const MIB = 1024 * 1024;
 export const MAX_TEXT_ATTACHMENT_CHARS = 20_000;
 
 function truncateText(raw: string): { text: string; truncated: boolean } {
-  if (raw.length <= MAX_TEXT_ATTACHMENT_CHARS)
-    return { text: raw, truncated: false };
+  if (raw.length <= MAX_TEXT_ATTACHMENT_CHARS) return { text: raw, truncated: false };
   return { text: raw.slice(0, MAX_TEXT_ATTACHMENT_CHARS), truncated: true };
 }
 
@@ -61,14 +56,9 @@ function decodeUtf8(dataBase64: string): string {
  * Render a text-ish attachment as a fenced block. The fence + filename header
  * keep the model from mistaking file contents for user instructions.
  */
-function renderAsText(
-  attachment: DecodedAttachment,
-  fence: string,
-): ContentPart[] {
+function renderAsText(attachment: DecodedAttachment, fence: string): ContentPart[] {
   const { text, truncated } = truncateText(decodeUtf8(attachment.dataBase64));
-  const suffix = truncated
-    ? `\n… (truncated at ${MAX_TEXT_ATTACHMENT_CHARS} characters)`
-    : "";
+  const suffix = truncated ? `\n… (truncated at ${MAX_TEXT_ATTACHMENT_CHARS} characters)` : "";
   return [
     {
       type: "text",
@@ -88,9 +78,7 @@ const HANDLERS: Record<AttachmentKind, AttachmentHandler> = {
       { type: "text", text: `Attached image "${attachment.name}":` },
       {
         type: "image_url",
-        image_url: {
-          url: `data:${attachment.mimeType};base64,${attachment.dataBase64}`,
-        },
+        image_url: { url: `data:${attachment.mimeType};base64,${attachment.dataBase64}` },
       },
     ],
   },
@@ -120,9 +108,7 @@ export type AttachmentKindInfo = {
   maxBytes: number;
 };
 
-export function attachmentKindInfo(
-  kinds: AttachmentKind[],
-): AttachmentKindInfo[] {
+export function attachmentKindInfo(kinds: AttachmentKind[]): AttachmentKindInfo[] {
   return kinds.map((kind) => {
     const handler = HANDLERS[kind];
     return {
@@ -179,7 +165,7 @@ function base64Bytes(dataBase64: string): number {
  */
 export function validateAttachments(
   attachments: IncomingAttachment[],
-  limits: AttachmentLimits,
+  limits: AttachmentLimits
 ): AttachmentValidation {
   const accepted: DecodedAttachment[] = [];
   const rejected: AttachmentRejection[] = [];
@@ -188,38 +174,26 @@ export function validateAttachments(
     const name = attachment.name || "attachment";
 
     if (accepted.length >= limits.maxAttachments) {
-      rejected.push({
-        name,
-        reason: `over the ${limits.maxAttachments}-attachment limit`,
-      });
+      rejected.push({ name, reason: `over the ${limits.maxAttachments}-attachment limit` });
       continue;
     }
 
     const kind = kindForMimeType(attachment.mimeType);
     if (!kind) {
-      rejected.push({
-        name,
-        reason: `unsupported file type (${attachment.mimeType})`,
-      });
+      rejected.push({ name, reason: `unsupported file type (${attachment.mimeType})` });
       continue;
     }
     if (!limits.allowedKinds.includes(kind)) {
-      rejected.push({
-        name,
-        reason: `${HANDLERS[kind].label.toLowerCase()} are not enabled`,
-      });
+      rejected.push({ name, reason: `${HANDLERS[kind].label.toLowerCase()} are not enabled` });
       continue;
     }
 
     const bytes = base64Bytes(attachment.dataBase64);
-    const ceiling = Math.min(
-      limits.maxAttachmentBytes,
-      HANDLERS[kind].maxBytes,
-    );
+    const ceiling = Math.min(limits.maxAttachmentBytes, HANDLERS[kind].maxBytes);
     if (bytes > ceiling) {
       rejected.push({
         name,
-        reason: `too large (${Math.round((bytes / MIB) * 10) / 10} MB, limit ${Math.round((ceiling / MIB) * 10) / 10} MB)`,
+        reason: `too large (${Math.round(bytes / MIB * 10) / 10} MB, limit ${Math.round(ceiling / MIB * 10) / 10} MB)`,
       });
       continue;
     }
@@ -238,7 +212,7 @@ export function validateAttachments(
  */
 export function buildUserContent(
   text: string,
-  attachments: DecodedAttachment[],
+  attachments: DecodedAttachment[]
 ): string | ContentPart[] {
   if (attachments.length === 0) return text;
   const parts: ContentPart[] = [];

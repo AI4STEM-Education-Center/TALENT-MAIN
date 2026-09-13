@@ -15,9 +15,7 @@ function MisconceptionStatement({ statement }: { statement: string }) {
       <summary className="cursor-pointer select-none">
         {statement.slice(0, LONG_STATEMENT_THRESHOLD)}…
       </summary>
-      <p className="mt-1 whitespace-pre-wrap text-muted-foreground">
-        {statement}
-      </p>
+      <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{statement}</p>
     </details>
   );
 }
@@ -28,11 +26,7 @@ interface MisconceptionsTableProps {
   showDeprecated: boolean;
 }
 
-export function MisconceptionsTable({
-  misconceptions,
-  search,
-  showDeprecated,
-}: MisconceptionsTableProps) {
+export function MisconceptionsTable({ misconceptions, search, showDeprecated }: MisconceptionsTableProps) {
   const q = search.trim().toLowerCase();
   const filtered = misconceptions.filter((m) => {
     if (!showDeprecated && m.deprecated) return false;
@@ -56,9 +50,7 @@ export function MisconceptionsTable({
       </CardHeader>
       <CardContent>
         {filtered.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-6 text-center">
-            No misconceptions match.
-          </p>
+          <p className="text-sm text-muted-foreground py-6 text-center">No misconceptions match.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -73,9 +65,7 @@ export function MisconceptionsTable({
               <tbody className="divide-y">
                 {filtered.map((m) => (
                   <tr key={m.id} className="align-top">
-                    <td className="py-2 pr-3 font-mono text-xs whitespace-nowrap">
-                      {m.misconceptionId}
-                    </td>
+                    <td className="py-2 pr-3 font-mono text-xs whitespace-nowrap">{m.misconceptionId}</td>
                     <td className="py-2 pr-3 max-w-md">
                       <MisconceptionStatement statement={m.statement} />
                     </td>
@@ -84,10 +74,7 @@ export function MisconceptionsTable({
                     </td>
                     <td className="py-2 pr-3 whitespace-nowrap">
                       {m.deprecated ? (
-                        <Badge
-                          variant="warning"
-                          title={m.deprecationNote ?? undefined}
-                        >
+                        <Badge variant="warning" title={m.deprecationNote ?? undefined}>
                           Deprecated
                         </Badge>
                       ) : (

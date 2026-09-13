@@ -44,21 +44,14 @@ export async function GET(req: NextRequest) {
         topic: { select: { name: true } },
         questions: {
           orderBy: { createdAt: "asc" },
-          include: {
-            simulation: { include: { _count: { select: { feedback: true } } } },
-          },
+          include: { simulation: { include: { _count: { select: { feedback: true } } } } },
         },
       },
     });
-    if (!quiz)
-      return NextResponse.json({ error: "Quiz not found" }, { status: 404 });
+    if (!quiz) return NextResponse.json({ error: "Quiz not found" }, { status: 404 });
 
     return NextResponse.json({
-      quiz: {
-        id: quiz.id,
-        name: quiz.name,
-        topicName: quiz.topic?.name ?? null,
-      },
+      quiz: { id: quiz.id, name: quiz.name, topicName: quiz.topic?.name ?? null },
       questions: quiz.questions.map((q) => ({
         id: q.id,
         title: q.title,

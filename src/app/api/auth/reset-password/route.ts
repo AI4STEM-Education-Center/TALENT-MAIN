@@ -58,10 +58,7 @@ export async function POST(req: NextRequest) {
         ip,
         metadata: { reason: lookup.reason },
       });
-      return NextResponse.json(
-        { error: INVALID_TOKEN_MESSAGE },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: INVALID_TOKEN_MESSAGE }, { status: 400 });
     }
 
     // Password strength is checked before the token is burned so a weak attempt
@@ -73,23 +70,17 @@ export async function POST(req: NextRequest) {
 
     const user = await prisma.user.findUnique({ where: { id: lookup.userId } });
     if (!user) {
-      return NextResponse.json(
-        { error: INVALID_TOKEN_MESSAGE },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: INVALID_TOKEN_MESSAGE }, { status: 400 });
     }
 
     const consumed = await consumeResetToken(
       lookup.tokenId,
       user.id,
-      await bcrypt.hash(password, 12),
+      await bcrypt.hash(password, 12)
     );
     if (!consumed) {
       // Lost a race with a concurrent redemption of the same link.
-      return NextResponse.json(
-        { error: INVALID_TOKEN_MESSAGE },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: INVALID_TOKEN_MESSAGE }, { status: 400 });
     }
 
     await logSystemEvent({
@@ -105,9 +96,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, username: user.username });
   } catch (error) {
     logApiError("AUTH_RESET_PASSWORD", error);
-    return NextResponse.json(
-      { error: "Internal server error." },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Internal server error." }, { status: 500 });
   }
 }

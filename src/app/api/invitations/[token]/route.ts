@@ -3,15 +3,8 @@ import bcrypt from "bcryptjs";
 import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import {
-  normalizeEmail,
-  normalizeUsername,
-  validatePassword,
-} from "@/lib/account-validation";
-import {
-  isValidEmail,
-  normalizeEmail as normalizeRosterEmail,
-} from "@/lib/csv-roster";
+import { normalizeEmail, normalizeUsername, validatePassword } from "@/lib/account-validation";
+import { isValidEmail, normalizeEmail as normalizeRosterEmail } from "@/lib/csv-roster";
 import { rateLimit } from "@/lib/rate-limit";
 import { logApiError } from "@/lib/system-log";
 
@@ -19,10 +12,7 @@ class InvitationUnavailableError extends Error {}
 class RosterAlreadyClaimedError extends Error {}
 
 // GET: validate token and return class info
-export async function GET(
-  req: NextRequest,
-  { params }: { params: Promise<{ token: string }> },
-) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   // Throttle invitation-token guessing per IP.
   const limited = rateLimit(req, "invite-validate", 30, 60_000);
   if (limited) return limited;
@@ -33,27 +23,13 @@ export async function GET(
     include: { class: { include: { teacher: { include: { user: true } } } } },
   });
 
-  if (!invitation)
-    return NextResponse.json(
-      { error: "Invalid invitation link." },
-      { status: 404 },
-    );
-  if (!invitation.active)
-    return NextResponse.json(
-      { error: "This invitation link has been deactivated." },
-      { status: 410 },
-    );
+  if (!invitation) return NextResponse.json({ error: "Invalid invitation link." }, { status: 404 });
+  if (!invitation.active) return NextResponse.json({ error: "This invitation link has been deactivated." }, { status: 410 });
   if (invitation.expiresAt && invitation.expiresAt < new Date()) {
-    return NextResponse.json(
-      { error: "This invitation link has expired." },
-      { status: 410 },
-    );
+    return NextResponse.json({ error: "This invitation link has expired." }, { status: 410 });
   }
   if (invitation.maxUses && invitation.usedCount >= invitation.maxUses) {
-    return NextResponse.json(
-      { error: "This invitation link has reached its maximum uses." },
-      { status: 410 },
-    );
+    return NextResponse.json({ error: "This invitation link has reached its maximum uses." }, { status: 410 });
   }
 
   return NextResponse.json({
@@ -66,10 +42,7 @@ export async function GET(
 
 // POST: use invitation (enroll current user, or create account + enroll)
 // Now requires orgDefinedId (81 number) verification against the class roster.
-export async function POST(
-  req: NextRequest,
-  { params }: { params: Promise<{ token: string }> },
-) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   // Throttle enrollment/signup attempts (token + 81-number guessing) per IP.
   const limited = rateLimit(req, "invite-enroll", 15, 60_000);
   if (limited) return limited;
@@ -82,32 +55,20 @@ export async function POST(
     });
 
     if (!invitation || !invitation.active) {
-      return NextResponse.json(
-        { error: "Invalid invitation." },
-        { status: 404 },
-      );
+      return NextResponse.json({ error: "Invalid invitation." }, { status: 404 });
     }
     if (invitation.expiresAt && invitation.expiresAt < new Date()) {
-      return NextResponse.json(
-        { error: "Invitation expired." },
-        { status: 410 },
-      );
+      return NextResponse.json({ error: "Invitation expired." }, { status: 410 });
     }
     if (invitation.maxUses && invitation.usedCount >= invitation.maxUses) {
-      return NextResponse.json(
-        { error: "Invitation limit reached." },
-        { status: 410 },
-      );
+      return NextResponse.json({ error: "Invitation limit reached." }, { status: 410 });
     }
 
     const body = await req.json();
     const rawOrgId = (body.orgDefinedId || "").replace(/^#/, "").trim();
 
     if (!rawOrgId) {
-      return NextResponse.json(
-        { error: "81 number is required." },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: "81 number is required." }, { status: 400 });
     }
 
     // Verify the 81 number against the class roster
@@ -121,17 +82,11 @@ export async function POST(
     });
 
     if (!rosterEntry) {
-      return NextResponse.json(
-        { error: "81 not found for class retry again" },
-        { status: 404 },
-      );
+      return NextResponse.json({ error: "81 not found for class retry again" }, { status: 404 });
     }
 
     if (rosterEntry.isRegistered) {
-      return NextResponse.json(
-        { error: "This 81 number is already registered." },
-        { status: 409 },
-      );
+      return NextResponse.json({ error: "This 81 number is already registered." }, { status: 409 });
     }
 
     const session = await auth();
@@ -148,20 +103,13 @@ export async function POST(
     if (session?.user) {
       // Already logged in — enroll this user
       if (session.user.role !== "STUDENT") {
-        return NextResponse.json(
-          { error: "Only students can join classes." },
-          { status: 403 },
-        );
+        return NextResponse.json({ error: "Only students can join classes." }, { status: 403 });
       }
       const student = await prisma.student.findUnique({
         where: { userId: session.user.id },
         include: { user: { select: { email: true } } },
       });
-      if (!student)
-        return NextResponse.json(
-          { error: "Student record not found." },
-          { status: 404 },
-        );
+      if (!student) return NextResponse.json({ error: "Student record not found." }, { status: 404 });
       // The account the student actually signs in to owns the mailbox, so the
       // roster follows it rather than the other way round. A roster address is
       // whatever the registrar exported; the confirmed account address is where
@@ -175,10 +123,7 @@ export async function POST(
       // New signup flow — requires username, email, password
       const { username, email, password } = body;
       if (!username?.trim() || !email?.trim() || !password) {
-        return NextResponse.json(
-          { error: "Username, email, and password are required." },
-          { status: 400 },
-        );
+        return NextResponse.json({ error: "Username, email, and password are required." }, { status: 400 });
       }
 
       const passwordError = validatePassword(password);
@@ -192,10 +137,7 @@ export async function POST(
       // The address doubles as the roster's notification target, so reject
       // anything unsendable here rather than storing it and failing silently.
       if (!isValidEmail(normalizedEmail)) {
-        return NextResponse.json(
-          { error: "Enter a valid email address." },
-          { status: 400 },
-        );
+        return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
       }
 
       // The roster follows the address the student signed up with: registrar
@@ -206,24 +148,14 @@ export async function POST(
         rosterEmailUpdate = normalizedEmail;
       }
 
-      const existingEmail = await prisma.user.findUnique({
-        where: { email: normalizedEmail },
-      });
+      const existingEmail = await prisma.user.findUnique({ where: { email: normalizedEmail } });
       if (existingEmail) {
-        return NextResponse.json(
-          { error: "Email already in use." },
-          { status: 409 },
-        );
+        return NextResponse.json({ error: "Email already in use." }, { status: 409 });
       }
 
-      const existingUsername = await prisma.user.findUnique({
-        where: { username: normalizedUsername },
-      });
+      const existingUsername = await prisma.user.findUnique({ where: { username: normalizedUsername } });
       if (existingUsername) {
-        return NextResponse.json(
-          { error: "Username already taken." },
-          { status: 409 },
-        );
+        return NextResponse.json({ error: "Username already taken." }, { status: 409 });
       }
 
       signupData = {
@@ -286,14 +218,11 @@ export async function POST(
           },
           include: { student: true },
         });
-        if (!user.student) throw new Error("Student profile was not created");
-        studentId = user.student.id;
+        studentId = user.student!.id;
       }
 
       await tx.classEnrollment.upsert({
-        where: {
-          classId_studentId: { classId: invitation.classId, studentId },
-        },
+        where: { classId_studentId: { classId: invitation.classId, studentId } },
         update: {},
         create: { classId: invitation.classId, studentId },
       });
@@ -307,35 +236,22 @@ export async function POST(
     });
   } catch (err) {
     if (err instanceof InvitationUnavailableError) {
-      return NextResponse.json(
-        { error: "Invitation limit reached." },
-        { status: 410 },
-      );
+      return NextResponse.json({ error: "Invitation limit reached." }, { status: 410 });
     }
     if (err instanceof RosterAlreadyClaimedError) {
       return NextResponse.json(
         { error: "This 81 number is already registered." },
-        { status: 409 },
+        { status: 409 }
       );
     }
-    if (
-      err instanceof Prisma.PrismaClientKnownRequestError &&
-      err.code === "P2002"
-    ) {
-      const target = Array.isArray(err.meta?.target)
-        ? err.meta.target.join(", ")
-        : "";
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      const target = Array.isArray(err.meta?.target) ? err.meta.target.join(", ") : "";
       const field = target.includes("username") ? "Username" : "Email";
-      return NextResponse.json(
-        { error: `${field} already in use.` },
-        { status: 409 },
-      );
+      return NextResponse.json({ error: `${field} already in use.` }, { status: 409 });
     }
 
     logApiError("INVITATION_POST", err);
-    return NextResponse.json(
-      { error: "Internal server error." },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Internal server error." }, { status: 500 });
   }
 }
+

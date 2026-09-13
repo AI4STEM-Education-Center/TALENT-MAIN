@@ -78,9 +78,7 @@ describe("POST /api/classes/[id]/materials/[materialId]/pages", () => {
     const { user, teacher } = await createTeacher();
     const cls = await createClass(teacher.id);
     const material = await pendingMaterial(teacher.id, cls.id);
-    mockAuth.mockResolvedValue({
-      user: { id: user.id, role: "TEACHER" },
-    } as never);
+    mockAuth.mockResolvedValue({ user: { id: user.id, role: "TEACHER" } } as never);
 
     const res = await pagesPost(
       jsonReq({
@@ -89,13 +87,13 @@ describe("POST /api/classes/[id]/materials/[materialId]/pages", () => {
           { pageNumber: 2, sizeBytes: 500, contentType: "image/webp" },
         ],
       }),
-      ctx(cls.id, material.id),
+      ctx(cls.id, material.id)
     );
 
     expect(res.status).toBe(200);
     const { pages } = await res.json();
     expect(pages[0].storageKey).toBe(
-      buildPageStorageKey(teacher.id, cls.id, material.id, 1, "webp"),
+      buildPageStorageKey(teacher.id, cls.id, material.id, 1, "webp")
     );
     expect(pages[0].mimeType).toBe("image/webp");
     // The signed Content-Type has to match the extension, or the PUT is rejected
@@ -104,7 +102,7 @@ describe("POST /api/classes/[id]/materials/[materialId]/pages", () => {
       "test-bucket",
       pages[0].storageKey,
       "image/webp",
-      500,
+      500
     );
   });
 
@@ -112,18 +110,16 @@ describe("POST /api/classes/[id]/materials/[materialId]/pages", () => {
     const { user, teacher } = await createTeacher();
     const cls = await createClass(teacher.id);
     const material = await pendingMaterial(teacher.id, cls.id);
-    mockAuth.mockResolvedValue({
-      user: { id: user.id, role: "TEACHER" },
-    } as never);
+    mockAuth.mockResolvedValue({ user: { id: user.id, role: "TEACHER" } } as never);
 
     const res = await pagesPost(
       jsonReq({ pages: [{ pageNumber: 1, sizeBytes: 500 }] }),
-      ctx(cls.id, material.id),
+      ctx(cls.id, material.id)
     );
 
     const { pages } = await res.json();
     expect(pages[0].storageKey).toBe(
-      buildPageStorageKey(teacher.id, cls.id, material.id, 1, "png"),
+      buildPageStorageKey(teacher.id, cls.id, material.id, 1, "png")
     );
     expect(pages[0].mimeType).toBe("image/png");
   });
@@ -132,15 +128,11 @@ describe("POST /api/classes/[id]/materials/[materialId]/pages", () => {
     const { user, teacher } = await createTeacher();
     const cls = await createClass(teacher.id);
     const material = await pendingMaterial(teacher.id, cls.id);
-    mockAuth.mockResolvedValue({
-      user: { id: user.id, role: "TEACHER" },
-    } as never);
+    mockAuth.mockResolvedValue({ user: { id: user.id, role: "TEACHER" } } as never);
 
     const res = await pagesPost(
-      jsonReq({
-        pages: [{ pageNumber: 1, sizeBytes: 500, contentType: "image/jpeg" }],
-      }),
-      ctx(cls.id, material.id),
+      jsonReq({ pages: [{ pageNumber: 1, sizeBytes: 500, contentType: "image/jpeg" }] }),
+      ctx(cls.id, material.id)
     );
 
     const { pages } = await res.json();
@@ -157,25 +149,14 @@ describe("POST /api/classes/[id]/materials/[materialId]/complete", () => {
     const { user, teacher } = await createTeacher();
     const cls = await createClass(teacher.id);
     const material = await pendingMaterial(teacher.id, cls.id);
-    mockAuth.mockResolvedValue({
-      user: { id: user.id, role: "TEACHER" },
-    } as never);
+    mockAuth.mockResolvedValue({ user: { id: user.id, role: "TEACHER" } } as never);
 
     const pages = [4, 2, 5, 1, 3].map((pageNumber) => ({
       pageNumber,
-      storageKey: buildPageStorageKey(
-        teacher.id,
-        cls.id,
-        material.id,
-        pageNumber,
-        "webp",
-      ),
+      storageKey: buildPageStorageKey(teacher.id, cls.id, material.id, pageNumber, "webp"),
     }));
 
-    const res = await completePost(
-      jsonReq({ pages }),
-      ctx(cls.id, material.id),
-    );
+    const res = await completePost(jsonReq({ pages }), ctx(cls.id, material.id));
 
     expect(res.status).toBe(200);
     const stored = await prisma.materialPage.findMany({
@@ -185,8 +166,8 @@ describe("POST /api/classes/[id]/materials/[materialId]/complete", () => {
     expect(stored.map((p) => p.pageNumber)).toEqual([1, 2, 3, 4, 5]);
     expect(stored.map((p) => p.storageKey)).toEqual(
       [1, 2, 3, 4, 5].map((n) =>
-        buildPageStorageKey(teacher.id, cls.id, material.id, n, "webp"),
-      ),
+        buildPageStorageKey(teacher.id, cls.id, material.id, n, "webp")
+      )
     );
     const updated = await prisma.learningMaterial.findUniqueOrThrow({
       where: { id: material.id },
@@ -199,26 +180,18 @@ describe("POST /api/classes/[id]/materials/[materialId]/complete", () => {
     const { user, teacher } = await createTeacher();
     const cls = await createClass(teacher.id);
     const material = await pendingMaterial(teacher.id, cls.id);
-    mockAuth.mockResolvedValue({
-      user: { id: user.id, role: "TEACHER" },
-    } as never);
+    mockAuth.mockResolvedValue({ user: { id: user.id, role: "TEACHER" } } as never);
 
     const res = await completePost(
       jsonReq({
         pages: [
           {
             pageNumber: 1,
-            storageKey: buildPageStorageKey(
-              teacher.id,
-              cls.id,
-              material.id,
-              1,
-              "png",
-            ),
+            storageKey: buildPageStorageKey(teacher.id, cls.id, material.id, 1, "png"),
           },
         ],
       }),
-      ctx(cls.id, material.id),
+      ctx(cls.id, material.id)
     );
 
     expect(res.status).toBe(200);
@@ -228,31 +201,21 @@ describe("POST /api/classes/[id]/materials/[materialId]/complete", () => {
     const { user, teacher } = await createTeacher();
     const cls = await createClass(teacher.id);
     const material = await pendingMaterial(teacher.id, cls.id);
-    mockAuth.mockResolvedValue({
-      user: { id: user.id, role: "TEACHER" },
-    } as never);
+    mockAuth.mockResolvedValue({ user: { id: user.id, role: "TEACHER" } } as never);
 
     // Sorting cannot rescue a gap: 1, 2, 4 has no page 3.
     const res = await completePost(
       jsonReq({
         pages: [1, 2, 4].map((pageNumber) => ({
           pageNumber,
-          storageKey: buildPageStorageKey(
-            teacher.id,
-            cls.id,
-            material.id,
-            pageNumber,
-            "webp",
-          ),
+          storageKey: buildPageStorageKey(teacher.id, cls.id, material.id, pageNumber, "webp"),
         })),
       }),
-      ctx(cls.id, material.id),
+      ctx(cls.id, material.id)
     );
 
     expect(res.status).toBe(400);
-    expect(
-      await prisma.materialPage.count({ where: { materialId: material.id } }),
-    ).toBe(0);
+    expect(await prisma.materialPage.count({ where: { materialId: material.id } })).toBe(0);
   });
 
   it("rejects a key pointing at another teacher's material", async () => {
@@ -262,9 +225,7 @@ describe("POST /api/classes/[id]/materials/[materialId]/complete", () => {
     const otherClass = await createClass(other.teacher.id);
     const material = await pendingMaterial(teacher.id, cls.id);
     const victim = await pendingMaterial(other.teacher.id, otherClass.id);
-    mockAuth.mockResolvedValue({
-      user: { id: user.id, role: "TEACHER" },
-    } as never);
+    mockAuth.mockResolvedValue({ user: { id: user.id, role: "TEACHER" } } as never);
 
     const res = await completePost(
       jsonReq({
@@ -276,12 +237,12 @@ describe("POST /api/classes/[id]/materials/[materialId]/complete", () => {
               otherClass.id,
               victim.id,
               1,
-              "webp",
+              "webp"
             ),
           },
         ],
       }),
-      ctx(cls.id, material.id),
+      ctx(cls.id, material.id)
     );
 
     expect(res.status).toBe(400);

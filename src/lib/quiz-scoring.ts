@@ -78,17 +78,11 @@ export function normalizeNumericValue(value: unknown): number | null {
  * tolerance (from the question) wins outright; otherwise fall back to the
  * larger of the absolute floor and a relative fraction of `|correct|`.
  */
-export function numericTolerance(
-  correct: number,
-  stored?: number | null,
-): number {
+export function numericTolerance(correct: number, stored?: number | null): number {
   if (typeof stored === "number" && Number.isFinite(stored) && stored > 0) {
     return stored;
   }
-  return Math.max(
-    NUMERIC_ABS_TOLERANCE_FLOOR,
-    NUMERIC_REL_TOLERANCE * Math.abs(correct),
-  );
+  return Math.max(NUMERIC_ABS_TOLERANCE_FLOOR, NUMERIC_REL_TOLERANCE * Math.abs(correct));
 }
 
 /**
@@ -97,22 +91,12 @@ export function numericTolerance(
  * `answerNumeric`; otherwise correct when `value` lies within the resolved
  * tolerance window (inclusive of the boundary).
  */
-export function isNumericAnswerCorrect(
-  question: ScorableQuestion,
-  value: number | null,
-): boolean {
+export function isNumericAnswerCorrect(question: ScorableQuestion, value: number | null): boolean {
   const correct = question.answerNumeric;
-  if (
-    value === null ||
-    typeof correct !== "number" ||
-    !Number.isFinite(correct)
-  ) {
+  if (value === null || typeof correct !== "number" || !Number.isFinite(correct)) {
     return false;
   }
-  return (
-    Math.abs(value - correct) <=
-    numericTolerance(correct, question.answerTolerance)
-  );
+  return Math.abs(value - correct) <= numericTolerance(correct, question.answerTolerance);
 }
 
 /**
@@ -122,9 +106,7 @@ export function isNumericAnswerCorrect(
  */
 export function normalizeSelectedOptionIds(answer: SubmittedAnswer): string[] {
   if (Array.isArray(answer.selectedOptionIds)) {
-    return answer.selectedOptionIds.filter(
-      (id): id is string => typeof id === "string",
-    );
+    return answer.selectedOptionIds.filter((id): id is string => typeof id === "string");
   }
   if (typeof answer.selectedOptionId === "string") {
     return [answer.selectedOptionId];
@@ -138,14 +120,9 @@ export function normalizeSelectedOptionIds(answer: SubmittedAnswer): string[] {
  *   exactly (no missing, no extra).
  * - SINGLE_SELECT: the first selected option must be a correct option.
  */
-export function isAnswerCorrect(
-  question: ScorableQuestion,
-  selectedOptionIds: string[],
-): boolean {
+export function isAnswerCorrect(question: ScorableQuestion, selectedOptionIds: string[]): boolean {
   const selectedSet = new Set(selectedOptionIds);
-  const correctOptionIds = question.options.flatMap((option) =>
-    option.isCorrect ? [option.id] : [],
-  );
+  const correctOptionIds = question.options.flatMap((option) => (option.isCorrect ? [option.id] : []));
 
   if (question.answerMode === "MULTI_SELECT") {
     return (
@@ -155,7 +132,7 @@ export function isAnswerCorrect(
   }
 
   return question.options.some(
-    (option) => option.id === selectedOptionIds[0] && option.isCorrect,
+    (option) => option.id === selectedOptionIds[0] && option.isCorrect
   );
 }
 
@@ -213,9 +190,7 @@ export function scoreQuiz(params: {
       quizAttemptId: attemptId,
       questionId: answer.questionId,
       selectedOptionId:
-        question.answerMode === "MULTI_SELECT"
-          ? null
-          : (selectedOptionIds[0] ?? null),
+        question.answerMode === "MULTI_SELECT" ? null : selectedOptionIds[0] ?? null,
       selectedOptionIds,
       numericValue: null,
       isCorrect,

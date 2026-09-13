@@ -23,13 +23,7 @@ interface MaterialDetail {
   processedPages: number;
   errorMessage: string | null;
   createdAt: string;
-  teacher: {
-    user: {
-      username: string;
-      firstName: string | null;
-      lastName: string | null;
-    };
-  } | null;
+  teacher: { user: { username: string; firstName: string | null; lastName: string | null } } | null;
   class: { name: string } | null;
   fileUrl: string | null;
   pages: MaterialPage[];
@@ -54,15 +48,11 @@ export default function AdminMaterialDetailPage() {
     (async () => {
       try {
         const res = await fetch(`/api/admin/materials/${materialId}`);
-        if (!res.ok)
-          throw new Error(
-            (await res.json()).error || "Failed to load material",
-          );
+        if (!res.ok) throw new Error((await res.json()).error || "Failed to load material");
         const data: MaterialDetail = await res.json();
         if (!cancelled) setMaterial(data);
       } catch (e) {
-        if (!cancelled)
-          setError(e instanceof Error ? e.message : "Failed to load material");
+        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load material");
       }
     })();
     return () => {
@@ -72,8 +62,7 @@ export default function AdminMaterialDetailPage() {
 
   const teacherUser = material?.teacher?.user;
   const teacherName = teacherUser
-    ? `${teacherUser.firstName ?? ""} ${teacherUser.lastName ?? ""}`.trim() ||
-      teacherUser.username
+    ? `${teacherUser.firstName ?? ""} ${teacherUser.lastName ?? ""}`.trim() || teacherUser.username
     : "Unknown teacher";
 
   return (
@@ -85,11 +74,7 @@ export default function AdminMaterialDetailPage() {
         <ArrowLeft className="size-4" /> Back to materials
       </Link>
 
-      {error && (
-        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-          {error}
-        </div>
-      )}
+      {error && <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
 
       {!material && !error && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -101,21 +86,15 @@ export default function AdminMaterialDetailPage() {
         <>
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
-              <FileText className="size-6 text-muted-foreground" />{" "}
-              {material.title || material.originalName}
+              <FileText className="size-6 text-muted-foreground" /> {material.title || material.originalName}
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
               {teacherName}
-              {material.class
-                ? ` · ${material.class.name}`
-                : " · no class"} · {formatBytes(material.sizeBytes)} ·{" "}
-              {material.processedPages}/{material.totalPages || "?"} pages
-              processed · {material.processingStatus}
+              {material.class ? ` · ${material.class.name}` : " · no class"} · {formatBytes(material.sizeBytes)} ·{" "}
+              {material.processedPages}/{material.totalPages || "?"} pages processed · {material.processingStatus}
             </p>
             {material.errorMessage && (
-              <p className="text-sm text-destructive mt-1">
-                {material.errorMessage}
-              </p>
+              <p className="text-sm text-destructive mt-1">{material.errorMessage}</p>
             )}
             {material.fileUrl && (
               <a
@@ -124,8 +103,7 @@ export default function AdminMaterialDetailPage() {
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 text-sm text-primary hover:underline mt-2"
               >
-                <ExternalLink className="size-4" /> Open original file (
-                {material.originalName})
+                <ExternalLink className="size-4" /> Open original file ({material.originalName})
               </a>
             )}
           </div>
@@ -144,9 +122,7 @@ export default function AdminMaterialDetailPage() {
                     <CardTitle className="text-base">
                       Page {page.pageNumber}
                       {page.keyConcept && (
-                        <span className="ml-2 font-normal text-sm text-muted-foreground">
-                          {page.keyConcept}
-                        </span>
+                        <span className="ml-2 font-normal text-sm text-muted-foreground">{page.keyConcept}</span>
                       )}
                     </CardTitle>
                   </CardHeader>
@@ -160,15 +136,9 @@ export default function AdminMaterialDetailPage() {
                         className="w-full max-w-3xl rounded border bg-white"
                       />
                     ) : (
-                      <p className="text-sm text-muted-foreground">
-                        Page image unavailable.
-                      </p>
+                      <p className="text-sm text-muted-foreground">Page image unavailable.</p>
                     )}
-                    {page.description && (
-                      <p className="text-sm text-muted-foreground">
-                        {page.description}
-                      </p>
-                    )}
+                    {page.description && <p className="text-sm text-muted-foreground">{page.description}</p>}
                   </CardContent>
                 </Card>
               ))}

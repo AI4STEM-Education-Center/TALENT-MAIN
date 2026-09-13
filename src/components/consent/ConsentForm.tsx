@@ -53,14 +53,8 @@ export function ConsentForm({
       setError("Type your full name to sign this form.");
       return;
     }
-    if (
-      decision === "AGREE" &&
-      wantsRecordingConsent &&
-      (initialsRef.current?.isEmpty() ?? true)
-    ) {
-      setError(
-        "Draw your initials to consent to the interview being recorded.",
-      );
+    if (decision === "AGREE" && wantsRecordingConsent && (initialsRef.current?.isEmpty() ?? true)) {
+      setError("Draw your initials to consent to the interview being recorded.");
       return;
     }
 
@@ -72,16 +66,11 @@ export function ConsentForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           decision,
-          interviewRecordingConsent:
-            decision === "AGREE" ? wantsRecordingConsent : undefined,
+          interviewRecordingConsent: decision === "AGREE" ? wantsRecordingConsent : undefined,
           initialsStrokeData:
-            decision === "AGREE" && wantsRecordingConsent
-              ? initialsRef.current?.toData()
-              : undefined,
+            decision === "AGREE" && wantsRecordingConsent ? initialsRef.current?.toData() : undefined,
           signatureTypedName: signatureTypedName.trim(),
-          signatureStrokeData: wantsDrawnSignature
-            ? signatureRef.current?.toData()
-            : undefined,
+          signatureStrokeData: wantsDrawnSignature ? signatureRef.current?.toData() : undefined,
         }),
       });
       if (!res.ok) {
@@ -102,9 +91,7 @@ export function ConsentForm({
       await update({});
       onSubmitted(decision);
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Could not submit your response.",
-      );
+      setError(err instanceof Error ? err.message : "Could not submit your response.");
     } finally {
       setSubmitting(false);
     }
@@ -113,12 +100,8 @@ export function ConsentForm({
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-lg font-semibold leading-tight">
-          {activeForm.title}
-        </h2>
-        <p className="text-xs text-muted-foreground">
-          Form version {activeForm.version}
-        </p>
+        <h2 className="text-lg font-semibold leading-tight">{activeForm.title}</h2>
+        <p className="text-xs text-muted-foreground">Form version {activeForm.version}</p>
       </div>
 
       <div
@@ -147,8 +130,7 @@ export function ConsentForm({
         </div>
         {role === "STUDENT" && (
           <p className="text-xs text-muted-foreground">
-            Either answer is complete — declining has no effect on your grades
-            or coursework.
+            Either answer is complete — declining has no effect on your grades or coursework.
           </p>
         )}
       </div>
@@ -168,12 +150,7 @@ export function ConsentForm({
             <div className="space-y-1 pl-6">
               <Label className="text-xs">Draw your initials</Label>
               <SignatureCanvas ref={initialsRef} height={70} />
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => initialsRef.current?.clear()}
-              >
+              <Button type="button" variant="ghost" size="sm" onClick={() => initialsRef.current?.clear()}>
                 Clear
               </Button>
             </div>
@@ -182,9 +159,7 @@ export function ConsentForm({
       )}
 
       <div className="space-y-2">
-        <Label htmlFor="consent-typed-name">
-          Typed signature (your full legal name)
-        </Label>
+        <Label htmlFor="consent-typed-name">Typed signature (your full legal name)</Label>
         <Input
           id="consent-typed-name"
           value={signatureTypedName}
@@ -192,8 +167,7 @@ export function ConsentForm({
           placeholder="Type your full name"
         />
         <p className="text-xs text-muted-foreground">
-          For the purposes of this form, typing your name is equivalent to your
-          legal signature.
+          For the purposes of this form, typing your name is equivalent to your legal signature.
         </p>
       </div>
 
@@ -203,19 +177,12 @@ export function ConsentForm({
           className="text-xs text-primary underline underline-offset-2"
           onClick={() => setWantsDrawnSignature((v) => !v)}
         >
-          {wantsDrawnSignature
-            ? "Remove hand-drawn signature"
-            : "Add a hand-drawn signature (optional)"}
+          {wantsDrawnSignature ? "Remove hand-drawn signature" : "Add a hand-drawn signature (optional)"}
         </button>
         {wantsDrawnSignature && (
           <div className="space-y-1 pt-1">
             <SignatureCanvas ref={signatureRef} height={90} />
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => signatureRef.current?.clear()}
-            >
+            <Button type="button" variant="ghost" size="sm" onClick={() => signatureRef.current?.clear()}>
               Clear
             </Button>
           </div>

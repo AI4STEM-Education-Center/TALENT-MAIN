@@ -8,7 +8,6 @@
 // in the same AI Config panel as every other model choice.
 
 import { prisma } from "@/lib/prisma";
-import { logSystemEvent } from "@/lib/system-log";
 import {
   DEFAULT_GUARDRAIL_POLICY,
   isGuardrailMode,
@@ -41,10 +40,7 @@ export const GUARDRAIL_SURFACES = [
 export type GuardrailSurface = (typeof GUARDRAIL_SURFACES)[number];
 
 export function isGuardrailSurface(value: unknown): value is GuardrailSurface {
-  return (
-    typeof value === "string" &&
-    (GUARDRAIL_SURFACES as readonly string[]).includes(value)
-  );
+  return typeof value === "string" && (GUARDRAIL_SURFACES as readonly string[]).includes(value);
 }
 
 /** Labels for the admin panel. Kept beside the list so the two cannot drift. */
@@ -115,8 +111,6 @@ function parseSurfaces(raw: string): GuardrailSurface[] {
 // The settings are read on nearly every AI call, so they are cached with the
 // same 60s TTL as the provider assignments in ai-provider.ts.
 const CACHE_TTL_MS = 60_000;
-/** The single GuardrailConfig row id — settings are global, not per tenant. */
-const SINGLETON_ID = "singleton";
 let _cache: { data: GuardrailSettings; expiresAt: number } | null = null;
 
 /** Drop the cached settings AND every cached verdict computed under them. */
@@ -132,26 +126,15 @@ export async function getGuardrailSettings(): Promise<GuardrailSettings> {
   let settings = defaults;
 
   try {
-    const row = await prisma.guardrailConfig.findUnique({
-      where: { id: SINGLETON_ID },
-    });
+    const row = await prisma.guardrailConfig.findUnique({ where: { id: "singleton" } });
     if (row) {
       settings = {
         moderationEnabled: row.moderationEnabled,
         jailbreakMode: readMode(row.jailbreakMode, defaults.jailbreakMode),
         offTopicMode: readMode(row.offTopicMode, defaults.offTopicMode),
-        jailbreakThreshold: clampThreshold(
-          row.jailbreakThreshold,
-          defaults.jailbreakThreshold,
-        ),
-        offTopicThreshold: clampThreshold(
-          row.offTopicThreshold,
-          defaults.offTopicThreshold,
-        ),
-        topicDescription: (row.topicDescription ?? "").slice(
-          0,
-          MAX_TOPIC_DESCRIPTION_CHARS,
-        ),
+        jailbreakThreshold: clampThreshold(row.jailbreakThreshold, defaults.jailbreakThreshold),
+        offTopicThreshold: clampThreshold(row.offTopicThreshold, defaults.offTopicThreshold),
+        topicDescription: (row.topicDescription ?? "").slice(0, MAX_TOPIC_DESCRIPTION_CHARS),
         failOpen: row.failOpen,
         disabledSurfaces: parseSurfaces(row.disabledSurfaces),
       };
@@ -160,12 +143,7 @@ export async function getGuardrailSettings(): Promise<GuardrailSettings> {
     // A database blip must not decide the safety posture by accident. The
     // defaults are report-only, so falling back to them is the same "observe,
     // don't enforce" stance the feature ships in.
-    void logSystemEvent({
-      category: "GUARDRAIL",
-      type: "SETTINGS_READ_FAILED",
-      severity: "ERROR",
-      message: "Could not read guardrail settings; using defaults",
-    });
+    console.error("[Guardrails] Could not read settings; using defaults:", error);
     return defaults;
   }
 
@@ -185,9 +163,7 @@ export interface GuardrailSettingsInput {
 }
 
 /** Coerce arbitrary request input into a valid settings object. Never throws. */
-export function normalizeGuardrailSettings(
-  input: GuardrailSettingsInput,
-): GuardrailSettings {
+export function normalizeGuardrailSettings(input: GuardrailSettingsInput): GuardrailSettings {
   const defaults = defaultGuardrailSettings();
   const surfaces = Array.isArray(input.disabledSurfaces)
     ? input.disabledSurfaces.filter(isGuardrailSurface)
@@ -200,28 +176,19 @@ export function normalizeGuardrailSettings(
         : defaults.moderationEnabled,
     jailbreakMode: readMode(input.jailbreakMode, defaults.jailbreakMode),
     offTopicMode: readMode(input.offTopicMode, defaults.offTopicMode),
-    jailbreakThreshold: clampThreshold(
-      input.jailbreakThreshold,
-      defaults.jailbreakThreshold,
-    ),
-    offTopicThreshold: clampThreshold(
-      input.offTopicThreshold,
-      defaults.offTopicThreshold,
-    ),
+    jailbreakThreshold: clampThreshold(input.jailbreakThreshold, defaults.jailbreakThreshold),
+    offTopicThreshold: clampThreshold(input.offTopicThreshold, defaults.offTopicThreshold),
     topicDescription:
       typeof input.topicDescription === "string"
         ? input.topicDescription.trim().slice(0, MAX_TOPIC_DESCRIPTION_CHARS)
         : defaults.topicDescription,
-    failOpen:
-      typeof input.failOpen === "boolean" ? input.failOpen : defaults.failOpen,
-    disabledSurfaces: GUARDRAIL_SURFACES.filter((surface) =>
-      surfaces.includes(surface),
-    ),
+    failOpen: typeof input.failOpen === "boolean" ? input.failOpen : defaults.failOpen,
+    disabledSurfaces: GUARDRAIL_SURFACES.filter((surface) => surfaces.includes(surface)),
   };
 }
 
 export async function saveGuardrailSettings(
-  input: GuardrailSettingsInput,
+  input: GuardrailSettingsInput
 ): Promise<GuardrailSettings> {
   const settings = normalizeGuardrailSettings(input);
   const data = {
@@ -238,7 +205,7 @@ export async function saveGuardrailSettings(
   await prisma.guardrailConfig.upsert({
     where: { id: "singleton" },
     update: data,
-    create: { id: SINGLETON_ID, ...data },
+    create: { id: "singleton", ...data },
   });
 
   invalidateGuardrailSettings();
@@ -246,16 +213,10 @@ export async function saveGuardrailSettings(
 }
 
 /** The policy half of the settings, for handing to `checkContentSafety`. */
-export function policyFor(
-  settings: GuardrailSettings,
-  surface: string,
-): GuardrailPolicy {
+export function policyFor(settings: GuardrailSettings, surface: string): GuardrailPolicy {
   // A disabled surface gets an inert policy, which makes checkContentSafety
   // return before it resolves a provider or bills a call.
-  if (
-    isGuardrailSurface(surface) &&
-    settings.disabledSurfaces.includes(surface)
-  ) {
+  if (isGuardrailSurface(surface) && settings.disabledSurfaces.includes(surface)) {
     return { ...settings, jailbreakMode: "OFF", offTopicMode: "OFF" };
   }
   return {
@@ -267,12 +228,7 @@ export function policyFor(
 }
 
 /** Whether the free moderation pass should run for a surface. */
-export function moderationEnabledFor(
-  settings: GuardrailSettings,
-  surface: string,
-): boolean {
+export function moderationEnabledFor(settings: GuardrailSettings, surface: string): boolean {
   if (!settings.moderationEnabled) return false;
-  return !(
-    isGuardrailSurface(surface) && settings.disabledSurfaces.includes(surface)
-  );
+  return !(isGuardrailSurface(surface) && settings.disabledSurfaces.includes(surface));
 }

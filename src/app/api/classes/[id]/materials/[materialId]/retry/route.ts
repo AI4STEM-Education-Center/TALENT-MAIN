@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string; materialId: string }> },
+  { params }: { params: Promise<{ id: string; materialId: string }> }
 ) {
   const session = await auth();
   if (!session?.user || session.user.role !== "TEACHER") {
@@ -22,8 +22,7 @@ export async function POST(
     params,
     prisma.teacher.findUnique({ where: { userId: session.user.id } }),
   ]);
-  if (!teacher)
-    return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
+  if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
 
   const material = await prisma.learningMaterial.findUnique({
     where: { id: materialId },
@@ -38,10 +37,7 @@ export async function POST(
   }
 
   if (material.processingStatus !== "FAILED") {
-    return NextResponse.json(
-      { error: "Only failed materials can be retried" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: "Only failed materials can be retried" }, { status: 400 });
   }
 
   // Update status back to PROCESSING and clear error
@@ -53,10 +49,7 @@ export async function POST(
     },
   });
   if (claimed.count !== 1) {
-    return NextResponse.json(
-      { error: "Material is already being retried" },
-      { status: 409 },
-    );
+    return NextResponse.json({ error: "Material is already being retried" }, { status: 409 });
   }
 
   // Start background process

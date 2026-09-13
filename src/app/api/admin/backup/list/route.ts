@@ -29,9 +29,6 @@ export async function GET() {
     });
   } catch (error) {
     logApiError("BACKUP_LIST", error);
-    return NextResponse.json(
-      { error: "Failed to list backups." },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Failed to list backups." }, { status: 500 });
   }
 }

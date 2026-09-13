@@ -1,0 +1,200 @@
+[
+    {
+        "GET_All_Classes": {
+            "avg_latency": 0.54642831325531,
+            "max_latency": 14.637492656707764,
+            "throughput": 33.14256850575731
+        },
+        "GET_Heavy_Class_Payload": {
+            "avg_latency": 0.8143231654167176,
+            "max_latency": 6.4384682178497314,
+            "throughput": 56.5422440111423
+        },
+        "GET_Topics_List": {
+            "avg_latency": 3.811826687335968,
+            "max_latency": 4.939454793930054,
+            "throughput": 12.538815268764136
+        },
+        "GET_Class_Topics": {
+            "avg_latency": 0.5734887156486511,
+            "max_latency": 0.7192642688751221,
+            "throughput": 84.6514749339397
+        }
+    },
+    {
+        "GET_All_Classes": {
+            "avg_latency": 0.4590629668235779,
+            "max_latency": 0.9827823638916016,
+            "throughput": 104.44118256101099
+        },
+        "GET_Heavy_Class_Payload": {
+            "avg_latency": 1.150270740032196,
+            "max_latency": 1.4238626956939697,
+            "throughput": 41.85383274089605
+        },
+        "GET_Topics_List": {
+            "avg_latency": 4.09126745891571,
+            "max_latency": 7.754755258560181,
+            "throughput": 11.580401569389057
+        },
+        "GET_Class_Topics": {
+            "avg_latency": 0.9013534045219421,
+            "max_latency": 1.1155664920806885,
+            "throughput": 53.703331774931385
+        }
+    },
+    {
+        "GET_All_Classes": {
+            "avg_latency": 0.4306254591941833,
+            "max_latency": 0.9274983406066895,
+            "throughput": 110.37900624514627
+        },
+        "GET_Heavy_Class_Payload": {
+            "avg_latency": 2.493070297241211,
+            "max_latency": 3.438873529434204,
+            "throughput": 19.262311709050433
+        },
+        "GET_Topics_List": {
+            "avg_latency": 5.434846522331238,
+            "max_latency": 7.101129770278931,
+            "throughput": 8.810427664636663
+        },
+        "GET_Class_Topics": {
+            "avg_latency": 2.166685338973999,
+            "max_latency": 2.8720386028289795,
+            "throughput": 22.06244293979039
+        }
+    },
+    {
+        "GET_All_Classes": {
+            "avg_latency": 0.4255838513374329,
+            "max_latency": 0.7124917507171631,
+            "throughput": 114.0727069688912
+        },
+        "GET_Heavy_Class_Payload": {
+            "avg_latency": 5.028603339195252,
+            "max_latency": 6.934769153594971,
+            "throughput": 9.513810000066098
+        },
+        "GET_Topics_List": {
+            "avg_latency": 7.968933250427246,
+            "max_latency": 9.811054706573486,
+            "throughput": 5.9904753090204945
+        },
+        "GET_Class_Topics": {
+            "avg_latency": 4.717456171989441,
+            "max_latency": 7.591887474060059,
+            "throughput": 10.064333882848366
+        }
+    },
+    {
+        "GET_All_Classes": {
+            "avg_latency": 0.4175155553817749,
+            "max_latency": 0.7048616409301758,
+            "throughput": 116.72848412193007
+        },
+        "GET_Heavy_Class_Payload": {
+            "avg_latency": 9.064446549415589,
+            "max_latency": 12.23911738395691,
+            "throughput": 5.264626619500303
+        },
+        "GET_Topics_List": {
+            "avg_latency": 12.115771152496338,
+            "max_latency": 14.672995805740356,
+            "throughput": 3.9383776571119866
+        },
+        "GET_Class_Topics": {
+            "avg_latency": 8.839538978099823,
+            "max_latency": 12.1555495262146,
+            "throughput": 5.394728983739626
+        }
+    },
+    {
+        "GET_All_Classes": {
+            "avg_latency": 0.43725550270080565,
+            "max_latency": 0.6915059089660645,
+            "throughput": 111.2893864631501
+        },
+        "GET_Heavy_Class_Payload": {
+            "avg_latency": 2.5241830463409425,
+            "max_latency": 11.486911296844482,
+            "throughput": 14.847612972463512
+        },
+        "GET_Topics_List": {
+            "avg_latency": 5.492508288383484,
+            "max_latency": 7.124882221221924,
+            "throughput": 8.688122437155984
+        },
+        "GET_Class_Topics": {
+            "avg_latency": 2.2475378475189207,
+            "max_latency": 2.91856050491333,
+            "throughput": 21.336703874455427
+        }
+    },
+    {
+        "GET_All_Classes": {
+            "avg_latency": 0.4320319018363953,
+            "max_latency": 0.6950514316558838,
+            "throughput": 112.7611108288255
+        },
+        "GET_Heavy_Class_Payload": {
+            "avg_latency": 2.575811171531677,
+            "max_latency": 3.431292772293091,
+            "throughput": 18.671666428724787
+        },
+        "GET_Topics_List": {
+            "avg_latency": 5.508274454593659,
+            "max_latency": 6.936614274978638,
+            "throughput": 8.6717207432283
+        },
+        "GET_Class_Topics": {
+            "avg_latency": 2.3235605635643006,
+            "max_latency": 3.4601051807403564,
+            "throughput": 20.637426887348777
+        }
+    },
+    {
+        "GET_All_Classes": {
+            "avg_latency": 0.42544147157669066,
+            "max_latency": 0.8106310367584229,
+            "throughput": 113.41298815020221
+        },
+        "GET_Heavy_Class_Payload": {
+            "avg_latency": 2.673053761482239,
+            "max_latency": 3.3020501136779785,
+            "throughput": 17.943447192211053
+        },
+        "GET_Topics_List": {
+            "avg_latency": 5.642017842769623,
+            "max_latency": 8.236449241638184,
+            "throughput": 8.434465853466664
+        },
+        "GET_Class_Topics": {
+            "avg_latency": 2.4756497340202333,
+            "max_latency": 3.4258337020874023,
+            "throughput": 19.359459545959325
+        }
+    },
+    {
+        "GET_All_Classes": {
+            "avg_latency": 0.43451078748703004,
+            "max_latency": 0.770432710647583,
+            "throughput": 112.60932770445636
+        },
+        "GET_Heavy_Class_Payload": {
+            "avg_latency": 2.956724152088165,
+            "max_latency": 3.5143704414367676,
+            "throughput": 16.24805971978862
+        },
+        "GET_Topics_List": {
+            "avg_latency": 5.804132022857666,
+            "max_latency": 7.230011463165283,
+            "throughput": 8.232666251875568
+        },
+        "GET_Class_Topics": {
+            "avg_latency": 2.797918466091156,
+            "max_latency": 3.690232992172241,
+            "throughput": 17.15617265888943
+        }
+    }
+]

@@ -24,8 +24,7 @@ import {
 } from "./simulation-stats";
 
 const fullName = (u: { firstName: string; lastName: string }): string =>
-  [u.firstName, u.lastName].filter(Boolean).join(" ").trim() ||
-  "Unknown student";
+  [u.firstName, u.lastName].filter(Boolean).join(" ").trim() || "Unknown student";
 
 // ─── Per-quiz stats ──────────────────────────────────────────────────────────
 
@@ -68,71 +67,51 @@ export type QuizStats = {
  * distribution, and per-question correctness rates. Returns null if the quiz is
  * gone.
  */
-export async function getQuizStats(
-  classId: string,
-  quizId: string,
-): Promise<QuizStats | null> {
-  const quiz = await prisma.quiz.findUnique({
-    where: { id: quizId },
-    select: { name: true },
-  });
+export async function getQuizStats(classId: string, quizId: string): Promise<QuizStats | null> {
+  const quiz = await prisma.quiz.findUnique({ where: { id: quizId }, select: { name: true } });
   if (!quiz) return null;
 
-  const [attempts, questions, grouped, enrollments, manualGrades] =
-    await Promise.all([
-      prisma.quizAttempt.findMany({
-        where: { classId, quizId, completedAt: { not: null } },
-        select: {
-          studentId: true,
-          score: true,
-          student: {
-            select: { user: { select: { firstName: true, lastName: true } } },
-          },
-        },
-      }),
-      prisma.question.findMany({
-        where: { quizId },
-        select: { id: true, text: true },
-        orderBy: { createdAt: "asc" },
-      }),
-      prisma.quizAnswer.groupBy({
-        by: ["questionId", "isCorrect"],
-        where: { quizAttempt: { classId, quizId, completedAt: { not: null } } },
-        _count: { _all: true },
-      }),
-      prisma.classEnrollment.findMany({
-        where: { classId },
-        select: {
-          studentId: true,
-          student: {
-            select: { user: { select: { firstName: true, lastName: true } } },
-          },
-        },
-      }),
-      prisma.quizProgress.findMany({
-        where: { classId, quizId, manualGrade: { not: null } },
-        select: { studentId: true, manualGrade: true },
-      }),
-    ]);
+  const [attempts, questions, grouped, enrollments, manualGrades] = await Promise.all([
+    prisma.quizAttempt.findMany({
+      where: { classId, quizId, completedAt: { not: null } },
+      select: {
+        studentId: true,
+        score: true,
+        student: { select: { user: { select: { firstName: true, lastName: true } } } },
+      },
+    }),
+    prisma.question.findMany({
+      where: { quizId },
+      select: { id: true, text: true },
+      orderBy: { createdAt: "asc" },
+    }),
+    prisma.quizAnswer.groupBy({
+      by: ["questionId", "isCorrect"],
+      where: { quizAttempt: { classId, quizId, completedAt: { not: null } } },
+      _count: { _all: true },
+    }),
+    prisma.classEnrollment.findMany({
+      where: { classId },
+      select: {
+        studentId: true,
+        student: { select: { user: { select: { firstName: true, lastName: true } } } },
+      },
+    }),
+    prisma.quizProgress.findMany({
+      where: { classId, quizId, manualGrade: { not: null } },
+      select: { studentId: true, manualGrade: true },
+    }),
+  ]);
 
   // Collapse attempts into one row per student (best score + attempt count).
-  const byStudent = new Map<
-    string,
-    { name: string; scores: number[]; attempts: number }
-  >();
+  const byStudent = new Map<string, { name: string; scores: number[]; attempts: number }>();
   for (const a of attempts) {
-    const row = byStudent.get(a.studentId) ?? {
-      name: fullName(a.student.user),
-      scores: [],
-      attempts: 0,
-    };
+    const row = byStudent.get(a.studentId) ?? { name: fullName(a.student.user), scores: [], attempts: 0 };
     row.scores.push(a.score ?? 0);
     row.attempts += 1;
     byStudent.set(a.studentId, row);
   }
-  const manualByStudent = new Map(
-    manualGrades.map((row) => [row.studentId, row.manualGrade]),
-  );
+  const manualByStudent = new Map(manualGrades.map((row) => [row.studentId, row.manualGrade]));
   const enrolledIds = new Set(enrollments.map((row) => row.studentId));
   const students: QuizStudentRow[] = enrollments.map((enrollment) => {
     const attempt = byStudent.get(enrollment.studentId);
@@ -161,8 +140,7 @@ export async function getQuizStats(
   students.sort((a, b) => a.name.localeCompare(b.name));
 
   const attemptedStudents = students.filter(
-    (student): student is QuizStudentRow & { bestScore: number } =>
-      student.bestScore !== null,
+    (student): student is QuizStudentRow & { bestScore: number } => student.bestScore !== null
   );
   const bestScores = attemptedStudents.map((s) => s.bestScore);
   const attemptCounts = attemptedStudents.map((s) => s.attempts);
@@ -242,10 +220,7 @@ export type StudentStats = {
  * per-quiz breakdown, and the flat list of completed attempts (each carrying
  * its attemptId for drill-down). Returns null if the student is gone.
  */
-export async function getStudentStats(
-  classId: string,
-  studentId: string,
-): Promise<StudentStats | null> {
+export async function getStudentStats(classId: string, studentId: string): Promise<StudentStats | null> {
   const student = await prisma.student.findUnique({
     where: { id: studentId },
     select: { user: { select: { firstName: true, lastName: true } } },
@@ -273,10 +248,7 @@ export async function getStudentStats(
 
   // Group attempts by quiz to compute per-quiz best/latest/count. Attempts are
   // already newest-first, so the first seen per quiz is the latest.
-  const byQuiz = new Map<
-    string,
-    { scores: number[]; latest: number; attempts: number }
-  >();
+  const byQuiz = new Map<string, { scores: number[]; latest: number; attempts: number }>();
   for (const a of attempts) {
     if (!a.quizId) continue;
     const row = byQuiz.get(a.quizId);
@@ -284,11 +256,7 @@ export async function getStudentStats(
       row.scores.push(a.score ?? 0);
       row.attempts += 1;
     } else {
-      byQuiz.set(a.quizId, {
-        scores: [a.score ?? 0],
-        latest: a.score ?? 0,
-        attempts: 1,
-      });
+      byQuiz.set(a.quizId, { scores: [a.score ?? 0], latest: a.score ?? 0, attempts: 1 });
     }
   }
 
@@ -323,8 +291,7 @@ export async function getStudentStats(
     overallMean: mean(allScores),
     avgBestScore: mean(bestScores),
     totalAttempts: attempts.length,
-    avgAttemptsPerQuiz:
-      completedQuizCount > 0 ? attempts.length / completedQuizCount : 0,
+    avgAttemptsPerQuiz: completedQuizCount > 0 ? attempts.length / completedQuizCount : 0,
     lastActivity: attemptRows[0]?.completedAt ?? null,
     perQuiz,
     attempts: attemptRows,
@@ -366,9 +333,7 @@ export type ClassStatsOverview = {
  * per-enrolled-student summary row, computed from all completed attempts in the
  * class in a single pass (no N+1 per quiz/student).
  */
-export async function getClassStatsOverview(
-  classId: string,
-): Promise<ClassStatsOverview> {
+export async function getClassStatsOverview(classId: string): Promise<ClassStatsOverview> {
   const [classQuizzes, enrollments, attempts] = await Promise.all([
     prisma.classQuiz.findMany({
       where: { classId },
@@ -380,9 +345,7 @@ export async function getClassStatsOverview(
       select: {
         studentId: true,
         student: {
-          select: {
-            user: { select: { email: true, firstName: true, lastName: true } },
-          },
+          select: { user: { select: { email: true, firstName: true, lastName: true } } },
         },
       },
     }),
@@ -421,8 +384,7 @@ export async function getClassStatsOverview(
     const byQuiz = new Map<string, number[]>();
     let lastActivity: Date | null = null;
     for (const a of studentAttempts) {
-      if (a.completedAt && (!lastActivity || a.completedAt > lastActivity))
-        lastActivity = a.completedAt;
+      if (a.completedAt && (!lastActivity || a.completedAt > lastActivity)) lastActivity = a.completedAt;
       if (!a.quizId) continue;
       const arr = byQuiz.get(a.quizId) ?? [];
       arr.push(a.score ?? 0);
@@ -465,9 +427,7 @@ async function simulationTitles(ids: string[]): Promise<Map<string, string>> {
     where: { id: { in: unique } },
     select: { id: true, title: true, topic: true },
   });
-  return new Map(
-    sims.map((s) => [s.id, s.title ?? s.topic ?? "Interactive simulation"]),
-  );
+  return new Map(sims.map((s) => [s.id, s.title ?? s.topic ?? "Interactive simulation"]));
 }
 
 export type QuizSimulationStats = {
@@ -479,7 +439,7 @@ export type QuizSimulationStats = {
 /** Per-quiz simulation engagement for one class: one row per simulation. */
 export async function getQuizSimulationStats(
   classId: string,
-  quizId: string,
+  quizId: string
 ): Promise<QuizSimulationStats> {
   const sessions = await prisma.simulationSession.findMany({
     where: { classId, quizId },
@@ -506,14 +466,9 @@ export type ClassSimulationInsights = {
  * students who attempted a quiz), median active time, and the retake-
  * improvement split by simulation use. Correlation only — the UI labels it so.
  */
-export async function getClassSimulationInsights(
-  classId: string,
-): Promise<ClassSimulationInsights> {
+export async function getClassSimulationInsights(classId: string): Promise<ClassSimulationInsights> {
   const [sessions, attempts] = await Promise.all([
-    prisma.simulationSession.findMany({
-      where: { classId },
-      select: SESSION_SELECT,
-    }),
+    prisma.simulationSession.findMany({ where: { classId }, select: SESSION_SELECT }),
     prisma.quizAttempt.findMany({
       where: { classId, completedAt: { not: null } },
       select: { studentId: true, quizId: true, score: true, completedAt: true },
@@ -542,7 +497,7 @@ export type StudentSimulationSessionRow = {
 export async function getStudentSimulationSessions(
   classId: string,
   studentId: string,
-  limit = 50,
+  limit = 50
 ): Promise<StudentSimulationSessionRow[]> {
   const sessions = await prisma.simulationSession.findMany({
     where: { classId, studentId },
@@ -552,13 +507,7 @@ export async function getStudentSimulationSessions(
   const [titles, quizzes] = await Promise.all([
     simulationTitles(sessions.map((s) => s.simulationId)),
     prisma.quiz.findMany({
-      where: {
-        id: {
-          in: [
-            ...new Set(sessions.flatMap((s) => (s.quizId ? [s.quizId] : []))),
-          ],
-        },
-      },
+      where: { id: { in: [...new Set(sessions.flatMap((s) => (s.quizId ? [s.quizId] : [])))] } },
       select: { id: true, name: true },
     }),
   ]);
