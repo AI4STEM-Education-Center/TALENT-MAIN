@@ -5,7 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -46,7 +52,10 @@ const UNITS = [
 
 type UnitValue = (typeof UNITS)[number]["value"];
 
-const STATUS_VARIANT: Record<TeacherCodeStatus, "success" | "warning" | "secondary"> = {
+const STATUS_VARIANT: Record<
+  TeacherCodeStatus,
+  "success" | "warning" | "secondary"
+> = {
   ACTIVE: "success",
   EXPIRED: "warning",
   EXHAUSTED: "warning",
@@ -62,7 +71,9 @@ const RELATIVE_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
 // Built once at module scope rather than per call. The locale is pinned for the
 // same reason as `formatDate`: an undefined locale resolves to the runtime's, so
 // the server and the browser can format the same instant differently.
-const RELATIVE_FORMATTER = new Intl.RelativeTimeFormat(DISPLAY_LOCALE, { numeric: "auto" });
+const RELATIVE_FORMATTER = new Intl.RelativeTimeFormat(DISPLAY_LOCALE, {
+  numeric: "auto",
+});
 
 /** "in 3 days" / "5 hours ago" — enough for an admin to judge a code at a glance. */
 function relativeTime(iso: string): string {
@@ -120,24 +131,32 @@ export function TeacherCodesClient() {
   }, [load]);
 
   const unitMinutes = UNITS.find((u) => u.value === unit)?.minutes ?? 1;
-  const expiresInMinutes = amount.trim() ? Math.round(Number(amount) * unitMinutes) : null;
+  const expiresInMinutes = amount.trim()
+    ? Math.round(Number(amount) * unitMinutes)
+    : null;
 
   // Validate before sending so the form explains itself instead of relaying a
   // 400. The API enforces the same bounds — this is convenience, not the guard.
   const durationError = useMemo(() => {
     if (expiresInMinutes === null) return "";
-    if (!Number.isFinite(expiresInMinutes) || expiresInMinutes < MIN_EXPIRES_IN_MINUTES) {
+    if (
+      !Number.isFinite(expiresInMinutes) ||
+      expiresInMinutes < MIN_EXPIRES_IN_MINUTES
+    ) {
       return `A code has to last at least ${MIN_EXPIRES_IN_MINUTES} minutes.`;
     }
-    if (expiresInMinutes > MAX_EXPIRES_IN_MINUTES) return "That is longer than 5 years.";
+    if (expiresInMinutes > MAX_EXPIRES_IN_MINUTES)
+      return "That is longer than 5 years.";
     return "";
   }, [expiresInMinutes]);
 
   const usesError = useMemo(() => {
     if (!maxUses.trim()) return "";
     const parsed = Number(maxUses);
-    if (!Number.isInteger(parsed) || parsed < 1) return "The use limit must be a whole number.";
-    if (parsed > MAX_USES_LIMIT) return `The use limit tops out at ${MAX_USES_LIMIT}.`;
+    if (!Number.isInteger(parsed) || parsed < 1)
+      return "The use limit must be a whole number.";
+    if (parsed > MAX_USES_LIMIT)
+      return `The use limit tops out at ${MAX_USES_LIMIT}.`;
     return "";
   }, [maxUses]);
 
@@ -169,7 +188,9 @@ export function TeacherCodesClient() {
       }
       const data = await res.json();
       setCodes((prev) => [data, ...prev]);
-      setNotice(`Code ${data.code} created — copy it now and share it with the teacher.`);
+      setNotice(
+        `Code ${data.code} created — copy it now and share it with the teacher.`,
+      );
       setLabel("");
       setAmount("");
       setMaxUses("");
@@ -223,7 +244,9 @@ export function TeacherCodesClient() {
 
     setError("");
     setNotice("");
-    const res = await fetch(`/api/admin/teacher-codes/${code.id}`, { method: "DELETE" });
+    const res = await fetch(`/api/admin/teacher-codes/${code.id}`, {
+      method: "DELETE",
+    });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       setError(data.error || "Could not delete the code.");
@@ -235,7 +258,10 @@ export function TeacherCodesClient() {
   async function copy(value: string, key: string) {
     await navigator.clipboard.writeText(value);
     setCopied(key);
-    setTimeout(() => setCopied((current) => (current === key ? null : current)), 2000);
+    setTimeout(
+      () => setCopied((current) => (current === key ? null : current)),
+      2000,
+    );
   }
 
   return (
@@ -246,12 +272,18 @@ export function TeacherCodesClient() {
             <KeyRound className="size-6" /> Teacher Codes
           </h1>
           <p className="text-muted-foreground mt-1">
-            Registration codes teachers redeem at <code className="text-xs">/register</code>. Each
-            one carries its own expiry and use limit, and can be revoked on its own.
+            Registration codes teachers redeem at{" "}
+            <code className="text-xs">/register</code>. Each one carries its own
+            expiry and use limit, and can be revoked on its own.
           </p>
         </div>
-        <Button variant="outline" onClick={() => void load()} disabled={loading}>
-          <RefreshCw className={loading ? "size-4 animate-spin" : "size-4"} /> Refresh
+        <Button
+          variant="outline"
+          onClick={() => void load()}
+          disabled={loading}
+        >
+          <RefreshCw className={loading ? "size-4 animate-spin" : "size-4"} />{" "}
+          Refresh
         </Button>
       </div>
 
@@ -259,22 +291,31 @@ export function TeacherCodesClient() {
         <div className="flex items-start gap-3 p-4 rounded-lg border border-yellow-400/30 bg-yellow-500/10 text-sm">
           <AlertTriangle className="size-4 mt-0.5 shrink-0 text-yellow-600 dark:text-yellow-500" />
           <span>
-            <strong>TEACHER_SIGNUP_TOKEN is still set.</strong> That single environment value
-            registers teachers no matter what you revoke here, and it never expires. Clear it from
-            the deployment&apos;s environment once you have issued the codes you need below.
+            <strong>TEACHER_SIGNUP_TOKEN is still set.</strong> That single
+            environment value registers teachers no matter what you revoke here,
+            and it never expires. Clear it from the deployment&apos;s
+            environment once you have issued the codes you need below.
           </span>
         </div>
       )}
 
-      {error && <div className="p-3 rounded-md bg-destructive/10 text-destructive text-sm">{error}</div>}
-      {notice && <div className="p-3 rounded-md bg-primary/10 text-primary text-sm">{notice}</div>}
+      {error && (
+        <div className="p-3 rounded-md bg-destructive/10 text-destructive text-sm">
+          {error}
+        </div>
+      )}
+      {notice && (
+        <div className="p-3 rounded-md bg-primary/10 text-primary text-sm">
+          {notice}
+        </div>
+      )}
 
       <Card>
         <CardHeader>
           <CardTitle>Issue a new code</CardTitle>
           <CardDescription>
-            Leave a field empty for no limit: no duration means the code never expires, no use limit
-            means it registers any number of teachers.
+            Leave a field empty for no limit: no duration means the code never
+            expires, no use limit means it registers any number of teachers.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -301,7 +342,10 @@ export function TeacherCodesClient() {
                     onChange={(e) => setAmount(e.target.value)}
                     placeholder="Never"
                   />
-                  <Select value={unit} onValueChange={(v) => setUnit(v as UnitValue)}>
+                  <Select
+                    value={unit}
+                    onValueChange={(v) => setUnit(v as UnitValue)}
+                  >
                     <SelectTrigger className="w-32" aria-label="Duration unit">
                       <SelectValue />
                     </SelectTrigger>
@@ -314,7 +358,9 @@ export function TeacherCodesClient() {
                     </SelectContent>
                   </Select>
                 </div>
-                {durationError && <p className="text-xs text-destructive">{durationError}</p>}
+                {durationError && (
+                  <p className="text-xs text-destructive">{durationError}</p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="code-uses">Use limit</Label>
@@ -327,11 +373,17 @@ export function TeacherCodesClient() {
                   onChange={(e) => setMaxUses(e.target.value)}
                   placeholder="Unlimited"
                 />
-                {usesError && <p className="text-xs text-destructive">{usesError}</p>}
+                {usesError && (
+                  <p className="text-xs text-destructive">{usesError}</p>
+                )}
               </div>
             </div>
-            <Button type="submit" disabled={creating || !!durationError || !!usesError}>
-              <Plus className="size-4" /> {creating ? "Generating…" : "Generate code"}
+            <Button
+              type="submit"
+              disabled={creating || !!durationError || !!usesError}
+            >
+              <Plus className="size-4" />{" "}
+              {creating ? "Generating…" : "Generate code"}
             </Button>
           </form>
         </CardContent>
@@ -341,7 +393,8 @@ export function TeacherCodesClient() {
         <CardHeader>
           <CardTitle>Issued codes</CardTitle>
           <CardDescription>
-            Share either the code itself or the link, which pre-fills it on the registration form.
+            Share either the code itself or the link, which pre-fills it on the
+            registration form.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -367,22 +420,50 @@ export function TeacherCodesClient() {
                 >
                   {code.status}
                 </Badge>
-                {code.label && <span className="text-sm text-muted-foreground">{code.label}</span>}
+                {code.label && (
+                  <span className="text-sm text-muted-foreground">
+                    {code.label}
+                  </span>
+                )}
                 <div className="ml-auto flex flex-wrap gap-2">
-                  <Button size="sm" variant="outline" onClick={() => void copy(code.code, `c-${code.id}`)}>
-                    {copied === `c-${code.id}` ? <Check className="size-3" /> : <Copy className="size-3" />}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void copy(code.code, `c-${code.id}`)}
+                  >
+                    {copied === `c-${code.id}` ? (
+                      <Check className="size-3" />
+                    ) : (
+                      <Copy className="size-3" />
+                    )}
                     Code
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => void copy(code.url, `u-${code.id}`)}>
-                    {copied === `u-${code.id}` ? <Check className="size-3" /> : <Link2 className="size-3" />}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void copy(code.url, `u-${code.id}`)}
+                  >
+                    {copied === `u-${code.id}` ? (
+                      <Check className="size-3" />
+                    ) : (
+                      <Link2 className="size-3" />
+                    )}
                     Link
                   </Button>
                   {code.active ? (
-                    <Button size="sm" variant="outline" onClick={() => void setActive(code, false)}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void setActive(code, false)}
+                    >
                       <Ban className="size-3" /> Revoke
                     </Button>
                   ) : (
-                    <Button size="sm" variant="outline" onClick={() => void setActive(code, true)}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void setActive(code, true)}
+                    >
                       <RotateCcw className="size-3" /> Restore
                     </Button>
                   )}
@@ -403,12 +484,18 @@ export function TeacherCodesClient() {
                   {code.maxUses ? ` / ${code.maxUses}` : ""} uses
                   {code.maxUses ? "" : " (unlimited)"}
                 </span>
-                <span title={code.expiresAt ? absoluteTime(code.expiresAt) : undefined}>
+                <span
+                  title={
+                    code.expiresAt ? absoluteTime(code.expiresAt) : undefined
+                  }
+                >
                   {code.expiresAt
                     ? `${code.status === "EXPIRED" ? "Expired" : "Expires"} ${relativeTime(code.expiresAt)}`
                     : "Never expires"}
                 </span>
-                <span title={absoluteTime(code.createdAt)}>Created {relativeTime(code.createdAt)}</span>
+                <span title={absoluteTime(code.createdAt)}>
+                  Created {relativeTime(code.createdAt)}
+                </span>
                 {code.lastUsedAt && (
                   <span title={absoluteTime(code.lastUsedAt)}>
                     Last used {relativeTime(code.lastUsedAt)}

@@ -40,7 +40,10 @@ const studentCtx: AssistantToolContext = {
 };
 
 /** A streamed round: text deltas, then optional tool calls. */
-type Round = { text?: string; toolCalls?: Array<{ name: string; args: string }> };
+type Round = {
+  text?: string;
+  toolCalls?: Array<{ name: string; args: string }>;
+};
 
 function chunksFor(round: Round) {
   const chunks: unknown[] = [];
@@ -65,7 +68,12 @@ function chunksFor(round: Round) {
     });
   });
   chunks.push({
-    choices: [{ delta: {}, finish_reason: round.toolCalls?.length ? "tool_calls" : "stop" }],
+    choices: [
+      {
+        delta: {},
+        finish_reason: round.toolCalls?.length ? "tool_calls" : "stop",
+      },
+    ],
     usage: { completion_tokens: 7 },
   });
   return chunks;
@@ -97,7 +105,7 @@ function fakeClient(rounds: Round[]) {
 async function run(
   rounds: Round[],
   overrides: Partial<ReturnType<typeof defaultSettings>> = {},
-  providerOverrides: Partial<typeof provider> = {}
+  providerOverrides: Partial<typeof provider> = {},
 ) {
   const { client, calls } = fakeClient(rounds);
   mockResolve.mockResolvedValue({ ...provider, ...providerOverrides });
@@ -133,7 +141,10 @@ describe("runAssistantTurn — API surface", () => {
     const create = vi.fn(async () => ({
       async *[Symbol.asyncIterator]() {
         yield { type: "response.output_text.delta", delta: "hello" };
-        yield { type: "response.completed", response: { usage: { output_tokens: 3 } } };
+        yield {
+          type: "response.completed",
+          response: { usage: { output_tokens: 3 } },
+        };
       },
     }));
     mockResolve.mockResolvedValue({ ...provider, apiSurface: "responses" });
@@ -172,7 +183,10 @@ describe("runAssistantTurn — provider resolution", () => {
     });
     expect(result.text).toBe("");
     expect(events).toEqual([
-      { type: "error", message: expect.stringContaining("no AI model assigned") },
+      {
+        type: "error",
+        message: expect.stringContaining("no AI model assigned"),
+      },
     ]);
   });
 
@@ -187,7 +201,11 @@ describe("runAssistantTurn — provider resolution", () => {
   });
 
   it("sends the model's thinking level as reasoning_effort when one is set", async () => {
-    const { calls } = await run([{ text: "hello" }], {}, { thinkingLevel: "high" });
+    const { calls } = await run(
+      [{ text: "hello" }],
+      {},
+      { thinkingLevel: "high" },
+    );
     expect(calls[0].reasoning_effort).toBe("high");
   });
 
@@ -195,7 +213,11 @@ describe("runAssistantTurn — provider resolution", () => {
     const { calls } = await run(
       [{ text: "hello" }],
       {},
-      { providerType: "local" as const, baseUrl: "http://localhost:1234/v1", thinkingLevel: "low" }
+      {
+        providerType: "local" as const,
+        baseUrl: "http://localhost:1234/v1",
+        thinkingLevel: "low",
+      },
     );
     expect(calls[0].reasoning_effort).toBe("low");
   });
@@ -205,11 +227,11 @@ describe("runAssistantTurn — plain answer", () => {
   it("streams each delta and finishes with a done event", async () => {
     const { result, events } = await run([{ text: "hi!" }]);
     expect(result.text).toBe("hi!");
-    expect(events.filter((e) => e.type === "delta").map((e) => (e as { text: string }).text)).toEqual([
-      "h",
-      "i",
-      "!",
-    ]);
+    expect(
+      events
+        .filter((e) => e.type === "delta")
+        .map((e) => (e as { text: string }).text),
+    ).toEqual(["h", "i", "!"]);
     expect(events.at(-1)).toMatchObject({
       type: "done",
       model: "gpt-test",
@@ -227,7 +249,9 @@ describe("runAssistantTurn — plain answer", () => {
 
   it("reports an empty model response as an error rather than an empty bubble", async () => {
     const { events } = await run([{ text: "" }]);
-    expect(events).toEqual([{ type: "error", message: expect.stringContaining("empty response") }]);
+    expect(events).toEqual([
+      { type: "error", message: expect.stringContaining("empty response") },
+    ]);
   });
 });
 
@@ -238,14 +262,24 @@ describe("runAssistantTurn — tool calls", () => {
       { text: "You have no results yet." },
     ]);
 
-    const advertised = (calls[0].tools as Array<{ function: { name: string } }>).map(
-      (tool) => tool.function.name
-    );
+    const advertised = (
+      calls[0].tools as Array<{ function: { name: string } }>
+    ).map((tool) => tool.function.name);
     expect(advertised).toContain("search_quiz_results");
 
     expect(events.filter((e) => e.type === "tool")).toEqual([
-      { type: "tool", name: "search_quiz_results", label: "Searching your quiz results", status: "running" },
-      { type: "tool", name: "search_quiz_results", label: "Searching your quiz results", status: "done" },
+      {
+        type: "tool",
+        name: "search_quiz_results",
+        label: "Searching your quiz results",
+        status: "running",
+      },
+      {
+        type: "tool",
+        name: "search_quiz_results",
+        label: "Searching your quiz results",
+        status: "done",
+      },
     ]);
     expect(result.toolCallCount).toBe(1);
     expect(result.text).toBe("You have no results yet.");
@@ -256,7 +290,10 @@ describe("runAssistantTurn — tool calls", () => {
       { toolCalls: [{ name: "search_quiz_results", args: "{}" }] },
       { text: "done" },
     ]);
-    const second = calls[1].messages as Array<{ role: string; content: unknown }>;
+    const second = calls[1].messages as Array<{
+      role: string;
+      content: unknown;
+    }>;
     expect(second.at(-1)).toMatchObject({ role: "tool" });
     expect(String(second.at(-1)?.content)).toContain("totalMatches");
   });
@@ -272,7 +309,10 @@ describe("runAssistantTurn — tool calls", () => {
       label: "run_shell",
       status: "error",
     });
-    const second = calls[1].messages as Array<{ role: string; content: string }>;
+    const second = calls[1].messages as Array<{
+      role: string;
+      content: string;
+    }>;
     expect(second.at(-1)?.content).toContain("Unknown tool");
   });
 
@@ -281,7 +321,10 @@ describe("runAssistantTurn — tool calls", () => {
       { toolCalls: [{ name: "search_quiz_results", args: '{"limit": 5000}' }] },
       { text: "retrying" },
     ]);
-    const second = calls[1].messages as Array<{ role: string; content: string }>;
+    const second = calls[1].messages as Array<{
+      role: string;
+      content: string;
+    }>;
     expect(second.at(-1)?.content).toContain("did not match the tool's schema");
   });
 
@@ -290,7 +333,10 @@ describe("runAssistantTurn — tool calls", () => {
       { toolCalls: [{ name: "search_quiz_results", args: "{not json" }] },
       { text: "retrying" },
     ]);
-    const second = calls[1].messages as Array<{ role: string; content: string }>;
+    const second = calls[1].messages as Array<{
+      role: string;
+      content: string;
+    }>;
     expect(second.at(-1)?.content).toContain("not valid JSON");
   });
 });
@@ -299,8 +345,13 @@ describe("runAssistantTurn — loop bounds", () => {
   it("withholds tools on the final round so a looping model still answers", async () => {
     // Every scripted round asks for the same tool; the last call must offer none.
     const { calls } = await run(
-      [{ text: "thinking", toolCalls: [{ name: "search_quiz_results", args: "{}" }] }],
-      { maxToolCalls: 2 }
+      [
+        {
+          text: "thinking",
+          toolCalls: [{ name: "search_quiz_results", args: "{}" }],
+        },
+      ],
+      { maxToolCalls: 2 },
     );
     expect(calls).toHaveLength(3);
     expect(calls[0].tools).toBeDefined();
@@ -317,9 +368,9 @@ describe("runAssistantTurn — loop bounds", () => {
     const { calls } = await run([{ text: "hi" }], {
       disabledTools: ["get_quiz_result_detail"],
     });
-    const advertised = (calls[0].tools as Array<{ function: { name: string } }>).map(
-      (tool) => tool.function.name
-    );
+    const advertised = (
+      calls[0].tools as Array<{ function: { name: string } }>
+    ).map((tool) => tool.function.name);
     expect(advertised).toContain("search_quiz_results");
     expect(advertised).not.toContain("get_quiz_result_detail");
   });
@@ -327,12 +378,19 @@ describe("runAssistantTurn — loop bounds", () => {
   it("refuses to run a disabled tool even if the model asks for it by name", async () => {
     const { calls } = await run(
       [
-        { toolCalls: [{ name: "get_quiz_result_detail", args: '{"resultId":"x"}' }] },
+        {
+          toolCalls: [
+            { name: "get_quiz_result_detail", args: '{"resultId":"x"}' },
+          ],
+        },
         { text: "I can't look that up." },
       ],
-      { disabledTools: ["get_quiz_result_detail"] }
+      { disabledTools: ["get_quiz_result_detail"] },
     );
-    const second = calls[1].messages as Array<{ role: string; content: string }>;
+    const second = calls[1].messages as Array<{
+      role: string;
+      content: string;
+    }>;
     expect(second.at(-1)?.content).toContain("Unknown tool");
   });
 });
@@ -342,7 +400,7 @@ describe("runAssistantTurn — replaying stored attachments", () => {
   async function runWithHistory(
     history: Parameters<typeof runAssistantTurn>[0]["history"],
     load: Parameters<typeof runAssistantTurn>[0]["loadHistoryAttachments"],
-    overrides: Partial<ReturnType<typeof defaultSettings>> = {}
+    overrides: Partial<ReturnType<typeof defaultSettings>> = {},
   ) {
     const { client } = fakeClient([{ text: "ok" }]);
     mockResolve.mockResolvedValue(provider);
@@ -375,10 +433,15 @@ describe("runAssistantTurn — replaying stored attachments", () => {
   it("re-attaches a prior turn's image as content parts", async () => {
     const messages = await runWithHistory(
       [
-        { role: "user", content: "what is this?", attachmentNames: ["a.png"], attachmentIds: ["a"] },
+        {
+          role: "user",
+          content: "what is this?",
+          attachmentNames: ["a.png"],
+          attachmentIds: ["a"],
+        },
         { role: "assistant", content: "a graph" },
       ],
-      async (ids) => ids.map(stored)
+      async (ids) => ids.map(stored),
     );
     const replayed = messages[1].content as Array<{ type: string }>;
     expect(Array.isArray(replayed)).toBe(true);
@@ -387,8 +450,15 @@ describe("runAssistantTurn — replaying stored attachments", () => {
 
   it("falls back to filenames when the file is gone", async () => {
     const messages = await runWithHistory(
-      [{ role: "user", content: "what is this?", attachmentNames: ["a.png"], attachmentIds: ["a"] }],
-      async () => []
+      [
+        {
+          role: "user",
+          content: "what is this?",
+          attachmentNames: ["a.png"],
+          attachmentIds: ["a"],
+        },
+      ],
+      async () => [],
     );
     expect(typeof messages[1].content).toBe("string");
     expect(messages[1].content).toContain("[attached: a.png]");
@@ -405,7 +475,7 @@ describe("runAssistantTurn — replaying stored attachments", () => {
         requested.push(ids);
         return ids.map(stored);
       },
-      { maxAttachments: 2 }
+      { maxAttachments: 2 },
     );
     // Only two ids are even asked for, and they are the newest turn's.
     expect(requested).toEqual([["new-1", "new-2"]]);
@@ -416,7 +486,7 @@ describe("runAssistantTurn — replaying stored attachments", () => {
     await runWithHistory(
       [{ role: "user", content: "one", attachmentIds: ["a"] }],
       load,
-      { maxAttachments: 0 }
+      { maxAttachments: 0 },
     );
     expect(load).not.toHaveBeenCalled();
   });
@@ -425,7 +495,7 @@ describe("runAssistantTurn — replaying stored attachments", () => {
     const load = vi.fn(async () => []);
     await runWithHistory(
       [{ role: "assistant", content: "here", attachmentIds: ["a"] }],
-      load
+      load,
     );
     expect(load).not.toHaveBeenCalled();
   });
@@ -434,9 +504,15 @@ describe("runAssistantTurn — replaying stored attachments", () => {
 describe("runAssistantTurn — prompt assembly", () => {
   it("puts the system prompt first and the user turn last", async () => {
     const { calls } = await run([{ text: "hi" }]);
-    const messages = calls[0].messages as Array<{ role: string; content: string }>;
+    const messages = calls[0].messages as Array<{
+      role: string;
+      content: string;
+    }>;
     expect(messages[0].role).toBe("system");
-    expect(messages.at(-1)).toMatchObject({ role: "user", content: "how did I do?" });
+    expect(messages.at(-1)).toMatchObject({
+      role: "user",
+      content: "how did I do?",
+    });
   });
 
   it("prefixes rejected-attachment notices to the user turn", async () => {
@@ -452,7 +528,8 @@ describe("runAssistantTurn — prompt assembly", () => {
       notices: ['the attachment "a.pdf" was not read: unsupported file type'],
       emit: () => {},
     });
-    const messages = client.chat.completions.create.mock.calls[0][0].messages as Array<{
+    const messages = client.chat.completions.create.mock.calls[0][0]
+      .messages as Array<{
       content: string;
     }>;
     expect(messages.at(-1)?.content).toContain("[system note:");
@@ -476,7 +553,8 @@ describe("runAssistantTurn — prompt assembly", () => {
       notices: [],
       emit: () => {},
     });
-    const messages = client.chat.completions.create.mock.calls[0][0].messages as Array<{
+    const messages = client.chat.completions.create.mock.calls[0][0]
+      .messages as Array<{
       content: string;
     }>;
     // system + 2 history turns + the new user turn.
@@ -533,15 +611,17 @@ describe("runAssistantTurn — thinking level vs tools", () => {
     new Error(
       "400 Function tools with reasoning_effort are not supported for gpt-test in " +
         "/v1/chat/completions. To use function tools, use /v1/responses or set " +
-        "reasoning_effort to 'none'."
+        "reasoning_effort to 'none'.",
     ),
-    { status: 400 }
+    { status: 400 },
   );
 
   it("retries without reasoning_effort when the provider refuses it alongside tools", async () => {
     // The real symptom this covers: every assistant turn 400'd because the
     // admin pinned a thinking level on a model that only takes one of the two.
-    const { client, calls } = clientRejectingOnce(rejection, { text: "you did well" });
+    const { client, calls } = clientRejectingOnce(rejection, {
+      text: "you did well",
+    });
     const { result, events } = await runWith(client);
 
     expect(calls).toHaveLength(2);
@@ -563,14 +643,16 @@ describe("runAssistantTurn — thinking level vs tools", () => {
   it("does not swallow unrelated provider failures", async () => {
     const { client, calls } = clientRejectingOnce(
       Object.assign(new Error("400 context_length_exceeded"), { status: 400 }),
-      { text: "unreachable" }
+      { text: "unreachable" },
     );
     await expect(runWith(client)).rejects.toThrow("context_length_exceeded");
     expect(calls).toHaveLength(1);
   });
 
   it("does not retry when no thinking level is pinned", async () => {
-    const { client, calls } = clientRejectingOnce(rejection, { text: "unreachable" });
+    const { client, calls } = clientRejectingOnce(rejection, {
+      text: "unreachable",
+    });
     mockResolve.mockResolvedValue({ ...provider, thinkingLevel: null });
     mockClient.mockResolvedValue(client as never);
     await expect(
@@ -582,7 +664,7 @@ describe("runAssistantTurn — thinking level vs tools", () => {
         attachments: [],
         notices: [],
         emit: () => {},
-      })
+      }),
     ).rejects.toThrow();
     expect(calls).toHaveLength(1);
   });

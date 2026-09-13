@@ -19,10 +19,15 @@ import {
   getStudentStats,
 } from "@/lib/quiz-stats-server";
 import { PASS_THRESHOLD } from "@/lib/quiz-stats";
-import type { AssistantSkill, AssistantTool, AssistantToolContext } from "../types";
+import type {
+  AssistantSkill,
+  AssistantTool,
+  AssistantToolContext,
+} from "../types";
 
 function requireTeacher(ctx: AssistantToolContext): string {
-  if (!ctx.teacherId) throw new Error("This tool is only available to teachers.");
+  if (!ctx.teacherId)
+    throw new Error("This tool is only available to teachers.");
   return ctx.teacherId;
 }
 
@@ -35,7 +40,10 @@ async function ownedClass(ctx: AssistantToolContext, classId: string) {
   });
 }
 
-const notFound = { found: false, message: "No class of yours matches that classId." } as const;
+const notFound = {
+  found: false,
+  message: "No class of yours matches that classId.",
+} as const;
 
 const listClassesInput = z.object({});
 
@@ -71,7 +79,11 @@ const listClasses: AssistantTool<typeof listClassesInput> = {
 };
 
 const classIdInput = z.object({
-  classId: z.string().min(1).max(64).describe("The classId returned by list_classes."),
+  classId: z
+    .string()
+    .min(1)
+    .max(64)
+    .describe("The classId returned by list_classes."),
 });
 
 const getClassOverview: AssistantTool<typeof classIdInput> = {
@@ -108,7 +120,11 @@ const getClassOverview: AssistantTool<typeof classIdInput> = {
 };
 
 const quizStatsInput = classIdInput.extend({
-  quizId: z.string().min(1).max(64).describe("The quizId from get_class_overview's quizzes list."),
+  quizId: z
+    .string()
+    .min(1)
+    .max(64)
+    .describe("The quizId from get_class_overview's quizzes list."),
 });
 
 const getQuizBreakdown: AssistantTool<typeof quizStatsInput> = {
@@ -177,15 +193,21 @@ const getStudentBreakdown: AssistantTool<typeof studentStatsInput> = {
     // the studentId belongs to it, and getStudentStats filters by (classId,
     // studentId) but would happily report an all-zero row for an outsider.
     const enrollment = await prisma.classEnrollment.findUnique({
-      where: { classId_studentId: { classId: klass.id, studentId: args.studentId } },
+      where: {
+        classId_studentId: { classId: klass.id, studentId: args.studentId },
+      },
       select: { id: true },
     });
     if (!enrollment) {
-      return { found: false, message: "That student is not enrolled in that class." };
+      return {
+        found: false,
+        message: "That student is not enrolled in that class.",
+      };
     }
 
     const stats = await getStudentStats(klass.id, args.studentId);
-    if (!stats) return { found: false, message: "That student no longer exists." };
+    if (!stats)
+      return { found: false, message: "That student no longer exists." };
 
     return {
       found: true,
@@ -208,17 +230,23 @@ const strugglingInput = z.object({
     .min(1)
     .max(64)
     .optional()
-    .describe("Restrict to one class. Omit to scan every class the teacher owns."),
+    .describe(
+      "Restrict to one class. Omit to scan every class the teacher owns.",
+    ),
   maxAvgScore: z
     .number()
     .min(0)
     .max(100)
     .optional()
-    .describe(`Flag students whose average best score is below this (default ${PASS_THRESHOLD}).`),
+    .describe(
+      `Flag students whose average best score is below this (default ${PASS_THRESHOLD}).`,
+    ),
   includeInactive: z
     .boolean()
     .optional()
-    .describe("Also flag enrolled students who have not completed any quiz yet. Default true."),
+    .describe(
+      "Also flag enrolled students who have not completed any quiz yet. Default true.",
+    ),
 });
 
 const findStrugglingStudents: AssistantTool<typeof strugglingInput> = {
@@ -249,7 +277,7 @@ const findStrugglingStudents: AssistantTool<typeof strugglingInput> = {
         const flagged = overview.students.filter((student) =>
           student.quizzesCompleted === 0
             ? includeInactive
-            : student.avgBestScore < threshold
+            : student.avgBestScore < threshold,
         );
         return {
           classId: klass.id,
@@ -262,10 +290,13 @@ const findStrugglingStudents: AssistantTool<typeof strugglingInput> = {
             avgBestScore: student.avgBestScore,
             totalAttempts: student.totalAttempts,
             lastActivity: student.lastActivity?.toISOString() ?? null,
-            reason: student.quizzesCompleted === 0 ? "no completed quizzes" : "below threshold",
+            reason:
+              student.quizzesCompleted === 0
+                ? "no completed quizzes"
+                : "below threshold",
           })),
         };
-      })
+      }),
     );
 
     return { found: true, threshold, includeInactive, classes: perClass };

@@ -31,7 +31,9 @@ interface MaterialImportDialogProps {
   classId: string;
 }
 
-export default function MaterialImportDialog({ classId }: MaterialImportDialogProps) {
+export default function MaterialImportDialog({
+  classId,
+}: MaterialImportDialogProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -117,7 +119,8 @@ export default function MaterialImportDialog({ classId }: MaterialImportDialogPr
         <DialogHeader>
           <DialogTitle>Import Materials</DialogTitle>
           <DialogDescription>
-            Share a material from another of your classes. The same file is reused, so no re-upload is needed.
+            Share a material from another of your classes. The same file is
+            reused, so no re-upload is needed.
           </DialogDescription>
         </DialogHeader>
 
@@ -136,7 +139,9 @@ export default function MaterialImportDialog({ classId }: MaterialImportDialogPr
             <div className="space-y-5">
               {classes.map((cls) => (
                 <div key={cls.id}>
-                  <h3 className="text-sm font-semibold text-gray-700 mb-2">{cls.name}</h3>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-2">
+                    {cls.name}
+                  </h3>
                   <div className="space-y-2">
                     {cls.materials.map((mat) => (
                       <label
@@ -153,7 +158,9 @@ export default function MaterialImportDialog({ classId }: MaterialImportDialogPr
                           <p className="text-sm font-medium text-gray-900 truncate">
                             {mat.title || mat.originalName}
                           </p>
-                          <p className="text-xs text-gray-500">{mat.totalPages} Pages</p>
+                          <p className="text-xs text-gray-500">
+                            {mat.totalPages} Pages
+                          </p>
                         </div>
                       </label>
                     ))}

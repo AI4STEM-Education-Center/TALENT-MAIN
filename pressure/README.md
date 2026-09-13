@@ -29,22 +29,24 @@ Add these repository secrets under **Settings → Secrets and variables → Acti
 | `DEV_TEST_TEACHER_PASSWORD` | Dev test teacher/developer password |
 | `DEV_TEST_ADMIN_LOGIN` | Dev test admin's email or username |
 | `DEV_TEST_ADMIN_PASSWORD` | Dev test admin's password |
-| `DEV_PRESSURE_RESULTS_TOKEN` | Random token also installed on the dev container |
-| `PROD_PRESSURE_RESULTS_TOKEN` | Different random token also installed on the production container |
+| `DEV_PRESSURE_RESULTS_TOKEN` | Ingestion token generated on dev |
+| `PROD_PRESSURE_RESULTS_TOKEN` | Ingestion token generated on production |
 
-Generate the two ingestion tokens independently:
+## Ingestion tokens
 
-```bash
-openssl rand -hex 32
-openssl rand -hex 32
-```
+Each deployment mints and stores its own tokens, so nothing has to be added to
+the server's environment. Sign in as an admin on the site you want to publish
+to, open `/admin/pressure-tests`, and use **Result ingestion tokens**:
 
-On the EC2 host, add the same values to `~/app/.env`:
+1. On <https://dev.ai4talent.org/admin/pressure-tests>, generate a token
+   labelled e.g. `GitHub Actions — dev` and copy it once. Save it as the
+   `DEV_PRESSURE_RESULTS_TOKEN` GitHub secret.
+2. Repeat on <https://ai4talent.org/admin/pressure-tests> and save that value as
+   `PROD_PRESSURE_RESULTS_TOKEN`.
 
-```bash
-DEV_PRESSURE_RESULTS_TOKEN="token matching the GitHub dev secret"
-PROD_PRESSURE_RESULTS_TOKEN="token matching the GitHub prod secret"
-```
+Only the SHA-256 digest is stored, so a token is displayed exactly once; if it
+is lost, generate a replacement and revoke the old row. Revocation takes effect
+on the next request — there is no redeploy and no `~/app/.env` edit.
 
 The existing deployment secrets are still required: `EC2_HOST`, `EC2_USER`,
 and `EC2_SSH_KEY`. GitHub supplies `GITHUB_TOKEN` automatically.
@@ -94,12 +96,13 @@ Sign in as an admin and open `/admin/pressure-tests`. The page includes:
 - pass/fail and latency summary cards;
 - a p95 latency trend;
 - filters for time window, suite, scenario, status, and tested environment;
-- paginated history with commit, source, virtual-user count, and failure detail.
+- paginated history with commit, source, virtual-user count, and failure detail;
+- a **Result ingestion tokens** panel for generating and revoking credentials.
 
 The ingestion endpoint is `POST /api/pressure-results`. It is public only at the
-proxy layer and accepts a request only when its bearer token matches that
-deployment's `PRESSURE_RESULTS_TOKEN`. Browser history is separately protected
-by the normal admin session.
+proxy layer and accepts a request only when its bearer token matches a live
+token generated in that deployment's own admin UI. Browser history and token
+management are separately protected by the normal admin session.
 
 ## Full isolated EC2 pressure test
 

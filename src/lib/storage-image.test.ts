@@ -24,7 +24,7 @@ vi.mock("@aws-sdk/client-s3", () => {
 vi.mock("@aws-sdk/s3-request-presigner", () => ({
   getSignedUrl: vi.fn(
     async (_client: unknown, cmd: { input: { Key: string } }) =>
-      `https://signed.example/${cmd.input.Key}`
+      `https://signed.example/${cmd.input.Key}`,
   ),
 }));
 
@@ -44,7 +44,9 @@ describe("getS3ObjectAsDataUrl", () => {
 
     const url = await getS3ObjectAsDataUrl("bucket", "k.jpg");
 
-    expect(url).toBe(`data:image/jpeg;base64,${Buffer.from(bytes).toString("base64")}`);
+    expect(url).toBe(
+      `data:image/jpeg;base64,${Buffer.from(bytes).toString("base64")}`,
+    );
   });
 
   it("defaults the MIME type to image/png when none is stored", async () => {
@@ -59,7 +61,9 @@ describe("getS3ObjectAsDataUrl", () => {
 
   it("throws when the object has no body", async () => {
     sendMock.mockResolvedValue({});
-    await expect(getS3ObjectAsDataUrl("bucket", "missing")).rejects.toThrow(/no body/i);
+    await expect(getS3ObjectAsDataUrl("bucket", "missing")).rejects.toThrow(
+      /no body/i,
+    );
   });
 });
 
@@ -70,7 +74,9 @@ describe("resolveModelImageUrl", () => {
       ContentType: "image/png",
     });
 
-    const url = await resolveModelImageUrl("bucket", "page-1.png", { inlineBase64: true });
+    const url = await resolveModelImageUrl("bucket", "page-1.png", {
+      inlineBase64: true,
+    });
 
     expect(url.startsWith("data:image/png;base64,")).toBe(true);
     expect(sendMock).toHaveBeenCalledTimes(1); // fetched the object

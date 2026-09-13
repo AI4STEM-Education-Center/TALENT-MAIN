@@ -28,7 +28,10 @@ export function ThemeToggle({
       type="button"
       aria-label={`Switch to ${isDark ? "light" : "dark"} mode`}
       onClick={() => setTheme(isDark ? "light" : "dark")}
-      className={cn("inline-flex items-center gap-3 transition-colors", className)}
+      className={cn(
+        "inline-flex items-center gap-3 transition-colors",
+        className,
+      )}
     >
       <Icon className="size-4 shrink-0" />
       {showLabel && <span>{label}</span>}

@@ -13,9 +13,12 @@ import type { IncomingAttachment } from "./types";
 const b64 = (text: string) => Buffer.from(text, "utf8").toString("base64");
 
 /** Base64 whose decoded length is exactly `bytes`. */
-const payloadOfBytes = (bytes: number) => Buffer.alloc(bytes, 0x41).toString("base64");
+const payloadOfBytes = (bytes: number) =>
+  Buffer.alloc(bytes, 0x41).toString("base64");
 
-const limits = (overrides: Partial<AttachmentLimits> = {}): AttachmentLimits => ({
+const limits = (
+  overrides: Partial<AttachmentLimits> = {},
+): AttachmentLimits => ({
   allowedKinds: ["image", "csv"],
   maxAttachments: 2,
   maxAttachmentBytes: 1024,
@@ -53,7 +56,7 @@ describe("validateAttachments", () => {
   it("rejects a kind the admin has not enabled", () => {
     const { accepted, rejected } = validateAttachments(
       [{ name: "notes.txt", mimeType: "text/plain", dataBase64: b64("hello") }],
-      limits({ allowedKinds: ["image"] })
+      limits({ allowedKinds: ["image"] }),
     );
     expect(accepted).toEqual([]);
     expect(rejected[0].reason).toContain("not enabled");
@@ -61,16 +64,28 @@ describe("validateAttachments", () => {
 
   it("rejects an unregistered MIME type", () => {
     const { rejected } = validateAttachments(
-      [{ name: "report.pdf", mimeType: "application/pdf", dataBase64: b64("x") }],
-      limits()
+      [
+        {
+          name: "report.pdf",
+          mimeType: "application/pdf",
+          dataBase64: b64("x"),
+        },
+      ],
+      limits(),
     );
     expect(rejected[0].reason).toContain("unsupported file type");
   });
 
   it("rejects an attachment over the admin's per-file ceiling", () => {
     const { accepted, rejected } = validateAttachments(
-      [{ name: "big.png", mimeType: "image/png", dataBase64: payloadOfBytes(4096) }],
-      limits({ maxAttachmentBytes: 1024 })
+      [
+        {
+          name: "big.png",
+          mimeType: "image/png",
+          dataBase64: payloadOfBytes(4096),
+        },
+      ],
+      limits({ maxAttachmentBytes: 1024 }),
     );
     expect(accepted).toEqual([]);
     expect(rejected[0].reason).toContain("too large");
@@ -79,8 +94,14 @@ describe("validateAttachments", () => {
   it("applies the kind's own ceiling even when the admin limit is higher", () => {
     // csv caps at 2 MiB regardless of maxAttachmentBytes.
     const { rejected } = validateAttachments(
-      [{ name: "huge.csv", mimeType: "text/csv", dataBase64: payloadOfBytes(3 * 1024 * 1024) }],
-      limits({ maxAttachmentBytes: 10 * 1024 * 1024 })
+      [
+        {
+          name: "huge.csv",
+          mimeType: "text/csv",
+          dataBase64: payloadOfBytes(3 * 1024 * 1024),
+        },
+      ],
+      limits({ maxAttachmentBytes: 10 * 1024 * 1024 }),
     );
     expect(rejected[0].reason).toContain("too large");
   });
@@ -88,7 +109,7 @@ describe("validateAttachments", () => {
   it("keeps the first N attachments and rejects the overflow", () => {
     const { accepted, rejected } = validateAttachments(
       [image("a.png"), image("b.png"), image("c.png")],
-      limits({ maxAttachments: 2 })
+      limits({ maxAttachments: 2 }),
     );
     expect(accepted.map((a) => a.name)).toEqual(["a.png", "b.png"]);
     expect(rejected).toEqual([
@@ -103,7 +124,7 @@ describe("validateAttachments", () => {
         image("a.png"),
         image("b.png"),
       ],
-      limits({ maxAttachments: 2 })
+      limits({ maxAttachments: 2 }),
     );
     expect(accepted.map((a) => a.name)).toEqual(["a.png", "b.png"]);
   });
@@ -118,7 +139,10 @@ describe("buildUserContent", () => {
     const { accepted } = validateAttachments([image()], limits());
     const parts = buildUserContent("look", accepted) as ContentPart[];
     expect(parts[0]).toEqual({ type: "text", text: "look" });
-    expect(parts[1]).toEqual({ type: "text", text: 'Attached image "shot.png":' });
+    expect(parts[1]).toEqual({
+      type: "text",
+      text: 'Attached image "shot.png":',
+    });
     expect(parts[2]).toMatchObject({
       type: "image_url",
       image_url: { url: expect.stringContaining("data:image/png;base64,") },
@@ -128,13 +152,22 @@ describe("buildUserContent", () => {
   it("omits the empty text part when only files were sent", () => {
     const { accepted } = validateAttachments([image()], limits());
     const parts = buildUserContent("   ", accepted) as ContentPart[];
-    expect(parts[0]).toEqual({ type: "text", text: 'Attached image "shot.png":' });
+    expect(parts[0]).toEqual({
+      type: "text",
+      text: 'Attached image "shot.png":',
+    });
   });
 
   it("renders a CSV as a fenced text block", () => {
     const { accepted } = validateAttachments(
-      [{ name: "grades.csv", mimeType: "text/csv", dataBase64: b64("a,b\n1,2") }],
-      limits()
+      [
+        {
+          name: "grades.csv",
+          mimeType: "text/csv",
+          dataBase64: b64("a,b\n1,2"),
+        },
+      ],
+      limits(),
     );
     const parts = buildUserContent("check", accepted) as ContentPart[];
     expect(parts[1]).toEqual({
@@ -147,7 +180,7 @@ describe("buildUserContent", () => {
     const long = "x".repeat(MAX_TEXT_ATTACHMENT_CHARS + 500);
     const { accepted } = validateAttachments(
       [{ name: "long.csv", mimeType: "text/csv", dataBase64: b64(long) }],
-      limits({ maxAttachmentBytes: 1024 * 1024 })
+      limits({ maxAttachmentBytes: 1024 * 1024 }),
     );
     const parts = buildUserContent("", accepted) as ContentPart[];
     const rendered = (parts[0] as { text: string }).text;

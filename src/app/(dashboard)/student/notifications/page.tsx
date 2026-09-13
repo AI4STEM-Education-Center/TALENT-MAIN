@@ -50,7 +50,13 @@ export default function StudentNotificationsPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
     }).catch(() => {});
-    setItems((prev) => prev.map((n) => (n.id === id && !n.readAt ? { ...n, readAt: new Date().toISOString() } : n)));
+    setItems((prev) =>
+      prev.map((n) =>
+        n.id === id && !n.readAt
+          ? { ...n, readAt: new Date().toISOString() }
+          : n,
+      ),
+    );
     window.dispatchEvent(new Event("notifications:updated"));
   }, []);
 
@@ -59,7 +65,9 @@ export default function StudentNotificationsPage() {
   // Read from location rather than useSearchParams so the page needs no
   // Suspense boundary; the param is dropped afterwards so a refresh is clean.
   useEffect(() => {
-    const linkedMessageId = new URLSearchParams(window.location.search).get("message");
+    const linkedMessageId = new URLSearchParams(window.location.search).get(
+      "message",
+    );
     if (!linkedMessageId || items.length === 0) return;
 
     const linked = items.find((n) => n.messageId === linkedMessageId);
@@ -109,7 +117,9 @@ export default function StudentNotificationsPage() {
               </span>
             )}
           </h1>
-          <p className="text-muted-foreground text-sm mt-1">Messages from your teachers.</p>
+          <p className="text-muted-foreground text-sm mt-1">
+            Messages from your teachers.
+          </p>
         </div>
         {unreadCount > 0 && (
           <Button variant="outline" size="sm" onClick={markAllRead}>
@@ -141,25 +151,39 @@ export default function StudentNotificationsPage() {
                   onClick={() => toggle(n)}
                   className={cn(
                     "w-full text-left px-4 py-3 flex gap-3 transition-colors hover:bg-muted/40",
-                    unread && "bg-primary/5"
+                    unread && "bg-primary/5",
                   )}
                 >
                   <span className="mt-0.5 shrink-0 text-muted-foreground">
-                    {unread ? <Mail className="size-4 text-primary" /> : <MailOpen className="size-4" />}
+                    {unread ? (
+                      <Mail className="size-4 text-primary" />
+                    ) : (
+                      <MailOpen className="size-4" />
+                    )}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-2 flex-wrap">
-                      <span className={cn("text-sm", unread ? "font-semibold" : "font-medium")}>{n.subject}</span>
-                      {unread && <span className="size-2 rounded-full bg-primary shrink-0" />}
+                      <span
+                        className={cn(
+                          "text-sm",
+                          unread ? "font-semibold" : "font-medium",
+                        )}
+                      >
+                        {n.subject}
+                      </span>
+                      {unread && (
+                        <span className="size-2 rounded-full bg-primary shrink-0" />
+                      )}
                     </span>
                     <span className="block text-xs text-muted-foreground mt-0.5">
                       {n.senderName}
-                      {n.className ? ` · ${n.className}` : ""} · {new Date(n.createdAt).toLocaleString()}
+                      {n.className ? ` · ${n.className}` : ""} ·{" "}
+                      {new Date(n.createdAt).toLocaleString()}
                     </span>
                     <span
                       className={cn(
                         "block text-sm text-muted-foreground mt-1 whitespace-pre-wrap",
-                        !expanded && "line-clamp-1"
+                        !expanded && "line-clamp-1",
                       )}
                     >
                       {n.body}

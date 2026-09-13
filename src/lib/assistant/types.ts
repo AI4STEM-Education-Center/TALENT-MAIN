@@ -8,8 +8,13 @@ import type { z } from "zod";
 export const ASSISTANT_AUDIENCES = ["student", "teacher"] as const;
 export type AssistantAudience = (typeof ASSISTANT_AUDIENCES)[number];
 
-export function isAssistantAudience(value: unknown): value is AssistantAudience {
-  return typeof value === "string" && (ASSISTANT_AUDIENCES as readonly string[]).includes(value);
+export function isAssistantAudience(
+  value: unknown,
+): value is AssistantAudience {
+  return (
+    typeof value === "string" &&
+    (ASSISTANT_AUDIENCES as readonly string[]).includes(value)
+  );
 }
 
 /** The AI use case each audience resolves its provider/model through. */
@@ -29,7 +34,10 @@ export const ATTACHMENT_KINDS = ["image", "text", "csv"] as const;
 export type AttachmentKind = (typeof ATTACHMENT_KINDS)[number];
 
 export function isAttachmentKind(value: unknown): value is AttachmentKind {
-  return typeof value === "string" && (ATTACHMENT_KINDS as readonly string[]).includes(value);
+  return (
+    typeof value === "string" &&
+    (ATTACHMENT_KINDS as readonly string[]).includes(value)
+  );
 }
 
 /** One file the user attached to a turn, as it arrives over the wire. */
@@ -76,7 +84,7 @@ export type AssistantTool<TSchema extends z.ZodType = z.ZodType> = {
   activityLabel: string;
   handler: (
     args: z.output<TSchema>,
-    ctx: AssistantToolContext
+    ctx: AssistantToolContext,
   ) => Promise<unknown>;
 };
 
@@ -99,7 +107,12 @@ export type AssistantSkill = {
 // ─── Wire protocol (NDJSON, one JSON object per line) ────────────────────────
 
 export type AssistantStreamEvent =
-  | { type: "tool"; name: string; label: string; status: "running" | "done" | "error" }
+  | {
+      type: "tool";
+      name: string;
+      label: string;
+      status: "running" | "done" | "error";
+    }
   | { type: "delta"; text: string }
   /**
    * Emitted once, before the model runs, for the attachments on this turn that

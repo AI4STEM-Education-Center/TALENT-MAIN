@@ -66,9 +66,9 @@ export function PoolSubmissionDialog({
           submission.contentType === contentType &&
           (contentType === "QUIZ"
             ? submission.quizId === contentId
-            : submission.materialId === contentId)
+            : submission.materialId === contentId),
       ),
-    [submissions, contentId, contentType]
+    [submissions, contentId, contentType],
   );
 
   async function loadOptions() {
@@ -76,15 +76,23 @@ export function PoolSubmissionDialog({
     setError(null);
     setMessage(null);
     try {
-      const response = await fetch("/api/pool-submissions", { cache: "no-store" });
+      const response = await fetch("/api/pool-submissions", {
+        cache: "no-store",
+      });
       if (!response.ok) throw new Error("Could not load reviewers.");
       const data = await response.json();
       setAdmins(data.admins ?? []);
-      setTopics((data.topics ?? []).filter((topic: TopicOption) => topic.contentType === contentType));
+      setTopics(
+        (data.topics ?? []).filter(
+          (topic: TopicOption) => topic.contentType === contentType,
+        ),
+      );
       setSubmissions(data.submissions ?? []);
       setReviewerId((current) => current || data.admins?.[0]?.id || "");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not load reviewers.");
+      setError(
+        cause instanceof Error ? cause.message : "Could not load reviewers.",
+      );
     } finally {
       setLoading(false);
     }
@@ -104,18 +112,26 @@ export function PoolSubmissionDialog({
       const response = await fetch("/api/pool-submissions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contentType, contentId, reviewerId, topicId: topicId || null }),
+        body: JSON.stringify({
+          contentType,
+          contentId,
+          reviewerId,
+          topicId: topicId || null,
+        }),
       });
       if (!response.ok) throw new Error("Could not submit the request.");
       const data = await response.json();
-      const successMessage =
-        data.emailWarning
-          ? `Request saved, but the email could not be delivered: ${data.emailWarning}`
-          : "Approval request sent to the selected administrator.";
+      const successMessage = data.emailWarning
+        ? `Request saved, but the email could not be delivered: ${data.emailWarning}`
+        : "Approval request sent to the selected administrator.";
       await loadOptions();
       setMessage(successMessage);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not submit the request.");
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Could not submit the request.",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -132,7 +148,8 @@ export function PoolSubmissionDialog({
         <DialogHeader>
           <DialogTitle>Submit to the global pool</DialogTitle>
           <DialogDescription>
-            Choose an administrator to review “{contentName}”. They will receive an email with a direct review link.
+            Choose an administrator to review “{contentName}”. They will receive
+            an email with a direct review link.
           </DialogDescription>
         </DialogHeader>
 
@@ -144,8 +161,16 @@ export function PoolSubmissionDialog({
           <div className="space-y-4">
             {latest && (
               <div className="rounded-md border bg-muted/40 p-3 text-sm">
-                Latest request: <span className="font-medium">{latest.status.toLowerCase()}</span> by {latest.reviewer.firstName} {latest.reviewer.lastName}.
-                {latest.decisionNote && <p className="mt-1 text-muted-foreground">{latest.decisionNote}</p>}
+                Latest request:{" "}
+                <span className="font-medium">
+                  {latest.status.toLowerCase()}
+                </span>{" "}
+                by {latest.reviewer.firstName} {latest.reviewer.lastName}.
+                {latest.decisionNote && (
+                  <p className="mt-1 text-muted-foreground">
+                    {latest.decisionNote}
+                  </p>
+                )}
               </div>
             )}
             <label className="block space-y-1.5 text-sm font-medium">
@@ -155,7 +180,9 @@ export function PoolSubmissionDialog({
                 value={reviewerId}
                 onChange={(event) => setReviewerId(event.target.value)}
               >
-                {admins.length === 0 && <option value="">No administrators available</option>}
+                {admins.length === 0 && (
+                  <option value="">No administrators available</option>
+                )}
                 {admins.map((admin) => (
                   <option key={admin.id} value={admin.id}>
                     {admin.firstName} {admin.lastName} — {admin.email}
@@ -170,9 +197,13 @@ export function PoolSubmissionDialog({
                 value={topicId}
                 onChange={(event) => setTopicId(event.target.value)}
               >
-                <option value="">Match the item’s current topic (or no topic)</option>
+                <option value="">
+                  Match the item’s current topic (or no topic)
+                </option>
                 {topics.map((topic) => (
-                  <option key={topic.id} value={topic.id}>{topic.name}</option>
+                  <option key={topic.id} value={topic.id}>
+                    {topic.name}
+                  </option>
                 ))}
               </select>
             </label>
@@ -184,10 +215,17 @@ export function PoolSubmissionDialog({
         <DialogFooter>
           <Button
             onClick={submit}
-            disabled={loading || submitting || !reviewerId || latest?.status === "PENDING"}
+            disabled={
+              loading ||
+              submitting ||
+              !reviewerId ||
+              latest?.status === "PENDING"
+            }
           >
             {submitting && <Loader2 className="size-4 animate-spin" />}
-            {latest?.status === "PENDING" ? "Awaiting review" : "Send approval request"}
+            {latest?.status === "PENDING"
+              ? "Awaiting review"
+              : "Send approval request"}
           </Button>
         </DialogFooter>
       </DialogContent>

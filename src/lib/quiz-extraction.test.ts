@@ -63,7 +63,9 @@ function rawQuestion(overrides: Partial<RawQuestion> = {}): RawQuestion {
 }
 
 /** A valid full-answer-key payload mirroring the real sample quiz: MC + TF + numeric. */
-function rawQuizPayload(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
+function rawQuizPayload(
+  overrides: Partial<Record<string, unknown>> = {},
+): Record<string, unknown> {
   return {
     has_answer_key: true,
     quiz_title: "Physics Quiz 3",
@@ -72,7 +74,11 @@ function rawQuizPayload(overrides: Partial<Record<string, unknown>> = {}): Recor
         number: 1,
         type: "multiple_choice",
         text: "Which expresses static friction? $f_s = \\mu_s N$",
-        options: [rawOption("$\\mu_s N$", true), rawOption("$\\mu_k N$", false), rawOption("$N$", false)],
+        options: [
+          rawOption("$\\mu_s N$", true),
+          rawOption("$\\mu_k N$", false),
+          rawOption("$N$", false),
+        ],
       }),
       rawQuestion({
         number: 2,
@@ -106,7 +112,9 @@ describe("validateExtractedQuiz", () => {
 
     const [mc, tf, numeric] = quiz.questions;
     expect(mc.type).toBe("MULTIPLE_CHOICE");
-    expect(mc.options.filter((o) => o.isCorrect === true).map((o) => o.text)).toEqual(["$\\mu_s N$"]);
+    expect(
+      mc.options.filter((o) => o.isCorrect === true).map((o) => o.text),
+    ).toEqual(["$\\mu_s N$"]);
     expect(tf.type).toBe("TRUE_FALSE");
     expect(numeric.type).toBe("NUMERIC");
     expect(numeric.numericAnswer).toBe(3.21);
@@ -121,12 +129,19 @@ describe("validateExtractedQuiz", () => {
       has_answer_key: false,
       questions: [
         rawQuestion({ options: [rawOption("3", null), rawOption("4", null)] }),
-        rawQuestion({ type: "numeric", options: [], numeric_answer: null, numeric_answer_text: null }),
+        rawQuestion({
+          type: "numeric",
+          options: [],
+          numeric_answer: null,
+          numeric_answer_text: null,
+        }),
       ],
     });
     const quiz = validateExtractedQuiz(payload);
     expect(quiz.hasAnswerKey).toBe(false);
-    expect(quiz.questions[0].options.every((o) => o.isCorrect === null)).toBe(true);
+    expect(quiz.questions[0].options.every((o) => o.isCorrect === null)).toBe(
+      true,
+    );
     expect(quiz.questions[1].numericAnswer).toBeNull();
   });
 
@@ -136,26 +151,39 @@ describe("validateExtractedQuiz", () => {
   });
 
   it("rejects questions that is not an array", () => {
-    expect(() => validateExtractedQuiz({ has_answer_key: true, quiz_title: null, questions: {} })).toThrow(
-      /questions must be an array/i
-    );
+    expect(() =>
+      validateExtractedQuiz({
+        has_answer_key: true,
+        quiz_title: null,
+        questions: {},
+      }),
+    ).toThrow(/questions must be an array/i);
   });
 
   it("rejects an unexpected type enum with the index in the message", () => {
     const payload = rawQuizPayload({
       questions: [rawQuestion(), rawQuestion(), rawQuestion({ type: "essay" })],
     });
-    expect(() => validateExtractedQuiz(payload)).toThrow(/questions\[2\]\.type: unexpected value "essay"/);
+    expect(() => validateExtractedQuiz(payload)).toThrow(
+      /questions\[2\]\.type: unexpected value "essay"/,
+    );
   });
 
   it("rejects a non-numeric confidence", () => {
-    const payload = rawQuizPayload({ questions: [rawQuestion({ confidence: "high" })] });
-    expect(() => validateExtractedQuiz(payload)).toThrow(/confidence: must be a number/i);
+    const payload = rawQuizPayload({
+      questions: [rawQuestion({ confidence: "high" })],
+    });
+    expect(() => validateExtractedQuiz(payload)).toThrow(
+      /confidence: must be a number/i,
+    );
   });
 
   it("clamps confidence into [0,1]", () => {
     const payload = rawQuizPayload({
-      questions: [rawQuestion({ confidence: 1.7 }), rawQuestion({ confidence: -0.3 })],
+      questions: [
+        rawQuestion({ confidence: 1.7 }),
+        rawQuestion({ confidence: -0.3 }),
+      ],
     });
     const quiz = validateExtractedQuiz(payload);
     expect(quiz.questions[0].confidence).toBe(1);
@@ -163,14 +191,20 @@ describe("validateExtractedQuiz", () => {
   });
 
   it("rounds points to an integer", () => {
-    const quiz = validateExtractedQuiz(rawQuizPayload({ questions: [rawQuestion({ points: 2.4 })] }));
+    const quiz = validateExtractedQuiz(
+      rawQuizPayload({ questions: [rawQuestion({ points: 2.4 })] }),
+    );
     expect(quiz.questions[0].points).toBe(2);
   });
 
   it("nulls a malformed figure_bbox instead of throwing", () => {
     const payload = rawQuizPayload({
       questions: [
-        rawQuestion({ has_figure: true, figure_page: 1, figure_bbox: { x: 0.1, y: 0.1, w: "wide", h: 0.5 } }),
+        rawQuestion({
+          has_figure: true,
+          figure_page: 1,
+          figure_bbox: { x: 0.1, y: 0.1, w: "wide", h: 0.5 },
+        }),
       ],
     });
     const quiz = validateExtractedQuiz(payload);
@@ -180,7 +214,13 @@ describe("validateExtractedQuiz", () => {
 
   it("clamps a valid figure_bbox into page coordinates", () => {
     const payload = rawQuizPayload({
-      questions: [rawQuestion({ has_figure: true, figure_page: 2, figure_bbox: { x: -0.2, y: 1.5, w: 2, h: 0.4 } })],
+      questions: [
+        rawQuestion({
+          has_figure: true,
+          figure_page: 2,
+          figure_bbox: { x: -0.2, y: 1.5, w: 2, h: 0.4 },
+        }),
+      ],
     });
     const quiz = validateExtractedQuiz(payload);
     expect(quiz.questions[0].figureBbox).toEqual({ x: 0, y: 1, w: 1, h: 0.4 });
@@ -192,7 +232,9 @@ describe("validateExtractedQuiz", () => {
 describe("normalizeExtractedQuiz", () => {
   it("drops a question with empty text and warns", () => {
     const quiz = validateExtractedQuiz(
-      rawQuizPayload({ questions: [rawQuestion({ text: "   " }), rawQuestion()] })
+      rawQuizPayload({
+        questions: [rawQuestion({ text: "   " }), rawQuestion()],
+      }),
     );
     const result = normalizeExtractedQuiz(quiz);
     expect(result.questions).toHaveLength(1);
@@ -203,28 +245,44 @@ describe("normalizeExtractedQuiz", () => {
     const quiz = validateExtractedQuiz(
       rawQuizPayload({
         questions: [
-          rawQuestion({ options: [rawOption("3", false), rawOption("4", true), rawOption("◄▬►", false)] }),
+          rawQuestion({
+            options: [
+              rawOption("3", false),
+              rawOption("4", true),
+              rawOption("◄▬►", false),
+            ],
+          }),
         ],
-      })
+      }),
     );
     const result = normalizeExtractedQuiz(quiz);
     expect(result.questions[0].options.map((o) => o.text)).toEqual(["3", "4"]);
-    expect(result.warnings.some((w) => /stripped 1 artifact option/.test(w))).toBe(true);
+    expect(
+      result.warnings.some((w) => /stripped 1 artifact option/.test(w)),
+    ).toBe(true);
   });
 
   it("dedupes identical options, preferring the correct copy", () => {
     const quiz = validateExtractedQuiz(
       rawQuizPayload({
         questions: [
-          rawQuestion({ options: [rawOption("4", false), rawOption("4", true), rawOption("5", false)] }),
+          rawQuestion({
+            options: [
+              rawOption("4", false),
+              rawOption("4", true),
+              rawOption("5", false),
+            ],
+          }),
         ],
-      })
+      }),
     );
     const result = normalizeExtractedQuiz(quiz);
     const q = result.questions[0];
     expect(q.options.map((o) => o.text)).toEqual(["4", "5"]);
     expect(q.options[0].isCorrect).toBe(true);
-    expect(result.warnings.some((w) => /removed duplicate option/.test(w))).toBe(true);
+    expect(
+      result.warnings.some((w) => /removed duplicate option/.test(w)),
+    ).toBe(true);
   });
 
   it("converts a MULTIPLE_CHOICE with two marked-correct into MULTI_SELECT", () => {
@@ -233,10 +291,14 @@ describe("normalizeExtractedQuiz", () => {
         questions: [
           rawQuestion({
             type: "multiple_choice",
-            options: [rawOption("a", true), rawOption("b", true), rawOption("c", false)],
+            options: [
+              rawOption("a", true),
+              rawOption("b", true),
+              rawOption("c", false),
+            ],
           }),
         ],
-      })
+      }),
     );
     const result = normalizeExtractedQuiz(quiz);
     expect(result.questions[0].type).toBe("MULTI_SELECT");
@@ -253,7 +315,7 @@ describe("normalizeExtractedQuiz", () => {
             options: [rawOption("true", true), rawOption("FALSE", false)],
           }),
         ],
-      })
+      }),
     );
     const result = normalizeExtractedQuiz(quiz);
     expect(result.questions[0].options).toEqual([
@@ -266,12 +328,17 @@ describe("normalizeExtractedQuiz", () => {
     const quiz = validateExtractedQuiz(
       rawQuizPayload({
         questions: [
-          rawQuestion({ type: "true_false", options: [rawOption("True", true), rawOption("False", true)] }),
+          rawQuestion({
+            type: "true_false",
+            options: [rawOption("True", true), rawOption("False", true)],
+          }),
         ],
-      })
+      }),
     );
     const result = normalizeExtractedQuiz(quiz);
-    expect(result.questions[0].options.every((o) => o.isCorrect === null)).toBe(true);
+    expect(result.questions[0].options.every((o) => o.isCorrect === null)).toBe(
+      true,
+    );
     expect(result.questions[0].needsReview).toBe(true);
   });
 
@@ -287,7 +354,7 @@ describe("normalizeExtractedQuiz", () => {
             numeric_unit: "m/s",
           }),
         ],
-      })
+      }),
     );
     const result = normalizeExtractedQuiz(quiz);
     expect(result.questions[0].numericAnswer).toBe(3.21);
@@ -305,20 +372,26 @@ describe("normalizeExtractedQuiz", () => {
             numeric_answer_text: "3.21",
           }),
         ],
-      })
+      }),
     );
     const result = normalizeExtractedQuiz(quiz);
     expect(result.questions[0].options).toEqual([]);
-    expect(result.warnings.some((w) => /numeric question had options/.test(w))).toBe(true);
+    expect(
+      result.warnings.some((w) => /numeric question had options/.test(w)),
+    ).toBe(true);
   });
 
   it("forces needsReview on a figure question", () => {
     const quiz = validateExtractedQuiz(
       rawQuizPayload({
         questions: [
-          rawQuestion({ has_figure: true, figure_page: 1, figure_bbox: { x: 0.1, y: 0.1, w: 0.5, h: 0.5 } }),
+          rawQuestion({
+            has_figure: true,
+            figure_page: 1,
+            figure_bbox: { x: 0.1, y: 0.1, w: 0.5, h: 0.5 },
+          }),
         ],
-      })
+      }),
     );
     const result = normalizeExtractedQuiz(quiz);
     expect(result.questions[0].needsReview).toBe(true);
@@ -328,8 +401,12 @@ describe("normalizeExtractedQuiz", () => {
   it("flags an unmarked choice question for review when an answer key is present", () => {
     const quiz = validateExtractedQuiz(
       rawQuizPayload({
-        questions: [rawQuestion({ options: [rawOption("a", false), rawOption("b", false)] })],
-      })
+        questions: [
+          rawQuestion({
+            options: [rawOption("a", false), rawOption("b", false)],
+          }),
+        ],
+      }),
     );
     const result = normalizeExtractedQuiz(quiz);
     expect(result.questions[0].needsReview).toBe(true);
@@ -341,7 +418,9 @@ describe("normalizeExtractedQuiz", () => {
       rawQuizPayload({
         has_answer_key: false,
         questions: [
-          rawQuestion({ options: [rawOption("a", true), rawOption("b", false)] }),
+          rawQuestion({
+            options: [rawOption("a", true), rawOption("b", false)],
+          }),
           rawQuestion({
             type: "numeric",
             options: [],
@@ -349,22 +428,32 @@ describe("normalizeExtractedQuiz", () => {
             numeric_answer_text: "5",
           }),
         ],
-      })
+      }),
     );
     const result = normalizeExtractedQuiz(quiz);
-    expect(result.questions[0].options.every((o) => o.isCorrect === null)).toBe(true);
+    expect(result.questions[0].options.every((o) => o.isCorrect === null)).toBe(
+      true,
+    );
     expect(result.questions[1].numericAnswer).toBeNull();
     expect(result.questions.every((q) => q.needsReview)).toBe(true);
-    expect(result.questions.every((q) => /no answer key/i.test(q.reviewNote ?? ""))).toBe(true);
+    expect(
+      result.questions.every((q) => /no answer key/i.test(q.reviewNote ?? "")),
+    ).toBe(true);
   });
 
   it("does not mutate a deep-frozen input", () => {
     const quiz = validateExtractedQuiz(
       rawQuizPayload({
         questions: [
-          rawQuestion({ options: [rawOption("3", false), rawOption("4", true), rawOption("◄▬►", false)] }),
+          rawQuestion({
+            options: [
+              rawOption("3", false),
+              rawOption("4", true),
+              rawOption("◄▬►", false),
+            ],
+          }),
         ],
-      })
+      }),
     );
     const deepFreeze = (obj: unknown): void => {
       if (obj && typeof obj === "object") {
@@ -381,7 +470,9 @@ describe("normalizeExtractedQuiz", () => {
 
 // ─── validateCommitQuestions ────────────────────────────────────────────────────
 
-function commitQuestion(overrides: Partial<StagedQuestion> = {}): Record<string, unknown> {
+function commitQuestion(
+  overrides: Partial<StagedQuestion> = {},
+): Record<string, unknown> {
   return {
     type: "MULTIPLE_CHOICE",
     text: "What is $2 + 2$?",
@@ -425,7 +516,12 @@ describe("validateCommitQuestions", () => {
           { text: "c", isCorrect: false },
         ],
       }),
-      commitQuestion({ type: "NUMERIC", options: [], numericAnswer: 3.21, numericUnit: "m/s" }),
+      commitQuestion({
+        type: "NUMERIC",
+        options: [],
+        numericAnswer: 3.21,
+        numericUnit: "m/s",
+      }),
       commitQuestion({
         hasFigure: true,
         figureStorageKey: "uploads/fig-1.png",
@@ -443,40 +539,67 @@ describe("validateCommitQuestions", () => {
 
   it("rejects a null isCorrect with the index", () => {
     expect(() =>
-      validateCommitQuestions([commitQuestion({ options: [{ text: "a", isCorrect: null }, { text: "b", isCorrect: true }] as never })])
+      validateCommitQuestions([
+        commitQuestion({
+          options: [
+            { text: "a", isCorrect: null },
+            { text: "b", isCorrect: true },
+          ] as never,
+        }),
+      ]),
     ).toThrow(/question 1: every option must have isCorrect set/i);
   });
 
   it("rejects a multiple-choice with zero correct", () => {
     expect(() =>
       validateCommitQuestions([
-        commitQuestion({ options: [{ text: "a", isCorrect: false }, { text: "b", isCorrect: false }] as never }),
-      ])
-    ).toThrow(/question 1: MULTIPLE_CHOICE question must have exactly one correct option/i);
+        commitQuestion({
+          options: [
+            { text: "a", isCorrect: false },
+            { text: "b", isCorrect: false },
+          ] as never,
+        }),
+      ]),
+    ).toThrow(
+      /question 1: MULTIPLE_CHOICE question must have exactly one correct option/i,
+    );
   });
 
   it("rejects a single-option multiple-choice", () => {
     expect(() =>
-      validateCommitQuestions([commitQuestion({ options: [{ text: "only", isCorrect: true }] as never })])
-    ).toThrow(/question 1: MULTIPLE_CHOICE question must have at least 2 options/i);
+      validateCommitQuestions([
+        commitQuestion({
+          options: [{ text: "only", isCorrect: true }] as never,
+        }),
+      ]),
+    ).toThrow(
+      /question 1: MULTIPLE_CHOICE question must have at least 2 options/i,
+    );
   });
 
   it("rejects a NUMERIC question without a numericAnswer", () => {
     expect(() =>
-      validateCommitQuestions([commitQuestion({ type: "NUMERIC", options: [], numericAnswer: null })])
+      validateCommitQuestions([
+        commitQuestion({ type: "NUMERIC", options: [], numericAnswer: null }),
+      ]),
     ).toThrow(/question 1: NUMERIC question requires a numericAnswer/i);
   });
 
   it("rejects hasFigure without a figureStorageKey", () => {
     expect(() =>
-      validateCommitQuestions([commitQuestion({ hasFigure: true, figureStorageKey: null })])
+      validateCommitQuestions([
+        commitQuestion({ hasFigure: true, figureStorageKey: null }),
+      ]),
     ).toThrow(/question 1: hasFigure is true but figureStorageKey is missing/i);
   });
 
   it("rejects empty text with the index", () => {
-    expect(() => validateCommitQuestions([commitQuestion(), commitQuestion({ text: "   " })])).toThrow(
-      /question 2: text is required/i
-    );
+    expect(() =>
+      validateCommitQuestions([
+        commitQuestion(),
+        commitQuestion({ text: "   " }),
+      ]),
+    ).toThrow(/question 2: text is required/i);
   });
 });
 
@@ -564,8 +687,18 @@ describe("optionLetter / letterToOptionIndex", () => {
 describe("summarizeQuestionsForAnswerKey", () => {
   it("enumerates each question with lettered options and marks numeric questions", () => {
     const summary = summarizeQuestionsForAnswerKey([
-      staged({ text: "Marital status", options: [{ text: "Nominal", isCorrect: null }, { text: "Ordinal", isCorrect: null }] }),
-      staged({ type: "NUMERIC", text: "Family income in dollars", options: [] }),
+      staged({
+        text: "Marital status",
+        options: [
+          { text: "Nominal", isCorrect: null },
+          { text: "Ordinal", isCorrect: null },
+        ],
+      }),
+      staged({
+        type: "NUMERIC",
+        text: "Family income in dollars",
+        options: [],
+      }),
     ]);
     expect(summary).toContain("[0] Marital status");
     expect(summary).toContain("A. Nominal");
@@ -576,7 +709,17 @@ describe("summarizeQuestionsForAnswerKey", () => {
 
   it("renders an image option as [image: alt]", () => {
     const summary = summarizeQuestionsForAnswerKey([
-      staged({ options: [{ text: "", isCorrect: null, isImage: true, imageAlt: "rising graph" }, { text: "plain", isCorrect: null }] }),
+      staged({
+        options: [
+          {
+            text: "",
+            isCorrect: null,
+            isImage: true,
+            imageAlt: "rising graph",
+          },
+          { text: "plain", isCorrect: null },
+        ],
+      }),
     ]);
     expect(summary).toContain("A. [image: rising graph]");
     expect(summary).toContain("B. plain");
@@ -587,7 +730,13 @@ describe("summarizeQuestionsForAnswerKey", () => {
 
 describe("buildAnswerKeyPrompt", () => {
   const questions = [
-    staged({ text: "Marital status", options: [{ text: "Nominal", isCorrect: null }, { text: "Ordinal", isCorrect: null }] }),
+    staged({
+      text: "Marital status",
+      options: [
+        { text: "Nominal", isCorrect: null },
+        { text: "Ordinal", isCorrect: null },
+      ],
+    }),
   ];
   const prompt = buildAnswerKeyPrompt(2, questions);
 
@@ -616,7 +765,9 @@ describe("buildAnswerKeyPrompt", () => {
   });
 
   it("is deterministic for the same inputs", () => {
-    expect(buildAnswerKeyPrompt(2, questions)).toBe(buildAnswerKeyPrompt(2, questions));
+    expect(buildAnswerKeyPrompt(2, questions)).toBe(
+      buildAnswerKeyPrompt(2, questions),
+    );
   });
 });
 
@@ -626,14 +777,19 @@ describe("QUIZ_ANSWER_KEY_SCHEMA", () => {
   it("is a strict json_schema payload named quiz_answer_key", () => {
     expect(QUIZ_ANSWER_KEY_SCHEMA.name).toBe("quiz_answer_key");
     expect(QUIZ_ANSWER_KEY_SCHEMA.strict).toBe(true);
-    expect(QUIZ_ANSWER_KEY_SCHEMA.schema.required).toEqual(["has_answer_key", "answers"]);
+    expect(QUIZ_ANSWER_KEY_SCHEMA.schema.required).toEqual([
+      "has_answer_key",
+      "answers",
+    ]);
     expect(QUIZ_ANSWER_KEY_SCHEMA.schema.additionalProperties).toBe(false);
   });
 });
 
 // ─── validateAnswerKeyResult ─────────────────────────────────────────────────────
 
-function rawAnswer(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+function rawAnswer(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
   return {
     question_index: 0,
     correct_labels: ["A"],
@@ -650,7 +806,15 @@ describe("validateAnswerKeyResult", () => {
   it("validates a well-formed payload", () => {
     const result = validateAnswerKeyResult({
       has_answer_key: true,
-      answers: [rawAnswer(), rawAnswer({ question_index: 1, correct_labels: [], numeric_answer: 3.21, source: "key_block" })],
+      answers: [
+        rawAnswer(),
+        rawAnswer({
+          question_index: 1,
+          correct_labels: [],
+          numeric_answer: 3.21,
+          source: "key_block",
+        }),
+      ],
     });
     expect(result.hasAnswerKey).toBe(true);
     expect(result.answers[0].correctLabels).toEqual(["A"]);
@@ -660,20 +824,33 @@ describe("validateAnswerKeyResult", () => {
 
   it("rejects a non-object payload / bad has_answer_key / non-array answers", () => {
     expect(() => validateAnswerKeyResult(null)).toThrow(/must be an object/i);
-    expect(() => validateAnswerKeyResult({ has_answer_key: "yes", answers: [] })).toThrow(/has_answer_key/i);
-    expect(() => validateAnswerKeyResult({ has_answer_key: true, answers: {} })).toThrow(/answers must be an array/i);
+    expect(() =>
+      validateAnswerKeyResult({ has_answer_key: "yes", answers: [] }),
+    ).toThrow(/has_answer_key/i);
+    expect(() =>
+      validateAnswerKeyResult({ has_answer_key: true, answers: {} }),
+    ).toThrow(/answers must be an array/i);
   });
 
   it("rejects a negative / non-integer question_index", () => {
     expect(() =>
-      validateAnswerKeyResult({ has_answer_key: true, answers: [rawAnswer({ question_index: -1 })] })
+      validateAnswerKeyResult({
+        has_answer_key: true,
+        answers: [rawAnswer({ question_index: -1 })],
+      }),
     ).toThrow(/question_index/i);
   });
 
   it("degrades an unknown source to none, clamps confidence, and drops empty labels", () => {
     const result = validateAnswerKeyResult({
       has_answer_key: true,
-      answers: [rawAnswer({ source: "guessed", confidence: 5, correct_labels: ["A", "", "  ", "C"] })],
+      answers: [
+        rawAnswer({
+          source: "guessed",
+          confidence: 5,
+          correct_labels: ["A", "", "  ", "C"],
+        }),
+      ],
     });
     expect(result.answers[0].source).toBe("none");
     expect(result.answers[0].confidence).toBe(1);
@@ -683,11 +860,17 @@ describe("validateAnswerKeyResult", () => {
 
 // ─── applyAnswerKey ──────────────────────────────────────────────────────────────
 
-function quizFrom(questions: StagedQuestion[], hasAnswerKey = false): ExtractedQuiz {
+function quizFrom(
+  questions: StagedQuestion[],
+  hasAnswerKey = false,
+): ExtractedQuiz {
   return { hasAnswerKey, quizTitle: null, questions, warnings: [] };
 }
 
-function answerKey(answers: AnswerKeyResult["answers"], hasAnswerKey = true): AnswerKeyResult {
+function answerKey(
+  answers: AnswerKeyResult["answers"],
+  hasAnswerKey = true,
+): AnswerKeyResult {
   return { hasAnswerKey, answers };
 }
 
@@ -700,61 +883,183 @@ describe("applyAnswerKey", () => {
   ];
 
   it("maps a correct letter onto the option position", () => {
-    const quiz = quizFrom([staged({ text: "Marital status", options: abcd() })]);
-    const applied = applyAnswerKey(quiz, answerKey([{ questionIndex: 0, correctLabels: ["A"], numericAnswer: null, source: "inline", confidence: 1, conflict: false, note: null }]));
+    const quiz = quizFrom([
+      staged({ text: "Marital status", options: abcd() }),
+    ]);
+    const applied = applyAnswerKey(
+      quiz,
+      answerKey([
+        {
+          questionIndex: 0,
+          correctLabels: ["A"],
+          numericAnswer: null,
+          source: "inline",
+          confidence: 1,
+          conflict: false,
+          note: null,
+        },
+      ]),
+    );
     expect(applied.hasAnswerKey).toBe(true);
-    expect(applied.questions[0].options.map((o) => o.isCorrect)).toEqual([true, false, false, false]);
+    expect(applied.questions[0].options.map((o) => o.isCorrect)).toEqual([
+      true,
+      false,
+      false,
+      false,
+    ]);
   });
 
   it("handles a whole shared-bank quiz (the Week 5 keys A B C B D…)", () => {
-    const stems = ["Marital status", "Achievement rank", "Raw score", "Educational level", "Years of education"];
+    const stems = [
+      "Marital status",
+      "Achievement rank",
+      "Raw score",
+      "Educational level",
+      "Years of education",
+    ];
     const letters = ["A", "B", "C", "B", "D"];
-    const quiz = quizFrom(stems.map((text) => staged({ text, options: abcd() })));
+    const quiz = quizFrom(
+      stems.map((text) => staged({ text, options: abcd() })),
+    );
     const applied = applyAnswerKey(
       quiz,
       answerKey(
-        letters.map((l, i) => ({ questionIndex: i, correctLabels: [l], numericAnswer: null, source: "mixed" as const, confidence: 1, conflict: false, note: null }))
-      )
+        letters.map((l, i) => ({
+          questionIndex: i,
+          correctLabels: [l],
+          numericAnswer: null,
+          source: "mixed" as const,
+          confidence: 1,
+          conflict: false,
+          note: null,
+        })),
+      ),
     );
     applied.questions.forEach((q, i) => {
       const expectedIdx = letterToOptionIndex(letters[i])!;
-      expect(q.options.findIndex((o) => o.isCorrect === true)).toBe(expectedIdx);
+      expect(q.options.findIndex((o) => o.isCorrect === true)).toBe(
+        expectedIdx,
+      );
       expect(q.options.filter((o) => o.isCorrect === true)).toHaveLength(1);
     });
   });
 
   it("copies a numeric answer without touching options", () => {
     const quiz = quizFrom([staged({ type: "NUMERIC", options: [] })]);
-    const applied = applyAnswerKey(quiz, answerKey([{ questionIndex: 0, correctLabels: [], numericAnswer: 3.21, source: "key_block", confidence: 1, conflict: false, note: null }]));
+    const applied = applyAnswerKey(
+      quiz,
+      answerKey([
+        {
+          questionIndex: 0,
+          correctLabels: [],
+          numericAnswer: 3.21,
+          source: "key_block",
+          confidence: 1,
+          conflict: false,
+          note: null,
+        },
+      ]),
+    );
     expect(applied.questions[0].numericAnswer).toBe(3.21);
   });
 
   it("flags a conflict for review", () => {
     const quiz = quizFrom([staged({ options: abcd() })]);
-    const applied = applyAnswerKey(quiz, answerKey([{ questionIndex: 0, correctLabels: ["A"], numericAnswer: null, source: "mixed", confidence: 0.5, conflict: true, note: "inline said A, key said B" }]));
+    const applied = applyAnswerKey(
+      quiz,
+      answerKey([
+        {
+          questionIndex: 0,
+          correctLabels: ["A"],
+          numericAnswer: null,
+          source: "mixed",
+          confidence: 0.5,
+          conflict: true,
+          note: "inline said A, key said B",
+        },
+      ]),
+    );
     expect(applied.questions[0].needsReview).toBe(true);
     expect(applied.questions[0].reviewNote).toMatch(/disagreed/i);
   });
 
   it("flags an out-of-range answer letter for review", () => {
-    const quiz = quizFrom([staged({ options: [{ text: "x", isCorrect: null }, { text: "y", isCorrect: null }] })]);
-    const applied = applyAnswerKey(quiz, answerKey([{ questionIndex: 0, correctLabels: ["Z"], numericAnswer: null, source: "inline", confidence: 1, conflict: false, note: null }]));
+    const quiz = quizFrom([
+      staged({
+        options: [
+          { text: "x", isCorrect: null },
+          { text: "y", isCorrect: null },
+        ],
+      }),
+    ]);
+    const applied = applyAnswerKey(
+      quiz,
+      answerKey([
+        {
+          questionIndex: 0,
+          correctLabels: ["Z"],
+          numericAnswer: null,
+          source: "inline",
+          confidence: 1,
+          conflict: false,
+          note: null,
+        },
+      ]),
+    );
     expect(applied.questions[0].needsReview).toBe(true);
     expect(applied.questions[0].reviewNote).toMatch(/did not match an option/i);
-    expect(applied.questions[0].options.every((o) => o.isCorrect === false)).toBe(true);
+    expect(
+      applied.questions[0].options.every((o) => o.isCorrect === false),
+    ).toBe(true);
   });
 
   it("leaves correctness null when the question has no key entry", () => {
-    const quiz = quizFrom([staged({ options: abcd() }), staged({ options: abcd() })]);
-    const applied = applyAnswerKey(quiz, answerKey([{ questionIndex: 0, correctLabels: ["A"], numericAnswer: null, source: "inline", confidence: 1, conflict: false, note: null }]));
-    expect(applied.questions[1].options.every((o) => o.isCorrect === null)).toBe(true);
+    const quiz = quizFrom([
+      staged({ options: abcd() }),
+      staged({ options: abcd() }),
+    ]);
+    const applied = applyAnswerKey(
+      quiz,
+      answerKey([
+        {
+          questionIndex: 0,
+          correctLabels: ["A"],
+          numericAnswer: null,
+          source: "inline",
+          confidence: 1,
+          conflict: false,
+          note: null,
+        },
+      ]),
+    );
+    expect(
+      applied.questions[1].options.every((o) => o.isCorrect === null),
+    ).toBe(true);
   });
 
   it("leaves everything null and hasAnswerKey false when there is no key", () => {
     const quiz = quizFrom([staged({ options: abcd() })]);
-    const applied = applyAnswerKey(quiz, answerKey([{ questionIndex: 0, correctLabels: ["A"], numericAnswer: null, source: "none", confidence: 0, conflict: false, note: null }], false));
+    const applied = applyAnswerKey(
+      quiz,
+      answerKey(
+        [
+          {
+            questionIndex: 0,
+            correctLabels: ["A"],
+            numericAnswer: null,
+            source: "none",
+            confidence: 0,
+            conflict: false,
+            note: null,
+          },
+        ],
+        false,
+      ),
+    );
     expect(applied.hasAnswerKey).toBe(false);
-    expect(applied.questions[0].options.every((o) => o.isCorrect === null)).toBe(true);
+    expect(
+      applied.questions[0].options.every((o) => o.isCorrect === null),
+    ).toBe(true);
   });
 
   it("does not mutate a deep-frozen input", () => {
@@ -767,9 +1072,24 @@ describe("applyAnswerKey", () => {
     };
     deepFreeze(quiz);
     expect(() =>
-      applyAnswerKey(quiz, answerKey([{ questionIndex: 0, correctLabels: ["A"], numericAnswer: null, source: "inline", confidence: 1, conflict: false, note: null }]))
+      applyAnswerKey(
+        quiz,
+        answerKey([
+          {
+            questionIndex: 0,
+            correctLabels: ["A"],
+            numericAnswer: null,
+            source: "inline",
+            confidence: 1,
+            conflict: false,
+            note: null,
+          },
+        ]),
+      ),
     ).not.toThrow();
-    expect(quiz.questions[0].options.every((o) => o.isCorrect === null)).toBe(true);
+    expect(quiz.questions[0].options.every((o) => o.isCorrect === null)).toBe(
+      true,
+    );
   });
 });
 
@@ -777,9 +1097,22 @@ describe("applyAnswerKey", () => {
 
 describe("normalizeStructure", () => {
   it("does NOT null correctness or add a no-key note (leaves answers to a later pass)", () => {
-    const quiz = quizFrom([staged({ options: [{ text: "a", isCorrect: true }, { text: "b", isCorrect: false }] })], false);
+    const quiz = quizFrom(
+      [
+        staged({
+          options: [
+            { text: "a", isCorrect: true },
+            { text: "b", isCorrect: false },
+          ],
+        }),
+      ],
+      false,
+    );
     const result = normalizeStructure(quiz);
-    expect(result.questions[0].options.map((o) => o.isCorrect)).toEqual([true, false]);
+    expect(result.questions[0].options.map((o) => o.isCorrect)).toEqual([
+      true,
+      false,
+    ]);
     expect(result.questions[0].reviewNote ?? "").not.toMatch(/no answer key/i);
   });
 
@@ -787,9 +1120,18 @@ describe("normalizeStructure", () => {
     const quiz = validateExtractedQuiz(
       rawQuizPayload({
         questions: [
-          rawQuestion({ options: [rawOption("3", false), rawOption("4", false), rawOption("◄▬►", false)], has_figure: true, figure_page: 1, figure_bbox: { x: 0.1, y: 0.1, w: 0.4, h: 0.4 } }),
+          rawQuestion({
+            options: [
+              rawOption("3", false),
+              rawOption("4", false),
+              rawOption("◄▬►", false),
+            ],
+            has_figure: true,
+            figure_page: 1,
+            figure_bbox: { x: 0.1, y: 0.1, w: 0.4, h: 0.4 },
+          }),
         ],
-      })
+      }),
     );
     const result = normalizeStructure(quiz);
     expect(result.questions[0].options.map((o) => o.text)).toEqual(["3", "4"]);
@@ -800,15 +1142,38 @@ describe("normalizeStructure", () => {
 
 describe("finalizeAnswers", () => {
   it("converts an over-marked multiple_choice to multi-select", () => {
-    const quiz = quizFrom([staged({ options: [{ text: "a", isCorrect: true }, { text: "b", isCorrect: true }, { text: "c", isCorrect: false }] })], true);
+    const quiz = quizFrom(
+      [
+        staged({
+          options: [
+            { text: "a", isCorrect: true },
+            { text: "b", isCorrect: true },
+            { text: "c", isCorrect: false },
+          ],
+        }),
+      ],
+      true,
+    );
     const result = finalizeAnswers(quiz);
     expect(result.questions[0].type).toBe("MULTI_SELECT");
   });
 
   it("nulls everything and reviews all when there is no key", () => {
-    const quiz = quizFrom([staged({ options: [{ text: "a", isCorrect: true }, { text: "b", isCorrect: false }] })], false);
+    const quiz = quizFrom(
+      [
+        staged({
+          options: [
+            { text: "a", isCorrect: true },
+            { text: "b", isCorrect: false },
+          ],
+        }),
+      ],
+      false,
+    );
     const result = finalizeAnswers(quiz);
-    expect(result.questions[0].options.every((o) => o.isCorrect === null)).toBe(true);
+    expect(result.questions[0].options.every((o) => o.isCorrect === null)).toBe(
+      true,
+    );
     expect(result.questions[0].needsReview).toBe(true);
     expect(result.questions[0].reviewNote).toMatch(/no answer key/i);
   });
@@ -819,28 +1184,79 @@ describe("structure → answer key → finalize (shared-bank end to end)", () =>
     // Pass 1 produced 3 questions all sharing the A/B/C/D bank, no answers yet.
     const structured = normalizeStructure(
       quizFrom([
-        staged({ text: "Marital status", options: [{ text: "Nominal", isCorrect: null }, { text: "Ordinal", isCorrect: null }, { text: "Interval", isCorrect: null }, { text: "Ratio", isCorrect: null }] }),
-        staged({ text: "Achievement rank", options: [{ text: "Nominal", isCorrect: null }, { text: "Ordinal", isCorrect: null }, { text: "Interval", isCorrect: null }, { text: "Ratio", isCorrect: null }] }),
-        staged({ text: "Raw score", options: [{ text: "Nominal", isCorrect: null }, { text: "Ordinal", isCorrect: null }, { text: "Interval", isCorrect: null }, { text: "Ratio", isCorrect: null }] }),
-      ])
+        staged({
+          text: "Marital status",
+          options: [
+            { text: "Nominal", isCorrect: null },
+            { text: "Ordinal", isCorrect: null },
+            { text: "Interval", isCorrect: null },
+            { text: "Ratio", isCorrect: null },
+          ],
+        }),
+        staged({
+          text: "Achievement rank",
+          options: [
+            { text: "Nominal", isCorrect: null },
+            { text: "Ordinal", isCorrect: null },
+            { text: "Interval", isCorrect: null },
+            { text: "Ratio", isCorrect: null },
+          ],
+        }),
+        staged({
+          text: "Raw score",
+          options: [
+            { text: "Nominal", isCorrect: null },
+            { text: "Ordinal", isCorrect: null },
+            { text: "Interval", isCorrect: null },
+            { text: "Ratio", isCorrect: null },
+          ],
+        }),
+      ]),
     );
     // Pass 2 read "Keys: A B C" from the bottom of the page.
     const withKey = applyAnswerKey(
       structured,
-      answerKey(["A", "B", "C"].map((l, i) => ({ questionIndex: i, correctLabels: [l], numericAnswer: null, source: "key_block" as const, confidence: 1, conflict: false, note: null })))
+      answerKey(
+        ["A", "B", "C"].map((l, i) => ({
+          questionIndex: i,
+          correctLabels: [l],
+          numericAnswer: null,
+          source: "key_block" as const,
+          confidence: 1,
+          conflict: false,
+          note: null,
+        })),
+      ),
     );
     const final = finalizeAnswers(withKey);
     expect(final.hasAnswerKey).toBe(true);
-    expect(final.questions.map((q) => q.options.findIndex((o) => o.isCorrect === true))).toEqual([0, 1, 2]);
-    expect(final.questions.every((q) => q.options.filter((o) => o.isCorrect === true).length === 1)).toBe(true);
+    expect(
+      final.questions.map((q) =>
+        q.options.findIndex((o) => o.isCorrect === true),
+      ),
+    ).toEqual([0, 1, 2]);
+    expect(
+      final.questions.every(
+        (q) => q.options.filter((o) => o.isCorrect === true).length === 1,
+      ),
+    ).toBe(true);
     // No spurious "no answer key" / "not marked" review flags.
-    expect(final.questions.some((q) => /no answer key|no correct option/i.test(q.reviewNote ?? ""))).toBe(false);
+    expect(
+      final.questions.some((q) =>
+        /no answer key|no correct option/i.test(q.reviewNote ?? ""),
+      ),
+    ).toBe(false);
   });
 });
 
 // ─── mapStagedToQuestionData ────────────────────────────────────────────────────
 
-const CTX = { quizId: "quiz-1", importId: "import-1", createdById: "teacher-1", figureBucket: "bucket-1" };
+const CTX = {
+  quizId: "quiz-1",
+  importId: "import-1",
+  createdById: "teacher-1",
+  figureBucket: "bucket-1",
+};
 
 function staged(overrides: Partial<StagedQuestion> = {}): StagedQuestion {
   return {
@@ -891,7 +1307,7 @@ describe("mapStagedToQuestionData", () => {
           { text: "False", isCorrect: false },
         ],
       }),
-      CTX
+      CTX,
     );
     expect(data.answerMode).toBe("SINGLE_SELECT");
     expect(data.options.create).toHaveLength(2);
@@ -907,7 +1323,7 @@ describe("mapStagedToQuestionData", () => {
           { text: "c", isCorrect: false },
         ],
       }),
-      CTX
+      CTX,
     );
     expect(data.answerMode).toBe("MULTI_SELECT");
     expect(data.options.create.filter((o) => o.isCorrect)).toHaveLength(2);
@@ -915,8 +1331,13 @@ describe("mapStagedToQuestionData", () => {
 
   it("maps a NUMERIC question to NUMERIC with answerNumeric/unit and no options", () => {
     const data = mapStagedToQuestionData(
-      staged({ type: "NUMERIC", options: [], numericAnswer: 3.21, numericUnit: "m/s" }),
-      CTX
+      staged({
+        type: "NUMERIC",
+        options: [],
+        numericAnswer: 3.21,
+        numericUnit: "m/s",
+      }),
+      CTX,
     );
     expect(data.answerMode).toBe("NUMERIC");
     expect(data.answerNumeric).toBe(3.21);
@@ -927,8 +1348,12 @@ describe("mapStagedToQuestionData", () => {
 
   it("includes figure fields only when hasFigure", () => {
     const data = mapStagedToQuestionData(
-      staged({ hasFigure: true, figureStorageKey: "uploads/fig.png", figureCaption: "A diagram" }),
-      CTX
+      staged({
+        hasFigure: true,
+        figureStorageKey: "uploads/fig.png",
+        figureCaption: "A diagram",
+      }),
+      CTX,
     );
     expect(data.figureStorageKey).toBe("uploads/fig.png");
     expect(data.figureBucket).toBe("bucket-1");
@@ -937,8 +1362,13 @@ describe("mapStagedToQuestionData", () => {
 
   it("coerces a null isCorrect to false in mapped options", () => {
     const data = mapStagedToQuestionData(
-      staged({ options: [{ text: "a", isCorrect: null }, { text: "b", isCorrect: true }] }),
-      CTX
+      staged({
+        options: [
+          { text: "a", isCorrect: null },
+          { text: "b", isCorrect: true },
+        ],
+      }),
+      CTX,
     );
     expect(data.options.create).toEqual([
       { text: "a", isCorrect: false },
@@ -977,20 +1407,44 @@ describe("QUIZ_EXTRACTION_SCHEMA", () => {
     expect(QUIZ_EXTRACTION_SCHEMA.name).toBe("quiz_extraction");
     expect(QUIZ_EXTRACTION_SCHEMA.strict).toBe(true);
     expect(QUIZ_EXTRACTION_SCHEMA.schema.additionalProperties).toBe(false);
-    expect(QUIZ_EXTRACTION_SCHEMA.schema.required).toEqual(["has_answer_key", "quiz_title", "questions"]);
+    expect(QUIZ_EXTRACTION_SCHEMA.schema.required).toEqual([
+      "has_answer_key",
+      "quiz_title",
+      "questions",
+    ]);
   });
 });
 
 // ─── Image answer-choices: validate / normalize / commit / map ──────────────────
 
-function rawImageOption(alt: string, isCorrect: boolean | null, page = 1): Record<string, unknown> {
-  return { text: "", is_correct: isCorrect, is_image: true, image_bbox: { x: 0.1, y: 0.1, w: 0.3, h: 0.2 }, image_page: page, image_alt: alt };
+function rawImageOption(
+  alt: string,
+  isCorrect: boolean | null,
+  page = 1,
+): Record<string, unknown> {
+  return {
+    text: "",
+    is_correct: isCorrect,
+    is_image: true,
+    image_bbox: { x: 0.1, y: 0.1, w: 0.3, h: 0.2 },
+    image_page: page,
+    image_alt: alt,
+  };
 }
 
 describe("image answer-choices", () => {
   it("validates an image option and keeps its bbox / page / alt", () => {
     const quiz = validateExtractedQuiz(
-      rawQuizPayload({ questions: [rawQuestion({ options: [rawImageOption("graph A", true), rawImageOption("graph B", false)] })] })
+      rawQuizPayload({
+        questions: [
+          rawQuestion({
+            options: [
+              rawImageOption("graph A", true),
+              rawImageOption("graph B", false),
+            ],
+          }),
+        ],
+      }),
     );
     const opt = quiz.questions[0].options[0];
     expect(opt.isImage).toBe(true);
@@ -1001,11 +1455,19 @@ describe("image answer-choices", () => {
 
   it("keeps an empty-text image option through normalize (not stripped as junk) and forces review", () => {
     const quiz = validateExtractedQuiz(
-      rawQuizPayload({ questions: [rawQuestion({ options: [rawImageOption("A", true), rawImageOption("B", false)] })] })
+      rawQuizPayload({
+        questions: [
+          rawQuestion({
+            options: [rawImageOption("A", true), rawImageOption("B", false)],
+          }),
+        ],
+      }),
     );
     const result = normalizeExtractedQuiz(quiz);
     expect(result.questions[0].options).toHaveLength(2);
-    expect(result.questions[0].options.every((o) => o.isImage === true)).toBe(true);
+    expect(result.questions[0].options.every((o) => o.isImage === true)).toBe(
+      true,
+    );
     expect(result.questions[0].needsReview).toBe(true);
     expect(result.questions[0].reviewNote).toMatch(/image-choice crops/i);
   });
@@ -1016,13 +1478,27 @@ describe("validateCommitQuestions — image options", () => {
     const result = validateCommitQuestions([
       commitQuestion({
         options: [
-          { text: "", isCorrect: true, isImage: true, imageStorageKey: "k/figures/option-0-0.png", imageAlt: "A" },
-          { text: "", isCorrect: false, isImage: true, imageStorageKey: "k/figures/option-0-1.png", imageAlt: "B" },
+          {
+            text: "",
+            isCorrect: true,
+            isImage: true,
+            imageStorageKey: "k/figures/option-0-0.png",
+            imageAlt: "A",
+          },
+          {
+            text: "",
+            isCorrect: false,
+            isImage: true,
+            imageStorageKey: "k/figures/option-0-1.png",
+            imageAlt: "B",
+          },
         ],
       }),
     ]);
     expect(result[0].options[0].isImage).toBe(true);
-    expect(result[0].options[0].imageStorageKey).toBe("k/figures/option-0-0.png");
+    expect(result[0].options[0].imageStorageKey).toBe(
+      "k/figures/option-0-0.png",
+    );
   });
 
   it("rejects an image option without an uploaded key", () => {
@@ -1034,13 +1510,20 @@ describe("validateCommitQuestions — image options", () => {
             { text: "b", isCorrect: false },
           ],
         }),
-      ])
+      ]),
     ).toThrow(/image option requires an uploaded image/i);
   });
 
   it("still rejects a text option with empty text", () => {
     expect(() =>
-      validateCommitQuestions([commitQuestion({ options: [{ text: "", isCorrect: true }, { text: "b", isCorrect: false }] })])
+      validateCommitQuestions([
+        commitQuestion({
+          options: [
+            { text: "", isCorrect: true },
+            { text: "b", isCorrect: false },
+          ],
+        }),
+      ]),
     ).toThrow(/text is required/i);
   });
 
@@ -1050,11 +1533,16 @@ describe("validateCommitQuestions — image options", () => {
         commitQuestion({
           type: "TRUE_FALSE",
           options: [
-            { text: "", isCorrect: true, isImage: true, imageStorageKey: "k/figures/option-0-0.png" },
+            {
+              text: "",
+              isCorrect: true,
+              isImage: true,
+              imageStorageKey: "k/figures/option-0-0.png",
+            },
             { text: "False", isCorrect: false },
           ],
         }),
-      ])
+      ]),
     ).toThrow(/TRUE_FALSE options cannot be images/i);
   });
 
@@ -1063,11 +1551,21 @@ describe("validateCommitQuestions — image options", () => {
       validateCommitQuestions([
         commitQuestion({
           options: [
-            { text: "", isCorrect: true, isImage: true, imageStorageKey: "k/figures/dup.png" },
-            { text: "", isCorrect: false, isImage: true, imageStorageKey: "k/figures/dup.png" },
+            {
+              text: "",
+              isCorrect: true,
+              isImage: true,
+              imageStorageKey: "k/figures/dup.png",
+            },
+            {
+              text: "",
+              isCorrect: false,
+              isImage: true,
+              imageStorageKey: "k/figures/dup.png",
+            },
           ],
         }),
-      ])
+      ]),
     ).toThrow(/options must be distinct/i);
   });
 });
@@ -1077,11 +1575,17 @@ describe("mapStagedToQuestionData — image options", () => {
     const data = mapStagedToQuestionData(
       staged({
         options: [
-          { text: "", isCorrect: true, isImage: true, imageStorageKey: "k/figures/option-0-0.png", imageAlt: "A" },
+          {
+            text: "",
+            isCorrect: true,
+            isImage: true,
+            imageStorageKey: "k/figures/option-0-0.png",
+            imageAlt: "A",
+          },
           { text: "plain", isCorrect: false },
         ],
       }),
-      CTX
+      CTX,
     );
     expect(data.options.create[0]).toEqual({
       text: "",
@@ -1107,8 +1611,22 @@ function imageOptionsQuestion(): StagedQuestion {
   return staged({
     sourcePage: 1,
     options: [
-      { text: "", isCorrect: true, isImage: true, imageBbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, imagePage: 1, imageAlt: "A" },
-      { text: "", isCorrect: false, isImage: true, imageBbox: { x: 0.4, y: 0.1, w: 0.2, h: 0.2 }, imagePage: 1, imageAlt: "B" },
+      {
+        text: "",
+        isCorrect: true,
+        isImage: true,
+        imageBbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+        imagePage: 1,
+        imageAlt: "A",
+      },
+      {
+        text: "",
+        isCorrect: false,
+        isImage: true,
+        imageBbox: { x: 0.4, y: 0.1, w: 0.2, h: 0.2 },
+        imagePage: 1,
+        imageAlt: "B",
+      },
     ],
   });
 }
@@ -1129,8 +1647,23 @@ describe("collectLocalizationTargets / needsLocalization", () => {
 
   it("collects the figure then each image option in order", () => {
     const quiz = quizOf([
-      staged({ hasFigure: true, figurePage: 2, figureBbox: { x: 0.1, y: 0.1, w: 0.4, h: 0.3 }, figureCaption: "diagram", sourcePage: 2,
-        options: [{ text: "", isCorrect: true, isImage: true, imageBbox: { x: 0.1, y: 0.5, w: 0.2, h: 0.2 }, imagePage: 2, imageAlt: "A" }] }),
+      staged({
+        hasFigure: true,
+        figurePage: 2,
+        figureBbox: { x: 0.1, y: 0.1, w: 0.4, h: 0.3 },
+        figureCaption: "diagram",
+        sourcePage: 2,
+        options: [
+          {
+            text: "",
+            isCorrect: true,
+            isImage: true,
+            imageBbox: { x: 0.1, y: 0.5, w: 0.2, h: 0.2 },
+            imagePage: 2,
+            imageAlt: "A",
+          },
+        ],
+      }),
     ]);
     const targets = collectLocalizationTargets(quiz);
     expect(targets.map((t) => t.targetId)).toEqual(["q0.figure", "q0.opt0"]);
@@ -1141,10 +1674,19 @@ describe("collectLocalizationTargets / needsLocalization", () => {
 
   it("resolves an option page to the source page when image_page is null", () => {
     const quiz = quizOf([
-      staged({ sourcePage: 3, options: [
-        { text: "", isCorrect: true, isImage: true, imageBbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, imageAlt: "A" },
-        { text: "x", isCorrect: false },
-      ] }),
+      staged({
+        sourcePage: 3,
+        options: [
+          {
+            text: "",
+            isCorrect: true,
+            isImage: true,
+            imageBbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+            imageAlt: "A",
+          },
+          { text: "x", isCorrect: false },
+        ],
+      }),
     ]);
     const targets = collectLocalizationTargets(quiz);
     expect(targets).toHaveLength(1);
@@ -1155,12 +1697,21 @@ describe("collectLocalizationTargets / needsLocalization", () => {
 describe("groupTargetsByPage", () => {
   it("groups targets by their page", () => {
     const quiz = quizOf([
-      staged({ hasFigure: true, figurePage: 2, figureBbox: { x: 0.1, y: 0.1, w: 0.4, h: 0.3 }, figureCaption: "d", sourcePage: 2 }),
+      staged({
+        hasFigure: true,
+        figurePage: 2,
+        figureBbox: { x: 0.1, y: 0.1, w: 0.4, h: 0.3 },
+        figureCaption: "d",
+        sourcePage: 2,
+      }),
       imageOptionsQuestion(),
     ]);
     const byPage = groupTargetsByPage(collectLocalizationTargets(quiz));
     expect(byPage.get(2)?.map((t) => t.targetId)).toEqual(["q0.figure"]);
-    expect(byPage.get(1)?.map((t) => t.targetId)).toEqual(["q1.opt0", "q1.opt1"]);
+    expect(byPage.get(1)?.map((t) => t.targetId)).toEqual([
+      "q1.opt0",
+      "q1.opt1",
+    ]);
   });
 });
 
@@ -1178,7 +1729,9 @@ describe("buildLocalizationPrompt", () => {
     expect(prompt).toMatch(/overlap/i);
   });
   it("is deterministic", () => {
-    expect(buildLocalizationPrompt(1, targets)).toBe(buildLocalizationPrompt(1, targets));
+    expect(buildLocalizationPrompt(1, targets)).toBe(
+      buildLocalizationPrompt(1, targets),
+    );
   });
 });
 
@@ -1187,26 +1740,58 @@ describe("validateLocalizationResult", () => {
 
   it("keeps found boxes with known ids and clamps the bbox", () => {
     const out = validateLocalizationResult(
-      { boxes: [{ target_id: "q0.opt0", found: true, bbox: { x: -0.1, y: 0.2, w: 0.3, h: 0.2 } }] },
-      known
+      {
+        boxes: [
+          {
+            target_id: "q0.opt0",
+            found: true,
+            bbox: { x: -0.1, y: 0.2, w: 0.3, h: 0.2 },
+          },
+        ],
+      },
+      known,
     );
-    expect(out).toEqual([{ targetId: "q0.opt0", bbox: { x: 0, y: 0.2, w: 0.3, h: 0.2 } }]);
+    expect(out).toEqual([
+      { targetId: "q0.opt0", bbox: { x: 0, y: 0.2, w: 0.3, h: 0.2 } },
+    ]);
   });
 
   it("drops unknown ids, found:false and malformed bboxes, and dedupes", () => {
     const out = validateLocalizationResult(
       {
         boxes: [
-          { target_id: "nope", found: true, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 } },
-          { target_id: "q0.figure", found: false, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 } },
-          { target_id: "q0.opt0", found: true, bbox: { x: 0.1, y: 0.1, w: "bad", h: 0.2 } },
-          { target_id: "q0.opt0", found: true, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 } },
-          { target_id: "q0.opt0", found: true, bbox: { x: 0.5, y: 0.5, w: 0.1, h: 0.1 } },
+          {
+            target_id: "nope",
+            found: true,
+            bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+          },
+          {
+            target_id: "q0.figure",
+            found: false,
+            bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+          },
+          {
+            target_id: "q0.opt0",
+            found: true,
+            bbox: { x: 0.1, y: 0.1, w: "bad", h: 0.2 },
+          },
+          {
+            target_id: "q0.opt0",
+            found: true,
+            bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+          },
+          {
+            target_id: "q0.opt0",
+            found: true,
+            bbox: { x: 0.5, y: 0.5, w: 0.1, h: 0.1 },
+          },
         ],
       },
-      known
+      known,
     );
-    expect(out).toEqual([{ targetId: "q0.opt0", bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 } }]);
+    expect(out).toEqual([
+      { targetId: "q0.opt0", bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 } },
+    ]);
   });
 
   it("returns [] for junk input", () => {
@@ -1220,17 +1805,36 @@ describe("mergeLocalizedBoxes", () => {
     const merged = mergeLocalizedBoxes(quizOf([imageOptionsQuestion()]), [
       { targetId: "q0.opt0", bbox: { x: 0.11, y: 0.12, w: 0.13, h: 0.14 } },
     ]);
-    expect(merged.questions[0].options[0].imageBbox).toEqual({ x: 0.11, y: 0.12, w: 0.13, h: 0.14 });
-    expect(merged.questions[0].options[1].imageBbox).toEqual({ x: 0.4, y: 0.1, w: 0.2, h: 0.2 });
+    expect(merged.questions[0].options[0].imageBbox).toEqual({
+      x: 0.11,
+      y: 0.12,
+      w: 0.13,
+      h: 0.14,
+    });
+    expect(merged.questions[0].options[1].imageBbox).toEqual({
+      x: 0.4,
+      y: 0.1,
+      w: 0.2,
+      h: 0.2,
+    });
   });
 
   it("forces needsReview when a figure has neither a tight nor a coarse box", () => {
     const merged = mergeLocalizedBoxes(
-      quizOf([staged({ hasFigure: true, figurePage: 1, figureBbox: null, figureCaption: "x" })]),
-      []
+      quizOf([
+        staged({
+          hasFigure: true,
+          figurePage: 1,
+          figureBbox: null,
+          figureCaption: "x",
+        }),
+      ]),
+      [],
     );
     expect(merged.questions[0].needsReview).toBe(true);
-    expect(merged.questions[0].reviewNote).toMatch(/could not locate the figure/i);
+    expect(merged.questions[0].reviewNote).toMatch(
+      /could not locate the figure/i,
+    );
   });
 
   it("does not mutate a deep-frozen input", () => {
@@ -1243,9 +1847,16 @@ describe("mergeLocalizedBoxes", () => {
     };
     deepFreeze(quiz);
     expect(() =>
-      mergeLocalizedBoxes(quiz, [{ targetId: "q0.opt0", bbox: { x: 0.2, y: 0.2, w: 0.2, h: 0.2 } }])
+      mergeLocalizedBoxes(quiz, [
+        { targetId: "q0.opt0", bbox: { x: 0.2, y: 0.2, w: 0.2, h: 0.2 } },
+      ]),
     ).not.toThrow();
-    expect(quiz.questions[0].options[0].imageBbox).toEqual({ x: 0.1, y: 0.1, w: 0.2, h: 0.2 });
+    expect(quiz.questions[0].options[0].imageBbox).toEqual({
+      x: 0.1,
+      y: 0.1,
+      w: 0.2,
+      h: 0.2,
+    });
   });
 });
 

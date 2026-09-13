@@ -25,9 +25,13 @@ import { resetDb, createStudent, createTeacher, createAdmin } from "./db";
 const mockAuth = vi.mocked(auth);
 
 const asStudent = (userId: string) =>
-  mockAuth.mockResolvedValue({ user: { id: userId, role: "STUDENT" } } as never);
+  mockAuth.mockResolvedValue({
+    user: { id: userId, role: "STUDENT" },
+  } as never);
 const asTeacher = (userId: string) =>
-  mockAuth.mockResolvedValue({ user: { id: userId, role: "TEACHER" } } as never);
+  mockAuth.mockResolvedValue({
+    user: { id: userId, role: "TEACHER" },
+  } as never);
 const asAdmin = (userId: string) =>
   mockAuth.mockResolvedValue({ user: { id: userId, role: "ADMIN" } } as never);
 
@@ -62,7 +66,13 @@ async function seedConversation(opts: {
   for (const [question, answer] of turns) {
     await prisma.assistantMessage.createMany({
       data: [
-        { conversationId: conversation.id, seq: seq, role: "user", content: question, createdAt: at },
+        {
+          conversationId: conversation.id,
+          seq: seq,
+          role: "user",
+          content: question,
+          createdAt: at,
+        },
         {
           conversationId: conversation.id,
           seq: seq + 1,
@@ -80,15 +90,23 @@ async function seedConversation(opts: {
 beforeEach(async () => {
   await resetDb();
   vi.clearAllMocks();
-  await saveAssistantSettings("student", { enabled: true, historyRetentionDays: 30 });
-  await saveAssistantSettings("teacher", { enabled: true, historyRetentionDays: 30 });
+  await saveAssistantSettings("student", {
+    enabled: true,
+    historyRetentionDays: 30,
+  });
+  await saveAssistantSettings("teacher", {
+    enabled: true,
+    historyRetentionDays: 30,
+  });
 });
 
 // ─── Pure helpers ────────────────────────────────────────────────────────────
 
 describe("deriveTitle", () => {
   it("takes the first line so a pasted block doesn't become the title", () => {
-    expect(deriveTitle("What is momentum?\nAlso, what is force?")).toBe("What is momentum?");
+    expect(deriveTitle("What is momentum?\nAlso, what is force?")).toBe(
+      "What is momentum?",
+    );
   });
 
   it("truncates a long single line with an ellipsis", () => {
@@ -105,7 +123,9 @@ describe("deriveTitle", () => {
 describe("historyCutoff", () => {
   it("is the retention window before the given instant", () => {
     const now = new Date("2026-03-31T00:00:00Z");
-    expect(historyCutoff(30, now).toISOString()).toBe("2026-03-01T00:00:00.000Z");
+    expect(historyCutoff(30, now).toISOString()).toBe(
+      "2026-03-01T00:00:00.000Z",
+    );
   });
 });
 
@@ -113,13 +133,27 @@ describe("parseTranscript", () => {
   it("skips the header line and reads the turns", () => {
     const body = [
       JSON.stringify({ v: 1, conversationId: "c1", title: "t" }),
-      JSON.stringify({ role: "user", content: "q", attachmentNames: ["a.png"] }),
+      JSON.stringify({
+        role: "user",
+        content: "q",
+        attachmentNames: ["a.png"],
+      }),
       JSON.stringify({ role: "assistant", content: "a" }),
       "",
     ].join("\n");
     expect(parseTranscript(body)).toEqual([
-      { role: "user", content: "q", attachmentIds: [], attachmentNames: ["a.png"] },
-      { role: "assistant", content: "a", attachmentIds: [], attachmentNames: [] },
+      {
+        role: "user",
+        content: "q",
+        attachmentIds: [],
+        attachmentNames: ["a.png"],
+      },
+      {
+        role: "assistant",
+        content: "a",
+        attachmentIds: [],
+        attachmentNames: [],
+      },
     ]);
   });
 
@@ -138,9 +172,11 @@ describe("resolveConversation", () => {
       { userId: user.id, audience: "student" },
       null,
       "Why is the sky blue?",
-      30
+      30,
     );
-    const row = await prisma.assistantConversation.findUniqueOrThrow({ where: { id: id! } });
+    const row = await prisma.assistantConversation.findUniqueOrThrow({
+      where: { id: id! },
+    });
     expect(row.title).toBe("Why is the sky blue?");
     expect(row.messageCount).toBe(0);
   });
@@ -152,7 +188,7 @@ describe("resolveConversation", () => {
       { userId: user.id, audience: "student" },
       existing.id,
       "next question",
-      30
+      30,
     );
     expect(id).toBe(existing.id);
   });
@@ -166,10 +202,12 @@ describe("resolveConversation", () => {
       { userId: other.id, audience: "student" },
       theirs.id,
       "sneaky",
-      30
+      30,
     );
     expect(id).not.toBe(theirs.id);
-    const row = await prisma.assistantConversation.findUniqueOrThrow({ where: { id: id! } });
+    const row = await prisma.assistantConversation.findUniqueOrThrow({
+      where: { id: id! },
+    });
     expect(row.userId).toBe(other.id);
   });
 
@@ -180,7 +218,7 @@ describe("resolveConversation", () => {
       { userId: user.id, audience: "student" },
       old.id,
       "still there?",
-      30
+      30,
     );
     expect(id).not.toBe(old.id);
   });
@@ -195,7 +233,7 @@ describe("resolveConversation", () => {
       { userId: user.id, audience: "teacher" },
       asStudentConversation.id,
       "hi",
-      30
+      30,
     );
     expect(id).not.toBe(asStudentConversation.id);
   });
@@ -208,22 +246,38 @@ describe("appendTurn", () => {
       { userId: user.id, audience: "student" },
       null,
       "first",
-      30
+      30,
     ))!;
 
     await appendTurn(
       id,
-      { content: "first", attachmentIds: ["att1"], attachmentNames: ["graph.png"] },
-      "the answer"
+      {
+        content: "first",
+        attachmentIds: ["att1"],
+        attachmentNames: ["graph.png"],
+      },
+      "the answer",
     );
 
-    const row = await prisma.assistantConversation.findUniqueOrThrow({ where: { id } });
+    const row = await prisma.assistantConversation.findUniqueOrThrow({
+      where: { id },
+    });
     expect(row.messageCount).toBe(2);
 
     const turns = await loadConversationHistory(id, 20);
     expect(turns).toEqual([
-      { role: "user", content: "first", attachmentIds: ["att1"], attachmentNames: ["graph.png"] },
-      { role: "assistant", content: "the answer", attachmentIds: [], attachmentNames: [] },
+      {
+        role: "user",
+        content: "first",
+        attachmentIds: ["att1"],
+        attachmentNames: ["graph.png"],
+      },
+      {
+        role: "assistant",
+        content: "the answer",
+        attachmentIds: [],
+        attachmentNames: [],
+      },
     ]);
   });
 
@@ -233,20 +287,27 @@ describe("appendTurn", () => {
       { userId: user.id, audience: "student" },
       null,
       "q",
-      30
+      30,
     ))!;
     // The SAME instant for both exchanges: timestamps alone cannot order these,
     // which is exactly why AssistantMessage carries an explicit `seq`.
     const now = new Date();
-    await appendTurn(id, { content: "q", attachmentIds: [], attachmentNames: [] }, "a", now);
-    await appendTurn(id, { content: "q2", attachmentIds: [], attachmentNames: [] }, "a2", now);
-
-    expect((await loadConversationHistory(id, 20)).map((turn) => turn.content)).toEqual([
-      "q",
+    await appendTurn(
+      id,
+      { content: "q", attachmentIds: [], attachmentNames: [] },
       "a",
-      "q2",
+      now,
+    );
+    await appendTurn(
+      id,
+      { content: "q2", attachmentIds: [], attachmentNames: [] },
       "a2",
-    ]);
+      now,
+    );
+
+    expect(
+      (await loadConversationHistory(id, 20)).map((turn) => turn.content),
+    ).toEqual(["q", "a", "q2", "a2"]);
   });
 });
 
@@ -276,7 +337,10 @@ describe("listUserConversations", () => {
     await seedConversation({ userId: user.id, title: "newer", agedDays: 1 });
     await seedConversation({ userId: other.id, title: "theirs" });
 
-    const rows = await listUserConversations({ userId: user.id, audience: "student" }, 30);
+    const rows = await listUserConversations(
+      { userId: user.id, audience: "student" },
+      30,
+    );
     expect(rows.map((row) => row.title)).toEqual(["newer", "older"]);
   });
 
@@ -285,37 +349,56 @@ describe("listUserConversations", () => {
     await seedConversation({ userId: user.id, title: "inside", agedDays: 29 });
     await seedConversation({ userId: user.id, title: "outside", agedDays: 31 });
 
-    const rows = await listUserConversations({ userId: user.id, audience: "student" }, 30);
+    const rows = await listUserConversations(
+      { userId: user.id, audience: "student" },
+      30,
+    );
     expect(rows.map((row) => row.title)).toEqual(["inside"]);
   });
 
   it("honours a shortened window without waiting for the archiver", async () => {
     const { user } = await createStudent();
-    await seedConversation({ userId: user.id, title: "eight days ago", agedDays: 8 });
+    await seedConversation({
+      userId: user.id,
+      title: "eight days ago",
+      agedDays: 8,
+    });
 
-    expect(await listUserConversations({ userId: user.id, audience: "student" }, 30)).toHaveLength(
-      1
-    );
+    expect(
+      await listUserConversations({ userId: user.id, audience: "student" }, 30),
+    ).toHaveLength(1);
     // Same un-archived rows, smaller window: visibility is decided by the date.
-    expect(await listUserConversations({ userId: user.id, audience: "student" }, 7)).toHaveLength(
-      0
-    );
+    expect(
+      await listUserConversations({ userId: user.id, audience: "student" }, 7),
+    ).toHaveLength(0);
   });
 
   it("omits conversations that never recorded a turn", async () => {
     const { user } = await createStudent();
-    await resolveConversation({ userId: user.id, audience: "student" }, null, "unanswered", 30);
-    expect(await listUserConversations({ userId: user.id, audience: "student" }, 30)).toEqual([]);
+    await resolveConversation(
+      { userId: user.id, audience: "student" },
+      null,
+      "unanswered",
+      30,
+    );
+    expect(
+      await listUserConversations({ userId: user.id, audience: "student" }, 30),
+    ).toEqual([]);
   });
 
   it("omits archived conversations even if the window would allow them", async () => {
     const { user } = await createStudent();
-    const conversation = await seedConversation({ userId: user.id, agedDays: 1 });
+    const conversation = await seedConversation({
+      userId: user.id,
+      agedDays: 1,
+    });
     await prisma.assistantConversation.update({
       where: { id: conversation.id },
       data: { archivedAt: new Date(), storageKey: "k", bucket: "b" },
     });
-    expect(await listUserConversations({ userId: user.id, audience: "student" }, 30)).toEqual([]);
+    expect(
+      await listUserConversations({ userId: user.id, audience: "student" }, 30),
+    ).toEqual([]);
   });
 });
 
@@ -332,9 +415,14 @@ describe("readUserConversation", () => {
     const result = await readUserConversation(
       { userId: user.id, audience: "student" },
       conversation.id,
-      30
+      30,
     );
-    expect(result?.turns.map((turn) => turn.content)).toEqual(["q1", "a1", "q2", "a2"]);
+    expect(result?.turns.map((turn) => turn.content)).toEqual([
+      "q1",
+      "a1",
+      "q2",
+      "a2",
+    ]);
   });
 
   it("is null for another user's conversation", async () => {
@@ -342,15 +430,26 @@ describe("readUserConversation", () => {
     const { user: other } = await createStudent();
     const conversation = await seedConversation({ userId: owner.id });
     expect(
-      await readUserConversation({ userId: other.id, audience: "student" }, conversation.id, 30)
+      await readUserConversation(
+        { userId: other.id, audience: "student" },
+        conversation.id,
+        30,
+      ),
     ).toBeNull();
   });
 
   it("is null once the conversation is past the window", async () => {
     const { user } = await createStudent();
-    const conversation = await seedConversation({ userId: user.id, agedDays: 31 });
+    const conversation = await seedConversation({
+      userId: user.id,
+      agedDays: 31,
+    });
     expect(
-      await readUserConversation({ userId: user.id, audience: "student" }, conversation.id, 30)
+      await readUserConversation(
+        { userId: user.id, audience: "student" },
+        conversation.id,
+        30,
+      ),
     ).toBeNull();
   });
 });
@@ -365,20 +464,31 @@ describe("purgeEmptyConversations", () => {
       null,
       "unanswered",
       30,
-      new Date(Date.now() - 40 * DAY_MS)
+      new Date(Date.now() - 40 * DAY_MS),
     );
     const withTurns = await seedConversation({ userId: user.id, agedDays: 40 });
 
-    const cutoffs = [{ audience: "student" as const, cutoff: historyCutoff(30) }];
+    const cutoffs = [
+      { audience: "student" as const, cutoff: historyCutoff(30) },
+    ];
     expect(await purgeEmptyConversations(cutoffs)).toBe(1);
     expect(await prisma.assistantConversation.findMany()).toHaveLength(1);
-    expect((await prisma.assistantConversation.findFirst())?.id).toBe(withTurns.id);
+    expect((await prisma.assistantConversation.findFirst())?.id).toBe(
+      withTurns.id,
+    );
   });
 
   it("leaves an empty conversation alone while it is still inside the window", async () => {
     const { user } = await createStudent();
-    await resolveConversation({ userId: user.id, audience: "student" }, null, "fresh", 30);
-    const cutoffs = [{ audience: "student" as const, cutoff: historyCutoff(30) }];
+    await resolveConversation(
+      { userId: user.id, audience: "student" },
+      null,
+      "fresh",
+      30,
+    );
+    const cutoffs = [
+      { audience: "student" as const, cutoff: historyCutoff(30) },
+    ];
     expect(await purgeEmptyConversations(cutoffs)).toBe(0);
   });
 });
@@ -390,13 +500,19 @@ describe("GET /api/assistant/conversations", () => {
     const { user } = await createStudent();
     asStudent(user.id);
     await seedConversation({ userId: user.id, title: "kept", agedDays: 2 });
-    await seedConversation({ userId: user.id, title: "aged out", agedDays: 45 });
+    await seedConversation({
+      userId: user.id,
+      title: "aged out",
+      agedDays: 45,
+    });
 
     const res = await GET_LIST();
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.retentionDays).toBe(30);
-    expect(body.conversations.map((row: { title: string }) => row.title)).toEqual(["kept"]);
+    expect(
+      body.conversations.map((row: { title: string }) => row.title),
+    ).toEqual(["kept"]);
   });
 
   it("is 401 when signed out", async () => {
@@ -420,13 +536,15 @@ describe("GET /api/assistant/conversations/:id", () => {
       turns: [["what is force?", "mass times acceleration"]],
     });
 
-    const res = await GET_ONE(new Request("http://localhost"), params(conversation.id));
+    const res = await GET_ONE(
+      new Request("http://localhost"),
+      params(conversation.id),
+    );
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.turns.map((turn: { content: string }) => turn.content)).toEqual([
-      "what is force?",
-      "mass times acceleration",
-    ]);
+    expect(body.turns.map((turn: { content: string }) => turn.content)).toEqual(
+      ["what is force?", "mass times acceleration"],
+    );
   });
 
   it("is 404 — not 403 — for another user's conversation", async () => {
@@ -435,31 +553,45 @@ describe("GET /api/assistant/conversations/:id", () => {
     const conversation = await seedConversation({ userId: owner.id });
     asStudent(other.id);
 
-    const res = await GET_ONE(new Request("http://localhost"), params(conversation.id));
+    const res = await GET_ONE(
+      new Request("http://localhost"),
+      params(conversation.id),
+    );
     expect(res.status).toBe(404);
   });
 
   it("is 404 once the conversation is older than the configured window", async () => {
     const { user } = await createStudent();
     asStudent(user.id);
-    const conversation = await seedConversation({ userId: user.id, agedDays: 31 });
+    const conversation = await seedConversation({
+      userId: user.id,
+      agedDays: 31,
+    });
 
-    const res = await GET_ONE(new Request("http://localhost"), params(conversation.id));
+    const res = await GET_ONE(
+      new Request("http://localhost"),
+      params(conversation.id),
+    );
     expect(res.status).toBe(404);
   });
 
   it("follows a shortened window immediately", async () => {
     const { user } = await createStudent();
     asStudent(user.id);
-    const conversation = await seedConversation({ userId: user.id, agedDays: 10 });
+    const conversation = await seedConversation({
+      userId: user.id,
+      agedDays: 10,
+    });
 
     expect(
-      (await GET_ONE(new Request("http://localhost"), params(conversation.id))).status
+      (await GET_ONE(new Request("http://localhost"), params(conversation.id)))
+        .status,
     ).toBe(200);
 
     await saveAssistantSettings("student", { historyRetentionDays: 7 });
     expect(
-      (await GET_ONE(new Request("http://localhost"), params(conversation.id))).status
+      (await GET_ONE(new Request("http://localhost"), params(conversation.id)))
+        .status,
     ).toBe(404);
   });
 });
@@ -479,7 +611,11 @@ describe("GET /api/admin/assistants/conversations", () => {
   it("shows conversations past the user's own retention window", async () => {
     const { user } = await createStudent();
     const admin = await createAdmin();
-    await seedConversation({ userId: user.id, title: "ancient", agedDays: 400 });
+    await seedConversation({
+      userId: user.id,
+      title: "ancient",
+      agedDays: 400,
+    });
     asAdmin(admin.id);
 
     const res = await GET_ADMIN_LIST(adminListRequest());
@@ -494,11 +630,21 @@ describe("GET /api/admin/assistants/conversations", () => {
     const { user: student } = await createStudent();
     const { user: teacher } = await createTeacher();
     const admin = await createAdmin();
-    await seedConversation({ userId: student.id, audience: "student", title: "s" });
-    await seedConversation({ userId: teacher.id, audience: "teacher", title: "t" });
+    await seedConversation({
+      userId: student.id,
+      audience: "student",
+      title: "s",
+    });
+    await seedConversation({
+      userId: teacher.id,
+      audience: "teacher",
+      title: "t",
+    });
     asAdmin(admin.id);
 
-    const body = await (await GET_ADMIN_LIST(adminListRequest("audience=teacher"))).json();
+    const body = await (
+      await GET_ADMIN_LIST(adminListRequest("audience=teacher"))
+    ).json();
     expect(body.rows.map((row: { title: string }) => row.title)).toEqual(["t"]);
   });
 
@@ -510,11 +656,19 @@ describe("GET /api/admin/assistants/conversations", () => {
       title: "unrelated title",
       turns: [["tell me about photosynthesis", "plants convert light"]],
     });
-    await seedConversation({ userId: user.id, title: "other", turns: [["algebra", "maths"]] });
+    await seedConversation({
+      userId: user.id,
+      title: "other",
+      turns: [["algebra", "maths"]],
+    });
     asAdmin(admin.id);
 
-    const body = await (await GET_ADMIN_LIST(adminListRequest("q=photosynthesis"))).json();
-    expect(body.rows.map((row: { title: string }) => row.title)).toEqual(["unrelated title"]);
+    const body = await (
+      await GET_ADMIN_LIST(adminListRequest("q=photosynthesis"))
+    ).json();
+    expect(body.rows.map((row: { title: string }) => row.title)).toEqual([
+      "unrelated title",
+    ]);
   });
 
   it("filters by user email", async () => {
@@ -526,9 +680,13 @@ describe("GET /api/admin/assistants/conversations", () => {
     asAdmin(admin.id);
 
     const body = await (
-      await GET_ADMIN_LIST(adminListRequest(`user=${encodeURIComponent(a.email)}`))
+      await GET_ADMIN_LIST(
+        adminListRequest(`user=${encodeURIComponent(a.email)}`),
+      )
     ).json();
-    expect(body.rows.map((row: { title: string }) => row.title)).toEqual(["a's chat"]);
+    expect(body.rows.map((row: { title: string }) => row.title)).toEqual([
+      "a's chat",
+    ]);
   });
 });
 
@@ -537,7 +695,10 @@ describe("GET /api/admin/assistants/conversations/:id", () => {
     const { user } = await createTeacher();
     const target = await seedConversation({ userId: user.id });
     asTeacher(user.id);
-    const res = await GET_ADMIN_ONE(new Request("http://localhost"), params(target.id));
+    const res = await GET_ADMIN_ONE(
+      new Request("http://localhost"),
+      params(target.id),
+    );
     expect(res.status).toBe(403);
   });
 
@@ -551,15 +712,17 @@ describe("GET /api/admin/assistants/conversations/:id", () => {
     });
     asAdmin(admin.id);
 
-    const res = await GET_ADMIN_ONE(new Request("http://localhost"), params(conversation.id));
+    const res = await GET_ADMIN_ONE(
+      new Request("http://localhost"),
+      params(conversation.id),
+    );
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.archived).toBe(false);
     expect(body.transcriptUnavailable).toBe(false);
-    expect(body.turns.map((turn: { content: string }) => turn.content)).toEqual([
-      "old question",
-      "old answer",
-    ]);
+    expect(body.turns.map((turn: { content: string }) => turn.content)).toEqual(
+      ["old question", "old answer"],
+    );
   });
 
   it("flags an archived transcript whose object cannot be read", async () => {
@@ -568,12 +731,19 @@ describe("GET /api/admin/assistants/conversations/:id", () => {
     const conversation = await seedConversation({ userId: user.id });
     await prisma.assistantConversation.update({
       where: { id: conversation.id },
-      data: { archivedAt: new Date(), bucket: "missing-bucket", storageKey: "missing-key" },
+      data: {
+        archivedAt: new Date(),
+        bucket: "missing-bucket",
+        storageKey: "missing-key",
+      },
     });
     asAdmin(admin.id);
 
     const body = await (
-      await GET_ADMIN_ONE(new Request("http://localhost"), params(conversation.id))
+      await GET_ADMIN_ONE(
+        new Request("http://localhost"),
+        params(conversation.id),
+      )
     ).json();
     expect(body.archived).toBe(true);
     // The record exists; only its bytes are unreachable. That must not read as
@@ -585,7 +755,10 @@ describe("GET /api/admin/assistants/conversations/:id", () => {
   it("is 404 for an unknown id", async () => {
     const admin = await createAdmin();
     asAdmin(admin.id);
-    const res = await GET_ADMIN_ONE(new Request("http://localhost"), params("nope"));
+    const res = await GET_ADMIN_ONE(
+      new Request("http://localhost"),
+      params("nope"),
+    );
     expect(res.status).toBe(404);
   });
 });

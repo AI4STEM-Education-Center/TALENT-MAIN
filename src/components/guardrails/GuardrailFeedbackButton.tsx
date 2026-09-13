@@ -13,9 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-
-/** Mirrors MAX_FEEDBACK_CHARS in src/lib/guardrail-events.ts. */
-const MAX_CHARS = 2_000;
+import { MAX_FEEDBACK_CHARS } from "@/lib/guardrail-feedback";
 
 /**
  * "Report a problem" on a guardrail result.
@@ -27,13 +25,15 @@ const MAX_CHARS = 2_000;
  * which is what a caller gets when the check passed or the record could not be
  * written, so it is safe to drop into any error path unconditionally.
  */
+interface GuardrailFeedbackButtonProps {
+  eventId?: string | null;
+  className?: string;
+}
+
 export function GuardrailFeedbackButton({
   eventId,
   className,
-}: {
-  eventId?: string | null;
-  className?: string;
-}) {
+}: GuardrailFeedbackButtonProps) {
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
@@ -81,7 +81,7 @@ export function GuardrailFeedbackButton({
         onClick={() => setOpen(true)}
         className={cn(
           "inline-flex items-center gap-1 text-xs underline underline-offset-2 hover:no-underline",
-          className
+          className,
         )}
       >
         <Flag className="h-3 w-3" aria-hidden="true" />
@@ -93,15 +93,16 @@ export function GuardrailFeedbackButton({
           <DialogHeader>
             <DialogTitle>Report a safety check</DialogTitle>
             <DialogDescription>
-              Tell us what you were trying to do. This goes to a site admin, who can adjust the
-              checks. Your message is stored with the flagged submission.
+              Tell us what you were trying to do. This goes to a site admin, who
+              can adjust the checks. Your message is stored with the flagged
+              submission.
             </DialogDescription>
           </DialogHeader>
 
           <Textarea
             rows={5}
             autoFocus
-            maxLength={MAX_CHARS}
+            maxLength={MAX_FEEDBACK_CHARS}
             placeholder="What were you trying to submit, and why do you think it was wrongly stopped?"
             value={message}
             onChange={(e) => setMessage(e.target.value)}
@@ -110,7 +111,11 @@ export function GuardrailFeedbackButton({
           {error && <p className="text-sm text-destructive">{error}</p>}
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)} disabled={sending}>
+            <Button
+              variant="outline"
+              onClick={() => setOpen(false)}
+              disabled={sending}
+            >
               Cancel
             </Button>
             <Button onClick={send} disabled={sending || !message.trim()}>

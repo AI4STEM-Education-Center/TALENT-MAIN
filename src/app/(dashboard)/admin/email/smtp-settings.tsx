@@ -4,7 +4,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { AlertTriangle, Check, Loader2, Save, Send, Server } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  Loader2,
+  Save,
+  Send,
+  Server,
+} from "lucide-react";
 
 interface SmtpConfig {
   host: string;
@@ -37,7 +44,10 @@ export function SmtpSettings() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testTo, setTestTo] = useState("");
-  const [banner, setBanner] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [banner, setBanner] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -87,7 +97,10 @@ export function SmtpSettings() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setBanner({ type: "error", text: data.error || "Failed to save configuration." });
+        setBanner({
+          type: "error",
+          text: data.error || "Failed to save configuration.",
+        });
       } else {
         setBanner({ type: "success", text: "SMTP configuration saved." });
         setHasPassword(data.config?.hasPassword ?? hasPassword);
@@ -112,7 +125,10 @@ export function SmtpSettings() {
       if (!res.ok) {
         setBanner({ type: "error", text: data.error || "SMTP test failed." });
       } else {
-        setBanner({ type: "success", text: data.message || "SMTP test succeeded." });
+        setBanner({
+          type: "success",
+          text: data.message || "SMTP test succeeded.",
+        });
       }
     } catch {
       setBanner({ type: "error", text: "An unexpected error occurred." });
@@ -162,7 +178,9 @@ export function SmtpSettings() {
                 <Input
                   id="host"
                   value={form.host}
-                  onChange={(e) => setForm((p) => ({ ...p, host: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, host: e.target.value }))
+                  }
                   placeholder="smtp.example.com"
                   required
                 />
@@ -173,7 +191,9 @@ export function SmtpSettings() {
                   id="port"
                   type="number"
                   value={form.port}
-                  onChange={(e) => setForm((p) => ({ ...p, port: Number(e.target.value) }))}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, port: Number(e.target.value) }))
+                  }
                   placeholder="465"
                   required
                 />
@@ -181,8 +201,10 @@ export function SmtpSettings() {
             </div>
 
             <p className="text-xs text-muted-foreground">
-              Enter the full SMTP host (e.g. <span className="font-mono">smtp.gmail.com</span>). Security is derived
-              from the port: <strong>465</strong> uses implicit TLS (SSL); other ports such as 587 use STARTTLS.
+              Enter the full SMTP host (e.g.{" "}
+              <span className="font-mono">smtp.gmail.com</span>). Security is
+              derived from the port: <strong>465</strong> uses implicit TLS
+              (SSL); other ports such as 587 use STARTTLS.
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -191,7 +213,9 @@ export function SmtpSettings() {
                 <Input
                   id="username"
                   value={form.username}
-                  onChange={(e) => setForm((p) => ({ ...p, username: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, username: e.target.value }))
+                  }
                   placeholder="apikey or user@example.com"
                   autoComplete="off"
                 />
@@ -202,12 +226,17 @@ export function SmtpSettings() {
                   id="password"
                   type="password"
                   value={form.password}
-                  onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
-                  placeholder={hasPassword ? "•••••••• (unchanged)" : "SMTP password"}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, password: e.target.value }))
+                  }
+                  placeholder={
+                    hasPassword ? "•••••••• (unchanged)" : "SMTP password"
+                  }
                   autoComplete="new-password"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Leave the masked value to keep the saved password. Clear the field to remove it.
+                  Leave the masked value to keep the saved password. Clear the
+                  field to remove it.
                 </p>
               </div>
             </div>
@@ -219,40 +248,53 @@ export function SmtpSettings() {
                   id="fromEmail"
                   type="email"
                   value={form.fromEmail}
-                  onChange={(e) => setForm((p) => ({ ...p, fromEmail: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, fromEmail: e.target.value }))
+                  }
                   placeholder="no-reply@example.com"
                   required
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="fromName">From Name <span className="text-muted-foreground">(optional)</span></Label>
+                <Label htmlFor="fromName">
+                  From Name{" "}
+                  <span className="text-muted-foreground">(optional)</span>
+                </Label>
                 <Input
                   id="fromName"
                   value={form.fromName}
-                  onChange={(e) => setForm((p) => ({ ...p, fromName: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, fromName: e.target.value }))
+                  }
                   placeholder="AI4Talent"
                 />
               </div>
             </div>
 
             <p className="text-xs text-muted-foreground">
-              These are the fallback From details. Set a shared sender domain under{" "}
-              <strong>Sender addresses</strong> below to give each kind of email its own address
-              instead.
+              These are the fallback From details. Set a shared sender domain
+              under <strong>Sender addresses</strong> below to give each kind of
+              email its own address instead.
             </p>
 
             <label className="flex items-center gap-2 text-sm font-medium">
               <input
                 type="checkbox"
                 checked={form.isActive}
-                onChange={(e) => setForm((p) => ({ ...p, isActive: e.target.checked }))}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, isActive: e.target.checked }))
+                }
                 className="size-4"
               />
               Enable email sending
             </label>
 
             <Button type="submit" disabled={saving}>
-              {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+              {saving ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Save className="size-4" />
+              )}
               {saving ? "Saving..." : "Save configuration"}
             </Button>
           </form>
@@ -267,8 +309,8 @@ export function SmtpSettings() {
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            Verifies the saved configuration. Provide an address to also receive a test email.
-            Save any changes before testing.
+            Verifies the saved configuration. Provide an address to also receive
+            a test email. Save any changes before testing.
           </p>
           <div className="flex flex-col sm:flex-row gap-2">
             <Input
@@ -277,8 +319,18 @@ export function SmtpSettings() {
               onChange={(e) => setTestTo(e.target.value)}
               placeholder="you@example.com (optional)"
             />
-            <Button type="button" variant="outline" onClick={handleTest} disabled={testing} className="shrink-0">
-              {testing ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleTest}
+              disabled={testing}
+              className="shrink-0"
+            >
+              {testing ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Send className="size-4" />
+              )}
               {testing ? "Testing..." : "Send test"}
             </Button>
           </div>

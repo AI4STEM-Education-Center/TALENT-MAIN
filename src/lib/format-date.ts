@@ -19,10 +19,14 @@ export const DISPLAY_TIME_ZONE = "America/New_York";
 
 /** e.g. "3/14/2026" — stable across server and browser. */
 export function formatDate(value: string | number | Date): string {
-  return new Date(value).toLocaleDateString(DISPLAY_LOCALE, { timeZone: DISPLAY_TIME_ZONE });
+  return new Date(value).toLocaleDateString(DISPLAY_LOCALE, {
+    timeZone: DISPLAY_TIME_ZONE,
+  });
 }
 
 /** e.g. "3/14/2026, 9:05 AM" — stable across server and browser. */
 export function formatDateTime(value: string | number | Date): string {
-  return new Date(value).toLocaleString(DISPLAY_LOCALE, { timeZone: DISPLAY_TIME_ZONE });
+  return new Date(value).toLocaleString(DISPLAY_LOCALE, {
+    timeZone: DISPLAY_TIME_ZONE,
+  });
 }

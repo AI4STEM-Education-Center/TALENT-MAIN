@@ -30,13 +30,20 @@ export default function AdminConsentRequestsPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/admin/consent-requests", { cache: "no-store", signal });
+      const res = await fetch("/api/admin/consent-requests", {
+        cache: "no-store",
+        signal,
+      });
       if (!res.ok) throw new Error("Could not load consent export requests.");
       const data = await res.json();
       setRequests(data.requests ?? []);
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === "AbortError") return;
-      setError(cause instanceof Error ? cause.message : "Could not load consent export requests.");
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Could not load consent export requests.",
+      );
     } finally {
       // react-doctor-disable-next-line react-doctor/no-loading-flag-reset-outside-finally -- the reset is already inside this function's finally block; detector misfire
       if (!signal?.aborted) setLoading(false);
@@ -60,7 +67,8 @@ export default function AdminConsentRequestsPage() {
         body: JSON.stringify({
           decision,
           note: notes[id] || "",
-          courseEndedAttested: decision === "APPROVE" ? attested[id] === true : undefined,
+          courseEndedAttested:
+            decision === "APPROVE" ? attested[id] === true : undefined,
         }),
       });
       if (!res.ok) {
@@ -69,7 +77,9 @@ export default function AdminConsentRequestsPage() {
       }
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not save the decision.");
+      setError(
+        cause instanceof Error ? cause.message : "Could not save the decision.",
+      );
     } finally {
       setBusyId(null);
     }
@@ -80,12 +90,17 @@ export default function AdminConsentRequestsPage() {
       <div>
         <h1 className="text-3xl font-bold">Consent Export Requests</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Teachers requesting a signed-students credit export, routed to you. Approving an export releases only an
-          aggregate credit-points outcome to the teacher — never individual decision detail.
+          Teachers requesting a signed-students credit export, routed to you.
+          Approving an export releases only an aggregate credit-points outcome
+          to the teacher — never individual decision detail.
         </p>
       </div>
 
-      {error && <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
+      {error && (
+        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          {error}
+        </div>
+      )}
 
       {loading ? (
         <div className="flex justify-center py-12 text-muted-foreground">
@@ -109,17 +124,23 @@ export default function AdminConsentRequestsPage() {
                     <div>
                       <h2 className="font-semibold">{request.class.name}</h2>
                       <p className="text-sm text-muted-foreground">
-                        From {request.teacher.user.firstName} {request.teacher.user.lastName} (
+                        From {request.teacher.user.firstName}{" "}
+                        {request.teacher.user.lastName} (
                         {request.teacher.user.email})
                       </p>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        Grade column: {request.gradeColumnName} ({request.pointsAwarded} points) ·{" "}
+                        Grade column: {request.gradeColumnName} (
+                        {request.pointsAwarded} points) ·{" "}
                         {new Date(request.requestedAt).toLocaleString()}
                       </p>
                     </div>
                     <Badge
                       variant={
-                        request.status === "APPROVED" ? "default" : request.status === "REJECTED" ? "destructive" : "secondary"
+                        request.status === "APPROVED"
+                          ? "default"
+                          : request.status === "REJECTED"
+                            ? "destructive"
+                            : "secondary"
                       }
                     >
                       {request.status}
@@ -134,35 +155,58 @@ export default function AdminConsentRequestsPage() {
                           className="mt-0.5 size-4"
                           checked={attested[request.id] === true}
                           onChange={(e) =>
-                            setAttested((prev) => ({ ...prev, [request.id]: e.target.checked }))
+                            setAttested((prev) => ({
+                              ...prev,
+                              [request.id]: e.target.checked,
+                            }))
                           }
                         />
                         <span>
-                          I confirm this course has ended and final grades have been submitted, per the signed
-                          consent form&apos;s commitment that a student&apos;s participation is never known to
-                          their instructor while enrolled. Approval is disabled until this is checked.
+                          I confirm this course has ended and final grades have
+                          been submitted, per the signed consent form&apos;s
+                          commitment that a student&apos;s participation is
+                          never known to their instructor while enrolled.
+                          Approval is disabled until this is checked.
                         </span>
                       </label>
                       <Textarea
                         value={notes[request.id] || ""}
-                        onChange={(e) => setNotes((prev) => ({ ...prev, [request.id]: e.target.value }))}
+                        onChange={(e) =>
+                          setNotes((prev) => ({
+                            ...prev,
+                            [request.id]: e.target.value,
+                          }))
+                        }
                         placeholder="Optional note to the teacher"
                       />
                       <div className="flex justify-end gap-2">
-                        <Button variant="outline" disabled={busyId === request.id} onClick={() => decide(request.id, "REJECT")}>
+                        <Button
+                          variant="outline"
+                          disabled={busyId === request.id}
+                          onClick={() => decide(request.id, "REJECT")}
+                        >
                           <X className="size-4" /> Reject
                         </Button>
                         <Button
-                          disabled={busyId === request.id || attested[request.id] !== true}
+                          disabled={
+                            busyId === request.id ||
+                            attested[request.id] !== true
+                          }
                           onClick={() => decide(request.id, "APPROVE")}
                         >
-                          {busyId === request.id ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+                          {busyId === request.id ? (
+                            <Loader2 className="size-4 animate-spin" />
+                          ) : (
+                            <Check className="size-4" />
+                          )}
                           Approve and send to teacher
                         </Button>
                       </div>
                     </div>
                   ) : request.decisionNote ? (
-                    <p className="rounded-md bg-muted/50 p-3 text-sm">{request.decisionNote}</p>
+                    <p className="rounded-md bg-muted/50 p-3 text-sm">
+                      {request.decisionNote}
+                    </p>
                   ) : null}
                 </CardContent>
               </Card>

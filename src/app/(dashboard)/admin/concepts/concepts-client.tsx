@@ -9,8 +9,17 @@ import { ConceptsTable } from "./concepts-table";
 import { MisconceptionsTable } from "./misconceptions-table";
 import { MappingsTable } from "./mappings-table";
 import { ExternalRefsTable } from "./external-refs-table";
-import { uploadConceptsCsv, uploadMisconceptionsCsv, uploadMappingsCsv } from "./import-actions";
-import type { ConceptRow, MisconceptionRow, MappingRow, ExternalRefRow } from "./types";
+import {
+  uploadConceptsCsv,
+  uploadMisconceptionsCsv,
+  uploadMappingsCsv,
+} from "./import-actions";
+import type {
+  ConceptRow,
+  MisconceptionRow,
+  MappingRow,
+  ExternalRefRow,
+} from "./types";
 
 interface ConceptsClientProps {
   concepts: ConceptRow[];
@@ -19,7 +28,12 @@ interface ConceptsClientProps {
   externalRefs: ExternalRefRow[];
 }
 
-export function ConceptsClient({ concepts, misconceptions, mappings, externalRefs }: ConceptsClientProps) {
+export function ConceptsClient({
+  concepts,
+  misconceptions,
+  mappings,
+  externalRefs,
+}: ConceptsClientProps) {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [showDeprecated, setShowDeprecated] = useState(false);
@@ -35,16 +49,19 @@ export function ConceptsClient({ concepts, misconceptions, mappings, externalRef
           <BookOpen className="size-6" /> Concept &amp; Misconception Catalog
         </h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Upload and review the concept catalog, misconception catalog, and the mappings between them.
+          Upload and review the concept catalog, misconception catalog, and the
+          mappings between them.
         </p>
       </div>
 
       <div>
         <p className="text-sm text-muted-foreground mb-3">
-          Recommended upload order: <strong className="text-foreground">Concepts</strong> →{" "}
+          Recommended upload order:{" "}
+          <strong className="text-foreground">Concepts</strong> →{" "}
           <strong className="text-foreground">Misconceptions</strong> →{" "}
-          <strong className="text-foreground">Mappings</strong>. Mapping rows that reference an unknown
-          concept or misconception ID are skipped and reported after upload.
+          <strong className="text-foreground">Mappings</strong>. Mapping rows
+          that reference an unknown concept or misconception ID are skipped and
+          reported after upload.
         </p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <UploadCard
@@ -94,8 +111,16 @@ export function ConceptsClient({ concepts, misconceptions, mappings, externalRef
         </label>
       </div>
 
-      <ConceptsTable concepts={concepts} search={search} showDeprecated={showDeprecated} />
-      <MisconceptionsTable misconceptions={misconceptions} search={search} showDeprecated={showDeprecated} />
+      <ConceptsTable
+        concepts={concepts}
+        search={search}
+        showDeprecated={showDeprecated}
+      />
+      <MisconceptionsTable
+        misconceptions={misconceptions}
+        search={search}
+        showDeprecated={showDeprecated}
+      />
       <MappingsTable mappings={mappings} search={search} />
       <ExternalRefsTable externalRefs={externalRefs} search={search} />
     </div>

@@ -26,14 +26,6 @@ export function hashResetToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
-/** Timing-safe comparison of two token hashes (both hex of equal length). */
-export function tokenHashesMatch(a: string, b: string): boolean {
-  const bufA = Buffer.from(a);
-  const bufB = Buffer.from(b);
-  if (bufA.length !== bufB.length) return false;
-  return crypto.timingSafeEqual(bufA, bufB);
-}
-
 export function resetTokenExpiry(now: Date = new Date()): Date {
   return new Date(now.getTime() + RESET_TOKEN_TTL_MINUTES * 60 * 1000);
 }
@@ -44,7 +36,7 @@ export function resetTokenExpiry(now: Date = new Date()): Date {
  */
 export async function issueResetToken(
   userId: string,
-  requestIp: string | null
+  requestIp: string | null,
 ): Promise<{ token: string; expiresAt: Date }> {
   const token = generateResetToken();
   const expiresAt = resetTokenExpiry();
@@ -82,7 +74,7 @@ export type ResetTokenLookup =
 /** Resolve a raw token to its (still valid) grant. */
 export async function findValidResetToken(
   rawToken: string,
-  now: Date = new Date()
+  now: Date = new Date(),
 ): Promise<ResetTokenLookup> {
   if (!rawToken) return { ok: false, reason: "unknown" };
 
@@ -104,7 +96,7 @@ export async function findValidResetToken(
 export async function consumeResetToken(
   tokenId: string,
   userId: string,
-  hashedPassword: string
+  hashedPassword: string,
 ): Promise<boolean> {
   try {
     await prisma.$transaction(async (tx) => {
@@ -124,7 +116,8 @@ export async function consumeResetToken(
     });
     return true;
   } catch (error) {
-    if (error instanceof Error && error.message === "TOKEN_ALREADY_USED") return false;
+    if (error instanceof Error && error.message === "TOKEN_ALREADY_USED")
+      return false;
     throw error;
   }
 }

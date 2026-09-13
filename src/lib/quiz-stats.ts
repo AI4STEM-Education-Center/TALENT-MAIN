@@ -17,7 +17,9 @@ export function median(values: number[]): number {
   if (values.length === 0) return 0;
   const sorted = values.toSorted((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+  return sorted.length % 2 === 0
+    ? (sorted[mid - 1] + sorted[mid]) / 2
+    : sorted[mid];
 }
 
 /** Minimum, or 0 for an empty list. */
@@ -39,7 +41,10 @@ export function stdDev(values: number[]): number {
 }
 
 /** Fraction (0-1) of values at or above PASS_THRESHOLD, or 0 for an empty list. */
-export function passRate(values: number[], threshold: number = PASS_THRESHOLD): number {
+export function passRate(
+  values: number[],
+  threshold: number = PASS_THRESHOLD,
+): number {
   if (values.length === 0) return 0;
   return values.filter((v) => v >= threshold).length / values.length;
 }
@@ -53,7 +58,12 @@ export function averageAttemptsPerStudent(attemptCounts: number[]): number {
 }
 
 /** A single score-distribution bucket: an inclusive label + count. */
-export type DistributionBucket = { label: string; min: number; max: number; count: number };
+export type DistributionBucket = {
+  label: string;
+  min: number;
+  max: number;
+  count: number;
+};
 
 /**
  * Bucket scores into five 20-point bands (0-20, 20-40, 40-60, 60-80, 80-100).

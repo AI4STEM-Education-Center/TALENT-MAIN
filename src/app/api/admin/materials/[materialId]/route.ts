@@ -18,7 +18,7 @@ export const runtime = "nodejs";
 // view working for materials whose class link is gone (classId is SetNull).
 export async function GET(
   _req: NextRequest,
-  { params }: { params: Promise<{ materialId: string }> }
+  { params }: { params: Promise<{ materialId: string }> },
 ) {
   const session = await auth();
   if (!session?.user || session.user.role !== "ADMIN") {
@@ -30,7 +30,11 @@ export async function GET(
     where: { id: materialId },
     include: {
       pages: { orderBy: { pageNumber: "asc" } },
-      teacher: { select: { user: { select: { username: true, firstName: true, lastName: true } } } },
+      teacher: {
+        select: {
+          user: { select: { username: true, firstName: true, lastName: true } },
+        },
+      },
       class: { select: { name: true } },
     },
   });
@@ -45,8 +49,10 @@ export async function GET(
         pageNumber: page.pageNumber,
         keyConcept: page.keyConcept,
         description: page.description,
-        url: await signObjectReadUrl(material.bucket, page.storageKey).catch(() => null),
-      }))
+        url: await signObjectReadUrl(material.bucket, page.storageKey).catch(
+          () => null,
+        ),
+      })),
     ),
   ]);
 
@@ -71,7 +77,7 @@ export async function GET(
 // Assign a material-only global tag to an existing pool material.
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: Promise<{ materialId: string }> }
+  { params }: { params: Promise<{ materialId: string }> },
 ) {
   const session = await auth();
   if (!session?.user || session.user.role !== "ADMIN") {
@@ -85,19 +91,38 @@ export async function PATCH(
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
-  if (!("topicId" in body) || (body.topicId !== null && typeof body.topicId !== "string")) {
-    return NextResponse.json({ error: "topicId must be a string or null" }, { status: 400 });
+  if (
+    !("topicId" in body) ||
+    (body.topicId !== null && typeof body.topicId !== "string")
+  ) {
+    return NextResponse.json(
+      { error: "topicId must be a string or null" },
+      { status: 400 },
+    );
   }
 
-  const topicId = typeof body.topicId === "string" && body.topicId ? body.topicId : null;
+  const topicId =
+    typeof body.topicId === "string" && body.topicId ? body.topicId : null;
   const [material, topic] = await Promise.all([
-    prisma.learningMaterial.findFirst({ where: { id: materialId, teacherId: null } }),
+    prisma.learningMaterial.findFirst({
+      where: { id: materialId, teacherId: null },
+    }),
     topicId
-      ? prisma.topic.findFirst({ where: { id: topicId, teacherId: null, contentType: "MATERIAL" } })
+      ? prisma.topic.findFirst({
+          where: { id: topicId, teacherId: null, contentType: "MATERIAL" },
+        })
       : null,
   ]);
-  if (!material) return NextResponse.json({ error: "Pool material not found" }, { status: 404 });
-  if (topicId && !topic) return NextResponse.json({ error: "Material tag not found" }, { status: 400 });
+  if (!material)
+    return NextResponse.json(
+      { error: "Pool material not found" },
+      { status: 404 },
+    );
+  if (topicId && !topic)
+    return NextResponse.json(
+      { error: "Material tag not found" },
+      { status: 400 },
+    );
 
   const updated = await prisma.learningMaterial.update({
     where: { id: materialId },
@@ -109,7 +134,7 @@ export async function PATCH(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: Promise<{ materialId: string }> }
+  { params }: { params: Promise<{ materialId: string }> },
 ) {
   const session = await auth();
   if (!session?.user || session.user.role !== "ADMIN") {
@@ -133,7 +158,7 @@ export async function DELETE(
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "S3 not configured" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 
@@ -146,7 +171,7 @@ export async function DELETE(
     if (pageKeys.length > 0) {
       await deleteS3Objects(bucket, pageKeys).catch(console.error);
     }
-    
+
     // Fallback: list the material prefix and delete in case DB missed some
     const prefix = materialPrefixFromStorageKey(material.storageKey);
     const remainingKeys = await listS3Objects(bucket, prefix);
@@ -164,7 +189,7 @@ export async function DELETE(
     console.error("Failed to delete material:", e);
     return NextResponse.json(
       { error: "Failed to delete material and associated files" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

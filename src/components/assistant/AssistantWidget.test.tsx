@@ -16,8 +16,8 @@ describe("AssistantWidget", () => {
       renderToStaticMarkup(
         <AssistantProvider>
           <AssistantWidget />
-        </AssistantProvider>
-      )
+        </AssistantProvider>,
+      ),
     ).toBe("");
   });
 });
@@ -30,8 +30,8 @@ describe("AssistantLauncher", () => {
       renderToStaticMarkup(
         <AssistantProvider>
           <AssistantLauncher />
-        </AssistantProvider>
-      )
+        </AssistantProvider>,
+      ),
     ).toBe("");
   });
 });
@@ -43,9 +43,14 @@ describe("AssistantLauncher", () => {
  * no matchMedia result other than `false` and no PointerEvent, so both are
  * stubbed — everything else is the component as it ships.
  */
-async function mountOpenPanel(): Promise<{ panel: HTMLElement; cleanup: () => void }> {
+async function mountOpenPanel(): Promise<{
+  panel: HTMLElement;
+  cleanup: () => void;
+}> {
   // React only suppresses its "not wrapped in act(...)" warning when this is set.
-  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  (
+    globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+  ).IS_REACT_ACT_ENVIRONMENT = true;
   vi.stubGlobal("matchMedia", () => ({
     matches: true,
     addEventListener: () => {},
@@ -63,7 +68,7 @@ async function mountOpenPanel(): Promise<{ panel: HTMLElement; cleanup: () => vo
         maxAttachments: 0,
         maxAttachmentBytes: 0,
       }),
-    }))
+    })),
   );
   // jsdom does not implement scrolling; the transcript auto-scroll calls it.
   Element.prototype.scrollTo = () => {};
@@ -78,11 +83,13 @@ async function mountOpenPanel(): Promise<{ panel: HTMLElement; cleanup: () => vo
       <AssistantProvider>
         <AssistantLauncher />
         <AssistantWidget />
-      </AssistantProvider>
+      </AssistantProvider>,
     );
   });
 
-  const launcher = host.querySelector<HTMLButtonElement>("button[aria-label^='Open']");
+  const launcher = host.querySelector<HTMLButtonElement>(
+    "button[aria-label^='Open']",
+  );
   if (!launcher) throw new Error("the launcher never appeared");
   await act(async () => launcher.click());
 
@@ -100,13 +107,28 @@ async function mountOpenPanel(): Promise<{ panel: HTMLElement; cleanup: () => vo
 
 /** jsdom has no PointerEvent; React only reads the mouse-event fields. */
 function pointer(type: string, x: number, y: number): MouseEvent {
-  return new MouseEvent(type, { bubbles: true, clientX: x, clientY: y, button: 0 });
+  return new MouseEvent(type, {
+    bubbles: true,
+    clientX: x,
+    clientY: y,
+    button: 0,
+  });
 }
 
-async function drag(target: EventTarget, from: [number, number], to: [number, number]) {
-  await act(async () => target.dispatchEvent(pointer("pointerdown", from[0], from[1])));
-  await act(async () => window.dispatchEvent(pointer("pointermove", to[0], to[1])));
-  await act(async () => window.dispatchEvent(pointer("pointerup", to[0], to[1])));
+async function drag(
+  target: EventTarget,
+  from: [number, number],
+  to: [number, number],
+) {
+  await act(async () =>
+    target.dispatchEvent(pointer("pointerdown", from[0], from[1])),
+  );
+  await act(async () =>
+    window.dispatchEvent(pointer("pointermove", to[0], to[1])),
+  );
+  await act(async () =>
+    window.dispatchEvent(pointer("pointerup", to[0], to[1])),
+  );
 }
 
 describe("moving and resizing the panel", () => {
@@ -117,7 +139,11 @@ describe("moving and resizing the panel", () => {
     try {
       const header = panel.querySelector("header");
       expect(header).not.toBeNull();
-      const before = { left: panel.style.left, top: panel.style.top, width: panel.style.width };
+      const before = {
+        left: panel.style.left,
+        top: panel.style.top,
+        width: panel.style.width,
+      };
 
       // Up and to the left: the panel opens against the bottom-right margin, so
       // that is the only direction with room to move on a 1024x768 jsdom window.
@@ -145,6 +171,87 @@ describe("moving and resizing the panel", () => {
     }
   });
 
+  it("moves on the compositor and only touches layout once, at the end", async () => {
+    // The perf contract for a move drag: while the gesture runs the panel is
+    // offset with a transform (no layout, no React render), and `left`/`top`
+    // are written exactly once — when the gesture ends. A regression here means
+    // the panel is back to laying out the page on every pointer event.
+    const { panel, cleanup } = await mountOpenPanel();
+    try {
+      const header = panel.querySelector("header")!;
+      const left = parseFloat(panel.style.left);
+      const top = parseFloat(panel.style.top);
+
+      await act(async () =>
+        header.dispatchEvent(pointer("pointerdown", 500, 200)),
+      );
+      await act(async () =>
+        window.dispatchEvent(pointer("pointermove", 460, 150)),
+      );
+      // Let the scheduled frame run.
+      await act(
+        async () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => resolve()),
+          ),
+      );
+
+      expect(panel.style.transform).toBe("translate3d(-40px, -50px, 0)");
+      // Untouched mid-gesture — the transform is doing the moving.
+      expect(parseFloat(panel.style.left)).toBe(left);
+      expect(parseFloat(panel.style.top)).toBe(top);
+
+      await act(async () =>
+        window.dispatchEvent(pointer("pointerup", 460, 150)),
+      );
+
+      // Folded back into real geometry, and the transform cleared in the same
+      // breath so the panel never flashes at its old position.
+      expect(panel.style.transform).toBe("");
+      expect(parseFloat(panel.style.left)).toBe(left - 40);
+      expect(parseFloat(panel.style.top)).toBe(top - 50);
+      // Not left promoted after the gesture — a permanent compositor layer is a
+      // cost paid on every page that mounts the widget.
+      expect(panel.style.willChange).toBe("");
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("coalesces a burst of pointer moves into a single frame", async () => {
+    // A mouse can report at 1000Hz. The panel must still be written once per
+    // display refresh, not once per event — this is the difference between a
+    // smooth drag and the queue-of-renders the old version built.
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
+      frames.push(cb);
+      return frames.length;
+    });
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+
+    const { panel, cleanup } = await mountOpenPanel();
+    try {
+      const header = panel.querySelector("header")!;
+      await act(async () =>
+        header.dispatchEvent(pointer("pointerdown", 500, 200)),
+      );
+      for (let i = 0; i < 25; i++) {
+        await act(async () =>
+          window.dispatchEvent(pointer("pointermove", 500 - i, 200 - i)),
+        );
+      }
+
+      expect(frames).toHaveLength(1);
+
+      // The one frame that does run paints the LAST position, not the first —
+      // coalescing must not mean lagging behind the pointer.
+      await act(async () => frames[0](0));
+      expect(panel.style.transform).toBe("translate3d(-24px, -24px, 0)");
+    } finally {
+      cleanup();
+    }
+  });
+
   it("grows when the west edge is dragged outward, and remembers the result", async () => {
     const { panel, cleanup } = await mountOpenPanel();
     try {
@@ -159,9 +266,9 @@ describe("moving and resizing the panel", () => {
       expect(parseFloat(panel.style.width)).toBe(width + 90);
       expect(parseFloat(panel.style.left)).toBe(left - 90);
       // Persisted once the gesture ends, so the panel reopens where it was left.
-      expect(JSON.parse(window.localStorage.getItem("assistant-panel-rect") ?? "{}")).toMatchObject(
-        { width: width + 90 }
-      );
+      expect(
+        JSON.parse(window.localStorage.getItem("assistant-panel-rect") ?? "{}"),
+      ).toMatchObject({ width: width + 90 });
     } finally {
       cleanup();
     }

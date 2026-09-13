@@ -8,7 +8,10 @@
  * can't be attacker-chosen.
  */
 export function appOrigin(req: Request): string {
-  const configured = process.env.APP_BASE_URL || process.env.AUTH_URL || process.env.NEXTAUTH_URL;
+  const configured =
+    process.env.APP_BASE_URL ||
+    process.env.AUTH_URL ||
+    process.env.NEXTAUTH_URL;
   if (configured) {
     try {
       return new URL(configured).origin;

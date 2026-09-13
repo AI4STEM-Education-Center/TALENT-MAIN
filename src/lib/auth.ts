@@ -28,7 +28,9 @@ const sessionCookieName = `${useSecureCookies ? "__Secure-" : ""}authjs.session-
  * on the active form, or NOT_REQUIRED when the role has no published form at
  * all — the proxy must treat those last two differently (consent-claim.ts).
  */
-async function stampConsentClaim(token: Record<string, unknown>): Promise<void> {
+async function stampConsentClaim(
+  token: Record<string, unknown>,
+): Promise<void> {
   const role = token.role;
   if (!isConsentRole(role) || typeof token.id !== "string") {
     token.consentVersion = null;
@@ -129,7 +131,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           firstName: user.firstName,
           lastName: user.lastName,
           role: user.role,
-          sessionExpiresAt: sessionExpiresAt(shouldRememberComputer(credentials?.remember)),
+          sessionExpiresAt: sessionExpiresAt(
+            shouldRememberComputer(credentials?.remember),
+          ),
         };
       },
     }),
@@ -143,7 +147,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.firstName = (user as { firstName: string }).firstName;
         token.lastName = (user as { lastName: string }).lastName;
         token.sessionExpiresAt =
-          (user as { sessionExpiresAt?: number }).sessionExpiresAt ?? sessionExpiresAt(false);
+          (user as { sessionExpiresAt?: number }).sessionExpiresAt ??
+          sessionExpiresAt(false);
         await stampConsentClaim(token);
       }
 
@@ -161,7 +166,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (trigger === "update" && token.id) {
         const fresh = await prisma.user.findUnique({
           where: { id: token.id as string },
-          select: { firstName: true, lastName: true, username: true, email: true, role: true },
+          select: {
+            firstName: true,
+            lastName: true,
+            username: true,
+            email: true,
+            role: true,
+          },
         });
         if (fresh) {
           token.firstName = fresh.firstName;
@@ -182,12 +193,16 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         session.user.username = token.username as string;
         session.user.firstName = token.firstName as string;
         session.user.lastName = token.lastName as string;
-        session.user.consentVersion = (token.consentVersion as string | null | undefined) ?? null;
-        session.user.consentDecision = (token.consentDecision as string | null | undefined) ?? null;
+        session.user.consentVersion =
+          (token.consentVersion as string | null | undefined) ?? null;
+        session.user.consentDecision =
+          (token.consentDecision as string | null | undefined) ?? null;
       }
       return {
         ...session,
-        expires: new Date(token.sessionExpiresAt as number * 1000).toISOString(),
+        expires: new Date(
+          (token.sessionExpiresAt as number) * 1000,
+        ).toISOString(),
       };
     },
   },

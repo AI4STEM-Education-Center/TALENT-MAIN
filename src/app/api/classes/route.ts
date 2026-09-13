@@ -5,11 +5,15 @@ import { isValidEmail, normalizeEmail } from "@/lib/csv-roster";
 
 export async function GET() {
   const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session?.user)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   if (session.user.role === "TEACHER") {
-    const teacher = await prisma.teacher.findUnique({ where: { userId: session.user.id } });
-    if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
+    const teacher = await prisma.teacher.findUnique({
+      where: { userId: session.user.id },
+    });
+    if (!teacher)
+      return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
 
     const classes = await prisma.class.findMany({
       where: { teacherId: teacher.id },
@@ -22,14 +26,19 @@ export async function GET() {
   }
 
   // Student: return enrolled classes
-  const student = await prisma.student.findUnique({ where: { userId: session.user.id } });
-  if (!student) return NextResponse.json({ error: "Student not found" }, { status: 404 });
+  const student = await prisma.student.findUnique({
+    where: { userId: session.user.id },
+  });
+  if (!student)
+    return NextResponse.json({ error: "Student not found" }, { status: 404 });
 
   const enrollments = await prisma.classEnrollment.findMany({
     where: { studentId: student.id },
     include: {
       class: {
-        include: { _count: { select: { enrollments: true, classQuizzes: true } } },
+        include: {
+          _count: { select: { enrollments: true, classQuizzes: true } },
+        },
       },
     },
     orderBy: { joinedAt: "desc" },
@@ -43,31 +52,46 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const teacher = await prisma.teacher.findUnique({ where: { userId: session.user.id } });
-  if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
+  const teacher = await prisma.teacher.findUnique({
+    where: { userId: session.user.id },
+  });
+  if (!teacher)
+    return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
 
   const { name, description, studentList } = await req.json();
-  if (!name?.trim()) return NextResponse.json({ error: "Class name is required." }, { status: 400 });
+  if (!name?.trim())
+    return NextResponse.json(
+      { error: "Class name is required." },
+      { status: 400 },
+    );
 
   // studentList is expected: [{ orgDefinedId, firstName, lastName, email }]
   // Email is required so teachers can send notifications to students.
-  const students: { orgDefinedId: string; firstName: string; lastName: string; email: string }[] =
-    Array.isArray(studentList) ? studentList : [];
+  const students: {
+    orgDefinedId: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+  }[] = Array.isArray(studentList) ? studentList : [];
 
   // Validate every roster entry has a usable email before creating anything.
   const invalid = students.find(
-    (s) => !s?.email || typeof s.email !== "string" || !isValidEmail(s.email)
+    (s) => !s?.email || typeof s.email !== "string" || !isValidEmail(s.email),
   );
   if (invalid) {
     return NextResponse.json(
       { error: "Every student on the roster must have a valid email address." },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
   const result = await prisma.$transaction(async (tx) => {
     const cls = await tx.class.create({
-      data: { name: name.trim(), description: description?.trim() || null, teacherId: teacher.id },
+      data: {
+        name: name.trim(),
+        description: description?.trim() || null,
+        teacherId: teacher.id,
+      },
     });
 
     if (students.length > 0) {

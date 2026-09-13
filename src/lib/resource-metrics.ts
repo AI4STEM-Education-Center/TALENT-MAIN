@@ -91,7 +91,8 @@ export function parseCgroupCpuMax(text: string): number | null {
   if (!quota || quota === "max") return null;
   const q = Number(quota);
   const p = Number(period);
-  if (!Number.isFinite(q) || !Number.isFinite(p) || p <= 0 || q <= 0) return null;
+  if (!Number.isFinite(q) || !Number.isFinite(p) || p <= 0 || q <= 0)
+    return null;
   return q / p;
 }
 
@@ -129,7 +130,8 @@ export function readCpuCores(): number {
   }
   const quota = readNumberFile(CGROUP_V1.cpuQuota);
   const period = readNumberFile(CGROUP_V1.cpuPeriod);
-  if (quota !== null && period !== null && quota > 0 && period > 0) return quota / period;
+  if (quota !== null && period !== null && quota > 0 && period > 0)
+    return quota / period;
   return Math.max(1, os.cpus().length);
 }
 
@@ -206,7 +208,7 @@ export function readHostMemory(): HostMemory | null {
 /** Busy share of the whole machine between two /proc/stat readings. */
 export function hostCpuPercentFromDelta(
   deltaTotalJiffies: number,
-  deltaIdleJiffies: number
+  deltaIdleJiffies: number,
 ): number | null {
   if (deltaTotalJiffies <= 0 || deltaIdleJiffies < 0) return null;
   const busy = Math.max(0, deltaTotalJiffies - deltaIdleJiffies);
@@ -230,7 +232,7 @@ export function createHostCpuSampler() {
     if (!last) return null;
     return hostCpuPercentFromDelta(
       current.totalJiffies - last.totalJiffies,
-      current.idleJiffies - last.idleJiffies
+      current.idleJiffies - last.idleJiffies,
     );
   };
 }
@@ -245,24 +247,32 @@ export function readMemoryUsage(): MemoryUsage {
 
   const v2Current = readNumberFile(CGROUP_V2.memCurrent);
   if (v2Current !== null) {
-    const cache = parseInactiveFileBytes(readFileOrNull(CGROUP_V2.memStat) ?? "");
+    const cache = parseInactiveFileBytes(
+      readFileOrNull(CGROUP_V2.memStat) ?? "",
+    );
     const rawMax = readFileOrNull(CGROUP_V2.memMax)?.trim();
     const max = rawMax && rawMax !== "max" ? Number(rawMax) : NaN;
     return {
       usedBytes: Math.max(0, v2Current - cache),
       // An unlimited container is bounded by the host, not by "max".
-      limitBytes: Number.isFinite(max) && max > 0 && max < hostTotal ? max : hostTotal,
+      limitBytes:
+        Number.isFinite(max) && max > 0 && max < hostTotal ? max : hostTotal,
     };
   }
 
   const v1Usage = readNumberFile(CGROUP_V1.memUsage);
   if (v1Usage !== null) {
-    const cache = parseInactiveFileBytes(readFileOrNull(CGROUP_V1.memStat) ?? "");
+    const cache = parseInactiveFileBytes(
+      readFileOrNull(CGROUP_V1.memStat) ?? "",
+    );
     const v1Limit = readNumberFile(CGROUP_V1.memLimit);
     return {
       usedBytes: Math.max(0, v1Usage - cache),
       // v1 reports "no limit" as a sentinel near 2^63, hence the host clamp.
-      limitBytes: v1Limit !== null && v1Limit > 0 && v1Limit < hostTotal ? v1Limit : hostTotal,
+      limitBytes:
+        v1Limit !== null && v1Limit > 0 && v1Limit < hostTotal
+          ? v1Limit
+          : hostTotal,
     };
   }
 
@@ -276,10 +286,10 @@ export function readMemoryUsage(): MemoryUsage {
 export function cpuPercentFromDelta(
   deltaUsageUsec: number,
   deltaWallMs: number,
-  cores: number
+  cores: number,
 ): number {
   if (deltaWallMs <= 0 || cores <= 0 || deltaUsageUsec < 0) return 0;
-  const percent = (deltaUsageUsec / 1000 / deltaWallMs) * 100 / cores;
+  const percent = ((deltaUsageUsec / 1000 / deltaWallMs) * 100) / cores;
   return Math.min(100, Math.round(percent * 100) / 100);
 }
 
@@ -387,7 +397,7 @@ export function collectResourceSample(
   identity: NodeIdentity,
   cpuPercent: number,
   hostCpuPercent: number | null,
-  s3Bytes: number | null
+  s3Bytes: number | null,
 ): ResourceSampleInput {
   const dataDir = resolveDataDir();
   const memory = readMemoryUsage();
@@ -428,7 +438,10 @@ const MINUTE = 60 * 1000;
  * points per node, far more than a chart can show, so longer ranges aggregate
  * into wider buckets — capping every range at roughly 60-340 points.
  */
-export function rangeConfig(range: ResourceRange): { windowMs: number; bucketMs: number } {
+export function rangeConfig(range: ResourceRange): {
+  windowMs: number;
+  bucketMs: number;
+} {
   switch (range) {
     case "1h":
       return { windowMs: 60 * MINUTE, bucketMs: MINUTE };
@@ -479,7 +492,7 @@ function average(values: number[]): number {
 /** Newest non-null reading of a field in a time-ordered bucket, else null. */
 function latestDefined(
   ordered: BucketableSample[],
-  pick: (sample: BucketableSample) => number | null | undefined
+  pick: (sample: BucketableSample) => number | null | undefined,
 ): number | null {
   for (let i = ordered.length - 1; i >= 0; i -= 1) {
     const value = pick(ordered[i]);
@@ -491,7 +504,7 @@ function latestDefined(
 /** Non-null readings of a field across a bucket. */
 function definedValues(
   ordered: BucketableSample[],
-  pick: (sample: BucketableSample) => number | null | undefined
+  pick: (sample: BucketableSample) => number | null | undefined,
 ): number[] {
   const out: number[] = [];
   for (const sample of ordered) {
@@ -512,7 +525,10 @@ function definedValues(
  * blank out an environment's line; the host fields are treated the same way,
  * since a node that has just restarted has no host CPU delta yet.
  */
-export function bucketSamples(samples: BucketableSample[], bucketMs: number): ResourcePoint[] {
+export function bucketSamples(
+  samples: BucketableSample[],
+  bucketMs: number,
+): ResourcePoint[] {
   if (bucketMs <= 0) return [];
   const buckets = new Map<number, BucketableSample[]>();
   for (const sample of samples) {
@@ -525,12 +541,15 @@ export function bucketSamples(samples: BucketableSample[], bucketMs: number): Re
   return [...buckets.entries()]
     .sort((a, b) => a[0] - b[0])
     .map(([t, rows]) => {
-      const ordered = [...rows].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+      const ordered = [...rows].sort(
+        (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
+      );
       const latest = ordered[ordered.length - 1];
       const hostCpu = definedValues(ordered, (r) => r.hostCpuPercent);
       return {
         t,
-        cpuPercent: Math.round(average(ordered.map((r) => r.cpuPercent)) * 100) / 100,
+        cpuPercent:
+          Math.round(average(ordered.map((r) => r.cpuPercent)) * 100) / 100,
         cpuPeakPercent: Math.max(...ordered.map((r) => r.cpuPercent)),
         memUsedBytes: Math.round(average(ordered.map((r) => r.memUsedBytes))),
         memLimitBytes: latest.memLimitBytes,
@@ -538,7 +557,9 @@ export function bucketSamples(samples: BucketableSample[], bucketMs: number): Re
         diskTotalBytes: latest.diskTotalBytes,
         diskFreeBytes: latest.diskFreeBytes,
         s3Bytes: latestDefined(ordered, (r) => r.s3Bytes),
-        hostCpuPercent: hostCpu.length ? Math.round(average(hostCpu) * 100) / 100 : null,
+        hostCpuPercent: hostCpu.length
+          ? Math.round(average(hostCpu) * 100) / 100
+          : null,
         hostCpuPeakPercent: hostCpu.length ? Math.max(...hostCpu) : null,
         hostCpuCores: latestDefined(ordered, (r) => r.hostCpuCores),
         hostMemUsedBytes: latestDefined(ordered, (r) => r.hostMemUsedBytes),

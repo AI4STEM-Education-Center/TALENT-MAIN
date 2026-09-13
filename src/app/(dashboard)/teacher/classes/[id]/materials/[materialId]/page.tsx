@@ -6,7 +6,9 @@ import { ArrowLeft, AlertCircle } from "lucide-react";
 import MaterialAnalysisEditor from "./material-analysis-editor";
 import { materialLinkedToClass } from "@/lib/learning-material";
 
-export default async function MaterialViewerPage(props: { params: Promise<{ id: string; materialId: string }> }) {
+export default async function MaterialViewerPage(props: {
+  params: Promise<{ id: string; materialId: string }>;
+}) {
   const session = await auth();
   if (!session?.user || session.user.role !== "TEACHER") {
     redirect("/login");
@@ -48,9 +50,12 @@ export default async function MaterialViewerPage(props: { params: Promise<{ id: 
           <ArrowLeft className="size-5 text-gray-700" />
         </Link>
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">{material.title || material.originalName}</h1>
+          <h1 className="text-3xl font-bold text-gray-900">
+            {material.title || material.originalName}
+          </h1>
           <p className="text-sm text-gray-500 mt-1">
-            {material.totalPages} Pages • Processed on {new Date(material.updatedAt).toLocaleDateString()}
+            {material.totalPages} Pages • Processed on{" "}
+            {new Date(material.updatedAt).toLocaleDateString()}
           </p>
         </div>
       </div>
@@ -59,7 +64,9 @@ export default async function MaterialViewerPage(props: { params: Promise<{ id: 
         <div className="bg-red-50 border border-red-200 rounded-lg p-6 flex items-start gap-x-4">
           <AlertCircle className="size-6 text-red-600 shrink-0 mt-0.5" />
           <div>
-            <h2 className="text-lg font-semibold text-red-800">Processing Failed</h2>
+            <h2 className="text-lg font-semibold text-red-800">
+              Processing Failed
+            </h2>
             <p className="text-red-700 mt-1">{material.errorMessage}</p>
           </div>
         </div>

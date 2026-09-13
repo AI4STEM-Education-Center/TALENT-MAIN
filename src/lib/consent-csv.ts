@@ -1,4 +1,9 @@
-import { buildGradeHeader, buildGradesCsv, formatGrade, type GradeExportRow } from "@/lib/grades-csv";
+import {
+  buildGradeHeader,
+  buildGradesCsv,
+  formatGrade,
+  type GradeExportRow,
+} from "@/lib/grades-csv";
 
 /**
  * CSV builder for the teacher "export signed students" request (§7 of
@@ -20,7 +25,7 @@ export interface ConsentExportRosterRow {
 export function buildConsentExportCsv(
   gradeColumnName: string,
   pointsAwarded: number,
-  rows: ConsentExportRosterRow[]
+  rows: ConsentExportRosterRow[],
 ): string {
   const header = buildGradeHeader(gradeColumnName, pointsAwarded);
   const gradeRows: GradeExportRow[] = rows.map((r) => ({

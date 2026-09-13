@@ -19,7 +19,9 @@ function jsonReq(body: unknown) {
 }
 
 function asTeacher(userId: string) {
-  mockAuth.mockResolvedValue({ user: { id: userId, role: "TEACHER" } } as never);
+  mockAuth.mockResolvedValue({
+    user: { id: userId, role: "TEACHER" },
+  } as never);
 }
 function asAdmin(userId = "admin-1") {
   mockAuth.mockResolvedValue({ user: { id: userId, role: "ADMIN" } } as never);
@@ -46,7 +48,9 @@ describe("GET /api/quizzes (list)", () => {
     const { user, teacher } = await createTeacher();
     const other = await createTeacher();
     await prisma.quiz.create({ data: { name: "Mine", teacherId: teacher.id } });
-    await prisma.quiz.create({ data: { name: "Theirs", teacherId: other.teacher.id } });
+    await prisma.quiz.create({
+      data: { name: "Theirs", teacherId: other.teacher.id },
+    });
     await prisma.quiz.create({ data: { name: "Pool", teacherId: null } });
 
     asTeacher(user.id);
@@ -57,7 +61,9 @@ describe("GET /api/quizzes (list)", () => {
   it("lists the global pool for an admin", async () => {
     const { teacher } = await createTeacher();
     await prisma.quiz.create({ data: { name: "Pool", teacherId: null } });
-    await prisma.quiz.create({ data: { name: "Private", teacherId: teacher.id } });
+    await prisma.quiz.create({
+      data: { name: "Private", teacherId: teacher.id },
+    });
 
     asAdmin();
     const body = await (await LIST()).json();
@@ -84,26 +90,40 @@ describe("POST /api/quizzes (create)", () => {
 
   it("rejects a topicId owned by another scope", async () => {
     const owner = await createTeacher();
-    const topic = await prisma.topic.create({ data: { name: "Other's", teacherId: owner.teacher.id } });
+    const topic = await prisma.topic.create({
+      data: { name: "Other's", teacherId: owner.teacher.id },
+    });
     const { user } = await createTeacher();
     asTeacher(user.id);
-    expect((await POST(jsonReq({ name: "Q", topicId: topic.id }))).status).toBe(400);
+    expect((await POST(jsonReq({ name: "Q", topicId: topic.id }))).status).toBe(
+      400,
+    );
   });
 
   it("creates a quiz grouped under an owned topic", async () => {
     const { user, teacher } = await createTeacher();
-    const topic = await prisma.topic.create({ data: { name: "Mine", teacherId: teacher.id } });
+    const topic = await prisma.topic.create({
+      data: { name: "Mine", teacherId: teacher.id },
+    });
     asTeacher(user.id);
-    const body = await (await POST(jsonReq({ name: "Q", topicId: topic.id }))).json();
+    const body = await (
+      await POST(jsonReq({ name: "Q", topicId: topic.id }))
+    ).json();
     expect(body.topicId).toBe(topic.id);
     expect(body.topic.name).toBe("Mine");
   });
 
   it("409s with dedupeByName when a same-named quiz exists under the topic (case/space-insensitive)", async () => {
-    const topic = await prisma.topic.create({ data: { name: "T", teacherId: null } });
-    const existing = await prisma.quiz.create({ data: { name: "Chapter 1", topicId: topic.id, teacherId: null } });
+    const topic = await prisma.topic.create({
+      data: { name: "T", teacherId: null },
+    });
+    const existing = await prisma.quiz.create({
+      data: { name: "Chapter 1", topicId: topic.id, teacherId: null },
+    });
     asAdmin();
-    const res = await POST(jsonReq({ name: "  chapter 1 ", topicId: topic.id, dedupeByName: true }));
+    const res = await POST(
+      jsonReq({ name: "  chapter 1 ", topicId: topic.id, dedupeByName: true }),
+    );
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.duplicate).toBe(true);
@@ -111,30 +131,48 @@ describe("POST /api/quizzes (create)", () => {
   });
 
   it("dedupeByName only matches within the same topic and scope", async () => {
-    const topicA = await prisma.topic.create({ data: { name: "A", teacherId: null } });
-    const topicB = await prisma.topic.create({ data: { name: "B", teacherId: null } });
-    await prisma.quiz.create({ data: { name: "Chapter 1", topicId: topicA.id, teacherId: null } });
+    const topicA = await prisma.topic.create({
+      data: { name: "A", teacherId: null },
+    });
+    const topicB = await prisma.topic.create({
+      data: { name: "B", teacherId: null },
+    });
+    await prisma.quiz.create({
+      data: { name: "Chapter 1", topicId: topicA.id, teacherId: null },
+    });
     const { teacher } = await createTeacher();
     // Same name under a teacher's scope must not block the admin pool either.
-    await prisma.quiz.create({ data: { name: "Chapter 1", teacherId: teacher.id } });
+    await prisma.quiz.create({
+      data: { name: "Chapter 1", teacherId: teacher.id },
+    });
 
     asAdmin();
-    const res = await POST(jsonReq({ name: "Chapter 1", topicId: topicB.id, dedupeByName: true }));
+    const res = await POST(
+      jsonReq({ name: "Chapter 1", topicId: topicB.id, dedupeByName: true }),
+    );
     expect(res.status).toBe(201);
   });
 
   it("allows duplicate names without the dedupeByName flag (existing behavior)", async () => {
-    const topic = await prisma.topic.create({ data: { name: "T", teacherId: null } });
-    await prisma.quiz.create({ data: { name: "Chapter 1", topicId: topic.id, teacherId: null } });
+    const topic = await prisma.topic.create({
+      data: { name: "T", teacherId: null },
+    });
+    await prisma.quiz.create({
+      data: { name: "Chapter 1", topicId: topic.id, teacherId: null },
+    });
     asAdmin();
-    expect((await POST(jsonReq({ name: "Chapter 1", topicId: topic.id }))).status).toBe(201);
+    expect(
+      (await POST(jsonReq({ name: "Chapter 1", topicId: topic.id }))).status,
+    ).toBe(201);
   });
 });
 
 describe("GET /api/quizzes/[id] (detail)", () => {
   it("404s a quiz the teacher cannot read", async () => {
     const owner = await createTeacher();
-    const quiz = await prisma.quiz.create({ data: { name: "Secret", teacherId: owner.teacher.id } });
+    const quiz = await prisma.quiz.create({
+      data: { name: "Secret", teacherId: owner.teacher.id },
+    });
     const intruder = await createTeacher();
     asTeacher(intruder.user.id);
     expect((await DETAIL({} as never, params(quiz.id))).status).toBe(404);
@@ -142,9 +180,16 @@ describe("GET /api/quizzes/[id] (detail)", () => {
 
   it("returns an owned quiz with questions and editable=true, no figure keys leaked", async () => {
     const { user, teacher } = await createTeacher();
-    const quiz = await prisma.quiz.create({ data: { name: "Q", teacherId: teacher.id } });
+    const quiz = await prisma.quiz.create({
+      data: { name: "Q", teacherId: teacher.id },
+    });
     await prisma.question.create({
-      data: { text: "hi", quizId: quiz.id, figureStorageKey: null, figureBucket: null },
+      data: {
+        text: "hi",
+        quizId: quiz.id,
+        figureStorageKey: null,
+        figureBucket: null,
+      },
     });
     asTeacher(user.id);
     const res = await DETAIL({} as never, params(quiz.id));
@@ -157,7 +202,9 @@ describe("GET /api/quizzes/[id] (detail)", () => {
   });
 
   it("lets a teacher preview a pool quiz with editable=false", async () => {
-    const pool = await prisma.quiz.create({ data: { name: "Pool", teacherId: null } });
+    const pool = await prisma.quiz.create({
+      data: { name: "Pool", teacherId: null },
+    });
     const { user } = await createTeacher();
     asTeacher(user.id);
     const body = await (await DETAIL({} as never, params(pool.id))).json();
@@ -167,7 +214,9 @@ describe("GET /api/quizzes/[id] (detail)", () => {
 
 describe("PATCH /api/quizzes/[id]", () => {
   it("404s when patching a quiz the teacher does not own", async () => {
-    const pool = await prisma.quiz.create({ data: { name: "Pool", teacherId: null } });
+    const pool = await prisma.quiz.create({
+      data: { name: "Pool", teacherId: null },
+    });
     const { user } = await createTeacher();
     asTeacher(user.id);
     const res = await PATCH(jsonReq({ name: "x" }), params(pool.id));
@@ -176,20 +225,32 @@ describe("PATCH /api/quizzes/[id]", () => {
 
   it("renames an owned quiz and can ungroup it from a topic", async () => {
     const { user, teacher } = await createTeacher();
-    const topic = await prisma.topic.create({ data: { name: "T", teacherId: teacher.id } });
-    const quiz = await prisma.quiz.create({ data: { name: "Old", topicId: topic.id, teacherId: teacher.id } });
+    const topic = await prisma.topic.create({
+      data: { name: "T", teacherId: teacher.id },
+    });
+    const quiz = await prisma.quiz.create({
+      data: { name: "Old", topicId: topic.id, teacherId: teacher.id },
+    });
     asTeacher(user.id);
-    const body = await (await PATCH(jsonReq({ name: "New", topicId: "" }), params(quiz.id))).json();
+    const body = await (
+      await PATCH(jsonReq({ name: "New", topicId: "" }), params(quiz.id))
+    ).json();
     expect(body.name).toBe("New");
     expect(body.topicId).toBeNull();
   });
 
   it("does not let an admin edit a teacher quiz", async () => {
     const { teacher } = await createTeacher();
-    const quiz = await prisma.quiz.create({ data: { name: "Teacher Quiz", teacherId: teacher.id } });
+    const quiz = await prisma.quiz.create({
+      data: { name: "Teacher Quiz", teacherId: teacher.id },
+    });
     asAdmin();
-    expect((await PATCH(jsonReq({ name: "Admin Rename" }), params(quiz.id))).status).toBe(404);
-    expect(await prisma.quiz.findUnique({ where: { id: quiz.id } })).toMatchObject({
+    expect(
+      (await PATCH(jsonReq({ name: "Admin Rename" }), params(quiz.id))).status,
+    ).toBe(404);
+    expect(
+      await prisma.quiz.findUnique({ where: { id: quiz.id } }),
+    ).toMatchObject({
       name: "Teacher Quiz",
     });
   });
@@ -197,7 +258,9 @@ describe("PATCH /api/quizzes/[id]", () => {
 
 describe("DELETE /api/quizzes/[id]", () => {
   it("404s a quiz the teacher does not own", async () => {
-    const pool = await prisma.quiz.create({ data: { name: "Pool", teacherId: null } });
+    const pool = await prisma.quiz.create({
+      data: { name: "Pool", teacherId: null },
+    });
     const { user } = await createTeacher();
     asTeacher(user.id);
     expect((await DELETE({} as never, params(pool.id))).status).toBe(404);
@@ -205,7 +268,9 @@ describe("DELETE /api/quizzes/[id]", () => {
 
   it("deletes an owned quiz", async () => {
     const { user, teacher } = await createTeacher();
-    const quiz = await prisma.quiz.create({ data: { name: "Q", teacherId: teacher.id } });
+    const quiz = await prisma.quiz.create({
+      data: { name: "Q", teacherId: teacher.id },
+    });
     asTeacher(user.id);
     expect((await DELETE({} as never, params(quiz.id))).status).toBe(200);
     expect(await prisma.quiz.findUnique({ where: { id: quiz.id } })).toBeNull();
@@ -215,9 +280,15 @@ describe("DELETE /api/quizzes/[id]", () => {
     const { teacher } = await createTeacher();
     const cls = await createClass(teacher.id);
     const { student } = await createStudent();
-    const quiz = await prisma.quiz.create({ data: { name: "Teacher Quiz", teacherId: teacher.id } });
-    const question = await prisma.question.create({ data: { text: "Q", quizId: quiz.id } });
-    await prisma.classQuiz.create({ data: { classId: cls.id, quizId: quiz.id } });
+    const quiz = await prisma.quiz.create({
+      data: { name: "Teacher Quiz", teacherId: teacher.id },
+    });
+    const question = await prisma.question.create({
+      data: { text: "Q", quizId: quiz.id },
+    });
+    await prisma.classQuiz.create({
+      data: { classId: cls.id, quizId: quiz.id },
+    });
     const attempt = await prisma.quizAttempt.create({
       data: {
         studentId: student.id,
@@ -235,10 +306,18 @@ describe("DELETE /api/quizzes/[id]", () => {
     expect((await DELETE({} as never, params(quiz.id))).status).toBe(200);
 
     expect(await prisma.quiz.findUnique({ where: { id: quiz.id } })).toBeNull();
-    expect(await prisma.question.findUnique({ where: { id: question.id } })).toBeNull();
-    expect(await prisma.classQuiz.count({ where: { quizId: quiz.id } })).toBe(0);
-    expect(await prisma.quiz.findUnique({ where: { id: poolCopy.id } })).not.toBeNull();
-    expect(await prisma.quizAttempt.findUnique({ where: { id: attempt.id } })).toMatchObject({
+    expect(
+      await prisma.question.findUnique({ where: { id: question.id } }),
+    ).toBeNull();
+    expect(await prisma.classQuiz.count({ where: { quizId: quiz.id } })).toBe(
+      0,
+    );
+    expect(
+      await prisma.quiz.findUnique({ where: { id: poolCopy.id } }),
+    ).not.toBeNull();
+    expect(
+      await prisma.quizAttempt.findUnique({ where: { id: attempt.id } }),
+    ).toMatchObject({
       quizId: null,
       score: 80,
     });

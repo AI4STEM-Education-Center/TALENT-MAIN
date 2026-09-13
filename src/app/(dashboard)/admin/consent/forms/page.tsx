@@ -37,7 +37,9 @@ interface OfficialForm {
 export default function AdminConsentFormsPage() {
   const alert = useAlert();
   const [versions, setVersions] = useState<ConsentVersionRow[]>([]);
-  const [official, setOfficial] = useState<Record<string, OfficialForm> | null>(null);
+  const [official, setOfficial] = useState<Record<string, OfficialForm> | null>(
+    null,
+  );
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState<"STUDENT" | "TEACHER">("STUDENT");
   const [version, setVersion] = useState("");
@@ -47,29 +49,36 @@ export default function AdminConsentFormsPage() {
   const [publishing, setPublishing] = useState(false);
   const previewHtml = useMemo(
     () => (preview && bodyHtml.trim() ? previewConsentHtml(bodyHtml) : ""),
-    [preview, bodyHtml]
+    [preview, bodyHtml],
   );
 
-  const load = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/admin/consent/forms", { cache: "no-store", signal });
-      if (!res.ok) throw new Error("Could not load consent form versions.");
-      const data = await res.json();
-      setVersions(data.versions ?? []);
-      setOfficial(data.official ?? null);
-    } catch (cause) {
-      if (!(cause instanceof DOMException && cause.name === "AbortError")) {
-        await alert({
-          title: "Couldn't load forms",
-          description: cause instanceof Error ? cause.message : "Unknown error.",
+  const load = useCallback(
+    async (signal?: AbortSignal) => {
+      setLoading(true);
+      try {
+        const res = await fetch("/api/admin/consent/forms", {
+          cache: "no-store",
+          signal,
         });
+        if (!res.ok) throw new Error("Could not load consent form versions.");
+        const data = await res.json();
+        setVersions(data.versions ?? []);
+        setOfficial(data.official ?? null);
+      } catch (cause) {
+        if (!(cause instanceof DOMException && cause.name === "AbortError")) {
+          await alert({
+            title: "Couldn't load forms",
+            description:
+              cause instanceof Error ? cause.message : "Unknown error.",
+          });
+        }
+      } finally {
+        // react-doctor-disable-next-line react-doctor/no-loading-flag-reset-outside-finally -- the reset is already inside this function's finally block; detector misfire
+        if (!signal?.aborted) setLoading(false);
       }
-    } finally {
-      // react-doctor-disable-next-line react-doctor/no-loading-flag-reset-outside-finally -- the reset is already inside this function's finally block; detector misfire
-      if (!signal?.aborted) setLoading(false);
-    }
-  }, [alert]);
+    },
+    [alert],
+  );
 
   // react-doctor-disable-next-line react-doctor/no-set-state-after-await-in-effect -- the fetch is aborted by the effect's AbortController cleanup, so no stale write can land
   useEffect(() => {
@@ -88,7 +97,10 @@ export default function AdminConsentFormsPage() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
-        await alert({ title: "Couldn't publish", description: data?.error || "Unknown error." });
+        await alert({
+          title: "Couldn't publish",
+          description: data?.error || "Unknown error.",
+        });
         return;
       }
       setVersion("");
@@ -115,9 +127,11 @@ export default function AdminConsentFormsPage() {
 
   const activeRoles = new Set<string>();
   for (const v of versions) if (v.isActive) activeRoles.add(v.role);
-  const missingRoles = (["STUDENT", "TEACHER"] as const).filter((r) => !activeRoles.has(r));
+  const missingRoles = (["STUDENT", "TEACHER"] as const).filter(
+    (r) => !activeRoles.has(r),
+  );
   const officialAlreadyPublished = versions.some(
-    (v) => v.role === role && v.version === official?.[role]?.version
+    (v) => v.role === role && v.version === official?.[role]?.version,
   );
 
   return (
@@ -125,8 +139,9 @@ export default function AdminConsentFormsPage() {
       <div>
         <h1 className="text-3xl font-bold">Consent Form Versions</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Versions are append-only — publishing a new one deactivates the previous version for that role and asks
-          everyone to respond again, without ever altering what a past signature legally agreed to.
+          Versions are append-only — publishing a new one deactivates the
+          previous version for that role and asks everyone to respond again,
+          without ever altering what a past signature legally agreed to.
         </p>
       </div>
 
@@ -135,12 +150,15 @@ export default function AdminConsentFormsPage() {
           <AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-600" />
           <div className="space-y-1">
             <p className="font-medium">
-              No active consent form for {missingRoles.map((r) => r.toLowerCase()).join(" or ")}.
+              No active consent form for{" "}
+              {missingRoles.map((r) => r.toLowerCase()).join(" or ")}.
             </p>
             <p className="text-muted-foreground">
-              Until a version is published for a role, nobody with that role is ever shown a consent form —
-              the form screen is simply empty, and no decisions can be recorded. Use{" "}
-              <strong>Load the official UGA text</strong> below to publish the IRB-approved form.
+              Until a version is published for a role, nobody with that role is
+              ever shown a consent form — the form screen is simply empty, and
+              no decisions can be recorded. Use{" "}
+              <strong>Load the official UGA text</strong> below to publish the
+              IRB-approved form.
             </p>
           </div>
         </div>
@@ -152,8 +170,13 @@ export default function AdminConsentFormsPage() {
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="space-y-1">
               <Label>Role</Label>
-              <Select value={role} onValueChange={(v) => setRole(v as "STUDENT" | "TEACHER")}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+              <Select
+                value={role}
+                onValueChange={(v) => setRole(v as "STUDENT" | "TEACHER")}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="STUDENT">Student</SelectItem>
                   <SelectItem value="TEACHER">Teacher</SelectItem>
@@ -162,18 +185,32 @@ export default function AdminConsentFormsPage() {
             </div>
             <div className="space-y-1">
               <Label>Version label</Label>
-              <Input value={version} onChange={(e) => setVersion(e.target.value)} placeholder="e.g. 2026-09-01" />
+              <Input
+                value={version}
+                onChange={(e) => setVersion(e.target.value)}
+                placeholder="e.g. 2026-09-01"
+              />
             </div>
             <div className="space-y-1">
               <Label>Title</Label>
-              <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Form title" />
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Form title"
+              />
             </div>
           </div>
           <div className="space-y-1">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <Label>Form text (HTML)</Label>
               <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="outline" size="sm" onClick={loadOfficialText} disabled={!official}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={loadOfficialText}
+                  disabled={!official}
+                >
                   <FileText className="size-4" /> Load the official UGA text
                 </Button>
                 <Button
@@ -204,18 +241,30 @@ export default function AdminConsentFormsPage() {
               />
             )}
             <p className="text-xs text-muted-foreground">
-              The official text is transcribed from the IRB PDFs in <code>data/</code> and matches what{" "}
-              <code>npm run seed:consent</code> installs. Only headings, paragraphs, lists, links, and inline
-              emphasis survive publishing — everything else is stripped.
+              The official text is transcribed from the IRB PDFs in{" "}
+              <code>data/</code> and matches what{" "}
+              <code>npm run seed:consent</code> installs. Only headings,
+              paragraphs, lists, links, and inline emphasis survive publishing —
+              everything else is stripped.
             </p>
           </div>
           {officialAlreadyPublished && (
             <p className="text-xs text-muted-foreground">
-              Version &quot;{official?.[role]?.version}&quot; already exists for {role.toLowerCase()}s — give this
-              one a new version label to publish an amended text.
+              Version &quot;{official?.[role]?.version}&quot; already exists for{" "}
+              {role.toLowerCase()}s — give this one a new version label to
+              publish an amended text.
             </p>
           )}
-          <Button onClick={publish} disabled={publishing || !role || !version.trim() || !title.trim() || !bodyHtml.trim()}>
+          <Button
+            onClick={publish}
+            disabled={
+              publishing ||
+              !role ||
+              !version.trim() ||
+              !title.trim() ||
+              !bodyHtml.trim()
+            }
+          >
             {publishing ? "Publishing…" : "Publish as active version"}
           </Button>
         </CardContent>
@@ -240,7 +289,10 @@ export default function AdminConsentFormsPage() {
             <tbody>
               {versions.length === 0 && (
                 <tr className="border-t">
-                  <td className="p-4 text-center text-muted-foreground" colSpan={5}>
+                  <td
+                    className="p-4 text-center text-muted-foreground"
+                    colSpan={5}
+                  >
                     No consent form versions have been published yet.
                   </td>
                 </tr>
@@ -250,9 +302,13 @@ export default function AdminConsentFormsPage() {
                   <td className="p-2">{v.role}</td>
                   <td className="p-2">{v.version}</td>
                   <td className="p-2">{v.title}</td>
-                  <td className="p-2 text-xs">{new Date(v.createdAt).toLocaleString()}</td>
+                  <td className="p-2 text-xs">
+                    {new Date(v.createdAt).toLocaleString()}
+                  </td>
                   <td className="p-2">
-                    <Badge variant={v.isActive ? "default" : "secondary"}>{v.isActive ? "Active" : "Retired"}</Badge>
+                    <Badge variant={v.isActive ? "default" : "secondary"}>
+                      {v.isActive ? "Active" : "Retired"}
+                    </Badge>
                   </td>
                 </tr>
               ))}

@@ -137,7 +137,9 @@ describe("parseQtiQuestionBank", () => {
     expect(q1.text).toBe("What is the capital of France?");
     expect(q1.answerMode).toBe("SINGLE_SELECT");
     expect(q1.options).toHaveLength(4);
-    expect(q1.options.filter((o) => o.isCorrect).map((o) => o.text)).toEqual(["Paris"]);
+    expect(q1.options.filter((o) => o.isCorrect).map((o) => o.text)).toEqual([
+      "Paris",
+    ]);
     expect(q1.feedbackCorrect).toBe("Correct! Paris it is.");
     expect(q1.feedbackIncorrect).toBe("Not quite.");
     expect(q1.feedbackGeneral).toBe("Capitals matter.");
@@ -154,7 +156,9 @@ describe("parseQtiQuestionBank", () => {
   it("infers MULTI_SELECT from question_type metadata even with a single correct answer", () => {
     const q3 = bank.questions[2];
     expect(q3.answerMode).toBe("MULTI_SELECT");
-    expect(q3.options.filter((o) => o.isCorrect).map((o) => o.text)).toEqual(["Dog"]);
+    expect(q3.options.filter((o) => o.isCorrect).map((o) => o.text)).toEqual([
+      "Dog",
+    ]);
   });
 
   it("flags an item with fewer than two options", () => {
@@ -189,7 +193,9 @@ describe("parseQtiQuestionBank — HTML normalization", () => {
 
 describe("parseQtiQuestionBank — fatal errors", () => {
   it("throws when there is no <assessment>", () => {
-    expect(() => parseQtiQuestionBank("<questestinterop></questestinterop>")).toThrow(/assessment/i);
+    expect(() =>
+      parseQtiQuestionBank("<questestinterop></questestinterop>"),
+    ).toThrow(/assessment/i);
   });
 });
 
@@ -220,8 +226,12 @@ describe("validateParsedQuestionBank", () => {
   });
 
   it("rejects a non-object payload", () => {
-    expect(() => validateParsedQuestionBank([])).toThrow(/parsed question bank/i);
-    expect(() => validateParsedQuestionBank(null)).toThrow(/parsed question bank/i);
+    expect(() => validateParsedQuestionBank([])).toThrow(
+      /parsed question bank/i,
+    );
+    expect(() => validateParsedQuestionBank(null)).toThrow(
+      /parsed question bank/i,
+    );
   });
 
   it("rejects a payload without a questions array", () => {
@@ -230,38 +240,82 @@ describe("validateParsedQuestionBank", () => {
 
   it("rejects a question missing text", () => {
     expect(() =>
-      validateParsedQuestionBank({ questions: [{ answerMode: "SINGLE_SELECT", options: validPayload.questions[0].options }] })
+      validateParsedQuestionBank({
+        questions: [
+          {
+            answerMode: "SINGLE_SELECT",
+            options: validPayload.questions[0].options,
+          },
+        ],
+      }),
     ).toThrow(/missing text/i);
   });
 
   it("rejects an invalid answer mode", () => {
     expect(() =>
-      validateParsedQuestionBank({ questions: [{ text: "q", answerMode: "WHATEVER", options: validPayload.questions[0].options }] })
+      validateParsedQuestionBank({
+        questions: [
+          {
+            text: "q",
+            answerMode: "WHATEVER",
+            options: validPayload.questions[0].options,
+          },
+        ],
+      }),
     ).toThrow(/invalid answer mode/i);
   });
 
   it("rejects a question with fewer than two options", () => {
     expect(() =>
-      validateParsedQuestionBank({ questions: [{ text: "q", answerMode: "SINGLE_SELECT", options: [{ text: "only", isCorrect: true }] }] })
+      validateParsedQuestionBank({
+        questions: [
+          {
+            text: "q",
+            answerMode: "SINGLE_SELECT",
+            options: [{ text: "only", isCorrect: true }],
+          },
+        ],
+      }),
     ).toThrow(/at least 2 options/i);
   });
 
   it("rejects a question with no correct option", () => {
     expect(() =>
       validateParsedQuestionBank({
-        questions: [{ text: "q", answerMode: "SINGLE_SELECT", options: [{ text: "a", isCorrect: false }, { text: "b", isCorrect: false }] }],
-      })
+        questions: [
+          {
+            text: "q",
+            answerMode: "SINGLE_SELECT",
+            options: [
+              { text: "a", isCorrect: false },
+              { text: "b", isCorrect: false },
+            ],
+          },
+        ],
+      }),
     ).toThrow(/at least one correct option/i);
   });
 
   it("bounds question, option, and text counts before database work", () => {
-    expect(() => validateParsedQuestionBank({ questions: Array(5_001).fill(validPayload.questions[0]) }))
-      .toThrow(/5,000 questions/i);
-    expect(() => validateParsedQuestionBank({
-      questions: [{ ...validPayload.questions[0], options: Array(21).fill({ text: "x", isCorrect: true }) }],
-    })).toThrow(/20 options/i);
-    expect(() => validateParsedQuestionBank({
-      questions: [{ ...validPayload.questions[0], text: "x".repeat(10_001) }],
-    })).toThrow(/text is too long/i);
+    expect(() =>
+      validateParsedQuestionBank({
+        questions: Array(5_001).fill(validPayload.questions[0]),
+      }),
+    ).toThrow(/5,000 questions/i);
+    expect(() =>
+      validateParsedQuestionBank({
+        questions: [
+          {
+            ...validPayload.questions[0],
+            options: Array(21).fill({ text: "x", isCorrect: true }),
+          },
+        ],
+      }),
+    ).toThrow(/20 options/i);
+    expect(() =>
+      validateParsedQuestionBank({
+        questions: [{ ...validPayload.questions[0], text: "x".repeat(10_001) }],
+      }),
+    ).toThrow(/text is too long/i);
   });
 });

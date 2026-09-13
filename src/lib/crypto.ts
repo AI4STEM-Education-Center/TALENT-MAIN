@@ -13,7 +13,7 @@ function getEncryptionKey(): Buffer {
   if (!secret) {
     throw new Error(
       "API_KEY_ENCRYPTION_SECRET environment variable is required for API key encryption. " +
-        "Generate one with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\""
+        "Generate one with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\"",
     );
   }
 
@@ -21,7 +21,7 @@ function getEncryptionKey(): Buffer {
   if (keyBuffer.length !== 32) {
     throw new Error(
       "API_KEY_ENCRYPTION_SECRET must be exactly 64 hex characters (32 bytes). " +
-        `Got ${secret.length} hex characters (${keyBuffer.length} bytes).`
+        `Got ${secret.length} hex characters (${keyBuffer.length} bytes).`,
     );
   }
 
@@ -43,7 +43,10 @@ function getDecryptionKeys(): Buffer[] {
   const keys = [getEncryptionKey()];
   const retired = process.env.API_KEY_ENCRYPTION_SECRET_OLD;
   if (retired) {
-    for (const hex of retired.split(",").map((s) => s.trim()).filter(Boolean)) {
+    for (const hex of retired
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)) {
       const buf = Buffer.from(hex, "hex");
       if (buf.length === 32) keys.push(buf);
     }
@@ -83,7 +86,7 @@ export function encryptApiKey(plaintext: string): {
 export function decryptApiKey(
   encrypted: string,
   iv: string,
-  tag: string
+  tag: string,
 ): string {
   // Try the active key first, then any retired keys, so ciphertext written
   // under a previous key still decrypts during/after a key rotation.

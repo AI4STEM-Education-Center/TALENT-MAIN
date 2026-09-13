@@ -62,12 +62,24 @@ export function computeCallMetrics(observed: {
   // arrived across it; a gateway that buffered the upstream stream flushes it
   // in a few ms, and dividing the token count by that yields nonsense rates.
   const streamedMs = ttftMs !== null ? Math.max(0, totalMs - ttftMs) : 0;
-  const generationMs = isStreamedGenerationWindow(streamedMs, totalMs) ? streamedMs : null;
+  const generationMs = isStreamedGenerationWindow(streamedMs, totalMs)
+    ? streamedMs
+    : null;
   const rateWindowMs = generationMs ?? totalMs;
   const tokensPerSec =
-    completionTokens > 0 && rateWindowMs > 0 ? completionTokens / (rateWindowMs / 1000) : null;
+    completionTokens > 0 && rateWindowMs > 0
+      ? completionTokens / (rateWindowMs / 1000)
+      : null;
 
-  return { model, ttftMs, completionTokens, tokensEstimated, totalMs, generationMs, tokensPerSec };
+  return {
+    model,
+    ttftMs,
+    completionTokens,
+    tokensEstimated,
+    totalMs,
+    generationMs,
+    tokensPerSec,
+  };
 }
 
 export interface DisplayAiMetrics {
@@ -120,7 +132,10 @@ export const MIN_GENERATION_SHARE = 0.1;
  * True when `genMs` is a large enough share of the whole call to be the model's
  * generation window rather than a transport flush. See MIN_GENERATION_SHARE.
  */
-export function isStreamedGenerationWindow(genMs: number, totalMs: number): boolean {
+export function isStreamedGenerationWindow(
+  genMs: number,
+  totalMs: number,
+): boolean {
   return genMs > 0 && genMs >= totalMs * MIN_GENERATION_SHARE;
 }
 

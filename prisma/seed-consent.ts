@@ -23,19 +23,27 @@ import {
 const adapter = new PrismaBetterSqlite3({ url: resolveDatabaseUrl() });
 const prisma = new PrismaClient({ adapter });
 
-async function upsertVersion({ role, version, title, bodyHtml }: OfficialConsentForm) {
+async function upsertVersion({
+  role,
+  version,
+  title,
+  bodyHtml,
+}: OfficialConsentForm) {
   const existing = await prisma.consentFormVersion.findUnique({
     where: { role_version: { role, version } },
   });
   if (existing) {
     console.log(
-      `  ${role} form ${version} already exists — skipping (active: ${existing.isActive}).`
+      `  ${role} form ${version} already exists — skipping (active: ${existing.isActive}).`,
     );
     return;
   }
 
   await prisma.$transaction([
-    prisma.consentFormVersion.updateMany({ where: { role, isActive: true }, data: { isActive: false } }),
+    prisma.consentFormVersion.updateMany({
+      where: { role, isActive: true },
+      data: { isActive: false },
+    }),
     prisma.consentFormVersion.create({
       data: { role, version, title, bodyHtml, isActive: true },
     }),
@@ -44,11 +52,15 @@ async function upsertVersion({ role, version, title, bodyHtml }: OfficialConsent
 }
 
 async function main() {
-  console.log(`Seeding IRB consent form versions (${OFFICIAL_CONSENT_VERSION})...`);
+  console.log(
+    `Seeding IRB consent form versions (${OFFICIAL_CONSENT_VERSION})...`,
+  );
   await upsertVersion(OFFICIAL_CONSENT_FORMS.STUDENT);
   await upsertVersion(OFFICIAL_CONSENT_FORMS.TEACHER);
 
-  const existingSettings = await prisma.consentExportSettings.findUnique({ where: { id: "singleton" } });
+  const existingSettings = await prisma.consentExportSettings.findUnique({
+    where: { id: "singleton" },
+  });
   if (!existingSettings) {
     await prisma.consentExportSettings.create({ data: { id: "singleton" } });
     console.log("  Created default ConsentExportSettings row.");
@@ -68,7 +80,7 @@ async function main() {
     console.log(
       version
         ? `  Active ${role} form: ${version}`
-        : `  WARNING: no active ${role} form — ${role.toLowerCase()}s will not be asked to consent.`
+        : `  WARNING: no active ${role} form — ${role.toLowerCase()}s will not be asked to consent.`,
     );
   }
 

@@ -77,11 +77,12 @@ export interface TeacherCodeLimits {
  */
 export function teacherCodeStatus(
   code: TeacherCodeLimits,
-  now: Date = new Date()
+  now: Date = new Date(),
 ): TeacherCodeStatus {
   if (!code.active) return "REVOKED";
   if (code.expiresAt && code.expiresAt <= now) return "EXPIRED";
-  if (code.maxUses !== null && code.usedCount >= code.maxUses) return "EXHAUSTED";
+  if (code.maxUses !== null && code.usedCount >= code.maxUses)
+    return "EXHAUSTED";
   return "ACTIVE";
 }
 

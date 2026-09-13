@@ -18,7 +18,8 @@ vi.mock("@/lib/system-log", () => ({
   logSystemEvent: (event: unknown) => logSystemEvent(event),
 }));
 
-const { moderateText, moderateImages, moderateContent } = await import("@/lib/guardrails");
+const { moderateText, moderateImages, moderateContent } =
+  await import("@/lib/guardrails");
 
 const PROVIDER: ResolvedProvider = {
   providerType: "openai",
@@ -44,8 +45,12 @@ function mockModeration(response: unknown) {
   return create;
 }
 
-const CLEAN = { results: [{ flagged: false, categories: { violence: false } }] };
-const FLAGGED = { results: [{ flagged: true, categories: { violence: true, hate: false } }] };
+const CLEAN = {
+  results: [{ flagged: false, categories: { violence: false } }],
+};
+const FLAGGED = {
+  results: [{ flagged: true, categories: { violence: true, hate: false } }],
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -55,7 +60,9 @@ beforeEach(() => {
 describe("moderateText", () => {
   it("reports a clean verdict and marks the check as having run", async () => {
     const create = mockModeration(CLEAN);
-    const verdict = await moderateText("what is kinetic energy?", { surface: "assistant_chat" });
+    const verdict = await moderateText("what is kinetic energy?", {
+      surface: "assistant_chat",
+    });
 
     expect(verdict).toEqual({ checked: true, flagged: false, categories: [] });
     expect(create).toHaveBeenCalledWith({
@@ -66,17 +73,29 @@ describe("moderateText", () => {
 
   it("reports the flagged categories and writes a GUARDRAIL log row", async () => {
     mockModeration(FLAGGED);
-    const verdict = await moderateText("...", { surface: "assistant_chat", userId: "u1", id: "c1" });
+    const verdict = await moderateText("...", {
+      surface: "assistant_chat",
+      userId: "u1",
+      id: "c1",
+    });
 
-    expect(verdict).toEqual({ checked: true, flagged: true, categories: ["violence"] });
+    expect(verdict).toEqual({
+      checked: true,
+      flagged: true,
+      categories: ["violence"],
+    });
     expect(logSystemEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         category: "GUARDRAIL",
         type: "MODERATION_FLAG",
         severity: "WARNING",
         userId: "u1",
-        metadata: { surface: "assistant_chat", subjectId: "c1", categories: ["violence"] },
-      })
+        metadata: {
+          surface: "assistant_chat",
+          subjectId: "c1",
+          categories: ["violence"],
+        },
+      }),
     );
   });
 
@@ -84,7 +103,9 @@ describe("moderateText", () => {
     resolveProvider.mockResolvedValue(null);
     const create = mockModeration(CLEAN);
 
-    expect(await moderateText("anything", { surface: "assistant_chat" })).toEqual({
+    expect(
+      await moderateText("anything", { surface: "assistant_chat" }),
+    ).toEqual({
       checked: false,
       flagged: false,
       categories: [],
@@ -96,15 +117,23 @@ describe("moderateText", () => {
     resolveProvider.mockResolvedValue({ ...PROVIDER, apiKey: null });
     const create = mockModeration(CLEAN);
 
-    expect((await moderateText("x", { surface: "assistant_chat" })).checked).toBe(false);
+    expect(
+      (await moderateText("x", { surface: "assistant_chat" })).checked,
+    ).toBe(false);
     expect(create).not.toHaveBeenCalled();
   });
 
   it("still runs for a local provider with no API key", async () => {
-    resolveProvider.mockResolvedValue({ ...PROVIDER, providerType: "local", apiKey: null });
+    resolveProvider.mockResolvedValue({
+      ...PROVIDER,
+      providerType: "local",
+      apiKey: null,
+    });
     const create = mockModeration(CLEAN);
 
-    expect((await moderateText("x", { surface: "assistant_chat" })).checked).toBe(true);
+    expect(
+      (await moderateText("x", { surface: "assistant_chat" })).checked,
+    ).toBe(true);
     expect(create).toHaveBeenCalled();
   });
 
@@ -117,7 +146,10 @@ describe("moderateText", () => {
       },
     });
 
-    const verdict = await moderateText("x", { surface: "material_page", id: "m1" });
+    const verdict = await moderateText("x", {
+      surface: "material_page",
+      id: "m1",
+    });
 
     expect(verdict).toEqual({ checked: false, flagged: false, categories: [] });
     expect(logSystemEvent).toHaveBeenCalledWith(
@@ -125,7 +157,7 @@ describe("moderateText", () => {
         category: "GUARDRAIL",
         type: "MODERATION_UNAVAILABLE",
         severity: "INFO",
-      })
+      }),
     );
   });
 
@@ -133,16 +165,18 @@ describe("moderateText", () => {
     resolveProvider.mockRejectedValue(new Error("database unavailable"));
 
     await expect(
-      moderateText("x", { surface: "assistant_chat" })
+      moderateText("x", { surface: "assistant_chat" }),
     ).resolves.toEqual({ checked: false, flagged: false, categories: [] });
     expect(logSystemEvent).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "MODERATION_UNAVAILABLE" })
+      expect.objectContaining({ type: "MODERATION_UNAVAILABLE" }),
     );
   });
 
   it("does not call the endpoint for empty or whitespace-only text", async () => {
     const create = mockModeration(CLEAN);
-    expect((await moderateText("   \n ", { surface: "assistant_chat" })).checked).toBe(false);
+    expect(
+      (await moderateText("   \n ", { surface: "assistant_chat" })).checked,
+    ).toBe(false);
     expect(create).not.toHaveBeenCalled();
   });
 
@@ -177,7 +211,7 @@ describe("moderateImages", () => {
     const create = mockModeration(CLEAN);
     await moderateImages(
       Array.from({ length: 12 }, (_, i) => `https://s3/p${i}.png`),
-      { surface: "quiz_extraction_page" }
+      { surface: "quiz_extraction_page" },
     );
     expect(create).toHaveBeenCalledTimes(1);
   });
@@ -186,17 +220,19 @@ describe("moderateImages", () => {
     const create = mockModeration(CLEAN);
     await moderateImages(
       Array.from({ length: 30 }, (_, i) => `https://s3/p${i}.png`),
-      { surface: "quiz_extraction_page" }
+      { surface: "quiz_extraction_page" },
     );
 
     expect(create).toHaveBeenCalledTimes(2);
-    expect((create.mock.calls[0][0].input as unknown[])).toHaveLength(16);
-    expect((create.mock.calls[1][0].input as unknown[])).toHaveLength(14);
+    expect(create.mock.calls[0][0].input as unknown[]).toHaveLength(16);
+    expect(create.mock.calls[1][0].input as unknown[]).toHaveLength(14);
   });
 
   it("does nothing when there are no usable URLs", async () => {
     const create = mockModeration(CLEAN);
-    expect((await moderateImages(["", "  "], { surface: "material_page" })).checked).toBe(false);
+    expect(
+      (await moderateImages(["", "  "], { surface: "material_page" })).checked,
+    ).toBe(false);
     expect(create).not.toHaveBeenCalled();
   });
 });
@@ -205,7 +241,10 @@ describe("moderateContent", () => {
   it("moderates a plain string turn", async () => {
     const create = mockModeration(CLEAN);
     await moderateContent("hello", { surface: "assistant_chat" });
-    expect(create).toHaveBeenCalledWith({ model: "omni-moderation-latest", input: ["hello"] });
+    expect(create).toHaveBeenCalledWith({
+      model: "omni-moderation-latest",
+      input: ["hello"],
+    });
   });
 
   it("checks text and images from one turn together in a single call", async () => {
@@ -215,7 +254,7 @@ describe("moderateContent", () => {
         { type: "text", text: "look at this" },
         { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } },
       ],
-      { surface: "assistant_chat", userId: "u1" }
+      { surface: "assistant_chat", userId: "u1" },
     );
 
     expect(create).toHaveBeenCalledTimes(1);
@@ -235,11 +274,12 @@ describe("moderateContent", () => {
           image_url: { url: `data:image/png;base64,${i}` },
         })),
       ],
-      { surface: "assistant_chat" }
+      { surface: "assistant_chat" },
     );
 
     const inputs = create.mock.calls.flatMap(
-      (call) => call[0].input as Array<{ type: string; image_url?: { url: string } }>
+      (call) =>
+        call[0].input as Array<{ type: string; image_url?: { url: string } }>,
     );
     expect(inputs[0]).toEqual({ type: "text", text: "question" });
     expect(inputs.filter((item) => item.type === "image_url")).toHaveLength(20);
@@ -253,14 +293,18 @@ describe("moderateContent", () => {
         { type: "text", text: "hi" },
         { type: "image_url", image_url: { url: "  " } },
       ],
-      { surface: "assistant_chat" }
+      { surface: "assistant_chat" },
     );
-    expect(create.mock.calls[0][0].input).toEqual([{ type: "text", text: "hi" }]);
+    expect(create.mock.calls[0][0].input).toEqual([
+      { type: "text", text: "hi" },
+    ]);
   });
 
   it("does nothing for content with no usable parts", async () => {
     const create = mockModeration(CLEAN);
-    expect((await moderateContent([], { surface: "assistant_chat" })).checked).toBe(false);
+    expect(
+      (await moderateContent([], { surface: "assistant_chat" })).checked,
+    ).toBe(false);
     expect(create).not.toHaveBeenCalled();
   });
 });

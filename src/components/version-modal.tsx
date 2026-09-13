@@ -7,9 +7,17 @@ import { Card } from "@/components/ui/card";
 import { getVersionInfo } from "@/lib/version";
 import { BookText, X } from "lucide-react";
 
-function ReleaseNotesList({ notes }: { notes: string[] }) {
+interface ReleaseNotesListProps {
+  notes: string[];
+}
+
+function ReleaseNotesList({ notes }: ReleaseNotesListProps) {
   if (notes.length === 0) {
-    return <p className="text-sm text-muted-foreground">No notes recorded for this release.</p>;
+    return (
+      <p className="text-sm text-muted-foreground">
+        No notes recorded for this release.
+      </p>
+    );
   }
 
   return (
@@ -37,7 +45,10 @@ export function VersionModal() {
           type="button"
         >
           <span>Version</span>
-          <Badge variant="outline" className="border-sidebar-border text-sidebar-foreground/90">
+          <Badge
+            variant="outline"
+            className="border-sidebar-border text-sidebar-foreground/90"
+          >
             v{versionInfo.version}
           </Badge>
         </button>
@@ -56,11 +67,17 @@ export function VersionModal() {
                 <Dialog.Description className="text-sm text-muted-foreground">
                   Current version v{versionInfo.version}
                   {versionInfo.date ? ` (${versionInfo.date})` : ""}
-                  <span className="mt-1 block">Weekly releases close Friday.</span>
+                  <span className="mt-1 block">
+                    Weekly releases close Friday.
+                  </span>
                 </Dialog.Description>
               </div>
               <Dialog.Close asChild>
-                <Button variant="ghost" size="icon" aria-label="Close changelog modal">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Close changelog modal"
+                >
                   <X className="size-4" />
                 </Button>
               </Dialog.Close>
@@ -68,22 +85,35 @@ export function VersionModal() {
 
             <div className="max-h-[65vh] overflow-y-auto p-5 space-y-4">
               {versionInfo.changelogEntries.length === 0 && (
-                <p className="text-sm text-muted-foreground">No changelog entries found.</p>
+                <p className="text-sm text-muted-foreground">
+                  No changelog entries found.
+                </p>
               )}
 
               {versionInfo.changelogEntries.map((entry) => (
-                <section key={`${entry.version}-${entry.date}`} className="rounded-md border border-border/80 p-4">
+                <section
+                  key={`${entry.version}-${entry.date}`}
+                  className="rounded-md border border-border/80 p-4"
+                >
                   <div className="mb-2 flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-semibold text-foreground">v{entry.version}</h3>
+                      <h3 className="text-sm font-semibold text-foreground">
+                        v{entry.version}
+                      </h3>
                       {entry.version === versionInfo.version && (
-                        <Badge variant="secondary" className="text-[10px] uppercase tracking-wide">
+                        <Badge
+                          variant="secondary"
+                          className="text-[10px] uppercase tracking-wide"
+                        >
                           Current
                         </Badge>
                       )}
                     </div>
                     {entry.date && (
-                      <time dateTime={entry.date} className="text-xs text-muted-foreground">
+                      <time
+                        dateTime={entry.date}
+                        className="text-xs text-muted-foreground"
+                      >
                         {entry.date}
                       </time>
                     )}

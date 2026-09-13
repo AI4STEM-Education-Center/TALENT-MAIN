@@ -24,11 +24,14 @@ describe("resolveWebdavConfig", () => {
 
   it("normalizes baseDir (leading slash added, trailing removed)", () => {
     expect(
-      resolveWebdavConfig({ webdavUrl: "https://x/y", baseDir: "backups/sub/" })?.baseDir,
+      resolveWebdavConfig({ webdavUrl: "https://x/y", baseDir: "backups/sub/" })
+        ?.baseDir,
     ).toBe("/backups/sub");
   });
 
   it("defaults baseDir to /backups", () => {
-    expect(resolveWebdavConfig({ webdavUrl: "https://x/y" })?.baseDir).toBe("/backups");
+    expect(resolveWebdavConfig({ webdavUrl: "https://x/y" })?.baseDir).toBe(
+      "/backups",
+    );
   });
 });

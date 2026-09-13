@@ -36,7 +36,7 @@ export type RasterizedPage = {
  */
 export async function encodeCanvasToPageImage(
   canvas: HTMLCanvasElement,
-  requested: PageImageMimeType
+  requested: PageImageMimeType,
 ): Promise<{ blob: Blob; mimeType: PageImageMimeType }> {
   const tooBigForWebp =
     canvas.width > WEBP_MAX_DIMENSION || canvas.height > WEBP_MAX_DIMENSION;
@@ -47,8 +47,8 @@ export async function encodeCanvasToPageImage(
     canvas.toBlob(
       resolve,
       target,
-      target === "image/webp" ? PAGE_IMAGE_WEBP_QUALITY : undefined
-    )
+      target === "image/webp" ? PAGE_IMAGE_WEBP_QUALITY : undefined,
+    ),
   );
   if (!blob) throw new Error("Failed to encode page image");
 
@@ -65,7 +65,7 @@ let capabilityProbe: Promise<PageImageMimeType> | null = null;
  * PUT with it, so guessing wrong makes every upload in the batch fail.
  */
 export function resolvePageImageMimeType(
-  preferred: PageImageMimeType = preferredPageImageMimeType()
+  preferred: PageImageMimeType = preferredPageImageMimeType(),
 ): Promise<PageImageMimeType> {
   if (preferred === "image/png") return Promise.resolve(preferred);
   capabilityProbe ??= (async () => {
@@ -89,7 +89,7 @@ export function resolvePageImageMimeType(
 export async function rasterizePdfToImageBlobs(
   file: File,
   maxPages: number,
-  mimeType: PageImageMimeType = preferredPageImageMimeType()
+  mimeType: PageImageMimeType = preferredPageImageMimeType(),
 ): Promise<RasterizedPage[]> {
   const arrayBuffer = await file.arrayBuffer();
   const pages: RasterizedPage[] = [];
@@ -102,7 +102,9 @@ export async function rasterizePdfToImageBlobs(
       const numPages = pdfDoc.getPageCount();
 
       if (numPages > maxPages) {
-        throw new Error(`PDF exceeds maximum limit of ${maxPages} pages (has ${numPages}).`);
+        throw new Error(
+          `PDF exceeds maximum limit of ${maxPages} pages (has ${numPages}).`,
+        );
       }
 
       for (let i = 1; i <= numPages; i++) {
@@ -123,9 +125,15 @@ export async function rasterizePdfToImageBlobs(
         canvas.height = height;
         const ctx = canvas.getContext("2d");
         if (!ctx) throw new Error("Could not create canvas context");
-        ctx.putImageData(new ImageData(new Uint8ClampedArray(data), width, height), 0, 0);
+        ctx.putImageData(
+          new ImageData(new Uint8ClampedArray(data), width, height),
+          0,
+          0,
+        );
 
-        const encoded = await encodeCanvasToPageImage(canvas, mimeType).catch(() => null);
+        const encoded = await encodeCanvasToPageImage(canvas, mimeType).catch(
+          () => null,
+        );
         if (!encoded) throw new Error(`Failed to create blob for page ${i}`);
 
         pages.push({

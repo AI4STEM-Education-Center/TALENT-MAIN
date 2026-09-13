@@ -8,7 +8,9 @@ import { prisma } from "@/lib/prisma";
 // better-sqlite3 connection runs queries in order, so this read can't race the
 // pending PRAGMA writes).
 async function pragma(name: string, col = name): Promise<unknown> {
-  const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(`PRAGMA ${name};`);
+  const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
+    `PRAGMA ${name};`,
+  );
   return rows[0]?.[col]; // values arrive as BigInt; callers coerce with Number()
 }
 

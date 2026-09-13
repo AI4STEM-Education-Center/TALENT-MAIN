@@ -57,17 +57,19 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
           <header
             className={cn(
               "sticky top-0 z-40 flex items-center gap-3 px-4 py-3 bg-background border-b border-border",
-              desktopSidebarOpen && "md:hidden"
+              desktopSidebarOpen && "md:hidden",
             )}
           >
-            <button type="button"
+            <button
+              type="button"
               aria-label="Open navigation menu"
               onClick={() => setSidebarOpen(true)}
               className="md:hidden p-2 rounded-md text-foreground/70 hover:text-foreground hover:bg-accent transition-colors"
             >
               <Menu className="size-5" />
             </button>
-            <button type="button"
+            <button
+              type="button"
               aria-label="Show sidebar"
               onClick={() => setDesktopSidebarOpen(true)}
               className="hidden md:block p-2 rounded-md text-foreground/70 hover:text-foreground hover:bg-accent transition-colors"
@@ -78,7 +80,9 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
               <div className="size-7 rounded-lg bg-primary/10 flex items-center justify-center">
                 <BookOpen className="size-3.5 text-primary" />
               </div>
-              <span className="font-bold text-sm text-foreground">AI4Talent</span>
+              <span className="font-bold text-sm text-foreground">
+                AI4Talent
+              </span>
             </div>
             <ThemeToggle className="ml-auto p-2 rounded-md text-foreground/70 hover:text-foreground hover:bg-accent" />
           </header>
@@ -89,7 +93,9 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                 sidebar instead of floating centered. Pages can lift the cap via
                 useContentFullWidth when they need the whole viewport. */}
             <SetContentFullWidthContext.Provider value={setContentFullWidth}>
-              <div className={cn("w-full", !contentFullWidth && "max-w-7xl")}>{children}</div>
+              <div className={cn("w-full", !contentFullWidth && "max-w-7xl")}>
+                {children}
+              </div>
             </SetContentFullWidthContext.Provider>
           </main>
         </div>
@@ -104,7 +110,11 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <SessionProvider>
       <DashboardContent>{children}</DashboardContent>

@@ -76,3 +76,15 @@ export function percentile(values, quantile) {
   const index = Math.min(sorted.length - 1, Math.ceil(sorted.length * quantile) - 1);
   return Math.round(sorted[Math.max(0, index)] * 100) / 100;
 }
+
+export function summarizeChecks(checks) {
+  const passedChecks = checks.filter((check) => check.outcome === "PASS").length;
+  const failedChecks = checks.filter((check) => check.outcome === "FAIL").length;
+  const totalChecks = passedChecks + failedChecks;
+  return {
+    totalChecks,
+    passedChecks,
+    failedChecks,
+    errorRate: totalChecks > 0 ? failedChecks / totalChecks : 1,
+  };
+}

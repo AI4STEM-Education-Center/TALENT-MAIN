@@ -18,7 +18,11 @@ export async function GET() {
   const requests = await prisma.consentExportRequest.findMany({
     where: { reviewerId: session.user.id },
     include: {
-      teacher: { select: { user: { select: { firstName: true, lastName: true, email: true } } } },
+      teacher: {
+        select: {
+          user: { select: { firstName: true, lastName: true, email: true } },
+        },
+      },
       class: { select: { id: true, name: true } },
     },
     orderBy: [{ status: "asc" }, { requestedAt: "desc" }],

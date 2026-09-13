@@ -48,7 +48,9 @@ export function RecommendationCard({ rec }: { rec: PresignedRecommendation }) {
     return (
       <div className="flex h-full flex-col rounded-xl border bg-card p-4 text-sm shadow-xs">
         {heading}
-        {rec.reason && <p className="mt-1 text-xs text-muted-foreground">{rec.reason}</p>}
+        {rec.reason && (
+          <p className="mt-1 text-xs text-muted-foreground">{rec.reason}</p>
+        )}
       </div>
     );
   }
@@ -62,7 +64,9 @@ export function RecommendationCard({ rec }: { rec: PresignedRecommendation }) {
         className="group flex h-full cursor-pointer flex-col rounded-xl border bg-card p-4 text-left text-sm shadow-xs transition hover:border-primary/50 hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
       >
         {heading}
-        {rec.reason && <p className="mt-1 text-xs text-muted-foreground">{rec.reason}</p>}
+        {rec.reason && (
+          <p className="mt-1 text-xs text-muted-foreground">{rec.reason}</p>
+        )}
 
         {/* Cover page only: a single static thumbnail that reads as "there is
             more behind this", instead of a scrollable box pretending to be a

@@ -11,10 +11,14 @@ import { resetDb, createTeacher, createStudent, createClass } from "./db";
 const mockAuth = vi.mocked(auth);
 
 function asAdmin() {
-  mockAuth.mockResolvedValue({ user: { id: "admin-1", role: "ADMIN" } } as never);
+  mockAuth.mockResolvedValue({
+    user: { id: "admin-1", role: "ADMIN" },
+  } as never);
 }
 function asTeacher(userId = "t") {
-  mockAuth.mockResolvedValue({ user: { id: userId, role: "TEACHER" } } as never);
+  mockAuth.mockResolvedValue({
+    user: { id: userId, role: "TEACHER" },
+  } as never);
 }
 
 beforeEach(async () => {

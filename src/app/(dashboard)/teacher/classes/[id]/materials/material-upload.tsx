@@ -4,10 +4,24 @@ import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { UploadCloud, Loader2 } from "lucide-react";
 import { rasterizePdfToImageBlobs } from "@/lib/pdf-rasterize-client";
+import { MAX_MATERIAL_PAGES } from "@/lib/page-image-format";
+import { errorMessage } from "@/lib/errors";
 
 interface MaterialUploadProps {
   classId: string;
 }
+
+/** One row of the page-presign response (see pages/route.ts). */
+interface PresignedPageUrl {
+  pageNumber: number;
+  presignedUrl: string;
+  storageKey: string;
+  mimeType: string;
+  error?: string;
+}
+
+/** Concurrent S3 PUTs; higher values saturate school networks. */
+const PAGE_UPLOAD_BATCH_SIZE = 5;
 
 export default function MaterialUploadForm({ classId }: MaterialUploadProps) {
   const { refresh } = useRouter();
@@ -45,7 +59,9 @@ export default function MaterialUploadForm({ classId }: MaterialUploadProps) {
         });
 
         if (!initRes.ok) {
-          throw new Error((await initRes.json()).error || "Failed to initialize upload");
+          throw new Error(
+            (await initRes.json()).error || "Failed to initialize upload",
+          );
         }
 
         const { id: materialId, presignedUrl, mimeType } = await initRes.json();
@@ -64,58 +80,81 @@ export default function MaterialUploadForm({ classId }: MaterialUploadProps) {
         // 3. Rasterize PDF pages in the browser via PDFium (WASM). Max 100 pages.
         // Each page comes back WebP-encoded where the browser supports it — see
         // src/lib/page-image-format.ts — carrying the MIME type it actually used.
-        const pageBlobs = await rasterizePdfToImageBlobs(file, 100);
+        const pageBlobs = await rasterizePdfToImageBlobs(
+          file,
+          MAX_MATERIAL_PAGES,
+        );
         const numPages = pageBlobs.length;
         setProgress(30); // First 30% is rendering
 
         setStatusText("Requesting upload URLs for pages...");
         // 4. Get presigned URLs for all pages
-        const pagesRes = await fetch(`/api/classes/${classId}/materials/${materialId}/pages`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            pages: pageBlobs.map((p) => ({
-              pageNumber: p.pageNumber,
-              sizeBytes: p.sizeBytes,
-              contentType: p.mimeType,
-            })),
-          }),
-        });
+        const pagesRes = await fetch(
+          `/api/classes/${classId}/materials/${materialId}/pages`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              pages: pageBlobs.map((p) => ({
+                pageNumber: p.pageNumber,
+                sizeBytes: p.sizeBytes,
+                contentType: p.mimeType,
+              })),
+            }),
+          },
+        );
 
         if (!pagesRes.ok) {
-          throw new Error((await pagesRes.json()).error || "Failed to get page upload URLs");
+          throw new Error(
+            (await pagesRes.json()).error || "Failed to get page upload URLs",
+          );
         }
 
-        const { pages: pageUrls } = await pagesRes.json();
+        const { pages: pageUrls }: { pages: PresignedPageUrl[] } =
+          await pagesRes.json();
 
         setStatusText("Uploading page images...");
         // 5. Upload all pages directly to S3
         let uploadedCount = 0;
 
         // Index page blobs by page number for O(1) lookup during upload
-        const blobsByPageNumber = new Map(pageBlobs.map((p) => [p.pageNumber, p]));
+        const blobsByPageNumber = new Map(
+          pageBlobs.map((p) => [p.pageNumber, p]),
+        );
 
-        // Upload in batches of 5 to avoid overwhelming network
-        for (let i = 0; i < pageUrls.length; i += 5) {
-          const batch = pageUrls.slice(i, i + 5);
+        // Upload in batches to avoid overwhelming the network.
+        for (let i = 0; i < pageUrls.length; i += PAGE_UPLOAD_BATCH_SIZE) {
+          const batch = pageUrls.slice(i, i + PAGE_UPLOAD_BATCH_SIZE);
           await Promise.all(
-            batch.map(async (pageData: any) => {
-              if (pageData.error) throw new Error(`Server error for page ${pageData.pageNumber}: ${pageData.error}`);
+            batch.map(async (pageData: PresignedPageUrl) => {
+              if (pageData.error)
+                throw new Error(
+                  `Server error for page ${pageData.pageNumber}: ${pageData.error}`,
+                );
+              if (!pageData.presignedUrl || !pageData.storageKey)
+                throw new Error(
+                  `Missing upload URL for page ${pageData.pageNumber}`,
+                );
 
               const blobData = blobsByPageNumber.get(pageData.pageNumber);
-              if (!blobData) throw new Error(`Missing blob for page ${pageData.pageNumber}`);
+              if (!blobData)
+                throw new Error(`Missing blob for page ${pageData.pageNumber}`);
 
               const res = await fetch(pageData.presignedUrl, {
                 method: "PUT",
-                headers: { "Content-Type": pageData.mimeType, "If-None-Match": "*" },
+                headers: {
+                  "Content-Type": pageData.mimeType,
+                  "If-None-Match": "*",
+                },
                 body: blobData.blob,
               });
 
-              if (!res.ok) throw new Error(`Failed to upload page ${pageData.pageNumber}`);
+              if (!res.ok)
+                throw new Error(`Failed to upload page ${pageData.pageNumber}`);
 
               uploadedCount++;
               setProgress(30 + (uploadedCount / numPages) * 60); // 30% to 90% is uploading
-            })
+            }),
           );
         }
 
@@ -125,19 +164,22 @@ export default function MaterialUploadForm({ classId }: MaterialUploadProps) {
         // collecting them as each upload resolved shuffled the list and made
         // every multi-batch document fail finalization.
         const uploadedPagesForComplete = pageUrls
-          .map((pageData: any) => ({
+          .map((pageData: PresignedPageUrl) => ({
             pageNumber: pageData.pageNumber,
             storageKey: pageData.storageKey,
           }))
-          .sort((a: { pageNumber: number }, b: { pageNumber: number }) => a.pageNumber - b.pageNumber);
+          .sort((a, b) => a.pageNumber - b.pageNumber);
 
         setStatusText("Finalizing upload...");
         // 6. Complete upload and trigger VLM
-        const completeRes = await fetch(`/api/classes/${classId}/materials/${materialId}/complete`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ pages: uploadedPagesForComplete }),
-        });
+        const completeRes = await fetch(
+          `/api/classes/${classId}/materials/${materialId}/complete`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pages: uploadedPagesForComplete }),
+          },
+        );
 
         if (!completeRes.ok) {
           // Surface what the server actually objected to; the old generic
@@ -152,20 +194,19 @@ export default function MaterialUploadForm({ classId }: MaterialUploadProps) {
 
         setProgress(100);
         setStatusText("Done!");
-        
+
         // Let user see 100% for a moment before refreshing list
         setTimeout(() => {
           setIsUploading(false);
           refresh();
         }, 1000);
-
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error(err);
-        setError(err.message || "An unexpected error occurred");
+        setError(errorMessage(err) || "An unexpected error occurred");
         setIsUploading(false);
       }
     },
-    [classId, refresh]
+    [classId, refresh],
   );
 
   return (
@@ -182,7 +223,9 @@ export default function MaterialUploadForm({ classId }: MaterialUploadProps) {
         {isUploading ? (
           <>
             <Loader2 className="size-10 text-blue-500 animate-spin" />
-            <div className="text-sm font-medium text-gray-700">{statusText}</div>
+            <div className="text-sm font-medium text-gray-700">
+              {statusText}
+            </div>
             <div className="w-full max-w-xs bg-gray-200 rounded-full h-2.5">
               <div
                 className="bg-blue-600 h-2.5 rounded-full transition-[width] duration-300"

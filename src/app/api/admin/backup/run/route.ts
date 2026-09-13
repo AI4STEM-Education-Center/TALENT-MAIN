@@ -18,23 +18,34 @@ export async function POST() {
 
   const cfg = await resolveWebdav();
   if (!cfg) {
-    return NextResponse.json({ error: "WebDAV is not configured." }, { status: 400 });
+    return NextResponse.json(
+      { error: "WebDAV is not configured." },
+      { status: 400 },
+    );
   }
 
   try {
     getS3Config();
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "S3 is not configured." },
+      {
+        error: error instanceof Error ? error.message : "S3 is not configured.",
+      },
       { status: 400 },
     );
   }
 
   try {
     enqueueBackup({ includeS3: true });
-    return NextResponse.json({ success: true, message: "Database and S3 backup queued." });
+    return NextResponse.json({
+      success: true,
+      message: "Database and S3 backup queued.",
+    });
   } catch (error) {
     logApiError("BACKUP_RUN", error);
-    return NextResponse.json({ error: "Failed to queue backup." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to queue backup." },
+      { status: 500 },
+    );
   }
 }

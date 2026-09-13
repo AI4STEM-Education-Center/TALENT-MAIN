@@ -32,7 +32,10 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const audience = url.searchParams.get("audience");
     const rawPage = Number.parseInt(url.searchParams.get("page") ?? "0", 10);
-    const rawPageSize = Number.parseInt(url.searchParams.get("pageSize") ?? "", 10);
+    const rawPageSize = Number.parseInt(
+      url.searchParams.get("pageSize") ?? "",
+      10,
+    );
 
     const result = await listConversationsForAdmin({
       audience: isAssistantAudience(audience) ? audience : undefined,
@@ -47,6 +50,9 @@ export async function GET(req: Request) {
     return NextResponse.json(result);
   } catch (error) {
     logApiError("ADMIN_ASSISTANT_CONVERSATIONS_GET", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }

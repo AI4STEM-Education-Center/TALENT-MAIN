@@ -1,6 +1,10 @@
 import { PrismaClient } from "@prisma/client";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
-import { prebuiltQuestions, prebuiltSubtopics, prebuiltTopic } from "./prebuilt-questions";
+import {
+  prebuiltQuestions,
+  prebuiltSubtopics,
+  prebuiltTopic,
+} from "./prebuilt-questions";
 import { resolveDatabaseUrl } from "../src/lib/db-url";
 
 const adapter = new PrismaBetterSqlite3({ url: resolveDatabaseUrl() });

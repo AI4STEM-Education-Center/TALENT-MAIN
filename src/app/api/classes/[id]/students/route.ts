@@ -6,7 +6,7 @@ import { isValidEmail, normalizeEmail } from "@/lib/csv-roster";
 // GET: Return all ClassStudentList entries for this class with enrollment status (teacher only)
 export async function GET(
   _req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await auth();
   if (!session?.user || session.user.role !== "TEACHER") {
@@ -14,14 +14,18 @@ export async function GET(
   }
 
   const { id } = await params;
-  const teacher = await prisma.teacher.findUnique({ where: { userId: session.user.id } });
-  if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
+  const teacher = await prisma.teacher.findUnique({
+    where: { userId: session.user.id },
+  });
+  if (!teacher)
+    return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
 
   // Verify the teacher owns this class
   const cls = await prisma.class.findFirst({
     where: { id, teacherId: teacher.id },
   });
-  if (!cls) return NextResponse.json({ error: "Class not found" }, { status: 404 });
+  if (!cls)
+    return NextResponse.json({ error: "Class not found" }, { status: 404 });
 
   const [students, enrollments] = await Promise.all([
     prisma.classStudentList.findMany({
@@ -59,7 +63,7 @@ export async function GET(
 // POST: Manually add a student to the class roster (teacher only)
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await auth();
   if (!session?.user || session.user.role !== "TEACHER") {
@@ -67,22 +71,32 @@ export async function POST(
   }
 
   const { id } = await params;
-  const teacher = await prisma.teacher.findUnique({ where: { userId: session.user.id } });
-  if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
+  const teacher = await prisma.teacher.findUnique({
+    where: { userId: session.user.id },
+  });
+  if (!teacher)
+    return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
 
   const cls = await prisma.class.findFirst({
     where: { id, teacherId: teacher.id },
   });
-  if (!cls) return NextResponse.json({ error: "Class not found" }, { status: 404 });
+  if (!cls)
+    return NextResponse.json({ error: "Class not found" }, { status: 404 });
 
   const { orgDefinedId, firstName, lastName, email } = await req.json();
 
   if (!orgDefinedId?.trim() || !firstName?.trim() || !lastName?.trim()) {
-    return NextResponse.json({ error: "81 number, first name, and last name are required." }, { status: 400 });
+    return NextResponse.json(
+      { error: "81 number, first name, and last name are required." },
+      { status: 400 },
+    );
   }
 
   if (!email?.trim() || !isValidEmail(email)) {
-    return NextResponse.json({ error: "A valid email address is required." }, { status: 400 });
+    return NextResponse.json(
+      { error: "A valid email address is required." },
+      { status: 400 },
+    );
   }
 
   const cleanId = orgDefinedId.replace(/^#/, "").trim();
@@ -92,7 +106,10 @@ export async function POST(
     where: { classId_orgDefinedId: { classId: id, orgDefinedId: cleanId } },
   });
   if (existing) {
-    return NextResponse.json({ error: "This 81 number is already in the class roster." }, { status: 409 });
+    return NextResponse.json(
+      { error: "This 81 number is already in the class roster." },
+      { status: 409 },
+    );
   }
 
   const entry = await prisma.classStudentList.create({

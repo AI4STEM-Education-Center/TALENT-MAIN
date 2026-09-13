@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { normalizeEmail, normalizeUsername, validatePassword } from "@/lib/account-validation";
+import {
+  normalizeEmail,
+  normalizeUsername,
+  validatePassword,
+} from "@/lib/account-validation";
 import { rateLimit } from "@/lib/rate-limit";
 import { parseBody, registerSchema } from "@/lib/validation";
 import { logApiError } from "@/lib/system-log";
@@ -19,13 +23,13 @@ export async function POST(req: NextRequest) {
     if (!expectedToken) {
       return NextResponse.json(
         { error: "Admin registration is not configured on this server." },
-        { status: 503 }
+        { status: 503 },
       );
     }
     if (!body?.adminToken || body.adminToken !== expectedToken) {
       return NextResponse.json(
         { error: "Invalid admin registration code." },
-        { status: 403 }
+        { status: 403 },
       );
     }
 
@@ -45,14 +49,20 @@ export async function POST(req: NextRequest) {
       where: { email: normalizedEmail },
     });
     if (existingEmail) {
-      return NextResponse.json({ error: "Email already in use." }, { status: 409 });
+      return NextResponse.json(
+        { error: "Email already in use." },
+        { status: 409 },
+      );
     }
 
     const existingUsername = await prisma.user.findUnique({
       where: { username: normalizedUsername },
     });
     if (existingUsername) {
-      return NextResponse.json({ error: "Username already taken." }, { status: 409 });
+      return NextResponse.json(
+        { error: "Username already taken." },
+        { status: 409 },
+      );
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
@@ -70,13 +80,24 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true }, { status: 201 });
   } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-      const target = Array.isArray(err.meta?.target) ? err.meta.target.join(", ") : "";
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === "P2002"
+    ) {
+      const target = Array.isArray(err.meta?.target)
+        ? err.meta.target.join(", ")
+        : "";
       const field = target.includes("username") ? "Username" : "Email";
-      return NextResponse.json({ error: `${field} already in use.` }, { status: 409 });
+      return NextResponse.json(
+        { error: `${field} already in use.` },
+        { status: 409 },
+      );
     }
 
     logApiError("ADMIN REGISTER", err);
-    return NextResponse.json({ error: "Internal server error." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error." },
+      { status: 500 },
+    );
   }
 }

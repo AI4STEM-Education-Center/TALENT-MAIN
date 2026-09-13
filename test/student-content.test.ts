@@ -5,7 +5,9 @@ vi.mock("@/lib/storage", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/storage")>();
   return {
     ...actual,
-    signObjectReadUrl: vi.fn(async (_bucket: string, key: string) => `https://signed.test/${key}`),
+    signObjectReadUrl: vi.fn(
+      async (_bucket: string, key: string) => `https://signed.test/${key}`,
+    ),
   };
 });
 
@@ -23,10 +25,13 @@ import { createClass, createStudent, createTeacher, resetDb } from "./db";
 const mockAuth = vi.mocked(auth);
 
 function asStudent(userId: string) {
-  mockAuth.mockResolvedValue({ user: { id: userId, role: "STUDENT" } } as never);
+  mockAuth.mockResolvedValue({
+    user: { id: userId, role: "STUDENT" },
+  } as never);
 }
 
-const req = () => new Request("http://localhost/api/student/materials/x") as never;
+const req = () =>
+  new Request("http://localhost/api/student/materials/x") as never;
 
 async function enroll(classId: string, studentId: string) {
   await prisma.classEnrollment.create({ data: { classId, studentId } });
@@ -35,7 +40,12 @@ async function enroll(classId: string, studentId: string) {
 /** A READY material, optionally linked to classes and given `pageCount` pages. */
 async function createMaterial(
   teacherId: string,
-  opts: { classIds?: string[]; title?: string; pageCount?: number; uploadStatus?: string } = {}
+  opts: {
+    classIds?: string[];
+    title?: string;
+    pageCount?: number;
+    uploadStatus?: string;
+  } = {},
 ) {
   const material = await prisma.learningMaterial.create({
     data: {
@@ -48,7 +58,9 @@ async function createMaterial(
       bucket: "test-bucket",
       uploadStatus: opts.uploadStatus ?? "READY",
       totalPages: opts.pageCount ?? 0,
-      classLinks: { create: (opts.classIds ?? []).map((classId) => ({ classId })) },
+      classLinks: {
+        create: (opts.classIds ?? []).map((classId) => ({ classId })),
+      },
     },
   });
   for (let i = 1; i <= (opts.pageCount ?? 0); i += 1) {
@@ -80,7 +92,11 @@ async function createQuizWithSimulation(opts: {
   const quiz = await prisma.quiz.create({
     // Explicit order: quizzes created in the same millisecond would otherwise
     // tie on the createdAt fallback and make the expected ordering flaky.
-    data: { name: opts.name, teacherId: opts.teacherId, order: opts.order ?? 0 },
+    data: {
+      name: opts.name,
+      teacherId: opts.teacherId,
+      order: opts.order ?? 0,
+    },
   });
   for (const classId of opts.classIds ?? []) {
     await prisma.classQuiz.create({
@@ -122,7 +138,10 @@ describe("listStudentMaterials", () => {
     await enroll(mine.id, student.id);
 
     await createMaterial(teacher.id, { classIds: [mine.id], title: "Mine" });
-    await createMaterial(teacher.id, { classIds: [theirs.id], title: "Not mine" });
+    await createMaterial(teacher.id, {
+      classIds: [theirs.id],
+      title: "Not mine",
+    });
 
     const materials = await listStudentMaterials(student.id);
     expect(materials.map((m) => m.title)).toEqual(["Mine"]);
@@ -141,7 +160,10 @@ describe("listStudentMaterials", () => {
 
     const materials = await listStudentMaterials(student.id);
     expect(materials).toHaveLength(1);
-    expect(materials[0].classes.map((c) => c.name).toSorted()).toEqual(["Section A", "Section B"]);
+    expect(materials[0].classes.map((c) => c.name).toSorted()).toEqual([
+      "Section A",
+      "Section B",
+    ]);
   });
 
   it("hides a material whose upload never completed", async () => {
@@ -150,7 +172,10 @@ describe("listStudentMaterials", () => {
     const { student } = await createStudent();
     await enroll(cls.id, student.id);
 
-    await createMaterial(teacher.id, { classIds: [cls.id], uploadStatus: "PENDING" });
+    await createMaterial(teacher.id, {
+      classIds: [cls.id],
+      uploadStatus: "PENDING",
+    });
 
     expect(await listStudentMaterials(student.id)).toEqual([]);
   });
@@ -185,7 +210,10 @@ describe("getStudentMaterial", () => {
     const cls = await createClass(teacher.id);
     const { student } = await createStudent();
     await enroll(cls.id, student.id);
-    const material = await createMaterial(teacher.id, { classIds: [cls.id], pageCount: 3 });
+    const material = await createMaterial(teacher.id, {
+      classIds: [cls.id],
+      pageCount: 3,
+    });
 
     const found = await getStudentMaterial(student.id, material.id);
     expect(found?.pages.map((p) => p.pageNumber)).toEqual([1, 2, 3]);
@@ -236,7 +264,9 @@ describe("listStudentSimulations", () => {
   }
 
   const titles = (groups: Awaited<ReturnType<typeof listStudentSimulations>>) =>
-    groups.flatMap((g) => g.quizzes.flatMap((q) => q.simulations.map((s) => s.title)));
+    groups.flatMap((g) =>
+      g.quizzes.flatMap((q) => q.simulations.map((s) => s.title)),
+    );
 
   it("gives each class only the simulations for the quizzes assigned to it", async () => {
     const { one, two, three } = await seedThreeClasses();
@@ -253,7 +283,9 @@ describe("listStudentSimulations", () => {
       "Sim 2",
       "Sim 3",
     ]);
-    expect(titles(await listStudentSimulations(inTwo.student.id))).toEqual(["Sim 4"]);
+    expect(titles(await listStudentSimulations(inTwo.student.id))).toEqual([
+      "Sim 4",
+    ]);
     expect(titles(await listStudentSimulations(inThree.student.id))).toEqual([
       "Sim 7",
       "Sim 8",
@@ -283,7 +315,11 @@ describe("listStudentSimulations", () => {
 
     const groups = await listStudentSimulations(student.id);
     expect(groups.map((g) => g.className)).toEqual(["Class One", "Class Two"]);
-    expect(groups[0].quizzes.map((q) => q.quizName)).toEqual(["Quiz 1", "Quiz 2", "Quiz 3"]);
+    expect(groups[0].quizzes.map((q) => q.quizName)).toEqual([
+      "Quiz 1",
+      "Quiz 2",
+      "Quiz 3",
+    ]);
     expect(groups[1].quizzes.map((q) => q.quizName)).toEqual(["Quiz 4"]);
   });
 
@@ -322,7 +358,9 @@ describe("listStudentSimulations", () => {
       simTitle: "Wave interference",
     });
     // A second question of the same quiz whose simulation reads identically.
-    const twin = await prisma.question.create({ data: { text: "Q2", quizId: quiz.id } });
+    const twin = await prisma.question.create({
+      data: { text: "Q2", quizId: quiz.id },
+    });
     await prisma.questionSimulation.create({
       data: {
         questionId: twin.id,
@@ -341,7 +379,9 @@ describe("listStudentSimulations", () => {
 });
 
 describe("GET /api/student/materials/[materialId]/file", () => {
-  const params = (materialId: string) => ({ params: Promise.resolve({ materialId }) });
+  const params = (materialId: string) => ({
+    params: Promise.resolve({ materialId }),
+  });
 
   it("redirects an enrolled student to a signed URL", async () => {
     const { teacher } = await createTeacher();
@@ -372,7 +412,9 @@ describe("GET /api/student/materials/[materialId]/file", () => {
     const cls = await createClass(teacher.id);
     const material = await createMaterial(teacher.id, { classIds: [cls.id] });
 
-    mockAuth.mockResolvedValue({ user: { id: user.id, role: "TEACHER" } } as never);
+    mockAuth.mockResolvedValue({
+      user: { id: user.id, role: "TEACHER" },
+    } as never);
     expect((await MATERIAL_FILE(req(), params(material.id))).status).toBe(401);
   });
 });
@@ -387,7 +429,10 @@ describe("GET /api/student/materials/[materialId]/pages/[pageId]/image", () => {
     const cls = await createClass(teacher.id);
     const { user, student } = await createStudent();
     await enroll(cls.id, student.id);
-    const material = await createMaterial(teacher.id, { classIds: [cls.id], pageCount: 2 });
+    const material = await createMaterial(teacher.id, {
+      classIds: [cls.id],
+      pageCount: 2,
+    });
     const page = await prisma.materialPage.findFirstOrThrow({
       where: { materialId: material.id, pageNumber: 1 },
     });
@@ -403,24 +448,39 @@ describe("GET /api/student/materials/[materialId]/pages/[pageId]/image", () => {
     const cls = await createClass(teacher.id);
     const { user, student } = await createStudent();
     await enroll(cls.id, student.id);
-    const mine = await createMaterial(teacher.id, { classIds: [cls.id], pageCount: 1 });
-    const other = await createMaterial(teacher.id, { pageCount: 1, title: "Other" });
+    const mine = await createMaterial(teacher.id, {
+      classIds: [cls.id],
+      pageCount: 1,
+    });
+    const other = await createMaterial(teacher.id, {
+      pageCount: 1,
+      title: "Other",
+    });
     const otherPage = await prisma.materialPage.findFirstOrThrow({
       where: { materialId: other.id },
     });
 
     asStudent(user.id);
-    expect((await PAGE_IMAGE(req(), params(mine.id, otherPage.id))).status).toBe(404);
+    expect(
+      (await PAGE_IMAGE(req(), params(mine.id, otherPage.id))).status,
+    ).toBe(404);
   });
 
   it("404s a student with no enrollment granting the material", async () => {
     const { teacher } = await createTeacher();
     const cls = await createClass(teacher.id);
     const { user } = await createStudent();
-    const material = await createMaterial(teacher.id, { classIds: [cls.id], pageCount: 1 });
-    const page = await prisma.materialPage.findFirstOrThrow({ where: { materialId: material.id } });
+    const material = await createMaterial(teacher.id, {
+      classIds: [cls.id],
+      pageCount: 1,
+    });
+    const page = await prisma.materialPage.findFirstOrThrow({
+      where: { materialId: material.id },
+    });
 
     asStudent(user.id);
-    expect((await PAGE_IMAGE(req(), params(material.id, page.id))).status).toBe(404);
+    expect((await PAGE_IMAGE(req(), params(material.id, page.id))).status).toBe(
+      404,
+    );
   });
 });

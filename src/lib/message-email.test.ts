@@ -36,30 +36,41 @@ describe("backoffSecondsFor", () => {
 
 describe("classifyDeliveryError", () => {
   it("gives up on a 5xx SMTP refusal — the mailbox will not appear on retry", () => {
-    const rejected = Object.assign(new Error("550 5.1.1 no such user"), { responseCode: 550 });
+    const rejected = Object.assign(new Error("550 5.1.1 no such user"), {
+      responseCode: 550,
+    });
     expect(classifyDeliveryError(rejected)).toBe("PERMANENT");
   });
 
   it("retries a 4xx greylist/throttle", () => {
-    const busy = Object.assign(new Error("451 try again later"), { responseCode: 451 });
+    const busy = Object.assign(new Error("451 try again later"), {
+      responseCode: 451,
+    });
     expect(classifyDeliveryError(busy)).toBe("TRANSIENT");
   });
 
   it("retries connection failures and anything unrecognized", () => {
-    expect(classifyDeliveryError(Object.assign(new Error("socket hang up"), { code: "ECONNRESET" })))
-      .toBe("TRANSIENT");
+    expect(
+      classifyDeliveryError(
+        Object.assign(new Error("socket hang up"), { code: "ECONNRESET" }),
+      ),
+    ).toBe("TRANSIENT");
     expect(classifyDeliveryError(new Error("boom"))).toBe("TRANSIENT");
     expect(classifyDeliveryError("weird")).toBe("TRANSIENT");
   });
 
   it("retries an unconfigured SMTP server so an admin can still fix it", () => {
-    expect(classifyDeliveryError(new SmtpNotConfiguredError("nope"))).toBe("TRANSIENT");
+    expect(classifyDeliveryError(new SmtpNotConfiguredError("nope"))).toBe(
+      "TRANSIENT",
+    );
   });
 });
 
 describe("describeDeliveryError", () => {
   it("flattens whitespace and truncates for storage", () => {
-    expect(describeDeliveryError(new Error("line one\n  line two"))).toBe("line one line two");
+    expect(describeDeliveryError(new Error("line one\n  line two"))).toBe(
+      "line one line two",
+    );
     expect(describeDeliveryError(new Error("x".repeat(500)))).toHaveLength(300);
   });
 
@@ -103,7 +114,11 @@ describe("selectEmailRecipients", () => {
   });
 
   it("records a null user when the address has no account behind it", () => {
-    expect(selectEmailRecipients([{ email: "roster@example.com" }]).get("roster@example.com")).toBeNull();
+    expect(
+      selectEmailRecipients([{ email: "roster@example.com" }]).get(
+        "roster@example.com",
+      ),
+    ).toBeNull();
   });
 });
 
@@ -116,13 +131,25 @@ describe("summarizeDeliveries", () => {
   });
 
   it("settles on SENT, PARTIAL, or FAILED once nothing is pending", () => {
-    expect(summarizeDeliveries({ pending: 0, sent: 5, failed: 0 })).toEqual({ status: "SENT", sentCount: 5 });
-    expect(summarizeDeliveries({ pending: 0, sent: 3, failed: 2 })).toEqual({ status: "PARTIAL", sentCount: 3 });
-    expect(summarizeDeliveries({ pending: 0, sent: 0, failed: 2 })).toEqual({ status: "FAILED", sentCount: 0 });
+    expect(summarizeDeliveries({ pending: 0, sent: 5, failed: 0 })).toEqual({
+      status: "SENT",
+      sentCount: 5,
+    });
+    expect(summarizeDeliveries({ pending: 0, sent: 3, failed: 2 })).toEqual({
+      status: "PARTIAL",
+      sentCount: 3,
+    });
+    expect(summarizeDeliveries({ pending: 0, sent: 0, failed: 2 })).toEqual({
+      status: "FAILED",
+      sentCount: 0,
+    });
   });
 
   it("reports SENT for a message that queued no email at all", () => {
-    expect(summarizeDeliveries({ pending: 0, sent: 0, failed: 0 })).toEqual({ status: "SENT", sentCount: 0 });
+    expect(summarizeDeliveries({ pending: 0, sent: 0, failed: 0 })).toEqual({
+      status: "SENT",
+      sentCount: 0,
+    });
   });
 });
 
@@ -137,19 +164,26 @@ describe("buildMessageEmail", () => {
   it("says a message is waiting, and where", () => {
     const { subject, text } = buildMessageEmail(base);
     expect(subject).toBe("New message in Physics 101: Quiz 3 moved");
-    expect(text).toContain("Tess Teacher has sent you a new message in Physics 101.");
+    expect(text).toContain(
+      "Tess Teacher has sent you a new message in Physics 101.",
+    );
     expect(text).toContain("Subject: Quiz 3 moved");
   });
 
   it("names the sender instead of the class when there is no class", () => {
     expect(buildMessageEmail({ ...base, className: null }).subject).toBe(
-      "New message from Tess Teacher: Quiz 3 moved"
+      "New message from Tess Teacher: Quiz 3 moved",
     );
   });
 
   it("links straight to the message rather than the mailbox", () => {
-    const { text } = buildMessageEmail({ ...base, appUrl: "https://app.example.com" });
-    expect(text).toContain("https://app.example.com/student/notifications?message=msg-1");
+    const { text } = buildMessageEmail({
+      ...base,
+      appUrl: "https://app.example.com",
+    });
+    expect(text).toContain(
+      "https://app.example.com/student/notifications?message=msg-1",
+    );
   });
 
   it("tells the student where to look when no app URL is configured", () => {
@@ -159,7 +193,10 @@ describe("buildMessageEmail", () => {
   });
 
   it("never carries the message itself — that stays on the platform", () => {
-    const { text } = buildMessageEmail({ ...base, appUrl: "https://app.example.com" });
+    const { text } = buildMessageEmail({
+      ...base,
+      appUrl: "https://app.example.com",
+    });
     expect(text).not.toContain("It is now due Friday.");
     expect(text).toContain("waiting for you in the app");
   });
@@ -168,7 +205,7 @@ describe("buildMessageEmail", () => {
 describe("messageLink", () => {
   it("escapes the id so an odd character can't break the URL", () => {
     expect(messageLink("https://app.example.com", "a b&c")).toBe(
-      "https://app.example.com/student/notifications?message=a%20b%26c"
+      "https://app.example.com/student/notifications?message=a%20b%26c",
     );
   });
 });

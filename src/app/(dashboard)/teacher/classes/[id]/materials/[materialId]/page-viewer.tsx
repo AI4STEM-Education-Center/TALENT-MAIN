@@ -34,9 +34,10 @@ export default function PageViewer({
       try {
         const res = await fetch(
           `/api/classes/${classId}/materials/${materialId}/pages/${pageId}/image`,
-          { signal }
+          { signal },
         );
-        if (!res.ok) throw new Error(`Page image request failed (HTTP ${res.status})`);
+        if (!res.ok)
+          throw new Error(`Page image request failed (HTTP ${res.status})`);
         const data = await res.json();
         if (signal.aborted) return;
         setImageUrl(typeof data?.url === "string" ? data.url : null);

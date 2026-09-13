@@ -12,7 +12,7 @@
  */
 export function consumeNdjson<T>(
   carry: string,
-  chunk: string
+  chunk: string,
 ): { values: T[]; carry: string } {
   const combined = carry + chunk;
   const lines = combined.split("\n");
@@ -32,7 +32,9 @@ export function consumeNdjson<T>(
 }
 
 /** Read a `Response` body as a stream of NDJSON values, in arrival order. */
-export async function* readNdjson<T>(body: ReadableStream<Uint8Array>): AsyncGenerator<T> {
+export async function* readNdjson<T>(
+  body: ReadableStream<Uint8Array>,
+): AsyncGenerator<T> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let carry = "";
@@ -42,7 +44,7 @@ export async function* readNdjson<T>(body: ReadableStream<Uint8Array>): AsyncGen
       if (done) break;
       const { values, carry: next } = consumeNdjson<T>(
         carry,
-        decoder.decode(value, { stream: true })
+        decoder.decode(value, { stream: true }),
       );
       carry = next;
       for (const parsed of values) yield parsed;

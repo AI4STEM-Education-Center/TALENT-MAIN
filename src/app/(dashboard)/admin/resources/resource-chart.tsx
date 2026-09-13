@@ -67,7 +67,16 @@ function niceMax(value: number, base: number): number {
   const rough = value / TICK_COUNT;
   const magnitude = base ** Math.floor(Math.log(rough) / Math.log(base));
   const normalized = rough / magnitude;
-  const step = (normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 2.5 ? 2.5 : normalized <= 5 ? 5 : base) * magnitude;
+  const step =
+    (normalized <= 1
+      ? 1
+      : normalized <= 2
+        ? 2
+        : normalized <= 2.5
+          ? 2.5
+          : normalized <= 5
+            ? 5
+            : base) * magnitude;
   return step * TICK_COUNT;
 }
 
@@ -78,7 +87,10 @@ function formatClock(t: number, spanMs: number): string {
     return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }
   // react-doctor-disable-next-line react-doctor/no-locale-format-in-render -- called only from the client-polled chart, which renders no samples during SSR
-  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export function ResourceChart({
@@ -110,7 +122,9 @@ export function ResourceChart({
     // Nodes sample independently, so their timestamps only mostly line up. The
     // union of every series' bucket starts is the x-domain and the crosshair's
     // snap positions; each series then looks itself up per timestamp.
-    const stamps = [...new Set(series.flatMap((s) => s.points.map((p) => p.t)))].sort((a, b) => a - b);
+    const stamps = [
+      ...new Set(series.flatMap((s) => s.points.map((p) => p.t))),
+    ].sort((a, b) => a - b);
     const values = series.flatMap((s) => s.points.map((p) => p.v));
     const dataMax = values.length ? Math.max(...values) : 0;
     return {
@@ -119,7 +133,9 @@ export function ResourceChart({
       tMax: stamps[stamps.length - 1] ?? 1,
       // Zero-anchored: a truncated axis exaggerates every wobble.
       yMax: fixedMax ?? niceMax(dataMax, axisBase),
-      lookup: new Map(series.map((s) => [s.id, new Map(s.points.map((p) => [p.t, p.v]))])),
+      lookup: new Map(
+        series.map((s) => [s.id, new Map(s.points.map((p) => [p.t, p.v]))]),
+      ),
     };
   }, [series, fixedMax, axisBase]);
 
@@ -130,25 +146,28 @@ export function ResourceChart({
 
   const x = useCallback(
     (t: number) => PADDING.left + ((t - tMin) / spanMs) * plotWidth,
-    [tMin, spanMs, plotWidth]
+    [tMin, spanMs, plotWidth],
   );
   const y = useCallback(
-    (v: number) => PADDING.top + plotHeight - (Math.min(v, yMax) / (yMax || 1)) * plotHeight,
-    [plotHeight, yMax]
+    (v: number) =>
+      PADDING.top + plotHeight - (Math.min(v, yMax) / (yMax || 1)) * plotHeight,
+    [plotHeight, yMax],
   );
 
   const pointerToIndex = useCallback(
     (clientX: number) => {
       const box = wrapperRef.current?.getBoundingClientRect();
       if (!box || stamps.length === 0) return null;
-      const target = tMin + ((clientX - box.left - PADDING.left) / plotWidth) * spanMs;
+      const target =
+        tMin + ((clientX - box.left - PADDING.left) / plotWidth) * spanMs;
       let best = 0;
       for (let i = 1; i < stamps.length; i += 1) {
-        if (Math.abs(stamps[i] - target) < Math.abs(stamps[best] - target)) best = i;
+        if (Math.abs(stamps[i] - target) < Math.abs(stamps[best] - target))
+          best = i;
       }
       return best;
     },
-    [stamps, tMin, spanMs, plotWidth]
+    [stamps, tMin, spanMs, plotWidth],
   );
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
@@ -182,9 +201,15 @@ export function ResourceChart({
     endLabels.push({ id: s.id, label: format(last.v), yPos });
   }
 
-  const yTicks = Array.from({ length: TICK_COUNT + 1 }, (_, i) => (yMax / TICK_COUNT) * i);
+  const yTicks = Array.from(
+    { length: TICK_COUNT + 1 },
+    (_, i) => (yMax / TICK_COUNT) * i,
+  );
   const xTickCount = Math.max(2, Math.min(6, Math.floor(plotWidth / 110)));
-  const xTicks = Array.from({ length: xTickCount }, (_, i) => tMin + (spanMs / (xTickCount - 1)) * i);
+  const xTicks = Array.from(
+    { length: xTickCount },
+    (_, i) => tMin + (spanMs / (xTickCount - 1)) * i,
+  );
 
   return (
     <section className="viz-root border border-border rounded-lg bg-card p-5">
@@ -196,8 +221,15 @@ export function ResourceChart({
       {/* Legend: identity never rests on colour-matching alone. */}
       <ul className="flex flex-wrap gap-x-4 gap-y-1 mb-2">
         {series.map((s) => (
-          <li key={s.id} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span aria-hidden className="h-0.5 w-4 rounded-full" style={seriesSwatchStyle(s)} />
+          <li
+            key={s.id}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground"
+          >
+            <span
+              aria-hidden
+              className="h-0.5 w-4 rounded-full"
+              style={seriesSwatchStyle(s)}
+            />
             {s.label}
           </li>
         ))}
@@ -258,7 +290,10 @@ export function ResourceChart({
             let path = "";
             let previousT: number | null = null;
             for (const point of s.points) {
-              const command = previousT === null || point.t - previousT > gapMs * 1.5 ? "M" : "L";
+              const command =
+                previousT === null || point.t - previousT > gapMs * 1.5
+                  ? "M"
+                  : "L";
               path += `${command}${x(point.t).toFixed(1)} ${y(point.v).toFixed(1)} `;
               previousT = point.t;
             }
@@ -289,8 +324,14 @@ export function ResourceChart({
 
           {series.map((s) => {
             const last = s.points[s.points.length - 1];
-            const hovered = activeStamp !== null ? lookup.get(s.id)?.get(activeStamp) : undefined;
-            const dot = hovered !== undefined ? { t: activeStamp as number, v: hovered } : last;
+            const hovered =
+              activeStamp !== null
+                ? lookup.get(s.id)?.get(activeStamp)
+                : undefined;
+            const dot =
+              hovered !== undefined
+                ? { t: activeStamp as number, v: hovered }
+                : last;
             if (!dot) return null;
             return (
               <circle
@@ -330,7 +371,10 @@ export function ResourceChart({
           <div
             className="pointer-events-none absolute z-10 min-w-40 rounded-md border border-border bg-popover p-2 shadow-md"
             style={{
-              left: Math.min(Math.max(x(activeStamp) + 12, 8), Math.max(8, width - 180)),
+              left: Math.min(
+                Math.max(x(activeStamp) + 12, 8),
+                Math.max(8, width - 180),
+              ),
               top: PADDING.top,
             }}
           >
@@ -352,7 +396,9 @@ export function ResourceChart({
                   <span className="font-semibold tabular-nums">
                     {value === undefined ? "–" : format(value)}
                   </span>
-                  <span className="text-muted-foreground truncate">{s.label}</span>
+                  <span className="text-muted-foreground truncate">
+                    {s.label}
+                  </span>
                 </p>
               );
             })}

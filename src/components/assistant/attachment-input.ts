@@ -37,7 +37,10 @@ function base64FromArrayBuffer(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
-function stripDataUrl(dataUrl: string): { mimeType: string; dataBase64: string } {
+function stripDataUrl(dataUrl: string): {
+  mimeType: string;
+  dataBase64: string;
+} {
   const match = /^data:([^;]+);base64,(.*)$/.exec(dataUrl);
   if (!match) return { mimeType: "application/octet-stream", dataBase64: "" };
   return { mimeType: match[1], dataBase64: match[2] };
@@ -63,12 +66,15 @@ async function loadImage(file: File): Promise<HTMLImageElement | null> {
  * browser can't decode or encode it, so the caller falls back to the raw bytes.
  */
 async function downscaleImage(
-  file: File
+  file: File,
 ): Promise<{ mimeType: string; dataBase64: string } | null> {
   const image = await loadImage(file);
   if (!image || !image.width || !image.height) return null;
 
-  const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(image.width, image.height));
+  const scale = Math.min(
+    1,
+    MAX_IMAGE_EDGE / Math.max(image.width, image.height),
+  );
   const width = Math.max(1, Math.round(image.width * scale));
   const height = Math.max(1, Math.round(image.height * scale));
 
@@ -91,7 +97,9 @@ async function downscaleImage(
  * Turn a picked/pasted file into an upload-ready attachment. Images go through
  * the downscaler; everything else is sent verbatim.
  */
-export async function prepareAttachment(file: File): Promise<PreparedAttachment> {
+export async function prepareAttachment(
+  file: File,
+): Promise<PreparedAttachment> {
   const isImage = file.type.startsWith("image/");
 
   if (isImage) {

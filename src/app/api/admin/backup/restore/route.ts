@@ -19,7 +19,10 @@ export async function POST(req: Request) {
     const body = await req.json();
     const name = typeof body.name === "string" ? body.name.trim() : "";
     if (!name || !/^backup-\d{8}T\d{6}Z\.db\.gz$/.test(name)) {
-      return NextResponse.json({ error: "A valid backup name is required." }, { status: 400 });
+      return NextResponse.json(
+        { error: "A valid backup name is required." },
+        { status: 400 },
+      );
     }
 
     const { s3 } = await stageRestoreForCurrentEnv(name);
@@ -31,7 +34,8 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     logApiError("BACKUP_RESTORE", error);
-    const message = error instanceof Error ? error.message : "Failed to stage restore.";
+    const message =
+      error instanceof Error ? error.message : "Failed to stage restore.";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

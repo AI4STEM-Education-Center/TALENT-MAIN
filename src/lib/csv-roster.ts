@@ -18,12 +18,25 @@ export interface RosterParseResult {
   /** Kept rows whose email was rewritten off an LMS-only export domain. */
   normalizedEmails: number;
   /** The column header labels that were applied (detected or inferred). */
-  headerMap: { orgDefinedId: number; lastName: number; firstName: number; email: number };
+  headerMap: {
+    orgDefinedId: number;
+    lastName: number;
+    firstName: number;
+    email: number;
+  };
 }
 
 // Header aliases (lower-cased, trimmed) → logical column.
 const ALIASES: Record<keyof RosterParseResult["headerMap"], string[]> = {
-  orgDefinedId: ["orgdefinedid", "org defined id", "id", "student id", "studentid", "81 number", "81number"],
+  orgDefinedId: [
+    "orgdefinedid",
+    "org defined id",
+    "id",
+    "student id",
+    "studentid",
+    "81 number",
+    "81number",
+  ],
   lastName: ["last name", "lastname", "last", "surname", "family name"],
   firstName: ["first name", "firstname", "first", "given name"],
   email: ["email", "e-mail", "email address", "emailaddress", "mail"],
@@ -60,7 +73,9 @@ const UGA_LMS_DOMAIN_RE = /@uga\.view\.usg\.edu$/;
  * call on addresses that are already clean.
  */
 export function normalizeEmail(value: unknown): string {
-  const email = String(value ?? "").trim().toLowerCase();
+  const email = String(value ?? "")
+    .trim()
+    .toLowerCase();
   return email.replace(UGA_LMS_DOMAIN_RE, "@uga.edu");
 }
 
@@ -96,7 +111,9 @@ function splitCsvLine(line: string): string[] {
 }
 
 /** Attempt to map header columns by name; returns null when nothing matches. */
-function detectHeader(headerCols: string[]): RosterParseResult["headerMap"] | null {
+function detectHeader(
+  headerCols: string[],
+): RosterParseResult["headerMap"] | null {
   const normalized = headerCols.map((c) => c.toLowerCase().trim());
   const find = (aliases: string[]) =>
     normalized.findIndex((c) => aliases.includes(c));
@@ -110,7 +127,8 @@ function detectHeader(headerCols: string[]): RosterParseResult["headerMap"] | nu
   if (orgDefinedId === -1 && firstName === -1 && lastName === -1) return null;
 
   return {
-    orgDefinedId: orgDefinedId === -1 ? FALLBACK_MAP.orgDefinedId : orgDefinedId,
+    orgDefinedId:
+      orgDefinedId === -1 ? FALLBACK_MAP.orgDefinedId : orgDefinedId,
     lastName: lastName === -1 ? FALLBACK_MAP.lastName : lastName,
     firstName: firstName === -1 ? FALLBACK_MAP.firstName : firstName,
     email: email === -1 ? FALLBACK_MAP.email : email,
@@ -150,7 +168,9 @@ export function parseRosterCsv(text: string): RosterParseResult {
 
   for (let i = dataStart; i < lines.length; i++) {
     const cols = splitCsvLine(lines[i]);
-    const orgDefinedId = (cols[map.orgDefinedId] ?? "").replace(/^#/, "").trim();
+    const orgDefinedId = (cols[map.orgDefinedId] ?? "")
+      .replace(/^#/, "")
+      .trim();
     const lastName = (cols[map.lastName] ?? "").trim();
     const firstName = (cols[map.firstName] ?? "").trim();
     const rawEmail = (cols[map.email] ?? "").trim().toLowerCase();
@@ -164,5 +184,11 @@ export function parseRosterCsv(text: string): RosterParseResult {
     if (email !== rawEmail) normalizedEmails++;
   }
 
-  return { students, headerInferred, skipped, normalizedEmails, headerMap: map };
+  return {
+    students,
+    headerInferred,
+    skipped,
+    normalizedEmails,
+    headerMap: map,
+  };
 }

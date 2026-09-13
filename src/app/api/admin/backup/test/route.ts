@@ -15,9 +15,16 @@ export async function POST() {
 
   const cfg = await resolveWebdav();
   if (!cfg) {
-    return NextResponse.json({ success: false, error: "WebDAV is not configured." });
+    return NextResponse.json({
+      success: false,
+      error: "WebDAV is not configured.",
+    });
   }
 
   const result = await testConnection(cfg);
-  return NextResponse.json({ success: result.ok, message: result.message, error: result.ok ? undefined : result.message });
+  return NextResponse.json({
+    success: result.ok,
+    message: result.message,
+    error: result.ok ? undefined : result.message,
+  });
 }

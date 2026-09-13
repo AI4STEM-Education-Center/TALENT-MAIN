@@ -2,7 +2,10 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getActiveConsentVersion } from "@/lib/consent";
-import { ConsentRequiredClient, ConsentClaimSync } from "./consent-required-client";
+import {
+  ConsentRequiredClient,
+  ConsentClaimSync,
+} from "./consent-required-client";
 import { sanitizeConsentHtml } from "@/lib/consent-html";
 
 /**
@@ -42,7 +45,8 @@ export default async function TeacherConsentRequiredPage() {
 
   // A stale JWT is the only way to land here already agreed — refresh it
   // (a plain redirect would just bounce off the proxy again) and move on.
-  if (priorDecision?.decision === "AGREE") return <ConsentClaimSync reason="already-agreed" />;
+  if (priorDecision?.decision === "AGREE")
+    return <ConsentClaimSync reason="already-agreed" />;
 
   return (
     <ConsentRequiredClient

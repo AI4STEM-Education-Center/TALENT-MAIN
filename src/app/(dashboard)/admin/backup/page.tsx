@@ -71,7 +71,9 @@ function formatBytes(n: number): string {
     value /= 1024;
     unit += 1;
   }
-  return unit === 0 ? `${value} ${units[unit]}` : `${value.toFixed(1)} ${units[unit]}`;
+  return unit === 0
+    ? `${value} ${units[unit]}`
+    : `${value.toFixed(1)} ${units[unit]}`;
 }
 
 export default function AdminBackupPage() {
@@ -87,7 +89,10 @@ export default function AdminBackupPage() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [running, setRunning] = useState(false);
-  const [banner, setBanner] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [banner, setBanner] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
 
   const [backups, setBackups] = useState<BackupItem[]>([]);
   const [loadingBackups, setLoadingBackups] = useState(false);
@@ -174,7 +179,10 @@ export default function AdminBackupPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setBanner({ type: "error", text: data.error || "Failed to save configuration." });
+        setBanner({
+          type: "error",
+          text: data.error || "Failed to save configuration.",
+        });
       } else {
         setBanner({ type: "success", text: "Backup configuration saved." });
         setHasPassword(data.config?.hasPassword ?? hasPassword);
@@ -196,12 +204,18 @@ export default function AdminBackupPage() {
       // would otherwise fall through to the generic "test failed" branch and
       // hide the real status.
       if (!res.ok) {
-        setBanner({ type: "error", text: `WebDAV test failed (HTTP ${res.status}).` });
+        setBanner({
+          type: "error",
+          text: `WebDAV test failed (HTTP ${res.status}).`,
+        });
         return;
       }
       const data = await res.json();
       if (data.success) {
-        setBanner({ type: "success", text: data.message || "Connected to WebDAV." });
+        setBanner({
+          type: "success",
+          text: data.message || "Connected to WebDAV.",
+        });
       } else {
         setBanner({ type: "error", text: data.error || "WebDAV test failed." });
       }
@@ -219,7 +233,10 @@ export default function AdminBackupPage() {
       const res = await fetch("/api/admin/backup/run", { method: "POST" });
       const data = await res.json();
       if (!res.ok) {
-        setBanner({ type: "error", text: data.error || "Failed to queue backup." });
+        setBanner({
+          type: "error",
+          text: data.error || "Failed to queue backup.",
+        });
       } else {
         setBanner({
           type: "success",
@@ -251,9 +268,15 @@ export default function AdminBackupPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setBanner({ type: "error", text: data.error || "Failed to stage restore." });
+        setBanner({
+          type: "error",
+          text: data.error || "Failed to stage restore.",
+        });
       } else {
-        setBanner({ type: "success", text: data.message || "Restore staged. Restart to apply." });
+        setBanner({
+          type: "success",
+          text: data.message || "Restore staged. Restart to apply.",
+        });
       }
     } catch {
       setBanner({ type: "error", text: "An unexpected error occurred." });
@@ -278,8 +301,11 @@ export default function AdminBackupPage() {
         </h1>
         <p className="text-muted-foreground text-sm mt-1">
           Snapshots this <strong>{appEnv}</strong> database to WebDAV under{" "}
-          <span className="font-mono">{form.baseDir}/{appEnv}</span>. Manual backups also copy the
-          deployment&apos;s S3 documents; scheduled backups remain database-only.
+          <span className="font-mono">
+            {form.baseDir}/{appEnv}
+          </span>
+          . Manual backups also copy the deployment&apos;s S3 documents;
+          scheduled backups remain database-only.
         </p>
       </div>
 
@@ -311,7 +337,9 @@ export default function AdminBackupPage() {
             <div>
               Last run:{" "}
               <span className="font-medium">
-                {status.lastRunAt ? new Date(status.lastRunAt).toLocaleString() : "never"}
+                {status.lastRunAt
+                  ? new Date(status.lastRunAt).toLocaleString()
+                  : "never"}
               </span>{" "}
               {status.lastStatus && (
                 <span
@@ -330,11 +358,15 @@ export default function AdminBackupPage() {
             <div>
               Next run:{" "}
               <span className="font-medium">
-                {status.nextRunAt ? new Date(status.nextRunAt).toLocaleString() : "—"}
+                {status.nextRunAt
+                  ? new Date(status.nextRunAt).toLocaleString()
+                  : "—"}
               </span>
             </div>
             {status.lastError && (
-              <div className="text-destructive">Last error: {status.lastError}</div>
+              <div className="text-destructive">
+                Last error: {status.lastError}
+              </div>
             )}
           </CardContent>
         </Card>
@@ -353,7 +385,9 @@ export default function AdminBackupPage() {
               <Input
                 id="webdavUrl"
                 value={form.webdavUrl}
-                onChange={(e) => setForm((p) => ({ ...p, webdavUrl: e.target.value }))}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, webdavUrl: e.target.value }))
+                }
                 placeholder="https://dav.example.com/remote.php/dav/files/user"
               />
             </div>
@@ -363,7 +397,9 @@ export default function AdminBackupPage() {
                 <Input
                   id="webdavUsername"
                   value={form.webdavUsername}
-                  onChange={(e) => setForm((p) => ({ ...p, webdavUsername: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, webdavUsername: e.target.value }))
+                  }
                   autoComplete="off"
                 />
               </div>
@@ -373,8 +409,12 @@ export default function AdminBackupPage() {
                   id="password"
                   type="password"
                   value={form.password}
-                  onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
-                  placeholder={hasPassword ? "•••••••• (unchanged)" : "WebDAV password"}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, password: e.target.value }))
+                  }
+                  placeholder={
+                    hasPassword ? "•••••••• (unchanged)" : "WebDAV password"
+                  }
                   autoComplete="new-password"
                 />
               </div>
@@ -384,26 +424,51 @@ export default function AdminBackupPage() {
               <Input
                 id="baseDir"
                 value={form.baseDir}
-                onChange={(e) => setForm((p) => ({ ...p, baseDir: e.target.value }))}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, baseDir: e.target.value }))
+                }
                 placeholder="/backups"
               />
               <p className="text-xs text-muted-foreground">
-                Backups are written under <span className="font-mono">{form.baseDir}/prod</span>{" "}
-                and <span className="font-mono">{form.baseDir}/dev</span>.
+                Backups are written under{" "}
+                <span className="font-mono">{form.baseDir}/prod</span> and{" "}
+                <span className="font-mono">{form.baseDir}/dev</span>.
               </p>
             </div>
 
             <div className="flex flex-wrap gap-2">
               <Button type="submit" disabled={saving}>
-                {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+                {saving ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Save className="size-4" />
+                )}
                 {saving ? "Saving..." : "Save configuration"}
               </Button>
-              <Button type="button" variant="outline" onClick={handleTest} disabled={testing}>
-                {testing ? <Loader2 className="size-4 animate-spin" /> : <Server className="size-4" />}
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleTest}
+                disabled={testing}
+              >
+                {testing ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Server className="size-4" />
+                )}
                 {testing ? "Testing..." : "Test connection"}
               </Button>
-              <Button type="button" variant="outline" onClick={handleRun} disabled={running}>
-                {running ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleRun}
+                disabled={running}
+              >
+                {running ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Play className="size-4" />
+                )}
                 {running ? "Queuing..." : "Back up database + S3 now"}
               </Button>
             </div>
@@ -423,7 +488,9 @@ export default function AdminBackupPage() {
               <input
                 type="checkbox"
                 checked={form.enabled}
-                onChange={(e) => setForm((p) => ({ ...p, enabled: e.target.checked }))}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, enabled: e.target.checked }))
+                }
                 className="size-4"
               />
               Enable scheduled backups
@@ -437,7 +504,12 @@ export default function AdminBackupPage() {
                   type="number"
                   min={1}
                   value={form.intervalHours}
-                  onChange={(e) => setForm((p) => ({ ...p, intervalHours: Number(e.target.value) }))}
+                  onChange={(e) =>
+                    setForm((p) => ({
+                      ...p,
+                      intervalHours: Number(e.target.value),
+                    }))
+                  }
                 />
               </div>
               <div className="space-y-2">
@@ -446,7 +518,9 @@ export default function AdminBackupPage() {
                   id="anchorTime"
                   type="time"
                   value={form.anchorTime}
-                  onChange={(e) => setForm((p) => ({ ...p, anchorTime: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, anchorTime: e.target.value }))
+                  }
                 />
               </div>
               <div className="space-y-2">
@@ -454,14 +528,17 @@ export default function AdminBackupPage() {
                 <Input
                   id="timezone"
                   value={form.timezone}
-                  onChange={(e) => setForm((p) => ({ ...p, timezone: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, timezone: e.target.value }))
+                  }
                   placeholder="America/New_York"
                 />
               </div>
             </div>
             <p className="text-xs text-muted-foreground">
-              Default is daily at 02:00 America/New_York (handles EST/EDT). Scheduled runs back up
-              only the database; S3 is included only when you use the manual button above.
+              Default is daily at 02:00 America/New_York (handles EST/EDT).
+              Scheduled runs back up only the database; S3 is included only when
+              you use the manual button above.
             </p>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -480,18 +557,24 @@ export default function AdminBackupPage() {
                     type="number"
                     min={0}
                     value={form[key]}
-                    onChange={(e) => setForm((p) => ({ ...p, [key]: Number(e.target.value) }))}
+                    onChange={(e) =>
+                      setForm((p) => ({ ...p, [key]: Number(e.target.value) }))
+                    }
                   />
                 </div>
               ))}
             </div>
             <p className="text-xs text-muted-foreground">
-              Grandfather-father-son retention: keep the newest N, plus the newest in each of the
-              last N weeks, months, and years.
+              Grandfather-father-son retention: keep the newest N, plus the
+              newest in each of the last N weeks, months, and years.
             </p>
 
             <Button type="submit" disabled={saving}>
-              {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+              {saving ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Save className="size-4" />
+              )}
               {saving ? "Saving..." : "Save configuration"}
             </Button>
           </form>
@@ -505,8 +588,18 @@ export default function AdminBackupPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <Button type="button" variant="outline" size="sm" onClick={loadBackups} disabled={loadingBackups}>
-            {loadingBackups ? <Loader2 className="size-4 animate-spin" /> : <RotateCcw className="size-4" />}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={loadBackups}
+            disabled={loadingBackups}
+          >
+            {loadingBackups ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <RotateCcw className="size-4" />
+            )}
             Refresh
           </Button>
           {backups.length === 0 ? (
@@ -514,9 +607,14 @@ export default function AdminBackupPage() {
           ) : (
             <ul className="divide-y divide-border rounded-md border border-border">
               {backups.map((b) => (
-                <li key={b.name} className="flex items-center justify-between gap-3 p-3 text-sm">
+                <li
+                  key={b.name}
+                  className="flex items-center justify-between gap-3 p-3 text-sm"
+                >
                   <div className="min-w-0">
-                    <p className="font-medium truncate">{new Date(b.date).toLocaleString()}</p>
+                    <p className="font-medium truncate">
+                      {new Date(b.date).toLocaleString()}
+                    </p>
                     <p className="text-xs text-muted-foreground truncate font-mono">
                       {b.name} · {formatBytes(b.size)}
                     </p>
@@ -546,8 +644,9 @@ export default function AdminBackupPage() {
             </ul>
           )}
           <p className="text-xs text-muted-foreground">
-            Restore uses this same list for both artifacts: S3 documents are restored immediately
-            when present, and the database is staged for the next service restart.
+            Restore uses this same list for both artifacts: S3 documents are
+            restored immediately when present, and the database is staged for
+            the next service restart.
           </p>
         </CardContent>
       </Card>

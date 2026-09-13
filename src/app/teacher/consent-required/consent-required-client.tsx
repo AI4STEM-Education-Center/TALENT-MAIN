@@ -4,9 +4,18 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { signOut, SessionProvider, useSession } from "next-auth/react";
 import { Loader2 } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ConsentForm, type ConsentFormActiveVersion } from "@/components/consent/ConsentForm";
+import {
+  ConsentForm,
+  type ConsentFormActiveVersion,
+} from "@/components/consent/ConsentForm";
 import { isTeacherConsentBlocked } from "@/lib/consent-claim";
 
 function ConsentRequiredInner({
@@ -26,14 +35,18 @@ function ConsentRequiredInner({
           <CardHeader>
             <CardTitle>Access to AI4Talent is on hold</CardTitle>
             <CardDescription className="pt-2 text-sm leading-relaxed">
-              You previously indicated you do not agree to participate in the &quot;{activeForm.title}&quot;
-              research study. Because using AI4Talent in your course is part of what this study is evaluating,
-              instructor access is only available to instructors who agree to participate — this has no effect on
-              your employment or professional standing.
+              You previously indicated you do not agree to participate in the
+              &quot;{activeForm.title}&quot; research study. Because using
+              AI4Talent in your course is part of what this study is evaluating,
+              instructor access is only available to instructors who agree to
+              participate — this has no effect on your employment or
+              professional standing.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3 sm:flex-row">
-            <Button onClick={() => setReviewing(true)}>Review my response</Button>
+            <Button onClick={() => setReviewing(true)}>
+              Review my response
+            </Button>
             <Button
               variant="outline"
               onClick={async () => {
@@ -88,7 +101,11 @@ export function ConsentRequiredClient(props: {
   );
 }
 
-function ConsentClaimSyncInner({ reason }: { reason: "no-form" | "already-agreed" }) {
+function ConsentClaimSyncInner({
+  reason,
+}: {
+  reason: "no-form" | "already-agreed";
+}) {
   const { update, status } = useSession();
   const [stuck, setStuck] = useState(false);
 
@@ -107,7 +124,10 @@ function ConsentClaimSyncInner({ reason }: { reason: "no-form" | "already-agreed
     update({})
       .then((session) => {
         if (cancelled) return;
-        if (session && !isTeacherConsentBlocked(session.user?.consentDecision)) {
+        if (
+          session &&
+          !isTeacherConsentBlocked(session.user?.consentDecision)
+        ) {
           window.location.replace("/teacher");
         } else {
           setStuck(true);
@@ -126,7 +146,9 @@ function ConsentClaimSyncInner({ reason }: { reason: "no-form" | "already-agreed
       <Card className="w-full max-w-lg">
         <CardHeader>
           <CardTitle>
-            {stuck ? "We couldn't refresh your session" : "Getting your dashboard ready…"}
+            {stuck
+              ? "We couldn't refresh your session"
+              : "Getting your dashboard ready…"}
           </CardTitle>
           <CardDescription className="pt-2 text-sm leading-relaxed">
             {stuck ? (
@@ -135,8 +157,8 @@ function ConsentClaimSyncInner({ reason }: { reason: "no-form" | "already-agreed
                 {reason === "no-form"
                   ? " (there is no research consent form published for instructors right now)"
                   : " (your agreement is on file)"}
-                , but this browser session is still carrying an out-of-date copy of it. Signing out
-                and back in will pick up the current one.
+                , but this browser session is still carrying an out-of-date copy
+                of it. Signing out and back in will pick up the current one.
               </>
             ) : (
               <>One moment — we&apos;re bringing your session up to date.</>
@@ -154,7 +176,10 @@ function ConsentClaimSyncInner({ reason }: { reason: "no-form" | "already-agreed
               >
                 Sign out and sign back in
               </Button>
-              <Button variant="outline" onClick={() => window.location.replace("/teacher")}>
+              <Button
+                variant="outline"
+                onClick={() => window.location.replace("/teacher")}
+              >
                 Try my dashboard again
               </Button>
             </>
@@ -174,7 +199,11 @@ function ConsentClaimSyncInner({ reason }: { reason: "no-form" | "already-agreed
  * them here, then leaves for /teacher — and degrades to a plain "sign out and
  * back in" screen rather than looping if the claim still disagrees.
  */
-export function ConsentClaimSync({ reason }: { reason: "no-form" | "already-agreed" }) {
+export function ConsentClaimSync({
+  reason,
+}: {
+  reason: "no-form" | "already-agreed";
+}) {
   return (
     <SessionProvider>
       <ConsentClaimSyncInner reason={reason} />

@@ -40,7 +40,11 @@ export const SignatureCanvas = forwardRef<
     canvas.height = rect.height * ratio;
     canvas.getContext("2d")?.scale(ratio, ratio);
 
-    padRef.current = new SignaturePad(canvas, { minWidth: 0.75, maxWidth: 2.2, penColor: "rgb(30,41,59)" });
+    padRef.current = new SignaturePad(canvas, {
+      minWidth: 0.75,
+      maxWidth: 2.2,
+      penColor: "rgb(30,41,59)",
+    });
     return () => {
       padRef.current?.off();
       padRef.current = null;
@@ -52,16 +56,22 @@ export const SignatureCanvas = forwardRef<
     () => ({
       clear: () => padRef.current?.clear(),
       isEmpty: () => padRef.current?.isEmpty() ?? true,
-      toData: () => (padRef.current && !padRef.current.isEmpty() ? padRef.current.toData() : null),
+      toData: () =>
+        padRef.current && !padRef.current.isEmpty()
+          ? padRef.current.toData()
+          : null,
     }),
-    []
+    [],
   );
 
   return (
     <canvas
       ref={canvasRef}
       style={{ width: "100%", height }}
-      className={cn("touch-none rounded-md border border-input bg-background", className)}
+      className={cn(
+        "touch-none rounded-md border border-input bg-background",
+        className,
+      )}
     />
   );
 });

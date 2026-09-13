@@ -41,19 +41,26 @@ function getReq() {
 }
 
 /** A class owned by a fresh teacher with `count` enrolled students. */
-async function seedClass(count: number, opts: { emails?: (string | null)[] } = {}) {
+async function seedClass(
+  count: number,
+  opts: { emails?: (string | null)[] } = {},
+) {
   const { user: teacherUser, teacher } = await createTeacher();
   const cls = await createClass(teacher.id);
   const students = [];
   for (let i = 0; i < count; i += 1) {
     const email = opts.emails?.[i];
     const { user, student } = await createStudent(
-      email ? { email } : undefined
+      email ? { email } : undefined,
     );
-    await prisma.classEnrollment.create({ data: { classId: cls.id, studentId: student.id } });
+    await prisma.classEnrollment.create({
+      data: { classId: cls.id, studentId: student.id },
+    });
     students.push({ user, student });
   }
-  mockAuth.mockResolvedValue({ user: { id: teacherUser.id, role: "TEACHER" } } as never);
+  mockAuth.mockResolvedValue({
+    user: { id: teacherUser.id, role: "TEACHER" },
+  } as never);
   return { teacherUser, teacher, cls, students };
 }
 
@@ -77,8 +84,13 @@ afterAll(async () => {
 describe("POST /api/classes/[id]/messages", () => {
   it("rejects a caller who is not a teacher", async () => {
     const { user } = await createStudent();
-    mockAuth.mockResolvedValue({ user: { id: user.id, role: "STUDENT" } } as never);
-    const res = await POST(jsonReq({ subject: "hi", body: "there" }), params("nope"));
+    mockAuth.mockResolvedValue({
+      user: { id: user.id, role: "STUDENT" },
+    } as never);
+    const res = await POST(
+      jsonReq({ subject: "hi", body: "there" }),
+      params("nope"),
+    );
     expect(res.status).toBe(401);
   });
 
@@ -86,37 +98,55 @@ describe("POST /api/classes/[id]/messages", () => {
     const other = await createTeacher();
     const foreignClass = await createClass(other.teacher.id);
     const { user: teacherUser } = await createTeacher();
-    mockAuth.mockResolvedValue({ user: { id: teacherUser.id, role: "TEACHER" } } as never);
+    mockAuth.mockResolvedValue({
+      user: { id: teacherUser.id, role: "TEACHER" },
+    } as never);
 
-    const res = await POST(jsonReq({ subject: "hi", body: "there" }), params(foreignClass.id));
+    const res = await POST(
+      jsonReq({ subject: "hi", body: "there" }),
+      params(foreignClass.id),
+    );
     expect(res.status).toBe(404);
   });
 
   it("requires a subject and a body", async () => {
     const { cls } = await seedClass(1);
-    expect((await POST(jsonReq({ subject: " ", body: "x" }), params(cls.id))).status).toBe(400);
-    expect((await POST(jsonReq({ subject: "x", body: "" }), params(cls.id))).status).toBe(400);
+    expect(
+      (await POST(jsonReq({ subject: " ", body: "x" }), params(cls.id))).status,
+    ).toBe(400);
+    expect(
+      (await POST(jsonReq({ subject: "x", body: "" }), params(cls.id))).status,
+    ).toBe(400);
   });
 
   it("refuses a class nobody has joined — there is no audience to notify", async () => {
     const { cls } = await seedClass(0);
-    const res = await POST(jsonReq({ subject: "hi", body: "there" }), params(cls.id));
+    const res = await POST(
+      jsonReq({ subject: "hi", body: "there" }),
+      params(cls.id),
+    );
     expect(res.status).toBe(400);
     expect(await prisma.message.count()).toBe(0);
   });
 
   it("notifies every enrolled student in-app and queues one email per address on file", async () => {
-    const { cls } = await seedClass(2, { emails: ["a@example.com", "b@example.com"] });
+    const { cls } = await seedClass(2, {
+      emails: ["a@example.com", "b@example.com"],
+    });
 
     const res = await POST(
       jsonReq({ subject: "Quiz moved", body: "Now due Friday." }),
-      params(cls.id)
+      params(cls.id),
     );
     expect(res.status).toBe(201);
     const payload = await res.json();
 
     expect(payload.inApp.count).toBe(2);
-    expect(payload.email).toMatchObject({ recipients: 2, queued: 2, skippedReason: null });
+    expect(payload.email).toMatchObject({
+      recipients: 2,
+      queued: 2,
+      skippedReason: null,
+    });
 
     const message = await prisma.message.findFirstOrThrow();
     expect(message.channels).toBe("IN_APP,EMAIL");
@@ -126,36 +156,63 @@ describe("POST /api/classes/[id]/messages", () => {
     expect(message.recipientCount).toBe(2);
     expect(message.inAppCount).toBe(2);
 
-    expect(await prisma.notification.count({ where: { messageId: message.id } })).toBe(2);
+    expect(
+      await prisma.notification.count({ where: { messageId: message.id } }),
+    ).toBe(2);
 
-    const deliveries = await prisma.messageEmailDelivery.findMany({ orderBy: { email: "asc" } });
-    expect(deliveries.map((d) => d.email)).toEqual(["a@example.com", "b@example.com"]);
-    expect(deliveries.every((d) => d.status === "PENDING" && d.attempts === 0)).toBe(true);
+    const deliveries = await prisma.messageEmailDelivery.findMany({
+      orderBy: { email: "asc" },
+    });
+    expect(deliveries.map((d) => d.email)).toEqual([
+      "a@example.com",
+      "b@example.com",
+    ]);
+    expect(
+      deliveries.every((d) => d.status === "PENDING" && d.attempts === 0),
+    ).toBe(true);
 
     // One job per recipient, so a single bad address can't hold up the class.
     expect(mockEnqueue).toHaveBeenCalledTimes(1);
-    expect([...mockEnqueue.mock.calls[0][0]].sort()).toEqual(deliveries.map((d) => d.id).sort());
+    expect([...mockEnqueue.mock.calls[0][0]].sort()).toEqual(
+      deliveries.map((d) => d.id).sort(),
+    );
   });
 
   it("still delivers in-app when a student has no usable address", async () => {
-    const { cls, students } = await seedClass(2, { emails: ["good@example.com", "b@example.com"] });
-    await prisma.user.update({ where: { id: students[1].user.id }, data: { email: "not-an-email" } });
+    const { cls, students } = await seedClass(2, {
+      emails: ["good@example.com", "b@example.com"],
+    });
+    await prisma.user.update({
+      where: { id: students[1].user.id },
+      data: { email: "not-an-email" },
+    });
 
-    const res = await POST(jsonReq({ subject: "s", body: "b" }), params(cls.id));
+    const res = await POST(
+      jsonReq({ subject: "s", body: "b" }),
+      params(cls.id),
+    );
     const payload = await res.json();
 
     expect(payload.inApp.count).toBe(2);
     expect(payload.email.queued).toBe(1);
-    expect((await prisma.messageEmailDelivery.findMany()).map((d) => d.email)).toEqual([
-      "good@example.com",
-    ]);
+    expect(
+      (await prisma.messageEmailDelivery.findMany()).map((d) => d.email),
+    ).toEqual(["good@example.com"]);
   });
 
   it("queues nothing (but still notifies) when the send would blow the email budget", async () => {
-    const { cls, teacher } = await seedClass(2, { emails: ["a@example.com", "b@example.com"] });
-    await prisma.teacher.update({ where: { id: teacher.id }, data: { emailDailyLimit: 1 } });
+    const { cls, teacher } = await seedClass(2, {
+      emails: ["a@example.com", "b@example.com"],
+    });
+    await prisma.teacher.update({
+      where: { id: teacher.id },
+      data: { emailDailyLimit: 1 },
+    });
 
-    const res = await POST(jsonReq({ subject: "s", body: "b" }), params(cls.id));
+    const res = await POST(
+      jsonReq({ subject: "s", body: "b" }),
+      params(cls.id),
+    );
     expect(res.status).toBe(201);
     const payload = await res.json();
 
@@ -179,7 +236,10 @@ describe("POST /api/classes/[id]/messages", () => {
       throw new Error("queue database is locked");
     });
 
-    const res = await POST(jsonReq({ subject: "s", body: "b" }), params(cls.id));
+    const res = await POST(
+      jsonReq({ subject: "s", body: "b" }),
+      params(cls.id),
+    );
     expect(res.status).toBe(201);
     expect((await res.json()).email.queued).toBe(0);
 
@@ -190,10 +250,14 @@ describe("POST /api/classes/[id]/messages", () => {
 
 describe("GET /api/classes/[id]/messages", () => {
   it("returns the audience a message would reach and each message's delivery tally", async () => {
-    const { cls, students } = await seedClass(2, { emails: ["a@example.com", "b@example.com"] });
+    const { cls, students } = await seedClass(2, {
+      emails: ["a@example.com", "b@example.com"],
+    });
     await POST(jsonReq({ subject: "s", body: "b" }), params(cls.id));
 
-    const [first] = await prisma.messageEmailDelivery.findMany({ orderBy: { email: "asc" } });
+    const [first] = await prisma.messageEmailDelivery.findMany({
+      orderBy: { email: "asc" },
+    });
     await prisma.messageEmailDelivery.update({
       where: { id: first.id },
       data: { status: "SENT", sentAt: new Date() },
@@ -201,11 +265,17 @@ describe("GET /api/classes/[id]/messages", () => {
 
     const payload = await (await GET(getReq(), params(cls.id))).json();
     expect(payload.audience).toEqual({ enrolled: 2, emailable: 2 });
-    expect(payload.recipients.map((recipient: { userId: string }) => recipient.userId).sort()).toEqual(
-      students.map((student) => student.user.id).sort()
-    );
+    expect(
+      payload.recipients
+        .map((recipient: { userId: string }) => recipient.userId)
+        .sort(),
+    ).toEqual(students.map((student) => student.user.id).sort());
     expect(payload.messages).toHaveLength(1);
-    expect(payload.messages[0].email).toEqual({ queued: 1, sent: 1, failed: 0 });
+    expect(payload.messages[0].email).toEqual({
+      queued: 1,
+      sent: 1,
+      failed: 0,
+    });
   });
 });
 
@@ -213,7 +283,10 @@ describe("deliverMessageEmail", () => {
   /** A queued single-recipient message, ready for the worker to pick up. */
   async function seedQueuedMessage() {
     const { cls } = await seedClass(1, { emails: ["student@example.com"] });
-    await POST(jsonReq({ subject: "Quiz moved", body: "Now due Friday." }), params(cls.id));
+    await POST(
+      jsonReq({ subject: "Quiz moved", body: "Now due Friday." }),
+      params(cls.id),
+    );
     const delivery = await prisma.messageEmailDelivery.findFirstOrThrow();
     return { delivery, messageId: delivery.messageId };
   }
@@ -233,13 +306,17 @@ describe("deliverMessageEmail", () => {
     expect(sent.text).toContain(`?message=${delivery.messageId}`);
     expect(sent.text).not.toContain("Now due Friday.");
 
-    const row = await prisma.messageEmailDelivery.findUniqueOrThrow({ where: { id: delivery.id } });
+    const row = await prisma.messageEmailDelivery.findUniqueOrThrow({
+      where: { id: delivery.id },
+    });
     expect(row.status).toBe("SENT");
     expect(row.attempts).toBe(1);
     expect(row.claimedAt).toBeNull();
     expect(row.sentAt).not.toBeNull();
 
-    const message = await prisma.message.findUniqueOrThrow({ where: { id: messageId } });
+    const message = await prisma.message.findUniqueOrThrow({
+      where: { id: messageId },
+    });
     expect(message.status).toBe("SENT");
     expect(message.sentCount).toBe(1);
     expect(message.error).toBeNull();
@@ -277,35 +354,46 @@ describe("deliverMessageEmail", () => {
 
   it("retries a transient failure with backoff and keeps the message queued", async () => {
     const { delivery, messageId } = await seedQueuedMessage();
-    mockSend.mockRejectedValueOnce(Object.assign(new Error("451 busy"), { responseCode: 451 }));
+    mockSend.mockRejectedValueOnce(
+      Object.assign(new Error("451 busy"), { responseCode: 451 }),
+    );
 
     const outcome = await deliverMessageEmail(delivery.id);
     expect(outcome).toMatchObject({ status: "RETRY", delaySeconds: 60 });
 
-    const row = await prisma.messageEmailDelivery.findUniqueOrThrow({ where: { id: delivery.id } });
+    const row = await prisma.messageEmailDelivery.findUniqueOrThrow({
+      where: { id: delivery.id },
+    });
     expect(row.status).toBe("PENDING");
     expect(row.attempts).toBe(1);
     expect(row.claimedAt).toBeNull();
     expect(row.lastError).toContain("451");
     expect(row.nextAttemptAt.getTime()).toBeGreaterThan(Date.now());
 
-    expect((await prisma.message.findUniqueOrThrow({ where: { id: messageId } })).status).toBe("QUEUED");
+    expect(
+      (await prisma.message.findUniqueOrThrow({ where: { id: messageId } }))
+        .status,
+    ).toBe("QUEUED");
   });
 
   it("gives up immediately on a rejected address and reports why", async () => {
     const { delivery, messageId } = await seedQueuedMessage();
     mockSend.mockRejectedValueOnce(
-      Object.assign(new Error("550 5.1.1 no such user"), { responseCode: 550 })
+      Object.assign(new Error("550 5.1.1 no such user"), { responseCode: 550 }),
     );
 
     const outcome = await deliverMessageEmail(delivery.id);
     expect(outcome).toMatchObject({ status: "FAILED" });
 
-    const row = await prisma.messageEmailDelivery.findUniqueOrThrow({ where: { id: delivery.id } });
+    const row = await prisma.messageEmailDelivery.findUniqueOrThrow({
+      where: { id: delivery.id },
+    });
     expect(row.status).toBe("FAILED");
     expect(row.attempts).toBe(1);
 
-    const message = await prisma.message.findUniqueOrThrow({ where: { id: messageId } });
+    const message = await prisma.message.findUniqueOrThrow({
+      where: { id: messageId },
+    });
     expect(message.status).toBe("FAILED");
     expect(message.error).toContain("student@example.com");
   });
@@ -320,20 +408,32 @@ describe("deliverMessageEmail", () => {
 
     expect((await deliverMessageEmail(delivery.id)).status).toBe("FAILED");
     expect(
-      (await prisma.messageEmailDelivery.findUniqueOrThrow({ where: { id: delivery.id } })).status
+      (
+        await prisma.messageEmailDelivery.findUniqueOrThrow({
+          where: { id: delivery.id },
+        })
+      ).status,
     ).toBe("FAILED");
   });
 
   it("reports PARTIAL when some recipients land and others do not", async () => {
-    const { cls } = await seedClass(2, { emails: ["a@example.com", "b@example.com"] });
+    const { cls } = await seedClass(2, {
+      emails: ["a@example.com", "b@example.com"],
+    });
     await POST(jsonReq({ subject: "s", body: "b" }), params(cls.id));
-    const [a, b] = await prisma.messageEmailDelivery.findMany({ orderBy: { email: "asc" } });
+    const [a, b] = await prisma.messageEmailDelivery.findMany({
+      orderBy: { email: "asc" },
+    });
 
     await deliverMessageEmail(a.id);
-    mockSend.mockRejectedValueOnce(Object.assign(new Error("550 nope"), { responseCode: 550 }));
+    mockSend.mockRejectedValueOnce(
+      Object.assign(new Error("550 nope"), { responseCode: 550 }),
+    );
     await deliverMessageEmail(b.id);
 
-    const message = await prisma.message.findUniqueOrThrow({ where: { id: a.messageId } });
+    const message = await prisma.message.findUniqueOrThrow({
+      where: { id: a.messageId },
+    });
     expect(message.status).toBe("PARTIAL");
     expect(message.sentCount).toBe(1);
   });
@@ -348,15 +448,22 @@ describe("deliverMessageEmail", () => {
 });
 
 describe("sweeper", () => {
-  async function seedDelivery(data: Partial<{ attempts: number; nextAttemptAt: Date; claimedAt: Date }>) {
+  async function seedDelivery(
+    data: Partial<{ attempts: number; nextAttemptAt: Date; claimedAt: Date }>,
+  ) {
     const { cls } = await seedClass(1, { emails: ["student@example.com"] });
     await POST(jsonReq({ subject: "s", body: "b" }), params(cls.id));
     const delivery = await prisma.messageEmailDelivery.findFirstOrThrow();
-    return prisma.messageEmailDelivery.update({ where: { id: delivery.id }, data });
+    return prisma.messageEmailDelivery.update({
+      where: { id: delivery.id },
+      data,
+    });
   }
 
   it("finds a due row whose job never ran", async () => {
-    const stranded = await seedDelivery({ nextAttemptAt: new Date(Date.now() - 30 * 60 * 1000) });
+    const stranded = await seedDelivery({
+      nextAttemptAt: new Date(Date.now() - 30 * 60 * 1000),
+    });
     expect(await findStrandedMessageEmails()).toEqual([stranded.id]);
   });
 
@@ -386,12 +493,15 @@ describe("sweeper", () => {
 
     expect(await failExhaustedMessageEmails()).toBe(1);
 
-    const row = await prisma.messageEmailDelivery.findUniqueOrThrow({ where: { id: stuck.id } });
+    const row = await prisma.messageEmailDelivery.findUniqueOrThrow({
+      where: { id: stuck.id },
+    });
     expect(row.status).toBe("FAILED");
     expect(row.lastError).toMatch(/Gave up/);
     // The teacher's history stops saying "queued" once nothing is coming.
-    expect((await prisma.message.findUniqueOrThrow({ where: { id: row.messageId } })).status).toBe(
-      "FAILED"
-    );
+    expect(
+      (await prisma.message.findUniqueOrThrow({ where: { id: row.messageId } }))
+        .status,
+    ).toBe("FAILED");
   });
 });

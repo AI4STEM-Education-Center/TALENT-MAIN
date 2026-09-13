@@ -11,7 +11,8 @@ export default function ProfilePage() {
           <UserRound className="size-6" /> My Profile
         </h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Your account details and password. Changes here apply everywhere you sign in.
+          Your account details and password. Changes here apply everywhere you
+          sign in.
         </p>
       </div>
 

@@ -23,7 +23,10 @@ export function previewConsentHtml(html: string): string {
 
   const allowedTags = new Set<string>(CONSENT_ALLOWED_TAGS);
   const nonTextTags = new Set<string>(CONSENT_NON_TEXT_TAGS);
-  const doc = new DOMParser().parseFromString(`<div id="root">${html}</div>`, "text/html");
+  const doc = new DOMParser().parseFromString(
+    `<div id="root">${html}</div>`,
+    "text/html",
+  );
   const root = doc.getElementById("root");
   if (!root) return "";
 
@@ -60,7 +63,10 @@ export function previewConsentHtml(html: string): string {
 }
 
 function isAllowedHref(value: string): boolean {
-  const scheme = value.trim().match(/^([a-z][a-z0-9+.-]*):/i)?.[1]?.toLowerCase();
+  const scheme = value
+    .trim()
+    .match(/^([a-z][a-z0-9+.-]*):/i)?.[1]
+    ?.toLowerCase();
   // Relative links carry no scheme and are harmless.
   if (!scheme) return true;
   return (CONSENT_ALLOWED_SCHEMES as readonly string[]).includes(scheme);

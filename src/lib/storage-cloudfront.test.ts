@@ -24,7 +24,7 @@ vi.mock("@aws-sdk/client-s3", () => {
 vi.mock("@aws-sdk/s3-request-presigner", () => ({
   getSignedUrl: vi.fn(
     async (_client: unknown, cmd: { input: { Bucket: string; Key: string } }) =>
-      `https://s3.example/${cmd.input.Bucket}/${cmd.input.Key}`
+      `https://s3.example/${cmd.input.Bucket}/${cmd.input.Key}`,
   ),
 }));
 
@@ -44,7 +44,9 @@ async function loadStorage() {
   return import("./storage");
 }
 
-function configureCloudFront(overrides: Record<string, string | undefined> = {}) {
+function configureCloudFront(
+  overrides: Record<string, string | undefined> = {},
+) {
   process.env.AWS_S3_BUCKET = ORIGIN_BUCKET;
   process.env.CLOUDFRONT_DOMAIN = "cdn.example.org";
   process.env.CLOUDFRONT_KEY_PAIR_ID = "K2JCJMDEHXQW5F";
@@ -105,21 +107,30 @@ describe("getCloudFrontConfig", () => {
 describe("signObjectReadUrl", () => {
   it("presigns against S3 when CloudFront is not configured", async () => {
     const { signObjectReadUrl } = await loadStorage();
-    const url = await signObjectReadUrl(TEST_AWS_ENV.AWS_S3_BUCKET, "dev/pages/page-1.png");
-    expect(url).toBe(`https://s3.example/${TEST_AWS_ENV.AWS_S3_BUCKET}/dev/pages/page-1.png`);
+    const url = await signObjectReadUrl(
+      TEST_AWS_ENV.AWS_S3_BUCKET,
+      "dev/pages/page-1.png",
+    );
+    expect(url).toBe(
+      `https://s3.example/${TEST_AWS_ENV.AWS_S3_BUCKET}/dev/pages/page-1.png`,
+    );
   });
 
   it("signs a CloudFront URL for objects in the distribution's origin bucket", async () => {
     configureCloudFront();
     const { signObjectReadUrl } = await loadStorage();
 
-    const url = new URL(await signObjectReadUrl(ORIGIN_BUCKET, "prod/pages/page-1.png"));
+    const url = new URL(
+      await signObjectReadUrl(ORIGIN_BUCKET, "prod/pages/page-1.png"),
+    );
 
     expect(url.host).toBe("cdn.example.org");
     expect(url.pathname).toBe("/prod/pages/page-1.png");
     expect(url.searchParams.get("Key-Pair-Id")).toBe("K2JCJMDEHXQW5F");
     expect(url.searchParams.get("Signature")).toBeTruthy();
-    expect(Number(url.searchParams.get("Expires"))).toBeGreaterThan(Date.now() / 1000);
+    expect(Number(url.searchParams.get("Expires"))).toBeGreaterThan(
+      Date.now() / 1000,
+    );
   });
 
   it("honours the expiry window in the signed URL", async () => {
@@ -127,7 +138,9 @@ describe("signObjectReadUrl", () => {
     const { signObjectReadUrl } = await loadStorage();
 
     const before = Math.floor(Date.now() / 1000);
-    const url = new URL(await signObjectReadUrl(ORIGIN_BUCKET, "prod/figure-0.png", 60));
+    const url = new URL(
+      await signObjectReadUrl(ORIGIN_BUCKET, "prod/figure-0.png", 60),
+    );
     const expires = Number(url.searchParams.get("Expires"));
 
     expect(expires).toBeGreaterThanOrEqual(before + 59);
@@ -141,7 +154,10 @@ describe("signObjectReadUrl", () => {
     configureCloudFront();
     const { signObjectReadUrl } = await loadStorage();
 
-    const url = await signObjectReadUrl("legacy-bucket", "prod/pages/page-1.png");
+    const url = await signObjectReadUrl(
+      "legacy-bucket",
+      "prod/pages/page-1.png",
+    );
 
     expect(url).toBe("https://s3.example/legacy-bucket/prod/pages/page-1.png");
   });
@@ -151,7 +167,10 @@ describe("signObjectReadUrl", () => {
     const { signObjectReadUrl } = await loadStorage();
 
     const url = new URL(
-      await signObjectReadUrl(ORIGIN_BUCKET, "prod/learning-materials/t1/my file.pdf")
+      await signObjectReadUrl(
+        ORIGIN_BUCKET,
+        "prod/learning-materials/t1/my file.pdf",
+      ),
     );
 
     expect(url.pathname).toBe("/prod/learning-materials/t1/my%20file.pdf");

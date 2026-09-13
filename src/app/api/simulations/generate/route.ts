@@ -11,11 +11,23 @@ type Scope =
   | { scope: "question"; questionId: string; force: boolean };
 
 function parseScope(body: Record<string, unknown>): Scope | null {
-  if (body.scope === "quiz" && typeof body.quizId === "string" && body.quizId.trim()) {
+  if (
+    body.scope === "quiz" &&
+    typeof body.quizId === "string" &&
+    body.quizId.trim()
+  ) {
     return { scope: "quiz", quizId: body.quizId.trim() };
   }
-  if (body.scope === "question" && typeof body.questionId === "string" && body.questionId.trim()) {
-    return { scope: "question", questionId: body.questionId.trim(), force: body.force === true };
+  if (
+    body.scope === "question" &&
+    typeof body.questionId === "string" &&
+    body.questionId.trim()
+  ) {
+    return {
+      scope: "question",
+      questionId: body.questionId.trim(),
+      force: body.force === true,
+    };
   }
   return null;
 }
@@ -36,7 +48,8 @@ function parseScope(body: Record<string, unknown>): Scope | null {
  */
 export async function POST(req: NextRequest) {
   const actor = await getContentActor();
-  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!actor)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const limited = rateLimit(req, "sim-generate", 20, 60_000, actor.userId);
   if (limited) return limited;
@@ -50,8 +63,11 @@ export async function POST(req: NextRequest) {
   const scope = parseScope(body);
   if (!scope) {
     return NextResponse.json(
-      { error: "scope must be 'quiz' (with quizId) or 'question' (with questionId)" },
-      { status: 400 }
+      {
+        error:
+          "scope must be 'quiz' (with quizId) or 'question' (with questionId)",
+      },
+      { status: 400 },
     );
   }
 
@@ -73,14 +89,17 @@ export async function POST(req: NextRequest) {
       include: { quiz: { select: { teacherId: true } } },
     });
     if (!question || !canManage(actor, question.quiz)) {
-      return NextResponse.json({ error: "Question not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Question not found" },
+        { status: 404 },
+      );
     }
     questionIds = [question.id];
   }
 
   const summary = await triggerSimulations(
     questionIds,
-    scope.scope === "question" && scope.force
+    scope.scope === "question" && scope.force,
   );
   return NextResponse.json({ scope: scope.scope, ...summary }, { status: 202 });
 }

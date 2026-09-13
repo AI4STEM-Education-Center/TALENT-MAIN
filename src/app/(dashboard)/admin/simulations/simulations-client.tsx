@@ -5,16 +5,47 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { MathText } from "@/components/ui/math-text";
 import { useConfirm } from "@/components/ui/confirm-dialog";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { SimulationStatusBadge } from "@/components/simulation/SimulationStatusBadge";
 import { SimulationViewer } from "@/components/simulation/SimulationViewer";
 import { AiMetricsLine } from "@/components/ai-metrics-line";
 import type { DisplayAiMetrics } from "@/lib/ai-metrics";
-import { Atom, ChevronDown, ChevronRight, Eye, Loader2, Play, RefreshCw, Sparkles, Trash2 } from "lucide-react";
+import {
+  Atom,
+  ChevronDown,
+  ChevronRight,
+  Eye,
+  Loader2,
+  Play,
+  RefreshCw,
+  Sparkles,
+  Trash2,
+} from "lucide-react";
 
-interface Counts { ready: number; declined: number; failed: number; inFlight: number; missing: number }
-interface QuizRow { id: string; name: string; topicName: string | null; questionCount: number; counts: Counts }
-interface Summary { quizzes: QuizRow[]; totals: Counts }
+interface Counts {
+  ready: number;
+  declined: number;
+  failed: number;
+  inFlight: number;
+  missing: number;
+}
+interface QuizRow {
+  id: string;
+  name: string;
+  topicName: string | null;
+  questionCount: number;
+  counts: Counts;
+}
+interface Summary {
+  quizzes: QuizRow[];
+  totals: Counts;
+}
 
 interface SimDetail {
   id: string;
@@ -29,8 +60,16 @@ interface SimDetail {
   feedbackCount: number;
   aiMetrics: DisplayAiMetrics;
 }
-interface QuestionRow { id: string; title: string | null; text: string; simulation: SimDetail | null }
-interface QuizDetail { quiz: { id: string; name: string }; questions: QuestionRow[] }
+interface QuestionRow {
+  id: string;
+  title: string | null;
+  text: string;
+  simulation: SimDetail | null;
+}
+interface QuizDetail {
+  quiz: { id: string; name: string };
+  questions: QuestionRow[];
+}
 
 interface PreviewState {
   simulationId: string;
@@ -68,7 +107,9 @@ export function AdminSimulationsClient() {
   }, []);
 
   const refreshDetail = useCallback(async (quizId: string) => {
-    const res = await fetch(`/api/admin/simulations?quizId=${encodeURIComponent(quizId)}`);
+    const res = await fetch(
+      `/api/admin/simulations?quizId=${encodeURIComponent(quizId)}`,
+    );
     if (res.ok) {
       const detail: QuizDetail = await res.json();
       setDetails((prev) => ({ ...prev, [quizId]: detail }));
@@ -103,9 +144,12 @@ export function AdminSimulationsClient() {
   }
 
   async function generate(
-    payload: { scope: "pool" } | { scope: "quiz"; quizId: string } | { scope: "question"; questionId: string; force?: boolean },
+    payload:
+      | { scope: "pool" }
+      | { scope: "quiz"; quizId: string }
+      | { scope: "question"; questionId: string; force?: boolean },
     busyKey: string,
-    detailQuizId?: string
+    detailQuizId?: string,
   ) {
     setBusy((prev) => new Set(prev).add(busyKey));
     try {
@@ -123,9 +167,15 @@ export function AdminSimulationsClient() {
         data.created > 0 ? `${data.created} queued` : null,
         data.retried > 0 ? `${data.retried} re-queued` : null,
         data.skipped > 0 ? `${data.skipped} skipped` : null,
-        data.enqueueFailed > 0 ? `${data.enqueueFailed} failed to enqueue` : null,
+        data.enqueueFailed > 0
+          ? `${data.enqueueFailed} failed to enqueue`
+          : null,
       ].filter(Boolean);
-      setMsg(parts.length > 0 ? `Generation started: ${parts.join(", ")}.` : "Nothing to generate.");
+      setMsg(
+        parts.length > 0
+          ? `Generation started: ${parts.join(", ")}.`
+          : "Nothing to generate.",
+      );
       await refreshSummary();
       if (detailQuizId) await refreshDetail(detailQuizId);
     } finally {
@@ -139,7 +189,8 @@ export function AdminSimulationsClient() {
 
   async function regenerate(question: QuestionRow, quizId: string) {
     const sim = question.simulation;
-    const stuck = sim && (sim.status === "PENDING" || sim.status === "REVISING");
+    const stuck =
+      sim && (sim.status === "PENDING" || sim.status === "REVISING");
     const ok = await confirm({
       title: stuck ? "Restart this generation?" : "Regenerate this simulation?",
       description: stuck
@@ -148,7 +199,11 @@ export function AdminSimulationsClient() {
       confirmText: stuck ? "Restart" : "Regenerate",
     });
     if (!ok) return;
-    await generate({ scope: "question", questionId: question.id, force: true }, `q:${question.id}`, quizId);
+    await generate(
+      { scope: "question", questionId: question.id, force: true },
+      `q:${question.id}`,
+      quizId,
+    );
   }
 
   async function remove(question: QuestionRow, quizId: string) {
@@ -164,7 +219,9 @@ export function AdminSimulationsClient() {
     const busyKey = `q:${question.id}`;
     setBusy((prev) => new Set(prev).add(busyKey));
     try {
-      const res = await fetch(`/api/simulations/${sim.id}`, { method: "DELETE" });
+      const res = await fetch(`/api/simulations/${sim.id}`, {
+        method: "DELETE",
+      });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         setMsg(data.error ?? "Failed to delete simulation.");
@@ -189,7 +246,8 @@ export function AdminSimulationsClient() {
           <p className="text-sm text-destructive">{loadError}</p>
         ) : (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" /> Loading simulation status…
+            <Loader2 className="size-4 animate-spin" /> Loading simulation
+            status…
           </p>
         )}
       </div>
@@ -204,14 +262,23 @@ export function AdminSimulationsClient() {
       <div>
         <h1 className="text-3xl font-bold">Simulations</h1>
         <p className="text-muted-foreground text-sm mt-1">
-          AI-generated interactive simulations, one per pool question, teaching each question&apos;s broad
-          topic — never the question itself. Teachers receive them with imported quizzes; students see them
-          after submitting a quiz.
+          AI-generated interactive simulations, one per pool question, teaching
+          each question&apos;s broad topic — never the question itself. Teachers
+          receive them with imported quizzes; students see them after submitting
+          a quiz.
         </p>
       </div>
 
-      {msg && <div className="p-3 rounded-md bg-primary/10 text-primary text-sm">{msg}</div>}
-      {loadError && <div className="p-3 rounded-md bg-destructive/10 text-destructive text-sm">{loadError}</div>}
+      {msg && (
+        <div className="p-3 rounded-md bg-primary/10 text-primary text-sm">
+          {msg}
+        </div>
+      )}
+      {loadError && (
+        <div className="p-3 rounded-md bg-destructive/10 text-destructive text-sm">
+          {loadError}
+        </div>
+      )}
 
       {/* Pool-wide status + the global trigger */}
       <Card>
@@ -220,10 +287,13 @@ export function AdminSimulationsClient() {
             <Atom className="size-4 text-muted-foreground" />
             <Badge variant="success">{totals.ready} ready</Badge>
             <Badge variant="secondary">{totals.declined} declined</Badge>
-            {totals.failed > 0 && <Badge variant="destructive">{totals.failed} failed</Badge>}
+            {totals.failed > 0 && (
+              <Badge variant="destructive">{totals.failed} failed</Badge>
+            )}
             {totals.inFlight > 0 && (
               <Badge variant="outline">
-                <Loader2 className="size-3 mr-1 animate-spin" /> {totals.inFlight} generating
+                <Loader2 className="size-3 mr-1 animate-spin" />{" "}
+                {totals.inFlight} generating
               </Badge>
             )}
             <Badge variant="outline">{totals.missing} without simulation</Badge>
@@ -233,7 +303,11 @@ export function AdminSimulationsClient() {
             disabled={busy.has("pool") || poolGeneratable === 0}
             className="shrink-0"
           >
-            {busy.has("pool") ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+            {busy.has("pool") ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Sparkles className="size-4" />
+            )}
             Generate missing ({poolGeneratable})
           </Button>
         </CardContent>
@@ -261,17 +335,36 @@ export function AdminSimulationsClient() {
                     aria-expanded={isOpen}
                     className="flex min-w-0 flex-1 items-center gap-3 text-left"
                   >
-                    {isOpen ? <ChevronDown className="size-4 shrink-0" /> : <ChevronRight className="size-4 shrink-0" />}
+                    {isOpen ? (
+                      <ChevronDown className="size-4 shrink-0" />
+                    ) : (
+                      <ChevronRight className="size-4 shrink-0" />
+                    )}
                     <span className="min-w-0">
-                      <span className="font-semibold block truncate">{quiz.name}</span>
+                      <span className="font-semibold block truncate">
+                        {quiz.name}
+                      </span>
                       <span className="mt-1 flex flex-wrap gap-2">
-                        {quiz.topicName && <Badge variant="outline">{quiz.topicName}</Badge>}
-                        <Badge variant="success">{quiz.counts.ready}/{quiz.questionCount} ready</Badge>
-                        {quiz.counts.declined > 0 && <Badge variant="secondary">{quiz.counts.declined} declined</Badge>}
-                        {quiz.counts.failed > 0 && <Badge variant="destructive">{quiz.counts.failed} failed</Badge>}
+                        {quiz.topicName && (
+                          <Badge variant="outline">{quiz.topicName}</Badge>
+                        )}
+                        <Badge variant="success">
+                          {quiz.counts.ready}/{quiz.questionCount} ready
+                        </Badge>
+                        {quiz.counts.declined > 0 && (
+                          <Badge variant="secondary">
+                            {quiz.counts.declined} declined
+                          </Badge>
+                        )}
+                        {quiz.counts.failed > 0 && (
+                          <Badge variant="destructive">
+                            {quiz.counts.failed} failed
+                          </Badge>
+                        )}
                         {quiz.counts.inFlight > 0 && (
                           <Badge variant="outline">
-                            <Loader2 className="size-3 mr-1 animate-spin" /> {quiz.counts.inFlight}
+                            <Loader2 className="size-3 mr-1 animate-spin" />{" "}
+                            {quiz.counts.inFlight}
                           </Badge>
                         )}
                       </span>
@@ -281,10 +374,22 @@ export function AdminSimulationsClient() {
                     size="sm"
                     variant="outline"
                     className="shrink-0"
-                    disabled={busy.has(`quiz:${quiz.id}`) || quizGeneratable === 0}
-                    onClick={() => generate({ scope: "quiz", quizId: quiz.id }, `quiz:${quiz.id}`, quiz.id)}
+                    disabled={
+                      busy.has(`quiz:${quiz.id}`) || quizGeneratable === 0
+                    }
+                    onClick={() =>
+                      generate(
+                        { scope: "quiz", quizId: quiz.id },
+                        `quiz:${quiz.id}`,
+                        quiz.id,
+                      )
+                    }
                   >
-                    {busy.has(`quiz:${quiz.id}`) ? <Loader2 className="size-3 animate-spin" /> : <Play className="size-3" />}
+                    {busy.has(`quiz:${quiz.id}`) ? (
+                      <Loader2 className="size-3 animate-spin" />
+                    ) : (
+                      <Play className="size-3" />
+                    )}
                     Generate ({quizGeneratable})
                   </Button>
                 </div>
@@ -293,39 +398,59 @@ export function AdminSimulationsClient() {
                   <div className="border-t p-3 space-y-2">
                     {!detail ? (
                       <p className="flex items-center gap-2 p-2 text-sm text-muted-foreground">
-                        <Loader2 className="size-4 animate-spin" /> Loading questions…
+                        <Loader2 className="size-4 animate-spin" /> Loading
+                        questions…
                       </p>
                     ) : (
                       detail.questions.map((question, index) => {
                         const sim = question.simulation;
                         const qBusy = busy.has(`q:${question.id}`);
                         return (
-                          <div key={question.id} className="rounded-md border p-3">
+                          <div
+                            key={question.id}
+                            className="rounded-md border p-3"
+                          >
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0 flex-1">
                                 <p className="text-sm line-clamp-2">
-                                  <span className="mr-1 text-muted-foreground">{index + 1}.</span>
-                                  <MathText text={question.title || question.text} />
+                                  <span className="mr-1 text-muted-foreground">
+                                    {index + 1}.
+                                  </span>
+                                  <MathText
+                                    text={question.title || question.text}
+                                  />
                                 </p>
                                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                                  <SimulationStatusBadge status={sim?.status ?? null} />
+                                  <SimulationStatusBadge
+                                    status={sim?.status ?? null}
+                                  />
                                   {sim?.title && (
                                     <span className="text-xs text-muted-foreground truncate">
                                       {sim.title}
                                       {sim.topic ? ` — ${sim.topic}` : ""}
-                                      {sim.version > 1 ? ` (v${sim.version})` : ""}
+                                      {sim.version > 1
+                                        ? ` (v${sim.version})`
+                                        : ""}
                                     </span>
                                   )}
                                   {sim && sim.feedbackCount > 0 && (
-                                    <Badge variant="outline">{sim.feedbackCount} feedback</Badge>
+                                    <Badge variant="outline">
+                                      {sim.feedbackCount} feedback
+                                    </Badge>
                                   )}
                                 </div>
-                                {sim?.status === "DECLINED" && sim.declineReason && (
-                                  <p className="mt-1 text-xs italic text-muted-foreground">{sim.declineReason}</p>
-                                )}
-                                {sim?.status === "FAILED" && sim.errorMessage && (
-                                  <p className="mt-1 text-xs text-destructive">{sim.errorMessage}</p>
-                                )}
+                                {sim?.status === "DECLINED" &&
+                                  sim.declineReason && (
+                                    <p className="mt-1 text-xs italic text-muted-foreground">
+                                      {sim.declineReason}
+                                    </p>
+                                  )}
+                                {sim?.status === "FAILED" &&
+                                  sim.errorMessage && (
+                                    <p className="mt-1 text-xs text-destructive">
+                                      {sim.errorMessage}
+                                    </p>
+                                  )}
                                 {sim && (
                                   <AiMetricsLine
                                     metrics={sim.aiMetrics}
@@ -343,7 +468,8 @@ export function AdminSimulationsClient() {
                                       setPreview({
                                         simulationId: sim.id,
                                         version: sim.version,
-                                        title: sim.title ?? "Simulation preview",
+                                        title:
+                                          sim.title ?? "Simulation preview",
                                         topic: sim.topic,
                                         learningGoal: sim.learningGoal,
                                         aiMetrics: sim.aiMetrics,
@@ -358,16 +484,45 @@ export function AdminSimulationsClient() {
                                     size="sm"
                                     variant="outline"
                                     disabled={qBusy}
-                                    onClick={() => generate({ scope: "question", questionId: question.id }, `q:${question.id}`, quiz.id)}
+                                    onClick={() =>
+                                      generate(
+                                        {
+                                          scope: "question",
+                                          questionId: question.id,
+                                        },
+                                        `q:${question.id}`,
+                                        quiz.id,
+                                      )
+                                    }
                                   >
-                                    {qBusy ? <Loader2 className="size-3 animate-spin" /> : <Play className="size-3" />}
-                                    {sim?.status === "FAILED" ? "Retry" : "Generate"}
+                                    {qBusy ? (
+                                      <Loader2 className="size-3 animate-spin" />
+                                    ) : (
+                                      <Play className="size-3" />
+                                    )}
+                                    {sim?.status === "FAILED"
+                                      ? "Retry"
+                                      : "Generate"}
                                   </Button>
                                 )}
                                 {sim && sim.status !== "FAILED" && (
-                                  <Button size="sm" variant="ghost" disabled={qBusy} onClick={() => regenerate(question, quiz.id)}>
-                                    {qBusy ? <Loader2 className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
-                                    {sim.status === "PENDING" || sim.status === "REVISING" ? "Restart" : "Regenerate"}
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    disabled={qBusy}
+                                    onClick={() =>
+                                      regenerate(question, quiz.id)
+                                    }
+                                  >
+                                    {qBusy ? (
+                                      <Loader2 className="size-3 animate-spin" />
+                                    ) : (
+                                      <RefreshCw className="size-3" />
+                                    )}
+                                    {sim.status === "PENDING" ||
+                                    sim.status === "REVISING"
+                                      ? "Restart"
+                                      : "Regenerate"}
                                   </Button>
                                 )}
                                 {sim && (
@@ -396,7 +551,10 @@ export function AdminSimulationsClient() {
       )}
 
       {/* Full-size sandboxed preview */}
-      <Dialog open={preview !== null} onOpenChange={(open) => !open && setPreview(null)}>
+      <Dialog
+        open={preview !== null}
+        onOpenChange={(open) => !open && setPreview(null)}
+      >
         <DialogContent className="flex h-[85vh] max-w-5xl flex-col">
           <DialogHeader>
             <DialogTitle>{preview?.title}</DialogTitle>

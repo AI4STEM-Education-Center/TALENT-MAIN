@@ -51,11 +51,18 @@ export default function StudentsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [className, setClassName] = useState("");
-  const [filter, setFilter] = useState<"all" | "enrolled" | "not_enrolled" | "not_registered">("all");
+  const [filter, setFilter] = useState<
+    "all" | "enrolled" | "not_enrolled" | "not_registered"
+  >("all");
 
   // Add dialog state
   const [addOpen, setAddOpen] = useState(false);
-  const [addForm, setAddForm] = useState({ orgDefinedId: "", firstName: "", lastName: "", email: "" });
+  const [addForm, setAddForm] = useState({
+    orgDefinedId: "",
+    firstName: "",
+    lastName: "",
+    email: "",
+  });
   const [addError, setAddError] = useState("");
   const [addLoading, setAddLoading] = useState(false);
 
@@ -71,38 +78,49 @@ export default function StudentsPage() {
 
   // Edit dialog state
   const [editTarget, setEditTarget] = useState<StudentEntry | null>(null);
-  const [editForm, setEditForm] = useState({ orgDefinedId: "", firstName: "", lastName: "", email: "" });
+  const [editForm, setEditForm] = useState({
+    orgDefinedId: "",
+    firstName: "",
+    lastName: "",
+    email: "",
+  });
   const [editError, setEditError] = useState("");
   const [editLoading, setEditLoading] = useState(false);
 
-  const fetchClassName = useCallback(async (signal?: AbortSignal) => {
-    try {
-      const res = await fetch(`/api/classes/${id}`, { signal });
-      if (res.ok) {
-        const data = await res.json();
-        if (!signal?.aborted) setClassName(data.name || "");
+  const fetchClassName = useCallback(
+    async (signal?: AbortSignal) => {
+      try {
+        const res = await fetch(`/api/classes/${id}`, { signal });
+        if (res.ok) {
+          const data = await res.json();
+          if (!signal?.aborted) setClassName(data.name || "");
+        }
+      } catch {
+        // ignore (including AbortError)
       }
-    } catch {
-      // ignore (including AbortError)
-    }
-  }, [id]);
+    },
+    [id],
+  );
 
-  const fetchStudents = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/classes/${id}/students`, { signal });
-      if (res.ok) {
-        const data = await res.json();
-        if (!signal?.aborted) setStudents(data);
+  const fetchStudents = useCallback(
+    async (signal?: AbortSignal) => {
+      setLoading(true);
+      try {
+        const res = await fetch(`/api/classes/${id}/students`, { signal });
+        if (res.ok) {
+          const data = await res.json();
+          if (!signal?.aborted) setStudents(data);
+        }
+      } catch {
+        // ignore (including AbortError)
+      } finally {
+        // An aborted request must not clear the spinner owned by its successor.
+        // react-doctor-disable-next-line react-doctor/no-loading-flag-reset-outside-finally -- the reset is already inside this finally; detector misfire
+        if (!signal?.aborted) setLoading(false);
       }
-    } catch {
-      // ignore (including AbortError)
-    } finally {
-      // An aborted request must not clear the spinner owned by its successor.
-      // react-doctor-disable-next-line react-doctor/no-loading-flag-reset-outside-finally -- the reset is already inside this finally; detector misfire
-      if (!signal?.aborted) setLoading(false);
-    }
-  }, [id]);
+    },
+    [id],
+  );
 
   // react-doctor-disable-next-line react-doctor/no-set-state-after-await-in-effect -- every post-await write is guarded by `signal.aborted`, and the effect aborts on cleanup
   useEffect(() => {
@@ -131,9 +149,13 @@ export default function StudentsPage() {
         return;
       }
       const data = await res.json();
-      setStudents((prev) => [...prev, { ...data, isEnrolled: false, enrolledAt: null }].sort((a, b) =>
-        a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName)
-      ));
+      setStudents((prev) =>
+        [...prev, { ...data, isEnrolled: false, enrolledAt: null }].sort(
+          (a, b) =>
+            a.lastName.localeCompare(b.lastName) ||
+            a.firstName.localeCompare(b.firstName),
+        ),
+      );
       setAddForm({ orgDefinedId: "", firstName: "", lastName: "", email: "" });
       setAddOpen(false);
     } catch {
@@ -169,10 +191,14 @@ export default function StudentsPage() {
     const reader = new FileReader();
     reader.onload = async (ev) => {
       const text = ev.target?.result as string;
-      const { students: parsed, skipped, normalizedEmails } = parseRosterCsv(text);
+      const {
+        students: parsed,
+        skipped,
+        normalizedEmails,
+      } = parseRosterCsv(text);
       if (parsed.length === 0) {
         setUploadError(
-          "Could not parse any students with a valid email. Each row needs an 81 number, first name, last name, and email."
+          "Could not parse any students with a valid email. Each row needs an 81 number, first name, last name, and email.",
         );
         if (fileRef.current) fileRef.current.value = "";
         return;
@@ -190,12 +216,16 @@ export default function StudentsPage() {
           setUploadError(data.error || "Failed to upload roster.");
         } else {
           await fetchStudents();
-          const parts = [`Added ${data.added} student${data.added === 1 ? "" : "s"}.`];
-          if (data.skipped > 0) parts.push(`${data.skipped} already on the roster (skipped).`);
-          if (skipped > 0) parts.push(`${skipped} row(s) skipped for missing/invalid email.`);
+          const parts = [
+            `Added ${data.added} student${data.added === 1 ? "" : "s"}.`,
+          ];
+          if (data.skipped > 0)
+            parts.push(`${data.skipped} already on the roster (skipped).`);
+          if (skipped > 0)
+            parts.push(`${skipped} row(s) skipped for missing/invalid email.`);
           if (normalizedEmails > 0) {
             parts.push(
-              `${normalizedEmails} @uga.view.usg.edu address(es) rewritten to @uga.edu.`
+              `${normalizedEmails} @uga.view.usg.edu address(es) rewritten to @uga.edu.`,
             );
           }
           setUploadMsg(parts.join(" "));
@@ -247,7 +277,11 @@ export default function StudentsPage() {
         setStudents((prev) =>
           prev
             .map((s) => (s.id === editTarget.id ? { ...s, ...data } : s))
-            .sort((a, b) => a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName))
+            .sort(
+              (a, b) =>
+                a.lastName.localeCompare(b.lastName) ||
+                a.firstName.localeCompare(b.firstName),
+            ),
         );
         setEditTarget(null);
       }
@@ -265,7 +299,7 @@ export default function StudentsPage() {
           s.firstName.toLowerCase().includes(searchLower) ||
           s.lastName.toLowerCase().includes(searchLower) ||
           s.email.toLowerCase().includes(searchLower) ||
-          s.orgDefinedId.includes(search.replace(/^#/, ""))
+          s.orgDefinedId.includes(search.replace(/^#/, "")),
       )
     : students;
 
@@ -309,105 +343,108 @@ export default function StudentsPage() {
         </div>
 
         <div className="flex items-center gap-2">
-        <Button size="sm" variant="outline" asChild>
-          <Link href={`/teacher/classes/${id}/messages`}>
-            <MessageSquare className="size-4 mr-1" /> Message Students
-          </Link>
-        </Button>
+          <Button size="sm" variant="outline" asChild>
+            <Link href={`/teacher/classes/${id}/messages`}>
+              <MessageSquare className="size-4 mr-1" /> Message Students
+            </Link>
+          </Button>
 
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".csv"
-          aria-label="Upload roster CSV"
-          onChange={handleCsvChange}
-          className="hidden"
-        />
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => fileRef.current?.click()}
-          disabled={uploading}
-        >
-          {uploading ? (
-            <Loader2 className="size-4 mr-1 animate-spin" />
-          ) : (
-            <Upload className="size-4 mr-1" />
-          )}
-          {uploading ? "Uploading..." : "Upload CSV"}
-        </Button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".csv"
+            aria-label="Upload roster CSV"
+            onChange={handleCsvChange}
+            className="hidden"
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+          >
+            {uploading ? (
+              <Loader2 className="size-4 mr-1 animate-spin" />
+            ) : (
+              <Upload className="size-4 mr-1" />
+            )}
+            {uploading ? "Uploading..." : "Upload CSV"}
+          </Button>
 
-        <Dialog open={addOpen} onOpenChange={setAddOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm">
-              <Plus className="size-4 mr-1" /> Add Student
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add Student to Roster</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleAdd} className="space-y-4">
-              {addError && (
-                <div className="p-3 rounded-md bg-destructive/10 text-destructive text-sm">
-                  {addError}
-                </div>
-              )}
-              <div className="space-y-2">
-                <Label htmlFor="add-orgId">81 Number</Label>
-                <Input
-                  id="add-orgId"
-                  value={addForm.orgDefinedId}
-                  onChange={(e) =>
-                    setAddForm((p) => ({ ...p, orgDefinedId: e.target.value }))
-                  }
-                  required
-                  placeholder="e.g. 811947904"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label htmlFor="add-first">First Name</Label>
-                  <Input
-                    id="add-first"
-                    value={addForm.firstName}
-                    onChange={(e) =>
-                      setAddForm((p) => ({ ...p, firstName: e.target.value }))
-                    }
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="add-last">Last Name</Label>
-                  <Input
-                    id="add-last"
-                    value={addForm.lastName}
-                    onChange={(e) =>
-                      setAddForm((p) => ({ ...p, lastName: e.target.value }))
-                    }
-                    required
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="add-email">Email</Label>
-                <Input
-                  id="add-email"
-                  type="email"
-                  value={addForm.email}
-                  onChange={(e) =>
-                    setAddForm((p) => ({ ...p, email: e.target.value }))
-                  }
-                  required
-                  placeholder="student@example.com"
-                />
-              </div>
-              <Button type="submit" className="w-full" disabled={addLoading}>
-                {addLoading ? "Adding..." : "Add Student"}
+          <Dialog open={addOpen} onOpenChange={setAddOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm">
+                <Plus className="size-4 mr-1" /> Add Student
               </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add Student to Roster</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleAdd} className="space-y-4">
+                {addError && (
+                  <div className="p-3 rounded-md bg-destructive/10 text-destructive text-sm">
+                    {addError}
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label htmlFor="add-orgId">81 Number</Label>
+                  <Input
+                    id="add-orgId"
+                    value={addForm.orgDefinedId}
+                    onChange={(e) =>
+                      setAddForm((p) => ({
+                        ...p,
+                        orgDefinedId: e.target.value,
+                      }))
+                    }
+                    required
+                    placeholder="e.g. 811947904"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="add-first">First Name</Label>
+                    <Input
+                      id="add-first"
+                      value={addForm.firstName}
+                      onChange={(e) =>
+                        setAddForm((p) => ({ ...p, firstName: e.target.value }))
+                      }
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="add-last">Last Name</Label>
+                    <Input
+                      id="add-last"
+                      value={addForm.lastName}
+                      onChange={(e) =>
+                        setAddForm((p) => ({ ...p, lastName: e.target.value }))
+                      }
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="add-email">Email</Label>
+                  <Input
+                    id="add-email"
+                    type="email"
+                    value={addForm.email}
+                    onChange={(e) =>
+                      setAddForm((p) => ({ ...p, email: e.target.value }))
+                    }
+                    required
+                    placeholder="student@example.com"
+                  />
+                </div>
+                <Button type="submit" className="w-full" disabled={addLoading}>
+                  {addLoading ? "Adding..." : "Add Student"}
+                </Button>
+              </form>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
@@ -426,36 +463,53 @@ export default function StudentsPage() {
 
       {/* Stats cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setFilter("all")}>
+        <Card
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => setFilter("all")}
+        >
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Total Roster</p>
                 <p className="text-2xl font-bold">{rosterCount}</p>
               </div>
-              <Users className={`size-8 ${filter === "all" ? "text-primary" : "text-muted-foreground/40"}`} />
+              <Users
+                className={`size-8 ${filter === "all" ? "text-primary" : "text-muted-foreground/40"}`}
+              />
             </div>
           </CardContent>
         </Card>
-        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setFilter("enrolled")}>
+        <Card
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => setFilter("enrolled")}
+        >
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Enrolled</p>
                 <p className="text-2xl font-bold">{enrolledCount}</p>
               </div>
-              <UserCheck className={`size-8 ${filter === "enrolled" ? "text-green-500" : "text-muted-foreground/40"}`} />
+              <UserCheck
+                className={`size-8 ${filter === "enrolled" ? "text-green-500" : "text-muted-foreground/40"}`}
+              />
             </div>
           </CardContent>
         </Card>
-        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setFilter("not_registered")}>
+        <Card
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => setFilter("not_registered")}
+        >
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Not Registered</p>
-                <p className="text-2xl font-bold">{rosterCount - registeredCount}</p>
+                <p className="text-2xl font-bold">
+                  {rosterCount - registeredCount}
+                </p>
               </div>
-              <UserX className={`size-8 ${filter === "not_registered" ? "text-amber-500" : "text-muted-foreground/40"}`} />
+              <UserX
+                className={`size-8 ${filter === "not_registered" ? "text-amber-500" : "text-muted-foreground/40"}`}
+              />
             </div>
           </CardContent>
         </Card>
@@ -475,7 +529,9 @@ export default function StudentsPage() {
             </div>
             {/* Filter pills */}
             <div className="flex gap-1.5 flex-wrap">
-              {(["all", "enrolled", "not_enrolled", "not_registered"] as const).map((f) => (
+              {(
+                ["all", "enrolled", "not_enrolled", "not_registered"] as const
+              ).map((f) => (
                 <Button
                   key={f}
                   variant={filter === f ? "default" : "outline"}
@@ -483,7 +539,13 @@ export default function StudentsPage() {
                   onClick={() => setFilter(f)}
                   className="text-xs h-8"
                 >
-                  {f === "all" ? "All" : f === "enrolled" ? "Enrolled" : f === "not_enrolled" ? "Registered Only" : "Not Registered"}
+                  {f === "all"
+                    ? "All"
+                    : f === "enrolled"
+                      ? "Enrolled"
+                      : f === "not_enrolled"
+                        ? "Registered Only"
+                        : "Not Registered"}
                 </Button>
               ))}
             </div>
@@ -497,12 +559,19 @@ export default function StudentsPage() {
         <CardContent>
           {filtered.length === 0 ? (
             <div className="text-center py-10 text-muted-foreground">
-              <p>{search || filter !== "all" ? "No students match your search/filter." : "No students in the roster yet."}</p>
+              <p>
+                {search || filter !== "all"
+                  ? "No students match your search/filter."
+                  : "No students in the roster yet."}
+              </p>
             </div>
           ) : (
             <div className="divide-y">
               {filtered.map((s) => (
-                <div key={s.id} className="flex items-center gap-3 py-3 flex-wrap">
+                <div
+                  key={s.id}
+                  className="flex items-center gap-3 py-3 flex-wrap"
+                >
                   <div className="size-9 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-sm shrink-0">
                     {s.firstName[0]}
                     {s.lastName[0]}
@@ -520,7 +589,8 @@ export default function StudentsPage() {
                       </p>
                     ) : (
                       <p className="text-xs text-amber-600 flex items-center gap-1">
-                        <AlertTriangle className="size-3 shrink-0" /> No email on file
+                        <AlertTriangle className="size-3 shrink-0" /> No email
+                        on file
                       </p>
                     )}
                   </div>
@@ -596,7 +666,10 @@ export default function StudentsPage() {
       </Card>
 
       {/* Edit dialog */}
-      <Dialog open={!!editTarget} onOpenChange={(open) => !open && setEditTarget(null)}>
+      <Dialog
+        open={!!editTarget}
+        onOpenChange={(open) => !open && setEditTarget(null)}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit Student</DialogTitle>
@@ -612,7 +685,9 @@ export default function StudentsPage() {
               <Input
                 id="edit-orgId"
                 value={editForm.orgDefinedId}
-                onChange={(e) => setEditForm((p) => ({ ...p, orgDefinedId: e.target.value }))}
+                onChange={(e) =>
+                  setEditForm((p) => ({ ...p, orgDefinedId: e.target.value }))
+                }
                 required
                 placeholder="e.g. 811947904"
               />
@@ -623,7 +698,9 @@ export default function StudentsPage() {
                 <Input
                   id="edit-first"
                   value={editForm.firstName}
-                  onChange={(e) => setEditForm((p) => ({ ...p, firstName: e.target.value }))}
+                  onChange={(e) =>
+                    setEditForm((p) => ({ ...p, firstName: e.target.value }))
+                  }
                   required
                 />
               </div>
@@ -632,7 +709,9 @@ export default function StudentsPage() {
                 <Input
                   id="edit-last"
                   value={editForm.lastName}
-                  onChange={(e) => setEditForm((p) => ({ ...p, lastName: e.target.value }))}
+                  onChange={(e) =>
+                    setEditForm((p) => ({ ...p, lastName: e.target.value }))
+                  }
                   required
                 />
               </div>
@@ -643,7 +722,9 @@ export default function StudentsPage() {
                 id="edit-email"
                 type="email"
                 value={editForm.email}
-                onChange={(e) => setEditForm((p) => ({ ...p, email: e.target.value }))}
+                onChange={(e) =>
+                  setEditForm((p) => ({ ...p, email: e.target.value }))
+                }
                 required
                 placeholder="student@example.com"
               />

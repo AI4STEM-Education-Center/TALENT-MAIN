@@ -6,12 +6,23 @@ type RouteParams = {
   params: Promise<{ id: string; quizId: string; studentId: string }>;
 };
 
-async function authorize(userId: string, classId: string, quizId: string, studentId: string) {
-  const teacher = await prisma.teacher.findUnique({ where: { userId }, select: { id: true } });
+async function authorize(
+  userId: string,
+  classId: string,
+  quizId: string,
+  studentId: string,
+) {
+  const teacher = await prisma.teacher.findUnique({
+    where: { userId },
+    select: { id: true },
+  });
   if (!teacher) return false;
 
   const [cls, assignment, enrollment] = await Promise.all([
-    prisma.class.findFirst({ where: { id: classId, teacherId: teacher.id }, select: { id: true } }),
+    prisma.class.findFirst({
+      where: { id: classId, teacherId: teacher.id },
+      select: { id: true },
+    }),
     prisma.classQuiz.findUnique({
       where: { classId_quizId: { classId, quizId } },
       select: { id: true },
@@ -33,15 +44,23 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
 
   const { id, quizId, studentId } = await params;
   if (!(await authorize(session.user.id, id, quizId, studentId))) {
-    return NextResponse.json({ error: "Class, quiz, or student not found" }, { status: 404 });
+    return NextResponse.json(
+      { error: "Class, quiz, or student not found" },
+      { status: 404 },
+    );
   }
 
   const body = await req.json().catch(() => null);
   const grade = body?.grade;
-  if (typeof grade !== "number" || !Number.isFinite(grade) || grade < 0 || grade > 100) {
+  if (
+    typeof grade !== "number" ||
+    !Number.isFinite(grade) ||
+    grade < 0 ||
+    grade > 100
+  ) {
     return NextResponse.json(
       { error: "Manual grade must be a number from 0 to 100" },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
@@ -63,7 +82,10 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
 
   const { id, quizId, studentId } = await params;
   if (!(await authorize(session.user.id, id, quizId, studentId))) {
-    return NextResponse.json({ error: "Class, quiz, or student not found" }, { status: 404 });
+    return NextResponse.json(
+      { error: "Class, quiz, or student not found" },
+      { status: 404 },
+    );
   }
 
   await prisma.quizProgress.updateMany({

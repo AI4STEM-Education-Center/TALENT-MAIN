@@ -9,14 +9,16 @@ const VALID_TYPES = new Set(["openai", "local", "cloudflare"]);
 
 // Bounds for a provider's per-request timeout override (ms). null clears the
 // override so the resolver falls back to DEFAULT_AI_TIMEOUT_MS.
-const MIN_TIMEOUT_MS = 1_000;        // 1s
-const MAX_TIMEOUT_MS = 3_600_000;    // 60min
+const MIN_TIMEOUT_MS = 1_000; // 1s
+const MAX_TIMEOUT_MS = 3_600_000; // 60min
 
 /**
  * Validate an incoming `timeoutMs` value. Returns either `{ value }` (an int or
  * null when unset/empty) or `{ error }` with a message for a 400 response.
  */
-function parseTimeoutMs(raw: unknown): { value: number | null } | { error: string } {
+function parseTimeoutMs(
+  raw: unknown,
+): { value: number | null } | { error: string } {
   if (raw === undefined || raw === null || raw === "") return { value: null };
   const n = typeof raw === "number" ? raw : Number(raw);
   if (!Number.isInteger(n) || n < MIN_TIMEOUT_MS || n > MAX_TIMEOUT_MS) {
@@ -89,7 +91,10 @@ export async function GET() {
     return NextResponse.json({ providers: masked });
   } catch (error) {
     logApiError("AI_PROVIDERS_GET", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }
 
@@ -108,12 +113,16 @@ export async function POST(req: Request) {
     const body = await req.json();
 
     const name = typeof body.name === "string" ? body.name.trim() : "";
-    const providerType = typeof body.providerType === "string" ? body.providerType.trim() : "";
-    const baseUrl = typeof body.baseUrl === "string" ? body.baseUrl.trim() || null : null;
-    const apiKey = typeof body.apiKey === "string" ? body.apiKey.trim() || null : null;
-    const cfAigByokAlias = typeof body.cfAigByokAlias === "string"
-      ? body.cfAigByokAlias.trim() || null
-      : null;
+    const providerType =
+      typeof body.providerType === "string" ? body.providerType.trim() : "";
+    const baseUrl =
+      typeof body.baseUrl === "string" ? body.baseUrl.trim() || null : null;
+    const apiKey =
+      typeof body.apiKey === "string" ? body.apiKey.trim() || null : null;
+    const cfAigByokAlias =
+      typeof body.cfAigByokAlias === "string"
+        ? body.cfAigByokAlias.trim() || null
+        : null;
 
     const timeout = parseTimeoutMs(body.timeoutMs);
     if ("error" in timeout) {
@@ -121,29 +130,37 @@ export async function POST(req: Request) {
     }
 
     // Unset (null) is legal and means "use the per-type default".
-    const apiSurface = body.apiSurface == null || body.apiSurface === "" ? null : body.apiSurface;
+    const apiSurface =
+      body.apiSurface == null || body.apiSurface === ""
+        ? null
+        : body.apiSurface;
     if (apiSurface !== null && !isApiSurface(apiSurface)) {
       return NextResponse.json(
-        { error: "apiSurface must be 'responses', 'chat_completions', or null" },
-        { status: 400 }
+        {
+          error: "apiSurface must be 'responses', 'chat_completions', or null",
+        },
+        { status: 400 },
       );
     }
 
     if (!name) {
-      return NextResponse.json({ error: "Provider name is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Provider name is required" },
+        { status: 400 },
+      );
     }
 
     if (!VALID_TYPES.has(providerType)) {
       return NextResponse.json(
         { error: "Provider type must be 'openai', 'local', or 'cloudflare'" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     if (providerType === "local" && !baseUrl) {
       return NextResponse.json(
         { error: "Base URL is required for local providers" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -151,13 +168,16 @@ export async function POST(req: Request) {
       if (!baseUrl) {
         return NextResponse.json(
           { error: "Base URL is required for Cloudflare AI Gateway providers" },
-          { status: 400 }
+          { status: 400 },
         );
       }
       if (!apiKey) {
         return NextResponse.json(
-          { error: "CF_AIG_TOKEN is required for Cloudflare AI Gateway providers" },
-          { status: 400 }
+          {
+            error:
+              "CF_AIG_TOKEN is required for Cloudflare AI Gateway providers",
+          },
+          { status: 400 },
         );
       }
     }
@@ -178,22 +198,28 @@ export async function POST(req: Request) {
       },
     });
 
-    return NextResponse.json({
-      provider: {
-        id: provider.id,
-        name: provider.name,
-        providerType: provider.providerType,
-        baseUrl: provider.baseUrl,
-        hasApiKey: !!encryptedKey,
-        maskedApiKey: apiKey ? maskApiKey(apiKey) : null,
-        cfAigByokAlias: provider.cfAigByokAlias,
-        timeoutMs: provider.timeoutMs,
-        apiSurface: provider.apiSurface,
-        isActive: provider.isActive,
+    return NextResponse.json(
+      {
+        provider: {
+          id: provider.id,
+          name: provider.name,
+          providerType: provider.providerType,
+          baseUrl: provider.baseUrl,
+          hasApiKey: !!encryptedKey,
+          maskedApiKey: apiKey ? maskApiKey(apiKey) : null,
+          cfAigByokAlias: provider.cfAigByokAlias,
+          timeoutMs: provider.timeoutMs,
+          apiSurface: provider.apiSurface,
+          isActive: provider.isActive,
+        },
       },
-    }, { status: 201 });
+      { status: 201 },
+    );
   } catch (error) {
     logApiError("AI_PROVIDERS_POST", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }

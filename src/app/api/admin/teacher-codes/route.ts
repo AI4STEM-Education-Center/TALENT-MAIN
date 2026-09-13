@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { appOrigin } from "@/lib/app-url";
-import { createTeacherCode, toTeacherCodeView } from "@/lib/teacher-registration-codes";
+import {
+  createTeacherCode,
+  toTeacherCodeView,
+} from "@/lib/teacher-registration-codes";
 import {
   MAX_EXPIRES_IN_MINUTES,
   MAX_USES_LIMIT,
@@ -43,7 +46,10 @@ export async function GET(req: NextRequest) {
     });
   } catch (error) {
     logApiError("ADMIN_TEACHER_CODES_GET", error);
-    return NextResponse.json({ error: "Internal server error." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error." },
+      { status: 500 },
+    );
   }
 }
 
@@ -63,7 +69,8 @@ export async function POST(req: NextRequest) {
     // which bound they crossed instead of parseBody's uniform 400 text.
     if (
       expiresInMinutes !== null &&
-      (expiresInMinutes < MIN_EXPIRES_IN_MINUTES || expiresInMinutes > MAX_EXPIRES_IN_MINUTES)
+      (expiresInMinutes < MIN_EXPIRES_IN_MINUTES ||
+        expiresInMinutes > MAX_EXPIRES_IN_MINUTES)
     ) {
       return NextResponse.json(
         {
@@ -72,7 +79,7 @@ export async function POST(req: NextRequest) {
             `${Math.round(MAX_EXPIRES_IN_MINUTES / (365 * 24 * 60))} years, ` +
             "or leave the duration empty for a code that never expires.",
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
     if (maxUses !== null && (maxUses < 1 || maxUses > MAX_USES_LIMIT)) {
@@ -82,7 +89,7 @@ export async function POST(req: NextRequest) {
             `The use limit must be between 1 and ${MAX_USES_LIMIT}, ` +
             "or empty for unlimited registrations.",
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -100,12 +107,21 @@ export async function POST(req: NextRequest) {
       userId: session.user.id,
       // Never the code itself — the admin log is readable by every admin and
       // the code is a bearer credential.
-      metadata: { codeId: row.id, expiresAt: row.expiresAt, maxUses: row.maxUses },
+      metadata: {
+        codeId: row.id,
+        expiresAt: row.expiresAt,
+        maxUses: row.maxUses,
+      },
     });
 
-    return NextResponse.json(toTeacherCodeView(row, appOrigin(req)), { status: 201 });
+    return NextResponse.json(toTeacherCodeView(row, appOrigin(req)), {
+      status: 201,
+    });
   } catch (error) {
     logApiError("ADMIN_TEACHER_CODES_POST", error);
-    return NextResponse.json({ error: "Internal server error." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error." },
+      { status: 500 },
+    );
   }
 }

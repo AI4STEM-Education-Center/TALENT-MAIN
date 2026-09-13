@@ -3,7 +3,14 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useAlert } from "@/components/ui/confirm-dialog";
 import { Search, Trash2, Shield, Users, GraduationCap } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -20,9 +27,12 @@ interface User {
 
 const getRoleIcon = (role: string) => {
   switch (role) {
-    case "ADMIN": return <Shield className="size-4 text-purple-500" />;
-    case "TEACHER": return <Users className="size-4 text-blue-500" />;
-    default: return <GraduationCap className="size-4 text-green-500" />;
+    case "ADMIN":
+      return <Shield className="size-4 text-purple-500" />;
+    case "TEACHER":
+      return <Users className="size-4 text-blue-500" />;
+    default:
+      return <GraduationCap className="size-4 text-green-500" />;
   }
 };
 
@@ -68,15 +78,21 @@ export default function AdminUsersPage() {
         method: "DELETE",
       });
       if (res.ok) {
-        setUsers(users.filter(u => u.id !== deleteUser.id));
+        setUsers(users.filter((u) => u.id !== deleteUser.id));
         setDeleteUser(null);
       } else {
         const data = await res.json();
-        await alert({ title: "Couldn't delete user", description: data.error || "Failed to delete user" });
+        await alert({
+          title: "Couldn't delete user",
+          description: data.error || "Failed to delete user",
+        });
       }
     } catch (err) {
       console.error("Error deleting user", err);
-      await alert({ title: "Couldn't delete user", description: "Error deleting user" });
+      await alert({
+        title: "Couldn't delete user",
+        description: "Error deleting user",
+      });
     } finally {
       setIsDeleting(false);
     }
@@ -119,7 +135,9 @@ export default function AdminUsersPage() {
       ) : (
         <div className="space-y-8">
           {ROLE_GROUPS.map((group) => {
-            const groupUsers = filteredUsers.filter((u) => u.role === group.role);
+            const groupUsers = filteredUsers.filter(
+              (u) => u.role === group.role,
+            );
             return (
               <section key={group.role} className="space-y-3">
                 <h2 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
@@ -131,23 +149,37 @@ export default function AdminUsersPage() {
                       <tr>
                         <th className="px-6 py-4 font-medium">User</th>
                         <th className="px-6 py-4 font-medium">Joined</th>
-                        <th className="px-6 py-4 font-medium text-right">Actions</th>
+                        <th className="px-6 py-4 font-medium text-right">
+                          Actions
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
                       {groupUsers.length === 0 ? (
                         <tr>
-                          <td colSpan={3} className="px-6 py-8 text-center text-muted-foreground">
-                            {search ? `No ${group.label.toLowerCase()} match your search.` : `No ${group.label.toLowerCase()} yet.`}
+                          <td
+                            colSpan={3}
+                            className="px-6 py-8 text-center text-muted-foreground"
+                          >
+                            {search
+                              ? `No ${group.label.toLowerCase()} match your search.`
+                              : `No ${group.label.toLowerCase()} yet.`}
                           </td>
                         </tr>
                       ) : (
                         groupUsers.map((user) => (
-                          <tr key={user.id} className="hover:bg-muted/50 transition-colors">
+                          <tr
+                            key={user.id}
+                            className="hover:bg-muted/50 transition-colors"
+                          >
                             <td className="px-6 py-4">
                               <div className="flex flex-col">
-                                <span className="font-medium text-foreground">{user.firstName} {user.lastName}</span>
-                                <span className="text-xs text-muted-foreground">{user.email} &bull; @{user.username}</span>
+                                <span className="font-medium text-foreground">
+                                  {user.firstName} {user.lastName}
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  {user.email} &bull; @{user.username}
+                                </span>
                               </div>
                             </td>
                             <td className="px-6 py-4 text-muted-foreground">
@@ -161,9 +193,14 @@ export default function AdminUsersPage() {
                                 disabled={user.id === session?.user?.id}
                                 className={cn(
                                   "text-destructive hover:text-destructive hover:bg-destructive/10 size-8",
-                                  user.id === session?.user?.id && "opacity-50 cursor-not-allowed"
+                                  user.id === session?.user?.id &&
+                                    "opacity-50 cursor-not-allowed",
                                 )}
-                                title={user.id === session?.user?.id ? "Cannot delete yourself" : "Delete user"}
+                                title={
+                                  user.id === session?.user?.id
+                                    ? "Cannot delete yourself"
+                                    : "Delete user"
+                                }
                               >
                                 <Trash2 className="size-4" />
                               </Button>
@@ -180,7 +217,10 @@ export default function AdminUsersPage() {
         </div>
       )}
 
-      <Dialog open={!!deleteUser} onOpenChange={(o) => !o && setDeleteUser(null)}>
+      <Dialog
+        open={!!deleteUser}
+        onOpenChange={(o) => !o && setDeleteUser(null)}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete User</DialogTitle>
@@ -190,17 +230,29 @@ export default function AdminUsersPage() {
                 {deleteUser?.firstName} {deleteUser?.lastName}
               </span>
               ?
-              <br /><br />
-              <strong className="text-destructive">Warning:</strong> This action cannot be undone. 
-              {deleteUser?.role === "TEACHER" && " All classes and materials created by this teacher will also be permanently deleted."}
-              {deleteUser?.role === "STUDENT" && " All class enrollments and progress will be permanently deleted."}
+              <br />
+              <br />
+              <strong className="text-destructive">Warning:</strong> This action
+              cannot be undone.
+              {deleteUser?.role === "TEACHER" &&
+                " All classes and materials created by this teacher will also be permanently deleted."}
+              {deleteUser?.role === "STUDENT" &&
+                " All class enrollments and progress will be permanently deleted."}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteUser(null)} disabled={isDeleting}>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteUser(null)}
+              disabled={isDeleting}
+            >
               Cancel
             </Button>
-            <Button variant="destructive" onClick={handleDelete} disabled={isDeleting}>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={isDeleting}
+            >
               {isDeleting ? "Deleting..." : "Delete User"}
             </Button>
           </DialogFooter>

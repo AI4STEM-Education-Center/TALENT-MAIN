@@ -20,7 +20,7 @@ describe("simulation LaTeX rendering", () => {
 
   it("renders valid LaTeX to self-contained MathML", () => {
     const rendered = renderSimulationLatex(
-      '<p><span class="sim-latex" data-display="block">T=2\\pi\\sqrt{\\frac{L}{g}}</span></p>'
+      '<p><span class="sim-latex" data-display="block">T=2\\pi\\sqrt{\\frac{L}{g}}</span></p>',
     );
 
     expect(rendered).toContain("<math");
@@ -32,26 +32,28 @@ describe("simulation LaTeX rendering", () => {
 
   it("validates marker shape, count, and LaTeX syntax", () => {
     expect(validateSimulationLatex("<p>No formulas</p>")).toContain(
-      "document must display its formulas with at least one sim-latex marker"
+      "document must display its formulas with at least one sim-latex marker",
     );
     expect(
-      validateSimulationLatex('<span class="sim-latex" data-display="wide">F=ma</span>').join(" ")
+      validateSimulationLatex(
+        '<span class="sim-latex" data-display="wide">F=ma</span>',
+      ).join(" "),
     ).toMatch(/every sim-latex marker/);
     expect(
       validateSimulationLatex(
-        '<span class="sim-latex" data-display="inline">\\notARealCommand{x}</span>'
-      ).join(" ")
+        '<span class="sim-latex" data-display="inline">\\notARealCommand{x}</span>',
+      ).join(" "),
     ).toMatch(/invalid LaTeX formula/);
   });
 
   it("leaves ordinary spans unchanged and safely falls back for invalid legacy markers", () => {
     expect(renderSimulationLatex('<span class="label">F = ma</span>')).toBe(
-      '<span class="label">F = ma</span>'
+      '<span class="label">F = ma</span>',
     );
     expect(
       renderSimulationLatex(
-        '<span class="sim-latex" data-display="inline">\\notARealCommand{&lt;x&gt;}</span>'
-      )
+        '<span class="sim-latex" data-display="inline">\\notARealCommand{&lt;x&gt;}</span>',
+      ),
     ).toContain('<span class="sim-formula-error">');
   });
 });
