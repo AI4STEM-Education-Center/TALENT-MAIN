@@ -33,7 +33,7 @@ jobs:
         with:
           # Match the scanner used for local triage so CI and local scores are
           # comparable. Bump both together.
-          version: "0.9.12"
+          version: "0.9.13"
           # Fail the PR on error-severity diagnostics. Warnings stay advisory —
           # `doctor.config.ts` and the inline suppressions in
           # `.react-doctor/false-positives.md` keep that signal meaningful.
