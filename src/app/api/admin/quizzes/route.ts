@@ -14,11 +14,7 @@ export async function GET() {
     where: { teacherId: { not: null } },
     include: {
       topic: true,
-      teacher: {
-        include: {
-          user: { select: { firstName: true, lastName: true, email: true } },
-        },
-      },
+      teacher: { include: { user: { select: { firstName: true, lastName: true, email: true } } } },
       _count: { select: { questions: true } },
     },
     orderBy: { createdAt: "desc" },
@@ -31,6 +27,6 @@ export async function GET() {
   const promotedIds = new Set(promoted.map((q) => q.sourceQuizId));
 
   return NextResponse.json(
-    quizzes.map((q) => ({ ...q, alreadyPromoted: promotedIds.has(q.id) })),
+    quizzes.map((q) => ({ ...q, alreadyPromoted: promotedIds.has(q.id) }))
   );
 }

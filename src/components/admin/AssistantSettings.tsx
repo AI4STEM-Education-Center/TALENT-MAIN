@@ -16,16 +16,11 @@ type SkillInfo = {
   toolNames: string[];
   tools: ToolInfo[];
 };
-type KindInfo = {
-  kind: string;
-  label: string;
-  accept: string;
-  maxBytes: number;
-};
+type KindInfo = { kind: string; label: string; accept: string; maxBytes: number };
 type Bound = { min: number; max: number };
 
 type Assistant = {
-  audience: "student" | "teacher" | "simulation";
+  audience: "student" | "teacher";
   useCase: string;
   enabled: boolean;
   extraInstructions: string;
@@ -50,14 +45,11 @@ type Payload = {
 };
 
 const AUDIENCE_LABEL = {
-  simulation: "Simulation editing assistant",
   student: "Student assistant",
   teacher: "Teacher assistant",
 } as const;
 
 const AUDIENCE_BLURB = {
-  simulation:
-    "Plans simulation edits with teachers before handing changes to the revision model.",
   student:
     "Shown to students in the bottom-right of every dashboard page. It can only read that student's own records.",
   teacher:
@@ -67,9 +59,7 @@ const AUDIENCE_BLURB = {
 const MIB = 1024 * 1024;
 
 function toggle(list: string[], value: string): string[] {
-  return list.includes(value)
-    ? list.filter((item) => item !== value)
-    : [...list, value];
+  return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
 }
 
 /**
@@ -95,24 +85,15 @@ export function AssistantSettings() {
         if (!res.ok) throw new Error("Failed to load assistant settings");
         const data = (await res.json()) as Payload;
         setPayload(data);
-        setDrafts(
-          Object.fromEntries(data.assistants.map((a) => [a.audience, a])),
-        );
+        setDrafts(Object.fromEntries(data.assistants.map((a) => [a.audience, a])));
       } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Failed to load assistant settings",
-        );
+        setError(err instanceof Error ? err.message : "Failed to load assistant settings");
       }
     })();
   }, []);
 
   const update = (audience: string, patch: Partial<Assistant>) => {
-    setDrafts((prev) => ({
-      ...prev,
-      [audience]: { ...prev[audience], ...patch },
-    }));
+    setDrafts((prev) => ({ ...prev, [audience]: { ...prev[audience], ...patch } }));
     setStatus((prev) => ({ ...prev, [audience]: "" }));
   };
 
@@ -144,14 +125,9 @@ export function AssistantSettings() {
         }),
       });
       if (!res.ok) throw new Error("Failed to save");
-      const { settings } = (await res.json()) as {
-        settings: Omit<Assistant, "availableSkills" | "useCase">;
-      };
+      const { settings } = (await res.json()) as { settings: Omit<Assistant, "availableSkills" | "useCase"> };
       // Echo back the server's clamped values so the form shows what was stored.
-      setDrafts((prev) => ({
-        ...prev,
-        [audience]: { ...prev[audience], ...settings },
-      }));
+      setDrafts((prev) => ({ ...prev, [audience]: { ...prev[audience], ...settings } }));
       setStatus((prev) => ({ ...prev, [audience]: "Saved" }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
@@ -166,8 +142,7 @@ export function AssistantSettings() {
   if (!payload) {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="size-4 animate-spin text-primary" /> Loading
-        assistant settings…
+        <Loader2 className="size-4 animate-spin text-primary" /> Loading assistant settings…
       </div>
     );
   }
@@ -201,29 +176,21 @@ export function AssistantSettings() {
                     className="size-4 accent-primary"
                     checked={draft.enabled}
                     onChange={(event) =>
-                      update(assistant.audience, {
-                        enabled: event.target.checked,
-                      })
+                      update(assistant.audience, { enabled: event.target.checked })
                     }
                   />
                   {draft.enabled ? "Enabled" : "Disabled"}
                 </label>
               </div>
-              <p className="text-xs text-muted-foreground">
-                {AUDIENCE_BLURB[assistant.audience]}
-              </p>
+              <p className="text-xs text-muted-foreground">{AUDIENCE_BLURB[assistant.audience]}</p>
               <p className="text-xs text-muted-foreground">
                 Model: set by the{" "}
-                <span className="font-medium text-foreground">
-                  {assistant.useCase}
-                </span>{" "}
-                use-case assignment above. A vision-capable model is required
-                for image input.
+                <span className="font-medium text-foreground">{assistant.useCase}</span> use-case
+                assignment above. A vision-capable model is required for image input.
               </p>
               <p className="text-xs text-muted-foreground">
-                Uploaded files are stored for the retention window below, so a
-                later message in the same conversation can refer back to them,
-                then deleted automatically.
+                Uploaded files are stored for the retention window below, so a later message in the
+                same conversation can refer back to them, then deleted automatically.
               </p>
             </CardHeader>
 
@@ -271,7 +238,7 @@ export function AssistantSettings() {
                         "flex cursor-pointer items-center gap-1.5 rounded-md border px-2 py-1 text-sm",
                         attachmentKinds.has(kind.kind)
                           ? "border-primary bg-primary/5"
-                          : "border-border",
+                          : "border-border"
                       )}
                     >
                       <input
@@ -280,10 +247,7 @@ export function AssistantSettings() {
                         checked={attachmentKinds.has(kind.kind)}
                         onChange={() =>
                           update(assistant.audience, {
-                            attachmentKinds: toggle(
-                              draft.attachmentKinds,
-                              kind.kind,
-                            ),
+                            attachmentKinds: toggle(draft.attachmentKinds, kind.kind),
                           })
                         }
                       />
@@ -301,18 +265,13 @@ export function AssistantSettings() {
                   label="Max attachments per message"
                   value={draft.maxAttachments}
                   bound={bounds.maxAttachments}
-                  onChange={(value) =>
-                    update(assistant.audience, { maxAttachments: value })
-                  }
+                  onChange={(value) => update(assistant.audience, { maxAttachments: value })}
                 />
                 <NumberField
                   label="Max size per attachment (MB)"
                   value={Math.round((draft.maxAttachmentBytes / MIB) * 10) / 10}
                   bound={{
-                    min: Math.max(
-                      1,
-                      Math.round(bounds.maxAttachmentBytes.min / MIB),
-                    ),
+                    min: Math.max(1, Math.round(bounds.maxAttachmentBytes.min / MIB)),
                     max: Math.round(bounds.maxAttachmentBytes.max / MIB),
                   }}
                   step={0.5}
@@ -327,9 +286,7 @@ export function AssistantSettings() {
                   value={draft.attachmentRetentionDays}
                   bound={bounds.attachmentRetentionDays}
                   onChange={(value) =>
-                    update(assistant.audience, {
-                      attachmentRetentionDays: value,
-                    })
+                    update(assistant.audience, { attachmentRetentionDays: value })
                   }
                 />
                 <NumberField
@@ -345,25 +302,19 @@ export function AssistantSettings() {
                   label="Max tool calls per message"
                   value={draft.maxToolCalls}
                   bound={bounds.maxToolCalls}
-                  onChange={(value) =>
-                    update(assistant.audience, { maxToolCalls: value })
-                  }
+                  onChange={(value) => update(assistant.audience, { maxToolCalls: value })}
                 />
                 <NumberField
                   label="Conversation turns kept as context"
                   value={draft.maxHistoryMessages}
                   bound={bounds.maxHistoryMessages}
-                  onChange={(value) =>
-                    update(assistant.audience, { maxHistoryMessages: value })
-                  }
+                  onChange={(value) => update(assistant.audience, { maxHistoryMessages: value })}
                 />
                 <NumberField
                   label="Messages per user per hour"
                   value={draft.turnsPerHour}
                   bound={bounds.turnsPerHour}
-                  onChange={(value) =>
-                    update(assistant.audience, { turnsPerHour: value })
-                  }
+                  onChange={(value) => update(assistant.audience, { turnsPerHour: value })}
                 />
               </div>
 
@@ -372,17 +323,14 @@ export function AssistantSettings() {
                   htmlFor={`extra-${assistant.audience}`}
                   className="mb-1 block text-xs font-medium text-muted-foreground"
                 >
-                  Extra instructions (appended to the built-in prompt; cannot
-                  override its rules)
+                  Extra instructions (appended to the built-in prompt; cannot override its rules)
                 </label>
                 <Textarea
                   id={`extra-${assistant.audience}`}
                   value={draft.extraInstructions}
                   maxLength={payload.maxExtraInstructionsChars}
                   onChange={(event) =>
-                    update(assistant.audience, {
-                      extraInstructions: event.target.value,
-                    })
+                    update(assistant.audience, { extraInstructions: event.target.value })
                   }
                   placeholder="e.g. Always answer in the same language the user writes in."
                   className="min-h-[70px] text-sm"
@@ -436,9 +384,7 @@ function SkillRow({
   onToggleSkill: () => void;
   onToggleTool: (toolName: string) => void;
 }) {
-  const liveTools = skill.tools.filter(
-    (tool) => !disabledTools.has(tool.name),
-  ).length;
+  const liveTools = skill.tools.filter((tool) => !disabledTools.has(tool.name)).length;
 
   return (
     <div className="rounded-md border border-border p-2">
@@ -451,9 +397,7 @@ function SkillRow({
         />
         <span className="min-w-0">
           <span className="block text-sm font-medium">{skill.name}</span>
-          <span className="block text-xs text-muted-foreground">
-            {skill.description}
-          </span>
+          <span className="block text-xs text-muted-foreground">{skill.description}</span>
         </span>
       </label>
 
@@ -463,7 +407,7 @@ function SkillRow({
             key={tool.name}
             className={cn(
               "flex items-start gap-2 text-xs",
-              enabled ? "cursor-pointer" : "cursor-not-allowed opacity-50",
+              enabled ? "cursor-pointer" : "cursor-not-allowed opacity-50"
             )}
           >
             <input
@@ -509,16 +453,10 @@ function NumberField({
 }) {
   // Derived from the visible label so each field gets a stable, unique id to
   // bind to; these labels are distinct within the settings form.
-  const fieldId = `assistant-setting-${label
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")}`;
+  const fieldId = `assistant-setting-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
   return (
     <div>
-      <label
-        htmlFor={fieldId}
-        className="mb-1 block text-xs font-medium text-muted-foreground"
-      >
+      <label htmlFor={fieldId} className="mb-1 block text-xs font-medium text-muted-foreground">
         {label}
         {bound && (
           <span className="ml-1 font-normal">

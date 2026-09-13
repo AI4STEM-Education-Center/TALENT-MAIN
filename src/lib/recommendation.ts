@@ -65,16 +65,14 @@ export const MATERIAL_SELECTION_SCHEMA = {
   properties: {
     materials: {
       type: "array",
-      description:
-        "The most relevant materials to recommend (choose at most 3).",
+      description: "The most relevant materials to recommend (choose at most 3).",
       items: {
         type: "object",
         additionalProperties: false,
         properties: {
           material_index: {
             type: "integer",
-            description:
-              "The 1-based index of a selected material from the provided list",
+            description: "The 1-based index of a selected material from the provided list",
           },
           reasoning: {
             type: "string",
@@ -99,14 +97,8 @@ export const PAGE_SELECTION_SCHEMA = {
       description:
         "True if any pages of this material are worth recommending; false to skip it entirely.",
     },
-    start_page: {
-      type: "integer",
-      description: "Starting page number of the recommended range",
-    },
-    end_page: {
-      type: "integer",
-      description: "Ending page number of the recommended range",
-    },
+    start_page: { type: "integer", description: "Starting page number of the recommended range" },
+    end_page: { type: "integer", description: "Ending page number of the recommended range" },
     reasoning: {
       type: "string",
       description:
@@ -145,9 +137,7 @@ const PAGE_SELECTION_INSTRUCTIONS =
  * counts; we do not label individual lines right or wrong.)
  */
 function attemptLines(attempt: HolisticAttempt): string[] {
-  const topics = attempt.questions.map(
-    (q, i) => `  ${i + 1}. ${q.questionText}`,
-  );
+  const topics = attempt.questions.map((q, i) => `  ${i + 1}. ${q.questionText}`);
   return [
     `The quiz covered ${attempt.questions.length} question(s) on these topics:`,
     ...topics,
@@ -159,7 +149,7 @@ function attemptLines(attempt: HolisticAttempt): string[] {
 /** Build the step-1 prompt: pick at most 3 relevant materials from the catalog. */
 export function buildMaterialSelectionPrompt(
   attempt: HolisticAttempt,
-  materials: CatalogMaterial[],
+  materials: CatalogMaterial[]
 ): string {
   const materialsList = materials
     .map((material) => {
@@ -189,7 +179,7 @@ export function buildMaterialSelectionPrompt(
 export function buildPageSelectionPrompt(
   attempt: HolisticAttempt,
   materialTitle: string,
-  pages: CatalogPage[],
+  pages: CatalogPage[]
 ): string {
   const pagesList = pages
     .map((page) =>
@@ -197,7 +187,7 @@ export function buildPageSelectionPrompt(
         `Page ${page.pageNumber}:`,
         `  Key Concept: ${page.keyConcept || "N/A"}`,
         `  Description: ${page.description || "N/A"}`,
-      ].join("\n"),
+      ].join("\n")
     )
     .join("\n");
 
@@ -218,7 +208,7 @@ export function buildPageSelectionPrompt(
 /** Map a model-chosen index back to the catalog entry, or null if out of range. */
 export function resolveSelectedMaterial<T extends { index: number }>(
   index: number,
-  materials: T[],
+  materials: T[]
 ): T | null {
   return materials.find((material) => material.index === index) ?? null;
 }
@@ -231,7 +221,7 @@ export function resolveSelectedMaterial<T extends { index: number }>(
  */
 export function dedupeSelectedMaterials(
   selected: SelectedMaterial[],
-  catalog: CatalogMaterial[],
+  catalog: CatalogMaterial[]
 ): { kept: SelectedMaterial[]; truncated: boolean } {
   const seen = new Set<number>();
   const valid: SelectedMaterial[] = [];
@@ -241,10 +231,7 @@ export function dedupeSelectedMaterials(
     seen.add(sel.material_index);
     valid.push(sel);
   }
-  return {
-    kept: valid.slice(0, MAX_MATERIALS),
-    truncated: valid.length > MAX_MATERIALS,
-  };
+  return { kept: valid.slice(0, MAX_MATERIALS), truncated: valid.length > MAX_MATERIALS };
 }
 
 /**
@@ -255,7 +242,7 @@ export function dedupeSelectedMaterials(
 export function clampPageRange(
   start: number,
   end: number,
-  availablePageNumbers: number[],
+  availablePageNumbers: number[]
 ): { start: number; end: number } | null {
   if (availablePageNumbers.length === 0) return null;
 

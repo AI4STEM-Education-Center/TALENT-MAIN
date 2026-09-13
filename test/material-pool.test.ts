@@ -56,10 +56,7 @@ describe("deepCopyLearningMaterial", () => {
       },
     });
 
-    const copy = await deepCopyLearningMaterial(source.id, {
-      teacherId: null,
-      classId: null,
-    });
+    const copy = await deepCopyLearningMaterial(source.id, { teacherId: null, classId: null });
     expect(copy).toMatchObject({
       teacherId: null,
       classId: null,
@@ -68,18 +65,9 @@ describe("deepCopyLearningMaterial", () => {
       processingStatus: "SUCCESS",
     });
     expect(copy!.storageKey).not.toBe(source.storageKey);
-    expect(copy!.topic).toMatchObject({
-      name: "Motion",
-      teacherId: null,
-      contentType: "MATERIAL",
-    });
-    const page = await prisma.materialPage.findFirstOrThrow({
-      where: { materialId: copy!.id },
-    });
-    expect(page).toMatchObject({
-      keyConcept: "Net force",
-      description: "Newton's second law",
-    });
+    expect(copy!.topic).toMatchObject({ name: "Motion", teacherId: null, contentType: "MATERIAL" });
+    const page = await prisma.materialPage.findFirstOrThrow({ where: { materialId: copy!.id } });
+    expect(page).toMatchObject({ keyConcept: "Net force", description: "Newton's second law" });
     expect(page.storageKey).not.toContain("/source/");
     expect(copyS3Object).toHaveBeenCalledTimes(2);
   });

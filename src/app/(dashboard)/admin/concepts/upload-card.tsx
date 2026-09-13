@@ -15,13 +15,7 @@ interface UploadCardProps {
 }
 
 /** Presentational upload card: hidden file input, banner, expandable row details. */
-export function UploadCard({
-  title,
-  description,
-  ariaLabel,
-  onFile,
-  onSuccess,
-}: UploadCardProps) {
+export function UploadCard({ title, description, ariaLabel, onFile, onSuccess }: UploadCardProps) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState<UploadResult | null>(null);
@@ -68,12 +62,7 @@ export function UploadCard({
           onChange={handleChange}
           className="hidden"
         />
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => fileRef.current?.click()}
-          disabled={uploading}
-        >
+        <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} disabled={uploading}>
           {uploading ? (
             <Loader2 className="size-4 mr-1 animate-spin" />
           ) : (
@@ -100,9 +89,7 @@ export function UploadCard({
               {detailCount} row detail{detailCount === 1 ? "" : "s"}
             </summary>
             <ul className="mt-2 space-y-1 list-disc pl-4">
-              {result?.details?.map((detail) => (
-                <li key={detail}>{detail}</li>
-              ))}
+              {result?.details?.map((detail) => <li key={detail}>{detail}</li>)}
             </ul>
           </details>
         )}

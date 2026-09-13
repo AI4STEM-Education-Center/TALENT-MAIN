@@ -1,10 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import {
-  getSmtpConfig,
-  verifyAndTest,
-  type ResolvedSmtpConfig,
-} from "@/lib/email";
+import { getSmtpConfig, verifyAndTest, type ResolvedSmtpConfig } from "@/lib/email";
 
 /**
  * POST /api/admin/smtp/test
@@ -21,10 +17,8 @@ export async function POST(req: Request) {
   const cfg = await getSmtpConfig();
   if (!cfg) {
     return NextResponse.json(
-      {
-        error: "No SMTP server is configured yet. Save a configuration first.",
-      },
-      { status: 400 },
+      { error: "No SMTP server is configured yet. Save a configuration first." },
+      { status: 400 }
     );
   }
 
@@ -49,9 +43,6 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return NextResponse.json(
-      { error: `SMTP test failed: ${message}` },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: `SMTP test failed: ${message}` }, { status: 400 });
   }
 }

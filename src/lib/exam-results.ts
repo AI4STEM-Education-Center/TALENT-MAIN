@@ -167,7 +167,7 @@ export type SnapshotAnswerInput = {
  */
 export function buildReviewSnapshot(
   questions: SnapshotQuestionInput[],
-  answers: SnapshotAnswerInput[],
+  answers: SnapshotAnswerInput[]
 ): ReviewSnapshot {
   const answerByQuestion = new Map(answers.map((a) => [a.questionId, a]));
   return {
@@ -218,9 +218,7 @@ export function parseReviewSnapshot(raw: string | null): ReviewSnapshot {
   if (!raw) return { questions: [] };
   try {
     const parsed = JSON.parse(raw);
-    return {
-      questions: Array.isArray(parsed?.questions) ? parsed.questions : [],
-    };
+    return { questions: Array.isArray(parsed?.questions) ? parsed.questions : [] };
   } catch {
     return { questions: [] };
   }
@@ -233,7 +231,7 @@ export function parseReviewSnapshot(raw: string | null): ReviewSnapshot {
  * question ids, and teacher misconception labels are deliberately absent.
  */
 export function snapshotToStudentMistakes(
-  snapshot: ReviewSnapshot,
+  snapshot: ReviewSnapshot
 ): StudentMistakeSource[] {
   return snapshot.questions.flatMap<StudentMistakeSource>((question, index) => {
     if (question.isCorrect) return [];
@@ -287,7 +285,7 @@ export function snapshotToStudentMistakes(
                         : null,
                   },
                 ]
-              : [],
+              : []
           ),
         },
       },
@@ -301,10 +299,8 @@ export function snapshotToStudentMistakes(
 const optionDisplayText = (o: SnapshotOption): string =>
   o.text || o.imageAlt || (o.imageStorageKey ? "(image choice)" : "");
 
-const joinTexts = (
-  opts: SnapshotOption[],
-  pick: (o: SnapshotOption) => boolean,
-): string[] => opts.flatMap((o) => (pick(o) ? [optionDisplayText(o)] : []));
+const joinTexts = (opts: SnapshotOption[], pick: (o: SnapshotOption) => boolean): string[] =>
+  opts.flatMap((o) => (pick(o) ? [optionDisplayText(o)] : []));
 
 /** True for snapshot questions persisted from a NUMERIC question (no options). */
 const isNumeric = (q: SnapshotQuestion): boolean => q.answerMode === "NUMERIC";
@@ -316,9 +312,7 @@ const isNumeric = (q: SnapshotQuestion): boolean => q.answerMode === "NUMERIC";
  * and the prompts (see recommendation.ts) deliberately never reveal which
  * specific questions were wrong.
  */
-export function snapshotToHolisticInput(
-  snapshot: ReviewSnapshot,
-): HolisticAttempt {
+export function snapshotToHolisticInput(snapshot: ReviewSnapshot): HolisticAttempt {
   const questions = snapshot.questions.map((q) => ({
     questionText: q.text,
     isCorrect: q.isCorrect,
@@ -344,16 +338,13 @@ export function snapshotToSummaryAttempt(
     className: string;
     topicName: string;
     quizName: string;
-  },
+  }
 ): QuizReviewAttempt {
   return {
     score: meta.score,
     completedAt: meta.completedAt,
     class: { name: meta.className },
-    quiz: {
-      name: meta.quizName,
-      topic: meta.topicName ? { name: meta.topicName } : null,
-    },
+    quiz: { name: meta.quizName, topic: meta.topicName ? { name: meta.topicName } : null },
     answers: snapshot.questions.map((q) => {
       // NUMERIC questions carry the submitted/correct numbers through to the
       // prompt builder (which formats them, +unit); choice answers stay
@@ -375,14 +366,10 @@ export function snapshotToSummaryAttempt(
       const selected = joinTexts(q.options, (o) => o.selected);
       return {
         isCorrect: q.isCorrect,
-        selectedOption:
-          selected.length > 0 ? { text: selected.join(" | ") } : null,
+        selectedOption: selected.length > 0 ? { text: selected.join(" | ") } : null,
         question: {
           text: q.text,
-          options: q.options.map((o) => ({
-            text: optionDisplayText(o),
-            isCorrect: o.isCorrect,
-          })),
+          options: q.options.map((o) => ({ text: optionDisplayText(o), isCorrect: o.isCorrect })),
         },
       };
     }),
@@ -400,10 +387,7 @@ export type StoredRecommendation = {
   reason: string;
   pages: StoredRecPage[];
 };
-export type StoredMisconception = {
-  misconceptionId: string;
-  statement: string;
-};
+export type StoredMisconception = { misconceptionId: string; statement: string };
 export type StoredQuestionMisconceptions = {
   questionId: string | null;
   questionIndex: number;
@@ -444,11 +428,8 @@ export type SimulationRecommendationView = StoredSimulationRecommendation & {
  * this key is what "the same simulation" means at display time. Falls back to
  * the id when a simulation carries no title/topic at all.
  */
-export function simulationDisplayKey(
-  sim: StoredSimulationRecommendation,
-): string {
-  const norm = (value: string | null) =>
-    value?.trim().toLowerCase().replace(/\s+/g, " ") ?? "";
+export function simulationDisplayKey(sim: StoredSimulationRecommendation): string {
+  const norm = (value: string | null) => value?.trim().toLowerCase().replace(/\s+/g, " ") ?? "";
   const key = `${norm(sim.title)}|${norm(sim.topic)}`;
   return key === "|" ? sim.simulationId : key;
 }
@@ -460,10 +441,10 @@ export function simulationDisplayKey(
  * still contain the duplicates.
  */
 export function dedupeStoredSimulations<T extends SimulationRecommendationView>(
-  simulations: T[],
+  simulations: T[]
 ): T[] {
   const availableKeys = new Set(
-    simulations.filter((sim) => !sim.unavailable).map(simulationDisplayKey),
+    simulations.filter((sim) => !sim.unavailable).map(simulationDisplayKey)
   );
   const seen = new Set<string>();
   return simulations.filter((sim) => {
@@ -502,15 +483,10 @@ export type PresignedRecommendations = {
 function isStoredMisconception(value: unknown): value is StoredMisconception {
   if (!value || typeof value !== "object") return false;
   const entry = value as { misconceptionId?: unknown; statement?: unknown };
-  return (
-    typeof entry.misconceptionId === "string" &&
-    typeof entry.statement === "string"
-  );
+  return typeof entry.misconceptionId === "string" && typeof entry.statement === "string";
 }
 
-function isStoredQuestionMisconceptions(
-  value: unknown,
-): value is StoredQuestionMisconceptions {
+function isStoredQuestionMisconceptions(value: unknown): value is StoredQuestionMisconceptions {
   if (!value || typeof value !== "object") return false;
   const entry = value as {
     questionId?: unknown;
@@ -528,9 +504,7 @@ function isStoredQuestionMisconceptions(
   );
 }
 
-function isStoredSimulationRecommendation(
-  value: unknown,
-): value is StoredSimulationRecommendation {
+function isStoredSimulationRecommendation(value: unknown): value is StoredSimulationRecommendation {
   if (!value || typeof value !== "object") return false;
   const entry = value as {
     simulationId?: unknown;
@@ -547,9 +521,7 @@ function isStoredSimulationRecommendation(
 }
 
 /** Safely parse the stored recommendations JSON blob. */
-export function parseStoredRecommendations(
-  raw: string | null,
-): StoredRecommendations {
+export function parseStoredRecommendations(raw: string | null): StoredRecommendations {
   if (!raw) return { items: [], truncated: false };
   try {
     const parsed = JSON.parse(raw);
@@ -578,7 +550,7 @@ export function parseStoredRecommendations(
  */
 export async function mapPresignedRecommendations(
   stored: StoredRecommendations,
-  presign: (storageKey: string) => Promise<string>,
+  presign: (storageKey: string) => Promise<string>
 ): Promise<PresignedRecommendations> {
   const items = await Promise.all(
     stored.items.map(async (rec) => {
@@ -587,27 +559,22 @@ export async function mapPresignedRecommendations(
       const settled = await Promise.all(
         rec.pages.map(async (pg): Promise<PresignedRecPage | null> => {
           try {
-            return {
-              pageNumber: pg.pageNumber,
-              imageUrl: await presign(pg.storageKey),
-            };
+            return { pageNumber: pg.pageNumber, imageUrl: await presign(pg.storageKey) };
           } catch {
             // Skip a page we can't presign; keep the rest of the recommendation.
             return null;
           }
-        }),
+        })
       );
       const pages = settled.filter((p): p is PresignedRecPage => p !== null);
       const { pages: _omit, ...rest } = rec;
       return { ...rest, pages };
-    }),
+    })
   );
   return {
     items,
     truncated: stored.truncated,
     ...(stored.simulations ? { simulations: stored.simulations } : {}),
-    ...(stored.errorMisconceptions
-      ? { errorMisconceptions: stored.errorMisconceptions }
-      : {}),
+    ...(stored.errorMisconceptions ? { errorMisconceptions: stored.errorMisconceptions } : {}),
   };
 }

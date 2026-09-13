@@ -18,14 +18,10 @@ function jsonReq(body: unknown) {
 }
 
 function asTeacher(userId: string) {
-  mockAuth.mockResolvedValue({
-    user: { id: userId, role: "TEACHER" },
-  } as never);
+  mockAuth.mockResolvedValue({ user: { id: userId, role: "TEACHER" } } as never);
 }
 function asStudent(userId: string) {
-  mockAuth.mockResolvedValue({
-    user: { id: userId, role: "STUDENT" },
-  } as never);
+  mockAuth.mockResolvedValue({ user: { id: userId, role: "STUDENT" } } as never);
 }
 
 beforeEach(async () => {
@@ -75,9 +71,7 @@ describe("GET /api/classes", () => {
     const { teacher } = await createTeacher();
     const cls = await createClass(teacher.id, "Physics");
     const { user: studentUser, student } = await createStudent();
-    await prisma.classEnrollment.create({
-      data: { classId: cls.id, studentId: student.id },
-    });
+    await prisma.classEnrollment.create({ data: { classId: cls.id, studentId: student.id } });
     // A class the student is NOT in.
     await createClass(teacher.id, "Chemistry");
 
@@ -103,9 +97,7 @@ describe("POST /api/classes", () => {
   it("creates a class for the teacher", async () => {
     const { user, teacher } = await createTeacher();
     asTeacher(user.id);
-    const res = await POST(
-      jsonReq({ name: " Algebra ", description: " intro " }),
-    );
+    const res = await POST(jsonReq({ name: " Algebra ", description: " intro " }));
     expect(res.status).toBe(201);
     const body = await res.json();
     expect(body.name).toBe("Algebra");
@@ -120,20 +112,10 @@ describe("POST /api/classes", () => {
       jsonReq({
         name: "Roster Class",
         studentList: [
-          {
-            orgDefinedId: "#811947904",
-            firstName: " Ada ",
-            lastName: " Lovelace ",
-            email: "Ada@Example.com",
-          },
-          {
-            orgDefinedId: "222",
-            firstName: "Alan",
-            lastName: "Turing",
-            email: "alan@example.com",
-          },
+          { orgDefinedId: "#811947904", firstName: " Ada ", lastName: " Lovelace ", email: "Ada@Example.com" },
+          { orgDefinedId: "222", firstName: "Alan", lastName: "Turing", email: "alan@example.com" },
         ],
-      }),
+      })
     );
     const body = await res.json();
     const roster = await prisma.classStudentList.findMany({

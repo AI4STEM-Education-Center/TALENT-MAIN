@@ -6,9 +6,7 @@ vi.mock("@/lib/auth", () => ({ auth: (handler: unknown) => handler }));
 
 import middleware from "@/proxy";
 
-type Session = {
-  user?: { role?: string; consentDecision?: string | null };
-} | null;
+type Session = { user?: { role?: string; consentDecision?: string | null } } | null;
 
 function makeReq({
   host,
@@ -32,8 +30,7 @@ function makeReq({
 }
 
 // middleware is the unwrapped handler thanks to the mock above.
-const run = (req: ReturnType<typeof makeReq>) =>
-  (middleware as unknown as (r: never) => Response)(req);
+const run = (req: ReturnType<typeof makeReq>) => (middleware as unknown as (r: never) => Response)(req);
 
 describe("middleware host validation", () => {
   it("forbids an unknown host", () => {
@@ -42,18 +39,12 @@ describe("middleware host validation", () => {
   });
 
   it("allows the apex ai4talent.org and its subdomains", () => {
-    expect(run(makeReq({ host: "ai4talent.org", path: "/" })).status).not.toBe(
-      403,
-    );
-    expect(
-      run(makeReq({ host: "dev.ai4talent.org", path: "/" })).status,
-    ).not.toBe(403);
+    expect(run(makeReq({ host: "ai4talent.org", path: "/" })).status).not.toBe(403);
+    expect(run(makeReq({ host: "dev.ai4talent.org", path: "/" })).status).not.toBe(403);
   });
 
   it("allows localhost", () => {
-    expect(run(makeReq({ host: "localhost:3000", path: "/" })).status).not.toBe(
-      403,
-    );
+    expect(run(makeReq({ host: "localhost:3000", path: "/" })).status).not.toBe(403);
   });
 });
 
@@ -65,27 +56,18 @@ describe("middleware auth + routing", () => {
 
   it("lets anonymous users reach the password recovery pages", () => {
     for (const path of ["/forgot-password", "/reset-password"]) {
-      expect(
-        run(makeReq({ host: "localhost", path })).headers.get("location"),
-      ).toBeNull();
+      expect(run(makeReq({ host: "localhost", path })).headers.get("location")).toBeNull();
     }
   });
 
   it("treats the password reset API as public (it lives under /api/auth)", () => {
-    for (const path of [
-      "/api/auth/forgot-password",
-      "/api/auth/reset-password",
-    ]) {
-      expect(
-        run(makeReq({ host: "localhost", path })).headers.get("location"),
-      ).toBeNull();
+    for (const path of ["/api/auth/forgot-password", "/api/auth/reset-password"]) {
+      expect(run(makeReq({ host: "localhost", path })).headers.get("location")).toBeNull();
     }
   });
 
   it("treats the invitations API as public", () => {
-    const res = run(
-      makeReq({ host: "localhost", path: "/api/invitations/abc" }),
-    );
+    const res = run(makeReq({ host: "localhost", path: "/api/invitations/abc" }));
     expect(res.headers.get("location")).toBeNull();
   });
 
@@ -99,11 +81,7 @@ describe("middleware auth + routing", () => {
 
   it("redirects a STUDENT away from /teacher to /student", () => {
     const res = run(
-      makeReq({
-        host: "dev.ai4talent.org",
-        path: "/teacher",
-        session: { user: { role: "STUDENT" } },
-      }),
+      makeReq({ host: "dev.ai4talent.org", path: "/teacher", session: { user: { role: "STUDENT" } } })
     );
     expect(res.status).toBe(307);
     expect(res.headers.get("location")).toContain("/student");
@@ -111,11 +89,7 @@ describe("middleware auth + routing", () => {
 
   it("redirects a TEACHER away from /student to /teacher", () => {
     const res = run(
-      makeReq({
-        host: "dev.ai4talent.org",
-        path: "/student",
-        session: { user: { role: "TEACHER" } },
-      }),
+      makeReq({ host: "dev.ai4talent.org", path: "/student", session: { user: { role: "TEACHER" } } })
     );
     expect(res.status).toBe(307);
     expect(res.headers.get("location")).toContain("/teacher");
@@ -127,7 +101,7 @@ describe("middleware auth + routing", () => {
         host: "dev.ai4talent.org",
         path: "/teacher",
         session: { user: { role: "TEACHER", consentDecision: "AGREE" } },
-      }),
+      })
     );
     expect(res.headers.get("location")).toBeNull();
   });
@@ -136,11 +110,7 @@ describe("middleware auth + routing", () => {
 describe("middleware IRB consent hard-gate", () => {
   it("redirects an undecided TEACHER's page load to /teacher/consent-required", () => {
     const res = run(
-      makeReq({
-        host: "dev.ai4talent.org",
-        path: "/teacher/classes",
-        session: { user: { role: "TEACHER" } },
-      }),
+      makeReq({ host: "dev.ai4talent.org", path: "/teacher/classes", session: { user: { role: "TEACHER" } } })
     );
     expect(res.status).toBe(307);
     expect(res.headers.get("location")).toContain("/teacher/consent-required");
@@ -152,18 +122,14 @@ describe("middleware IRB consent hard-gate", () => {
         host: "dev.ai4talent.org",
         path: "/teacher",
         session: { user: { role: "TEACHER", consentDecision: "DECLINE" } },
-      }),
+      })
     );
     expect(res.headers.get("location")).toContain("/teacher/consent-required");
   });
 
   it("never redirects away from the consent-required page itself (no loop)", () => {
     const res = run(
-      makeReq({
-        host: "dev.ai4talent.org",
-        path: "/teacher/consent-required",
-        session: { user: { role: "TEACHER" } },
-      }),
+      makeReq({ host: "dev.ai4talent.org", path: "/teacher/consent-required", session: { user: { role: "TEACHER" } } })
     );
     expect(res.headers.get("location")).toBeNull();
   });
@@ -174,7 +140,7 @@ describe("middleware IRB consent hard-gate", () => {
         host: "dev.ai4talent.org",
         path: "/api/classes",
         session: { user: { role: "TEACHER" } },
-      }),
+      })
     );
     expect(res.status).toBe(403);
     expect(res.headers.get("location")).toBeNull();
@@ -189,10 +155,8 @@ describe("middleware IRB consent hard-gate", () => {
         makeReq({
           host: "dev.ai4talent.org",
           path,
-          session: {
-            user: { role: "TEACHER", consentDecision: "NOT_REQUIRED" },
-          },
-        }),
+          session: { user: { role: "TEACHER", consentDecision: "NOT_REQUIRED" } },
+        })
       );
       expect(res.headers.get("location")).toBeNull();
     }
@@ -204,18 +168,14 @@ describe("middleware IRB consent hard-gate", () => {
         host: "dev.ai4talent.org",
         path: "/api/classes",
         session: { user: { role: "TEACHER", consentDecision: "NOT_REQUIRED" } },
-      }),
+      })
     );
     expect(res.status).not.toBe(403);
   });
 
   it("never blocks /api/consent itself, even for an undecided teacher", () => {
     const res = run(
-      makeReq({
-        host: "dev.ai4talent.org",
-        path: "/api/consent",
-        session: { user: { role: "TEACHER" } },
-      }),
+      makeReq({ host: "dev.ai4talent.org", path: "/api/consent", session: { user: { role: "TEACHER" } } })
     );
     expect(res.status).not.toBe(403);
   });
@@ -226,7 +186,7 @@ describe("middleware IRB consent hard-gate", () => {
         host: "dev.ai4talent.org",
         path: "/student",
         session: { user: { role: "STUDENT", consentDecision: "DECLINE" } },
-      }),
+      })
     );
     expect(res.headers.get("location")).toBeNull();
   });

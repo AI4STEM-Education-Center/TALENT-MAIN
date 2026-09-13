@@ -2,12 +2,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { ConceptsClient } from "./concepts-client";
-import type {
-  ConceptRow,
-  MisconceptionRow,
-  MappingRow,
-  ExternalRefRow,
-} from "./types";
+import type { ConceptRow, MisconceptionRow, MappingRow, ExternalRefRow } from "./types";
 
 export default async function AdminConceptsPage() {
   const session = await auth();
@@ -30,9 +25,7 @@ export default async function AdminConceptsPage() {
         concept: { select: { displayName: true } },
       },
     }),
-    prisma.conceptExternalRef.findMany({
-      orderBy: [{ conceptId: "asc" }, { refCode: "asc" }],
-    }),
+    prisma.conceptExternalRef.findMany({ orderBy: [{ conceptId: "asc" }, { refCode: "asc" }] }),
   ]);
 
   const conceptRows: ConceptRow[] = concepts.map((c) => ({

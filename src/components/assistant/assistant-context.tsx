@@ -68,9 +68,5 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(() => ({ config, open, setOpen }), [config, open]);
 
-  return (
-    <AssistantContext.Provider value={value}>
-      {children}
-    </AssistantContext.Provider>
-  );
+  return <AssistantContext.Provider value={value}>{children}</AssistantContext.Provider>;
 }

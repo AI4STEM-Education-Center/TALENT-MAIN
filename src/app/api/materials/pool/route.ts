@@ -4,15 +4,10 @@ import { prisma } from "@/lib/prisma";
 
 export async function GET() {
   const actor = await getContentActor();
-  if (!actor)
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const materials = await prisma.learningMaterial.findMany({
-    where: {
-      teacherId: null,
-      uploadStatus: "READY",
-      processingStatus: "SUCCESS",
-    },
+    where: { teacherId: null, uploadStatus: "READY", processingStatus: "SUCCESS" },
     include: { topic: true, _count: { select: { pages: true } } },
     orderBy: [{ topic: { order: "asc" } }, { createdAt: "desc" }],
   });
@@ -26,11 +21,7 @@ export async function GET() {
       },
       select: { sourceMaterialId: true },
     });
-    importedIds = new Set(
-      copies.flatMap((copy) =>
-        copy.sourceMaterialId ? [copy.sourceMaterialId] : [],
-      ),
-    );
+    importedIds = new Set(copies.flatMap((copy) => copy.sourceMaterialId ? [copy.sourceMaterialId] : []));
   }
 
   return NextResponse.json({

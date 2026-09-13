@@ -20,7 +20,7 @@ export const runtime = "nodejs";
  */
 export async function GET(
   _req: Request,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await resolveAssistantSession();
@@ -29,17 +29,14 @@ export async function GET(
     }
     const { ctx, settings } = session;
     if (!settings.enabled) {
-      return NextResponse.json(
-        { error: "This assistant is currently turned off." },
-        { status: 503 },
-      );
+      return NextResponse.json({ error: "This assistant is currently turned off." }, { status: 503 });
     }
 
     const { id } = await params;
     const conversation = await readUserConversation(
       { userId: ctx.userId, audience: ctx.audience },
       id,
-      settings.historyRetentionDays,
+      settings.historyRetentionDays
     );
     if (!conversation) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -48,9 +45,6 @@ export async function GET(
     return NextResponse.json(conversation);
   } catch (error) {
     logApiError("ASSISTANT_CONVERSATION_GET", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

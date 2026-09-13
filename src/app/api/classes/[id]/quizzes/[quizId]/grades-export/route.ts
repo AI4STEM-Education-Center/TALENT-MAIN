@@ -15,9 +15,7 @@ const nameKey = (first: string, last: string) =>
 async function getTeacherClass(userId: string, classId: string) {
   const teacher = await prisma.teacher.findUnique({ where: { userId } });
   if (!teacher) return null;
-  return prisma.class.findFirst({
-    where: { id: classId, teacherId: teacher.id },
-  });
+  return prisma.class.findFirst({ where: { id: classId, teacherId: teacher.id } });
 }
 
 // GET: download the class roster as an eLC-format CSV with each student's
@@ -27,7 +25,7 @@ async function getTeacherClass(userId: string, classId: string) {
 // either calculation.
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string; quizId: string }> },
+  { params }: { params: Promise<{ id: string; quizId: string }> }
 ) {
   const session = await auth();
   if (!session?.user || session.user.role !== "TEACHER") {
@@ -36,32 +34,20 @@ export async function GET(
 
   const { id, quizId } = await params;
   const cls = await getTeacherClass(session.user.id, id);
-  if (!cls)
-    return NextResponse.json({ error: "Class not found" }, { status: 404 });
+  if (!cls) return NextResponse.json({ error: "Class not found" }, { status: 404 });
 
   // The quiz must actually be assigned to this class.
   const assigned = await prisma.classQuiz.findUnique({
     where: { classId_quizId: { classId: id, quizId } },
   });
-  if (!assigned)
-    return NextResponse.json(
-      { error: "Quiz not assigned to this class" },
-      { status: 404 },
-    );
+  if (!assigned) return NextResponse.json({ error: "Quiz not assigned to this class" }, { status: 404 });
 
-  const quiz = await prisma.quiz.findUnique({
-    where: { id: quizId },
-    select: { name: true },
-  });
-  if (!quiz)
-    return NextResponse.json({ error: "Quiz not found" }, { status: 404 });
+  const quiz = await prisma.quiz.findUnique({ where: { id: quizId }, select: { name: true } });
+  if (!quiz) return NextResponse.json({ error: "Quiz not found" }, { status: 404 });
 
   const modeParam = req.nextUrl.searchParams.get("mode") ?? "best-attempt";
   if (modeParam !== "best-attempt" && modeParam !== "completion") {
-    return NextResponse.json(
-      { error: "Invalid grade calculation mode" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: "Invalid grade calculation mode" }, { status: 400 });
   }
   const mode: GradeExportMode = modeParam;
 
@@ -69,11 +55,8 @@ export async function GET(
   const maxPoints = Number(maxPointsParam);
   if (!Number.isFinite(maxPoints) || maxPoints <= 0 || maxPoints > 1_000_000) {
     return NextResponse.json(
-      {
-        error:
-          "Max points must be a number greater than 0 and no more than 1,000,000",
-      },
-      { status: 400 },
+      { error: "Max points must be a number greater than 0 and no more than 1,000,000" },
+      { status: 400 }
     );
   }
 
@@ -92,18 +75,14 @@ export async function GET(
       where: { classId: id, quizId, completedAt: { not: null } },
       select: {
         score: true,
-        student: {
-          select: { user: { select: { firstName: true, lastName: true } } },
-        },
+        student: { select: { user: { select: { firstName: true, lastName: true } } } },
       },
     }),
     prisma.quizProgress.findMany({
       where: { classId: id, quizId, manualGrade: { not: null } },
       select: {
         manualGrade: true,
-        student: {
-          select: { user: { select: { firstName: true, lastName: true } } },
-        },
+        student: { select: { user: { select: { firstName: true, lastName: true } } } },
       },
     }),
   ]);
@@ -112,11 +91,7 @@ export async function GET(
   // case-insensitive "first|last" name key the class roster page uses.
   const gradeDataByName = new Map<
     string,
-    {
-      bestScore: number | null;
-      hasCompletedAttempt: boolean;
-      manualGrade: number | null;
-    }
+    { bestScore: number | null; hasCompletedAttempt: boolean; manualGrade: number | null }
   >();
   for (const a of attempts) {
     const key = nameKey(a.student.user.firstName, a.student.user.lastName);
@@ -126,16 +101,12 @@ export async function GET(
       hasCompletedAttempt: false,
       manualGrade: null,
     };
-    row.bestScore =
-      row.bestScore === null ? score : Math.max(row.bestScore, score);
+    row.bestScore = row.bestScore === null ? score : Math.max(row.bestScore, score);
     row.hasCompletedAttempt = true;
     gradeDataByName.set(key, row);
   }
   for (const progress of progressRows) {
-    const key = nameKey(
-      progress.student.user.firstName,
-      progress.student.user.lastName,
-    );
+    const key = nameKey(progress.student.user.firstName, progress.student.user.lastName);
     const row = gradeDataByName.get(key) ?? {
       bestScore: null,
       hasCompletedAttempt: false,
@@ -160,16 +131,13 @@ export async function GET(
           }),
           mode,
           maxPoints,
-        }),
+        })
       ),
-    })),
+    }))
   );
 
   const safeName =
-    quiz.name
-      .replace(/[^\w\- ]+/g, "")
-      .trim()
-      .replace(/\s+/g, "_") || "quiz";
+    quiz.name.replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "_") || "quiz";
   return new NextResponse(csv, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",

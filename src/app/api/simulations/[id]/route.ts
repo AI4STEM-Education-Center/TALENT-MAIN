@@ -12,13 +12,9 @@ export const runtime = "nodejs";
  * storage keys — content is served only through ./content). Admins see
  * everything; teachers see sims on their own quizzes and pool quizzes.
  */
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const [actor, { id }] = await Promise.all([getContentActor(), params]);
-  if (!actor)
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const sim = await prisma.questionSimulation.findUnique({
     where: { id },
@@ -66,20 +62,15 @@ export async function GET(
  * is best-effort — the DB row is the source of truth, and an orphaned object is
  * harmless — so a storage error does not fail the request.
  */
-export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const [actor, { id }] = await Promise.all([getContentActor(), params]);
-  if (!actor)
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const sim = await prisma.questionSimulation.findUnique({
     where: { id },
     include: {
       question: { select: { quiz: { select: { teacherId: true } } } },
       feedback: { select: { previousStorageKey: true } },
-      versions: true,
     },
   });
   if (!sim || !canManage(actor, sim.question.quiz)) {
@@ -88,41 +79,27 @@ export async function DELETE(
 
   // Every S3 key this row is responsible for: the current artifact plus each
   // version snapshotted on a feedback round.
-  const candidateKeys = new Map<string, string>();
-  if (sim.storageKey && sim.bucket)
-    candidateKeys.set(sim.storageKey, sim.bucket);
-  for (const f of sim.feedback)
-    if (f.previousStorageKey && sim.bucket)
-      candidateKeys.set(f.previousStorageKey, sim.bucket);
-  for (const v of sim.versions) candidateKeys.set(v.storageKey, v.bucket);
+  const bucket = sim.bucket;
+  const candidateKeys = new Set<string>();
+  if (sim.storageKey) candidateKeys.add(sim.storageKey);
+  for (const f of sim.feedback) if (f.previousStorageKey) candidateKeys.add(f.previousStorageKey);
 
   await prisma.questionSimulation.delete({ where: { id: sim.id } });
 
   // With the row gone, an artifact is safe to remove only when nothing else
   // points at it (a deep-copied sibling, or another sibling's version history).
-  {
-    for (const [key, bucket] of candidateKeys) {
+  if (bucket) {
+    for (const key of candidateKeys) {
       try {
         const [stillUsed, stillReferenced] = await Promise.all([
           prisma.questionSimulation.count({ where: { storageKey: key } }),
-          prisma.simulationFeedback.count({
-            where: { previousStorageKey: key },
-          }),
+          prisma.simulationFeedback.count({ where: { previousStorageKey: key } }),
         ]);
-        if (
-          stillUsed === 0 &&
-          stillReferenced === 0 &&
-          (await prisma.simulationVersion.count({
-            where: { storageKey: key },
-          })) === 0
-        ) {
+        if (stillUsed === 0 && stillReferenced === 0) {
           await deleteS3Object(bucket, key);
         }
       } catch (e) {
-        console.error(
-          `[Simulation] Best-effort delete of artifact ${key} failed:`,
-          e,
-        );
+        console.error(`[Simulation] Best-effort delete of artifact ${key} failed:`, e);
       }
     }
   }

@@ -4,10 +4,7 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
-import {
-  ExamHistoryList,
-  type ExamHistoryItem,
-} from "@/components/student/ExamHistoryList";
+import { ExamHistoryList, type ExamHistoryItem } from "@/components/student/ExamHistoryList";
 
 export default async function ClassExamHistoryPage({
   params,
@@ -30,10 +27,7 @@ export default async function ClassExamHistoryPage({
   });
   if (!enrollment) notFound();
 
-  const cls = await prisma.class.findUnique({
-    where: { id },
-    select: { name: true },
-  });
+  const cls = await prisma.class.findUnique({ where: { id }, select: { name: true } });
   if (!cls) notFound();
 
   const results = await prisma.examResult.findMany({

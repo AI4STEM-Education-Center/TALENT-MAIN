@@ -4,12 +4,5 @@ import { QuizEditor } from "@/components/quiz/QuizEditor";
 
 export default function TeacherQuizDetailPage() {
   const { id } = useParams<{ id: string }>();
-  return (
-    <QuizEditor
-      quizId={id}
-      backHref="/teacher/quizzes"
-      backLabel="Quizzes"
-      previewHref={`/teacher/quizzes/${id}/preview`}
-    />
-  );
+  return <QuizEditor quizId={id} backHref="/teacher/quizzes" backLabel="Quizzes" />;
 }

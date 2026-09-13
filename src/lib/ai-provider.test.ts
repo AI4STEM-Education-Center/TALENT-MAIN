@@ -27,27 +27,21 @@ function provider(overrides: Partial<ResolvedProvider>): ResolvedProvider {
 describe("buildProviderHeaders", () => {
   it("adds cf-aig-byok-alias for cloudflare with an alias", () => {
     const headers = buildProviderHeaders(
-      provider({ providerType: "cloudflare", cfAigByokAlias: "my-alias" }),
+      provider({ providerType: "cloudflare", cfAigByokAlias: "my-alias" })
     );
     expect(headers).toEqual({ "cf-aig-byok-alias": "my-alias" });
   });
 
   it("returns no headers for cloudflare without an alias", () => {
     expect(
-      buildProviderHeaders(
-        provider({ providerType: "cloudflare", cfAigByokAlias: null }),
-      ),
+      buildProviderHeaders(provider({ providerType: "cloudflare", cfAigByokAlias: null }))
     ).toEqual({});
   });
 
   it("returns no headers for openai/local providers", () => {
-    expect(buildProviderHeaders(provider({ providerType: "openai" }))).toEqual(
-      {},
-    );
+    expect(buildProviderHeaders(provider({ providerType: "openai" }))).toEqual({});
     expect(
-      buildProviderHeaders(
-        provider({ providerType: "local", cfAigByokAlias: "ignored" }),
-      ),
+      buildProviderHeaders(provider({ providerType: "local", cfAigByokAlias: "ignored" }))
     ).toEqual({});
   });
 });
@@ -67,9 +61,7 @@ describe("thinkingParams", () => {
 
   it("applies to every provider type, not just OpenAI", () => {
     for (const providerType of ["openai", "local", "cloudflare"] as const) {
-      expect(
-        thinkingParams(provider({ providerType, thinkingLevel: "low" })),
-      ).toEqual({
+      expect(thinkingParams(provider({ providerType, thinkingLevel: "low" }))).toEqual({
         reasoning_effort: "low",
       });
     }

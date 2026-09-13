@@ -22,8 +22,6 @@ export const CONSENT_NOT_REQUIRED = "NOT_REQUIRED";
  * tools. Only an explicit AGREE — or the absence of any published form —
  * lets them through; null (undecided) and DECLINE both gate.
  */
-export function isTeacherConsentBlocked(
-  decision: string | null | undefined,
-): boolean {
+export function isTeacherConsentBlocked(decision: string | null | undefined): boolean {
   return decision !== "AGREE" && decision !== CONSENT_NOT_REQUIRED;
 }

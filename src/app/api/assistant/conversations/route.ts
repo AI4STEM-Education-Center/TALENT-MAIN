@@ -21,15 +21,12 @@ export async function GET() {
     }
     const { ctx, settings } = session;
     if (!settings.enabled) {
-      return NextResponse.json(
-        { error: "This assistant is currently turned off." },
-        { status: 503 },
-      );
+      return NextResponse.json({ error: "This assistant is currently turned off." }, { status: 503 });
     }
 
     const conversations = await listUserConversations(
       { userId: ctx.userId, audience: ctx.audience },
-      settings.historyRetentionDays,
+      settings.historyRetentionDays
     );
 
     return NextResponse.json({
@@ -38,9 +35,6 @@ export async function GET() {
     });
   } catch (error) {
     logApiError("ASSISTANT_CONVERSATIONS", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

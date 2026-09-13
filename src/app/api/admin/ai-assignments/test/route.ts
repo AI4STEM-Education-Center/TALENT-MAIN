@@ -6,13 +6,8 @@ import {
   thinkingParams,
   type UseCase,
 } from "@/lib/ai-provider";
-import {
-  streamChatCompletion,
-  streamOptionsFor,
-  transportFor,
-} from "@/lib/ai-streaming";
+import { streamChatCompletion, streamOptionsFor, transportFor } from "@/lib/ai-streaming";
 import { logApiError } from "@/lib/system-log";
-import { errorMessage } from "@/lib/errors";
 
 const VALID_USE_CASES: UseCase[] = [
   "pdf_description",
@@ -20,7 +15,6 @@ const VALID_USE_CASES: UseCase[] = [
   "recommendation",
   "quiz_extraction",
   "simulation_generation",
-  "simulation_chat",
   "student_assistant",
   "teacher_assistant",
 ];
@@ -42,10 +36,8 @@ export async function POST(req: Request) {
 
     if (!VALID_USE_CASES.includes(useCase as UseCase)) {
       return NextResponse.json(
-        {
-          error: `Invalid use case. Must be one of: ${VALID_USE_CASES.join(", ")}`,
-        },
-        { status: 400 },
+        { error: `Invalid use case. Must be one of: ${VALID_USE_CASES.join(", ")}` },
+        { status: 400 }
       );
     }
 
@@ -57,7 +49,7 @@ export async function POST(req: Request) {
           success: false,
           error: `No active provider configured for use case: ${useCase}`,
         },
-        { status: 200 },
+        { status: 200 }
       );
     }
 
@@ -75,23 +67,22 @@ export async function POST(req: Request) {
         messages: [
           {
             role: "user",
-            content:
-              "Please write a short paragraph testing the connection. Reply with at least 20 words.",
+            content: "Please write a short paragraph testing the connection. Reply with at least 20 words.",
           },
         ],
         max_completion_tokens: !isLocal ? 2000 : undefined,
         max_tokens: isLocal ? 2000 : undefined,
         service_tier:
           !isLocal &&
-          provider.serviceTier &&
-          ["auto", "default", "flex"].includes(provider.serviceTier)
+            provider.serviceTier &&
+            ["auto", "default", "flex"].includes(provider.serviceTier)
             ? (provider.serviceTier as any)
             : undefined,
         // Absent unless the assigned model has a level pinned, so the test call
         // exercises exactly the request the real use case will send.
         ...thinkingParams(provider),
       },
-      streamOptionsFor(transportFor(provider)),
+      streamOptionsFor(transportFor(provider))
     );
 
     return NextResponse.json({
@@ -110,11 +101,11 @@ export async function POST(req: Request) {
       serviceTier: provider.serviceTier,
       thinkingLevel: provider.thinkingLevel,
     });
-  } catch (error: unknown) {
+  } catch (error: any) {
     logApiError("AI_ASSIGNMENT_TEST", error);
     return NextResponse.json({
       success: false,
-      error: errorMessage(error) || "Connection test failed",
+      error: error.message || "Connection test failed",
     });
   }
 }
