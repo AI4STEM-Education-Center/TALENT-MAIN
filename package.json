@@ -48,10 +48,10 @@
     "esbuild": "$esbuild"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1127.0",
+    "@aws-sdk/client-s3": "^3.1130.0",
     "@aws-sdk/cloudfront-signer": "^3.1125.0",
-    "@aws-sdk/lib-storage": "^3.1127.0",
-    "@aws-sdk/s3-request-presigner": "^3.1127.0",
+    "@aws-sdk/lib-storage": "^3.1130.0",
+    "@aws-sdk/s3-request-presigner": "^3.1130.0",
     "@hyzyla/pdfium": "^2.1.13",
     "@prisma/adapter-better-sqlite3": "^7.10.0",
     "@prisma/client": "^7.10.0",
@@ -66,14 +66,14 @@
     "better-sqlite3": "^13.0.3",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
-    "jszip": "^3.10.1",
+    "jszip": "^3.10.2",
     "katex": "^0.18.7",
-    "lucide-react": "^1.42.0",
+    "lucide-react": "^1.44.0",
     "next": "^16.3.4",
     "next-auth": "^5.0.0-beta.32",
     "next-themes": "^0.4.6",
     "nodemailer": "^9.1.0",
-    "openai": "^7.10.0",
+    "openai": "^7.15.0",
     "pdf-lib": "^1.17.1",
     "react": "^19",
     "react-dom": "^19",
@@ -83,7 +83,7 @@
     "signature_pad": "^5.1.4",
     "tailwind-merge": "^3.6.0",
     "webdav": "^5.10.0",
-    "zod": "^4.5.4"
+    "zod": "^4.6.2"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
