@@ -74,7 +74,24 @@ SUT_VCPUS="$(jq -r '.sutVcpus // null' "$STATE_FILE")"
 SUT_MEMORY_MIB="$(jq -r '.sutMemoryMiB // null' "$STATE_FILE")"
 [ -n "$REGION" ] || REGION="$(jq -r '.region' "$STATE_FILE")"
 
-SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ServerAliveInterval=30)
+# Multiplex every call over ONE connection. Each lg/sut call used to open a new
+# TCP+SSH session, and the READY, SSH-detect and BOOTED polls each open one per
+# iteration — dozens of connections from a single source in a few minutes. The
+# load generator's sshd eventually answered one with an immediate RST
+# ("kex_exchange_identification: read: Connection reset by peer") and the run
+# died mid-payload. Whether that was sshd rate-limiting the source or
+# unattended-upgrades restarting sshd underneath us, reusing one connection
+# removes the churn that provokes it — and makes the polls much faster.
+SSH_CTL_DIR="$(mktemp -d -t pressure-ssh-XXXXXX)"
+cleanup_ssh_control() {
+  [ -n "${SSH_CTL_DIR:-}" ] || return 0
+  ssh -o ControlPath="${SSH_CTL_DIR}/%C" -O exit "ubuntu@${LOADGEN_IP}" >/dev/null 2>&1 || true
+  rm -rf "$SSH_CTL_DIR"
+}
+trap cleanup_ssh_control EXIT
+
+SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ServerAliveInterval=30
+          -o ControlMaster=auto -o ControlPath="${SSH_CTL_DIR}/%C" -o ControlPersist=600)
 [ -n "$SSH_KEY" ] && SSH_OPTS+=(-i "$SSH_KEY")
 
 # The clone authorizes only this run's throwaway key (provision.sh mints it and
@@ -84,7 +101,27 @@ SUT_KEY_LOCAL="$(jq -r '.sutKey // empty' "$STATE_FILE")"
 SUT_KEY_REMOTE="/opt/pressure/sut-key"
 SUT_SSH_OPTS="-o StrictHostKeyChecking=accept-new -i ${SUT_KEY_REMOTE}"
 
-lg() { ssh "${SSH_OPTS[@]}" "ubuntu@${LOADGEN_IP}" "$@"; }
+# ssh returns 255 for ITS OWN transport failures and passes through the remote
+# command's status otherwise — so retrying only on 255 recovers a dropped
+# connection without ever masking a meaningful non-zero result. That matters:
+# callers like `lg "test -f /opt/pressure/READY"` rely on exit 1 meaning "not
+# there yet", and retrying that would turn every poll into a 4x stall.
+lg() {
+  local attempt=1 code
+  while :; do
+    ssh "${SSH_OPTS[@]}" "ubuntu@${LOADGEN_IP}" "$@"
+    code=$?
+    [ "$code" -ne 255 ] && return "$code"
+    [ "$attempt" -ge 4 ] && return "$code"
+    log "ssh to the load generator failed at the transport layer; retry ${attempt}/3"
+    sleep $((attempt * 3))
+    attempt=$((attempt + 1))
+  done
+}
+# Single-shot variant for callers that pipe or redirect LOCAL stdin. A retry
+# cannot replay a consumed pipe, and silently re-sending a partially drained one
+# would upload a truncated file, so these deliberately do not retry.
+lg_stream() { ssh "${SSH_OPTS[@]}" "ubuntu@${LOADGEN_IP}" "$@"; }
 # The clone has no public IP by design, so every command to it is proxied through
 # the load generator.
 sut() { lg "ssh ${SUT_SSH_OPTS} ${SUT_SSH_USER}@${SUT_IP} \"$*\""; }
@@ -202,7 +239,7 @@ install_sut_key() {
   [ -f "$SUT_KEY_LOCAL" ] || die "the throwaway clone key is missing: ${SUT_KEY_LOCAL}"
   # Piped under umask 077 rather than scp'd, so the private key is never briefly
   # readable at a default-mode path on the load generator.
-  lg "umask 077 && mkdir -p /opt/pressure && cat > ${SUT_KEY_REMOTE}" < "$SUT_KEY_LOCAL" \
+  lg_stream "umask 077 && mkdir -p /opt/pressure && cat > ${SUT_KEY_REMOTE}" < "$SUT_KEY_LOCAL" \
     || die "could not install the throwaway clone key on the load generator"
 }
 log "installing this run's throwaway clone key on the load generator..."
@@ -243,7 +280,7 @@ else
   # scp through the load generator: -J would need a jump-host-capable ssh on the
   # local machine AND the key forwarded; piping tar over two hops needs neither.
   tar -C "$PRESSURE_DIR" -czf - ec2/sanitize-sut.sh ec2/bootstrap-sut.sh ec2/docker-compose.sut.yml instrument/probe.cjs \
-    | lg "cat > /tmp/payload.tgz"
+    | lg_stream "cat > /tmp/payload.tgz"
   lg "scp ${SUT_SSH_OPTS} /tmp/payload.tgz ${SUT_SSH_USER}@${SUT_IP}:/tmp/payload.tgz" >/dev/null
   sut "mkdir -p /tmp/payload && tar -C /tmp/payload -xzf /tmp/payload.tgz \
        && sudo install -m 0700 /tmp/payload/ec2/sanitize-sut.sh /opt/pressure/sanitize-sut.sh \
@@ -310,7 +347,7 @@ else
   log "copying the harness to the load generator..."
   lg "rm -rf /opt/pressure/harness && mkdir -p /opt/pressure/harness"
   tar -C "$REPO_DIR" -czf - pressure package.json package-lock.json prisma src/lib/db-url.ts \
-    | lg "tar -C /opt/pressure/harness -xzf -"
+    | lg_stream "tar -C /opt/pressure/harness -xzf -"
 
   log "installing harness dependencies on the load generator..."
   # --omit=dev is wrong here: tsx and prisma are devDependencies and the minter
