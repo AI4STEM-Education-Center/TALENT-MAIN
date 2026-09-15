@@ -53,6 +53,16 @@ bootcmd:
   # `|| true` — leaving production's real S3 keys intact on the clone. Glob so
   # this keeps working whichever image production is rebuilt on.
   - [ sh, -c, "for env in /home/*/app/.env; do [ -f \"$env\" ] || continue; sed -i 's|^AWS_ACCESS_KEY_ID=.*|AWS_ACCESS_KEY_ID=\"\"|; s|^AWS_SECRET_ACCESS_KEY=.*|AWS_SECRET_ACCESS_KEY=\"\"|; s|^AWS_SESSION_TOKEN=.*|AWS_SESSION_TOKEN=\"\"|' \"$env\"; done || true" ]
+  # Authorize this run's throwaway public key, substituted by provision.sh. The
+  # load generator reaches this clone directly and holds only this key; the
+  # production key pair stays on the operator's machine.
+  #
+  # In `bootcmd`, not `runcmd`: run-ec2.sh probes for SSH BEFORE it waits for
+  # cloud-final, so a key installed in runcmd would not be in place for the
+  # first probes, and "not authorized yet" is indistinguishable from "wrong
+  # login user" over a bare publickey rejection. Appending is idempotent so a
+  # reboot cannot accumulate duplicates.
+  - [ sh, -c, "for ak in /home/*/.ssh/authorized_keys; do [ -f \"$ak\" ] || continue; grep -qF '__PRESSURE_SUT_PUBKEY__' \"$ak\" || printf '%s\\n' '__PRESSURE_SUT_PUBKEY__' >> \"$ak\"; done || true" ]
   # A hard backstop in case cloud-final never completes, or nobody ever drives
   # the run. Paired with --instance-initiated-shutdown-behavior terminate at
   # launch, this guarantees the clone cannot outlive the day.

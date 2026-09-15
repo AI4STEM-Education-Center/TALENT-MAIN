@@ -217,6 +217,22 @@ support packages are installed. Transient downloads are retried. A failed stage
 prints its marker, cloud-init status, recent boot log, and both EC2 instance
 states automatically; no follow-up SSH command is needed to discover the cause.
 
+### SSH keys
+
+The clone has no public IP, so the load generator talks to it directly — running
+commands and moving four payloads, two of which (`mint.db`, the container logs)
+carry production data and must never be routed through the operator's machine.
+
+The load generator therefore needs a credential for the clone, and it is
+deliberately **not** `EC2_KEY_NAME`: that key also opens production, and the load
+generator is the instance with a public IP. Each run mints a throwaway ed25519
+pair instead. Its public half is substituted into the clone's cloud-config and
+appended to the cloud user's `authorized_keys` in `bootcmd`; its private half is
+installed on the load generator at `/opt/pressure/sut-key`. It opens exactly one
+instance, which teardown destroys, and teardown shreds the local copy.
+
+Your own key pair never leaves your machine, and no SSH agent is forwarded.
+
 Prerequisites are AWS CLI credentials with EC2/AMI/EBS/security-group access,
 `jq`, `ssh`, `scp`, Node 24, and access to the configured EC2 key. `run.sh`
 uses the source instance's VPC, subnet, availability zone, and instance type

@@ -182,7 +182,12 @@ if [ "$DRY_RUN" != "yes" ]; then
 fi
 
 if [ -n "$RUN_ID" ] && [ "$DRY_RUN" != "yes" ]; then
-  rm -f "${STATE_DIR}/${RUN_ID}.json" "${STATE_DIR}/${RUN_ID}-sut-userdata.yml" "${STATE_DIR}/${RUN_ID}-loadgen-userdata.yml"
+  # The throwaway clone key goes too. It only ever opened an instance that no
+  # longer exists, but leaving private keys lying around in .tmp trains the
+  # wrong habit, and `shred` keeps it out of a recoverable block.
+  shred -u "${STATE_DIR}/${RUN_ID}-sut-key" 2>/dev/null || rm -f "${STATE_DIR}/${RUN_ID}-sut-key"
+  rm -f "${STATE_DIR}/${RUN_ID}.json" "${STATE_DIR}/${RUN_ID}-sut-key.pub" \
+        "${STATE_DIR}/${RUN_ID}-sut-userdata.yml" "${STATE_DIR}/${RUN_ID}-loadgen-userdata.yml"
 fi
 
 log "done. Verify nothing is left behind with:"

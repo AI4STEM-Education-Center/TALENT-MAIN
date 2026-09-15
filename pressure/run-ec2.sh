@@ -77,10 +77,17 @@ SUT_MEMORY_MIB="$(jq -r '.sutMemoryMiB // null' "$STATE_FILE")"
 SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ServerAliveInterval=30)
 [ -n "$SSH_KEY" ] && SSH_OPTS+=(-i "$SSH_KEY")
 
+# The clone authorizes only this run's throwaway key (provision.sh mints it and
+# user-data-sut.yml installs it), and the load generator is the only thing that
+# talks to the clone. Production's key pair never gets here.
+SUT_KEY_LOCAL="$(jq -r '.sutKey // empty' "$STATE_FILE")"
+SUT_KEY_REMOTE="/opt/pressure/sut-key"
+SUT_SSH_OPTS="-o StrictHostKeyChecking=accept-new -i ${SUT_KEY_REMOTE}"
+
 lg() { ssh "${SSH_OPTS[@]}" "ubuntu@${LOADGEN_IP}" "$@"; }
 # The clone has no public IP by design, so every command to it is proxied through
 # the load generator.
-sut() { lg "ssh -o StrictHostKeyChecking=accept-new ${SUT_SSH_USER}@${SUT_IP} \"$*\""; }
+sut() { lg "ssh ${SUT_SSH_OPTS} ${SUT_SSH_USER}@${SUT_IP} \"$*\""; }
 
 # The clone's login user and application path come from the PRODUCTION image, not
 # from this repo: Debian cloud images ship `admin`, Ubuntu ships `ubuntu`. These
@@ -95,7 +102,7 @@ detect_sut_identity() {
   local candidate
   if [ -z "$SUT_SSH_USER" ]; then
     for candidate in admin ubuntu debian ec2-user; do
-      if lg "ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ConnectTimeout=10 ${candidate}@${SUT_IP} true" >/dev/null 2>&1; then
+      if lg "ssh ${SUT_SSH_OPTS} -o BatchMode=yes -o ConnectTimeout=10 ${candidate}@${SUT_IP} true" >/dev/null 2>&1; then
         SUT_SSH_USER="$candidate"
         break
       fi
@@ -186,6 +193,21 @@ fi
 # sshd on the clone is not up the instant the instance is, so detection has to be
 # as patient as the BOOTED wait below — and has to notice a clone that is dying
 # rather than merely slow, which is what silently ate an entire run before.
+# Must happen before the first probe below: without this the load generator has
+# no credential at all for the clone, every candidate user fails identically on
+# publickey, and the failure reads as "wrong login user" when it is "no key".
+install_sut_key() {
+  [ -n "$SUT_KEY_LOCAL" ] || \
+    die "this run's state file predates the throwaway clone key; re-provision with the current ec2/provision.sh"
+  [ -f "$SUT_KEY_LOCAL" ] || die "the throwaway clone key is missing: ${SUT_KEY_LOCAL}"
+  # Piped under umask 077 rather than scp'd, so the private key is never briefly
+  # readable at a default-mode path on the load generator.
+  lg "umask 077 && mkdir -p /opt/pressure && cat > ${SUT_KEY_REMOTE}" < "$SUT_KEY_LOCAL" \
+    || die "could not install the throwaway clone key on the load generator"
+}
+log "installing this run's throwaway clone key on the load generator..."
+install_sut_key
+
 log "waiting for the clone to accept SSH..."
 for attempt in $(seq 1 90); do
   detect_sut_identity && break
@@ -222,7 +244,7 @@ else
   # local machine AND the key forwarded; piping tar over two hops needs neither.
   tar -C "$PRESSURE_DIR" -czf - ec2/sanitize-sut.sh ec2/bootstrap-sut.sh ec2/docker-compose.sut.yml instrument/probe.cjs \
     | lg "cat > /tmp/payload.tgz"
-  lg "scp -o StrictHostKeyChecking=accept-new /tmp/payload.tgz ${SUT_SSH_USER}@${SUT_IP}:/tmp/payload.tgz" >/dev/null
+  lg "scp ${SUT_SSH_OPTS} /tmp/payload.tgz ${SUT_SSH_USER}@${SUT_IP}:/tmp/payload.tgz" >/dev/null
   sut "mkdir -p /tmp/payload && tar -C /tmp/payload -xzf /tmp/payload.tgz \
        && sudo install -m 0700 /tmp/payload/ec2/sanitize-sut.sh /opt/pressure/sanitize-sut.sh \
        && sudo install -m 0700 /tmp/payload/ec2/bootstrap-sut.sh /opt/pressure/bootstrap-sut.sh \
@@ -331,7 +353,7 @@ else
   # The escaped quotes must survive both SSH hops so sqlite receives the dot
   # command as one argument rather than `.backup` and its path as two.
   sut "sudo rm -f /tmp/mint.db && sudo sqlite3 ${SUT_APP_DIR}/data/db/prod/prod.db \\\".backup /tmp/mint.db\\\" && sudo chown ${SUT_SSH_USER}:${SUT_SSH_USER} /tmp/mint.db"
-  lg "scp -o StrictHostKeyChecking=accept-new ${SUT_SSH_USER}@${SUT_IP}:/tmp/mint.db /opt/pressure/mint.db" >/dev/null
+  lg "scp ${SUT_SSH_OPTS} ${SUT_SSH_USER}@${SUT_IP}:/tmp/mint.db /opt/pressure/mint.db" >/dev/null
   sut "rm -f /tmp/mint.db"
   [ "$SUITE_RUN" = "yes" ] && lg "cp /opt/pressure/mint.db /opt/pressure/suite-baseline.db"
 
@@ -362,7 +384,7 @@ if sut "curl -fsS http://127.0.0.1:8099/healthz >/dev/null" 2>/dev/null; then
 else
   log "starting the AI stub on the clone..."
   lg "tar -C /opt/pressure/harness -czf - pressure/mock-ai pressure/tools \
-      | ssh -o StrictHostKeyChecking=accept-new ${SUT_SSH_USER}@${SUT_IP} 'mkdir -p /opt/pressure/ai && tar -C /opt/pressure/ai -xzf -'"
+      | ssh ${SUT_SSH_OPTS} ${SUT_SSH_USER}@${SUT_IP} 'mkdir -p /opt/pressure/ai && tar -C /opt/pressure/ai -xzf -'"
   sut "command -v node >/dev/null 2>&1" \
     || log "WARNING: node is not on the clone; the AI stub cannot start and exam-result generation will fail (recorded as designed worker failures)"
   sut "cd /opt/pressure/ai && (nohup npx --yes tsx pressure/mock-ai/server.ts --port 8099 --host 0.0.0.0 > /tmp/mock-ai.log 2>&1 &) ; sleep 3; curl -fsS http://127.0.0.1:8099/healthz || true"
@@ -373,7 +395,7 @@ fi
 # scenarios measure a mutated cohort rather than an independent workload.
 if [ "$SUITE_RUN" = "yes" ] && lg "test -f /opt/pressure/SCENARIO_COMPLETED" 2>/dev/null; then
   log "restoring the clean post-sanitize database for an independent scenario..."
-  lg "scp -o StrictHostKeyChecking=accept-new /opt/pressure/suite-baseline.db ${SUT_SSH_USER}@${SUT_IP}:/tmp/suite-baseline.db" >/dev/null
+  lg "scp ${SUT_SSH_OPTS} /opt/pressure/suite-baseline.db ${SUT_SSH_USER}@${SUT_IP}:/tmp/suite-baseline.db" >/dev/null
   sut "cd ${SUT_APP_DIR} \
        && sudo docker compose -f docker-compose.sut.yml down --timeout 30 \
        && sudo chown --reference=data/db/prod/prod.db /tmp/suite-baseline.db \
@@ -424,7 +446,7 @@ lg "cd /opt/pressure/harness && pressure/collect/metrics.sh --probe-once \
 # ─────────────────────────────────────────────────────────────────────────────
 log "collecting logs from the clone..."
 sut "cd ${SUT_APP_DIR} && sudo docker compose -f docker-compose.sut.yml logs --no-color > /tmp/containers.log 2>&1; sudo chown ${SUT_SSH_USER}:${SUT_SSH_USER} /tmp/containers.log"
-lg "scp -o StrictHostKeyChecking=accept-new ${SUT_SSH_USER}@${SUT_IP}:/tmp/containers.log ${RUN_DIR_REMOTE}/containers.log" >/dev/null || true
+lg "scp ${SUT_SSH_OPTS} ${SUT_SSH_USER}@${SUT_IP}:/tmp/containers.log ${RUN_DIR_REMOTE}/containers.log" >/dev/null || true
 sut "sudo cat /opt/pressure/sanitize-report.json" > /tmp/sanitize-report.json 2>/dev/null || true
 STUDENT_TARGET_JSON="null"
 [ -n "$STUDENT_COUNT" ] && STUDENT_TARGET_JSON="$STUDENT_COUNT"
