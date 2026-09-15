@@ -294,7 +294,15 @@ else
   # refuses to run without it. The acknowledgement was already made explicitly
   # at provision time (--ack-real-data), which is what this carries forward.
   set +e
-  sut "PRESSURE_SOURCE_INSTANCE_ID='$(jq -r '.sourceInstance' "$STATE_FILE")' \
+  # Through `sudo env`, not directly. bootstrap-sut.sh is installed root-owned
+  # 0700 — deliberately, since it is the thing that unmasks Docker on a box
+  # holding production data — but the login user is the unprivileged cloud user,
+  # so invoking it directly is exit 126, "Permission denied", every time. The
+  # script is written to escalate per-command with sudo; running the whole thing
+  # as root simply makes those internal sudo calls no-ops.
+  #
+  # `env` is required because sudo does not accept leading VAR=value assignments.
+  sut "sudo env PRESSURE_SOURCE_INSTANCE_ID='$(jq -r '.sourceInstance' "$STATE_FILE")' \
        PRESSURE_ACK_REAL_DATA='yes' \
        PRESSURE_DEADMAN_MINUTES='$(jq -r '.deadmanMinutes // 240' "$STATE_FILE")' \
        APP_DIR='${SUT_APP_DIR}' \
