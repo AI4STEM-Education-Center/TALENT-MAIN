@@ -53,7 +53,24 @@ APP_DIR="${APP_DIR}" \
 
 log "sanitize confirmed. Unmasking Docker..."
 sudo rm -f /opt/pressure/AWAITING_SANITIZE
-sudo systemctl unmask docker docker.socket
+# Mirrors the neutralization in user-data-sut.yml exactly. That file masks
+# containerd as well as docker, and additionally strips the exec bits off the
+# daemons as a systemd-independent backstop — the mask is written as a plain
+# symlink there because `systemctl mask` deadlocks the early boot, and a plain
+# symlink is ignored if systemd had already loaded the unit. Undo BOTH halves,
+# or docker unmasks cleanly and then fails to exec for a non-obvious reason.
+#
+# Safe to use systemctl here: this runs over SSH on a fully booted system, not
+# in cloud-init's pre-sysinit stage.
+sudo systemctl unmask docker docker.socket containerd
+# Docker tried to start during boot and hit 203/EXEC against the stripped
+# binary, so systemd has it in `failed` with the restart counter tripped
+# ("Start request repeated too quickly"). Without a reset it refuses to start
+# now that the binary is executable again.
+sudo systemctl reset-failed docker.service docker.socket containerd.service 2>/dev/null || true
+for b in /usr/bin/dockerd /usr/sbin/dockerd /usr/bin/containerd /usr/bin/docker; do
+  [ -e "$b" ] && sudo chmod 755 "$b"
+done
 sudo systemctl start docker
 
 log "starting the benchmark stack (web + worker)..."
