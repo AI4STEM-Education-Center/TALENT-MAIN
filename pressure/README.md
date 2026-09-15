@@ -217,6 +217,28 @@ support packages are installed. Transient downloads are retried. A failed stage
 prints its marker, cloud-init status, recent boot log, and both EC2 instance
 states automatically; no follow-up SSH command is needed to discover the cause.
 
+### The seeded benchmark cohort
+
+The clone boots from production, and production currently contains one ADMIN and
+one TEACHER — no students, classes or quizzes. The scenarios drive load as
+concurrent students, so before sessions are minted the harness seeds a synthetic
+cohort into the clone: N students, one class per teacher, and one quiz of ten
+four-option questions, published and always open.
+
+Seeding happens on the load generator, against the database copy already pulled
+across for minting, and the seeded file is then installed on the clone. It is
+idempotent — every row it owns is prefixed `bench-` — so a re-run tops up rather
+than duplicating.
+
+**Read capacity numbers accordingly.** They describe uniform students answering
+one uniform quiz. That is a real measurement of row contention, the write path
+and event-loop cost, but it is not the shape of a real classroom, and it is not
+what "clone of production" implies on its own. When production has a genuine
+student population, drop `--students`/`--teachers` low enough that the seeder is
+a no-op and the run measures the real set.
+
+Production is never seeded. The seeder only ever touches the throwaway clone.
+
 ### SSH keys
 
 The clone has no public IP, so the load generator talks to it directly — running

@@ -400,9 +400,42 @@ else
   sut "sudo rm -f /tmp/mint.db && sudo sqlite3 ${SUT_APP_DIR}/data/db/prod/prod.db \\\".backup /tmp/mint.db\\\" && sudo chown ${SUT_SSH_USER}:${SUT_SSH_USER} /tmp/mint.db"
   lg "scp ${SUT_SSH_OPTS} ${SUT_SSH_USER}@${SUT_IP}:/tmp/mint.db /opt/pressure/mint.db" >/dev/null
   sut "rm -f /tmp/mint.db"
+
+  # Production holds one ADMIN and one TEACHER and nothing else — no students,
+  # classes or quizzes. mint-sessions.ts does not fail on that, it warns and
+  # returns an empty student list, so every student journey would run with no
+  # identity and the thresholds would pass on zero samples. Seed a cohort first.
+  #
+  # On the generator, against the copy that is already here, because the clone
+  # has no Node and putting one there would add a competing process to the
+  # single CPU the whole measurement is about.
+  log "seeding a benchmark cohort (${MINT_STUDENTS} students, ${MINT_TEACHERS} teachers)..."
+  lg "cd /opt/pressure/harness && npx tsx pressure/tools/seed-clone.ts \
+        --database-url 'file:/opt/pressure/mint.db' \
+        --students ${MINT_STUDENTS} --teachers ${MINT_TEACHERS} --questions 10 \
+        --password 'bench-${RUN_ID}'" \
+    || die "seeding the benchmark cohort failed"
+  # better-sqlite3 leaves a -wal beside the file. Ship one self-contained
+  # database, or the clone silently comes up on the pre-seed contents.
+  lg "sqlite3 /opt/pressure/mint.db 'PRAGMA wal_checkpoint(TRUNCATE);' >/dev/null" \
+    || die "could not checkpoint the seeded database"
+
+  log "installing the seeded database on the clone..."
+  lg "scp ${SUT_SSH_OPTS} /opt/pressure/mint.db ${SUT_SSH_USER}@${SUT_IP}:/tmp/seeded.db" >/dev/null
+  sut "cd ${SUT_APP_DIR} \
+       && sudo docker compose -f docker-compose.sut.yml down --timeout 30 \
+       && sudo chown --reference=data/db/prod/prod.db /tmp/seeded.db \
+       && sudo chmod --reference=data/db/prod/prod.db /tmp/seeded.db \
+       && sudo mv /tmp/seeded.db data/db/prod/prod.db \
+       && sudo rm -f data/db/prod/prod.db-wal data/db/prod/prod.db-shm \
+       && sudo docker compose -f docker-compose.sut.yml up -d --wait --wait-timeout 300" \
+    || die "could not install the seeded database on the clone"
+
+  # AFTER seeding, so a suite restore between scenarios brings back the cohort
+  # rather than the empty production snapshot.
   [ "$SUITE_RUN" = "yes" ] && lg "cp /opt/pressure/mint.db /opt/pressure/suite-baseline.db"
 
-  log "minting sessions from the real user set (${MINT_STUDENTS} students, ${MINT_TEACHERS} teachers)..."
+  log "minting sessions from the seeded cohort (${MINT_STUDENTS} students, ${MINT_TEACHERS} teachers)..."
   lg "cd /opt/pressure/harness && AUTH_SECRET='${CLONE_SECRET}' npx tsx pressure/tools/mint-sessions.ts \
         --out /opt/pressure/sessions.json --database-url 'file:/opt/pressure/mint.db' \
         --students ${MINT_STUDENTS} --teachers ${MINT_TEACHERS} --admins 2 --secure \

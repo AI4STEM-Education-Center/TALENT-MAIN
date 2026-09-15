@@ -26,8 +26,8 @@
         "media-signing",
         "admin-observability"
       ],
-      "dataset": "prod-snapshot",
-      "notes": "Boots from a snapshot of production's root volume, then runs a fail-closed sanitize stage before Docker starts. Load is generated from a SECOND instance in the same AZ so k6 never competes for the single CPU the app is bottlenecked on."
+      "dataset": "prod-snapshot + seeded bench cohort",
+      "notes": "Boots from a snapshot of production's root volume, then runs a fail-closed sanitize stage before Docker starts. Production currently has no students, classes or quizzes, so a synthetic bench cohort is seeded into the clone before sessions are minted: capacity numbers describe uniform students answering one uniform quiz, NOT the distribution of a real classroom. Load is generated from a SECOND instance in the same AZ so k6 never competes for the single CPU the app is bottlenecked on."
     }
   },
 
