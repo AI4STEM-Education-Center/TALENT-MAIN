@@ -105,7 +105,11 @@ export function summarizeChecks(checks) {
  * dropped from the list, every result reached the dashboard as FAIL, and the
  * runner exited non-zero on a fully passing run.
  *
- * @param {Record<string, {thresholds?: Record<string, boolean|{ok?: boolean}>}>} metrics
+ * @param {Record<string, ({thresholds?: Record<string, boolean|{ok?: boolean}>}
+ *   & Record<string, unknown>)> | undefined} metrics
+ *   Real k6 metrics carry many other fields (count, avg, p(95)...), so the
+ *   value type is intersected with an index signature; without it a caller
+ *   passing a genuine metric object trips excess-property checking.
  * @returns {string[]} `"<metric> <threshold>"` for each crossed threshold
  */
 export function crossedThresholds(metrics) {
