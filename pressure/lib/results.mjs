@@ -88,3 +88,34 @@ export function summarizeChecks(checks) {
     errorRate: totalChecks > 0 ? failedChecks / totalChecks : 1,
   };
 }
+
+/**
+ * Collect the thresholds a k6 summary reports as CROSSED.
+ *
+ * The two summary shapes mean opposite things, and confusing them is not a
+ * cosmetic bug — it silently inverts every published verdict:
+ *
+ *   `--summary-export`  "p(95)<800": true   -> crossed (FAILED)
+ *                       "p(95)<800": false  -> held   (passed)
+ *   `handleSummary`     { ok: false }       -> crossed (FAILED)
+ *                       { ok: true }        -> held   (passed)
+ *
+ * This shipped reading the boolean form as `state === false`, i.e. backwards.
+ * Every passing threshold was recorded as a failure, every genuine breach was
+ * dropped from the list, every result reached the dashboard as FAIL, and the
+ * runner exited non-zero on a fully passing run.
+ *
+ * @param {Record<string, {thresholds?: Record<string, boolean|{ok?: boolean}>}>} metrics
+ * @returns {string[]} `"<metric> <threshold>"` for each crossed threshold
+ */
+export function crossedThresholds(metrics) {
+  const crossed = [];
+  for (const [metricName, metric] of Object.entries(metrics ?? {})) {
+    for (const [threshold, state] of Object.entries(metric?.thresholds ?? {})) {
+      const didFail =
+        typeof state === "boolean" ? state === true : state?.ok === false;
+      if (didFail) crossed.push(`${metricName} ${threshold}`);
+    }
+  }
+  return crossed;
+}

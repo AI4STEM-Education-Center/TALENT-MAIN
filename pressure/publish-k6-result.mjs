@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
-import { publishResult, saveResult } from "./lib/results.mjs";
+import { publishResult, saveResult, crossedThresholds } from "./lib/results.mjs";
 
 function argument(name, fallback = null) {
   const index = process.argv.indexOf(`--${name}`);
@@ -36,14 +36,7 @@ const requests = stats(metrics.http_reqs);
 const failed = stats(metrics.http_req_failed);
 const unexpected = stats(metrics.unexpected_errors).count;
 const busy = stats(metrics.sqlite_busy).count;
-const thresholdFailures = [];
-for (const [metricName, metric] of Object.entries(metrics)) {
-  for (const [threshold, state] of Object.entries(metric.thresholds ?? {})) {
-    const didFail =
-      typeof state === "boolean" ? state === false : state?.ok === false;
-    if (didFail) thresholdFailures.push(`${metricName} ${threshold}`);
-  }
-}
+const thresholdFailures = crossedThresholds(metrics);
 
 // react-doctor-disable-next-line react-doctor/no-impure-call-at-module-scope -- one-shot result normalizer uses current time only as fallback for legacy artifacts without timestamps
 const startedAt =
