@@ -559,6 +559,23 @@ lg "rm -rf ${RUN_DIR_REMOTE} && mkdir -p ${RUN_DIR_REMOTE}"
 lg "curl -fsS -X POST http://${SUT_IP}:9099/reset >/dev/null 2>&1 || true"
 lg "curl -fsS -X POST http://${SUT_IP}:9098/reset >/dev/null 2>&1 || true"
 
+# ── Warm the app BEFORE the sampler and k6 start ─────────────────────────────
+# The first request to a freshly started container pays costs no later request
+# does. Measured on a real clone: admin_resources 2.89s cold against a
+# steady-state p50 of 16.2ms. Because every Prisma call is synchronous
+# better-sqlite3, that cold request blocks the event loop and whatever is queued
+# behind it inherits the delay — it surfaced as student_dashboard p99 2.44s
+# breaching a 1500ms SLO whose p95 was 520.9ms. The tail was measuring warm-up.
+#
+# Best-effort: an unwarmed run is degraded, not invalid, so this warns instead
+# of failing. Bounded, because a warm-up that hangs would be worse than a cold
+# measurement.
+log "warming the application so cold-start cost does not land in the measured tail..."
+LG_TIMEOUT=300
+lg "cd /opt/pressure/harness && pressure/tools/warmup.sh '${SUT_IP}' 'localhost:3000' /opt/pressure/sessions.json" \
+  || log "WARNING: warm-up did not complete; first-request cost may contaminate the measured tail"
+LG_TIMEOUT=""
+
 log "starting the metrics sampler and running '${SCENARIO}'..."
 RUN_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # THE BRACES ARE THE FIX, and they are not cosmetic.

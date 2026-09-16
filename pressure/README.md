@@ -217,6 +217,32 @@ support packages are installed. Transient downloads are retried. A failed stage
 prints its marker, cloud-init status, recent boot log, and both EC2 instance
 states automatically; no follow-up SSH command is needed to discover the cause.
 
+### Warm-up, and why the SLOs describe steady state
+
+k6 is preceded by a short warm-up pass (`tools/warmup.sh`) that hits the static
+page, the student dashboard and both admin endpoints a few times.
+
+This is not cosmetic. The first request to a freshly started container pays costs
+no later request does — `readSpool()` parses every node's NDJSON uncached, Prisma
+prepares statements, nothing is JIT-warm. Measured on a real clone,
+`/api/admin/resources` took **2.89s cold against a steady-state p50 of 16.2ms and
+p95 of 45.8ms**. A single cold sample is bad enough on its own, but because every
+Prisma call is a synchronous better-sqlite3 call it also **blocks the event loop**,
+and whatever is queued behind it inherits the delay: in an `admin-observability`
+run it surfaced as `student_dashboard` p99 = 2.44s, breaching a 1500ms SLO whose
+p50 and p95 were 16.2ms and 520.9ms. The tail was measuring warm-up, not capacity.
+
+Excluding the first N seconds of samples inside k6 was rejected: `smoke` runs
+exactly one iteration, so that would drop its only sample and fire its
+`requireSteps` assertion — the check that exists to catch a journey which
+silently did nothing — against an empty dataset.
+
+So the SLOs in `config/tiers.json` describe **steady state**. Cold-start cost is
+real and worth knowing, but it is a different question from capacity, and leaving
+it in the tail of a capacity run answers neither. The warm-up prints each
+round's timings; if the last round is still seconds, that is a genuine finding
+rather than warm-up.
+
 ### The seeded benchmark cohort
 
 The clone boots from production, and production currently contains one ADMIN and
