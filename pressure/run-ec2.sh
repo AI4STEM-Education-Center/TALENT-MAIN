@@ -83,7 +83,42 @@ SUT_MEMORY_MIB="$(jq -r '.sutMemoryMiB // null' "$STATE_FILE")"
 # unattended-upgrades restarting sshd underneath us, reusing one connection
 # removes the churn that provokes it — and makes the polls much faster.
 SSH_CTL_DIR="$(mktemp -d -t pressure-ssh-XXXXXX)"
+# Defined HERE, not at download time near the end of the script. The EXIT trap
+# writes failure evidence into it, and an early failure — sanitize, bootstrap,
+# minting — is exactly when that evidence matters most. Declared late, it was
+# empty for every failure the collector was built to capture.
+LOCAL_RUN_DIR="${PRESSURE_DIR}/.tmp/ec2-runs/${RUN_ID}-${SCENARIO}"
+
+# On failure, grab the evidence BEFORE returning — run.sh's own EXIT trap tears
+# the instances down the moment this script exits, and once the load generator
+# is gone the logs that explain the failure are gone with it. Learned the hard
+# way: an 8-hour stall was torn down before /tmp/sampler.log and k6.log were
+# collected, and the cause is still unknown as a result.
+#
+# Everything here is best-effort and hard-bounded. A diagnostic collector that
+# can itself hang would just move the problem.
+collect_failure_evidence() {
+  local code=$1 dest
+  [ "$code" -eq 0 ] && return 0
+  [ -n "${LOCAL_RUN_DIR:-}" ] || return 0
+  dest="${LOCAL_RUN_DIR}/failure-evidence"
+  mkdir -p "$dest" 2>/dev/null || return 0
+  log "run failed (exit ${code}); collecting evidence into ${dest} before teardown..."
+  {
+    timeout 60 ssh "${SSH_OPTS[@]}" "ubuntu@${LOADGEN_IP}" \
+      'echo "=== BOOT_STAGE ==="; cat /opt/pressure/BOOT_STAGE 2>/dev/null
+       echo "=== sampler.log (tail) ==="; tail -50 /tmp/sampler.log 2>/dev/null
+       echo "=== k6.log (tail) ==="; tail -120 /opt/pressure/run/k6.log 2>/dev/null
+       echo "=== run dir ==="; ls -la /opt/pressure/run/ 2>/dev/null
+       echo "=== processes ==="; ps -eo pid,etime,args | grep -E "k6|metrics" | grep -v grep
+       echo "=== cloud-init ==="; tail -40 /var/log/cloud-init-output.log 2>/dev/null'
+  } > "${dest}/loadgen.txt" 2>&1 || true
+  log "evidence saved: ${dest}/loadgen.txt"
+}
+
 cleanup_ssh_control() {
+  local code=$?
+  collect_failure_evidence "$code" || true
   [ -n "${SSH_CTL_DIR:-}" ] || return 0
   ssh -o ControlPath="${SSH_CTL_DIR}/%C" -O exit "ubuntu@${LOADGEN_IP}" >/dev/null 2>&1 || true
   rm -rf "$SSH_CTL_DIR"
@@ -106,11 +141,26 @@ SUT_SSH_OPTS="-o StrictHostKeyChecking=accept-new -i ${SUT_KEY_REMOTE}"
 # connection without ever masking a meaningful non-zero result. That matters:
 # callers like `lg "test -f /opt/pressure/READY"` rely on exit 1 meaning "not
 # there yet", and retrying that would turn every poll into a 4x stall.
+# NO remote call may block forever. A run once sat for EIGHT HOURS on a single
+# ssh call whose remote command had already exited — smoke caps k6 at
+# maxDuration 3m and `pgrep k6` on the generator showed nothing running — while
+# the load generator kept billing. Nothing in the harness noticed, because every
+# stage was unbounded. Override per call with LG_TIMEOUT; k6 sets its own from
+# the scenario's own shape.
+LG_TIMEOUT_DEFAULT=600
+_lg_budget() { echo "${LG_TIMEOUT:-$LG_TIMEOUT_DEFAULT}"; }
+
 lg() {
-  local attempt=1 code
+  local attempt=1 code budget
+  budget="$(_lg_budget)"
   while :; do
-    ssh "${SSH_OPTS[@]}" "ubuntu@${LOADGEN_IP}" "$@"
+    timeout --signal=TERM --kill-after=30 "$budget" \
+      ssh "${SSH_OPTS[@]}" "ubuntu@${LOADGEN_IP}" "$@"
     code=$?
+    if [ "$code" -eq 124 ]; then
+      log "ssh to the load generator exceeded its ${budget}s budget and was killed"
+      return 124
+    fi
     [ "$code" -ne 255 ] && return "$code"
     [ "$attempt" -ge 4 ] && return "$code"
     log "ssh to the load generator failed at the transport layer; retry ${attempt}/3"
@@ -118,10 +168,28 @@ lg() {
     attempt=$((attempt + 1))
   done
 }
+
+# Each scenario's own shape sets the ceiling, with slack for k6 startup, the
+# summary export and teardown of its VUs. Deliberately not one global number:
+# soak legitimately runs two hours, and smoke hanging for two hours is the
+# failure this exists to prevent.
+k6_budget_for() {
+  case "$1" in
+    smoke|login-storm|media-signing) echo 900 ;;
+    admin-observability)             echo 1200 ;;
+    exam-day|spike-recovery)         echo 2400 ;;
+    ramp-capacity)                   echo 3600 ;;
+    soak)                            echo 10800 ;;
+    *)                               echo 3600 ;;
+  esac
+}
 # Single-shot variant for callers that pipe or redirect LOCAL stdin. A retry
 # cannot replay a consumed pipe, and silently re-sending a partially drained one
 # would upload a truncated file, so these deliberately do not retry.
-lg_stream() { ssh "${SSH_OPTS[@]}" "ubuntu@${LOADGEN_IP}" "$@"; }
+lg_stream() {
+  timeout --signal=TERM --kill-after=30 "${LG_STREAM_TIMEOUT:-900}" \
+    ssh "${SSH_OPTS[@]}" "ubuntu@${LOADGEN_IP}" "$@"
+}
 # The clone has no public IP by design, so every command to it is proxied through
 # the load generator.
 sut() { lg "ssh ${SUT_SSH_OPTS} ${SUT_SSH_USER}@${SUT_IP} \"$*\""; }
@@ -493,11 +561,18 @@ lg "curl -fsS -X POST http://${SUT_IP}:9098/reset >/dev/null 2>&1 || true"
 
 log "starting the metrics sampler and running '${SCENARIO}'..."
 RUN_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-lg "cd /opt/pressure/harness && nohup pressure/collect/metrics.sh \
+# `</dev/null` and setsid are load-bearing. A backgrounded remote process that
+# still holds the session's stdin keeps the ssh CHANNEL open even after the
+# foreground command exits, so ssh waits on EOF forever and the runner blocks
+# with nothing left to wait for. Redirect all three streams and detach.
+lg "cd /opt/pressure/harness && setsid nohup pressure/collect/metrics.sh \
       --out ${RUN_DIR_REMOTE}/metrics.ndjson --interval 5 \
-      --probe-host ${SUT_IP} --probe-ports '9099 9098' > /tmp/sampler.log 2>&1 & echo \$! > /tmp/sampler.pid"
+      --probe-host ${SUT_IP} --probe-ports '9099 9098' \
+      </dev/null > /tmp/sampler.log 2>&1 & echo \$! > /tmp/sampler.pid"
 
 set +e
+LG_TIMEOUT="$(k6_budget_for "$SCENARIO")"
+log "k6 budget for '${SCENARIO}': ${LG_TIMEOUT}s"
 lg "cd /opt/pressure/harness && \
     PRESSURE_TIER=ec2-clone \
     PRESSURE_BASE_URL='http://${SUT_IP}:3000' \
@@ -511,7 +586,12 @@ lg "cd /opt/pressure/harness && \
     k6 run --summary-export ${RUN_DIR_REMOTE}/summary.json \
       pressure/k6/scenarios/${SCENARIO}.js 2>&1 | tee ${RUN_DIR_REMOTE}/k6.log"
 K6_EXIT=$?
+LG_TIMEOUT=""
 set -e
+if [ "$K6_EXIT" -eq 124 ]; then
+  log "WARNING: k6 exceeded its budget and was killed. Collecting what exists anyway —"
+  log "         artifacts from a killed run are still the best evidence of why it hung."
+fi
 RUN_FINISHED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 [ "$SUITE_RUN" = "yes" ] && lg "touch /opt/pressure/SCENARIO_COMPLETED"
 
@@ -559,7 +639,6 @@ log "scrubbing artifacts on the load generator before download..."
 lg "cd /opt/pressure/harness && npx tsx pressure/collect/scrub.ts --in ${RUN_DIR_REMOTE} --out /opt/pressure/run-scrubbed" \
   || die "scrub failed — refusing to download unscrubbed artifacts from a clone holding production data"
 
-LOCAL_RUN_DIR="${PRESSURE_DIR}/.tmp/ec2-runs/${RUN_ID}-${SCENARIO}"
 mkdir -p "$LOCAL_RUN_DIR"
 log "downloading scrubbed artifacts..."
 scp "${SSH_OPTS[@]}" -r "ubuntu@${LOADGEN_IP}:/opt/pressure/run-scrubbed/*" "$LOCAL_RUN_DIR/" >/dev/null
