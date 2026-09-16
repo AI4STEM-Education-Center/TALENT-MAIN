@@ -48,6 +48,7 @@ async function main() {
 
   const studentCount = num(args, "students", 800);
   const teacherCount = num(args, "teachers", 40);
+  const adminCount = num(args, "admins", 2);
   const questionCount = num(args, "questions", 10);
   const password = str(args, "password", "");
   if (!password) throw new Error("--password is required (login-storm needs real credentials)");
@@ -129,6 +130,54 @@ async function main() {
     }
     await recordConsent(user.id, "TEACHER", `${firstName} ${lastName}`, email);
     teacherIds.push(teacher.id);
+  }
+
+  // ── Admins ─────────────────────────────────────────────────────────────────
+  // run-ec2.sh mints 2. Production has 1, and minting only warns, so
+  // admin-observability would silently hammer a single row.
+  log(`ensuring ${adminCount} benchmark admins...`);
+  for (let i = 0; i < adminCount; i++) {
+    const username = `${PREFIX}admin-${i}`;
+    const existing = await prisma.user.findUnique({ where: { username }, select: { id: true } });
+    if (!existing) {
+      await prisma.user.create({
+        data: {
+          email: `${username}@bench.invalid`,
+          username,
+          hashedPassword,
+          firstName: "Bench",
+          lastName: `Admin ${i}`,
+          role: "ADMIN",
+        },
+      });
+    }
+  }
+
+  // ── Consent backfill for accounts that came from the snapshot ──────────────
+  // mint-sessions selects identities by id ascending, so the real production
+  // teacher lands in the minted set. It has no AGREE against the active form,
+  // and src/proxy.ts 403s every /api/ request from a gated account — its steps
+  // would be recorded as designed_refusals rather than load, quietly biasing
+  // the teacher numbers. Give every TEACHER and STUDENT a record.
+  //
+  // This writes a consent decision on behalf of a real account. That is
+  // acceptable here and nowhere else: it happens only on the throwaway clone,
+  // which cannot email, cannot reach S3, and is terminated at teardown. The
+  // production database is never touched.
+  if (activeStudentForm || activeTeacherForm) {
+    const preExisting = await prisma.user.findMany({
+      where: { role: { in: ["STUDENT", "TEACHER"] }, username: { not: { startsWith: PREFIX } } },
+      select: { id: true, role: true, firstName: true, lastName: true, email: true },
+    });
+    for (const u of preExisting) {
+      await recordConsent(
+        u.id,
+        u.role as "STUDENT" | "TEACHER",
+        `${u.firstName} ${u.lastName}`,
+        u.email,
+      );
+    }
+    if (preExisting.length) log(`backfilled consent for ${preExisting.length} snapshot account(s)`);
   }
 
   // ── One topic + quiz + questions, owned by the first teacher ───────────────
@@ -256,6 +305,7 @@ async function main() {
   const totals = {
     students: await prisma.user.count({ where: { role: "STUDENT" } }),
     teachers: await prisma.user.count({ where: { role: "TEACHER" } }),
+    admins: await prisma.user.count({ where: { role: "ADMIN" } }),
     classes: await prisma.class.count(),
     questions: await prisma.question.count({ where: { quizId: quiz.id } }),
     enrollments: await prisma.classEnrollment.count(),

@@ -412,7 +412,7 @@ else
   log "seeding a benchmark cohort (${MINT_STUDENTS} students, ${MINT_TEACHERS} teachers)..."
   lg "cd /opt/pressure/harness && npx tsx pressure/tools/seed-clone.ts \
         --database-url 'file:/opt/pressure/mint.db' \
-        --students ${MINT_STUDENTS} --teachers ${MINT_TEACHERS} --questions 10 \
+        --students ${MINT_STUDENTS} --teachers ${MINT_TEACHERS} --admins 2 --questions 10 \
         --password 'bench-${RUN_ID}'" \
     || die "seeding the benchmark cohort failed"
   # better-sqlite3 leaves a -wal beside the file. Ship one self-contained
