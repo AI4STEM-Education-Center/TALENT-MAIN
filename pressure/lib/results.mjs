@@ -123,3 +123,29 @@ export function crossedThresholds(metrics) {
   }
   return crossed;
 }
+
+/**
+ * Wall-clock duration of the measured phase, in milliseconds.
+ *
+ * k6's `--summary-export` top level is only `{ root_group, metrics }` — there is
+ * no `state` key — so reading `summary.state.testRunDurationMs` yields undefined
+ * and every published result carried durationMs 0. `handleSummary` output DOES
+ * provide state, so the summary value still wins when it is present; otherwise
+ * fall back to the runner's own brackets around the k6 phase in meta.json.
+ *
+ * @param {{state?: {testRunDurationMs?: number}} | undefined} summary
+ * @param {{startedAt?: string, finishedAt?: string} | undefined} meta
+ * @returns {number} non-negative whole milliseconds
+ */
+export function resolveDurationMs(summary, meta) {
+  const fromSummary = summary?.state?.testRunDurationMs;
+  if (typeof fromSummary === "number" && Number.isFinite(fromSummary)) {
+    return Math.max(0, Math.round(fromSummary));
+  }
+  const start = meta?.startedAt ? Date.parse(meta.startedAt) : NaN;
+  const end = meta?.finishedAt ? Date.parse(meta.finishedAt) : NaN;
+  if (Number.isFinite(start) && Number.isFinite(end)) {
+    return Math.max(0, Math.round(end - start));
+  }
+  return 0;
+}

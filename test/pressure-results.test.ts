@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { crossedThresholds, summarizeChecks } from "../pressure/lib/results.mjs";
+import {
+  crossedThresholds,
+  resolveDurationMs,
+  summarizeChecks,
+} from "../pressure/lib/results.mjs";
 
 describe("pressure result check summary", () => {
   it("derives a bounded error rate from recorded checks", () => {
@@ -73,5 +77,42 @@ describe("k6 threshold interpretation", () => {
     expect(crossedThresholds({ http_reqs: { count: 10 } })).toEqual([]);
     expect(crossedThresholds({})).toEqual([]);
     expect(crossedThresholds(undefined)).toEqual([]);
+  });
+});
+
+describe("run duration", () => {
+  // k6's --summary-export has no `state` key at all, so reading
+  // summary.state.testRunDurationMs published durationMs 0 for every run and
+  // the dashboard's Duration column was empty throughout.
+  it("falls back to the meta wall clock when the summary has no state", () => {
+    expect(
+      resolveDurationMs(
+        { metrics: {} } as never,
+        { startedAt: "2026-09-16T20:07:13Z", finishedAt: "2026-09-16T20:07:14Z" },
+      ),
+    ).toBe(1000);
+  });
+
+  it("prefers the summary value when handleSummary provided one", () => {
+    expect(
+      resolveDurationMs({ state: { testRunDurationMs: 4242 } }, {
+        startedAt: "2026-09-16T20:07:13Z",
+        finishedAt: "2026-09-16T20:07:14Z",
+      }),
+    ).toBe(4242);
+  });
+
+  it("never returns a negative duration from mis-ordered timestamps", () => {
+    expect(
+      resolveDurationMs(undefined, {
+        startedAt: "2026-09-16T20:07:14Z",
+        finishedAt: "2026-09-16T20:07:13Z",
+      }),
+    ).toBe(0);
+  });
+
+  it("returns 0 when neither source has usable timestamps", () => {
+    expect(resolveDurationMs(undefined, undefined)).toBe(0);
+    expect(resolveDurationMs({}, { startedAt: "not-a-date" })).toBe(0);
   });
 });
