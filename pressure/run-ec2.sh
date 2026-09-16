@@ -561,14 +561,28 @@ lg "curl -fsS -X POST http://${SUT_IP}:9098/reset >/dev/null 2>&1 || true"
 
 log "starting the metrics sampler and running '${SCENARIO}'..."
 RUN_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-# `</dev/null` and setsid are load-bearing. A backgrounded remote process that
-# still holds the session's stdin keeps the ssh CHANNEL open even after the
-# foreground command exits, so ssh waits on EOF forever and the runner blocks
-# with nothing left to wait for. Redirect all three streams and detach.
-lg "cd /opt/pressure/harness && setsid nohup pressure/collect/metrics.sh \
+# THE BRACES ARE THE FIX, and they are not cosmetic.
+#
+#   cd X && nohup Y >log 2>&1 &  echo $!
+#
+# parses as `(cd X && nohup Y >log 2>&1) & (echo $!)`. The `&` binds to the
+# WHOLE compound, so bash forks a SUBSHELL to run it, and that subshell waits on
+# metrics.sh forever. The redirections apply only to metrics.sh — the subshell
+# itself still holds the ssh session's stdout and stderr, so sshd never sees EOF
+# and the client blocks indefinitely. That is what stalled a run for eight hours
+# with k6.log empty and no k6 process: k6 was never reached, because the SAMPLER
+# call never returned.
+#
+# Redirecting the inner command harder does not help; `</dev/null` and setsid
+# were tried and the hang persisted. The `&` has to bind to the redirected
+# command alone, which is what the brace group does.
+#
+# Verified on Linux: without braces ssh hangs (killed at 20s, exit 124); with
+# them it returns in 0s and the sampler is still running afterwards.
+lg "cd /opt/pressure/harness && { setsid nohup pressure/collect/metrics.sh \
       --out ${RUN_DIR_REMOTE}/metrics.ndjson --interval 5 \
       --probe-host ${SUT_IP} --probe-ports '9099 9098' \
-      </dev/null > /tmp/sampler.log 2>&1 & echo \$! > /tmp/sampler.pid"
+      </dev/null > /tmp/sampler.log 2>&1 & echo \$! > /tmp/sampler.pid; }"
 
 set +e
 LG_TIMEOUT="$(k6_budget_for "$SCENARIO")"
