@@ -111,9 +111,9 @@ sudo find / -xdev -type f -size +100M -exec ls -lh {} + 2>/dev/null | sort -k5 -
 Cleanup, once you know what is large. Run only what the numbers above justify:
 
 ```bash
-docker container prune -f                          # stopped containers
-docker image prune -af --filter "until=168h"       # images nothing is running
-docker builder prune -f                            # build cache
+bash ~/app/prune-docker.sh --dry-run               # report, remove nothing
+bash ~/app/prune-docker.sh                         # stopped containers, unused
+                                                   # images, build cache
 docker volume prune -f                             # ANONYMOUS volumes only
 
 # Truncate oversized container logs in place. Safe while running — the daemon
@@ -126,7 +126,20 @@ sudo apt-get autoremove --purge -y && sudo apt-get clean
 
 Avoid `docker system prune -a --volumes`: it also deletes unused volumes, which includes `talent-resource-metrics` whenever both stacks happen to be down.
 
-Going forward, both compose stacks cap their container logs (`json-file`, 10 MiB × 3 per container, so ≤120 MiB total) and both deploy workflows prune stopped containers and unused images rather than only dangling ones.
+Reach for `docker image prune -af --filter "until=<age>"` only if you know what
+it does here, which is close to nothing. The box runs the containerd image
+store, where `until` is measured against the containerd image *record* rather
+than the date the image was built — and superseding a tag re-registers the old
+image under a record created by the pull that displaced it. An image that has
+been on the box for a fortnight can therefore read as seconds old. Both deploy
+workflows ran that command for months and reclaimed 0 B every time while ten
+untagged 800 MB images accumulated. `prune-docker.sh` bounds the count instead:
+it keeps whatever a container still references, keeps named tags (a locally
+built image such as `talent-caddy:local` has no registry to re-pull from),
+keeps the two newest unreferenced images for a re-pull-free rollback, and
+removes the rest.
+
+Going forward, both compose stacks cap their container logs (`json-file`, 10 MiB × 3 per container, so ≤120 MiB total), both deploy workflows run `prune-docker.sh` after the stack is healthy, and `.github/workflows/docker-prune.yml` runs it nightly — which is the only sweep that covers a deploy that failed before reaching it, or images left by anything else sharing the box.
 
 ## GitHub Deployment Secrets
 
