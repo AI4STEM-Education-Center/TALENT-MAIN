@@ -63,6 +63,48 @@ export function QuizVariants({
   quizId: string;
   questions: SourceQuestion[];
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const [activated, setActivated] = useState(false);
+  return (
+    <section
+      className="rounded-xl border bg-card p-4 space-y-5"
+      aria-label="Alternative quiz versions"
+    >
+      <h2 className="text-lg font-semibold">
+        <button
+          type="button"
+          className="flex w-full items-center gap-2 text-left"
+          aria-expanded={expanded}
+          aria-controls={`quiz-variants-${quizId}`}
+          onClick={() => {
+            setActivated(true);
+            setExpanded((value) => !value);
+          }}
+        >
+          <span aria-hidden="true">{expanded ? "▾" : "▸"}</span>
+          Alternative practice versions
+        </button>
+      </h2>
+      <div id={`quiz-variants-${quizId}`} hidden={!expanded}>
+        {activated && (
+          <QuizVariantsContent
+            key={quizId}
+            quizId={quizId}
+            questions={questions}
+          />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function QuizVariantsContent({
+  quizId,
+  questions,
+}: {
+  quizId: string;
+  questions: SourceQuestion[];
+}) {
   const [versions, setVersions] = useState<Version[]>([]);
   const [objectives, setObjectives] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState<Record<string, string>>({});
@@ -209,12 +251,8 @@ export function QuizVariants({
     (value) => value.trim().length > 0 && value.trim().length < 10,
   );
   return (
-    <section
-      className="rounded-xl border bg-card p-4 space-y-5"
-      aria-label="Alternative quiz versions"
-    >
+    <div className="space-y-5">
       <div>
-        <h2 className="text-lg font-semibold">Alternative practice versions</h2>
         <p className="text-sm text-muted-foreground">
           Compare the original with two alternatives. Four versions per change
           mode are prepared for you. Review answers before publishing; practice
@@ -369,7 +407,7 @@ export function QuizVariants({
           />
         ))}
       </details>
-    </section>
+    </div>
   );
 }
 

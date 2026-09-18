@@ -78,7 +78,7 @@ afterEach(async () => {
   host.remove();
   vi.unstubAllGlobals();
 });
-async function render() {
+async function render(open = true) {
   await act(async () =>
     root.render(
       <StrictMode>
@@ -86,10 +86,11 @@ async function render() {
       </StrictMode>,
     ),
   );
+  if (open) await click("Alternative practice versions");
 }
 async function click(text: string) {
   const button = [...host.querySelectorAll("button")].find(
-    (el) => el.textContent === text,
+    (el) => el.textContent?.replace(/[▾▸]/g, "").trim() === text,
   )!;
   expect(button).toBeTruthy();
   await act(async () => button.click());
@@ -152,9 +153,15 @@ it.each(["Enter", "Save"])(
     );
   },
 );
-it("pre-generates eight previews once, including under StrictMode", async () => {
+it("waits for the label click, then generates once even when reopened under StrictMode", async () => {
   versions = [];
-  await render();
+  await render(false);
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(host.querySelector("article")).toBeNull();
+  await click("Alternative practice versions");
+  expect(posts()).toHaveLength(1);
+  await click("Alternative practice versions");
+  await click("Alternative practice versions");
   expect(posts()).toHaveLength(1);
   expect(JSON.parse(posts()[0][1].body)).toMatchObject({
     count: 4,
@@ -171,5 +178,6 @@ it("does not automatically generate for unsupported questions", async () => {
       />,
     ),
   );
+  await click("Alternative practice versions");
   expect(posts()).toHaveLength(0);
 });

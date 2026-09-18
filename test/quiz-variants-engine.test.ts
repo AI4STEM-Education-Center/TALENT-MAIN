@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock("@/lib/quiz-variant-requests", () => ({
+  requestQuizVariant: (call: () => Promise<unknown>) => call(),
+}));
 vi.mock("@/lib/ai-provider", () => ({
   resolveProvider: vi.fn(),
   createOpenAIClient: vi.fn(),
