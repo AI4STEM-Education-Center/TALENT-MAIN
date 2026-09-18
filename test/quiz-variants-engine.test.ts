@@ -159,3 +159,28 @@ describe("variant generation worker", () => {
     expect(streamJsonCompletion).toHaveBeenCalledOnce();
   });
 });
+
+it("rejects repeated alternatives rather than presenting duplicate previews", async () => {
+  const version = await fixture();
+  await prisma.quizPracticeVersion.create({
+    data: {
+      quizId: version.quizId,
+      name: "Earlier preview",
+      variation: "NUMBERS",
+      status: "REVIEW",
+      sourceSnapshot: version.sourceSnapshot,
+      objectives: version.objectives,
+      questions: JSON.stringify([candidate]),
+    },
+  });
+  vi.mocked(streamJsonCompletion).mockResolvedValueOnce(
+    answer({ questions: [candidate] }),
+  );
+  await runQuizVariant(version.id);
+  const row = await prisma.quizPracticeVersion.findUniqueOrThrow({
+    where: { id: version.id },
+  });
+  expect(row.status).toBe("FAILED");
+  expect(row.error).toContain("repeats an existing question");
+  expect(row.questions).toBe("[]");
+});

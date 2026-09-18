@@ -322,3 +322,78 @@ describe("teacher variant controls", () => {
     ).toBe(202);
   });
 });
+
+it("queues four drafts per mode atomically, preserving restrictions and requiring review", async () => {
+  const f = await fixture();
+  login(f.teacher.user.id, "TEACHER");
+  const response = await generate(
+    req({
+      name: "Preview",
+      variation: "NUMBERS",
+      count: 4,
+      bothModes: true,
+      objectives: [
+        {
+          sourceQuestionId: f.question.id,
+          objective: "Use only whole numbers.",
+        },
+      ],
+    }),
+    ctx(f.quiz.id),
+  );
+  expect(response.status).toBe(202);
+  const data = await response.json();
+  expect(data.ids).toHaveLength(8);
+  const rows = await prisma.quizPracticeVersion.findMany({
+    where: { id: { in: data.ids } },
+  });
+  expect(rows.filter((r) => r.variation === "NUMBERS")).toHaveLength(4);
+  expect(rows.filter((r) => r.variation === "CONTEXT")).toHaveLength(4);
+  expect(rows.every((r) => r.status === "QUEUED")).toBe(true);
+  expect(enqueueQuizVariant).toHaveBeenCalledTimes(8);
+  const blocked = await generate(
+    req({
+      name: "Another",
+      variation: "NUMBERS",
+      count: 4,
+      objectives: [
+        {
+          sourceQuestionId: f.question.id,
+          objective: "Use only whole numbers.",
+        },
+      ],
+    }),
+    ctx(f.quiz.id),
+  );
+  expect(blocked.status).toBe(409);
+});
+
+it("records individual queue failures without losing the rest of the preview batch", async () => {
+  const f = await fixture();
+  login(f.teacher.user.id, "TEACHER");
+  vi.mocked(enqueueQuizVariant).mockImplementationOnce(() => {
+    throw new Error("Queue unavailable");
+  });
+  const response = await generate(
+    req({
+      name: "Preview",
+      variation: "CONTEXT",
+      count: 4,
+      objectives: [
+        {
+          sourceQuestionId: f.question.id,
+          objective: "Use only whole numbers.",
+        },
+      ],
+    }),
+    ctx(f.quiz.id),
+  );
+  expect(response.status).toBe(503);
+  const drafts = await prisma.quizPracticeVersion.findMany({
+    where: { quizId: f.quiz.id, id: { not: f.version.id } },
+  });
+  expect(drafts).toHaveLength(4);
+  expect(drafts.filter((v) => v.status === "FAILED")).toHaveLength(1);
+  expect(drafts.filter((v) => v.status === "QUEUED")).toHaveLength(3);
+  expect(enqueueQuizVariant).toHaveBeenCalledTimes(4);
+});

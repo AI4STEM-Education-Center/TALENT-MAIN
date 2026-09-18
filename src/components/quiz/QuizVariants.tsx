@@ -1,5 +1,11 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,10 +17,21 @@ type SourceQuestion = {
   text: string;
   answerMode: string;
   feedbackGeneral?: string | null;
+  options: {
+    id?: string;
+    text: string;
+    isCorrect: boolean;
+    imageUrl?: string | null;
+  }[];
+  answerTolerance?: number | null;
+  answerNumeric?: number | null;
+  answerUnit?: string | null;
+  figureUrl?: string | null;
 };
 type Version = {
   id: string;
   name: string;
+  variation: string;
   status: string;
   questions: VariantQuestion[];
   sourceSnapshot: VariantQuestion[];
@@ -48,6 +65,11 @@ export function QuizVariants({
 }) {
   const [versions, setVersions] = useState<Version[]>([]);
   const [objectives, setObjectives] = useState<Record<string, string>>({});
+  const [saved, setSaved] = useState<Record<string, string>>({});
+  const [page, setPage] = useState(0);
+  const started = useRef(new Set<string>());
+  const hydrated = useRef(false);
+  const loaded = useRef(false);
   const [name, setName] = useState("Practice version");
   const [variation, setVariation] = useState("NUMBERS");
   const [busy, setBusy] = useState(false);
@@ -55,7 +77,20 @@ export function QuizVariants({
   const url = `/api/quizzes/${quizId}/variants`;
   const refresh = useCallback(async () => {
     try {
-      setVersions((await request(url)).versions);
+      const data = (await request(url)).versions as Version[];
+      setVersions(data);
+      if (!hydrated.current) {
+        hydrated.current = true;
+        const restored = Object.fromEntries(
+          (data[0]?.objectives ?? []).map((o) => [
+            o.sourceQuestionId,
+            o.objective,
+          ]),
+        );
+        setObjectives(restored);
+        setSaved(restored);
+      }
+      loaded.current = true;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not load versions.");
     }
@@ -83,108 +118,311 @@ export function QuizVariants({
       setBusy(false);
     }
   }
+  const supported =
+    questions.length > 0 &&
+    questions.length <= 40 &&
+    questions.every(
+      (q) =>
+        ["SINGLE_SELECT", "NUMERIC"].includes(q.answerMode) &&
+        !q.figureUrl &&
+        !q.options.some((o) => o.imageUrl),
+    );
+  const objectiveList = (values: Record<string, string>) =>
+    questions.map((q) => ({
+      sourceQuestionId: q.id,
+      objective:
+        values[q.id]?.trim() ||
+        "Preserve the original learning objective, reasoning steps, units, and difficulty.",
+    }));
+  const matches = versions.filter(
+    (v) =>
+      v.variation === variation &&
+      objectiveList(saved).every((o) =>
+        v.objectives.some(
+          (vo) =>
+            vo.sourceQuestionId === o.sourceQuestionId &&
+            vo.objective === o.objective,
+        ),
+      ) &&
+      v.sourceSnapshot.length === questions.length &&
+      questions.every((q) =>
+        v.sourceSnapshot.some(
+          (source) =>
+            source.id === q.id &&
+            source.text === q.text &&
+            JSON.stringify(source.options) ===
+              JSON.stringify(
+                q.options.map(({ id, text, isCorrect }) => ({
+                  id,
+                  text,
+                  isCorrect,
+                })),
+              ) &&
+            (source.answerTolerance ?? null) === (q.answerTolerance ?? null) &&
+            (source.answerNumeric ?? null) === (q.answerNumeric ?? null) &&
+            (source.answerUnit ?? null) === (q.answerUnit ?? null),
+        ),
+      ),
+  );
+  const ready = matches.filter(
+    (v) => v.status === "REVIEW" || v.status === "PUBLISHED",
+  );
+  const visiblePage = Math.min(
+    page,
+    Math.max(0, Math.ceil(ready.length / 2) - 1),
+  );
+  const pair = ready.slice(visiblePage * 2, visiblePage * 2 + 2);
+  async function generate(values: Record<string, string>, bothModes = false) {
+    if (busy || generating || !supported) return;
+    setBusy(true);
+    setError("");
+    try {
+      await request(url, "POST", {
+        name: name.trim() || "Practice version",
+        variation,
+        objectives: objectiveList(values),
+        count: 4,
+        bothModes,
+      });
+      setSaved(values);
+      setPage(0);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not generate previews.");
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+  const prepareMissingPreviews = useEffectEvent(() => {
+    if (!loaded.current || !supported || busy || generating || matches.length)
+      return;
+    const key = JSON.stringify([variation, saved, questions]);
+    if (started.current.has(key)) return;
+    started.current.add(key);
+    void generate(saved, !versions.length);
+  });
+  useEffect(() => {
+    prepareMissingPreviews();
+  }, [versions, questions, variation, saved, busy]);
+  const invalidRestrictions = Object.values(objectives).some(
+    (value) => value.trim().length > 0 && value.trim().length < 10,
+  );
   return (
     <section
-      className="rounded-xl border p-4 space-y-4"
+      className="rounded-xl border bg-card p-4 space-y-5"
       aria-label="Alternative quiz versions"
     >
-      <h2 className="text-lg font-semibold">Alternative practice versions</h2>
-      <p className="text-sm text-muted-foreground">
-        Create text-only single-select or numeric alternatives. Confirm what
-        every question must assess, then review the generated answers before
-        publishing. Practice never changes grades or uses graded attempts.
-      </p>
+      <div>
+        <h2 className="text-lg font-semibold">Alternative practice versions</h2>
+        <p className="text-sm text-muted-foreground">
+          Compare the original with two alternatives. Four versions per change
+          mode are prepared for you. Review answers before publishing; practice
+          never changes grades.
+        </p>
+      </div>
       {error && (
         <p role="alert" className="text-sm text-destructive">
           {error}
         </p>
       )}
-      <details>
-        <summary className="cursor-pointer font-medium">
-          Create a version
-        </summary>
-        <div className="space-y-3 mt-3">
-          <label className="block text-sm">
-            Version name
-            <Input
-              value={name}
-              maxLength={100}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </label>
-          <label className="block text-sm">
-            Allowed changes
-            <select
-              className="block border rounded p-2 w-full"
-              value={variation}
-              onChange={(e) => setVariation(e.target.value)}
-            >
-              <option value="NUMBERS">Numbers and answer choices</option>
-              <option value="CONTEXT">
-                Context, numbers, and answer choices
-              </option>
-            </select>
-          </label>
-          {questions.map((q, i) => (
-            <div key={q.id} className="border rounded p-3 space-y-2">
-              <p className="font-medium">Question {i + 1}</p>
-              <MathText text={q.text} />
-              <label className="block text-sm">
-                Learning objective and constraints
-                <Textarea
-                  value={objectives[q.id] ?? ""}
-                  maxLength={2000}
-                  onChange={(e) =>
-                    setObjectives((prev) => ({
-                      ...prev,
-                      [q.id]: e.target.value,
-                    }))
-                  }
-                  placeholder="For example: calculate constant speed from distance and time; retain units, one-step reasoning, and whole-number answers."
-                />
-              </label>
-            </div>
-          ))}
-          <Button
-            disabled={
-              busy ||
-              generating ||
-              !name.trim() ||
-              !questions.length ||
-              questions.some((q) => (objectives[q.id]?.trim().length ?? 0) < 10)
-            }
-            onClick={() =>
-              void change(
-                {
-                  name,
-                  variation,
-                  objectives: questions.map((q) => ({
-                    sourceQuestionId: q.id,
-                    objective: objectives[q.id],
-                  })),
-                },
-                "POST",
-              )
-            }
-          >
-            Confirm objectives and generate
-          </Button>
-        </div>
-      </details>
-      {!versions.length && (
-        <p className="text-sm text-muted-foreground">
-          No alternative versions yet.
+      {!supported && (
+        <p role="status">
+          Previews support 1–40 text-only single-select or numeric questions.
         </p>
       )}
-      {versions.map((version) => (
-        <VariantReview
-          key={`${version.id}:${version.status}`}
-          version={version}
-          busy={busy}
-          change={change}
-        />
+      <div className="flex flex-wrap items-end gap-4">
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium">Allowed changes</legend>
+          <div className="flex flex-wrap gap-2">
+            {[
+              ["NUMBERS", "Numbers & choices"],
+              ["CONTEXT", "Context, numbers & choices"],
+            ].map(([value, label]) => (
+              <Button
+                key={value}
+                variant={variation === value ? "default" : "outline"}
+                aria-pressed={variation === value}
+                onClick={() => {
+                  setVariation(value);
+                  setPage(0);
+                }}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+        </fieldset>
+        <label className="text-sm">
+          Version name
+          <Input
+            value={name}
+            maxLength={100}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </label>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/50 p-3">
+        <p className="text-sm" role="status">
+          {generating
+            ? "Preparing and checking alternatives…"
+            : `${ready.length} previews ready for this mode`}
+        </p>
+        <div className="flex gap-2">
+          {ready.length > 2 && (
+            <Button
+              variant="outline"
+              onClick={() =>
+                setPage((p) => (p + 1) % Math.ceil(ready.length / 2))
+              }
+            >
+              Show two more
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            disabled={busy || generating || !supported || invalidRestrictions}
+            onClick={() => void generate(objectives)}
+          >
+            Generate four more
+          </Button>
+        </div>
+      </div>
+      {questions.map((q, index) => (
+        <article key={q.id} className="overflow-hidden rounded-xl border">
+          <h3 className="border-b bg-muted/40 px-4 py-3 font-semibold">
+            Question {index + 1}
+          </h3>
+          <div className="grid divide-y lg:grid-cols-3 lg:divide-y-0 lg:divide-x">
+            <QuestionPreview label="Original" question={q} />
+            {[0, 1].map((slot) => (
+              <QuestionPreview
+                key={slot}
+                label={pair[slot]?.name ?? `Alternative ${slot + 1}`}
+                question={pair[slot]?.questions.find(
+                  (v) => v.sourceQuestionId === q.id,
+                )}
+                pending={generating}
+              />
+            ))}
+          </div>
+          <div className="border-t bg-muted/20 p-4 space-y-2">
+            <label
+              htmlFor={`restrictions-${q.id}`}
+              className="text-sm font-medium"
+            >
+              Learning objective & restrictions
+            </label>
+            <Textarea
+              id={`restrictions-${q.id}`}
+              rows={2}
+              value={objectives[q.id] ?? ""}
+              maxLength={2000}
+              onChange={(e) =>
+                setObjectives((prev) => ({ ...prev, [q.id]: e.target.value }))
+              }
+              onKeyDown={(e) => {
+                if (
+                  e.key === "Enter" &&
+                  !e.shiftKey &&
+                  !e.nativeEvent.isComposing
+                ) {
+                  e.preventDefault();
+                  if (!invalidRestrictions) void generate(objectives);
+                }
+              }}
+              placeholder="Keep the same skill and difficulty, or add restrictions such as whole-number answers only."
+            />
+            <div className="flex flex-wrap justify-between items-center gap-2">
+              <p className="text-xs text-muted-foreground">
+                Enter to save and preview · Shift+Enter for a new line. Optional
+                restrictions need at least 10 characters.
+              </p>
+              <Button
+                size="sm"
+                disabled={
+                  busy || generating || !supported || invalidRestrictions
+                }
+                onClick={() => void generate(objectives)}
+              >
+                Save & preview
+              </Button>
+            </div>
+            {(objectives[q.id] ?? "") !== (saved[q.id] ?? "") && (
+              <p className="text-xs text-amber-700">
+                Unsaved restrictions — previews use the last saved settings.
+              </p>
+            )}
+          </div>
+        </article>
       ))}
+      <details className="space-y-3">
+        <summary className="cursor-pointer font-medium">
+          Review & publish versions ({versions.length})
+        </summary>
+        {versions.map((version) => (
+          <VariantReview
+            key={`${version.id}:${version.status}`}
+            version={version}
+            busy={busy}
+            change={change}
+          />
+        ))}
+      </details>
     </section>
+  );
+}
+
+function QuestionPreview({
+  label,
+  question,
+  pending = false,
+}: {
+  label: string;
+  question?: SourceQuestion;
+  pending?: boolean;
+}) {
+  return (
+    <div className="min-w-0 p-4 space-y-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
+      {question ? (
+        <>
+          <MathText text={question.text} />
+          <ul className="space-y-2">
+            {question.options.map((option, i) => (
+              <li
+                key={option.id ?? option.text}
+                className={`flex gap-2 rounded-lg border p-2 text-sm ${option.isCorrect ? "border-emerald-500/40 bg-emerald-500/10" : "bg-background"}`}
+              >
+                <span className="font-medium">
+                  {String.fromCharCode(65 + i)}.
+                </span>
+                <MathText text={option.text} />
+                {option.isCorrect && (
+                  <span className="ml-auto text-xs font-medium">Correct</span>
+                )}
+              </li>
+            ))}
+          </ul>
+          {question.answerMode === "NUMERIC" && (
+            <p className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm">
+              Answer: {question.answerNumeric} {question.answerUnit}
+            </p>
+          )}
+        </>
+      ) : (
+        <div
+          className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground"
+          role="status"
+        >
+          {pending
+            ? "Generating a checked preview…"
+            : "No checked preview yet. Generate alternatives or review any failed versions below."}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -238,12 +476,11 @@ function VariantReview({
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <p className="font-medium">Original</p>
-                <MathText
-                  text={
-                    version.sourceSnapshot.find(
-                      (s) => s.id === q.sourceQuestionId,
-                    )?.text ?? ""
-                  }
+                <QuestionPreview
+                  label="Source question and choices"
+                  question={version.sourceSnapshot.find(
+                    (s) => s.id === q.sourceQuestionId,
+                  )}
                 />
               </div>
               <div className="space-y-2">

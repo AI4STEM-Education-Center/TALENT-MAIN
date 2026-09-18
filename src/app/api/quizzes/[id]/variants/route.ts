@@ -47,6 +47,8 @@ const createSchema = z.object({
   name: z.string().trim().min(1).max(100),
   variation: z.enum(["NUMBERS", "CONTEXT"]),
   objectives: objectiveSchema,
+  count: z.number().int().min(1).max(4).default(1),
+  bothModes: z.boolean().default(false),
 });
 export async function POST(req: NextRequest, context: Context) {
   const quiz = await ownedQuiz(context);
@@ -125,30 +127,53 @@ export async function POST(req: NextRequest, context: Context) {
       { status: 400 },
     );
   }
-  const version = await prisma.$transaction(async (tx) => {
+  const versions = await prisma.$transaction(async (tx) => {
     if (
       await tx.quizPracticeVersion.count({
         where: { quizId: quiz.id, status: { in: ["QUEUED", "GENERATING"] } },
       })
     )
       return null;
-    return tx.quizPracticeVersion.create({
-      data: {
-        quizId: quiz.id,
-        name: body.data.name,
-        variation: body.data.variation,
-        objectives: JSON.stringify(objectives),
-        sourceSnapshot: JSON.stringify(sources),
-      },
-    });
+    const modes = body.data.bothModes
+      ? ["NUMBERS", "CONTEXT"]
+      : [body.data.variation];
+    const created = [];
+    for (const variation of modes) {
+      for (let i = 0; i < body.data.count; i++) {
+        created.push(
+          await tx.quizPracticeVersion.create({
+            data: {
+              quizId: quiz.id,
+              name:
+                body.data.count === 1
+                  ? body.data.name
+                  : `${body.data.name.slice(0, 80)} · ${variation === "NUMBERS" ? "Numbers" : "Context"} ${i + 1}`,
+              variation,
+              objectives: JSON.stringify(objectives),
+              sourceSnapshot: JSON.stringify(sources),
+            },
+          }),
+        );
+      }
+    }
+    return created;
   });
-  if (!version)
+  if (!versions)
     return NextResponse.json(
       { error: "A version is already generating for this quiz." },
       { status: 409 },
     );
-  return queueVersion(version.id);
+  const results = await Promise.all(
+    versions.map((version) => queueVersion(version.id)),
+  );
+  const failed = results.find((result) => !result.ok);
+  if (failed) return failed;
+  return NextResponse.json(
+    { id: versions[0].id, ids: versions.map((v) => v.id), status: "QUEUED" },
+    { status: 202 },
+  );
 }
+
 async function queueVersion(id: string) {
   try {
     enqueueQuizVariant(id);

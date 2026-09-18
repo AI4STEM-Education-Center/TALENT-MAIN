@@ -72,12 +72,39 @@ export async function runQuizVariant(versionId: string) {
     if (existing.length) {
       questions = validateVariant({ questions: existing }, sources);
     } else {
+      const siblings = await prisma.quizPracticeVersion.findMany({
+        where: {
+          quizId: row.quizId,
+          id: { not: row.id },
+          status: { in: ["REVIEW", "PUBLISHED"] },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 12,
+        select: { questions: true },
+      });
+      const previous = siblings.flatMap(
+        (sibling) => JSON.parse(sibling.questions) as VariantQuestion[],
+      );
       const value = await call(
-        `Create one complete alternative quiz. Variation: ${row.variation}. Preserve each teacher-confirmed objective, reasoning steps, units, prerequisites and difficulty. Change numbers for NUMBERS; change a modest real-world context as well for CONTEXT. Do not introduce additional skills, acceleration, unit conversions, hidden assumptions, or outside facts. Recompute answers and plausible distractors. Use unique question/option IDs, map every sourceQuestionId, preserve answerMode. Preserve answerUnit and answerTolerance exactly from each source. Numeric answerTolerance is an absolute positive tolerance; single-select numeric fields must be null. Include a worked solution and an explanation of preserved intent. If the source is flawed or cannot be varied safely, do not invent a solution: return an empty questions array so the job fails for teacher attention.\nObjectives: ${JSON.stringify(objectives)}\nSource quiz: ${JSON.stringify(sources)}`,
+        `Create one complete alternative quiz. Use this unique variation seed to explore different examples: ${row.id}. Do not repeat these previous question texts: ${JSON.stringify(previous.map((q) => q.text))}. Variation: ${row.variation}. Preserve each specified objective, reasoning steps, units, prerequisites and difficulty. Change numbers for NUMBERS; change a modest real-world context as well for CONTEXT. Do not introduce additional skills, acceleration, unit conversions, hidden assumptions, or outside facts. Recompute answers and plausible distractors. Use unique question/option IDs, map every sourceQuestionId, preserve answerMode. Preserve answerUnit and answerTolerance exactly from each source. Numeric answerTolerance is an absolute positive tolerance; single-select numeric fields must be null. Include a worked solution and an explanation of preserved intent. If the source is flawed or cannot be varied safely, do not invent a solution: return an empty questions array so the job fails for teacher attention.\nObjectives: ${JSON.stringify(objectives)}\nSource quiz: ${JSON.stringify(sources)}`,
         variantPayloadSchema,
         "quiz_variant",
       );
       questions = validateVariant(value, sources);
+      const normalize = (text: string) =>
+        text.trim().replace(/\s+/g, " ").toLowerCase();
+      if (
+        questions.some((q) =>
+          [...sources, ...previous].some(
+            (other) =>
+              other.sourceQuestionId === q.sourceQuestionId &&
+              normalize(other.text) === normalize(q.text),
+          ),
+        )
+      )
+        throw new Error(
+          "This alternative repeats an existing question. Retry to generate a different version.",
+        );
     }
     const saved = await prisma.quizPracticeVersion.updateMany({
       where: { id: versionId, status: "GENERATING", updatedAt: lease },
