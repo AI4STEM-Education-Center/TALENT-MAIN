@@ -74,13 +74,152 @@ SUT_VCPUS="$(jq -r '.sutVcpus // null' "$STATE_FILE")"
 SUT_MEMORY_MIB="$(jq -r '.sutMemoryMiB // null' "$STATE_FILE")"
 [ -n "$REGION" ] || REGION="$(jq -r '.region' "$STATE_FILE")"
 
-SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ServerAliveInterval=30)
+# Multiplex every call over ONE connection. Each lg/sut call used to open a new
+# TCP+SSH session, and the READY, SSH-detect and BOOTED polls each open one per
+# iteration — dozens of connections from a single source in a few minutes. The
+# load generator's sshd eventually answered one with an immediate RST
+# ("kex_exchange_identification: read: Connection reset by peer") and the run
+# died mid-payload. Whether that was sshd rate-limiting the source or
+# unattended-upgrades restarting sshd underneath us, reusing one connection
+# removes the churn that provokes it — and makes the polls much faster.
+SSH_CTL_DIR="$(mktemp -d -t pressure-ssh-XXXXXX)"
+# Defined HERE, not at download time near the end of the script. The EXIT trap
+# writes failure evidence into it, and an early failure — sanitize, bootstrap,
+# minting — is exactly when that evidence matters most. Declared late, it was
+# empty for every failure the collector was built to capture.
+LOCAL_RUN_DIR="${PRESSURE_DIR}/.tmp/ec2-runs/${RUN_ID}-${SCENARIO}"
+
+# On failure, grab the evidence BEFORE returning — run.sh's own EXIT trap tears
+# the instances down the moment this script exits, and once the load generator
+# is gone the logs that explain the failure are gone with it. Learned the hard
+# way: an 8-hour stall was torn down before /tmp/sampler.log and k6.log were
+# collected, and the cause is still unknown as a result.
+#
+# Everything here is best-effort and hard-bounded. A diagnostic collector that
+# can itself hang would just move the problem.
+collect_failure_evidence() {
+  local code=$1 dest
+  [ "$code" -eq 0 ] && return 0
+  [ -n "${LOCAL_RUN_DIR:-}" ] || return 0
+  dest="${LOCAL_RUN_DIR}/failure-evidence"
+  mkdir -p "$dest" 2>/dev/null || return 0
+  log "run failed (exit ${code}); collecting evidence into ${dest} before teardown..."
+  {
+    timeout 60 ssh "${SSH_OPTS[@]}" "ubuntu@${LOADGEN_IP}" \
+      'echo "=== BOOT_STAGE ==="; cat /opt/pressure/BOOT_STAGE 2>/dev/null
+       echo "=== sampler.log (tail) ==="; tail -50 /tmp/sampler.log 2>/dev/null
+       echo "=== k6.log (tail) ==="; tail -120 /opt/pressure/run/k6.log 2>/dev/null
+       echo "=== run dir ==="; ls -la /opt/pressure/run/ 2>/dev/null
+       echo "=== processes ==="; ps -eo pid,etime,args | grep -E "k6|metrics" | grep -v grep
+       echo "=== cloud-init ==="; tail -40 /var/log/cloud-init-output.log 2>/dev/null'
+  } > "${dest}/loadgen.txt" 2>&1 || true
+  log "evidence saved: ${dest}/loadgen.txt"
+}
+
+cleanup_ssh_control() {
+  local code=$?
+  collect_failure_evidence "$code" || true
+  [ -n "${SSH_CTL_DIR:-}" ] || return 0
+  ssh -o ControlPath="${SSH_CTL_DIR}/%C" -O exit "ubuntu@${LOADGEN_IP}" >/dev/null 2>&1 || true
+  rm -rf "$SSH_CTL_DIR"
+}
+trap cleanup_ssh_control EXIT
+
+SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ServerAliveInterval=30
+          -o ControlMaster=auto -o ControlPath="${SSH_CTL_DIR}/%C" -o ControlPersist=600)
 [ -n "$SSH_KEY" ] && SSH_OPTS+=(-i "$SSH_KEY")
 
-lg() { ssh "${SSH_OPTS[@]}" "ubuntu@${LOADGEN_IP}" "$@"; }
+# The clone authorizes only this run's throwaway key (provision.sh mints it and
+# user-data-sut.yml installs it), and the load generator is the only thing that
+# talks to the clone. Production's key pair never gets here.
+SUT_KEY_LOCAL="$(jq -r '.sutKey // empty' "$STATE_FILE")"
+SUT_KEY_REMOTE="/opt/pressure/sut-key"
+SUT_SSH_OPTS="-o StrictHostKeyChecking=accept-new -i ${SUT_KEY_REMOTE}"
+
+# ssh returns 255 for ITS OWN transport failures and passes through the remote
+# command's status otherwise — so retrying only on 255 recovers a dropped
+# connection without ever masking a meaningful non-zero result. That matters:
+# callers like `lg "test -f /opt/pressure/READY"` rely on exit 1 meaning "not
+# there yet", and retrying that would turn every poll into a 4x stall.
+# NO remote call may block forever. A run once sat for EIGHT HOURS on a single
+# ssh call whose remote command had already exited — smoke caps k6 at
+# maxDuration 3m and `pgrep k6` on the generator showed nothing running — while
+# the load generator kept billing. Nothing in the harness noticed, because every
+# stage was unbounded. Override per call with LG_TIMEOUT; k6 sets its own from
+# the scenario's own shape.
+LG_TIMEOUT_DEFAULT=600
+_lg_budget() { echo "${LG_TIMEOUT:-$LG_TIMEOUT_DEFAULT}"; }
+
+lg() {
+  local attempt=1 code budget
+  budget="$(_lg_budget)"
+  while :; do
+    timeout --signal=TERM --kill-after=30 "$budget" \
+      ssh "${SSH_OPTS[@]}" "ubuntu@${LOADGEN_IP}" "$@"
+    code=$?
+    if [ "$code" -eq 124 ]; then
+      log "ssh to the load generator exceeded its ${budget}s budget and was killed"
+      return 124
+    fi
+    [ "$code" -ne 255 ] && return "$code"
+    [ "$attempt" -ge 4 ] && return "$code"
+    log "ssh to the load generator failed at the transport layer; retry ${attempt}/3"
+    sleep $((attempt * 3))
+    attempt=$((attempt + 1))
+  done
+}
+
+# Each scenario's own shape sets the ceiling, with slack for k6 startup, the
+# summary export and teardown of its VUs. Deliberately not one global number:
+# soak legitimately runs two hours, and smoke hanging for two hours is the
+# failure this exists to prevent.
+k6_budget_for() {
+  case "$1" in
+    smoke|login-storm|media-signing) echo 900 ;;
+    admin-observability)             echo 1200 ;;
+    exam-day|spike-recovery)         echo 2400 ;;
+    ramp-capacity)                   echo 3600 ;;
+    soak)                            echo 10800 ;;
+    *)                               echo 3600 ;;
+  esac
+}
+# Single-shot variant for callers that pipe or redirect LOCAL stdin. A retry
+# cannot replay a consumed pipe, and silently re-sending a partially drained one
+# would upload a truncated file, so these deliberately do not retry.
+lg_stream() {
+  timeout --signal=TERM --kill-after=30 "${LG_STREAM_TIMEOUT:-900}" \
+    ssh "${SSH_OPTS[@]}" "ubuntu@${LOADGEN_IP}" "$@"
+}
 # The clone has no public IP by design, so every command to it is proxied through
 # the load generator.
-sut() { lg "ssh -o StrictHostKeyChecking=accept-new ubuntu@${SUT_IP} \"$*\""; }
+sut() { lg "ssh ${SUT_SSH_OPTS} ${SUT_SSH_USER}@${SUT_IP} \"$*\""; }
+
+# The clone's login user and application path come from the PRODUCTION image, not
+# from this repo: Debian cloud images ship `admin`, Ubuntu ships `ubuntu`. These
+# were hardcoded to `ubuntu`, so on the Debian production image every command
+# against the clone failed with a bare "Permission denied (publickey)" and every
+# `/home/ubuntu/app` path silently missed. Detect instead of guessing, and let an
+# operator override when production moves again.
+SUT_SSH_USER="${PRESSURE_SUT_SSH_USER:-}"
+SUT_APP_DIR="${PRESSURE_SUT_APP_DIR:-}"
+
+detect_sut_identity() {
+  local candidate
+  if [ -z "$SUT_SSH_USER" ]; then
+    for candidate in admin ubuntu debian ec2-user; do
+      if lg "ssh ${SUT_SSH_OPTS} -o BatchMode=yes -o ConnectTimeout=10 ${candidate}@${SUT_IP} true" >/dev/null 2>&1; then
+        SUT_SSH_USER="$candidate"
+        break
+      fi
+    done
+  fi
+  [ -n "$SUT_SSH_USER" ] || return 1
+  if [ -z "$SUT_APP_DIR" ]; then
+    SUT_APP_DIR="$(sut "ls -d /home/*/app 2>/dev/null | head -1" 2>/dev/null | tr -d '\r')"
+    [ -n "$SUT_APP_DIR" ] || SUT_APP_DIR="/home/${SUT_SSH_USER}/app"
+  fi
+  log "clone identity: user=${SUT_SSH_USER} app-dir=${SUT_APP_DIR}"
+}
 
 loadgen_diagnostics() {
   log "load-generator bootstrap diagnostics:"
@@ -104,11 +243,29 @@ instance_state() {
     --query 'Reservations[0].Instances[0].State.Name' --output text 2>/dev/null || true
 }
 
+# The clone has no public IP and may die before it ever accepts SSH, so the only
+# evidence available is what EC2 itself reports. Console output is included
+# because a clone that powers itself off during cloud-init leaves nothing else.
+sut_diagnostics() {
+  command -v aws >/dev/null 2>&1 || return 0
+  log "clone (SUT) diagnostics:"
+  aws ec2 describe-instances --region "$REGION" --instance-ids "$SUT_ID" \
+    --query 'Reservations[].Instances[].{id:InstanceId,state:State.Name,reason:StateReason.Message,transition:StateTransitionReason}' \
+    --output table 2>&1 | sed 's/^/    /' || true
+  log "  console output (last 40 lines, empty if the image does not log to serial):"
+  aws ec2 get-console-output --region "$REGION" --instance-id "$SUT_ID" \
+    --query Output --output text 2>/dev/null | tail -40 | sed 's/^/    /' || true
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. Wait for both instances, and REFUSE to proceed unless sanitize succeeded
 # ─────────────────────────────────────────────────────────────────────────────
+# 40 minutes, not 20: base-packages alone is now allowed up to two 900s attempts
+# (see ec2/bootstrap-loadgen.sh), and a readiness budget shorter than the
+# bootstrap's own worst case reports "never became ready" while the box is still
+# making progress — which hides the real cause behind a timeout.
 log "waiting for the load generator to finish cloud-init (package installation can take several minutes)..."
-for attempt in $(seq 1 120); do
+for attempt in $(seq 1 240); do
   if lg "test -f /opt/pressure/READY" 2>/dev/null; then break; fi
   if lg "test -f /opt/pressure/BOOT_FAILED" 2>/dev/null; then
     loadgen_diagnostics
@@ -129,7 +286,7 @@ for attempt in $(seq 1 120); do
 done
 if ! lg "test -f /opt/pressure/READY"; then
   loadgen_diagnostics
-  die "the load generator never became ready after 20 minutes"
+  die "the load generator never became ready after 40 minutes"
 fi
 
 # ── Deliver the sanitize payload and start the app ───────────────────────────
@@ -138,6 +295,42 @@ fi
 # sanitize machinery, because EC2 caps user-data at 16 KB and embedding it came
 # to ~47 KB. So it is shipped now, over SSH, through the load generator — the
 # clone has no public IP.
+# sshd on the clone is not up the instant the instance is, so detection has to be
+# as patient as the BOOTED wait below — and has to notice a clone that is dying
+# rather than merely slow, which is what silently ate an entire run before.
+# Must happen before the first probe below: without this the load generator has
+# no credential at all for the clone, every candidate user fails identically on
+# publickey, and the failure reads as "wrong login user" when it is "no key".
+install_sut_key() {
+  [ -n "$SUT_KEY_LOCAL" ] || \
+    die "this run's state file predates the throwaway clone key; re-provision with the current ec2/provision.sh"
+  [ -f "$SUT_KEY_LOCAL" ] || die "the throwaway clone key is missing: ${SUT_KEY_LOCAL}"
+  # Piped under umask 077 rather than scp'd, so the private key is never briefly
+  # readable at a default-mode path on the load generator.
+  lg_stream "umask 077 && mkdir -p /opt/pressure && cat > ${SUT_KEY_REMOTE}" < "$SUT_KEY_LOCAL" \
+    || die "could not install the throwaway clone key on the load generator"
+}
+log "installing this run's throwaway clone key on the load generator..."
+install_sut_key
+
+log "waiting for the clone to accept SSH..."
+for attempt in $(seq 1 90); do
+  detect_sut_identity && break
+  SUT_EC2_STATE="$(instance_state "$SUT_ID")"
+  case "$SUT_EC2_STATE" in
+    stopping|stopped|shutting-down|terminated)
+      sut_diagnostics
+      die "the SUT entered EC2 state '${SUT_EC2_STATE}' before it accepted SSH"
+      ;;
+  esac
+  [ $((attempt % 3)) -eq 0 ] && log "clone is not accepting SSH yet ($((attempt * 10))s elapsed)..."
+  sleep 10
+done
+[ -n "$SUT_SSH_USER" ] || {
+  sut_diagnostics
+  die "could not log in to the clone as any known cloud user (tried admin, ubuntu, debian, ec2-user); set PRESSURE_SUT_SSH_USER"
+}
+
 log "waiting for the clone to finish cloud-init..."
 for attempt in $(seq 1 90); do
   if sut "test -f /opt/pressure/BOOTED" 2>/dev/null; then break; fi
@@ -155,13 +348,13 @@ else
   # scp through the load generator: -J would need a jump-host-capable ssh on the
   # local machine AND the key forwarded; piping tar over two hops needs neither.
   tar -C "$PRESSURE_DIR" -czf - ec2/sanitize-sut.sh ec2/bootstrap-sut.sh ec2/docker-compose.sut.yml instrument/probe.cjs \
-    | lg "cat > /tmp/payload.tgz"
-  lg "scp -o StrictHostKeyChecking=accept-new /tmp/payload.tgz ubuntu@${SUT_IP}:/tmp/payload.tgz" >/dev/null
+    | lg_stream "cat > /tmp/payload.tgz"
+  lg "scp ${SUT_SSH_OPTS} /tmp/payload.tgz ${SUT_SSH_USER}@${SUT_IP}:/tmp/payload.tgz" >/dev/null
   sut "mkdir -p /tmp/payload && tar -C /tmp/payload -xzf /tmp/payload.tgz \
        && sudo install -m 0700 /tmp/payload/ec2/sanitize-sut.sh /opt/pressure/sanitize-sut.sh \
        && sudo install -m 0700 /tmp/payload/ec2/bootstrap-sut.sh /opt/pressure/bootstrap-sut.sh \
        && sudo install -m 0644 /tmp/payload/instrument/probe.cjs /opt/pressure/probe.cjs \
-       && install -m 0644 /tmp/payload/ec2/docker-compose.sut.yml /home/ubuntu/app/docker-compose.sut.yml \
+       && install -m 0644 /tmp/payload/ec2/docker-compose.sut.yml ${SUT_APP_DIR}/docker-compose.sut.yml \
        && rm -rf /tmp/payload /tmp/payload.tgz"
 
   log "sanitizing the clone and starting the application..."
@@ -169,9 +362,18 @@ else
   # refuses to run without it. The acknowledgement was already made explicitly
   # at provision time (--ack-real-data), which is what this carries forward.
   set +e
-  sut "PRESSURE_SOURCE_INSTANCE_ID='$(jq -r '.sourceInstance' "$STATE_FILE")' \
+  # Through `sudo env`, not directly. bootstrap-sut.sh is installed root-owned
+  # 0700 — deliberately, since it is the thing that unmasks Docker on a box
+  # holding production data — but the login user is the unprivileged cloud user,
+  # so invoking it directly is exit 126, "Permission denied", every time. The
+  # script is written to escalate per-command with sudo; running the whole thing
+  # as root simply makes those internal sudo calls no-ops.
+  #
+  # `env` is required because sudo does not accept leading VAR=value assignments.
+  sut "sudo env PRESSURE_SOURCE_INSTANCE_ID='$(jq -r '.sourceInstance' "$STATE_FILE")' \
        PRESSURE_ACK_REAL_DATA='yes' \
        PRESSURE_DEADMAN_MINUTES='$(jq -r '.deadmanMinutes // 240' "$STATE_FILE")' \
+       APP_DIR='${SUT_APP_DIR}' \
        /opt/pressure/bootstrap-sut.sh"
   BOOTSTRAP_EXIT=$?
   set -e
@@ -221,7 +423,7 @@ else
   log "copying the harness to the load generator..."
   lg "rm -rf /opt/pressure/harness && mkdir -p /opt/pressure/harness"
   tar -C "$REPO_DIR" -czf - pressure package.json package-lock.json prisma src/lib/db-url.ts \
-    | lg "tar -C /opt/pressure/harness -xzf -"
+    | lg_stream "tar -C /opt/pressure/harness -xzf -"
 
   log "installing harness dependencies on the load generator..."
   # --omit=dev is wrong here: tsx and prisma are devDependencies and the minter
@@ -263,12 +465,45 @@ else
   log "copying a consistent clone database backup to the load generator for session minting..."
   # The escaped quotes must survive both SSH hops so sqlite receives the dot
   # command as one argument rather than `.backup` and its path as two.
-  sut "sudo rm -f /tmp/mint.db && sudo sqlite3 /home/ubuntu/app/data/db/prod/prod.db \\\".backup /tmp/mint.db\\\" && sudo chown ubuntu:ubuntu /tmp/mint.db"
-  lg "scp -o StrictHostKeyChecking=accept-new ubuntu@${SUT_IP}:/tmp/mint.db /opt/pressure/mint.db" >/dev/null
+  sut "sudo rm -f /tmp/mint.db && sudo sqlite3 ${SUT_APP_DIR}/data/db/prod/prod.db \\\".backup /tmp/mint.db\\\" && sudo chown ${SUT_SSH_USER}:${SUT_SSH_USER} /tmp/mint.db"
+  lg "scp ${SUT_SSH_OPTS} ${SUT_SSH_USER}@${SUT_IP}:/tmp/mint.db /opt/pressure/mint.db" >/dev/null
   sut "rm -f /tmp/mint.db"
+
+  # Production holds one ADMIN and one TEACHER and nothing else — no students,
+  # classes or quizzes. mint-sessions.ts does not fail on that, it warns and
+  # returns an empty student list, so every student journey would run with no
+  # identity and the thresholds would pass on zero samples. Seed a cohort first.
+  #
+  # On the generator, against the copy that is already here, because the clone
+  # has no Node and putting one there would add a competing process to the
+  # single CPU the whole measurement is about.
+  log "seeding a benchmark cohort (${MINT_STUDENTS} students, ${MINT_TEACHERS} teachers)..."
+  lg "cd /opt/pressure/harness && npx tsx pressure/tools/seed-clone.ts \
+        --database-url 'file:/opt/pressure/mint.db' \
+        --students ${MINT_STUDENTS} --teachers ${MINT_TEACHERS} --admins 2 --questions 10 \
+        --password 'bench-${RUN_ID}'" \
+    || die "seeding the benchmark cohort failed"
+  # better-sqlite3 leaves a -wal beside the file. Ship one self-contained
+  # database, or the clone silently comes up on the pre-seed contents.
+  lg "sqlite3 /opt/pressure/mint.db 'PRAGMA wal_checkpoint(TRUNCATE);' >/dev/null" \
+    || die "could not checkpoint the seeded database"
+
+  log "installing the seeded database on the clone..."
+  lg "scp ${SUT_SSH_OPTS} /opt/pressure/mint.db ${SUT_SSH_USER}@${SUT_IP}:/tmp/seeded.db" >/dev/null
+  sut "cd ${SUT_APP_DIR} \
+       && sudo docker compose -f docker-compose.sut.yml down --timeout 30 \
+       && sudo chown --reference=data/db/prod/prod.db /tmp/seeded.db \
+       && sudo chmod --reference=data/db/prod/prod.db /tmp/seeded.db \
+       && sudo mv /tmp/seeded.db data/db/prod/prod.db \
+       && sudo rm -f data/db/prod/prod.db-wal data/db/prod/prod.db-shm \
+       && sudo docker compose -f docker-compose.sut.yml up -d --wait --wait-timeout 300" \
+    || die "could not install the seeded database on the clone"
+
+  # AFTER seeding, so a suite restore between scenarios brings back the cohort
+  # rather than the empty production snapshot.
   [ "$SUITE_RUN" = "yes" ] && lg "cp /opt/pressure/mint.db /opt/pressure/suite-baseline.db"
 
-  log "minting sessions from the real user set (${MINT_STUDENTS} students, ${MINT_TEACHERS} teachers)..."
+  log "minting sessions from the seeded cohort (${MINT_STUDENTS} students, ${MINT_TEACHERS} teachers)..."
   lg "cd /opt/pressure/harness && AUTH_SECRET='${CLONE_SECRET}' npx tsx pressure/tools/mint-sessions.ts \
         --out /opt/pressure/sessions.json --database-url 'file:/opt/pressure/mint.db' \
         --students ${MINT_STUDENTS} --teachers ${MINT_TEACHERS} --admins 2 --secure \
@@ -295,7 +530,7 @@ if sut "curl -fsS http://127.0.0.1:8099/healthz >/dev/null" 2>/dev/null; then
 else
   log "starting the AI stub on the clone..."
   lg "tar -C /opt/pressure/harness -czf - pressure/mock-ai pressure/tools \
-      | ssh -o StrictHostKeyChecking=accept-new ubuntu@${SUT_IP} 'mkdir -p /opt/pressure/ai && tar -C /opt/pressure/ai -xzf -'"
+      | ssh ${SUT_SSH_OPTS} ${SUT_SSH_USER}@${SUT_IP} 'mkdir -p /opt/pressure/ai && tar -C /opt/pressure/ai -xzf -'"
   sut "command -v node >/dev/null 2>&1" \
     || log "WARNING: node is not on the clone; the AI stub cannot start and exam-result generation will fail (recorded as designed worker failures)"
   sut "cd /opt/pressure/ai && (nohup npx --yes tsx pressure/mock-ai/server.ts --port 8099 --host 0.0.0.0 > /tmp/mock-ai.log 2>&1 &) ; sleep 3; curl -fsS http://127.0.0.1:8099/healthz || true"
@@ -306,8 +541,8 @@ fi
 # scenarios measure a mutated cohort rather than an independent workload.
 if [ "$SUITE_RUN" = "yes" ] && lg "test -f /opt/pressure/SCENARIO_COMPLETED" 2>/dev/null; then
   log "restoring the clean post-sanitize database for an independent scenario..."
-  lg "scp -o StrictHostKeyChecking=accept-new /opt/pressure/suite-baseline.db ubuntu@${SUT_IP}:/tmp/suite-baseline.db" >/dev/null
-  sut "cd /home/ubuntu/app \
+  lg "scp ${SUT_SSH_OPTS} /opt/pressure/suite-baseline.db ${SUT_SSH_USER}@${SUT_IP}:/tmp/suite-baseline.db" >/dev/null
+  sut "cd ${SUT_APP_DIR} \
        && sudo docker compose -f docker-compose.sut.yml down --timeout 30 \
        && sudo chown --reference=data/db/prod/prod.db /tmp/suite-baseline.db \
        && sudo chmod --reference=data/db/prod/prod.db /tmp/suite-baseline.db \
@@ -324,13 +559,51 @@ lg "rm -rf ${RUN_DIR_REMOTE} && mkdir -p ${RUN_DIR_REMOTE}"
 lg "curl -fsS -X POST http://${SUT_IP}:9099/reset >/dev/null 2>&1 || true"
 lg "curl -fsS -X POST http://${SUT_IP}:9098/reset >/dev/null 2>&1 || true"
 
+# ── Warm the app BEFORE the sampler and k6 start ─────────────────────────────
+# The first request to a freshly started container pays costs no later request
+# does. Measured on a real clone: admin_resources 2.89s cold against a
+# steady-state p50 of 16.2ms. Because every Prisma call is synchronous
+# better-sqlite3, that cold request blocks the event loop and whatever is queued
+# behind it inherits the delay — it surfaced as student_dashboard p99 2.44s
+# breaching a 1500ms SLO whose p95 was 520.9ms. The tail was measuring warm-up.
+#
+# Best-effort: an unwarmed run is degraded, not invalid, so this warns instead
+# of failing. Bounded, because a warm-up that hangs would be worse than a cold
+# measurement.
+log "warming the application so cold-start cost does not land in the measured tail..."
+LG_TIMEOUT=300
+lg "cd /opt/pressure/harness && pressure/tools/warmup.sh '${SUT_IP}' 'localhost:3000' /opt/pressure/sessions.json" \
+  || log "WARNING: warm-up did not complete; first-request cost may contaminate the measured tail"
+LG_TIMEOUT=""
+
 log "starting the metrics sampler and running '${SCENARIO}'..."
 RUN_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-lg "cd /opt/pressure/harness && nohup pressure/collect/metrics.sh \
+# THE BRACES ARE THE FIX, and they are not cosmetic.
+#
+#   cd X && nohup Y >log 2>&1 &  echo $!
+#
+# parses as `(cd X && nohup Y >log 2>&1) & (echo $!)`. The `&` binds to the
+# WHOLE compound, so bash forks a SUBSHELL to run it, and that subshell waits on
+# metrics.sh forever. The redirections apply only to metrics.sh — the subshell
+# itself still holds the ssh session's stdout and stderr, so sshd never sees EOF
+# and the client blocks indefinitely. That is what stalled a run for eight hours
+# with k6.log empty and no k6 process: k6 was never reached, because the SAMPLER
+# call never returned.
+#
+# Redirecting the inner command harder does not help; `</dev/null` and setsid
+# were tried and the hang persisted. The `&` has to bind to the redirected
+# command alone, which is what the brace group does.
+#
+# Verified on Linux: without braces ssh hangs (killed at 20s, exit 124); with
+# them it returns in 0s and the sampler is still running afterwards.
+lg "cd /opt/pressure/harness && { setsid nohup pressure/collect/metrics.sh \
       --out ${RUN_DIR_REMOTE}/metrics.ndjson --interval 5 \
-      --probe-host ${SUT_IP} --probe-ports '9099 9098' > /tmp/sampler.log 2>&1 & echo \$! > /tmp/sampler.pid"
+      --probe-host ${SUT_IP} --probe-ports '9099 9098' \
+      </dev/null > /tmp/sampler.log 2>&1 & echo \$! > /tmp/sampler.pid; }"
 
 set +e
+LG_TIMEOUT="$(k6_budget_for "$SCENARIO")"
+log "k6 budget for '${SCENARIO}': ${LG_TIMEOUT}s"
 lg "cd /opt/pressure/harness && \
     PRESSURE_TIER=ec2-clone \
     PRESSURE_BASE_URL='http://${SUT_IP}:3000' \
@@ -344,7 +617,12 @@ lg "cd /opt/pressure/harness && \
     k6 run --summary-export ${RUN_DIR_REMOTE}/summary.json \
       pressure/k6/scenarios/${SCENARIO}.js 2>&1 | tee ${RUN_DIR_REMOTE}/k6.log"
 K6_EXIT=$?
+LG_TIMEOUT=""
 set -e
+if [ "$K6_EXIT" -eq 124 ]; then
+  log "WARNING: k6 exceeded its budget and was killed. Collecting what exists anyway —"
+  log "         artifacts from a killed run are still the best evidence of why it hung."
+fi
 RUN_FINISHED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 [ "$SUITE_RUN" = "yes" ] && lg "touch /opt/pressure/SCENARIO_COMPLETED"
 
@@ -356,8 +634,8 @@ lg "cd /opt/pressure/harness && pressure/collect/metrics.sh --probe-once \
 # 4. Collect, scrub, download
 # ─────────────────────────────────────────────────────────────────────────────
 log "collecting logs from the clone..."
-sut "cd /home/ubuntu/app && sudo docker compose -f docker-compose.sut.yml logs --no-color > /tmp/containers.log 2>&1; sudo chown ubuntu:ubuntu /tmp/containers.log"
-lg "scp -o StrictHostKeyChecking=accept-new ubuntu@${SUT_IP}:/tmp/containers.log ${RUN_DIR_REMOTE}/containers.log" >/dev/null || true
+sut "cd ${SUT_APP_DIR} && sudo docker compose -f docker-compose.sut.yml logs --no-color > /tmp/containers.log 2>&1; sudo chown ${SUT_SSH_USER}:${SUT_SSH_USER} /tmp/containers.log"
+lg "scp ${SUT_SSH_OPTS} ${SUT_SSH_USER}@${SUT_IP}:/tmp/containers.log ${RUN_DIR_REMOTE}/containers.log" >/dev/null || true
 sut "sudo cat /opt/pressure/sanitize-report.json" > /tmp/sanitize-report.json 2>/dev/null || true
 STUDENT_TARGET_JSON="null"
 [ -n "$STUDENT_COUNT" ] && STUDENT_TARGET_JSON="$STUDENT_COUNT"
@@ -392,7 +670,6 @@ log "scrubbing artifacts on the load generator before download..."
 lg "cd /opt/pressure/harness && npx tsx pressure/collect/scrub.ts --in ${RUN_DIR_REMOTE} --out /opt/pressure/run-scrubbed" \
   || die "scrub failed — refusing to download unscrubbed artifacts from a clone holding production data"
 
-LOCAL_RUN_DIR="${PRESSURE_DIR}/.tmp/ec2-runs/${RUN_ID}-${SCENARIO}"
 mkdir -p "$LOCAL_RUN_DIR"
 log "downloading scrubbed artifacts..."
 scp "${SSH_OPTS[@]}" -r "ubuntu@${LOADGEN_IP}:/opt/pressure/run-scrubbed/*" "$LOCAL_RUN_DIR/" >/dev/null

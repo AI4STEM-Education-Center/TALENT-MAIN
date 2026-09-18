@@ -320,7 +320,47 @@ fi
 # compose file, because EC2 rejects user-data over 16 KB and embedding those came
 # to ~47 KB (~19 KB even gzipped). run-ec2.sh delivers them over SSH and runs
 # ec2/bootstrap-sut.sh, which is what unmasks Docker — only if sanitize succeeded.
-SUT_USERDATA="${SCRIPT_DIR}/user-data-sut.yml"
+# ── The clone's throwaway key pair ───────────────────────────────────────────
+# The load generator has to reach the clone directly. `sut()` runs commands
+# there, and four bulk transfers cross that hop: the sanitize payload in,
+# mint.db out, the suite baseline in, and container logs out. mint.db is a copy
+# of the production database and the container logs are unscrubbed, so those
+# transfers must NOT be rerouted through the operator's machine — scrubbing
+# happens on the load generator precisely so unscrubbed copies never exist
+# locally.
+#
+# So the load generator needs a credential for the clone, and it must not be
+# ${KEY_NAME}: that key also opens PRODUCTION, and the load generator is the box
+# with the public IP. Mint a throwaway pair per run instead, authorize only its
+# public half on the clone (see the bootcmd in user-data-sut.yml), and hand the
+# load generator only the private half. Its blast radius is one clone that
+# teardown destroys.
+SUT_KEY="${STATE_DIR}/${RUN_ID}-sut-key"
+rm -f "$SUT_KEY" "${SUT_KEY}.pub"
+ssh-keygen -t ed25519 -N "" -q -f "$SUT_KEY" -C "pressure-${RUN_ID}-clone-only" \
+  || die "could not generate the clone's throwaway key pair"
+chmod 600 "$SUT_KEY"
+SUT_PUBKEY="$(cat "${SUT_KEY}.pub")"
+log "minted a throwaway clone key (${SUT_KEY}); ${KEY_NAME} never leaves this machine"
+
+# Rendered per run rather than passed as the static file, because the public key
+# has to be substituted in. teardown.sh already removes this path.
+SUT_USERDATA="${STATE_DIR}/${RUN_ID}-sut-userdata.yml"
+# An OpenSSH public key is base64 plus a comment this script controls, so it can
+# never contain the `|` delimiter.
+# `g` is load-bearing: the placeholder appears TWICE on the authorized_keys
+# line (the idempotence guard and the value it writes). Substituting only the
+# first, as sed does by default, appends a literal placeholder to the clone's
+# authorized_keys and makes the guard never match — so it re-appends on every
+# boot and the load generator still cannot log in.
+sed "s|__PRESSURE_SUT_PUBKEY__|${SUT_PUBKEY}|g" "${SCRIPT_DIR}/user-data-sut.yml" > "$SUT_USERDATA"
+# Fail loudly rather than launching a clone the load generator can never log
+# into. Written as `! grep || die` because `grep && die` returns non-zero on the
+# success path and `set -e` would abort the run.
+! grep -q '__PRESSURE_SUT_PUBKEY__' "$SUT_USERDATA" || \
+  die "the clone public key was not substituted into the cloud-config"
+grep -qF "$SUT_PUBKEY" "$SUT_USERDATA" || \
+  die "the clone public key is missing from the rendered cloud-config"
 USERDATA_BYTES="$(wc -c < "$SUT_USERDATA")"
 [ "$USERDATA_BYTES" -lt 16384 ] || \
   die "the SUT cloud-config is ${USERDATA_BYTES} bytes; EC2 rejects user-data over 16384. Move content into ec2/bootstrap-sut.sh instead."
@@ -422,6 +462,7 @@ cat > "$STATE_FILE" <<JSON
   "sgLoadgen": "${CREATED_SG_LOADGEN}",
   "az": "${SRC_AZ}",
   "keyName": "${KEY_NAME}",
+  "sutKey": "${SUT_KEY}",
   "deadmanMinutes": ${DEADMAN_MINUTES}
 }
 JSON
@@ -459,7 +500,7 @@ sanitize wrote its success marker:
 If you never run it, the clone sits with the app stopped until the deadman timer
 terminates it. Watch the sanitize log with:
 
-  ssh -A ubuntu@${LOADGEN_PUBLIC_IP} "ssh ubuntu@${SUT_PRIVATE_IP} 'sudo cat /var/log/pressure/sanitize.log'"
+  ssh ubuntu@${LOADGEN_PUBLIC_IP} "ssh -i /opt/pressure/sut-key admin@${SUT_PRIVATE_IP} 'sudo cat /var/log/pressure/sanitize.log'"
 
 WHEN YOU ARE DONE — this is not optional, these instances cost money:
 
