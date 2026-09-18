@@ -1,4 +1,6 @@
 "use client";
+import { ModuleOrganizer } from "@/components/teacher/ModuleOrganizer";
+import type { ModuleLayout } from "@/lib/class-modules";
 import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -90,7 +92,9 @@ export function ClassQuizzesClient({
   classId,
   initialClassQuizzes,
   initialAllQuizzes,
+  initialModuleLayout,
 }: {
+  initialModuleLayout: ModuleLayout;
   classId: string;
   initialClassQuizzes: ClassQuiz[];
   initialAllQuizzes: Quiz[];
@@ -100,6 +104,10 @@ export function ClassQuizzesClient({
     useState<ClassQuiz[]>(initialClassQuizzes);
   const [allQuizzes, setAllQuizzes] = useState<Quiz[]>(initialAllQuizzes);
   const [msg, setMsg] = useState("");
+  const [moduleState, setModuleState] = useState({
+    layout: initialModuleLayout,
+    key: 0,
+  });
 
   // The quiz whose settings dialog is open, plus its working form values.
   const [editing, setEditing] = useState<ClassQuiz | null>(null);
@@ -213,6 +221,11 @@ export function ClassQuizzesClient({
     });
     if (res.ok) {
       const { quizDeleted } = await res.json();
+      const modulesResponse = await fetch(`/api/classes/${classId}/modules`);
+      if (modulesResponse.ok) {
+        const layout = await modulesResponse.json();
+        setModuleState((prev) => ({ layout, key: prev.key + 1 }));
+      }
       setClassQuizzes((prev) => prev.filter((cq) => cq.quizId !== quizId));
       if (quizDeleted) {
         // It's gone from the library too — don't reoffer it under "Add Quizzes".
@@ -250,88 +263,89 @@ export function ClassQuizzesClient({
         </div>
       )}
 
-      {/* Assigned Quizzes */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Assigned Quizzes ({classQuizzes.length})</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {classQuizzes.length === 0 ? (
-            <p className="text-muted-foreground text-sm text-center py-6">
-              No quizzes assigned. Add one below.
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {classQuizzes.map((cq) => (
-                <div
-                  key={cq.id}
-                  className="flex items-start justify-between gap-2 flex-wrap p-3 rounded-lg border"
-                >
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <FileQuestion className="size-4 text-muted-foreground shrink-0" />
-                      <span className="font-medium">{cq.quiz.name}</span>
-                      {cq.quiz.topic && (
-                        <Badge variant="outline">{cq.quiz.topic.name}</Badge>
-                      )}
-                      <Badge variant={cq.published ? "success" : "warning"}>
-                        {cq.published ? "Published" : "Draft"}
-                      </Badge>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1 ml-6">
-                      {cq.quiz._count.questions} question
-                      {cq.quiz._count.questions !== 1 ? "s" : ""}
-                    </p>
-                    <div className="mt-1 ml-6">
-                      <SettingsSummary cq={cq} />
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {cq.quiz._count.questions > 0 && (
-                      <Button size="sm" variant="outline" asChild>
-                        <Link
-                          href={`/teacher/quizzes/${cq.quizId}/preview?classId=${encodeURIComponent(classId)}`}
-                        >
-                          <Eye className="size-3" /> Preview as student
-                        </Link>
-                      </Button>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => openSettings(cq)}
-                    >
-                      <Settings className="size-3" /> Settings
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={cq.published ? "secondary" : "default"}
-                      onClick={() => togglePublish(cq.quizId, cq.published)}
-                    >
-                      {cq.published ? (
-                        <>
-                          <EyeOff className="size-3" /> Unpublish
-                        </>
-                      ) : (
-                        <>
-                          <Eye className="size-3" /> Publish
-                        </>
-                      )}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => removeQuiz(cq.quizId)}
-                    >
-                      <Trash2 className="size-3 text-destructive" />
-                    </Button>
-                  </div>
+      <ModuleOrganizer
+        key={moduleState.key}
+        classId={classId}
+        initialLayout={moduleState.layout}
+        quizzes={allQuizzes}
+        assignedQuizIds={classQuizzes.map((cq) => cq.quizId)}
+        onSaved={async () => {
+          const res = await fetch(`/api/classes/${classId}/quizzes`);
+          if (!res.ok) throw new Error("Could not refresh class quizzes");
+          setClassQuizzes(await res.json());
+        }}
+        renderQuiz={(quizId) => {
+          const cq = classQuizzes.find((item) => item.quizId === quizId);
+          if (!cq) return null;
+          return (
+            <div
+              key={cq.id}
+              className="flex items-start justify-between gap-2 flex-wrap p-3 rounded-lg border"
+            >
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <FileQuestion className="size-4 text-muted-foreground shrink-0" />
+                  <span className="font-medium">{cq.quiz.name}</span>
+                  {cq.quiz.topic && (
+                    <Badge variant="outline">{cq.quiz.topic.name}</Badge>
+                  )}
+                  <Badge variant={cq.published ? "success" : "warning"}>
+                    {cq.published ? "Published" : "Draft"}
+                  </Badge>
                 </div>
-              ))}
+                <p className="text-xs text-muted-foreground mt-1 ml-6">
+                  {cq.quiz._count.questions} question
+                  {cq.quiz._count.questions !== 1 ? "s" : ""}
+                </p>
+                <div className="mt-1 ml-6">
+                  <SettingsSummary cq={cq} />
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {cq.quiz._count.questions > 0 && (
+                  <Button size="sm" variant="outline" asChild>
+                    <Link
+                      href={`/teacher/quizzes/${cq.quizId}/preview?classId=${encodeURIComponent(classId)}`}
+                    >
+                      <Eye className="size-3" /> Preview as student
+                    </Link>
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => openSettings(cq)}
+                >
+                  <Settings className="size-3" /> Settings
+                </Button>
+                <Button
+                  size="sm"
+                  variant={cq.published ? "secondary" : "default"}
+                  onClick={() => togglePublish(cq.quizId, cq.published)}
+                >
+                  {cq.published ? (
+                    <>
+                      <EyeOff className="size-3" /> Unpublish
+                    </>
+                  ) : (
+                    <>
+                      <Eye className="size-3" /> Publish
+                    </>
+                  )}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => removeQuiz(cq.quizId)}
+                >
+                  <Trash2 className="size-3 text-destructive" /> Remove from
+                  class
+                </Button>
+              </div>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          );
+        }}
+      />
 
       {/* Available Quizzes */}
       {availableQuizzes.length > 0 && (
