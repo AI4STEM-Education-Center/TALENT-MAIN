@@ -160,6 +160,8 @@ model Class {
   enrollments    ClassEnrollment[]
   invitations    Invitation[]
   classQuizzes   ClassQuiz[]
+  modules        ClassModule[]
+  modulesRevision Int @default(0)
   quizProgress   QuizProgress[]
   quizAttempts   QuizAttempt[]
   studentList    ClassStudentList[]
@@ -529,11 +531,36 @@ model Option {
 
 // ─── Class <-> Quiz (with publish control) ────────────────────────────────────
 
+// Organization only: deleting a module never deletes a class assignment or quiz.
+model ClassModule {
+  id          String @id @default(cuid())
+  classId     String
+  name        String
+  description String @default("")
+  position    Int
+  class       Class @relation(fields: [classId], references: [id], onDelete: Cascade)
+  quizzes     ClassModuleQuiz[]
+
+  @@index([classId, position])
+}
+
+model ClassModuleQuiz {
+  moduleId    String
+  classQuizId String
+  position    Int
+  module      ClassModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  classQuiz   ClassQuiz @relation(fields: [classQuizId], references: [id], onDelete: Cascade)
+
+  @@id([moduleId, classQuizId])
+  @@index([classQuizId])
+}
+
 model ClassQuiz {
   id        String  @id @default(cuid())
   classId   String
   quizId    String
   published Boolean @default(false)
+  modules   ClassModuleQuiz[]
 
   // Per-class quiz availability + attempt controls. All nullable: existing rows
   // default to null = always open / unlimited attempts (no backfill needed).

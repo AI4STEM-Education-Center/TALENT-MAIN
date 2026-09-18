@@ -1,3 +1,5 @@
+import { getClassModules } from "@/lib/class-modules-server";
+import { groupModuleQuizzes } from "@/lib/class-modules";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { quizAvailability } from "@/lib/quiz-availability";
@@ -92,11 +94,21 @@ export default async function StudentClassPage({
     group.quizzes.push(quiz);
     groups.set(key, group);
   }
-  const orderedGroups = Array.from(groups.values()).toSorted((a, b) => {
-    if (a.topicName === null) return 1;
-    if (b.topicName === null) return -1;
-    return 0;
-  });
+  const topicGroups = Array.from(groups.entries())
+    .map(([id, group]) => ({ ...group, id, description: "" }))
+    .toSorted((a, b) => {
+      if (a.topicName === null) return 1;
+      if (b.topicName === null) return -1;
+      return 0;
+    });
+
+  const { modules } = await getClassModules(id);
+  const orderedGroups = modules.length
+    ? groupModuleQuizzes(modules, quizzes).map((group) => ({
+        ...group,
+        topicName: group.name,
+      }))
+    : topicGroups;
 
   return (
     <div className="p-4 md:p-6 space-y-6">
@@ -145,7 +157,7 @@ export default async function StudentClassPage({
             ).length;
 
             return (
-              <Card key={group.topicName ?? "__ungrouped"}>
+              <Card key={group.id}>
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between gap-2 flex-wrap">
                     <CardTitle className="flex items-center gap-2">
@@ -156,6 +168,11 @@ export default async function StudentClassPage({
                       {completed}/{group.quizzes.length} completed
                     </Badge>
                   </div>
+                  {group.description && (
+                    <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                      {group.description}
+                    </p>
+                  )}
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">

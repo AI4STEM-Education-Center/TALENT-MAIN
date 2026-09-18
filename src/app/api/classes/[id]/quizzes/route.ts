@@ -165,8 +165,19 @@ export async function DELETE(
   if (!cls)
     return NextResponse.json({ error: "Class not found" }, { status: 404 });
 
-  const removed = await prisma.classQuiz.deleteMany({
-    where: { classId: id, quizId },
+  const removed = await prisma.$transaction(async (tx) => {
+    const removed = await tx.classQuiz.deleteMany({
+      where: { classId: id, quizId },
+    });
+    if (removed.count > 0) {
+      // Cascading module memberships changed too. Invalidate open organizers
+      // so a stale save/undo cannot silently reassign this quiz.
+      await tx.class.update({
+        where: { id },
+        data: { modulesRevision: { increment: 1 } },
+      });
+    }
+    return removed;
   });
 
   let quizDeleted = false;
