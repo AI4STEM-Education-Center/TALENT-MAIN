@@ -24,6 +24,7 @@ export interface QuizResult {
 export interface QuizSession {
   // Only real student sessions have a persisted attempt and AI results.
   attemptId?: string;
+  versionName?: string;
   questions: QuizQuestion[];
   submit: (answers: SubmittedAnswer[]) => Promise<QuizResult>;
 }
@@ -115,5 +116,33 @@ export async function startQuizPreview(quizId: string): Promise<QuizSession> {
         ),
       };
     },
+  };
+}
+
+export async function startPracticeQuiz(
+  classId: string,
+  quizId: string,
+): Promise<QuizSession> {
+  const data = await readResponse<{
+    attemptId: string;
+    versionName: string;
+    questions: QuizQuestion[];
+  }>(
+    await fetch("/api/quiz/practice", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ classId, quizId }),
+    }),
+  );
+  return {
+    ...data,
+    submit: async (answers) =>
+      readResponse<QuizResult>(
+        await fetch("/api/quiz/practice", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ attemptId: data.attemptId, answers }),
+        }),
+      ),
   };
 }

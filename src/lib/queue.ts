@@ -173,3 +173,9 @@ export function enqueueConsentExport(jobId: string): void {
   const payload: ConsentExportJobPayload = { jobId };
   db.queue(CONSENT_EXPORTS_QUEUE).enqueue(payload);
 }
+
+export const QUIZ_VARIANTS_QUEUE = "quiz-variants";
+export function enqueueQuizVariant(versionId: string) {
+  const db = honker.open(resolveQueueDbPath());
+  db.queue(QUIZ_VARIANTS_QUEUE).enqueue({ versionId });
+}
