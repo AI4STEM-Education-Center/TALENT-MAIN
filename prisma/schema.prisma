@@ -304,6 +304,7 @@ model Quiz {
   quizAttempts   QuizAttempt[]
   imports        QuestionImport[]
   classQuizzes   ClassQuiz[]
+  practiceVersions QuizPracticeVersion[]
   pdfExtractions QuizPdfExtraction[]
   poolSubmissions PoolSubmission[]
 
@@ -1834,4 +1835,45 @@ model SimulationEditChat {
   updatedAt DateTime @updatedAt
   simulation QuestionSimulation @relation(fields: [simulationId], references: [id], onDelete: Cascade)
   @@index([simulationId, userId])
+}
+
+// Published payloads are immutable. Source snapshots bind objectives to the exact
+// authored revision. Practice is deliberately separate from graded progress.
+model QuizPracticeVersion {
+  id String @id @default(cuid())
+  quizId String
+  quiz Quiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  name String
+  status String @default("QUEUED")
+  variation String
+  sourceSnapshot String
+  objectives String
+  questions String @default("[]")
+  validation String?
+  error String?
+  aiModel String?
+  aiTokens Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([quizId, status])
+}
+
+// Self-contained attempt archive: no content cascade can alter a student's
+// submitted practice. No grade/progress/export code reads this table.
+model QuizPracticeAttempt {
+  id String @id @default(cuid())
+  studentId String
+  classId String
+  quizId String
+  versionId String
+  versionName String
+  questions String
+  answers String @default("[]")
+  score Float?
+  startedAt DateTime @default(now())
+  completedAt DateTime?
+  // Non-null while active, released on submit. Enforces one active practice
+  // per student/class/quiz even under concurrent start requests.
+  activeKey String? @unique
+  @@index([studentId, classId, quizId])
 }

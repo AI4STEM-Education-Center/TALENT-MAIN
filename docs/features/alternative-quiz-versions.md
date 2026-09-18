@@ -1,0 +1,24 @@
+# Alternative quiz practice
+
+Teachers can create alternative versions from the **Alternative practice versions** section in the quiz editor. Enter a learning objective and constraints for each source question, choose number or modest context changes, and generate a version. Generation runs in the existing worker. The version appears in review only after structural validation and an independent model solve agree. Teachers inspect originals, alternatives, solutions, and validation explanations, then explicitly approve publication. Edited questions must pass validation again. Published versions are immutable; retire a version to stop assigning it to new attempts.
+
+Students use **Practice alternatives** on a class quiz, or **Practice another version** after a graded attempt. The practice landing page lists their recent practice scores. New attempts prefer unseen published versions; once exhausted, they avoid the immediately previous version when another is available. Reloading a started attempt resumes exactly the same questions and choice order. Completing practice never updates graded progress, consumes graded attempts, or changes grade exports.
+
+## Setup
+
+- Deploy the web application and worker together. The additive Prisma schema creates `QuizPracticeVersion` and `QuizPracticeAttempt`; existing quiz/attempt records require no backfill.
+- Assign a model/provider to **Alternative Quiz Versions** (`quiz_variants`) in the administrator AI Config screen.
+- Run the existing `npm run worker` process. The new `quiz-variants` Honker queue is consumed alongside other AI jobs.
+- Unassigned providers and queue/model failures appear as retryable failures in the teacher panel. A worker sweep marks jobs stranded for 30 minutes as failed. Conditional writes fence stale generation completions after retries.
+
+## Scope and guarantees
+
+The first release supports quizzes of 1–40 text-only single-select and numeric questions. It explicitly rejects image-dependent and multi-select source quizzes. Teachers can create multiple versions, one generation at a time per quiz. Publication makes a version available through that quiz's published class assignments; enrollment and availability windows are enforced at practice start. Graded attempt caps do not apply to practice. Previously started work may be submitted after the availability window closes, provided the student is still enrolled.
+
+Each version stores source content and confirmed objectives. Each practice attempt stores its own complete immutable question/answer-key payload, even if the version is subsequently retired or the source content is edited/deleted. Student responses and scores live in a separate archive, with a unique active-attempt key and conditional single-use submission. Student start/history responses use explicit field allowlists and never expose answer keys, solutions, objectives, or AI validation messages. Archived attempts survive quiz deletion, although the practice landing page requires a currently accessible assignment.
+
+The model sees assessment content, not student records. Independent verification receives neither generated answers nor generated solutions. Structural checks require source coverage, unchanged answer modes/units/tolerances, unique IDs, valid choices, finite numeric answers, and exactly one correct single-select choice. These checks and model agreement do **not** establish psychometric equivalence or mathematically prove arbitrary solutions. Teacher review remains mandatory. Fully changed premises, diagrams, multi-select, automatic intent inference, per-class practice limits, and graded variants are outside this initial release.
+
+## Validation
+
+Tests exercise source coverage, malformed answer keys, independent-check disagreement, missing provider, revalidation, stale-worker fencing, ownership, enrollment, availability, immutable resume, concurrent starts, unseen-version selection, malformed/duplicate answers, single-use submission, retirement, archival retention, and separation from grades. The player regression test verifies practice-specific start/submit/retry behavior. Model calls are mocked in automated tests; administrators should pilot their configured model on representative course questions before broad publication.

@@ -13,6 +13,7 @@ import { MathText } from "@/components/ui/math-text";
 import { parseQtiQuestionBank } from "@/lib/question-import/qti";
 import { normalizeNumericValue } from "@/lib/quiz-scoring";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { QuizVariants } from "@/components/quiz/QuizVariants";
 import { QuizPdfImport } from "@/components/quiz/QuizPdfImport";
 import { loadQuizEditorData } from "@/components/quiz/quiz-editor-load";
 import { SimulationStatusBadge } from "@/components/simulation/SimulationStatusBadge";
@@ -1030,6 +1031,10 @@ export function QuizEditor({
             )}
           </CardContent>
         </Card>
+      )}
+
+      {!readOnly && (
+        <QuizVariants quizId={quiz.id} questions={quiz.questions} />
       )}
 
       {!readOnly && (

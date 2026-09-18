@@ -274,6 +274,15 @@ export default async function StudentClassPage({
                               </Link>
                             </Button>
                           )}
+                          {!notOpenYet && !closed && (
+                            <Button size="sm" variant="outline" asChild>
+                              <Link
+                                href={`/student/classes/${id}/quiz/${quiz.id}/practice`}
+                              >
+                                Practice alternatives
+                              </Link>
+                            </Button>
+                          )}
                         </div>
                       );
                     })}

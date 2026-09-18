@@ -1,3 +1,5 @@
+import { runQuizVariant } from "./lib/quiz-variants-engine";
+import { QUIZ_VARIANTS_QUEUE } from "./lib/queue";
 import honker from "@russellthehippo/honker-node";
 import { processMaterial } from "./lib/vlm-engine";
 import { prisma } from "./lib/prisma";
@@ -695,6 +697,41 @@ async function runAssistantTranscriptArchiveLoop() {
   }
 }
 
+async function consumeQuizVariants() {
+  for await (const job of db
+    .queue(QUIZ_VARIANTS_QUEUE)
+    .claim("quiz-variants-worker")) {
+    try {
+      await runQuizVariant((job.payload as { versionId: string }).versionId);
+      job.ack();
+    } catch (error) {
+      console.error("[Worker] Quiz variant job failed", errorMessage(error));
+      // Leave unacknowledged on database failure; queue redelivery can retry.
+    }
+  }
+}
+
+async function sweepQuizVariants() {
+  for (;;) {
+    try {
+      // A crashed/terminated worker must not leave a teacher waiting forever.
+      await prisma.quizPracticeVersion.updateMany({
+        where: {
+          status: { in: ["QUEUED", "GENERATING"] },
+          updatedAt: { lt: new Date(Date.now() - 30 * 60_000) },
+        },
+        data: {
+          status: "FAILED",
+          error: "Generation timed out. Retry this version.",
+        },
+      });
+    } catch (error) {
+      console.error("[Worker] Variant sweep failed", errorMessage(error));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 60_000));
+  }
+}
+
 async function startWorker() {
   try {
     // This node's own CPU/RAM/storage feed for the admin System Resources tab.
@@ -704,6 +741,8 @@ async function startWorker() {
 
     // Run all consumers + the scheduler concurrently; each blocks on its own loop.
     await Promise.all([
+      consumeQuizVariants(),
+      sweepQuizVariants(),
       consumeMaterials(),
       consumeExamResults(),
       consumeQuizExtractions(),

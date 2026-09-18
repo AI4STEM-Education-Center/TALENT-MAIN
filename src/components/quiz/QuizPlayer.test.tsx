@@ -222,3 +222,58 @@ describe("QuizPlayer", () => {
     });
   });
 });
+
+describe("alternative practice player", () => {
+  it("uses practice endpoints, shows ungraded results, and can start another version", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          attemptId: "practice-1",
+          versionName: "Version A",
+          questions: [questions[0]],
+        }),
+      ),
+    );
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ score: 100, incorrectQuestionIds: [] })),
+    );
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          attemptId: "practice-2",
+          versionName: "Version B",
+          questions: [questions[0]],
+        }),
+      ),
+    );
+    await act(async () =>
+      root.render(
+        <StrictMode>
+          <QuizPlayer
+            mode="practice"
+            classId="class"
+            quizId="quiz"
+            backHref="/student/classes/class"
+            backLabel="Back to class"
+          />
+        </StrictMode>,
+      ),
+    );
+    expect(host.textContent).toContain("Version A · Ungraded practice");
+    await click("Correct choice");
+    await click("Submit Quiz");
+    expect(host.textContent).toContain("Version A results");
+    expect(host.textContent).toContain(
+      "Your grade and graded attempt allowance are unchanged",
+    );
+    expect(host.textContent).not.toContain("Student results for");
+    await click("Practice another version");
+    expect(host.textContent).toContain("Version B · Ungraded practice");
+    expect(host.textContent).toContain("0 answered");
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "/api/quiz/practice",
+      "/api/quiz/practice",
+      "/api/quiz/practice",
+    ]);
+  });
+});

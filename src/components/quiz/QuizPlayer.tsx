@@ -17,6 +17,7 @@ import { RESULT_STATUS, type StudentMistakeView } from "@/lib/exam-results";
 import { normalizeNumericValue } from "@/lib/quiz-scoring";
 
 import {
+  startPracticeQuiz,
   startQuizPreview,
   startStudentQuiz,
   type QuizQuestion,
@@ -31,7 +32,8 @@ type QuizPlayerProps = {
   backHref: string;
   backLabel: string;
 } & (
-  { mode: "preview"; classId?: never } | { mode: "student"; classId: string }
+  | { mode: "preview"; classId?: never }
+  | { mode: "student" | "practice"; classId: string }
 );
 
 type Phase = "loading" | "quiz" | "results" | "error";
@@ -70,7 +72,9 @@ export function QuizPlayer({
       const data =
         mode === "preview"
           ? await startQuizPreview(quizId)
-          : await startStudentQuiz(classId, quizId);
+          : mode === "practice"
+            ? await startPracticeQuiz(classId, quizId)
+            : await startStudentQuiz(classId, quizId);
       setSession(data);
       setQuestions(data.questions);
       setSelections({});
@@ -232,15 +236,28 @@ export function QuizPlayer({
       },
     );
 
-    if (mode === "preview") {
+    if (mode === "preview" || mode === "practice") {
       return (
         <div className="p-4 md:p-6 max-w-2xl space-y-6">
-          <h2 className="text-xl font-semibold">Preview results</h2>
+          <h2 className="text-xl font-semibold">
+            {mode === "practice"
+              ? `${session?.versionName ?? "Practice"} results`
+              : "Preview results"}
+          </h2>
+          {mode === "practice" && (
+            <p className="text-sm text-muted-foreground">
+              Practice saved. Your grade and graded attempt allowance are
+              unchanged.
+            </p>
+          )}
           <ScoreBanner score={result.score} />
           <StudentMistakesReview mistakes={mistakes} />
           <div className="flex flex-wrap gap-2">
             <Button onClick={() => startQuiz()} variant="outline">
-              <RotateCcw className="size-4" /> Restart preview
+              <RotateCcw className="size-4" />{" "}
+              {mode === "practice"
+                ? "Practice another version"
+                : "Restart preview"}
             </Button>
             <Button asChild>
               <Link href={backHref}>{backLabel}</Link>
@@ -272,6 +289,13 @@ export function QuizPlayer({
         backLabel={backLabel}
         actions={
           <>
+            <Button variant="outline" asChild>
+              <Link
+                href={`/student/classes/${classId}/quiz/${quizId}/practice`}
+              >
+                Practice another version
+              </Link>
+            </Button>
             <Button onClick={() => startQuiz()} variant="outline">
               <RotateCcw className="size-4" /> Retry Quiz
             </Button>
@@ -292,6 +316,12 @@ export function QuizPlayer({
           <ArrowLeft className="size-4" /> {backLabel}
         </Link>
       </Button>
+
+      {mode === "practice" && (
+        <p className="text-sm font-medium">
+          {session?.versionName} · Ungraded practice
+        </p>
+      )}
 
       {/* Progress */}
       <div className="flex items-center justify-between">
