@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { invitationCreateSchema, parseJsonBody } from "@/lib/validation";
 
 /**
  * A fresh invitation token: 32 crypto-random bytes, base64url so it is safe in
@@ -20,16 +21,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { classId, expiresInDays, maxUses } = await req.json();
-  if (!classId)
-    return NextResponse.json({ error: "classId required" }, { status: 400 });
+  const parsed = await parseJsonBody(invitationCreateSchema, req);
+  if (!parsed.ok) return parsed.response;
+  const { classId, expiresInDays, maxUses } = parsed.data;
 
   // Verify teacher owns this class
   const teacher = await prisma.teacher.findUnique({
     where: { userId: session.user.id },
   });
+  if (!teacher)
+    return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
   const cls = await prisma.class.findFirst({
-    where: { id: classId, teacherId: teacher?.id },
+    where: { id: classId, teacherId: teacher.id },
   });
   if (!cls)
     return NextResponse.json({ error: "Class not found" }, { status: 404 });

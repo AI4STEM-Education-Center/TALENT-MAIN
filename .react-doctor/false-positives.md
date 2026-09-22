@@ -49,11 +49,13 @@ was a **real** defect and was fixed, not suppressed.
 
 - Line ~41 (`loadImage`) revokes in its own `finally`.
 - The two `previewUrl` sites transfer ownership to the caller;
-  `AssistantWidget.tsx` revokes on send, on clear, and on remove.
+  `use-assistant-attachments.ts` revokes on send/clear, remove, and unmount.
 
-Predicate: those three `revokeObjectURL` calls in `AssistantWidget.tsx` still
-exist. Known gap: an unmount with attachments still staged leaks those blobs
-until the tab is closed — accepted as negligible, not detector-visible.
+Predicate: `use-assistant-attachments.ts` owns the staged list in a ref, revokes
+removed/cleared/unmounted previews, and revokes preparation results whose
+generation was superseded. Retained previews must not be revoked on rerender.
+The prior accepted unmount leak is fixed; hook regressions cover lifecycle and
+late preparation.
 
 ## `no-set-state-after-await-in-effect` (3) — AbortController-guarded
 
@@ -75,7 +77,8 @@ The other two original hits of this rule were **real** and were fixed.
 
 ## `no-locale-format-in-render` (5) — nothing renders during SSR
 
-`admin/logs/page.tsx` ×2, `admin/resources/resource-chart.tsx` ×3.
+`admin/logs/page.tsx` ×2, `admin/resources/resource-chart.tsx` ×3,
+`components/assistant/AssistantHistory.tsx` ×3.
 
 Predicate: the formatted values still originate from a **client-side fetch or
 hover state**, so the server-rendered HTML contains the empty/placeholder branch
@@ -164,3 +167,13 @@ prefetched or forged GET changes no state and the CSRF premise does not apply.
 Predicate: the `GET` handler still performs no Prisma write/`$execute*` call and
 the only mutation reachable from it is the local `byMessage` Map. Remove the
 suppression the moment a persisting call appears in this handler.
+
+## September 2026 guarded-finally regressions
+
+The same `no-loading-flag-reset-outside-finally` detector limitation occurs in
+`admin/assistant-chats/page.tsx`, `admin/consent/page.tsx`,
+`teacher/classes/page.tsx`, and `use-assistant-conversation.ts` after adding
+request ownership. Each suppression applies to a reset lexically inside
+`finally`, guarded by `signal.aborted` or identity of the active controller.
+The assistant hook also owns conversation selection independently of streaming.
+Remove these suppressions when the detector recognizes the guarded resets.

@@ -26,6 +26,12 @@ jobs:
       - name: Generate Prisma client
         run: npx prisma generate
 
+      - name: Check types
+        run: npm run typecheck
+
+      - name: Check formatting
+        run: npm run format:check
+
       - name: Run tests
         run: npm test
 
@@ -42,3 +48,6 @@ jobs:
 
       - name: Build application
         run: npm run build
+
+      - name: Build background worker
+        run: npm run worker:build

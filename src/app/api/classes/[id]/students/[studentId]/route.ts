@@ -1,3 +1,4 @@
+import { USER_PROFILE_SELECT } from "@/lib/user-profile";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -124,7 +125,9 @@ export async function DELETE(
     // The enrollment is tied to the studentId, so we need to find the student
     const allEnrollments = await prisma.classEnrollment.findMany({
       where: { classId: id },
-      include: { student: { include: { user: true } } },
+      include: {
+        student: { include: { user: { select: USER_PROFILE_SELECT } } },
+      },
     });
 
     // Find the enrollment for the student matching this roster entry's name

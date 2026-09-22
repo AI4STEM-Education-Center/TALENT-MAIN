@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { z } from "zod";
+import { parseJsonBody } from "@/lib/validation";
 
 // Normalize an incoming limit value: null/""/missing → null (use the global
 // default); a positive integer → that value; anything else is invalid.
@@ -9,8 +11,11 @@ function normalizeLimit(
 ): { ok: true; value: number | null } | { ok: false } {
   if (value === null || value === undefined || value === "")
     return { ok: true, value: null };
+  if (typeof value !== "number" && typeof value !== "string")
+    return { ok: false };
   const n = Number(value);
-  if (Number.isFinite(n) && n > 0) return { ok: true, value: Math.floor(n) };
+  if (Number.isInteger(n) && n > 0 && n <= 2147483647)
+    return { ok: true, value: n };
   return { ok: false };
 }
 
@@ -27,7 +32,15 @@ export async function PATCH(
   }
 
   const { teacherId } = await params;
-  const body = await req.json().catch(() => ({}));
+  const parsed = await parseJsonBody(
+    z.object({
+      emailDailyLimit: z.unknown().optional(),
+      emailMonthlyLimit: z.unknown().optional(),
+    }),
+    req,
+  );
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.data;
 
   const data: {
     emailDailyLimit?: number | null;

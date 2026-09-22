@@ -119,6 +119,7 @@ export function SimulationViewer({
     let cancelled = false;
     let dirty = false;
     let finalSent = false;
+    let endedAt: number | null = null;
     let totals: SimTelemetryTotals = {
       activeMs: 0,
       interactionCount: 0,
@@ -133,8 +134,10 @@ export function SimulationViewer({
     })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (!cancelled && typeof data?.sessionId === "string")
+        if (typeof data?.sessionId === "string") {
           sessionId = data.sessionId;
+          if (cancelled || endedAt !== null) flush(true);
+        }
       })
       .catch(() => {
         // Telemetry is best-effort — the simulation itself is unaffected.
@@ -177,33 +180,36 @@ export function SimulationViewer({
       const url = `/api/simulations/${simulationId}/sessions/${sessionId}`;
       const body = JSON.stringify({
         ...totals,
-        dwellMs: Date.now() - startedAt,
+        dwellMs: (endedAt ?? Date.now()) - startedAt,
         ended,
       });
       if (ended && typeof navigator.sendBeacon === "function") {
-        navigator.sendBeacon(
+        const queued = navigator.sendBeacon(
           url,
           new Blob([body], { type: "application/json" }),
         );
-      } else {
-        fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body,
-          keepalive: true,
-        }).catch(() => {});
+        if (queued) return;
       }
+      fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+        keepalive: true,
+      }).catch(() => {});
     };
 
     const interval = setInterval(() => flush(false), FLUSH_MS);
-    const onPageHide = () => flush(true);
+    const onPageHide = () => {
+      endedAt ??= Date.now();
+      flush(true);
+    };
     window.addEventListener("pagehide", onPageHide);
     return () => {
       cancelled = true;
       clearInterval(interval);
       window.removeEventListener("message", onMessage);
       window.removeEventListener("pagehide", onPageHide);
-      flush(true);
+      onPageHide();
     };
   }, [simulationId, attemptId, surface]);
 
