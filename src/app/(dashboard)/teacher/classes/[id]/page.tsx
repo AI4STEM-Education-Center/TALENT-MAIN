@@ -1,3 +1,4 @@
+import { USER_PROFILE_SELECT } from "@/lib/user-profile";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect, notFound } from "next/navigation";
@@ -36,7 +37,9 @@ export default async function ClassDetailPage({
     where: { id, teacherId: teacher?.id ?? "" },
     include: {
       enrollments: {
-        include: { student: { include: { user: true } } },
+        include: {
+          student: { include: { user: { select: USER_PROFILE_SELECT } } },
+        },
         orderBy: { joinedAt: "desc" },
       },
       classQuizzes: {

@@ -1,3 +1,4 @@
+import { USER_PROFILE_SELECT } from "@/lib/user-profile";
 import { getClassModules } from "@/lib/class-modules-server";
 import { groupModuleQuizzes } from "@/lib/class-modules";
 import { auth } from "@/lib/auth";
@@ -41,7 +42,7 @@ export default async function StudentClassPage({
   const cls = await prisma.class.findUnique({
     where: { id },
     include: {
-      teacher: { include: { user: true } },
+      teacher: { include: { user: { select: USER_PROFILE_SELECT } } },
       classQuizzes: {
         where: { published: true },
         include: { quiz: { include: { topic: true } } },

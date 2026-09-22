@@ -24,6 +24,7 @@
  *   tsx pressure/tools/mint-sessions.ts --out sessions.json --secure   # __Secure- cookie (prod image)
  */
 
+import { credentialVersion } from "../../src/lib/session-credentials";
 import { encode, decode } from "next-auth/jwt";
 import { PrismaClient } from "@prisma/client";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
@@ -160,6 +161,7 @@ async function main() {
         firstName: true,
         lastName: true,
         role: true,
+        hashedPassword: true,
       },
     });
 
@@ -195,6 +197,7 @@ async function main() {
           lastName: user.lastName,
           email: user.email,
           sessionExpiresAt: expiresAt,
+          credentialVersion: credentialVersion(user.hashedPassword),
           consentVersion: claim.version,
           consentDecision: claim.decision,
         },

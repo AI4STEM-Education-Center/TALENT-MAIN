@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -40,6 +40,7 @@ type JobState = {
 
 export default function AdminConsentPage() {
   const alert = useAlert();
+  const requestRef = useRef<AbortController | null>(null);
   const [records, setRecords] = useState<ConsentRecordRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState<string>("ALL");
@@ -49,6 +50,9 @@ export default function AdminConsentPage() {
   const [requestingExport, setRequestingExport] = useState(false);
 
   const load = useCallback(async () => {
+    requestRef.current?.abort();
+    const controller = new AbortController();
+    requestRef.current = controller;
     setLoading(true);
     const params = new URLSearchParams({ pageSize: "100" });
     if (role !== "ALL") params.set("role", role);
@@ -56,34 +60,58 @@ export default function AdminConsentPage() {
     try {
       const res = await fetch(`/api/admin/consent?${params}`, {
         cache: "no-store",
+        signal: controller.signal,
       });
       if (!res.ok) throw new Error("Could not load consent records.");
       const data = await res.json();
+      if (controller.signal.aborted) return;
       setRecords(data.records ?? []);
+      setSelected(new Set());
     } catch (cause) {
+      if (controller.signal.aborted) return;
       await alert({
         title: "Couldn't load consent records",
         description: cause instanceof Error ? cause.message : "Unknown error.",
       });
     } finally {
-      setLoading(false);
+      // react-doctor-disable-next-line react-doctor/no-loading-flag-reset-outside-finally -- reset is in finally; an aborted request must not clear its successor’s loading state
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, [role, decision, alert]);
 
   useEffect(() => {
-    load();
+    void load();
+    return () => requestRef.current?.abort();
   }, [load]);
 
   // Poll an in-flight bulk export job until it reaches a terminal state.
   useEffect(() => {
     if (!job || job.status === "COMPLETE" || job.status === "FAILED") return;
+    const controller = new AbortController();
+    let inFlight = false;
     const timer = setInterval(async () => {
-      const res = await fetch(`/api/admin/consent/export/${job.jobId}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      setJob((prev) => (prev ? { ...prev, ...data } : prev));
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const res = await fetch(`/api/admin/consent/export/${job.jobId}`, {
+          signal: controller.signal,
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!controller.signal.aborted)
+          setJob((prev) =>
+            prev?.jobId === job.jobId ? { ...prev, ...data } : prev,
+          );
+      } catch {
+        // A transient network failure is retried on the next tick.
+      } finally {
+        inFlight = false;
+      }
     }, 2000);
-    return () => clearInterval(timer);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+    };
   }, [job]);
 
   function toggle(id: string) {

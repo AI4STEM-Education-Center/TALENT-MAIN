@@ -35,6 +35,28 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
+describe("class payload credentials", () => {
+  it("excludes teacher and student password hashes from class detail", async () => {
+    const { user, teacher } = await createTeacher();
+    const cls = await createClass(teacher.id);
+    const { student } = await createStudent();
+    await prisma.classEnrollment.create({
+      data: { classId: cls.id, studentId: student.id },
+    });
+    asTeacher(user.id);
+    const res = await GET_CLASS(new Request("http://localhost") as never, {
+      params: Promise.resolve({ id: cls.id }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.teacher.user).not.toHaveProperty("hashedPassword");
+    expect(body.enrollments[0].student.user).not.toHaveProperty(
+      "hashedPassword",
+    );
+    expect(body.teacher.user.email).toBe(user.email);
+  });
+});
+
 describe("GET /api/classes/[id] — owner-only (F-02)", () => {
   it("401s an unauthenticated caller", async () => {
     const { teacher } = await createTeacher();

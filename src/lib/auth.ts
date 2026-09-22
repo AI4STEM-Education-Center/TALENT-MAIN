@@ -1,4 +1,5 @@
-import NextAuth from "next-auth";
+import NextAuth, { type NextAuthConfig } from "next-auth";
+import { credentialVersion } from "./session-credentials";
 import Credentials from "next-auth/providers/credentials";
 import { decode, encode } from "next-auth/jwt";
 import bcrypt from "bcryptjs";
@@ -42,7 +43,7 @@ async function stampConsentClaim(
   token.consentDecision = claim?.decision ?? null;
 }
 
-export const { handlers, signIn, signOut, auth } = NextAuth({
+export const authConfig = {
   providers: [
     Credentials({
       name: "credentials",
@@ -52,10 +53,18 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         remember: { label: "Remember this computer", type: "checkbox" },
       },
       async authorize(credentials, request) {
-        const identifier = credentials?.identifier as string | undefined;
-        const password = credentials?.password as string | undefined;
-
-        if (!identifier || !password) return null;
+        const identifier = credentials?.identifier;
+        const password = credentials?.password;
+        if (
+          typeof identifier !== "string" ||
+          typeof password !== "string" ||
+          !identifier.trim() ||
+          identifier.length > 200 ||
+          !password ||
+          password.length > 200
+        )
+          return null;
+        const normalizedIdentifier = identifier.trim().toLowerCase();
 
         const ip = request instanceof Request ? clientIp(request) : null;
 
@@ -84,8 +93,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const user = await prisma.user.findFirst({
           where: {
             OR: [
-              { email: identifier.toLowerCase() },
-              { username: identifier.toLowerCase() },
+              { email: normalizedIdentifier },
+              { username: normalizedIdentifier },
             ],
           },
         });
@@ -131,6 +140,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           firstName: user.firstName,
           lastName: user.lastName,
           role: user.role,
+          credentialVersion: credentialVersion(user.hashedPassword),
           sessionExpiresAt: sessionExpiresAt(
             shouldRememberComputer(credentials?.remember),
           ),
@@ -142,7 +152,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     async jwt({ token, user, trigger }) {
       if (user) {
         token.id = user.id;
-        token.role = (user as { role: string }).role;
+        token.credentialVersion = user.credentialVersion;
+        token.role = user.role;
         token.username = (user as { username: string }).username;
         token.firstName = (user as { firstName: string }).firstName;
         token.lastName = (user as { lastName: string }).lastName;
@@ -157,32 +168,40 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       // Tokens issued before this policy intentionally fail closed.
       if (!user && isSessionExpired(token.sessionExpiresAt)) return null;
 
-      // The profile page calls useSession().update() after saving so the
-      // sidebar reflects a renamed account without a re-login. Re-read from the
-      // database rather than trusting the client-supplied patch. This is also
-      // the trigger the consent modal calls right after a successful submit,
-      // so the JWT's consent claim reflects the just-recorded decision without
-      // requiring a full re-login — see src/components/consent/ConsentGate.tsx.
-      if (trigger === "update" && token.id) {
+      // A JWT is only a reference to a live account. Recheck its credential
+      // version and role so deleting/demoting an account or changing its password
+      // immediately revokes old access, rather than waiting up to thirty days.
+      if (!user) {
+        if (
+          typeof token.id !== "string" ||
+          typeof token.credentialVersion !== "string"
+        )
+          return null;
         const fresh = await prisma.user.findUnique({
-          where: { id: token.id as string },
+          where: { id: token.id },
           select: {
             firstName: true,
             lastName: true,
             username: true,
             email: true,
             role: true,
+            hashedPassword: true,
           },
         });
-        if (fresh) {
-          token.firstName = fresh.firstName;
-          token.lastName = fresh.lastName;
-          token.username = fresh.username;
-          token.email = fresh.email;
-          token.role = fresh.role;
-        }
-        await stampConsentClaim(token);
+        if (
+          !fresh ||
+          credentialVersion(fresh.hashedPassword) !== token.credentialVersion ||
+          fresh.role !== token.role
+        )
+          return null;
+        token.firstName = fresh.firstName;
+        token.lastName = fresh.lastName;
+        token.username = fresh.username;
+        token.email = fresh.email;
       }
+
+      // Consent submission requests a refresh; claims always come from the DB.
+      if (trigger === "update") await stampConsentClaim(token);
 
       return token;
     },
@@ -242,4 +261,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     },
   },
   trustHost: true,
-});
+} satisfies NextAuthConfig;
+
+export const { handlers, signIn, signOut, auth } = NextAuth(authConfig);

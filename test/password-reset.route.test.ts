@@ -16,6 +16,8 @@ import {
 import { prisma } from "@/lib/prisma";
 import { sendPurposeEmail, SmtpNotConfiguredError } from "@/lib/email";
 import {
+  consumeResetToken,
+  findValidResetToken,
   hashResetToken,
   MAX_RESET_REQUESTS_PER_USER,
 } from "@/lib/password-reset";
@@ -204,6 +206,42 @@ describe("GET /api/auth/reset-password", () => {
 
 describe("POST /api/auth/reset-password", () => {
   const NEW_PASSWORD = "Brand2New!";
+
+  it("rechecks expiry when claiming a token after a successful lookup", async () => {
+    const { user } = await createStudent();
+    const token = await requestReset(user.email);
+    const lookup = await findValidResetToken(token);
+    if (!lookup.ok) throw new Error("Expected a valid token");
+    await prisma.passwordResetToken.update({
+      where: { id: lookup.tokenId },
+      data: { expiresAt: new Date(Date.now() - 1) },
+    });
+
+    expect(
+      await consumeResetToken(lookup.tokenId, user.id, "replacement"),
+    ).toBe(false);
+    const unchanged = await prisma.user.findUniqueOrThrow({
+      where: { id: user.id },
+    });
+    expect(unchanged.hashedPassword).toBe(user.hashedPassword);
+  });
+
+  it("cannot use one account's token to replace another account's password", async () => {
+    const { user } = await createStudent();
+    const { user: other } = await createStudent();
+    const token = await requestReset(user.email);
+    const lookup = await findValidResetToken(token);
+    if (!lookup.ok) throw new Error("Expected a valid token");
+
+    expect(
+      await consumeResetToken(lookup.tokenId, other.id, "replacement"),
+    ).toBe(false);
+    expect((await findValidResetToken(token)).ok).toBe(true);
+    const unchanged = await prisma.user.findUniqueOrThrow({
+      where: { id: other.id },
+    });
+    expect(unchanged.hashedPassword).toBe(other.hashedPassword);
+  });
 
   it("sets the new password and burns the link", async () => {
     const { user } = await createStudent();

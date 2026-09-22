@@ -89,16 +89,21 @@ export function AssistantSettings() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const controller = new AbortController();
     void (async () => {
       try {
-        const res = await fetch("/api/admin/assistants");
+        const res = await fetch("/api/admin/assistants", {
+          signal: controller.signal,
+        });
         if (!res.ok) throw new Error("Failed to load assistant settings");
         const data = (await res.json()) as Payload;
+        if (controller.signal.aborted) return;
         setPayload(data);
         setDrafts(
           Object.fromEntries(data.assistants.map((a) => [a.audience, a])),
         );
       } catch (err) {
+        if (controller.signal.aborted) return;
         setError(
           err instanceof Error
             ? err.message
@@ -106,6 +111,7 @@ export function AssistantSettings() {
         );
       }
     })();
+    return () => controller.abort();
   }, []);
 
   const update = (audience: string, patch: Partial<Assistant>) => {

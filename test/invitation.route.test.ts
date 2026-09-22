@@ -420,3 +420,52 @@ describe("POST /api/invitations/[token] — logged-in student", () => {
     ).toBe(1);
   });
 });
+
+describe("POST /api/invitations", () => {
+  it("rejects a teacher account without a profile instead of omitting the ownership filter", async () => {
+    const { cls } = await seedInvite();
+    const { teacher, user } = await createTeacher();
+    await prisma.teacher.delete({ where: { id: teacher.id } });
+    mockAuth.mockResolvedValue({
+      user: { id: user.id, role: "TEACHER" },
+    } as never);
+    const { POST: createInvitation } =
+      await import("@/app/api/invitations/route");
+    const before = await prisma.invitation.count();
+    expect((await createInvitation(req({ classId: cls.id }))).status).toBe(404);
+    expect(await prisma.invitation.count()).toBe(before);
+  });
+  it.each([
+    null,
+    [],
+    { classId: 4 },
+    { classId: "class", maxUses: -1 },
+    { classId: "class", maxUses: 0.5 },
+    { classId: "class", expiresInDays: 1e99 },
+  ])("rejects malformed creation input %j", async (body) => {
+    const { user } = await createTeacher();
+    mockAuth.mockResolvedValue({
+      user: { id: user.id, role: "TEACHER" },
+    } as never);
+    const { POST: createInvitation } =
+      await import("@/app/api/invitations/route");
+    expect((await createInvitation(req(body))).status).toBe(400);
+  });
+  it("creates a bounded invitation for the class owner", async () => {
+    const { teacher, user } = await createTeacher();
+    const cls = await createClass(teacher.id, "Class");
+    mockAuth.mockResolvedValue({
+      user: { id: user.id, role: "TEACHER" },
+    } as never);
+    const { POST: createInvitation } =
+      await import("@/app/api/invitations/route");
+    const response = await createInvitation(
+      req({ classId: cls.id, maxUses: 5, expiresInDays: 1 }),
+    );
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({
+      classId: cls.id,
+      maxUses: 5,
+    });
+  });
+});
