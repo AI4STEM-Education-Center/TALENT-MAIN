@@ -7,11 +7,37 @@ function refs(partial: Partial<GcRefs> = {}): GcRefs {
     extractionStatusById: new Map(),
     figureKeys: new Set(),
     simulationKeys: new Set(),
+    syllabusRevisions: new Map(),
     ...partial,
   };
 }
 
 describe("classifyForGc", () => {
+  describe("syllabi family", () => {
+    const current = "syllabi/t1/c1/syl1/r2/syllabus.pdf";
+    const pending = "syllabi/t1/c1/syl1/r3/pages/page-1.webp";
+    const superseded = "syllabi/t1/c1/syl1/r1/syllabus.pdf";
+
+    it("keeps the current and the pending revision, sweeps older ones", () => {
+      const r = refs({
+        syllabusRevisions: new Map([["syl1", new Set(["r2", "r3"])]]),
+      });
+      expect(classifyForGc(current, r)).toBe("keep");
+      expect(classifyForGc(pending, r)).toBe("keep");
+      expect(classifyForGc(superseded, r)).toBe("delete");
+    });
+
+    it("sweeps every revision of a deleted syllabus", () => {
+      expect(classifyForGc(current, refs())).toBe("delete");
+    });
+
+    it("keeps keys too short to carry a revision", () => {
+      expect(classifyForGc("syllabi/t1/c1/syl1/stray.pdf", refs())).toBe(
+        "keep",
+      );
+    });
+  });
+
   describe("learning-materials family", () => {
     const pdf = "learning-materials/t1/c1/mat1/notes.pdf";
     const page = "learning-materials/t1/c1/mat1/pages/page-3.png";

@@ -114,6 +114,6 @@ export function buildSystemPrompt(
 /** Greeting shown in an empty chat window, before the first turn. */
 export function greeting(audience: AssistantAudience): string {
   return audience === "student"
-    ? "Hi! Ask me about your past quiz results — try “how did I do on kinematics?” or “show my lowest scores”. You can attach a screenshot too."
-    : "Hi! Ask me for insight on your classes — try “which quiz did my class struggle with most?” or “who needs help in Physics 101?”. You can attach a screenshot too.";
+    ? "Hi! Ask me about your past quiz results or your class syllabus — try “how did I do on kinematics?” or “what’s due this week?”. You can attach a screenshot too."
+    : "Hi! Ask me for insight on your classes — try “which quiz did my class struggle with most?”, “who needs help in Physics 101?” or “what deadlines are coming up across my classes?”. You can attach a screenshot too.";
 }
