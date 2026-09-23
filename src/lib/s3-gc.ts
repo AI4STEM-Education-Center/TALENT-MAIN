@@ -17,7 +17,7 @@ import {
 // failures) that no user action will ever clean up.
 //
 // Safety properties:
-// - Only the three key families under this deployment's S3_KEY_PREFIX are ever
+// - Only the four key families under this deployment's S3_KEY_PREFIX are ever
 //   touched; another environment sharing the bucket remains invisible.
 // - Objects younger than ORPHAN_GRACE_MS are never deleted, so an object
 //   uploaded before its DB reference commits can't be swept mid-flight.
@@ -47,6 +47,11 @@ export type GcRefs = {
   figureKeys: Set<string>;
   /** QuestionSimulation.storageKey + SimulationFeedback.previousStorageKey. */
   simulationKeys: Set<string>;
+  /**
+   * ClassSyllabus id → the revision directories ("r3") still in use: the
+   * pending upload's and the one backing the current content.
+   */
+  syllabusRevisions: Map<string, Set<string>>;
 };
 
 /**
@@ -84,6 +89,16 @@ export function classifyForGc(
     return refs.figureKeys.has(key) ? "keep" : "delete";
   }
 
+  if (segments[0] === "syllabi") {
+    // syllabi/{teacherId}/{classId}/{syllabusId}/r{n}/... — a revision
+    // directory lives exactly as long as the row still points at it; older
+    // revisions were replaced by a re-upload and are swept.
+    if (segments.length < 6) return "keep";
+    return refs.syllabusRevisions.get(segments[3])?.has(segments[4])
+      ? "keep"
+      : "delete";
+  }
+
   if (segments[0] === "simulations") {
     // simulations/{teacherId|pool}/{quizId}/{questionId}/v{n}.html — exact
     // version files; anything unreferenced is a superseded or orphaned version.
@@ -101,27 +116,37 @@ export function classifyForGc(
  * while missing its just-created question rows, dooming a live figure.
  */
 export async function loadGcRefs(): Promise<GcRefs> {
-  const [materials, extractions, questions, options, simulations, feedback] =
-    await prisma.$transaction([
-      prisma.learningMaterial.findMany({ select: { id: true } }),
-      prisma.quizPdfExtraction.findMany({ select: { id: true, status: true } }),
-      prisma.question.findMany({
-        where: { figureStorageKey: { not: null } },
-        select: { figureStorageKey: true },
-      }),
-      prisma.option.findMany({
-        where: { imageStorageKey: { not: null } },
-        select: { imageStorageKey: true },
-      }),
-      prisma.questionSimulation.findMany({
-        where: { storageKey: { not: null } },
-        select: { storageKey: true },
-      }),
-      prisma.simulationFeedback.findMany({
-        where: { previousStorageKey: { not: null } },
-        select: { previousStorageKey: true },
-      }),
-    ]);
+  const [
+    materials,
+    extractions,
+    questions,
+    options,
+    simulations,
+    feedback,
+    syllabi,
+  ] = await prisma.$transaction([
+    prisma.learningMaterial.findMany({ select: { id: true } }),
+    prisma.quizPdfExtraction.findMany({ select: { id: true, status: true } }),
+    prisma.question.findMany({
+      where: { figureStorageKey: { not: null } },
+      select: { figureStorageKey: true },
+    }),
+    prisma.option.findMany({
+      where: { imageStorageKey: { not: null } },
+      select: { imageStorageKey: true },
+    }),
+    prisma.questionSimulation.findMany({
+      where: { storageKey: { not: null } },
+      select: { storageKey: true },
+    }),
+    prisma.simulationFeedback.findMany({
+      where: { previousStorageKey: { not: null } },
+      select: { previousStorageKey: true },
+    }),
+    prisma.classSyllabus.findMany({
+      select: { id: true, revision: true, sourceRevision: true },
+    }),
+  ]);
 
   const figureKeys = new Set<string>();
   for (const q of questions)
@@ -135,11 +160,19 @@ export async function loadGcRefs(): Promise<GcRefs> {
   for (const f of feedback)
     if (f.previousStorageKey) simulationKeys.add(f.previousStorageKey);
 
+  const syllabusRevisions = new Map<string, Set<string>>();
+  for (const s of syllabi) {
+    const live = new Set([`r${s.revision}`]);
+    if (s.sourceRevision !== null) live.add(`r${s.sourceRevision}`);
+    syllabusRevisions.set(s.id, live);
+  }
+
   return {
     materialIds: new Set(materials.map((m) => m.id)),
     extractionStatusById: new Map(extractions.map((e) => [e.id, e.status])),
     figureKeys,
     simulationKeys,
+    syllabusRevisions,
   };
 }
 
@@ -213,7 +246,7 @@ async function discardStaleExtractions(
 }
 
 /**
- * Pass 2 — namespace-vs-DB reconciliation: list every object in the three
+ * Pass 2 — namespace-vs-DB reconciliation: list every object in the four
  * managed families under this deployment's prefix and delete the ones nothing
  * in its database references anymore. Because the check is per-object against
  * ALL references, it is safe under deep-copied quizzes sharing figure/
@@ -225,7 +258,12 @@ async function reconcileBucket(bucket: string, now: Date): Promise<number> {
   const keyPrefix = getS3KeyPrefix();
 
   const doomed: string[] = [];
-  const families = ["learning-materials/", "quiz-extractions/", "simulations/"];
+  const families = [
+    "learning-materials/",
+    "quiz-extractions/",
+    "simulations/",
+    "syllabi/",
+  ];
   const objectGroups = await Promise.all(
     families.map((family) =>
       listS3ObjectsWithMeta(bucket, `${keyPrefix}${family}`),
