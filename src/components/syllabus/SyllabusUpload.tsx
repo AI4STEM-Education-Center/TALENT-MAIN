@@ -27,9 +27,11 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  const data = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
-  return data as T;
+  if (!res.ok) {
+    const failure = await res.json().catch(() => null);
+    throw new Error(failure?.error || `Request failed (${res.status})`);
+  }
+  return (await res.json()) as T;
 }
 
 export function SyllabusUpload({

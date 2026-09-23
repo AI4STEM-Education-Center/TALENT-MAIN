@@ -100,24 +100,24 @@ export function TeacherSyllabusPanel({
     return () => clearInterval(timer);
   }, [extracting, refresh]);
 
-  async function run(action: () => Promise<void>) {
+  /** Run one API call, then refresh the route. Resolves true on success. */
+  async function run(action: () => Promise<void>): Promise<boolean> {
     setBusy(true);
     setError(null);
     try {
       await action();
       refresh();
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
+      return false;
     } finally {
       setBusy(false);
     }
   }
 
   async function save(content: SyllabusContent) {
-    await run(async () => {
-      await send(base, "PUT", { content });
-      setEditing(false);
-    });
+    if (await run(() => send(base, "PUT", { content }))) setEditing(false);
   }
 
   async function retry() {
