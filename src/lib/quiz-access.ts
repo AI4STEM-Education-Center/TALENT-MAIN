@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { QUESTION_ORDER } from "@/lib/question-order";
 
 // Ownership convention (mirrors prisma/schema.prisma): Quiz.teacherId/Topic.teacherId
 // NULL = global pool (admin-managed), non-null = private to that teacher.
@@ -54,6 +55,9 @@ export function canRead(
  * a teacher importing a pool quiz — so the copy is fully independent: edits or
  * deletions on either side never affect the other.
  *
+ * Also used by a teacher (or admin) duplicating a quiz within their own scope,
+ * with `name` overriding the copy's title.
+ *
  * The source quiz's topic (if any) is matched by name within the target scope,
  * or created there, so grouping carries over without sharing Topic rows.
  */
@@ -61,6 +65,7 @@ export async function deepCopyQuiz(
   sourceQuizId: string,
   targetTeacherId: string | null,
   targetTopicId?: string | null,
+  { name }: { name?: string } = {},
 ) {
   const source = await prisma.quiz.findUnique({
     where: { id: sourceQuizId },
@@ -68,7 +73,7 @@ export async function deepCopyQuiz(
       topic: true,
       questions: {
         include: { options: true, simulation: true },
-        orderBy: { createdAt: "asc" },
+        orderBy: QUESTION_ORDER,
       },
     },
   });
@@ -111,7 +116,7 @@ export async function deepCopyQuiz(
 
     const quiz = await tx.quiz.create({
       data: {
-        name: source.name,
+        name: name ?? source.name,
         order: source.order,
         topicId,
         teacherId: targetTeacherId,
@@ -119,12 +124,15 @@ export async function deepCopyQuiz(
       },
     });
 
-    for (const question of source.questions) {
+    for (const [position, question] of source.questions.entries()) {
       const copied = await tx.question.create({
         data: {
           quizId: quiz.id,
           title: question.title,
           text: question.text,
+          // Renumbered from the canonical order, so ties the source resolved
+          // by createdAt can't flip on rows inserted in the same millisecond.
+          order: position,
           difficultyLevel: question.difficultyLevel,
           answerMode: question.answerMode,
           points: question.points,

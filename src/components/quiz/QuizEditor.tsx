@@ -65,7 +65,12 @@ function QuizEditorContent({
         </Link>
       </Button>
 
-      <QuizEditorHeader editor={editor} quiz={quiz} previewHref={previewHref} />
+      <QuizEditorHeader
+        editor={editor}
+        quiz={quiz}
+        previewHref={previewHref}
+        listHref={backHref}
+      />
 
       {msg && (
         <div className="p-3 rounded-md bg-primary/10 text-primary text-sm">
@@ -105,13 +110,14 @@ function QuizEditorContent({
             key={q.id}
             q={q}
             index={i}
+            total={quiz.questions.length}
             readOnly={readOnly}
             editor={editor}
           />
         ))}
 
         {/* Add a new question inline, at the end of the list where it will
-            land (order is createdAt asc): the "New Question" form when active,
+            land (new questions are appended last): the "New Question" form when active,
             otherwise a trigger button in the same spot. */}
         {!readOnly &&
           (showForm && !editingQuestion ? (

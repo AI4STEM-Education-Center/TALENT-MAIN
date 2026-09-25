@@ -15,6 +15,7 @@ import {
   questionUpdateSchema,
   questionDeleteSchema,
 } from "@/lib/question-input";
+import { QUESTION_ORDER, nextQuestionOrder } from "@/lib/question-order";
 
 const badRequest = (error: string) =>
   NextResponse.json({ error }, { status: 400 });
@@ -58,7 +59,7 @@ export async function GET(req: NextRequest) {
   const questions = await prisma.question.findMany({
     where: { quizId, ...(difficulty && { difficultyLevel: difficulty }) },
     include: { options: true, quiz: true },
-    orderBy: { createdAt: "asc" },
+    orderBy: QUESTION_ORDER,
   });
   return NextResponse.json(questions);
 }
@@ -89,6 +90,7 @@ export async function POST(req: NextRequest) {
     data: {
       text: body.text,
       quizId: quiz.id,
+      order: await nextQuestionOrder(prisma, quiz.id),
       difficultyLevel: body.difficultyLevel ?? "BEGINNER",
       answerMode,
       createdById: actor.teacherId,

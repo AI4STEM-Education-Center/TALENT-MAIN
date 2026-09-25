@@ -8,6 +8,7 @@ import {
 import { rateLimit } from "@/lib/rate-limit";
 import { guardText } from "@/lib/guardrail-runner";
 import { BODY_TOO_LARGE, readBoundedText } from "@/lib/request-body";
+import { nextQuestionOrder } from "@/lib/question-order";
 
 export const runtime = "nodejs";
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
@@ -147,6 +148,7 @@ export async function POST(req: NextRequest) {
     let skippedCount = 0;
     const errors: QuestionImportError[] = [...parsed.errors];
 
+    let order = await nextQuestionOrder(tx, quizId);
     for (const question of parsed.questions) {
       const duplicate = await tx.question.findFirst({
         where: {
@@ -174,6 +176,7 @@ export async function POST(req: NextRequest) {
           title: question.title,
           text: question.text,
           quizId,
+          order: order++,
           difficultyLevel: "BEGINNER",
           answerMode: question.answerMode,
           points: question.points,
