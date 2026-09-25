@@ -66,6 +66,11 @@ export const quizUpdateSchema = quizCreateSchema
   .omit({ dedupeByName: true })
   .partial();
 
+/** Full new question order for a quiz: every question id, first to last. */
+export const questionOrderSchema = z.object({
+  questionIds: z.array(contentId).max(2000),
+});
+
 /**
  * Password inputs. Strength is enforced separately by validatePassword so its
  * detailed, user-facing message is preserved; the cap only stops an absurdly

@@ -365,7 +365,7 @@ model Quiz {
   order        Int      @default(0)
   topicId      String?
   teacherId    String?  @map("createdById")
-  sourceQuizId String? // lineage: the pool quiz this was imported from, or the teacher quiz a pool copy was promoted from
+  sourceQuizId String? // lineage: the pool quiz this was imported from, the teacher quiz a pool copy was promoted from, or the quiz this was duplicated from
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -426,6 +426,9 @@ model Question {
   quizId            String   @map("subtopicId")
   difficultyLevel   String   @default("BEGINNER")
   answerMode        String   @default("SINGLE_SELECT")
+  // Display position within the quiz (teacher-reorderable). Ties — e.g. rows
+  // written before this column existed, all 0 — fall back to createdAt.
+  order             Int      @default(0)
   points            Int?
   feedbackGeneral   String?
   feedbackCorrect   String?
@@ -455,8 +458,8 @@ model Question {
   simulation  QuestionSimulation?
 
   @@index([importId])
-  // Quiz generation: WHERE quizId ORDER BY createdAt ASC
-  @@index([quizId, createdAt])
+  // Quiz generation: WHERE quizId ORDER BY order, createdAt ASC
+  @@index([quizId, order, createdAt])
   @@index([createdById])
 }
 

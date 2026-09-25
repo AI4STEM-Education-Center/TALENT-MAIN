@@ -12,6 +12,7 @@ import {
   quizExtractionPrefix,
 } from "@/lib/storage";
 import { guardText } from "@/lib/guardrail-runner";
+import { nextQuestionOrder } from "@/lib/question-order";
 
 export const runtime = "nodejs";
 
@@ -176,6 +177,7 @@ export async function POST(
     let importedCount = 0;
     let skippedCount = 0;
 
+    let order = await nextQuestionOrder(tx, quizId);
     for (const question of questions) {
       // Dedupe by exact text within the quiz — an identical-text question
       // already in this quiz is treated as already-imported and skipped.
@@ -188,12 +190,15 @@ export async function POST(
       }
 
       await tx.question.create({
-        data: mapStagedToQuestionData(question, {
-          quizId,
-          importId: questionImport.id,
-          createdById: extraction.teacherId,
-          figureBucket: extraction.bucket,
-        }),
+        data: {
+          ...mapStagedToQuestionData(question, {
+            quizId,
+            importId: questionImport.id,
+            createdById: extraction.teacherId,
+            figureBucket: extraction.bucket,
+          }),
+          order: order++,
+        },
       });
       importedCount += 1;
     }
