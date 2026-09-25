@@ -1948,6 +1948,8 @@ model SimulationEditChat {
 
 // Published payloads are immutable. Source snapshots bind objectives to the exact
 // authored revision. Practice is deliberately separate from graded progress.
+// status: "QUEUED" | "GENERATING" | "REVIEW" | "FAILED" | "PUBLISHED" |
+// "RETIRED" | "DISCARDED" | "STANDALONE"
 model QuizPracticeVersion {
   id String @id @default(cuid())
   quizId String
@@ -1962,9 +1964,24 @@ model QuizPracticeVersion {
   error String?
   aiModel String?
   aiTokens Int?
+  // Teacher generation workflow. batchId groups one "Generate new version"
+  // round (two NUMBERS + two CONTEXT drafts, plus any "two more"); purpose is
+  // the teacher's starting intent ("ALTERNATE" | "STANDALONE"). A draft revised
+  // with teacher feedback becomes DISCARDED and a new draft records the
+  // feedback and revisedFromId. Saving a draft as its own exam sets status
+  // "STANDALONE" and standaloneQuizId. attempts counts generate/verify rounds;
+  // teacherEdited drafts are only re-verified, never silently regenerated.
+  batchId String?
+  purpose String @default("ALTERNATE")
+  feedback String?
+  revisedFromId String?
+  standaloneQuizId String?
+  attempts Int @default(0)
+  teacherEdited Boolean @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@index([quizId, status])
+  @@index([quizId, batchId])
 }
 
 // Self-contained attempt archive: no content cascade can alter a student's

@@ -397,3 +397,219 @@ it("records individual queue failures without losing the rest of the preview bat
   expect(drafts.filter((v) => v.status === "QUEUED")).toHaveLength(3);
   expect(enqueueQuizVariant).toHaveBeenCalledTimes(4);
 });
+
+describe("generation rounds", () => {
+  const objectives = (questionId: string) => [
+    { sourceQuestionId: questionId, objective: "Use only whole numbers." },
+  ];
+  it("queues a 2×2 round, then two more into the same round while it runs", async () => {
+    const f = await fixture();
+    login(f.teacher.user.id, "TEACHER");
+    const round = await (
+      await generate(
+        req({
+          name: "Version",
+          variation: "NUMBERS",
+          count: 2,
+          bothModes: true,
+          purpose: "STANDALONE",
+          objectives: objectives(f.question.id),
+        }),
+        ctx(f.quiz.id),
+      )
+    ).json();
+    expect(round.ids).toHaveLength(4);
+    const more = await generate(
+      req({
+        name: "Version",
+        variation: "CONTEXT",
+        count: 2,
+        batchId: round.batchId,
+        objectives: objectives(f.question.id),
+      }),
+      ctx(f.quiz.id),
+    );
+    expect(more.status).toBe(202);
+    const rows = await prisma.quizPracticeVersion.findMany({
+      where: { batchId: round.batchId },
+      orderBy: { createdAt: "asc" },
+    });
+    expect(rows).toHaveLength(6);
+    // "Two more" inherit the round's purpose and continue its numbering.
+    expect(rows.every((r) => r.purpose === "STANDALONE")).toBe(true);
+    expect(
+      rows.filter((r) => r.variation === "CONTEXT").map((r) => r.name),
+    ).toEqual([
+      "Version · Context 1",
+      "Version · Context 2",
+      "Version · Context 3",
+      "Version · Context 4",
+    ]);
+    const unknown = await generate(
+      req({
+        name: "Version",
+        variation: "CONTEXT",
+        count: 2,
+        batchId: "missing",
+        objectives: objectives(f.question.id),
+      }),
+      ctx(f.quiz.id),
+    );
+    expect(unknown.status).toBe(404);
+    const crowded = await generate(
+      req({
+        name: "Version",
+        variation: "CONTEXT",
+        count: 4,
+        bothModes: true,
+        batchId: round.batchId,
+        objectives: objectives(f.question.id),
+      }),
+      ctx(f.quiz.id),
+    );
+    expect(crowded.status).toBe(409);
+  });
+
+  it("revises a draft with feedback into a fresh queued draft", async () => {
+    const f = await fixture();
+    login(f.teacher.user.id, "TEACHER");
+    await prisma.quizPracticeVersion.update({
+      where: { id: f.version.id },
+      data: { status: "REVIEW", batchId: "round" },
+    });
+    expect(
+      (
+        await change(
+          req({ versionId: f.version.id, action: "revise" }),
+          ctx(f.quiz.id),
+        )
+      ).status,
+    ).toBe(400);
+    const revised = await change(
+      req({
+        versionId: f.version.id,
+        action: "revise",
+        feedback: "Use smaller numbers.",
+      }),
+      ctx(f.quiz.id),
+    );
+    expect(revised.status).toBe(202);
+    const next = await prisma.quizPracticeVersion.findUniqueOrThrow({
+      where: { id: (await revised.json()).id },
+    });
+    expect(next).toMatchObject({
+      status: "QUEUED",
+      batchId: "round",
+      feedback: "Use smaller numbers.",
+      revisedFromId: f.version.id,
+    });
+    expect(
+      (
+        await prisma.quizPracticeVersion.findUniqueOrThrow({
+          where: { id: f.version.id },
+        })
+      ).status,
+    ).toBe("DISCARDED");
+    const listed = await (await versions(req({}), ctx(f.quiz.id))).json();
+    expect(listed.versions.map((v: { id: string }) => v.id)).toEqual([next.id]);
+  });
+
+  it("saves a reviewed draft as a standalone exam in the source quiz's scope", async () => {
+    const f = await fixture();
+    login(f.teacher.user.id, "TEACHER");
+    await prisma.question.update({
+      where: { id: f.question.id },
+      data: { points: 3, difficultyLevel: "ADVANCED" },
+    });
+    await prisma.quizPracticeVersion.update({
+      where: { id: f.version.id },
+      data: { status: "REVIEW" },
+    });
+    const saved = await change(
+      req({ versionId: f.version.id, action: "standalone" }),
+      ctx(f.quiz.id),
+    );
+    expect(saved.status).toBe(200);
+    const { quizId } = await saved.json();
+    const quiz = await prisma.quiz.findUniqueOrThrow({
+      where: { id: quizId },
+      include: { questions: { include: { options: true } } },
+    });
+    expect(quiz).toMatchObject({
+      teacherId: f.teacher.teacher.id,
+      sourceQuizId: f.quiz.id,
+      name: `${f.quiz.name} (new version 1)`,
+    });
+    expect(quiz.questions).toHaveLength(1);
+    expect(quiz.questions[0]).toMatchObject({
+      text: "What is 3 + 3?",
+      points: 3,
+      difficultyLevel: "ADVANCED",
+      feedbackGeneral: "3+3=6",
+    });
+    expect(quiz.questions[0].options.map((o) => [o.text, o.isCorrect])).toEqual(
+      [
+        ["6", true],
+        ["7", false],
+      ],
+    );
+    const listed = await (await versions(req({}), ctx(f.quiz.id))).json();
+    expect(listed.versions[0]).toMatchObject({
+      status: "STANDALONE",
+      standaloneQuiz: { id: quizId },
+    });
+    // Saving twice must not create a second exam.
+    expect(
+      (
+        await change(
+          req({ versionId: f.version.id, action: "standalone" }),
+          ctx(f.quiz.id),
+        )
+      ).status,
+    ).toBe(409);
+    expect(
+      await prisma.quiz.count({ where: { sourceQuizId: f.quiz.id } }),
+    ).toBe(1);
+  });
+
+  it("regenerates failed drafts from scratch but keeps teacher edits on retry", async () => {
+    const f = await fixture();
+    login(f.teacher.user.id, "TEACHER");
+    await prisma.quizPracticeVersion.update({
+      where: { id: f.version.id },
+      data: { status: "FAILED" },
+    });
+    await change(
+      req({ versionId: f.version.id, action: "retry" }),
+      ctx(f.quiz.id),
+    );
+    expect(
+      (
+        await prisma.quizPracticeVersion.findUniqueOrThrow({
+          where: { id: f.version.id },
+        })
+      ).questions,
+    ).toBe("[]");
+    await prisma.quizPracticeVersion.update({
+      where: { id: f.version.id },
+      data: {
+        status: "FAILED",
+        teacherEdited: true,
+        questions: JSON.stringify(f.questions),
+      },
+    });
+    await change(
+      req({ versionId: f.version.id, action: "retry" }),
+      ctx(f.quiz.id),
+    );
+    expect(
+      JSON.parse(
+        (
+          await prisma.quizPracticeVersion.findUniqueOrThrow({
+            where: { id: f.version.id },
+          })
+        ).questions,
+      ),
+    ).toEqual(f.questions);
+  });
+});
