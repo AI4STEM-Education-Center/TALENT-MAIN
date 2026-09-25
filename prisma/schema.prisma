@@ -1742,8 +1742,10 @@ model ConsentRecord {
   formVersionId             String
   formVersion               ConsentFormVersion @relation(fields: [formVersionId], references: [id])
   decision                  String
-  interviewRecordingConsent Boolean?
-  initialsStrokeData        String?  // vector path JSON; only set when interviewRecordingConsent is true
+  interviewRecordingConsent Boolean? // true when interviewRecordingChoice allows audio/video recording
+  interviewRecordingChoice  String?  // "VIDEO_AUDIO" | "AUDIO_ONLY" | "TRANSCRIPT_ONLY" | "NO_INTERVIEW"; AGREE only, null on older records
+  initialsStrokeData        String?  // legacy: drawn initials from the pre-2026-09-22 forms; no longer captured
+  ugaId                     String?  // digits only; required since the 2026-09-22 forms, null on older records
   signatureTypedName        String   // "typing your name is equivalent to your legal signature"
   signatureStrokeData       String?  // optional hand-drawn vector JSON, if drawn instead of / in addition to typed
   signedAt                  DateTime @default(now())

@@ -7,6 +7,7 @@ import {
 } from "./simulation-telemetry";
 import { MAX_LABEL_LENGTH } from "./teacher-codes";
 import { BODY_TOO_LARGE, readBoundedText } from "./request-body";
+import { INTERVIEW_RECORDING_CHOICES } from "./consent-fields";
 import {
   FEEDBACK_RATING_MAX,
   FEEDBACK_RATING_MIN,
@@ -281,15 +282,17 @@ export const simulationSessionUpdateSchema = z.object({
 });
 
 // ─── IRB research consent ───────────────────────────────────────────────────
-// Stroke data (drawn initials/signature) is only shape-checked as "present or
+// Stroke data (a drawn signature) is only shape-checked as "present or
 // not" here — src/lib/consent.ts's normalizeStrokeData does the real
 // shape/size validation, since it needs to throw a specific oversized-payload
 // error rather than a generic 400.
 
 export const consentSubmitSchema = z.object({
   decision: z.enum(["AGREE", "DECLINE"]),
-  interviewRecordingConsent: z.boolean().optional(),
-  initialsStrokeData: z.unknown().optional(),
+  interviewRecordingChoice: z.enum(INTERVIEW_RECORDING_CHOICES).optional(),
+  // Format-checked by the route (normalizeUgaId) so it can return a specific
+  // message instead of parseBody's generic one.
+  ugaId: z.string().trim().min(1).max(40),
   signatureTypedName: z.string().trim().min(1).max(200),
   signatureStrokeData: z.unknown().optional(),
 });

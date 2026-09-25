@@ -9,6 +9,7 @@ import {
   normalizeStrokeData,
   parseDeviceType,
 } from "@/lib/consent";
+import { choiceAllowsRecording, normalizeUgaId } from "@/lib/consent-fields";
 import { enqueueConsentConfirmationEmail } from "@/lib/consent-email";
 import { enqueueConsentEmails } from "@/lib/queue";
 import { sanitizeConsentHtml } from "@/lib/consent-html";
@@ -58,6 +59,7 @@ export async function GET() {
       decision: true,
       signedAt: true,
       interviewRecordingConsent: true,
+      interviewRecordingChoice: true,
       signatureTypedName: true,
     },
   });
@@ -106,14 +108,23 @@ export async function POST(req: NextRequest) {
   }
   const parsed = parseBody(consentSubmitSchema, raw);
   if (!parsed.ok) return parsed.response;
-  const { decision, interviewRecordingConsent, signatureTypedName } =
-    parsed.data;
+  const { decision, signatureTypedName } = parsed.data;
 
-  if (interviewRecordingConsent && !parsed.data.initialsStrokeData) {
+  const ugaId = normalizeUgaId(parsed.data.ugaId);
+  if (!ugaId) {
     return NextResponse.json(
-      {
-        error: "Draw your initials to consent to the interview being recorded.",
-      },
+      { error: "Enter a valid UGA ID." },
+      { status: 400 },
+    );
+  }
+
+  // Participation is all-or-nothing: AGREE must come with exactly one
+  // interview-recording choice; DECLINE never records one.
+  const interviewRecordingChoice =
+    decision === "AGREE" ? parsed.data.interviewRecordingChoice : undefined;
+  if (decision === "AGREE" && !interviewRecordingChoice) {
+    return NextResponse.json(
+      { error: "Choose one interview recording option." },
       { status: 400 },
     );
   }
@@ -128,10 +139,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let initialsStrokeData: string | null;
   let signatureStrokeData: string | null;
   try {
-    initialsStrokeData = normalizeStrokeData(parsed.data.initialsStrokeData);
     signatureStrokeData = normalizeStrokeData(parsed.data.signatureStrokeData);
   } catch (error) {
     return NextResponse.json(
@@ -150,8 +159,11 @@ export async function POST(req: NextRequest) {
       role,
       formVersionId: activeForm.id,
       decision,
-      interviewRecordingConsent: interviewRecordingConsent ?? null,
-      initialsStrokeData,
+      interviewRecordingChoice: interviewRecordingChoice ?? null,
+      interviewRecordingConsent: interviewRecordingChoice
+        ? choiceAllowsRecording(interviewRecordingChoice)
+        : null,
+      ugaId,
       signatureTypedName: signatureTypedName.trim(),
       signatureStrokeData,
       ipAddress: clientIp(req),

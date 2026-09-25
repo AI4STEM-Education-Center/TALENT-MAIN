@@ -5,6 +5,12 @@ import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import {
+  INTERVIEW_RECORDING_CHOICES,
+  INTERVIEW_RECORDING_CHOICE_LABELS,
+  normalizeUgaId,
+  type InterviewRecordingChoice,
+} from "@/lib/consent-fields";
 import { SignatureCanvas, type SignatureCanvasHandle } from "./SignatureCanvas";
 
 export interface ConsentFormActiveVersion {
@@ -36,12 +42,13 @@ export function ConsentForm({
 }) {
   const { update } = useSession();
   const [decision, setDecision] = useState<"AGREE" | "DECLINE" | null>(null);
-  const [wantsRecordingConsent, setWantsRecordingConsent] = useState(false);
+  const [recordingChoice, setRecordingChoice] =
+    useState<InterviewRecordingChoice | null>(null);
+  const [ugaId, setUgaId] = useState("");
   const [wantsDrawnSignature, setWantsDrawnSignature] = useState(false);
   const [signatureTypedName, setSignatureTypedName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const initialsRef = useRef<SignatureCanvasHandle>(null);
   const signatureRef = useRef<SignatureCanvasHandle>(null);
 
   async function handleSubmit() {
@@ -53,14 +60,12 @@ export function ConsentForm({
       setError("Type your full name to sign this form.");
       return;
     }
-    if (
-      decision === "AGREE" &&
-      wantsRecordingConsent &&
-      (initialsRef.current?.isEmpty() ?? true)
-    ) {
-      setError(
-        "Draw your initials to consent to the interview being recorded.",
-      );
+    if (decision === "AGREE" && !recordingChoice) {
+      setError("Choose one interview recording option.");
+      return;
+    }
+    if (!normalizeUgaId(ugaId)) {
+      setError("Enter a valid UGA ID.");
       return;
     }
 
@@ -72,12 +77,9 @@ export function ConsentForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           decision,
-          interviewRecordingConsent:
-            decision === "AGREE" ? wantsRecordingConsent : undefined,
-          initialsStrokeData:
-            decision === "AGREE" && wantsRecordingConsent
-              ? initialsRef.current?.toData()
-              : undefined,
+          interviewRecordingChoice:
+            decision === "AGREE" ? recordingChoice : undefined,
+          ugaId: ugaId.trim(),
           signatureTypedName: signatureTypedName.trim(),
           signatureStrokeData: wantsDrawnSignature
             ? signatureRef.current?.toData()
@@ -154,32 +156,36 @@ export function ConsentForm({
       </div>
 
       {decision === "AGREE" && (
-        <div className="space-y-2 rounded-md bg-muted/40 p-3">
-          <label className="flex items-start gap-2 text-sm">
-            <input
-              type="checkbox"
-              className="mt-1 size-4"
-              checked={wantsRecordingConsent}
-              onChange={(e) => setWantsRecordingConsent(e.target.checked)}
-            />
-            <span>I give my consent to have the interview recorded.</span>
-          </label>
-          {wantsRecordingConsent && (
-            <div className="space-y-1 pl-6">
-              <Label className="text-xs">Draw your initials</Label>
-              <SignatureCanvas ref={initialsRef} height={70} />
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => initialsRef.current?.clear()}
-              >
-                Clear
-              </Button>
-            </div>
-          )}
-        </div>
+        <fieldset className="space-y-2 rounded-md bg-muted/40 p-3">
+          <legend className="text-sm font-medium">
+            Interview recording — choose one
+          </legend>
+          {INTERVIEW_RECORDING_CHOICES.map((choice) => (
+            <label key={choice} className="flex items-start gap-2 text-sm">
+              <input
+                type="radio"
+                name="interview-recording-choice"
+                className="mt-1 size-4"
+                checked={recordingChoice === choice}
+                onChange={() => setRecordingChoice(choice)}
+              />
+              <span>{INTERVIEW_RECORDING_CHOICE_LABELS[choice]}</span>
+            </label>
+          ))}
+        </fieldset>
       )}
+
+      <div className="space-y-2">
+        <Label htmlFor="consent-uga-id">UGA ID</Label>
+        <Input
+          id="consent-uga-id"
+          value={ugaId}
+          onChange={(e) => setUgaId(e.target.value)}
+          placeholder="e.g. 811-234-567"
+          inputMode="numeric"
+          autoComplete="off"
+        />
+      </div>
 
       <div className="space-y-2">
         <Label htmlFor="consent-typed-name">

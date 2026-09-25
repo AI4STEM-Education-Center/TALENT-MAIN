@@ -42,9 +42,11 @@ describe("official consent form templates", () => {
       "not be known to your course instructor while you are enrolled",
     );
     expect(student).toContain("no impact on your grades");
-    // Both forms offer interview recording, which the initials capture backs.
+    // Both forms offer the optional interview-recording choice.
     for (const role of ROLES) {
-      expect(OFFICIAL_CONSENT_FORMS[role].bodyHtml).toContain("initials");
+      expect(OFFICIAL_CONSENT_FORMS[role].bodyHtml).toContain(
+        "Interview Recording (optional)",
+      );
       expect(OFFICIAL_CONSENT_FORMS[role].bodyHtml).toContain(
         "xiaoming.zhai@uga.edu",
       );
