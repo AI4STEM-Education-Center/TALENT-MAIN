@@ -7,6 +7,7 @@ import {
   Clock3,
   Gauge,
   RefreshCw,
+  Trash2,
   XCircle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -213,7 +214,15 @@ function TargetLoad({ result }: { result: PressureResult }) {
   );
 }
 
-function RunResultRow({ result }: { result: PressureResult }) {
+function RunResultRow({
+  result,
+  onDelete,
+  deleting,
+}: {
+  result: PressureResult;
+  onDelete: (result: PressureResult) => void;
+  deleting: boolean;
+}) {
   return (
     <tr className="border-b align-top last:border-0">
       <td className="whitespace-nowrap py-4 pr-4">
@@ -271,13 +280,25 @@ function RunResultRow({ result }: { result: PressureResult }) {
       <td className="py-4 pr-4 text-right tabular-nums">
         {formatDuration(result.durationMs)}
       </td>
-      <td className="py-4">
+      <td className="py-4 pr-4">
         <div>{result.source}</div>
         {result.commitSha && (
           <div className="mt-1 font-mono text-xs text-muted-foreground">
             {result.commitSha.slice(0, 8)}
           </div>
         )}
+      </td>
+      <td className="py-4 text-right">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-destructive hover:text-destructive"
+          disabled={deleting}
+          onClick={() => onDelete(result)}
+          aria-label={`Delete result ${result.runId}`}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
       </td>
     </tr>
   );
@@ -289,13 +310,46 @@ function RunHistory({
   loading,
   page,
   setPage,
+  reload,
 }: {
   data: ResponseBody | null;
   error: string | null;
   loading: boolean;
   page: number;
   setPage: (update: (value: number) => number) => void;
+  reload: () => Promise<void> | void;
 }) {
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // A deleted result is gone for good and it moves the pass/fail cards and the
+  // p95 trend, so confirm against the run id rather than a generic "are you
+  // sure" the operator will click through.
+  const handleDelete = async (result: PressureResult) => {
+    if (deletingId) return;
+    if (
+      !window.confirm(
+        `Delete ${result.runId}?\n\nThis permanently removes the result and changes the summary cards and trend. It cannot be undone.`,
+      )
+    )
+      return;
+    setDeletingId(result.id);
+    setDeleteError(null);
+    try {
+      const response = await fetch(`/api/admin/pressure-results/${result.id}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) throw new Error(`Request failed (${response.status})`);
+      await reload();
+    } catch (error_) {
+      setDeleteError(
+        error_ instanceof Error ? error_.message : "Could not delete result.",
+      );
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const isEmpty = !loading && (data?.results.length ?? 0) === 0;
   const isLastPage = page * (data?.pageSize ?? 25) >= (data?.total ?? 0);
   return (
@@ -304,12 +358,12 @@ function RunHistory({
         <CardTitle>Run history</CardTitle>
       </CardHeader>
       <CardContent>
-        {error && (
+        {(error || deleteError) && (
           <div
             role="alert"
             className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
           >
-            {error}
+            {error ?? deleteError}
           </div>
         )}
         <div className="overflow-x-auto">
@@ -323,14 +377,15 @@ function RunHistory({
                 <th className="py-3 pr-4 text-right">Checks</th>
                 <th className="py-3 pr-4 text-right">p95 / p99</th>
                 <th className="py-3 pr-4 text-right">Duration</th>
-                <th className="py-3">Source</th>
+                <th className="py-3 pr-4">Source</th>
+                <th className="py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {isEmpty && (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9}
                     className="py-12 text-center text-muted-foreground"
                   >
                     No results match these filters.
@@ -338,7 +393,12 @@ function RunHistory({
                 </tr>
               )}
               {data?.results.map((result) => (
-                <RunResultRow key={result.id} result={result} />
+                <RunResultRow
+                  key={result.id}
+                  result={result}
+                  onDelete={handleDelete}
+                  deleting={deletingId === result.id}
+                />
               ))}
             </tbody>
           </table>
@@ -559,6 +619,7 @@ export function PressureTestsClient() {
         loading={loading}
         page={page}
         setPage={setPage}
+        reload={load}
       />
 
       <IngestionTokens />

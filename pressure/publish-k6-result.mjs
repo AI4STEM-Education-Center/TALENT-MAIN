@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
-import { publishResult, saveResult } from "./lib/results.mjs";
+import { publishResult, saveResult, crossedThresholds, resolveDurationMs } from "./lib/results.mjs";
 
 function argument(name, fallback = null) {
   const index = process.argv.indexOf(`--${name}`);
@@ -36,19 +36,20 @@ const requests = stats(metrics.http_reqs);
 const failed = stats(metrics.http_req_failed);
 const unexpected = stats(metrics.unexpected_errors).count;
 const busy = stats(metrics.sqlite_busy).count;
-const thresholdFailures = [];
-for (const [metricName, metric] of Object.entries(metrics)) {
-  for (const [threshold, state] of Object.entries(metric.thresholds ?? {})) {
-    const didFail =
-      typeof state === "boolean" ? state === false : state?.ok === false;
-    if (didFail) thresholdFailures.push(`${metricName} ${threshold}`);
-  }
-}
+const thresholdFailures = crossedThresholds(metrics);
+
+// k6's --summary-export carries NO `state` key at all — its top level is just
+// { root_group, metrics } — so `summary.state?.testRunDurationMs` is always
+// undefined and every result reached the dashboard with durationMs 0. The
+// runner already brackets the k6 phase with RUN_STARTED_AT/RUN_FINISHED_AT in
+// meta.json, so fall back to that wall clock. handleSummary output does provide
+// state, hence the summary value still wins when present.
+const durationMs = resolveDurationMs(summary, meta);
 
 // react-doctor-disable-next-line react-doctor/no-impure-call-at-module-scope -- one-shot result normalizer uses current time only as fallback for legacy artifacts without timestamps
 const startedAt =
   meta.startedAt ??
-  new Date(Date.now() - (summary.state?.testRunDurationMs ?? 0)).toISOString();
+  new Date(Date.now() - durationMs).toISOString();
 // react-doctor-disable-next-line react-doctor/no-impure-call-at-module-scope -- one-shot result normalizer uses current time only as fallback for legacy artifacts without timestamps
 const finishedAt = meta.finishedAt ?? new Date().toISOString();
 const failures = [
@@ -75,7 +76,7 @@ const result = {
   commitSha: process.env.GIT_SHA || null,
   branch: process.env.GIT_BRANCH || null,
   targetUrl: null,
-  durationMs: Math.max(0, Math.round(summary.state?.testRunDurationMs ?? 0)),
+  durationMs,
   totalChecks: Math.round(requests.count ?? 0),
   passedChecks: Math.max(0, Math.round((requests.count ?? 0) - failedChecks)),
   failedChecks,
