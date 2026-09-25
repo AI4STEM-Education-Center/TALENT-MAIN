@@ -9,6 +9,10 @@ import {
   type VariantQuestion,
 } from "@/lib/quiz-variants";
 import { QUESTION_ORDER } from "@/lib/question-order";
+import { createStandaloneQuiz } from "@/lib/quiz-variant-standalone";
+
+/** Drafts generating at once per quiz; bounds provider bursts and cost. */
+const MAX_IN_FLIGHT = 8;
 
 type Context = { params: Promise<{ id: string }> };
 async function ownedQuiz(context: Context) {
@@ -23,20 +27,35 @@ async function ownedQuiz(context: Context) {
       questions: { include: { options: true }, orderBy: QUESTION_ORDER },
     },
   });
-  return quiz && canManage(actor, quiz) ? quiz : null;
+  return quiz && canManage(actor, quiz) ? Object.assign(quiz, { actor }) : null;
 }
 export async function GET(_req: NextRequest, context: Context) {
   const quiz = await ownedQuiz(context);
   if (!quiz)
     return NextResponse.json({ error: "Quiz not found" }, { status: 404 });
   const versions = await prisma.quizPracticeVersion.findMany({
-    where: { quizId: quiz.id },
+    where: { quizId: quiz.id, status: { not: "DISCARDED" } },
     orderBy: { createdAt: "desc" },
-    take: 30,
+    take: 60,
   });
+  // A standalone exam may since have been deleted; only link live ones.
+  const standalone = await prisma.quiz.findMany({
+    where: {
+      id: {
+        in: versions.flatMap((v) =>
+          v.standaloneQuizId ? [v.standaloneQuizId] : [],
+        ),
+      },
+    },
+    select: { id: true, name: true },
+  });
+  const standaloneById = new Map(standalone.map((q) => [q.id, q]));
   return NextResponse.json({
     versions: versions.map((v) => ({
       ...v,
+      standaloneQuiz: v.standaloneQuizId
+        ? (standaloneById.get(v.standaloneQuizId) ?? null)
+        : null,
       questions: JSON.parse(v.questions),
       sourceSnapshot: JSON.parse(v.sourceSnapshot),
       objectives: JSON.parse(v.objectives),
@@ -50,6 +69,9 @@ const createSchema = z.object({
   objectives: objectiveSchema,
   count: z.number().int().min(1).max(4).default(1),
   bothModes: z.boolean().default(false),
+  purpose: z.enum(["ALTERNATE", "STANDALONE"]).default("ALTERNATE"),
+  // Append to an existing round ("Generate two more") instead of starting one.
+  batchId: z.string().min(1).max(100).optional(),
 });
 export async function POST(req: NextRequest, context: Context) {
   const quiz = await ownedQuiz(context);
@@ -128,28 +150,45 @@ export async function POST(req: NextRequest, context: Context) {
       { status: 400 },
     );
   }
-  const versions = await prisma.$transaction(async (tx) => {
-    if (
-      await tx.quizPracticeVersion.count({
-        where: { quizId: quiz.id, status: { in: ["QUEUED", "GENERATING"] } },
-      })
-    )
-      return null;
-    const modes = body.data.bothModes
-      ? ["NUMBERS", "CONTEXT"]
-      : [body.data.variation];
+  const modes = body.data.bothModes
+    ? ["NUMBERS", "CONTEXT"]
+    : [body.data.variation];
+  const requested = modes.length * body.data.count;
+  const outcome = await prisma.$transaction(async (tx) => {
+    const inFlight = await tx.quizPracticeVersion.count({
+      where: { quizId: quiz.id, status: { in: ["QUEUED", "GENERATING"] } },
+    });
+    let batchId = body.data.batchId;
+    let purpose = body.data.purpose;
+    const batch = batchId
+      ? await tx.quizPracticeVersion.findMany({
+          where: { quizId: quiz.id, batchId },
+          select: { variation: true, purpose: true },
+        })
+      : [];
+    if (batchId) {
+      if (!batch.length) return "missing" as const;
+      if (inFlight + requested > MAX_IN_FLIGHT) return "busy" as const;
+      purpose = batch[0].purpose as typeof purpose;
+    } else {
+      if (inFlight) return "busy" as const;
+      batchId = crypto.randomUUID();
+    }
     const created = [];
     for (const variation of modes) {
+      const offset = batch.filter((v) => v.variation === variation).length;
       for (let i = 0; i < body.data.count; i++) {
         created.push(
           await tx.quizPracticeVersion.create({
             data: {
               quizId: quiz.id,
               name:
-                body.data.count === 1
+                body.data.count === 1 && !body.data.bothModes && !offset
                   ? body.data.name
-                  : `${body.data.name.slice(0, 80)} · ${variation === "NUMBERS" ? "Numbers" : "Context"} ${i + 1}`,
+                  : `${body.data.name.slice(0, 80)} · ${variation === "NUMBERS" ? "Numbers" : "Context"} ${offset + i + 1}`,
               variation,
+              batchId,
+              purpose,
               objectives: JSON.stringify(objectives),
               sourceSnapshot: JSON.stringify(sources),
             },
@@ -159,9 +198,19 @@ export async function POST(req: NextRequest, context: Context) {
     }
     return created;
   });
+  if (outcome === "missing")
+    return NextResponse.json(
+      { error: "That generation round no longer exists. Start a new one." },
+      { status: 404 },
+    );
+  const versions = outcome === "busy" ? null : outcome;
   if (!versions)
     return NextResponse.json(
-      { error: "A version is already generating for this quiz." },
+      {
+        error: body.data.batchId
+          ? "Too many versions are generating. Wait for some to finish."
+          : "A version is already generating for this quiz.",
+      },
       { status: 409 },
     );
   const results = await Promise.all(
@@ -170,7 +219,12 @@ export async function POST(req: NextRequest, context: Context) {
   const failed = results.find((result) => !result.ok);
   if (failed) return failed;
   return NextResponse.json(
-    { id: versions[0].id, ids: versions.map((v) => v.id), status: "QUEUED" },
+    {
+      id: versions[0].id,
+      ids: versions.map((v) => v.id),
+      batchId: versions[0].batchId,
+      status: "QUEUED",
+    },
     { status: 202 },
   );
 }
@@ -195,15 +249,39 @@ async function queueVersion(id: string) {
 }
 const changeSchema = z.object({
   versionId: z.string(),
-  action: z.enum(["publish", "retire", "retry", "edit"]),
+  action: z.enum([
+    "publish",
+    "retire",
+    "retry",
+    "edit",
+    "discard",
+    "revise",
+    "standalone",
+  ]),
   questions: z.unknown().optional(),
+  feedback: z.string().trim().min(1).max(2000).optional(),
 });
+// Which statuses each action may start from.
+const FROM: Record<z.infer<typeof changeSchema>["action"], string[]> = {
+  publish: ["REVIEW"],
+  standalone: ["REVIEW"],
+  edit: ["REVIEW", "FAILED"],
+  retire: ["PUBLISHED"],
+  retry: ["FAILED"],
+  discard: ["REVIEW", "FAILED"],
+  revise: ["REVIEW", "FAILED"],
+};
+const conflict = () =>
+  NextResponse.json(
+    { error: "Version changed. Reload before continuing." },
+    { status: 409 },
+  );
 export async function PATCH(req: NextRequest, context: Context) {
   const quiz = await ownedQuiz(context);
   if (!quiz)
     return NextResponse.json({ error: "Quiz not found" }, { status: 404 });
   const body = changeSchema.safeParse(await req.json().catch(() => null));
-  if (!body.success)
+  if (!body.success || (body.data.action === "revise" && !body.data.feedback))
     return NextResponse.json(
       { error: "Invalid version action" },
       { status: 400 },
@@ -214,24 +292,72 @@ export async function PATCH(req: NextRequest, context: Context) {
   });
   if (!version)
     return NextResponse.json({ error: "Version not found" }, { status: 404 });
-  const expected =
-    action === "publish" || action === "edit"
-      ? "REVIEW"
-      : action === "retire"
-        ? "PUBLISHED"
-        : "FAILED";
   if (
-    version.status !== expected &&
-    !(
-      action === "edit" &&
+    !FROM[action].includes(version.status) ||
+    (action === "edit" &&
       version.status === "FAILED" &&
-      version.questions !== "[]"
-    )
+      version.questions === "[]")
   )
-    return NextResponse.json(
-      { error: "Version changed. Reload before continuing." },
-      { status: 409 },
-    );
+    return conflict();
+  const fence = {
+    id: versionId,
+    status: version.status,
+    updatedAt: version.updatedAt,
+  };
+  if (action === "revise") {
+    const revision = await prisma.$transaction(async (tx) => {
+      const discarded = await tx.quizPracticeVersion.updateMany({
+        where: fence,
+        data: { status: "DISCARDED" },
+      });
+      if (!discarded.count) return null;
+      return tx.quizPracticeVersion.create({
+        data: {
+          quizId: quiz.id,
+          name: version.name,
+          variation: version.variation,
+          batchId: version.batchId,
+          purpose: version.purpose,
+          objectives: version.objectives,
+          sourceSnapshot: version.sourceSnapshot,
+          feedback: body.data.feedback,
+          revisedFromId: version.id,
+        },
+      });
+    });
+    return revision ? queueVersion(revision.id) : conflict();
+  }
+  if (action === "standalone") {
+    const created = await prisma.$transaction(async (tx) => {
+      const claimed = await tx.quizPracticeVersion.updateMany({
+        where: fence,
+        data: { status: "STANDALONE" },
+      });
+      if (!claimed.count) return null;
+      const saved = await tx.quizPracticeVersion.count({
+        where: { quizId: quiz.id, status: "STANDALONE" },
+      });
+      const standalone = await createStandaloneQuiz(
+        tx,
+        quiz,
+        JSON.parse(version.questions),
+        `${quiz.name} (new version ${saved})`,
+        quiz.actor.teacherId,
+      );
+      await tx.quizPracticeVersion.update({
+        where: { id: versionId },
+        data: { standaloneQuizId: standalone.id },
+      });
+      return standalone;
+    });
+    if (!created) return conflict();
+    return NextResponse.json({
+      id: versionId,
+      status: "STANDALONE",
+      quizId: created.id,
+      quizName: created.name,
+    });
+  }
   let questions: VariantQuestion[] | undefined;
   if (action === "edit") {
     try {
@@ -251,27 +377,31 @@ export async function PATCH(req: NextRequest, context: Context) {
       ? "PUBLISHED"
       : action === "retire"
         ? "RETIRED"
-        : "QUEUED";
+        : action === "discard"
+          ? "DISCARDED"
+          : "QUEUED";
   const changed = await prisma.quizPracticeVersion.updateMany({
-    where: {
-      id: versionId,
-      status: version.status,
-      updatedAt: version.updatedAt,
-    },
+    where: fence,
     data: {
       status,
       error: null,
       ...(questions
-        ? { questions: JSON.stringify(questions), validation: null }
+        ? {
+            questions: JSON.stringify(questions),
+            validation: null,
+            teacherEdited: true,
+          }
         : {}),
-      ...(action === "retry" ? { validation: null } : {}),
+      // A fresh retry regenerates from scratch; a teacher edit is re-verified.
+      ...(action === "retry"
+        ? {
+            validation: null,
+            ...(version.teacherEdited ? {} : { questions: "[]" }),
+          }
+        : {}),
     },
   });
-  if (!changed.count)
-    return NextResponse.json(
-      { error: "Version changed. Reload before continuing." },
-      { status: 409 },
-    );
+  if (!changed.count) return conflict();
   if (status === "QUEUED") return queueVersion(versionId);
   return NextResponse.json({ id: versionId, status });
 }
