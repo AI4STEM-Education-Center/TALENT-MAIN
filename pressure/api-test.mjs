@@ -167,6 +167,37 @@ const clients = {
 };
 
 async function login(role) {
+  await signIn(role);
+  // A teacher with no decision on the active IRB consent form is hard-gated
+  // (every teacher API 403s), and publishing a new form version resets that
+  // for everyone — including this test account. Answer it the first time the
+  // gate appears. DECLINE keeps the synthetic account out of the research
+  // data; either decision clears the gate. The decision reaches the session
+  // JWT only at sign-in, so sign in again afterwards.
+  if (role === "TEACHER" && (await answerConsentIfNeeded(role))) {
+    await signIn(role);
+  }
+}
+
+async function answerConsentIfNeeded(role) {
+  const client = clients[role];
+  const status = await client.request(`${role.toLowerCase()} consent status`, "/api/consent", {
+    allowed: [200],
+  });
+  if (!status.body?.needsDecision) return false;
+  await client.request(`${role.toLowerCase()} consent decision`, "/api/consent", {
+    method: "POST",
+    json: {
+      decision: "DECLINE",
+      ugaId: "000000000",
+      signatureTypedName: "API Test Account",
+    },
+    allowed: [200],
+  });
+  return true;
+}
+
+async function signIn(role) {
   const client = clients[role];
   const csrf = await client.request(`${role.toLowerCase()} csrf`, "/api/auth/csrf", {
     allowed: [200],
