@@ -131,7 +131,11 @@ describe("pre-survey gate", () => {
 
     await decide(user.id, consent.id, "AGREE");
     const due = await (await preGet()).json();
-    expect(due).toMatchObject({ state: "DUE", mandatory: true });
+    expect(due).toMatchObject({
+      state: "DUE",
+      mandatory: true,
+      defaultEmail: user.email,
+    });
     expect(due.form.id).toBe(form.id);
 
     const refused = await dismissPost(jsonReq("/api/surveys/pre/dismiss", {}));
@@ -328,4 +332,83 @@ describe("post-survey email", () => {
     );
     expect(res.status).toBe(404);
   });
+});
+
+describe("research contact email", () => {
+  it.each([
+    ["POOL", "POOL"],
+    ["POST_SURVEY", "ALL"],
+    ["POST_SURVEY", "PRE_COMPLETED"],
+    ["POST_SURVEY", "POOL"],
+  ])(
+    "uses the chosen address for %s / %s without changing login",
+    async (kind, target) => {
+      const { user } = await createStudent();
+      const admin = await createAdmin();
+      const pre = await enabledForm("PRE");
+      await enabledForm("POST");
+      asUser(user);
+      const result = await prePost(
+        jsonReq("/api/surveys/pre", {
+          formId: pre.id,
+          answers: answersFor(pre.questions),
+          interviewOptIn: true,
+          interviewEmail: " personal@example.com ",
+        }),
+      );
+      expect(result.status).toBe(200);
+      expect(
+        await prisma.user.findUniqueOrThrow({ where: { id: user.id } }),
+      ).toMatchObject({ email: user.email });
+      expect(await prisma.surveyResponse.findFirstOrThrow()).toMatchObject({
+        interviewEmail: "personal@example.com",
+        emailSnapshot: user.email,
+      });
+      asUser(admin);
+      const campaign = await campaignPost(
+        jsonReq("/api/admin/research-email/campaigns", {
+          kind,
+          replyTo: "research@uga.edu",
+          irbSubject: "Research",
+          irbBody: "Follow up {{surveyLink}}",
+          surveySubject: "Research",
+          surveyBody: "Follow up {{surveyLink}}",
+          attachments: [],
+          audience: { roles: ["STUDENT"], target, sources: ["IRB", "SURVEY"] },
+        }),
+      );
+      expect(campaign.status).toBe(201);
+      const ids = await materializeDueCampaigns();
+      expect(ids).toHaveLength(1);
+      expect(await deliverResearchEmail(ids[0])).toEqual({ status: "SENT" });
+      expect(mockSend).toHaveBeenCalledWith(
+        expect.objectContaining({ to: "personal@example.com" }),
+      );
+      if (kind === "POST_SURVEY") {
+        expect(await prisma.surveyInvite.findFirstOrThrow()).toMatchObject({
+          email: "personal@example.com",
+          userId: user.id,
+        });
+      }
+    },
+  );
+
+  it.each(["", "bad-email"])(
+    "rejects an invalid explicit contact email: %s",
+    async (email) => {
+      const { user } = await createStudent();
+      const pre = await enabledForm("PRE");
+      asUser(user);
+      const result = await prePost(
+        jsonReq("/api/surveys/pre", {
+          formId: pre.id,
+          answers: answersFor(pre.questions),
+          interviewOptIn: true,
+          interviewEmail: email,
+        }),
+      );
+      expect(result.status).toBe(400);
+      expect(await prisma.surveyResponse.count()).toBe(0);
+    },
+  );
 });

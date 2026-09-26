@@ -128,6 +128,7 @@ export function SurveyGate() {
               </p>
             )}
             <SurveyFormView
+              key={due.form.id}
               form={due.form}
               interviewDefaultEmail={due.defaultEmail ?? ""}
               onSubmit={async (answers, interview) => {

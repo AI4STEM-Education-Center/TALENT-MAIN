@@ -174,12 +174,12 @@ export async function recordSurveyResponse(input: {
   let interviewOptIn = false;
   let interviewEmail: string | null = null;
   if (input.form.kind === "PRE" && input.interview?.optIn) {
-    const email = (input.interview.email ?? "").trim() || input.email;
+    const email = (input.interview.email ?? input.email).trim();
     if (!isEmailAddress(email) || email.length > 254)
       return {
         ok: false,
         status: 400,
-        error: "Enter a valid email address for interview contact.",
+        error: "Enter a valid email address for research contact.",
       };
     interviewOptIn = true;
     interviewEmail = email;
