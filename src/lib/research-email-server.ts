@@ -205,7 +205,7 @@ async function planPostSurveyRecipients(
       };
       recipients.push({
         userId: user.id,
-        email: user.email,
+        email: entry?.email ?? user.email,
         name: `${user.firstName} ${user.lastName}`.trim(),
         variant: variantFor(person),
         vars: recipientVars(person, APP_NAME),

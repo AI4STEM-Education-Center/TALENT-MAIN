@@ -1,12 +1,16 @@
 "use client";
 
 import { useState } from "react";
+import {
+  InterviewContactFields,
+  type InterviewContactState,
+} from "./InterviewContactFields";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { isEmailAddress } from "@/lib/email-purposes";
 import {
-  INTERVIEW_CONTACT_COPY,
   isOtherAnswer,
   validateSurveyAnswers,
   type SurveyAnswers,
@@ -49,9 +53,11 @@ export function SurveyFormView({
 }) {
   const [answers, setAnswers] = useState<SurveyAnswers>({});
   const [otherText, setOtherText] = useState<Record<string, string>>({});
-  const [interview, setInterview] = useState<InterviewChoice>({
+  const [interview, setInterview] = useState<InterviewContactState>({
     optIn: false,
     email: interviewDefaultEmail ?? "",
+    editing: !interviewDefaultEmail,
+    confirmed: false,
   });
   const [error, setError] = useState<string | null>(null);
   const [errorQuestion, setErrorQuestion] = useState<string | null>(null);
@@ -92,13 +98,27 @@ export function SurveyFormView({
       if (check.questionId) focusQuestion(check.questionId);
       return;
     }
+    if (withInterview && interview.optIn) {
+      if (!isEmailAddress(interview.email.trim())) {
+        setError("Enter a valid email address for research contact.");
+        return;
+      }
+      if (!interview.confirmed) {
+        setError(
+          "Please confirm your email for post-survey and interview messages.",
+        );
+        return;
+      }
+    }
     setSubmitting(true);
     setError(null);
     setErrorQuestion(null);
     try {
       const result = await onSubmit(
         check.answers,
-        withInterview ? interview : null,
+        withInterview
+          ? { optIn: interview.optIn, email: interview.email.trim() }
+          : null,
       );
       if (!result.ok) {
         setError(result.error);
@@ -271,45 +291,11 @@ export function SurveyFormView({
       })}
 
       {withInterview && (
-        <fieldset className="space-y-3 rounded-md border bg-muted/40 p-4">
-          <legend className="px-1 text-base font-semibold">
-            {INTERVIEW_CONTACT_COPY.heading}
-          </legend>
-          <p className="text-sm text-muted-foreground">
-            {INTERVIEW_CONTACT_COPY.body}
-          </p>
-          <label className="flex items-start gap-2 text-sm">
-            <input
-              type="checkbox"
-              className="mt-0.5 size-4"
-              checked={interview.optIn}
-              onChange={(e) =>
-                setInterview((prev) => ({ ...prev, optIn: e.target.checked }))
-              }
-            />
-            <span>{INTERVIEW_CONTACT_COPY.checkbox}</span>
-          </label>
-          {interview.optIn && (
-            <div className="space-y-1">
-              <label
-                htmlFor={`survey-${form.id}-interview-email`}
-                className="text-sm font-medium"
-              >
-                {INTERVIEW_CONTACT_COPY.emailLabel}
-              </label>
-              <Input
-                id={`survey-${form.id}-interview-email`}
-                type="email"
-                className="max-w-sm"
-                value={interview.email}
-                maxLength={254}
-                onChange={(e) =>
-                  setInterview((prev) => ({ ...prev, email: e.target.value }))
-                }
-              />
-            </div>
-          )}
-        </fieldset>
+        <InterviewContactFields
+          formId={form.id}
+          interview={interview}
+          setInterview={setInterview}
+        />
       )}
 
       {error && (
