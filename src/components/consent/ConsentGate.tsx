@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { ConsentForm, type ConsentFormActiveVersion } from "./ConsentForm";
+import { CONSENT_DECIDED_EVENT } from "@/components/survey/SurveyGate";
 
 type GateStatus = "checking" | "clear" | "needs-decision" | "submitted";
 
@@ -90,7 +91,11 @@ export function ConsentGate() {
         <ConsentForm
           role={role}
           activeForm={activeForm}
-          onSubmitted={() => setStatus("submitted")}
+          onSubmitted={() => {
+            setStatus("submitted");
+            // The pre-survey waits for the consent decision; let it follow.
+            window.dispatchEvent(new Event(CONSENT_DECIDED_EVENT));
+          }}
         />
       </DialogContent>
     </Dialog>

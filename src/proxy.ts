@@ -91,10 +91,16 @@ export default auth((req) => {
   // Invitation API must be public: unauthenticated students need to validate
   // tokens and POST to enroll (signup flow) before they have a session.
   const isApiInvitation = pathname.startsWith("/api/invitations/");
+  // Emailed post-survey links: the per-person token in the path is the
+  // credential, so participants can answer without signing in.
+  const isSurveyLink =
+    pathname.startsWith("/survey/") ||
+    pathname.startsWith("/api/surveys/invite/");
 
   if (
     isPublicRoute ||
     isInviteRoute ||
+    isSurveyLink ||
     isApiAuth ||
     isApiInvitation ||
     isPressureResultIngest
