@@ -171,8 +171,9 @@ async function login(role) {
   // A teacher with no decision on the active IRB consent form is hard-gated
   // (every teacher API 403s), and publishing a new form version resets that
   // for everyone — including this test account. Answer it the first time the
-  // gate appears. DECLINE keeps the synthetic account out of the research
-  // data; either decision clears the gate. The decision reaches the session
+  // gate appears. Only AGREE clears it (a teacher who declines stays out of
+  // the instructor tools — see isTeacherConsentBlocked), so the synthetic
+  // account agrees, without an interview. The decision reaches the session
   // JWT only at sign-in, so sign in again afterwards.
   if (role === "TEACHER" && (await answerConsentIfNeeded(role))) {
     await signIn(role);
@@ -184,11 +185,13 @@ async function answerConsentIfNeeded(role) {
   const status = await client.request(`${role.toLowerCase()} consent status`, "/api/consent", {
     allowed: [200],
   });
-  if (!status.body?.needsDecision) return false;
+  if (!status.body?.activeForm) return false;
+  if (!status.body.needsDecision && status.body.priorDecision?.decision === "AGREE") return false;
   await client.request(`${role.toLowerCase()} consent decision`, "/api/consent", {
     method: "POST",
     json: {
-      decision: "DECLINE",
+      decision: "AGREE",
+      interviewRecordingChoice: "NO_INTERVIEW",
       ugaId: "000000000",
       signatureTypedName: "API Test Account",
     },
