@@ -249,6 +249,24 @@ export function buildSimulationKey(
   );
 }
 
+/**
+ * Keys for research-survey source PDFs and research-email attachments. Outside
+ * the S3 GC's managed families on purpose: survey PDFs are the study's record
+ * of each instrument, and an attachment may back a campaign scheduled weeks out.
+ */
+export function buildResearchSurveyPdfKey(formId: string): string {
+  return prefixedS3Key(`research/surveys/${formId}/source.pdf`);
+}
+
+export function buildResearchAttachmentKey(
+  attachmentId: string,
+  filename: string,
+): string {
+  return prefixedS3Key(
+    `research/attachments/${attachmentId}/${sanitizeFilename(filename)}`,
+  );
+}
+
 /** Key for one bulk admin consent-record export job's zip archive. */
 export function buildConsentExportKey(jobId: string): string {
   return prefixedS3Key(`consent-exports/${jobId}/export.zip`);
