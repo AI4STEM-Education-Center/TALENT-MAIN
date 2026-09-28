@@ -1,0 +1,54 @@
+name: Prune Docker Disk
+
+# The deploy workflows sweep at the end of a deploy, which covers nothing in
+# two cases that both filled the root volume before: a deploy that failed
+# before reaching the sweep, and images left by anything else sharing the box.
+# This is the backstop, so a full disk is never waiting on the next push.
+on:
+  schedule:
+    - cron: "17 8 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Report what would be removed without removing it"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-prune
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Copy prune script to EC2
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: docker/prune-docker.sh
+          target: ~/app
+          strip_components: 1
+
+      - name: Prune
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          DRY_RUN: ${{ inputs.dry_run == true && '--dry-run' || '' }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: DRY_RUN
+          script: |
+            set -euo pipefail
+            cd ~/app
+            bash prune-docker.sh ${DRY_RUN}
+            df -h /

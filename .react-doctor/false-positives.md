@@ -149,3 +149,18 @@ the `fetch` assignment even though the required check is a few statements below.
 
 Predicate: the accepted-status branch remains above the first body-consumption
 call. Remove the suppression if response parsing moves ahead of that branch.
+
+## `nextjs-no-side-effect-in-get-handler` (1) — local Map, not a persisted write
+
+`src/app/api/classes/[id]/messages/route.ts` `GET`. The rule arrived in
+react-doctor 0.9.14 and reports the handler's "side effect" as `byMessage.set()`.
+That call populates a `Map` created inside the `emailDeliveryCounts` helper to
+fold a `groupBy` result into per-message tallies; the Map is returned to the
+caller and never leaves the request. Every database call the handler makes —
+`teacher.findUnique`, `class.findFirst`, `message.findMany`,
+`classEnrollment.findMany`, `messageEmailDelivery.groupBy` — is a read, so a
+prefetched or forged GET changes no state and the CSRF premise does not apply.
+
+Predicate: the `GET` handler still performs no Prisma write/`$execute*` call and
+the only mutation reachable from it is the local `byMessage` Map. Remove the
+suppression the moment a persisting call appears in this handler.

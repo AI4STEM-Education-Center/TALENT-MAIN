@@ -52,7 +52,7 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: docker/docker-compose.dev.yml
+          source: docker/docker-compose.dev.yml,docker/prune-docker.sh
           target: ~/app
           strip_components: 1
 
@@ -72,9 +72,9 @@ jobs:
             docker compose -f docker-compose.dev.yml stop worker-dev
             docker compose -f docker-compose.dev.yml up -d --wait --wait-timeout 150 --force-recreate --no-build
             docker exec talent-web-dev node prisma/seed-prebuilt.js
-            docker container prune -f
-            docker image prune -af --filter "until=168h"
-            docker builder prune -f --filter "until=168h"
+            # Reclaim disk. See docker/prune-docker.sh for why an age filter
+            # cannot do this job on the containerd image store.
+            bash prune-docker.sh
 
       - name: Run critical live-site checks
         env:

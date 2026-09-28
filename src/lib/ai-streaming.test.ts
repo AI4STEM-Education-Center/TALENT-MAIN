@@ -400,6 +400,23 @@ describe("streamJsonCompletion", () => {
     });
   });
 
+  it.each([429, 503])(
+    "does not retry overload %s as a schema fallback",
+    async (status) => {
+      const error = Object.assign(new Error("Overloaded"), { status });
+      const create = vi.fn().mockRejectedValue(error);
+      const client = { chat: { completions: { create } } } as unknown as OpenAI;
+      await expect(
+        streamJsonCompletion(
+          client,
+          { model: "m", messages: [] },
+          { name: "s" },
+        ),
+      ).rejects.toBe(error);
+      expect(create).toHaveBeenCalledOnce();
+    },
+  );
+
   it("retries once without response_format when the schema call throws", async () => {
     const create = vi
       .fn()

@@ -12,6 +12,7 @@ export const USE_CASES = [
   "description_generation",
   "recommendation",
   "quiz_extraction",
+  "quiz_variants",
   "simulation_chat",
   "simulation_generation",
   // The two chat assistants. Separate assignments on purpose: the student and

@@ -1,3 +1,4 @@
+import { getClassModules } from "@/lib/class-modules-server";
 import { prisma } from "@/lib/prisma";
 import { redirect, notFound } from "next/navigation";
 import { getContentActor, ownScope } from "@/lib/quiz-access";
@@ -21,7 +22,7 @@ export default async function ClassQuizzesPage({
   });
   if (!cls) notFound();
 
-  const [classQuizzes, allQuizzes] = await Promise.all([
+  const [classQuizzes, allQuizzes, moduleLayout] = await Promise.all([
     prisma.classQuiz.findMany({
       where: { classId },
       include: {
@@ -36,11 +37,13 @@ export default async function ClassQuizzesPage({
       include: { topic: true, _count: { select: { questions: true } } },
       orderBy: [{ order: "asc" }, { createdAt: "asc" }],
     }),
+    getClassModules(classId),
   ]);
 
   return (
     <ClassQuizzesClient
       classId={classId}
+      initialModuleLayout={moduleLayout}
       initialClassQuizzes={classQuizzes}
       initialAllQuizzes={allQuizzes}
     />

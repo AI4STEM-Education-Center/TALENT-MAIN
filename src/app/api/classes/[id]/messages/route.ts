@@ -38,6 +38,7 @@ async function emailDeliveryCounts(messageIds: string[]) {
 // GET: this class's message history (teacher only) plus the audience a new
 // message would reach. Each row carries its live email delivery tally — sends
 // are queued, so those counts keep moving after the compose request returns.
+// react-doctor-disable-next-line react-doctor/nextjs-no-side-effect-in-get-handler -- the flagged `byMessage.set()` mutates a local Map built inside `emailDeliveryCounts`; every database call in this handler is a read
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
