@@ -17,8 +17,9 @@ export default async function InvitePage({
   const teacher = await prisma.teacher.findUnique({
     where: { userId: session.user.id },
   });
+  if (!teacher) notFound();
   const cls = await prisma.class.findFirst({
-    where: { id, teacherId: teacher?.id },
+    where: { id, teacherId: teacher.id },
   });
   if (!cls) notFound();
 

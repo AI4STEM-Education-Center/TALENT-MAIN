@@ -7,6 +7,8 @@ import {
 } from "@/lib/question-figures";
 import { simulationMetricsView } from "@/lib/simulation-metrics";
 
+import { parseJsonBody, quizUpdateSchema } from "@/lib/validation";
+
 // GET: quiz detail with questions. Own quizzes are fully visible; pool quizzes
 // are readable by any teacher/admin (so the pool can be previewed before import).
 export async function GET(
@@ -78,13 +80,13 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const [actor, { id }, { name, topicId, order }] = await Promise.all([
-    getContentActor(),
-    params,
-    req.json(),
-  ]);
+  const [actor, { id }] = await Promise.all([getContentActor(), params]);
   if (!actor)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const parsed = await parseJsonBody(quizUpdateSchema, req);
+  if (!parsed.ok) return parsed.response;
+  const { name, topicId, order } = parsed.data;
 
   const quiz = await prisma.quiz.findUnique({ where: { id } });
   if (!quiz || !canManage(actor, quiz)) {

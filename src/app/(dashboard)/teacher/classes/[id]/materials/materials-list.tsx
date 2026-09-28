@@ -86,25 +86,31 @@ export default function MaterialsList({
   useEffect(() => {
     if (!hasActiveProcessing(materials)) return;
 
-    let cancelled = false;
+    const controller = new AbortController();
+    let inFlight = false;
     const tick = async () => {
+      if (inFlight) return;
+      inFlight = true;
       try {
         const res = await fetch(`/api/classes/${classId}/materials`, {
           cache: "no-store",
+          signal: controller.signal,
         });
         if (!res.ok) return;
         const data = await res.json();
-        if (!cancelled && Array.isArray(data.materials)) {
+        if (!controller.signal.aborted && Array.isArray(data.materials)) {
           setMaterials(data.materials);
         }
       } catch {
         // Swallow transient errors; next tick will retry.
+      } finally {
+        inFlight = false;
       }
     };
 
     const interval = setInterval(tick, POLL_INTERVAL_MS);
     return () => {
-      cancelled = true;
+      controller.abort();
       clearInterval(interval);
     };
   }, [materials, classId]);
@@ -112,40 +118,48 @@ export default function MaterialsList({
   async function createTag() {
     if (!newTag.trim()) return;
     setTagError(null);
-    const response = await fetch("/api/topics", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newTag.trim(), contentType: "MATERIAL" }),
-    });
-    if (!response.ok) {
+    try {
+      const response = await fetch("/api/topics", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newTag.trim(), contentType: "MATERIAL" }),
+      });
+      if (!response.ok) {
+        setTagError("Could not create the material tag.");
+        return;
+      }
+      const tag = await response.json();
+      setTags((current) => [...current, tag]);
+      setNewTag("");
+    } catch {
       setTagError("Could not create the material tag.");
-      return;
     }
-    const tag = await response.json();
-    setTags((current) => [...current, tag]);
-    setNewTag("");
   }
 
   async function assignTag(materialId: string, topicId: string) {
     setTagError(null);
-    const response = await fetch(
-      `/api/classes/${classId}/materials/${materialId}`,
-      {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topicId: topicId || null }),
-      },
-    );
-    if (!response.ok) {
+    try {
+      const response = await fetch(
+        `/api/classes/${classId}/materials/${materialId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ topicId: topicId || null }),
+        },
+      );
+      if (!response.ok) {
+        setTagError("Could not tag the material.");
+        return;
+      }
+      const { material } = await response.json();
+      setMaterials((current) =>
+        current.map((item) =>
+          item.id === materialId ? { ...item, topic: material.topic } : item,
+        ),
+      );
+    } catch {
       setTagError("Could not tag the material.");
-      return;
     }
-    const { material } = await response.json();
-    setMaterials((current) =>
-      current.map((item) =>
-        item.id === materialId ? { ...item, topic: material.topic } : item,
-      ),
-    );
   }
 
   return (

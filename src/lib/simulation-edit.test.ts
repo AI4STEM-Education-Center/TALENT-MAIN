@@ -64,7 +64,9 @@ describe("splitting a finished reply", () => {
   });
 
   it("reports a reply that carried no JSON at all", () => {
-    expect(splitSimulationReply("I am not sure what you mean.").json).toBeNull();
+    expect(
+      splitSimulationReply("I am not sure what you mean.").json,
+    ).toBeNull();
     expect(() => parseSimulationEditPlan("I am not sure.")).toThrow();
   });
 });

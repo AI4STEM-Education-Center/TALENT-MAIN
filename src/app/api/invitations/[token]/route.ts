@@ -1,3 +1,4 @@
+import { USER_PROFILE_SELECT } from "@/lib/user-profile";
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { Prisma } from "@prisma/client";
@@ -30,7 +31,13 @@ export async function GET(
   const { token } = await params;
   const invitation = await prisma.invitation.findUnique({
     where: { token },
-    include: { class: { include: { teacher: { include: { user: true } } } } },
+    include: {
+      class: {
+        include: {
+          teacher: { include: { user: { select: USER_PROFILE_SELECT } } },
+        },
+      },
+    },
   });
 
   if (!invitation)

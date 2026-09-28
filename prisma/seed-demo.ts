@@ -20,15 +20,21 @@ async function main() {
   // print it once. No password literal is ever committed to the repo.
   const email = process.env.DEMO_SEED_EMAIL || "demo-teacher@example.com";
   const username = process.env.DEMO_SEED_USERNAME || "demo-teacher";
+  if (
+    await prisma.user.findUnique({ where: { email }, select: { id: true } })
+  ) {
+    console.log(
+      `Demo account already exists: ${email}. Its password is unchanged.`,
+    );
+    return;
+  }
   const password =
     process.env.DEMO_SEED_PASSWORD ||
     crypto.randomBytes(12).toString("base64url");
   const hashedPassword = await bcrypt.hash(password, 12);
 
-  const user = await prisma.user.upsert({
-    where: { email },
-    update: {},
-    create: {
+  const user = await prisma.user.create({
+    data: {
       email,
       username,
       hashedPassword,

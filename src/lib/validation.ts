@@ -6,6 +6,7 @@ import {
   sanitizeControlCounts,
 } from "./simulation-telemetry";
 import { MAX_LABEL_LENGTH } from "./teacher-codes";
+import { BODY_TOO_LARGE, readBoundedText } from "./request-body";
 import {
   FEEDBACK_RATING_MAX,
   FEEDBACK_RATING_MIN,
@@ -34,8 +35,35 @@ export const registerSchema = z.object({
   email: trimmedNonEmpty,
   // Strength is enforced separately by validatePassword so its detailed,
   // user-facing message is preserved; here we only require a non-empty string.
-  password: z.string().min(1),
+  password: z.string().min(1).max(200),
 });
+
+const contentId = z.string().trim().min(1).max(200);
+const contentOrder = z.number().int().min(-2147483648).max(2147483647);
+export const contentDeleteSchema = z.object({ id: contentId });
+export const invitationCreateSchema = z.object({
+  classId: contentId,
+  expiresInDays: z.number().positive().max(36500).nullish(),
+  maxUses: z.number().int().min(1).max(2147483647).nullish(),
+});
+export const topicCreateSchema = z.object({
+  name: trimmedNonEmpty,
+  order: contentOrder.optional(),
+  contentType: z.enum(["QUIZ", "MATERIAL"]).optional(),
+});
+export const topicUpdateSchema = topicCreateSchema
+  .omit({ contentType: true })
+  .partial()
+  .extend({ id: contentId });
+export const quizCreateSchema = z.object({
+  name: trimmedNonEmpty,
+  topicId: z.string().max(200).nullable().optional(),
+  order: contentOrder.optional(),
+  dedupeByName: z.boolean().optional(),
+});
+export const quizUpdateSchema = quizCreateSchema
+  .omit({ dedupeByName: true })
+  .partial();
 
 /**
  * Password inputs. Strength is enforced separately by validatePassword so its
@@ -321,4 +349,35 @@ export function parseBody<T>(
     };
   }
   return { ok: true, data: result.data };
+}
+
+/** Parse small JSON mutations without buffering an unbounded request body. */
+export async function parseJsonBody<T>(
+  schema: z.ZodType<T>,
+  request: Request,
+  maxBytes = 1024 * 1024,
+): Promise<ParseResult<T>> {
+  const text = await readBoundedText(request, maxBytes);
+  if (text === BODY_TOO_LARGE) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: "Request body too large." },
+        { status: 413 },
+      ),
+    };
+  }
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: "Invalid JSON body." },
+        { status: 400 },
+      ),
+    };
+  }
+  return parseBody(schema, data);
 }

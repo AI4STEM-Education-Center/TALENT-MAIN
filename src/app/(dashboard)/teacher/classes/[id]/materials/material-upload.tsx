@@ -196,13 +196,12 @@ export default function MaterialUploadForm({ classId }: MaterialUploadProps) {
         setStatusText("Done!");
 
         // Let user see 100% for a moment before refreshing list
-        setTimeout(() => {
-          setIsUploading(false);
-          refresh();
-        }, 1000);
+        await new Promise<void>((resolve) => setTimeout(resolve, 1000));
+        refresh();
       } catch (err: unknown) {
         console.error(err);
         setError(errorMessage(err) || "An unexpected error occurred");
+      } finally {
         setIsUploading(false);
       }
     },

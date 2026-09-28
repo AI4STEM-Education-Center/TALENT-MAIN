@@ -42,21 +42,24 @@ export default function ClassesPage() {
   const [deleteLoading, setDeleteLoading] = useState(false);
 
   useEffect(() => {
-    fetchClasses();
+    const controller = new AbortController();
+    void fetchClasses(controller.signal);
+    return () => controller.abort();
   }, []);
 
-  async function fetchClasses() {
+  async function fetchClasses(signal: AbortSignal) {
     setLoading(true);
     try {
-      const res = await fetch("/api/classes");
+      const res = await fetch("/api/classes", { signal });
       if (res.ok) {
         const data = await res.json();
-        setClasses(data);
+        if (!signal.aborted) setClasses(data);
       }
     } catch {
       // ignore
     } finally {
-      setLoading(false);
+      // react-doctor-disable-next-line react-doctor/no-loading-flag-reset-outside-finally -- reset is in finally; an aborted request must not clear its successor’s loading state
+      if (!signal.aborted) setLoading(false);
     }
   }
 
