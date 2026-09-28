@@ -139,6 +139,8 @@ const USE_CASE_LABELS: Record<UseCase, string> = {
   description_generation: "Exam Summary Generation",
   recommendation: "Recommendation",
   quiz_extraction: "Quiz PDF Extraction",
+  // Falls back to the Quiz PDF Extraction model when left unassigned.
+  syllabus_extraction: "Syllabus PDF Extraction",
   quiz_variants: "Alternative Quiz Versions",
   simulation_chat: "Simulation Editing Chat",
   simulation_generation: "Question Simulation Generation",

@@ -18,6 +18,7 @@ import {
   FileUp,
   MessageSquare,
   BarChart3,
+  ScrollText,
 } from "lucide-react";
 import MaterialTitleEdit from "./materials/material-title-edit";
 
@@ -102,7 +103,12 @@ export default async function ClassDetailPage({
             <p className="text-muted-foreground mt-1">{cls.description}</p>
           )}
         </div>
-        <div className="flex gap-2 shrink-0">
+        <div className="flex gap-2 shrink-0 flex-wrap">
+          <Button variant="outline" asChild>
+            <Link href={`/teacher/classes/${cls.id}/syllabus`}>
+              <ScrollText className="size-4" /> Syllabus
+            </Link>
+          </Button>
           <Button variant="outline" asChild>
             <Link href={`/teacher/classes/${cls.id}/stats`}>
               <BarChart3 className="size-4" /> Statistics

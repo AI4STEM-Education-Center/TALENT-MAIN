@@ -194,6 +194,44 @@ export function quizExtractionPrefix(pdfStorageKey: string): string {
   return pdfStorageKey.slice(0, pdfStorageKey.lastIndexOf("/") + 1);
 }
 
+// ─── Class syllabus keys ──────────────────────────────────────────────────────
+// syllabi/{teacherId}/{classId}/{syllabusId}/r{revision}/... — every upload is a
+// new revision directory, so replacing the syllabus never overwrites an object
+// the current content (or a signed URL already handed out) still points at.
+// The S3 GC keeps only the pending and the current revision; see s3-gc.ts.
+
+export function syllabusRevisionPrefix(
+  teacherId: string,
+  classId: string,
+  syllabusId: string,
+  revision: number,
+): string {
+  return prefixedS3Key(
+    `syllabi/${teacherId}/${classId}/${syllabusId}/r${revision}/`,
+  );
+}
+
+export function buildSyllabusPdfKey(
+  teacherId: string,
+  classId: string,
+  syllabusId: string,
+  revision: number,
+  originalName: string,
+): string {
+  return `${syllabusRevisionPrefix(teacherId, classId, syllabusId, revision)}${sanitizeFilename(originalName)}`;
+}
+
+export function buildSyllabusPageKey(
+  teacherId: string,
+  classId: string,
+  syllabusId: string,
+  revision: number,
+  pageNumber: number,
+  extension: PageImageExtension,
+): string {
+  return `${syllabusRevisionPrefix(teacherId, classId, syllabusId, revision)}pages/page-${pageNumber}.${extension}`;
+}
+
 // ─── Question simulation keys ─────────────────────────────────────────────────
 // Same scope convention as quiz extractions: pool questions live under "pool".
 // Every (re)generation writes a NEW version — objects are immutable because
