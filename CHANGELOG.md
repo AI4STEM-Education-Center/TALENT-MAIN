@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.0.22 - 2026-09-25
+
+- Added class syllabus upload with AI extraction of course details and dated schedule items, teacher editing and re-uploads, a read-only student view, and a syllabus skill for the chat assistants.
+- Added pre/post research surveys built from uploaded PDFs, a mandatory pre-survey for IRB participants, a research participant pool with CSV export, and scheduled research emails with single-use post-survey links.
+- Adopted the PROJECT00015294 consent forms with a UGA ID and a four-way interview recording choice.
+- Added teacher-reviewed alternative quiz practice, generated as rounds of verified drafts that can be approved as alternates or saved as standalone exams.
+- Added preparation modules for organizing class quizzes, question reordering, and quiz duplication.
+- Added reusable key concepts from description agents and visual practice previews.
+- Added export and import of the full AI configuration as JSON for moving setups between environments.
+- Grouped the administrator sidebar into collapsible folders.
+- Improved security by hardening access boundaries, and split the quiz editor and assistant into smaller, tested pieces.
+- Improved reliability: practice previews are deferred, AI retries are throttled, the research contact email is confirmed before follow-ups, the post-deploy API check clears the new consent gate, and the production host now reclaims Docker disk space nightly.
+- Refreshed the validated production and development dependency sets.
+
 ## v0.0.21 - 2026-09-11
 
 - Added AI guardrails end to end: untrusted text is fenced, free content moderation, jailbreak and off-topic checks, an administrator panel with enforcement switched on, per-check model assignments, and user feedback on flagged content.
