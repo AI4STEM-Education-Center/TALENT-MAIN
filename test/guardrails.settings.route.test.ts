@@ -184,9 +184,10 @@ describe("GET /api/admin/guardrails — model read-out", () => {
     expect(body.models.guardrail_offtopic).toBeNull();
   });
 
-  // Moderation fails open, so an assignment that can never work is invisible
-  // at runtime — the panel has to say so from the assignment alone.
-  it("warns that a Cloudflare provider has no moderations endpoint", async () => {
+  // Whether a Cloudflare gateway serves /v1/moderations depends on its base URL
+  // (/openai does, /compat does not), so the provider type alone is no reason to
+  // warn — the connection test is what answers it.
+  it("does not warn for a moderation model on a Cloudflare provider", async () => {
     const provider = await prisma.aiProvider.create({
       data: { name: "cf", providerType: "cloudflare", isActive: true },
     });
@@ -205,8 +206,7 @@ describe("GET /api/admin/guardrails — model read-out", () => {
     });
 
     const body = await (await GET()).json();
-    expect(body.models.moderation.warning).toContain("/v1/moderations");
-    expect(body.models.moderation.warning).toContain("Cloudflare");
+    expect(body.models.moderation.warning).toBeNull();
   });
 
   it("warns when a chat model is assigned to moderation", async () => {
