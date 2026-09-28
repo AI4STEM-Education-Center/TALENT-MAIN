@@ -30,6 +30,8 @@ describe("renderConsentPdf", () => {
         role: "STUDENT",
         decision: "AGREE",
         interviewRecordingConsent: true,
+        interviewRecordingChoice: "AUDIO_ONLY",
+        ugaId: "811234567",
         initialsStrokeData: JSON.stringify([
           {
             points: [
@@ -66,6 +68,8 @@ describe("renderConsentPdf", () => {
         role: "TEACHER",
         decision: "DECLINE",
         interviewRecordingConsent: null,
+        interviewRecordingChoice: null,
+        ugaId: null,
         initialsStrokeData: null,
         signatureTypedName: "Grace Hopper",
         signatureStrokeData: null,

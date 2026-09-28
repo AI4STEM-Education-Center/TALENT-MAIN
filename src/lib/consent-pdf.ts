@@ -5,6 +5,10 @@ import {
   type PDFFont,
   type PDFPage,
 } from "pdf-lib";
+import {
+  INTERVIEW_RECORDING_CHOICE_LABELS,
+  isInterviewRecordingChoice,
+} from "@/lib/consent-fields";
 
 /**
  * On-demand PDF rendering for one consent signature. Deliberately the ONLY
@@ -24,7 +28,9 @@ export interface ConsentRecordForPdf {
   role: string;
   decision: string;
   interviewRecordingConsent: boolean | null;
+  interviewRecordingChoice: string | null;
   initialsStrokeData: string | null;
+  ugaId: string | null;
   signatureTypedName: string;
   signatureStrokeData: string | null;
   signedAt: Date;
@@ -262,6 +268,19 @@ function drawStrokes(
   return drewAny;
 }
 
+/**
+ * The signer's recording choice. Records from before the four-option forms
+ * only carry the yes/no flag, so they fall back to that.
+ */
+function describeInterviewRecording(record: ConsentRecordForPdf): string {
+  if (isInterviewRecordingChoice(record.interviewRecordingChoice)) {
+    return INTERVIEW_RECORDING_CHOICE_LABELS[record.interviewRecordingChoice];
+  }
+  if (record.interviewRecordingConsent === true) return "Yes";
+  if (record.interviewRecordingConsent === false) return "No";
+  return "Not applicable";
+}
+
 function formatTimestamp(date: Date): string {
   return `${date.toISOString()} (UTC)`;
 }
@@ -299,6 +318,9 @@ export async function renderConsentPdf(
   const fields: [string, string][] = [
     ["Name", sanitizeForPdf(record.signerNameSnapshot)],
     ["Email", sanitizeForPdf(record.signerEmailSnapshot)],
+    ...(record.ugaId
+      ? ([["UGA ID", sanitizeForPdf(record.ugaId)]] as [string, string][])
+      : []),
     [
       "Decision",
       record.decision === "AGREE"
@@ -308,14 +330,7 @@ export async function renderConsentPdf(
     ["Signed at", formatTimestamp(record.signedAt)],
     ["IP address", record.ipAddress],
     ["Device type", record.deviceType],
-    [
-      "Interview recording consent",
-      record.interviewRecordingConsent === true
-        ? "Yes"
-        : record.interviewRecordingConsent === false
-          ? "No"
-          : "Not applicable",
-    ],
+    ["Interview recording", describeInterviewRecording(record)],
   ];
   for (const [label, value] of fields) {
     drawParagraph(cursor, `${label}: ${value}`, { size: LABEL_SIZE });
