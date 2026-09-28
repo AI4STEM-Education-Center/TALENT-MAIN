@@ -22,18 +22,12 @@ export const runtime = "nodejs";
  * honest on load. It has to be said somewhere: moderation fails open by design,
  * so an assignment that can never work looks identical to one that never finds
  * anything — the check silently does nothing while the panel shows it enabled.
+ *
+ * Only the model is judged here. Whether a provider serves /v1/moderations
+ * depends on its base URL (Cloudflare AI Gateway's /compat path does not, its
+ * /openai path does), which the connection test answers by actually calling it.
  */
-function moderationWarning(
-  providerType: string,
-  modelId: string,
-): string | null {
-  if (providerType === "cloudflare") {
-    return (
-      "Cloudflare AI Gateway's compatibility endpoint does not implement " +
-      "/v1/moderations, so this check cannot run. Assign an OpenAI provider " +
-      "with omni-moderation-latest, or untick the box above."
-    );
-  }
+function moderationWarning(modelId: string): string | null {
   if (!isModerationModel(modelId)) {
     return (
       `${modelId} is a chat model. /v1/moderations only accepts a moderation ` +
@@ -61,7 +55,7 @@ async function guardrailModels() {
   const rows = await prisma.aiUseCaseAssignment.findMany({
     where: { useCase: { in: [...useCases] } },
     include: {
-      provider: { select: { name: true, isActive: true, providerType: true } },
+      provider: { select: { name: true, isActive: true } },
       model: { select: { modelId: true, displayName: true } },
     },
   });
@@ -79,7 +73,7 @@ async function guardrailModels() {
           providerActive: row.provider.isActive,
           warning:
             useCase === "moderation"
-              ? moderationWarning(row.provider.providerType, row.model.modelId)
+              ? moderationWarning(row.model.modelId)
               : null,
         }
       : null;
