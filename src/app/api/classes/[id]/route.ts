@@ -1,3 +1,4 @@
+import { USER_PROFILE_SELECT } from "@/lib/user-profile";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -29,9 +30,11 @@ export async function GET(
   const cls = await prisma.class.findUnique({
     where: { id },
     include: {
-      teacher: { include: { user: true } },
+      teacher: { include: { user: { select: USER_PROFILE_SELECT } } },
       enrollments: {
-        include: { student: { include: { user: true } } },
+        include: {
+          student: { include: { user: { select: USER_PROFILE_SELECT } } },
+        },
         orderBy: { joinedAt: "desc" },
       },
       classQuizzes: {

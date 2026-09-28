@@ -1,3 +1,4 @@
+import { USER_PROFILE_SELECT } from "@/lib/user-profile";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -22,7 +23,7 @@ export async function POST(
   const { id } = await params;
   const student = await prisma.student.findUnique({
     where: { userId: session.user.id },
-    include: { user: true },
+    include: { user: { select: USER_PROFILE_SELECT } },
   });
   if (!student)
     return NextResponse.json({ error: "Student not found" }, { status: 404 });
@@ -39,7 +40,9 @@ export async function POST(
 
   const cls = await prisma.class.findUnique({
     where: { id },
-    include: { teacher: { include: { user: true } } },
+    include: {
+      teacher: { include: { user: { select: USER_PROFILE_SELECT } } },
+    },
   });
   if (!cls)
     return NextResponse.json({ error: "Class not found" }, { status: 404 });

@@ -1,10 +1,10 @@
 # Adaptive Learning Platform
 
-A Next.js 14 adaptive learning platform for science education with teacher dashboards, class management, and module-based quizzes.
+A Next.js 16 adaptive learning platform for science education with teacher dashboards, class management, and module-based quizzes.
 
 ## Tech Stack
 
-- **Next.js 14** (App Router) + TypeScript
+- **Next.js 16** (App Router) + TypeScript
 - **Prisma ORM** — SQLite (configured with WAL mode and `busy_timeout` optimizations)
 - **NextAuth.js v5** — credentials-based login (email or username)
 - **Tailwind CSS** + shadcn/ui components
@@ -22,28 +22,32 @@ npm run dev              # starts dev server
 
 Open [http://localhost:3000](http://localhost:3000).
 
-Demo teacher account: `edwardcheng@uga.edu` / `nY*H1#6i#t8kqeP`
+The demo teacher defaults to `demo-teacher@example.com`. The seed prints a
+random password for a new account; set `DEMO_SEED_EMAIL`, `DEMO_SEED_USERNAME`,
+and `DEMO_SEED_PASSWORD` to choose local credentials. Demo seeding refuses to run
+with `NODE_ENV=production`.
 
-Run `npm run setup` again at any time to wipe and re-seed a clean database.
+`npm run setup` wipes and re-seeds the configured database. Use it only with a
+disposable local database; use `npm run db:push` to apply the schema without seeding.
+
+Before opening a PR, run `npm run typecheck`, `npm run format:check`, `npm test`,
+`npm run build`, and `npm run worker:build`. React Doctor uses
+`npx react-doctor@0.9.14 --scope full --verbose`; reviewed exceptions are recorded
+in [.react-doctor/false-positives.md](.react-doctor/false-positives.md).
 
 ## Production
 
 Production deployment is fully containerized using **Docker** and **Docker Compose** on an **AWS EC2** instance.
 
 The production architecture consists of two services:
-1. **web**: The Next.js 14 web application.
+1. **web**: The Next.js 16 web application.
 2. **worker**: A background worker powered by `honker-node` to run tasks asynchronously without blocking the Next.js API.
 
 ### Server Setup (EC2 Host)
 
-An automated setup script is provided at [scripts/ec2-setup.sh](file:///home/edward/data/adaptive_learning_webapp/scripts/ec2-setup.sh). Run this script on a fresh Debian/Ubuntu EC2 instance (as the `admin` user) to:
-1. Install Docker and add your user to the `docker` group.
-2. Create app directories (`~/app/data/db/prod` and `~/app/data/db/dev`).
-3. Set permissive directory permissions (`777` for SQLite DB folders, `666` for database files) so the nextjs container user can write to them.
-4. Auto-generate the production `docker-compose.yml` and `docker-compose.dev.yml` files in `~/app`.
-5. Pre-configure a template `~/app/.env` file.
-6. Generate SSH deployment keys (`~/.ssh/github_actions`) for GitHub Actions automation.
-7. Configure `rclone` and schedule a cron job for daily OneDrive backup of the SQLite production database (`~/app/scripts/sqlite_backup.sh`).
+Follow the numbered [deployment scripts and recovery runbook](scripts/README.md).
+They cover host provisioning, Docker, storage, application secrets, networking,
+backups, and verification. Each script lists its prerequisites and where it runs.
 
 ### Deployment via GitHub Actions
 
@@ -53,7 +57,7 @@ deployed from `main`. See `.github/workflows/ci.yml`, `deploy-dev.yml`, and
 `deploy.yml`.
 
 The deployment workflows:
-1. Builds the Docker image based on [docker/Dockerfile](file:///home/edward/data/adaptive_learning_webapp/docker/Dockerfile) (injecting release version/date from `version.json`).
+1. Builds the Docker image based on [docker/Dockerfile](docker/Dockerfile) (injecting release version/date from `version.json`).
 2. Pushes the image to **GitHub Container Registry (GHCR)**.
 3. SCPs the docker-compose file to the EC2 server (`~/app`).
 4. SSHes to the EC2 instance, pulls the latest image, and restarts the containers:

@@ -271,13 +271,14 @@ export function QuizPdfImport({
   // On mount: resume the newest non-committed extraction, if any.
   useEffect(() => {
     mounted.current = true;
+    const controller = new AbortController();
     (async () => {
       try {
-        const res = await fetch(base);
+        const res = await fetch(base, { signal: controller.signal });
         if (!res.ok) return;
         const { extractions }: { extractions: ListItem[] } = await res.json();
         const resumable = extractions.find((e) => e.status !== "COMMITTED");
-        if (resumable && mounted.current) {
+        if (resumable && !controller.signal.aborted && mounted.current) {
           extractionIdRef.current = resumable.id;
           poll(resumable.id);
         }
@@ -287,6 +288,7 @@ export function QuizPdfImport({
     })();
     return () => {
       mounted.current = false;
+      controller.abort();
       stopPolling();
     };
   }, [base, poll, stopPolling]);

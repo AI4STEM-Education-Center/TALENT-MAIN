@@ -53,20 +53,22 @@ export default function AdminUsersPage() {
   const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
-    fetchUsers();
+    const controller = new AbortController();
+    void fetchUsers(controller.signal);
+    return () => controller.abort();
   }, []);
 
-  async function fetchUsers() {
+  async function fetchUsers(signal: AbortSignal) {
     try {
-      const res = await fetch("/api/admin/users");
+      const res = await fetch("/api/admin/users", { signal });
       if (res.ok) {
         const data = await res.json();
-        setUsers(data);
+        if (!signal.aborted) setUsers(data);
       }
     } catch (err) {
       console.error("Failed to fetch users", err);
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
   }
 

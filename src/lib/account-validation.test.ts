@@ -23,6 +23,13 @@ describe("validatePassword", () => {
     expect(validatePassword("Abcdef1!")).toBeNull();
   });
 
+  it("rejects passwords bcrypt would silently truncate, including multibyte text", () => {
+    expect(validatePassword("Aa1!" + "a".repeat(68))).toBeNull();
+    expect(validatePassword("Aa1!" + "a".repeat(69))).toMatch(/72 UTF-8 bytes/);
+    expect(validatePassword("Aa1!" + "é".repeat(34))).toBeNull();
+    expect(validatePassword("Aa1!" + "é".repeat(35))).toMatch(/72 UTF-8 bytes/);
+  });
+
   it.each([
     ["too short", "Ab1!"],
     ["no uppercase", "abcdef1!"],

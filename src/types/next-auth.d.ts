@@ -28,5 +28,7 @@ declare module "next-auth" {
     role: string;
     /** Absolute Unix timestamp selected when credentials are accepted. */
     sessionExpiresAt?: number;
+    /** Server-derived fingerprint used to revoke sessions after a password change. */
+    credentialVersion?: string;
   }
 }

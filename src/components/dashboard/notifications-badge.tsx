@@ -14,18 +14,25 @@ export function NotificationsBadge() {
   const [unread, setUnread] = useState(0);
 
   useEffect(() => {
+    let controller: AbortController | null = null;
     const load = () => {
-      fetch("/api/notifications?take=1")
+      controller?.abort();
+      const request = new AbortController();
+      controller = request;
+      fetch("/api/notifications?take=1", { signal: request.signal })
         .then((r) => (r.ok ? r.json() : null))
         .then((d) => {
-          if (d) setUnread(d.unreadCount ?? 0);
+          if (d && !request.signal.aborted) setUnread(d.unreadCount ?? 0);
         })
         .catch(() => {});
     };
 
     load();
     window.addEventListener("notifications:updated", load);
-    return () => window.removeEventListener("notifications:updated", load);
+    return () => {
+      controller?.abort();
+      window.removeEventListener("notifications:updated", load);
+    };
   }, []);
 
   if (unread <= 0) return null;

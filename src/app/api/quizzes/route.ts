@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getContentActor, ownScope } from "@/lib/quiz-access";
 
+import { parseJsonBody, quizCreateSchema } from "@/lib/validation";
+
 // GET: list the caller's quizzes (teacher → their own, admin → the global pool)
 export async function GET() {
   const actor = await getContentActor();
@@ -25,7 +27,9 @@ export async function POST(req: NextRequest) {
   if (!actor)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { name, topicId, order, dedupeByName } = await req.json();
+  const parsed = await parseJsonBody(quizCreateSchema, req);
+  if (!parsed.ok) return parsed.response;
+  const { name, topicId, order, dedupeByName } = parsed.data;
   if (!name?.trim())
     return NextResponse.json({ error: "Quiz name required." }, { status: 400 });
 

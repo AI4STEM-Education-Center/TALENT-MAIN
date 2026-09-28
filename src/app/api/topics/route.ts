@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { canManage, getContentActor, ownScope } from "@/lib/quiz-access";
 
+import {
+  parseJsonBody,
+  topicCreateSchema,
+  topicUpdateSchema,
+  contentDeleteSchema,
+} from "@/lib/validation";
+
 type TopicContentType = "QUIZ" | "MATERIAL";
 
 function contentType(value: unknown): TopicContentType | null {
@@ -32,7 +39,9 @@ export async function POST(req: NextRequest) {
   if (!actor)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { name, order, contentType: rawContentType } = await req.json();
+  const parsed = await parseJsonBody(topicCreateSchema, req);
+  if (!parsed.ok) return parsed.response;
+  const { name, order, contentType: rawContentType } = parsed.data;
   if (!name?.trim())
     return NextResponse.json(
       { error: "Topic name required." },
@@ -62,7 +71,9 @@ export async function PATCH(req: NextRequest) {
   if (!actor)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { id, name, order } = await req.json();
+  const parsed = await parseJsonBody(topicUpdateSchema, req);
+  if (!parsed.ok) return parsed.response;
+  const { id, name, order } = parsed.data;
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
   const topic = await prisma.topic.findUnique({ where: { id } });
@@ -87,7 +98,9 @@ export async function DELETE(req: NextRequest) {
   if (!actor)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { id } = await req.json();
+  const parsed = await parseJsonBody(contentDeleteSchema, req);
+  if (!parsed.ok) return parsed.response;
+  const { id } = parsed.data;
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
   const topic = await prisma.topic.findUnique({ where: { id } });

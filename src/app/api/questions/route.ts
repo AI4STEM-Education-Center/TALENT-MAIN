@@ -1,46 +1,42 @@
 import { NextRequest, NextResponse } from "next/server";
 import { guardText } from "@/lib/guardrail-runner";
 import { prisma } from "@/lib/prisma";
-import { canManage, canRead, getContentActor } from "@/lib/quiz-access";
-import { normalizeNumericValue } from "@/lib/quiz-scoring";
+import {
+  canManage,
+  canRead,
+  getContentActor,
+  type ContentActor,
+} from "@/lib/quiz-access";
+import { parseJsonBody } from "@/lib/validation";
+import {
+  choiceValidationError,
+  parseNumericAnswer,
+  questionCreateSchema,
+  questionUpdateSchema,
+  questionDeleteSchema,
+} from "@/lib/question-input";
 
-/**
- * Validate and normalize the NUMERIC answer payload (answerNumeric required and
- * finite, answerTolerance optional but > 0 when given, answerUnit a trimmed
- * string or null). Returns either an error message or the persisted shape.
- */
-function parseNumericPayload(body: {
-  answerNumeric?: unknown;
-  answerTolerance?: unknown;
-  answerUnit?: unknown;
-}):
-  | { error: string }
-  | {
-      answerNumeric: number;
-      answerTolerance: number | null;
-      answerUnit: string | null;
-    } {
-  const answerNumeric = normalizeNumericValue(body.answerNumeric);
-  if (answerNumeric === null) {
-    return { error: "A finite numeric answer is required." };
-  }
-  let answerTolerance: number | null = null;
-  if (
-    body.answerTolerance !== undefined &&
-    body.answerTolerance !== null &&
-    body.answerTolerance !== ""
-  ) {
-    const tol = normalizeNumericValue(body.answerTolerance);
-    if (tol === null || tol <= 0) {
-      return { error: "Tolerance must be a positive number." };
-    }
-    answerTolerance = tol;
-  }
-  const answerUnit =
-    typeof body.answerUnit === "string" && body.answerUnit.trim()
-      ? body.answerUnit.trim()
-      : null;
-  return { answerNumeric, answerTolerance, answerUnit };
+const badRequest = (error: string) =>
+  NextResponse.json({ error }, { status: 400 });
+
+/** Edits and creates must pass the same authoring guardrail. */
+async function checkAuthoredText(
+  actor: ContentActor,
+  quizId: string,
+  text: string,
+  options: { text: string }[],
+) {
+  const guard = await guardText(
+    [text, ...options.map((option) => option.text)].filter(Boolean).join("\n"),
+    { surface: "question_authoring", id: quizId, userId: actor.userId },
+    { requestPath: true },
+  );
+  return guard.blocked
+    ? NextResponse.json(
+        { error: guard.message, guardrailEventId: guard.eventId },
+        { status: 422 },
+      )
+    : null;
 }
 
 export async function GET(req: NextRequest) {
@@ -71,110 +67,35 @@ export async function POST(req: NextRequest) {
   const actor = await getContentActor();
   if (!actor)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const body = await req.json();
-  const { text, quizId, difficultyLevel, answerMode, options } = body;
-  const isNumeric = answerMode === "NUMERIC";
-  const normalizedAnswerMode = isNumeric
-    ? "NUMERIC"
-    : answerMode === "MULTI_SELECT"
-      ? "MULTI_SELECT"
-      : "SINGLE_SELECT";
-
-  if (!text?.trim() || !quizId) {
-    return NextResponse.json(
-      { error: "text and quizId are required." },
-      { status: 400 },
-    );
-  }
-
-  // NUMERIC questions carry no options; choice questions require valid options.
-  let numeric: {
-    answerNumeric: number;
-    answerTolerance: number | null;
-    answerUnit: string | null;
-  } | null = null;
-  if (isNumeric) {
-    const parsed = parseNumericPayload(body);
-    if ("error" in parsed)
-      return NextResponse.json({ error: parsed.error }, { status: 400 });
-    numeric = parsed;
-  } else {
-    if (!options || options.length < 2) {
-      return NextResponse.json(
-        { error: "At least 2 options are required." },
-        { status: 400 },
-      );
-    }
-    if (!options.some((o: { isCorrect: boolean }) => o.isCorrect)) {
-      return NextResponse.json(
-        { error: "At least one option must be marked as correct." },
-        { status: 400 },
-      );
-    }
-    if (
-      normalizedAnswerMode === "SINGLE_SELECT" &&
-      options.filter((o: { isCorrect: boolean }) => o.isCorrect).length > 1
-    ) {
-      return NextResponse.json(
-        { error: "Single-select questions can only have one correct option." },
-        { status: 400 },
-      );
-    }
-  }
-
-  const quiz = await prisma.quiz.findUnique({ where: { id: quizId } });
-  if (!quiz || !canManage(actor, quiz)) {
+  const parsed = await parseJsonBody(questionCreateSchema, req);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.data;
+  const quiz = await prisma.quiz.findUnique({ where: { id: body.quizId } });
+  if (!quiz || !canManage(actor, quiz))
     return NextResponse.json({ error: "Quiz not found" }, { status: 404 });
-  }
 
-  // A teacher typing a question is the ordinary case; this catches the one
-  // where the text was pasted out of a document that carried a payload. Both
-  // guardrails fail open, and off-topic is OFF by default here — a physics
-  // question IS the topic, so running it would be pure false positives.
-  const authored = [
-    text,
-    ...(options ?? []).map((o: { text?: string }) => o?.text ?? ""),
-  ]
-    .filter(Boolean)
-    .join("\n");
-  const guard = await guardText(
-    authored,
-    { surface: "question_authoring", id: quizId, userId: actor.userId },
-    { requestPath: true },
-  );
-  if (guard.blocked) {
-    // The id lets the client offer "report a problem" on the refusal. The
-    // message stays vague about WHY on purpose; the reasons are admin-only.
-    return NextResponse.json(
-      { error: guard.message, guardrailEventId: guard.eventId },
-      { status: 422 },
-    );
+  const answerMode = body.answerMode ?? "SINGLE_SELECT";
+  const options = answerMode === "NUMERIC" ? [] : (body.options ?? []);
+  const numeric = answerMode === "NUMERIC" ? parseNumericAnswer(body) : null;
+  if (numeric && "error" in numeric) return badRequest(numeric.error);
+  if (!numeric) {
+    const error = choiceValidationError(answerMode, options);
+    if (error) return badRequest(error);
   }
+  const blocked = await checkAuthoredText(actor, quiz.id, body.text, options);
+  if (blocked) return blocked;
 
   const question = await prisma.question.create({
     data: {
-      text: text.trim(),
-      quizId,
-      difficultyLevel: difficultyLevel || "BEGINNER",
-      answerMode: normalizedAnswerMode,
+      text: body.text,
+      quizId: quiz.id,
+      difficultyLevel: body.difficultyLevel ?? "BEGINNER",
+      answerMode,
       createdById: actor.teacherId,
-      ...(numeric
-        ? {
-            answerNumeric: numeric.answerNumeric,
-            answerTolerance: numeric.answerTolerance,
-            answerUnit: numeric.answerUnit,
-          }
-        : {
-            options: {
-              create: options.map(
-                (o: { text: string; isCorrect: boolean }) => ({
-                  text: o.text.trim(),
-                  isCorrect: o.isCorrect,
-                }),
-              ),
-            },
-          }),
+      ...(numeric ?? {}),
+      options: {
+        create: options.map(({ text, isCorrect }) => ({ text, isCorrect })),
+      },
     },
     include: { options: true, quiz: true },
   });
@@ -185,120 +106,83 @@ export async function PATCH(req: NextRequest) {
   const actor = await getContentActor();
   if (!actor)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const body = await req.json();
-  const { id, text, difficultyLevel, answerMode, options } = body;
-  if (!id)
-    return NextResponse.json(
-      { error: "Question id required." },
-      { status: 400 },
-    );
-  const isNumeric = answerMode === "NUMERIC";
-  const normalizedAnswerMode = isNumeric
-    ? "NUMERIC"
-    : answerMode === "MULTI_SELECT"
-      ? "MULTI_SELECT"
-      : answerMode === "SINGLE_SELECT"
-        ? "SINGLE_SELECT"
-        : undefined;
-
-  // NUMERIC: validate the numeric payload (and ignore options). Choice modes:
-  // validate options when present, exactly as before.
-  let numeric: {
-    answerNumeric: number;
-    answerTolerance: number | null;
-    answerUnit: string | null;
-  } | null = null;
-  if (isNumeric) {
-    const parsed = parseNumericPayload(body);
-    if ("error" in parsed)
-      return NextResponse.json({ error: parsed.error }, { status: 400 });
-    numeric = parsed;
-  } else if (options) {
-    if (options.length < 2) {
-      return NextResponse.json(
-        { error: "At least 2 options are required." },
-        { status: 400 },
-      );
-    }
-    if (!options.some((o: { isCorrect: boolean }) => o.isCorrect)) {
-      return NextResponse.json(
-        { error: "At least one option must be marked as correct." },
-        { status: 400 },
-      );
-    }
-    if (
-      normalizedAnswerMode === "SINGLE_SELECT" &&
-      options.filter((o: { isCorrect: boolean }) => o.isCorrect).length > 1
-    ) {
-      return NextResponse.json(
-        { error: "Single-select questions can only have one correct option." },
-        { status: 400 },
-      );
-    }
-  }
-
+  const parsed = await parseJsonBody(questionUpdateSchema, req);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.data;
   const existing = await prisma.question.findUnique({
-    where: { id },
-    include: { quiz: true },
+    where: { id: body.id },
+    include: { quiz: true, options: true },
   });
-  if (!existing || !canManage(actor, existing.quiz)) {
+  if (!existing || !canManage(actor, existing.quiz))
     return NextResponse.json({ error: "Question not found" }, { status: 404 });
+
+  const answerMode = body.answerMode ?? existing.answerMode;
+  const priorById = new Map(
+    existing.options.map((option) => [option.id, option]),
+  );
+  const options =
+    answerMode === "NUMERIC"
+      ? []
+      : (body.options ?? existing.options).map((option) => ({
+          ...option,
+          imageStorageKey: option.id
+            ? priorById.get(option.id)?.imageStorageKey
+            : null,
+        }));
+  const numeric =
+    answerMode === "NUMERIC"
+      ? parseNumericAnswer({ ...existing, ...body })
+      : null;
+  if (numeric && "error" in numeric) return badRequest(numeric.error);
+  if (!numeric) {
+    const error = choiceValidationError(answerMode, options);
+    if (error) return badRequest(error);
   }
+  const blocked = await checkAuthoredText(
+    actor,
+    existing.quizId,
+    body.text ?? existing.text,
+    options,
+  );
+  if (blocked) return blocked;
 
-  // Mode transitions: switching TO a choice mode nulls the numeric scalars;
-  // switching TO NUMERIC writes them instead (and drops options below). Figure
-  // fields are preserved and never settable through this route (figures
-  // originate from the PDF pipeline).
-  const switchingToChoice = normalizedAnswerMode !== undefined && !isNumeric;
-  await prisma.question.update({
-    where: { id },
-    data: {
-      text: text?.trim(),
-      difficultyLevel,
-      answerMode: normalizedAnswerMode,
-      ...(isNumeric && numeric
-        ? {
-            answerNumeric: numeric.answerNumeric,
-            answerTolerance: numeric.answerTolerance,
-            answerUnit: numeric.answerUnit,
-          }
-        : switchingToChoice
-          ? { answerNumeric: null, answerTolerance: null, answerUnit: null }
-          : {}),
-    },
-  });
-
-  if (isNumeric) {
-    // NUMERIC questions hold zero options; drop any left from a prior mode.
-    await prisma.option.deleteMany({ where: { questionId: id } });
-  } else if (options) {
-    // Bulk-replace, but carry image answer-choice crops (which only the PDF
-    // pipeline can create) across the replace: the editor echoes each existing
-    // option's id, so match on it to preserve the image fields.
-    const prior = await prisma.option.findMany({ where: { questionId: id } });
-    const priorById = new Map(prior.map((o) => [o.id, o]));
-    await prisma.option.deleteMany({ where: { questionId: id } });
-    await prisma.option.createMany({
-      data: options.map(
-        (o: { id?: string; text: string; isCorrect: boolean }) => {
-          const carried = o.id ? priorById.get(o.id) : undefined;
-          return {
-            questionId: id,
-            text: o.text.trim(),
-            isCorrect: o.isCorrect,
-            imageStorageKey: carried?.imageStorageKey ?? null,
-            imageBucket: carried?.imageBucket ?? null,
-            imageAlt: carried?.imageAlt ?? null,
-          };
-        },
-      ),
+  // Keep unchanged option ids so student answers and stored image crops retain
+  // their references. Every option mutation and the question write commit together.
+  const updated = await prisma.$transaction(async (tx) => {
+    await tx.question.update({
+      where: { id: existing.id },
+      data: {
+        text: body.text,
+        difficultyLevel: body.difficultyLevel,
+        answerMode,
+        ...(numeric ?? {
+          answerNumeric: null,
+          answerTolerance: null,
+          answerUnit: null,
+        }),
+      },
     });
-  }
-
-  const updated = await prisma.question.findUnique({
-    where: { id },
-    include: { options: true },
+    if (answerMode === "NUMERIC" || body.options !== undefined) {
+      const retainedIds = options.flatMap((option) =>
+        option.id && priorById.has(option.id) ? [option.id] : [],
+      );
+      await tx.option.deleteMany({
+        where: { questionId: existing.id, id: { notIn: retainedIds } },
+      });
+      for (const option of options) {
+        const data = { text: option.text, isCorrect: option.isCorrect };
+        if (option.id && priorById.has(option.id))
+          await tx.option.update({ where: { id: option.id }, data });
+        else
+          await tx.option.create({
+            data: { ...data, questionId: existing.id },
+          });
+      }
+    }
+    return tx.question.findUnique({
+      where: { id: existing.id },
+      include: { options: true },
+    });
   });
   return NextResponse.json(updated);
 }
@@ -307,16 +191,15 @@ export async function DELETE(req: NextRequest) {
   const actor = await getContentActor();
   if (!actor)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const { id } = await req.json();
+  const parsed = await parseJsonBody(questionDeleteSchema, req);
+  if (!parsed.ok) return parsed.response;
+  const { id } = parsed.data;
   const existing = await prisma.question.findUnique({
     where: { id },
     include: { quiz: true },
   });
-  if (!existing || !canManage(actor, existing.quiz)) {
+  if (!existing || !canManage(actor, existing.quiz))
     return NextResponse.json({ error: "Question not found" }, { status: 404 });
-  }
-
   await prisma.question.delete({ where: { id } });
   return NextResponse.json({ success: true });
 }

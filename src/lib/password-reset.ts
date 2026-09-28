@@ -90,8 +90,8 @@ export async function findValidResetToken(
 
 /**
  * Set the new password and burn the token atomically. The conditional
- * updateMany (usedAt: null) makes concurrent redemptions of the same link
- * race-safe: the loser updates 0 rows and the transaction is rolled back.
+ * claim checks ownership, expiry, and prior use at write time, including time
+ * spent hashing the replacement password after the initial lookup.
  */
 export async function consumeResetToken(
   tokenId: string,
@@ -101,7 +101,12 @@ export async function consumeResetToken(
   try {
     await prisma.$transaction(async (tx) => {
       const claimed = await tx.passwordResetToken.updateMany({
-        where: { id: tokenId, usedAt: null },
+        where: {
+          id: tokenId,
+          userId,
+          usedAt: null,
+          expiresAt: { gt: new Date() },
+        },
         data: { usedAt: new Date() },
       });
       if (claimed.count === 0) throw new Error("TOKEN_ALREADY_USED");
