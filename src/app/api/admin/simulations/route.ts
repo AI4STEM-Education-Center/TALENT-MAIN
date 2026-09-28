@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { simulationMetricsView } from "@/lib/simulation-metrics";
+import { QUESTION_ORDER } from "@/lib/question-order";
 
 // Simulation status counts for one quiz. "missing" = questions with no
 // QuestionSimulation row at all (never triggered).
@@ -43,7 +44,7 @@ export async function GET(req: NextRequest) {
       include: {
         topic: { select: { name: true } },
         questions: {
-          orderBy: { createdAt: "asc" },
+          orderBy: QUESTION_ORDER,
           include: {
             simulation: { include: { _count: { select: { feedback: true } } } },
           },

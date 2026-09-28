@@ -8,6 +8,7 @@ import {
   validateVariant,
   type VariantQuestion,
 } from "@/lib/quiz-variants";
+import { QUESTION_ORDER } from "@/lib/question-order";
 
 type Context = { params: Promise<{ id: string }> };
 async function ownedQuiz(context: Context) {
@@ -19,7 +20,7 @@ async function ownedQuiz(context: Context) {
   const quiz = await prisma.quiz.findUnique({
     where: { id },
     include: {
-      questions: { include: { options: true }, orderBy: { createdAt: "asc" } },
+      questions: { include: { options: true }, orderBy: QUESTION_ORDER },
     },
   });
   return quiz && canManage(actor, quiz) ? quiz : null;

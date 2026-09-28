@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   Check,
+  Copy,
   X,
   Pencil,
   Eye,
@@ -19,10 +20,13 @@ export function QuizEditorHeader({
   editor,
   quiz,
   previewHref,
+  listHref,
 }: {
   editor: QuizEditorModel;
   quiz: QuizDetail;
   previewHref?: string;
+  /** The quiz list route; a duplicate opens at `${listHref}/<copyId>`. */
+  listHref: string;
 }) {
   const {
     editingName,
@@ -34,6 +38,8 @@ export function QuizEditorHeader({
     changeTopic,
     importPoolCopy,
     poolImportBusy,
+    duplicateQuiz,
+    duplicateBusy,
     generateSimulations,
     simBusy,
   } = editor;
@@ -122,22 +128,39 @@ export function QuizEditorHeader({
             {poolImportBusy ? "Importing…" : "Import to my quizzes"}
           </Button>
         ) : (
-          missingSimulations > 0 && (
+          <>
             <Button
               variant="outline"
-              onClick={() =>
-                generateSimulations({ scope: "quiz", quizId: quiz.id }, "quiz")
-              }
-              disabled={simBusy.has("quiz")}
+              onClick={() => duplicateQuiz(listHref)}
+              disabled={duplicateBusy}
             >
-              {simBusy.has("quiz") ? (
+              {duplicateBusy ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : (
-                <Sparkles className="size-4" />
+                <Copy className="size-4" />
               )}
-              Generate simulations ({missingSimulations})
+              {duplicateBusy ? "Duplicating…" : "Duplicate"}
             </Button>
-          )
+            {missingSimulations > 0 && (
+              <Button
+                variant="outline"
+                onClick={() =>
+                  generateSimulations(
+                    { scope: "quiz", quizId: quiz.id },
+                    "quiz",
+                  )
+                }
+                disabled={simBusy.has("quiz")}
+              >
+                {simBusy.has("quiz") ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Sparkles className="size-4" />
+                )}
+                Generate simulations ({missingSimulations})
+              </Button>
+            )}
+          </>
         )}
       </div>
     </div>

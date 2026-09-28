@@ -8,6 +8,7 @@ import {
 import { simulationMetricsView } from "@/lib/simulation-metrics";
 
 import { parseJsonBody, quizUpdateSchema } from "@/lib/validation";
+import { QUESTION_ORDER } from "@/lib/question-order";
 
 // GET: quiz detail with questions. Own quizzes are fully visible; pool quizzes
 // are readable by any teacher/admin (so the pool can be previewed before import).
@@ -28,7 +29,7 @@ export async function GET(
           options: true,
           simulation: { include: { _count: { select: { feedback: true } } } },
         },
-        orderBy: { createdAt: "asc" },
+        orderBy: QUESTION_ORDER,
       },
     },
   });

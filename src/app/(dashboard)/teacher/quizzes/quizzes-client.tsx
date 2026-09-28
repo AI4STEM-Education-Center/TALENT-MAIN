@@ -11,6 +11,7 @@ import { PoolSubmissionDialog } from "@/components/pool-submission-dialog";
 import {
   Plus,
   BookOpen,
+  Copy,
   Pencil,
   Eye,
   Trash2,
@@ -84,6 +85,7 @@ export function TeacherQuizzesClient({
   const [editingTopicId, setEditingTopicId] = useState<string | null>(null);
   const [editTopicName, setEditTopicName] = useState("");
   const [importBusyId, setImportBusyId] = useState<string | null>(null);
+  const [duplicateBusyId, setDuplicateBusyId] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
 
   async function createQuiz() {
@@ -114,6 +116,32 @@ export function TeacherQuizzesClient({
     if (!ok) return;
     const res = await fetch(`/api/quizzes/${id}`, { method: "DELETE" });
     if (res.ok) setQuizzes((prev) => prev.filter((q) => q.id !== id));
+  }
+
+  // Deep-copy one of the teacher's own quizzes; the copy lands right after it.
+  async function duplicateQuiz(id: string) {
+    setDuplicateBusyId(id);
+    try {
+      const res = await fetch(`/api/quizzes/${id}/duplicate`, {
+        method: "POST",
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setMsg(data?.error ?? "Could not duplicate this quiz.");
+        return;
+      }
+      setQuizzes((prev) => {
+        const at = prev.findIndex((q) => q.id === id);
+        return at < 0
+          ? [...prev, data]
+          : [...prev.slice(0, at + 1), data, ...prev.slice(at + 1)];
+      });
+      setMsg(`Created "${data.name}".`);
+    } catch {
+      setMsg("Could not duplicate this quiz. Please try again.");
+    } finally {
+      setDuplicateBusyId(null);
+    }
   }
 
   async function createTopic() {
@@ -342,6 +370,18 @@ export function TeacherQuizzesClient({
                           <Button
                             size="sm"
                             variant="ghost"
+                            disabled={duplicateBusyId === quiz.id}
+                            onClick={() => duplicateQuiz(quiz.id)}
+                          >
+                            <Copy className="size-3" />{" "}
+                            {duplicateBusyId === quiz.id
+                              ? "Duplicating…"
+                              : "Duplicate"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            aria-label={`Delete ${quiz.name}`}
                             onClick={() => deleteQuiz(quiz.id)}
                           >
                             <Trash2 className="size-3 text-destructive" />

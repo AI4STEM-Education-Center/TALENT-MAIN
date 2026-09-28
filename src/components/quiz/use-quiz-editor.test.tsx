@@ -109,3 +109,52 @@ describe("quiz editor mutations", () => {
     expect(state.current.savingQuestion).toBe(false);
   });
 });
+
+describe("question reordering", () => {
+  const second = { ...quiz.questions[0], id: "second", text: "Second" };
+  const twoQuestions: QuizDetail = {
+    ...quiz,
+    questions: [quiz.questions[0], second],
+  };
+  const order = (state: { current: QuizEditorModel }) =>
+    state.current.quiz?.questions.map((q) => q.id);
+  beforeEach(() => {
+    vi.mocked(loadQuizEditorData).mockResolvedValue({
+      kind: "ok",
+      quiz: twoQuestions,
+      topics: [],
+    });
+  });
+
+  it("moves a question and saves the full new order", async () => {
+    const state = await mount();
+    const fetcher = vi.fn().mockResolvedValue(Response.json({ success: true }));
+    vi.stubGlobal("fetch", fetcher);
+    await act(async () => state.current.moveQuestion("second", -1));
+    expect(order(state)).toEqual(["second", "question"]);
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/quizzes/quiz/question-order",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({ questionIds: ["second", "question"] }),
+      }),
+    );
+  });
+
+  it("rolls back and reports when the save is rejected", async () => {
+    const state = await mount();
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          Response.json({ error: "List changed" }, { status: 409 }),
+        )
+        .mockResolvedValueOnce(Response.json(twoQuestions)),
+    );
+    await act(async () => state.current.moveQuestion("question", 1));
+    expect(order(state)).toEqual(["question", "second"]);
+    expect(state.current.msg).toBe("List changed");
+    expect(state.current.reorderBusy).toBe(false);
+  });
+});

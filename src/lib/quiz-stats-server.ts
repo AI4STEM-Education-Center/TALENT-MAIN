@@ -22,6 +22,7 @@ import {
   type SimulationEngagementRow,
   type RetakeImpact,
 } from "./simulation-stats";
+import { QUESTION_ORDER } from "@/lib/question-order";
 
 const fullName = (u: { firstName: string; lastName: string }): string =>
   [u.firstName, u.lastName].filter(Boolean).join(" ").trim() ||
@@ -93,7 +94,7 @@ export async function getQuizStats(
       prisma.question.findMany({
         where: { quizId },
         select: { id: true, text: true },
-        orderBy: { createdAt: "asc" },
+        orderBy: QUESTION_ORDER,
       }),
       prisma.quizAnswer.groupBy({
         by: ["questionId", "isCorrect"],

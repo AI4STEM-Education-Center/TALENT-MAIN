@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { simulationDisplayKey } from "@/lib/exam-results";
+import { QUESTION_ORDER } from "@/lib/question-order";
 
 /**
  * Read models for the student's own content library: the two standalone pages
@@ -204,7 +205,7 @@ export async function listStudentSimulations(
                 is: { status: "READY", storageKey: { not: null } },
               },
             },
-            orderBy: { createdAt: "asc" },
+            orderBy: QUESTION_ORDER,
             select: {
               simulation: {
                 select: {

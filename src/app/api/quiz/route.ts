@@ -10,6 +10,7 @@ import {
 import { shuffleAnswerChoices } from "@/lib/quiz-shuffle";
 import { enqueueExamResult } from "@/lib/queue";
 import { logApiError } from "@/lib/system-log";
+import { QUESTION_ORDER } from "@/lib/question-order";
 
 class AttemptLimitError extends Error {}
 class AttemptAlreadySubmittedError extends Error {}
@@ -93,7 +94,7 @@ export async function POST(req: NextRequest) {
         },
       },
     },
-    orderBy: { createdAt: "asc" },
+    orderBy: QUESTION_ORDER,
   });
 
   if (questionRows.length === 0) {
@@ -284,6 +285,7 @@ export async function PATCH(req: NextRequest) {
   const quizQuestions = await prisma.question.findMany({
     where: { quizId },
     include: { options: true },
+    orderBy: QUESTION_ORDER,
   });
   const questionsById = new Map<string, ScorableQuestion>(
     quizQuestions.map((q) => [q.id, q]),

@@ -39,6 +39,7 @@ import {
 } from "lucide-react";
 import { formatAiMetrics } from "@/lib/ai-metrics";
 import type { UseCase } from "@/lib/ai-provider";
+import { AiConfigTransfer } from "@/components/admin/AiConfigTransfer";
 import { AssistantSettings } from "@/components/admin/AssistantSettings";
 import { GuardrailSettings } from "@/components/admin/GuardrailSettings";
 import { GuardrailFeedbackList } from "@/components/admin/GuardrailFeedbackList";
@@ -244,6 +245,9 @@ export default function AiConfigPage() {
   // Bumped after assignments are saved, so the Guardrails panel re-reads which
   // model each of its checks is running on rather than showing a stale one.
   const [assignmentsSavedAt, setAssignmentsSavedAt] = useState(0);
+  // Bumped after a config import, remounting the assistant and guardrail
+  // panels so they re-read settings the import may have replaced.
+  const [importedAt, setImportedAt] = useState(0);
 
   // Assignment state
   const [assignmentEdits, setAssignmentEdits] = useState<
@@ -707,11 +711,26 @@ export default function AiConfigPage() {
 
   return (
     <div className="p-8 space-y-10">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">AI Configuration</h1>
-        <p className="text-muted-foreground mt-1">
-          Manage API providers, models, and use-case assignments.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">
+            AI Configuration
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Manage API providers, models, and use-case assignments.
+          </p>
+        </div>
+        <div className="max-w-xl">
+          <AiConfigTransfer
+            useCaseLabels={USE_CASE_LABELS}
+            onImported={async () => {
+              setAssignmentEdits({});
+              await Promise.all([fetchProviders(), fetchAssignments()]);
+              setAssignmentsSavedAt(Date.now());
+              setImportedAt(Date.now());
+            }}
+          />
+        </div>
       </div>
 
       {error && (
@@ -1557,9 +1576,12 @@ export default function AiConfigPage() {
             the provider and model assigned to its use case above.
           </p>
         </div>
-        <AssistantSettings />
+        <AssistantSettings key={`assistants-${importedAt}`} />
 
-        <GuardrailSettings refreshKey={assignmentsSavedAt} />
+        <GuardrailSettings
+          key={`guardrails-${importedAt}`}
+          refreshKey={assignmentsSavedAt}
+        />
 
         <GuardrailFeedbackList />
       </section>

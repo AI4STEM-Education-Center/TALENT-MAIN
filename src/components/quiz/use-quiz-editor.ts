@@ -59,6 +59,13 @@ export function useQuizEditor(quizId: string) {
     answerUnit: "",
   });
   const [poolImportBusy, setPoolImportBusy] = useState(false);
+  const [duplicateBusy, setDuplicateBusy] = useState(false);
+  // True while a question reorder is being saved; disables the move controls.
+  const [reorderBusy, setReorderBusy] = useState(false);
+  // The question whose drag handle is being dragged, if any.
+  const [draggedQuestionId, setDraggedQuestionId] = useState<string | null>(
+    null,
+  );
   // True while a PDF import is in progress; hides the QTI card to free up space.
   const [pdfImportActive, setPdfImportActive] = useState(false);
   // Simulation being viewed/reviewed in the dialog, if any.
@@ -219,6 +226,85 @@ export function useQuizEditor(quizId: string) {
     } finally {
       setPoolImportBusy(false);
     }
+  }
+
+  // Deep-copy this quiz into the same scope and open the copy. `basePath` is the
+  // editor's list route (teacher or admin), so the copy opens in the same area.
+  async function duplicateQuiz(basePath: string) {
+    setDuplicateBusy(true);
+    try {
+      const res = await fetch(`/api/quizzes/${quizId}/duplicate`, {
+        method: "POST",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setMsg(data.error ?? "Could not duplicate this quiz.");
+        return;
+      }
+      router.push(`${basePath}/${data.id}`);
+    } catch {
+      setMsg("Could not duplicate this quiz. Please try again.");
+    } finally {
+      setDuplicateBusy(false);
+    }
+  }
+
+  // ── Question order ──────────────────────────────────────────────────────────
+  // Optimistic: the list reorders immediately and rolls back if the save fails.
+
+  async function saveQuestionOrder(ids: string[]) {
+    if (!quiz || reorderBusy) return;
+    const previous = quiz.questions;
+    const byId = new Map(previous.map((q) => [q.id, q]));
+    setQuiz({ ...quiz, questions: ids.map((id) => byId.get(id)!) });
+    setReorderBusy(true);
+    try {
+      const res = await fetch(`/api/quizzes/${quizId}/question-order`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questionIds: ids }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Could not save the new order.");
+      }
+    } catch (error) {
+      setQuiz((current) =>
+        current ? { ...current, questions: previous } : current,
+      );
+      setMsg(
+        error instanceof Error
+          ? error.message
+          : "Could not save the new order.",
+      );
+      await refreshQuestions();
+    } finally {
+      setReorderBusy(false);
+    }
+  }
+
+  /** Move a question `delta` places (-1 = up, 1 = down). */
+  function moveQuestion(id: string, delta: number) {
+    if (!quiz) return;
+    const ids = quiz.questions.map((q) => q.id);
+    const from = ids.indexOf(id);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= ids.length) return;
+    ids.splice(to, 0, ...ids.splice(from, 1));
+    void saveQuestionOrder(ids);
+  }
+
+  /** Drop the dragged question into `targetId`'s slot. */
+  function dropQuestion(targetId: string) {
+    const dragged = draggedQuestionId;
+    setDraggedQuestionId(null);
+    if (!quiz || !dragged || dragged === targetId) return;
+    const ids = quiz.questions.map((q) => q.id);
+    const from = ids.indexOf(dragged);
+    const to = ids.indexOf(targetId);
+    if (from < 0 || to < 0) return;
+    ids.splice(to, 0, ...ids.splice(from, 1));
+    void saveQuestionOrder(ids);
   }
 
   function startEdit(q: Question) {
@@ -578,6 +664,13 @@ export function useQuizEditor(quizId: string) {
     form,
     setForm,
     poolImportBusy,
+    duplicateBusy,
+    duplicateQuiz,
+    reorderBusy,
+    moveQuestion,
+    draggedQuestionId,
+    setDraggedQuestionId,
+    dropQuestion,
     pdfImportActive,
     setPdfImportActive,
     openSimulationId,

@@ -1,4 +1,5 @@
 "use client";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -6,6 +7,9 @@ import { MathText } from "@/components/ui/math-text";
 import { AiMetricsLine } from "@/components/ai-metrics-line";
 import { SimulationStatusBadge } from "@/components/simulation/SimulationStatusBadge";
 import {
+  ArrowDown,
+  ArrowUp,
+  GripVertical,
   Pencil,
   Trash2,
   Atom,
@@ -133,15 +137,50 @@ function SimulationNotice({
 export function QuizQuestionCard({
   q,
   index: i,
+  total,
   readOnly,
   editor,
-}: QuestionProps & { index: number }) {
-  const { editingQuestion, startEdit, deleteQuestion } = editor;
+}: QuestionProps & { index: number; total: number }) {
+  const {
+    editingQuestion,
+    startEdit,
+    deleteQuestion,
+    reorderBusy,
+    moveQuestion,
+    draggedQuestionId,
+    setDraggedQuestionId,
+    dropQuestion,
+  } = editor;
+  const [dragOver, setDragOver] = useState(false);
+  // Reordering is off while any question is open in the form, so the inline
+  // editor never jumps out from under the teacher.
+  const canReorder = !readOnly && !editingQuestion && total > 1;
+  const dropTarget =
+    canReorder && draggedQuestionId !== null && draggedQuestionId !== q.id;
   return (
     <Card
       className={
-        editingQuestion?.id === q.id ? "ring-2 ring-primary" : undefined
+        editingQuestion?.id === q.id
+          ? "ring-2 ring-primary"
+          : dragOver && dropTarget
+            ? "ring-2 ring-primary/60"
+            : draggedQuestionId === q.id
+              ? "opacity-50"
+              : undefined
       }
+      onDragOver={(e) => {
+        if (!dropTarget) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        setDragOver(true);
+      }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => {
+        if (!dropTarget) return;
+        e.preventDefault();
+        setDragOver(false);
+        dropQuestion(q.id);
+      }}
     >
       <CardContent className="p-4">
         {!readOnly && editingQuestion?.id === q.id ? (
@@ -190,6 +229,43 @@ export function QuizQuestionCard({
             </div>
             {!readOnly && (
               <div className="flex gap-1 shrink-0">
+                {canReorder && (
+                  <>
+                    <button
+                      type="button"
+                      draggable={!reorderBusy}
+                      disabled={reorderBusy}
+                      aria-label={`Drag question ${i + 1} to reorder; the arrow buttons are an alternative`}
+                      className="cursor-grab touch-none rounded p-2 hover:bg-muted"
+                      onDragStart={(e) => {
+                        setDraggedQuestionId(q.id);
+                        e.dataTransfer.effectAllowed = "move";
+                        e.dataTransfer.setData("text/plain", `Q${i + 1}`);
+                      }}
+                      onDragEnd={() => setDraggedQuestionId(null)}
+                    >
+                      <GripVertical className="size-3 pointer-events-none" />
+                    </button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-label={`Move question ${i + 1} up`}
+                      disabled={reorderBusy || i === 0}
+                      onClick={() => moveQuestion(q.id, -1)}
+                    >
+                      <ArrowUp className="size-3" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-label={`Move question ${i + 1} down`}
+                      disabled={reorderBusy || i === total - 1}
+                      onClick={() => moveQuestion(q.id, 1)}
+                    >
+                      <ArrowDown className="size-3" />
+                    </Button>
+                  </>
+                )}
                 <Button
                   size="sm"
                   variant="ghost"
