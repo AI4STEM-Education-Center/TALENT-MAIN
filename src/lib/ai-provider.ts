@@ -17,6 +17,10 @@ export const USE_CASES = [
   // (see src/lib/syllabus-engine.ts), so a site that can already read quiz
   // PDFs can read syllabi without another setup step.
   "syllabus_extraction",
+  // Research survey PDF text -> editable survey questions. Text-only; falls
+  // back to the quiz_extraction assignment when left unassigned (see
+  // src/lib/survey-extraction-engine.ts).
+  "survey_extraction",
   "quiz_variants",
   "simulation_chat",
   "simulation_generation",

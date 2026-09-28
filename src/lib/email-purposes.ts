@@ -27,6 +27,7 @@ export const EMAIL_PURPOSES = [
   "CONSENT_EXPORT_REQUEST",
   "CONSENT_EXPORT_READY",
   "SECURITY_ALERT",
+  "RESEARCH",
 ] as const;
 
 export type EmailPurpose = (typeof EMAIL_PURPOSES)[number];
@@ -143,6 +144,11 @@ Times used since revocation: {{useCount}}
 This may point to a token leak — the old token may still live in a GitHub Actions secret, a local pressure/.env file, or a log. Remove the leaked value wherever it is stored and confirm no unexpected results were ingested.
 
 Review tokens in Admin → Pressure Tests.`,
+};
+
+const RESEARCH_TEMPLATE = {
+  subject: "{{subject}}",
+  body: "{{body}}",
 };
 
 export const EMAIL_PURPOSE_DEFINITIONS: Record<
@@ -280,6 +286,15 @@ export const EMAIL_PURPOSE_DEFINITIONS: Record<
       "ip",
       "useCount",
     ],
+  },
+  RESEARCH: {
+    key: "RESEARCH",
+    label: "Research study emails",
+    description:
+      "Emails the research team sends to the participant pool and post-survey invitations. The message itself is written in Admin → Research Pool / Post-Survey Email; this wrapper goes around it.",
+    defaultLocalPart: "research",
+    template: RESEARCH_TEMPLATE,
+    variables: ["appName", "subject", "body"],
   },
 };
 

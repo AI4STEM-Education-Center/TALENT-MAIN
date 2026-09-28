@@ -28,6 +28,8 @@ model User {
   poolSubmissionReviews PoolSubmission[] @relation("PoolSubmissionReviewer")
   consentRecords        ConsentRecord[]
   consentExportReviews  ConsentExportRequest[] @relation("ConsentExportReviewer")
+  surveyResponses       SurveyResponse[]
+  surveyDismissals      SurveyPromptDismissal[]
 
   @@index([role])
 }
@@ -1948,6 +1950,8 @@ model SimulationEditChat {
 
 // Published payloads are immutable. Source snapshots bind objectives to the exact
 // authored revision. Practice is deliberately separate from graded progress.
+// status: "QUEUED" | "GENERATING" | "REVIEW" | "FAILED" | "PUBLISHED" |
+// "RETIRED" | "DISCARDED" | "STANDALONE"
 model QuizPracticeVersion {
   id String @id @default(cuid())
   quizId String
@@ -1962,9 +1966,24 @@ model QuizPracticeVersion {
   error String?
   aiModel String?
   aiTokens Int?
+  // Teacher generation workflow. batchId groups one "Generate new version"
+  // round (two NUMBERS + two CONTEXT drafts, plus any "two more"); purpose is
+  // the teacher's starting intent ("ALTERNATE" | "STANDALONE"). A draft revised
+  // with teacher feedback becomes DISCARDED and a new draft records the
+  // feedback and revisedFromId. Saving a draft as its own exam sets status
+  // "STANDALONE" and standaloneQuizId. attempts counts generate/verify rounds;
+  // teacherEdited drafts are only re-verified, never silently regenerated.
+  batchId String?
+  purpose String @default("ALTERNATE")
+  feedback String?
+  revisedFromId String?
+  standaloneQuizId String?
+  attempts Int @default(0)
+  teacherEdited Boolean @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@index([quizId, status])
+  @@index([quizId, batchId])
 }
 
 // Self-contained attempt archive: no content cascade can alter a student's
@@ -1985,4 +2004,165 @@ model QuizPracticeAttempt {
   // per student/class/quiz even under concurrent start requests.
   activeKey String? @unique
   @@index([studentId, classId, quizId])
+}
+
+// ─── Research surveys & participant pool ────────────────────────────────────
+// Pre/post platform-use surveys for students and teachers, admin-uploaded as a
+// PDF and converted into editable questions (src/lib/survey.ts). At most one
+// form per (kind, role) is enabled at a time. The pre-survey is mandatory for
+// anyone who agreed to the IRB consent form and offered to everyone else; the
+// post-survey is never blocking — it is reached through a per-person emailed
+// link (SurveyInvite). See docs/features/research-surveys.md.
+
+// kind: "PRE" | "POST". role: "STUDENT" | "TEACHER".
+// status: "READY" | "EXTRACTING" | "FAILED" — EXTRACTING while the worker turns
+// the uploaded PDF's text into questions.
+model SurveyForm {
+  id           String   @id @default(cuid())
+  kind         String
+  role         String
+  title        String
+  description  String   @default("")
+  questions    String   @default("[]") // JSON SurveyQuestion[]
+  isEnabled    Boolean  @default(false)
+  status       String   @default("READY")
+  errorMessage String?
+  sourceText   String? // text extracted from the uploaded PDF, kept for re-runs
+  pdfBucket    String?
+  pdfKey       String?
+  pdfName      String?
+  createdById  String? // plain id, no FK — survives account deletion
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  responses SurveyResponse[]
+  invites   SurveyInvite[]
+
+  @@index([kind, role, isEnabled])
+}
+
+// One submitted survey. userId is SetNull (research data outlives the account);
+// the name/email snapshots freeze who answered. source: "APP" (signed in) |
+// "LINK" (emailed post-survey link, no sign-in).
+model SurveyResponse {
+  id             String     @id @default(cuid())
+  formId         String
+  form           SurveyForm @relation(fields: [formId], references: [id], onDelete: Cascade)
+  userId         String?
+  user           User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  kind           String
+  role           String
+  answers        String // JSON Record<questionId, string | string[]>
+  interviewOptIn Boolean    @default(false)
+  interviewEmail String?
+  irbAgreed      Boolean    @default(false) // IRB AGREE on file when submitted
+  source         String     @default("APP")
+  nameSnapshot   String
+  emailSnapshot  String
+  submittedAt    DateTime   @default(now())
+
+  // One response per person per form (SQLite treats NULL userIds as distinct,
+  // so link responses from deleted accounts never collide).
+  @@unique([formId, userId])
+  @@index([formId, submittedAt])
+  @@index([userId, kind])
+  @@index([interviewOptIn])
+}
+
+// "No thanks" on the optional pre-survey prompt (users without IRB agreement),
+// so it stops reappearing on every page load.
+model SurveyPromptDismissal {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  formId      String
+  dismissedAt DateTime @default(now())
+
+  @@unique([userId, formId])
+}
+
+// Per-person post-survey link. Only the SHA-256 of the token is stored; the
+// plaintext lives in the delivery row until the email is sent.
+model SurveyInvite {
+  id         String     @id @default(cuid())
+  tokenHash  String     @unique
+  formId     String
+  form       SurveyForm @relation(fields: [formId], references: [id], onDelete: Cascade)
+  userId     String? // plain id, no FK
+  email      String
+  name       String
+  campaignId String?
+  createdAt  DateTime   @default(now())
+  usedAt     DateTime?
+  responseId String?
+
+  @@index([formId])
+}
+
+// The admin's working draft for each research email kind ("POOL" |
+// "POST_SURVEY"), so the editor reopens where it was left. Campaigns snapshot
+// it when scheduled. Two versions: the IRB version goes to people who agreed
+// via the IRB consent form, the survey version to everyone else.
+model ResearchEmailTemplate {
+  kind          String   @id
+  replyTo       String   @default("")
+  irbSubject    String   @default("")
+  irbBody       String   @default("")
+  surveySubject String   @default("")
+  surveyBody    String   @default("")
+  attachments   String   @default("[]") // JSON ResearchEmailAttachment[]
+  audience      String   @default("{}") // JSON ResearchEmailAudience
+  updatedAt     DateTime @updatedAt
+  updatedById   String?
+}
+
+// One send (now or scheduled). Recipients are resolved when the worker picks
+// the campaign up at scheduledAt, not when it was created.
+// status: "SCHEDULED" | "SENDING" | "SENT" | "CANCELLED" | "FAILED".
+model ResearchEmailCampaign {
+  id            String    @id @default(cuid())
+  kind          String
+  replyTo       String
+  irbSubject    String
+  irbBody       String
+  surveySubject String
+  surveyBody    String
+  attachments   String    @default("[]")
+  audience      String    @default("{}")
+  appOrigin     String // for {{surveyLink}}; the worker has no request to derive it from
+  status        String    @default("SCHEDULED")
+  scheduledAt   DateTime
+  startedAt     DateTime?
+  completedAt   DateTime?
+  error         String?
+  createdById   String?
+  createdAt     DateTime  @default(now())
+
+  deliveries ResearchEmailDelivery[]
+
+  @@index([status, scheduledAt])
+}
+
+// One recipient of a campaign, with the claim/backoff shape of
+// ConsentEmailDelivery. variant: "IRB" | "SURVEY". status: "PENDING" | "SENT" |
+// "FAILED". vars holds the rendered template variables (incl. surveyLink,
+// scrubbed once sent).
+model ResearchEmailDelivery {
+  id            String                @id @default(cuid())
+  campaignId    String
+  campaign      ResearchEmailCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  userId        String?
+  recipient     String
+  variant       String
+  vars          String                @default("{}")
+  status        String                @default("PENDING")
+  attempts      Int                   @default(0)
+  lastError     String?
+  nextAttemptAt DateTime              @default(now())
+  claimedAt     DateTime?
+  sentAt        DateTime?
+  createdAt     DateTime              @default(now())
+
+  @@index([campaignId, status])
+  @@index([status, nextAttemptAt])
 }

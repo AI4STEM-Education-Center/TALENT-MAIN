@@ -21,6 +21,11 @@ import {
   CONSENT_EXPORTS_QUEUE,
   SYLLABUS_EXTRACTIONS_QUEUE,
   type SyllabusExtractionJobPayload,
+  SURVEY_EXTRACTIONS_QUEUE,
+  type SurveyExtractionJobPayload,
+  RESEARCH_EMAILS_QUEUE,
+  type ResearchEmailJobPayload,
+  enqueueResearchEmails,
   enqueueBackup,
   type BackupJobPayload,
   enqueueMessageEmails,
@@ -62,6 +67,16 @@ import {
   RESOURCE_SAMPLE_RETENTION_DAYS,
 } from "./lib/resource-monitor";
 import { logSystemEvent } from "./lib/system-log";
+import {
+  failStaleSurveyExtractions,
+  runSurveyExtraction,
+} from "./lib/survey-extraction-engine";
+import {
+  deliverResearchEmail,
+  failExhaustedResearchEmails,
+  findStrandedResearchEmails,
+  runResearchEmailScheduler,
+} from "./lib/research-email-server";
 import { errorMessage } from "./lib/errors";
 
 // Honker opens its own SQLite file (a sibling of the Prisma DB); see
@@ -782,6 +797,98 @@ async function sweepSyllabusExtractions() {
   }
 }
 
+async function consumeSurveyExtractions() {
+  console.log(
+    `[Worker] Starting Honker queue consumer for '${SURVEY_EXTRACTIONS_QUEUE}'...`,
+  );
+  for await (const job of db
+    .queue(SURVEY_EXTRACTIONS_QUEUE)
+    .claim("survey-extraction-worker")) {
+    const { formId } = job.payload as SurveyExtractionJobPayload;
+    try {
+      // Records its own outcome on the form row and never throws.
+      await runSurveyExtraction(formId);
+    } catch (err: unknown) {
+      await logSystemEvent({
+        category: "WORKER",
+        type: "JOB_FAILED",
+        severity: "ERROR",
+        message: `Survey extraction job failed: ${errorMessage(err)}`,
+        metadata: { queue: SURVEY_EXTRACTIONS_QUEUE, jobId: job.id, formId },
+      });
+    } finally {
+      job.ack();
+    }
+  }
+}
+
+async function consumeResearchEmails() {
+  console.log(
+    `[Worker] Starting Honker queue consumer for '${RESEARCH_EMAILS_QUEUE}'...`,
+  );
+  for await (const job of db
+    .queue(RESEARCH_EMAILS_QUEUE)
+    .claim("research-emails-worker")) {
+    const { deliveryId } = job.payload as ResearchEmailJobPayload;
+    try {
+      const result = await deliverResearchEmail(deliveryId);
+      if (result.status === "RETRY") {
+        job.retry(result.delaySeconds, result.error);
+        continue;
+      }
+      if (result.status === "FAILED") {
+        await logSystemEvent({
+          category: "WORKER",
+          type: "RESEARCH_EMAIL_FAILED",
+          severity: "ERROR",
+          message: `Research email gave up: ${result.error}`,
+          metadata: { queue: RESEARCH_EMAILS_QUEUE, jobId: job.id, deliveryId },
+        });
+      }
+      job.ack();
+    } catch (err: unknown) {
+      console.error(
+        `[Worker] Error on research-email job ${job.id}:`,
+        errorMessage(err),
+      );
+      job.retry(60, errorMessage(err));
+    }
+  }
+}
+
+const RESEARCH_EMAIL_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
+
+/**
+ * Every minute: expand research email campaigns whose scheduled time has come
+ * into per-recipient deliveries. Every five minutes: re-enqueue stranded
+ * deliveries, close out exhausted ones, and release stale survey extractions.
+ */
+async function runResearchScheduler() {
+  console.log("[Worker] Research email scheduler started (60s interval)...");
+  let lastSweep = 0;
+  for (;;) {
+    try {
+      const queued = await runResearchEmailScheduler();
+      if (queued > 0)
+        console.log(`[Worker] Queued ${queued} research email(s)`);
+
+      if (Date.now() - lastSweep >= RESEARCH_EMAIL_SWEEP_INTERVAL_MS) {
+        lastSweep = Date.now();
+        const stranded = await findStrandedResearchEmails();
+        if (stranded.length > 0) enqueueResearchEmails(stranded);
+        await failExhaustedResearchEmails();
+        await failStaleSurveyExtractions();
+      }
+    } catch (err: unknown) {
+      console.error(
+        "[Worker] Research scheduler tick failed:",
+        errorMessage(err),
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 60_000));
+  }
+}
+
 async function startWorker() {
   try {
     // This node's own CPU/RAM/storage feed for the admin System Resources tab.
@@ -799,6 +906,9 @@ async function startWorker() {
       consumeSimulations(),
       consumeSyllabusExtractions(),
       sweepSyllabusExtractions(),
+      consumeSurveyExtractions(),
+      consumeResearchEmails(),
+      runResearchScheduler(),
       consumeMessageEmails(),
       runMessageEmailSweeper(),
       consumeConsentEmails(),

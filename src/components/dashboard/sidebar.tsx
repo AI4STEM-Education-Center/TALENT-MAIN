@@ -1,4 +1,5 @@
 "use client";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -35,6 +36,11 @@ import {
   ShieldCheck,
   KeyRound,
   Star,
+  ChevronDown,
+  FlaskConical,
+  ClipboardList,
+  UsersRound,
+  MailCheck,
 } from "lucide-react";
 
 interface NavItem {
@@ -120,97 +126,162 @@ const studentNav: NavItem[] = [
   },
 ];
 
-const adminNav: NavItem[] = [
+const adminOverview: NavItem = {
+  href: "/admin",
+  label: "Overview",
+  icon: <LayoutDashboard className="size-4" />,
+};
+
+interface NavGroup {
+  label: string;
+  icon: React.ReactNode;
+  items: NavItem[];
+}
+
+// The admin rail grew past what fits on a screen, so its pages are filed into
+// folders. Folders start collapsed; the one holding the current page opens on
+// its own so the active item is never hidden.
+const adminNavGroups: NavGroup[] = [
   {
-    href: "/admin",
-    label: "Overview",
-    icon: <LayoutDashboard className="size-4" />,
-  },
-  {
-    href: "/admin/quizzes",
-    label: "Quiz Pool",
-    icon: <FileQuestion className="size-4" />,
-  },
-  {
-    href: "/admin/material-pool",
-    label: "Material Pool",
+    label: "Content",
     icon: <FolderOpen className="size-4" />,
+    items: [
+      {
+        href: "/admin/quizzes",
+        label: "Quiz Pool",
+        icon: <FileQuestion className="size-4" />,
+      },
+      {
+        href: "/admin/material-pool",
+        label: "Material Pool",
+        icon: <FolderOpen className="size-4" />,
+      },
+      {
+        href: "/admin/pool-submissions",
+        label: "Pool Approvals",
+        icon: <ClipboardCheck className="size-4" />,
+      },
+      {
+        href: "/admin/simulations",
+        label: "Simulations",
+        icon: <Atom className="size-4" />,
+      },
+      {
+        href: "/admin/materials",
+        label: "Materials Processing",
+        icon: <FileUp className="size-4" />,
+      },
+      {
+        href: "/admin/concepts",
+        label: "Concepts",
+        icon: <BookOpen className="size-4" />,
+      },
+    ],
   },
   {
-    href: "/admin/pool-submissions",
-    label: "Pool Approvals",
-    icon: <ClipboardCheck className="size-4" />,
+    label: "Research",
+    icon: <FlaskConical className="size-4" />,
+    items: [
+      {
+        href: "/admin/consent",
+        label: "Consent Records",
+        icon: <ShieldCheck className="size-4" />,
+      },
+      {
+        href: "/admin/consent-requests",
+        label: "Consent Export Requests",
+        icon: <ClipboardCheck className="size-4" />,
+      },
+      {
+        href: "/admin/surveys",
+        label: "Surveys",
+        icon: <ClipboardList className="size-4" />,
+      },
+      {
+        href: "/admin/research-pool",
+        label: "Research Pool",
+        icon: <UsersRound className="size-4" />,
+      },
+      {
+        href: "/admin/post-survey-email",
+        label: "Post-Survey Email",
+        icon: <MailCheck className="size-4" />,
+      },
+    ],
   },
   {
-    href: "/admin/consent",
-    label: "Consent Records",
-    icon: <ShieldCheck className="size-4" />,
-  },
-  {
-    href: "/admin/consent-requests",
-    label: "Consent Export Requests",
-    icon: <ClipboardCheck className="size-4" />,
-  },
-  {
-    href: "/admin/simulations",
-    label: "Simulations",
-    icon: <Atom className="size-4" />,
-  },
-  {
-    href: "/admin/feedback",
-    label: "Feedback",
-    icon: <Star className="size-4" />,
-  },
-  {
-    href: "/admin/materials",
-    label: "Materials Processing",
-    icon: <FolderOpen className="size-4" />,
-  },
-  {
-    href: "/admin/concepts",
-    label: "Concepts",
-    icon: <BookOpen className="size-4" />,
-  },
-  { href: "/admin/users", label: "Users", icon: <Users className="size-4" /> },
-  {
-    href: "/admin/teacher-codes",
-    label: "Teacher Codes",
-    icon: <KeyRound className="size-4" />,
-  },
-  {
-    href: "/admin/ai-config",
-    label: "AI Config",
-    icon: <Settings className="size-4" />,
-  },
-  {
-    href: "/admin/assistant-chats",
-    label: "Chat Transcripts",
+    label: "Feedback & Chats",
     icon: <MessagesSquare className="size-4" />,
+    items: [
+      {
+        href: "/admin/feedback",
+        label: "Feedback",
+        icon: <Star className="size-4" />,
+      },
+      {
+        href: "/admin/assistant-chats",
+        label: "Chat Transcripts",
+        icon: <MessagesSquare className="size-4" />,
+      },
+    ],
   },
   {
-    href: "/admin/email",
-    label: "Email / SMTP",
-    icon: <Mail className="size-4" />,
+    label: "People",
+    icon: <Users className="size-4" />,
+    items: [
+      {
+        href: "/admin/users",
+        label: "Users",
+        icon: <Users className="size-4" />,
+      },
+      {
+        href: "/admin/teacher-codes",
+        label: "Teacher Codes",
+        icon: <KeyRound className="size-4" />,
+      },
+    ],
   },
   {
-    href: "/admin/backup",
-    label: "Database Backup",
-    icon: <HardDrive className="size-4" />,
+    label: "Settings",
+    icon: <Settings className="size-4" />,
+    items: [
+      {
+        href: "/admin/ai-config",
+        label: "AI Config",
+        icon: <Settings className="size-4" />,
+      },
+      {
+        href: "/admin/email",
+        label: "Email / SMTP",
+        icon: <Mail className="size-4" />,
+      },
+      {
+        href: "/admin/backup",
+        label: "Database Backup",
+        icon: <HardDrive className="size-4" />,
+      },
+    ],
   },
   {
-    href: "/admin/resources",
-    label: "System Resources",
-    icon: <Gauge className="size-4" />,
-  },
-  {
-    href: "/admin/pressure-tests",
-    label: "Pressure Tests",
+    label: "Monitoring",
     icon: <Activity className="size-4" />,
-  },
-  {
-    href: "/admin/logs",
-    label: "System Logs",
-    icon: <ScrollText className="size-4" />,
+    items: [
+      {
+        href: "/admin/resources",
+        label: "System Resources",
+        icon: <Gauge className="size-4" />,
+      },
+      {
+        href: "/admin/pressure-tests",
+        label: "Pressure Tests",
+        icon: <Activity className="size-4" />,
+      },
+      {
+        href: "/admin/logs",
+        label: "System Logs",
+        icon: <ScrollText className="size-4" />,
+      },
+    ],
   },
 ];
 
@@ -238,9 +309,62 @@ function SidebarContent({
 }) {
   const pathname = usePathname();
 
-  const roleNav =
-    role === "ADMIN" ? adminNav : role === "TEACHER" ? teacherNav : studentNav;
-  const navItems = [...roleNav, profileNav];
+  // Sub-pages light up their section, but only on a full path-segment
+  // boundary: a bare startsWith made /admin/consent-requests light up
+  // "Consent Records" (/admin/consent) as well as its own item.
+  const isActive = (href: string) =>
+    pathname === href ||
+    (href !== "/teacher" &&
+      href !== "/student" &&
+      href !== "/admin" &&
+      pathname.startsWith(`${href}/`));
+
+  const activeGroup = adminNavGroups.find((g) =>
+    g.items.some((item) => isActive(item.href)),
+  )?.label;
+  const [openGroups, setOpenGroups] = useState<Set<string>>(
+    () => new Set(activeGroup ? [activeGroup] : []),
+  );
+  // Following a link into another folder opens that folder too.
+  const [lastActiveGroup, setLastActiveGroup] = useState(activeGroup);
+  if (activeGroup !== lastActiveGroup) {
+    setLastActiveGroup(activeGroup);
+    if (activeGroup && !openGroups.has(activeGroup))
+      setOpenGroups((prev) => new Set(prev).add(activeGroup));
+  }
+
+  const toggleGroup = (label: string) =>
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+
+  const renderLink = (item: NavItem, nested = false) => {
+    const active = isActive(item.href);
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        onClick={onNavigate}
+        className={cn(
+          "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+          nested && "py-2 pl-9",
+          active
+            ? "bg-sidebar-accent text-sidebar-accent-foreground ring-1 ring-inset ring-sidebar-primary/40"
+            : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+        )}
+      >
+        {item.icon}
+        {item.label}
+        <span className="ml-auto flex items-center gap-1.5">
+          {item.href === "/student/notifications" && <NotificationsBadge />}
+          {active && <ChevronRight className="size-3" />}
+        </span>
+      </Link>
+    );
+  };
 
   return (
     <div className="flex flex-col min-h-full">
@@ -266,39 +390,51 @@ function SidebarContent({
 
       {/* Nav */}
       <nav className="flex-1 p-4 space-y-1">
-        {navItems.map((item) => {
-          // Sub-pages light up their section, but only on a full path-segment
-          // boundary: a bare startsWith made /admin/consent-requests light up
-          // "Consent Records" (/admin/consent) as well as its own item.
-          const isActive =
-            pathname === item.href ||
-            (item.href !== "/teacher" &&
-              item.href !== "/student" &&
-              item.href !== "/admin" &&
-              pathname.startsWith(`${item.href}/`));
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onNavigate}
-              className={cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground ring-1 ring-inset ring-sidebar-primary/40"
-                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
-              )}
-            >
-              {item.icon}
-              {item.label}
-              <span className="ml-auto flex items-center gap-1.5">
-                {item.href === "/student/notifications" && (
-                  <NotificationsBadge />
-                )}
-                {isActive && <ChevronRight className="size-3" />}
-              </span>
-            </Link>
-          );
-        })}
+        {role === "ADMIN" ? (
+          <>
+            {renderLink(adminOverview)}
+            {adminNavGroups.map((group) => {
+              const open = openGroups.has(group.label);
+              const containsActive = group.label === activeGroup;
+              const panelId = `admin-nav-${group.label.replace(/\W+/g, "-").toLowerCase()}`;
+              return (
+                <div key={group.label}>
+                  <button
+                    type="button"
+                    aria-expanded={open}
+                    aria-controls={panelId}
+                    onClick={() => toggleGroup(group.label)}
+                    className={cn(
+                      "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+                      containsActive && !open
+                        ? "text-sidebar-foreground"
+                        : "text-sidebar-foreground/70",
+                    )}
+                  >
+                    {group.icon}
+                    {group.label}
+                    <ChevronDown
+                      className={cn(
+                        "ml-auto size-3.5 transition-transform",
+                        !open && "-rotate-90",
+                      )}
+                    />
+                  </button>
+                  {open && (
+                    <div id={panelId} className="mt-1 space-y-1">
+                      {group.items.map((item) => renderLink(item, true))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {renderLink(profileNav)}
+          </>
+        ) : (
+          [...(role === "TEACHER" ? teacherNav : studentNav), profileNav].map(
+            (item) => renderLink(item),
+          )
+        )}
       </nav>
 
       {/* User */}
