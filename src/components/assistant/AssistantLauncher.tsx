@@ -1,10 +1,11 @@
 "use client";
 
-import { Sparkles } from "lucide-react";
+import { ChevronRight, Sparkles } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { useAssistant } from "./assistant-context";
 
 /**
- * The sidebar row that opens the assistant. Renders nothing until the config
+ * The sidebar button that opens the assistant. Renders nothing until the config
  * says an assistant exists for this role, so the rail never shows a button that
  * would open an empty panel.
  */
@@ -20,7 +21,7 @@ export function AssistantLauncher({ onOpen }: AssistantLauncherProps) {
     config.audience === "teacher" ? "Teaching assistant" : "Study assistant";
 
   return (
-    <button
+    <Button
       type="button"
       onClick={() => {
         setOpen(true);
@@ -29,10 +30,12 @@ export function AssistantLauncher({ onOpen }: AssistantLauncherProps) {
       }}
       aria-label={`Open ${label.toLowerCase()}`}
       aria-expanded={open}
-      className="mb-2 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+      aria-haspopup="dialog"
+      className="mb-3 h-auto min-h-11 w-full cursor-pointer justify-start gap-2.5 rounded-lg border border-sidebar-primary bg-sidebar-primary px-3 py-3 text-left font-semibold text-sidebar-primary-foreground shadow-sm hover:bg-sidebar-primary/90 active:bg-sidebar-primary/80 focus-visible:ring-sidebar-ring focus-visible:ring-offset-sidebar"
     >
-      <Sparkles className="size-4 text-sidebar-primary" />
-      {label}
-    </button>
+      <Sparkles aria-hidden="true" />
+      <span className="flex-1">{label}</span>
+      <ChevronRight aria-hidden="true" />
+    </Button>
   );
 }
