@@ -19,7 +19,10 @@ import {
   type AiCallMetrics,
   type AiTransport,
 } from "./ai-streaming";
-import { getActiveConceptLabels } from "./concept-catalog";
+import {
+  getActiveConceptLabels,
+  registerGeneratedConcepts,
+} from "./concept-catalog";
 import { fenceUntrusted, UNTRUSTED_CONTENT_RULE } from "./guardrail-fence";
 import { moderateImages } from "./guardrails";
 import { auditText } from "./guardrail-runner";
@@ -68,66 +71,17 @@ const TIER2_SCHEMA = {
   },
 };
 
-/**
- * "None" is the escape hatch offered to tier-1 (per-page) key-concept
- * selection when a curated concept catalog is active — a single page may
- * genuinely not match any listed concept, whereas the tier-2 batch summary
- * can just omit concepts it doesn't find (empty array), so it gets no such
- * sentinel.
- */
-const NONE_CONCEPT = "None";
-
-/**
- * Build the tier-1 (per-page) response schema. Empty catalogs fail closed.
- */
-export function buildTier1Schema(allowedConcepts: string[]) {
-  requireActiveConcepts(allowedConcepts);
-  return {
-    ...TIER1_SCHEMA,
-    schema: {
-      ...TIER1_SCHEMA.schema,
-      properties: {
-        ...TIER1_SCHEMA.schema.properties,
-        key_concept: {
-          type: "string",
-          enum: [...allowedConcepts, NONE_CONCEPT],
-        },
-      },
-    },
-  };
+/** Structured output stays open to concepts missing from the catalog. */
+export function buildTier1Schema() {
+  return TIER1_SCHEMA;
 }
 
-/**
- * Build the tier-2 (batch summary) response schema. Empty catalogs fail closed.
- */
-export function buildTier2Schema(allowedConcepts: string[]) {
-  requireActiveConcepts(allowedConcepts);
-  return {
-    ...TIER2_SCHEMA,
-    schema: {
-      ...TIER2_SCHEMA.schema,
-      properties: {
-        ...TIER2_SCHEMA.schema.properties,
-        key_concept: {
-          type: "array",
-          items: { type: "string", enum: allowedConcepts },
-        },
-      },
-    },
-  };
+export function buildTier2Schema() {
+  return TIER2_SCHEMA;
 }
 
-/** Render the allowed-concept list as a Markdown bullet list, one per line. */
-export function formatConceptBulletList(allowedConcepts: string[]): string {
-  return allowedConcepts.map((label) => `- ${label}`).join("\n");
-}
-
-function requireActiveConcepts(allowedConcepts: string[]): void {
-  if (allowedConcepts.length === 0) {
-    throw new Error(
-      "The active concept catalog is empty. Upload concepts in the admin dashboard before generating material descriptions.",
-    );
-  }
+export function formatConceptBulletList(concepts: string[]): string {
+  return concepts.map((label) => `- ${label}`).join("\n");
 }
 
 const TIER1_BASE_PROMPT =
@@ -136,58 +90,23 @@ const TIER1_BASE_PROMPT =
 const TIER2_BASE_PROMPT =
   "Based on these pages from a learning material, provide a cohesive batch summary and a list of overarching key concepts across the document.";
 
-/**
- * Build the tier-1 (per-page) prompt. Empty catalogs fail closed.
- */
-export function buildTier1Prompt(allowedConcepts: string[]): string {
-  requireActiveConcepts(allowedConcepts);
-  // Concept labels arrive by admin CSV import, so they are fenced like any
-  // other stored text. The response schema already pins key_concept to this
-  // enum; the fence protects the surrounding instructions instead.
-  return `${TIER1_BASE_PROMPT} Choose key_concept ONLY from this list (use the exact label). If no listed concept fits, use "None". The description must discuss only the selected listed concept and must not introduce unlisted concepts.
+const CONCEPT_GENERATION_INSTRUCTION =
+  "Reuse an existing concept's exact label when it fits. If a concept is missing, generate a concise, specific new label grounded in the material; new labels will be saved to the shared concept catalog for future use. Describe all relevant educational content, including concepts not yet in the catalog.";
+
+export function buildTier1Prompt(concepts: string[]): string {
+  return `${TIER1_BASE_PROMPT} ${CONCEPT_GENERATION_INSTRUCTION} Use "None" only when the page has no educational concept.
 
 ${UNTRUSTED_CONTENT_RULE}
 
-${fenceUntrusted("concept catalog", formatConceptBulletList(allowedConcepts))}`;
+${fenceUntrusted("concept catalog", formatConceptBulletList(concepts))}`;
 }
 
-/**
- * Build the tier-2 (batch summary) prompt. Empty catalogs fail closed.
- */
-export function buildTier2Prompt(allowedConcepts: string[]): string {
-  requireActiveConcepts(allowedConcepts);
-  return `${TIER2_BASE_PROMPT} Choose key concepts ONLY from this list (use the exact labels). Return an empty list if none apply. The description must discuss only concepts selected from this list and must not introduce unlisted concepts.
+export function buildTier2Prompt(concepts: string[]): string {
+  return `${TIER2_BASE_PROMPT} ${CONCEPT_GENERATION_INSTRUCTION} Return an empty concept list only when no educational concepts apply.
 
 ${UNTRUSTED_CONTENT_RULE}
 
-${fenceUntrusted("concept catalog", formatConceptBulletList(allowedConcepts))}`;
-}
-
-/**
- * Post-validation for tier-1 key_concept (defense in depth: ai-streaming falls
- * back to plain, unconstrained streaming when a provider rejects
- * response_format, so the schema enum alone isn't a guarantee). "None" or any
- * value outside the catalog is nulled out; empty catalogs fail closed.
- */
-export function resolveTier1KeyConcept(
-  value: string,
-  allowedConcepts: string[],
-): string | null {
-  requireActiveConcepts(allowedConcepts);
-  if (value === NONE_CONCEPT) return null;
-  return allowedConcepts.includes(value) ? value : null;
-}
-
-/**
- * Post-validation for tier-2 key_concept array (same defense-in-depth
- * rationale as resolveTier1KeyConcept). Empty catalogs fail closed.
- */
-export function filterTier2KeyConcepts(
-  values: string[],
-  allowedConcepts: string[],
-): string[] {
-  requireActiveConcepts(allowedConcepts);
-  return values.filter((v) => allowedConcepts.includes(v));
+${fenceUntrusted("concept catalog", formatConceptBulletList(concepts))}`;
 }
 
 /**
@@ -289,16 +208,18 @@ async function processPage(
         // Empty unless an admin pinned a thinking level on this model.
         ...thinking,
       },
-      buildTier1Schema(allowedConcepts),
+      buildTier1Schema(),
       streamOptionsFor(transport),
     ),
   );
+
+  const concepts = await registerGeneratedConcepts([value.key_concept]);
 
   await prisma.materialPage.update({
     where: { materialId_pageNumber: { materialId, pageNumber } },
     data: {
       needed: value.needed,
-      keyConcept: resolveTier1KeyConcept(value.key_concept, allowedConcepts),
+      keyConcept: concepts[0] ?? null,
       description: value.description,
     },
   });
@@ -331,8 +252,7 @@ export async function processMaterial(materialId: string) {
     throw new Error("S3 not configured");
   }
 
-  // Fail closed before making any AI call: material concept metadata and its
-  // prose description must always be grounded in the admin-managed catalog.
+  // Existing labels guide reuse; an empty catalog also supports generation.
   const allowedConcepts = await getActiveConceptLabels();
   // Read once for the whole job rather than per page: the settings are cached
   // for 60s anyway, and a mid-document toggle flip should not split a document
@@ -342,7 +262,6 @@ export async function processMaterial(materialId: string) {
     guardrailSettings,
     "material_page",
   );
-  requireActiveConcepts(allowedConcepts);
 
   // Resolve provider from DB config
   const {
@@ -557,7 +476,7 @@ export async function processMaterial(materialId: string) {
   const contentArray: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [
     {
       type: "text",
-      text: buildTier2Prompt(allowedConcepts),
+      text: buildTier2Prompt(await getActiveConceptLabels()),
     },
   ];
 
@@ -575,21 +494,20 @@ export async function processMaterial(materialId: string) {
           service_tier: serviceTier === "flex" ? "flex" : undefined,
           ...thinking,
         },
-        buildTier2Schema(allowedConcepts),
+        buildTier2Schema(),
         streamOptionsFor(transport),
       ),
     );
     callMetrics.push(metrics);
 
+    const concepts = await registerGeneratedConcepts(value.key_concept);
     const agg = aggregateMetrics(callMetrics);
     await prisma.learningMaterial.update({
       where: { id: materialId },
       data: {
         processingStatus: "SUCCESS",
         batchDescription: value.description,
-        batchKeyConcepts: JSON.stringify(
-          filterTier2KeyConcepts(value.key_concept, allowedConcepts),
-        ),
+        batchKeyConcepts: JSON.stringify(concepts),
         aiModel: agg?.model ?? null,
         aiProvider: agg ? providerType : null,
         aiServiceTier: agg ? serviceTier : null,

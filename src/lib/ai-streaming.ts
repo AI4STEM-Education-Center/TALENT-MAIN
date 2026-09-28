@@ -1,3 +1,4 @@
+import { isTransientAiError } from "./quiz-variant-requests";
 // Shared streaming-completion helper. Every AI call in the app routes through
 // here so we (a) always stream the response and (b) capture the same two
 // metrics everywhere: time-to-first-token (TTFT) and the number of generated
@@ -305,6 +306,9 @@ export async function streamJsonCompletion<T = unknown>(
   try {
     result = await streamChatCompletion(client, withSchema, options);
   } catch (schemaErr) {
+    // Overload and connection failures are not schema incompatibilities.
+    // Let the caller apply backoff instead of immediately doubling traffic.
+    if (isTransientAiError(schemaErr)) throw schemaErr;
     console.warn(
       "[AI] Schema-constrained streaming call failed; retrying once without response_format:",
       schemaErr instanceof Error ? schemaErr.message : schemaErr,
