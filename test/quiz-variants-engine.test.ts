@@ -15,7 +15,10 @@ vi.mock("@/lib/ai-streaming", () => ({
 import { prisma } from "@/lib/prisma";
 import { resolveProvider } from "@/lib/ai-provider";
 import { streamJsonCompletion } from "@/lib/ai-streaming";
-import { runQuizVariant } from "@/lib/quiz-variants-engine";
+import {
+  MAX_GENERATION_ATTEMPTS,
+  runQuizVariant,
+} from "@/lib/quiz-variants-engine";
 import { resetDb } from "./db";
 const source = {
   id: "source",
@@ -92,20 +95,96 @@ describe("variant generation worker", () => {
     expect(blind[0]).not.toHaveProperty("solution");
     expect(blind[0]).not.toHaveProperty("intentExplanation");
   });
-  it("retains failed candidates for editing and does not accept an incorrect solution", async () => {
+  it("regenerates a rejected draft with the reasons until one passes", async () => {
     const version = await fixture();
+    const wrong = { reviews: [{ ...review.reviews[0], answerNumeric: 9 }] };
     vi.mocked(streamJsonCompletion)
       .mockResolvedValueOnce(answer({ questions: [candidate] }))
-      .mockResolvedValueOnce(
-        answer({ reviews: [{ ...review.reviews[0], answerNumeric: 9 }] }),
-      );
+      .mockResolvedValueOnce(answer(wrong))
+      .mockResolvedValueOnce(answer({ questions: [candidate] }))
+      .mockResolvedValueOnce(answer(review));
     await runQuizVariant(version.id);
     const row = await prisma.quizPracticeVersion.findUniqueOrThrow({
       where: { id: version.id },
     });
+    expect(row.status).toBe("REVIEW");
+    expect(row.attempts).toBe(2);
+    expect(row.aiTokens).toBe(400);
+    const retryPrompt = vi.mocked(streamJsonCompletion).mock.calls[2][1]
+      .messages[1].content as string;
+    expect(retryPrompt).toContain("failed automatic checks");
+    expect(retryPrompt).toContain("disagrees");
+  });
+  it("fails for teacher attention only after every attempt is rejected, keeping the last draft", async () => {
+    const version = await fixture();
+    const wrong = { reviews: [{ ...review.reviews[0], answerNumeric: 9 }] };
+    for (let i = 0; i < MAX_GENERATION_ATTEMPTS; i++)
+      vi.mocked(streamJsonCompletion)
+        .mockResolvedValueOnce(answer({ questions: [candidate] }))
+        .mockResolvedValueOnce(answer(wrong));
+    await runQuizVariant(version.id);
+    const row = await prisma.quizPracticeVersion.findUniqueOrThrow({
+      where: { id: version.id },
+    });
+    expect(streamJsonCompletion).toHaveBeenCalledTimes(
+      MAX_GENERATION_ATTEMPTS * 2,
+    );
     expect(row.status).toBe("FAILED");
+    expect(row.attempts).toBe(MAX_GENERATION_ATTEMPTS);
+    expect(row.error).toContain("No draft passed verification");
     expect(row.error).toContain("disagrees");
     expect(JSON.parse(row.questions)).toEqual([candidate]);
+  });
+  it("re-verifies a teacher-edited draft without replacing it", async () => {
+    const version = await fixture();
+    await prisma.quizPracticeVersion.update({
+      where: { id: version.id },
+      data: { questions: JSON.stringify([candidate]), teacherEdited: true },
+    });
+    vi.mocked(streamJsonCompletion).mockResolvedValueOnce(
+      answer({ reviews: [{ ...review.reviews[0], answerNumeric: 9 }] }),
+    );
+    await runQuizVariant(version.id);
+    const row = await prisma.quizPracticeVersion.findUniqueOrThrow({
+      where: { id: version.id },
+    });
+    expect(streamJsonCompletion).toHaveBeenCalledOnce();
+    expect(row.status).toBe("FAILED");
+    expect(row.error).not.toContain("No draft passed");
+    expect(JSON.parse(row.questions)).toEqual([candidate]);
+  });
+  it("applies teacher feedback against the draft it revises", async () => {
+    const version = await fixture();
+    const previous = await prisma.quizPracticeVersion.create({
+      data: {
+        quizId: version.quizId,
+        name: "Practice",
+        variation: "NUMBERS",
+        status: "DISCARDED",
+        sourceSnapshot: version.sourceSnapshot,
+        objectives: version.objectives,
+        questions: JSON.stringify([{ ...candidate, text: "What is 10/2?" }]),
+      },
+    });
+    await prisma.quizPracticeVersion.update({
+      where: { id: version.id },
+      data: { feedback: "Use smaller numbers.", revisedFromId: previous.id },
+    });
+    vi.mocked(streamJsonCompletion)
+      .mockResolvedValueOnce(answer({ questions: [candidate] }))
+      .mockResolvedValueOnce(answer(review));
+    await runQuizVariant(version.id);
+    const prompt = vi.mocked(streamJsonCompletion).mock.calls[0][1].messages[1]
+      .content as string;
+    expect(prompt).toContain("Use smaller numbers.");
+    expect(prompt).toContain("What is 10/2?");
+    expect(
+      (
+        await prisma.quizPracticeVersion.findUniqueOrThrow({
+          where: { id: version.id },
+        })
+      ).status,
+    ).toBe("REVIEW");
   });
   it("revalidates edits without regenerating and ignores duplicate delivery", async () => {
     const version = await fixture();
@@ -163,7 +242,7 @@ describe("variant generation worker", () => {
   });
 });
 
-it("rejects repeated alternatives rather than presenting duplicate previews", async () => {
+it("regenerates repeated alternatives rather than presenting duplicate previews", async () => {
   const version = await fixture();
   await prisma.quizPracticeVersion.create({
     data: {
@@ -176,14 +255,18 @@ it("rejects repeated alternatives rather than presenting duplicate previews", as
       questions: JSON.stringify([candidate]),
     },
   });
-  vi.mocked(streamJsonCompletion).mockResolvedValueOnce(
-    answer({ questions: [candidate] }),
-  );
+  const fresh = { ...candidate, text: "What is 12/3?", answerNumeric: 4 };
+  vi.mocked(streamJsonCompletion)
+    .mockResolvedValueOnce(answer({ questions: [candidate] }))
+    .mockResolvedValueOnce(answer({ questions: [fresh] }))
+    .mockResolvedValueOnce(answer(review));
   await runQuizVariant(version.id);
   const row = await prisma.quizPracticeVersion.findUniqueOrThrow({
     where: { id: version.id },
   });
-  expect(row.status).toBe("FAILED");
-  expect(row.error).toContain("repeats an existing question");
-  expect(row.questions).toBe("[]");
+  expect(row.status).toBe("REVIEW");
+  expect(JSON.parse(row.questions)[0].text).toBe("What is 12/3?");
+  expect(
+    vi.mocked(streamJsonCompletion).mock.calls[1][1].messages[1].content,
+  ).toContain("repeats an existing question");
 });

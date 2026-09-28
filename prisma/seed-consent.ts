@@ -6,6 +6,7 @@ import {
   OFFICIAL_CONSENT_VERSION,
   type OfficialConsentForm,
 } from "../src/lib/consent-form-templates";
+import { SURVEY_TEMPLATES } from "../src/lib/survey-templates";
 
 // Idempotent, additive-only seed for the IRB consent forms — mirrors
 // seed-prebuilt.ts's "skip if it already exists" pattern rather than
@@ -82,6 +83,29 @@ async function main() {
         ? `  Active ${role} form: ${version}`
         : `  WARNING: no active ${role} form — ${role.toLowerCase()}s will not be asked to consent.`,
     );
+  }
+
+  // The study's four survey instruments, added disabled so an admin reviews
+  // and enables them in Admin → Surveys. Only when no form exists yet for that
+  // survey type and audience — never touches forms an admin already manages.
+  for (const template of SURVEY_TEMPLATES) {
+    const existing = await prisma.surveyForm.count({
+      where: { kind: template.kind, role: template.role },
+    });
+    if (existing > 0) {
+      console.log(`  ${template.title}: a form already exists — skipping.`);
+      continue;
+    }
+    await prisma.surveyForm.create({
+      data: {
+        kind: template.kind,
+        role: template.role,
+        title: template.title,
+        description: template.description,
+        questions: JSON.stringify(template.questions),
+      },
+    });
+    console.log(`  Added survey "${template.title}" (disabled).`);
   }
 
   console.log("Consent seed complete.");

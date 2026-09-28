@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { SetContentFullWidthContext } from "@/components/dashboard/content-width";
 import { ConsentGate } from "@/components/consent/ConsentGate";
+import { SurveyGate } from "@/components/survey/SurveyGate";
 import { AssistantWidget } from "@/components/assistant/AssistantWidget";
 import { AssistantProvider } from "@/components/assistant/assistant-context";
 import { SessionProvider } from "next-auth/react";
@@ -38,6 +39,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     <AssistantProvider>
       <div className="flex min-h-screen bg-background">
         <ConsentGate />
+        <SurveyGate />
         <Sidebar
           role={role}
           firstName={session.user.firstName}

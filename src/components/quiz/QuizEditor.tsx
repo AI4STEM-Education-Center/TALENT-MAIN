@@ -91,7 +91,11 @@ function QuizEditorContent({
       )}
 
       {!readOnly && (
-        <QuizVariants quizId={quiz.id} questions={quiz.questions} />
+        <QuizVariants
+          quizId={quiz.id}
+          questions={quiz.questions}
+          quizHrefBase={backHref}
+        />
       )}
 
       {!readOnly && (

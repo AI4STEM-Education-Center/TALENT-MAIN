@@ -200,3 +200,36 @@ export function enqueueSyllabusExtraction(
   const payload: SyllabusExtractionJobPayload = { syllabusId, revision };
   db.queue(SYLLABUS_EXTRACTIONS_QUEUE).enqueue(payload);
 }
+
+export const SURVEY_EXTRACTIONS_QUEUE = "survey-extractions";
+export const RESEARCH_EMAILS_QUEUE = "research-emails";
+
+export type SurveyExtractionJobPayload = { formId: string };
+// One job per recipient (a ResearchEmailDelivery row) — see
+// src/lib/research-email-server.ts.
+export type ResearchEmailJobPayload = { deliveryId: string };
+
+/**
+ * Enqueue AI conversion of an uploaded survey PDF's text into questions.
+ * Callers must NOT swallow failures: the caller marks the form FAILED so the
+ * admin isn't left watching a spinner.
+ */
+export function enqueueSurveyExtraction(formId: string): void {
+  const db = honker.open(resolveQueueDbPath());
+  const payload: SurveyExtractionJobPayload = { formId };
+  db.queue(SURVEY_EXTRACTIONS_QUEUE).enqueue(payload);
+}
+
+/**
+ * Enqueue delivery jobs for research emails — one per ResearchEmailDelivery
+ * row. The rows are already PENDING, so a failed enqueue only delays delivery
+ * until the worker's sweeper re-enqueues them.
+ */
+export function enqueueResearchEmails(deliveryIds: string[]): void {
+  if (deliveryIds.length === 0) return;
+  const db = honker.open(resolveQueueDbPath());
+  const queue = db.queue(RESEARCH_EMAILS_QUEUE);
+  for (const deliveryId of deliveryIds) {
+    queue.enqueue({ deliveryId } satisfies ResearchEmailJobPayload);
+  }
+}
