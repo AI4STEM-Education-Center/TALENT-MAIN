@@ -517,19 +517,25 @@ async function generateRecommendations(examResult: ExamResultRow): Promise<{
   const thinking = thinkingParams(provider);
   const allMetrics: AiCallMetrics[] = [];
 
-  // Misconception labels are independent of study-material availability: run
-  // them whenever there's a usable provider and incorrect answers, even when
-  // no materials end up being recommended below (or S3 isn't configured at
-  // all). A labeling failure never blocks the material recommendations.
-  const { errorMisconceptions, metrics: labelMetrics } =
-    await labelMisconceptions(
+  // Student-facing learning support is available regardless of research
+  // participation. Only the additional, teacher-only research diagnostics
+  // require consent. Consent is keyed by User.id, not Student.id.
+  let errorMisconceptions: StoredQuestionMisconceptions[] = [];
+  const student = await prisma.student.findUnique({
+    where: { id: examResult.studentId },
+    select: { userId: true },
+  });
+  if (student && (await hasResearchConsent(student.userId))) {
+    const labels = await labelMisconceptions(
       client,
       provider.model,
       thinking,
       transport,
       snapshot,
     );
-  allMetrics.push(...labelMetrics);
+    errorMisconceptions = labels.errorMisconceptions;
+    allMetrics.push(...labels.metrics);
+  }
 
   let items: StoredRecommendation[] = [];
   let truncated = false;
@@ -670,36 +676,10 @@ export async function generateExamResult(examResultId: string): Promise<void> {
   })) as ExamResultRow | null;
   if (!examResult) return;
 
-  // These two sections are engagement/diagnostic telemetry layered on top of
-  // grading, not grading itself — the score/correctCount/reviewSnapshot were
-  // already computed and persisted before this job ever runs, independent of
-  // consent. Gated per docs/plans/consent-compliance-plan.md §9: a
-  // non-consenting student's attempt is graded exactly the same as anyone
-  // else's, it just never gets an AI summary, study recommendations, or
-  // misconception labels generated for it. "SKIPPED_NO_CONSENT" is distinct
-  // from "FAILED" so it's never mistaken for a bug or retried.
-  //
-  // ExamResult.studentId is a Student.id (see src/app/api/quiz/route.ts), while
-  // consent records are keyed by User.id — resolve across before asking, or
-  // every attempt reads as non-consenting and no summary is ever generated.
-  const student = await prisma.student.findUnique({
-    where: { id: examResult.studentId },
-    select: { userId: true },
-  });
-  if (!student || !(await hasResearchConsent(student.userId))) {
-    await prisma.examResult.updateMany({
-      where: { id: examResult.id, summaryStatus: { not: RESULT_STATUS.READY } },
-      data: { summaryStatus: "SKIPPED_NO_CONSENT" },
-    });
-    await prisma.examResult.updateMany({
-      where: {
-        id: examResult.id,
-        recommendationsStatus: { not: RESULT_STATUS.READY },
-      },
-      data: { recommendationsStatus: "SKIPPED_NO_CONSENT" },
-    });
-    return;
-  }
+  // Summaries, materials, and simulations are normal learning features for
+  // every student. Research consent gates only diagnostic/telemetry collection,
+  // never access to these features. Legacy SKIPPED_NO_CONSENT sections can be
+  // regenerated just like PENDING sections; completed sections remain intact.
 
   const generateSummarySection = async () => {
     if (examResult.summaryStatus === RESULT_STATUS.READY) return;

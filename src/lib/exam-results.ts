@@ -14,8 +14,16 @@ export const RESULT_STATUS = {
   GENERATING: "GENERATING",
   READY: "READY",
   FAILED: "FAILED",
+  // Legacy rows from the old consent gate are recoverable, not terminal.
+  SKIPPED_NO_CONSENT: "SKIPPED_NO_CONSENT",
 } as const;
 export type ResultStatus = (typeof RESULT_STATUS)[keyof typeof RESULT_STATUS];
+
+/** Includes legacy skipped results so opening them restarts generation. */
+export const isResultPending = (status: string): boolean =>
+  status === RESULT_STATUS.PENDING ||
+  status === RESULT_STATUS.GENERATING ||
+  status === RESULT_STATUS.SKIPPED_NO_CONSENT;
 
 /**
  * Metrics displayed after one generated result component reaches READY.

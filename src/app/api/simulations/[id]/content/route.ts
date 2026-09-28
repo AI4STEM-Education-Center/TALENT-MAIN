@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { hasResearchConsent } from "@/lib/consent";
 import { listSimulationVersions } from "@/lib/simulation-versions";
 import { getS3ObjectAsString } from "@/lib/storage";
 import { SIMULATION_CSP } from "@/lib/simulation";
@@ -114,12 +115,14 @@ export async function GET(
   html += buildSimulationLayoutLayer();
   if (editing) html += buildSimulationEditorLayer();
 
-  // Students get the interaction-telemetry snippet injected at serve time (the
+  // Consenting students get the interaction-telemetry snippet at serve time (the
   // stored artifact is never modified, and pre-telemetry artifacts report like
   // new ones). It only postMessages cumulative counters to the parent viewer —
   // no network APIs, so it works under the strict CSP. Staff previews stay
   // byte-identical to the reviewed artifact.
-  if (role === "STUDENT") html = injectTelemetryScript(html);
+  if (role === "STUDENT" && (await hasResearchConsent(session.user.id))) {
+    html = injectTelemetryScript(html);
+  }
 
   return new NextResponse(html, {
     status: 200,
