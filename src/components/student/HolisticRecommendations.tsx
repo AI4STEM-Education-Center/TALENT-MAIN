@@ -3,6 +3,7 @@ import { RecommendationCard } from "@/components/student/RecommendationCard";
 import { AiMetricsLine } from "@/components/ai-metrics-line";
 import {
   RESULT_STATUS,
+  isResultPending,
   type ResultComponentMetrics,
   type ResultStatus,
   type PresignedRecommendation,
@@ -34,8 +35,7 @@ export function HolisticRecommendations({
    */
   attemptId?: string;
 }) {
-  const pending =
-    status === RESULT_STATUS.PENDING || status === RESULT_STATUS.GENERATING;
+  const pending = isResultPending(status);
 
   return (
     /* Container for the card grid below: column count must follow the
@@ -63,6 +63,11 @@ export function HolisticRecommendations({
           <Loader2 className="size-4 animate-spin text-primary" /> Finding study
           material
           {audience === "student" ? " for you" : " for this student"}…
+        </div>
+      ) : status === RESULT_STATUS.FAILED ? (
+        <div className="rounded-xl border p-4 text-sm text-muted-foreground">
+          We couldn&apos;t generate study recommendations for this attempt.
+          Please try again later.
         </div>
       ) : (
         <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">

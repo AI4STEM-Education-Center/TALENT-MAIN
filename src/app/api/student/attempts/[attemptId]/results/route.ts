@@ -202,11 +202,12 @@ export async function GET(
     return NextResponse.json({ error: "Result not found" }, { status: 404 });
   }
 
-  // Self-heal: if a section is still PENDING, or has been GENERATING/FAILED
+  // Self-heal: if a section is PENDING/legacy-skipped, or has been GENERATING/FAILED
   // beyond the stale window, re-enqueue so a (re)started worker picks it up.
   const stale = Date.now() - examResult.updatedAt.getTime() > STALE_MS;
   const sectionStuck = (status: string) =>
     status === RESULT_STATUS.PENDING ||
+    status === RESULT_STATUS.SKIPPED_NO_CONSENT ||
     ((status === RESULT_STATUS.GENERATING || status === RESULT_STATUS.FAILED) &&
       stale);
   if (
