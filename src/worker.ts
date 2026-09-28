@@ -7,6 +7,10 @@ import { generateExamResult } from "./lib/exam-results-engine";
 import { runQuizExtraction } from "./lib/quiz-extraction-engine";
 import { runSimulationJob } from "./lib/simulation-engine";
 import {
+  failStaleSyllabusExtractions,
+  runSyllabusExtraction,
+} from "./lib/syllabus-engine";
+import {
   EXAM_RESULTS_QUEUE,
   QUIZ_EXTRACTIONS_QUEUE,
   BACKUPS_QUEUE,
@@ -15,6 +19,8 @@ import {
   MESSAGE_EMAILS_QUEUE_OPTIONS,
   CONSENT_EMAILS_QUEUE,
   CONSENT_EXPORTS_QUEUE,
+  SYLLABUS_EXTRACTIONS_QUEUE,
+  type SyllabusExtractionJobPayload,
   enqueueBackup,
   type BackupJobPayload,
   enqueueMessageEmails,
@@ -732,6 +738,50 @@ async function sweepQuizVariants() {
   }
 }
 
+async function consumeSyllabusExtractions() {
+  console.log(
+    `[Worker] Starting Honker queue consumer for '${SYLLABUS_EXTRACTIONS_QUEUE}'...`,
+  );
+  for await (const job of db
+    .queue(SYLLABUS_EXTRACTIONS_QUEUE)
+    .claim("syllabus-extraction-worker")) {
+    const { syllabusId, revision } =
+      job.payload as SyllabusExtractionJobPayload;
+    try {
+      // Revision-pinned and records FAILED internally, so it always returns;
+      // ack unconditionally to avoid blocking the queue.
+      await runSyllabusExtraction(syllabusId, revision);
+    } catch (err: unknown) {
+      await logSystemEvent({
+        category: "WORKER",
+        type: "JOB_FAILED",
+        severity: "ERROR",
+        message: `Syllabus extraction job failed: ${errorMessage(err)}`,
+        metadata: {
+          queue: SYLLABUS_EXTRACTIONS_QUEUE,
+          jobId: job.id,
+          syllabusId,
+        },
+      });
+    } finally {
+      job.ack();
+    }
+  }
+}
+
+async function sweepSyllabusExtractions() {
+  for (;;) {
+    try {
+      const failed = await failStaleSyllabusExtractions();
+      if (failed > 0)
+        console.warn(`[Worker] Failed ${failed} stale syllabus extraction(s)`);
+    } catch (error) {
+      console.error("[Worker] Syllabus sweep failed", errorMessage(error));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5 * 60_000));
+  }
+}
+
 async function startWorker() {
   try {
     // This node's own CPU/RAM/storage feed for the admin System Resources tab.
@@ -747,6 +797,8 @@ async function startWorker() {
       consumeExamResults(),
       consumeQuizExtractions(),
       consumeSimulations(),
+      consumeSyllabusExtractions(),
+      sweepSyllabusExtractions(),
       consumeMessageEmails(),
       runMessageEmailSweeper(),
       consumeConsentEmails(),

@@ -16,6 +16,7 @@ import {
   PlayCircle,
   BookOpen,
   History,
+  ScrollText,
 } from "lucide-react";
 import { ContactTeacherDialog } from "./contact-teacher-dialog";
 
@@ -131,6 +132,11 @@ export default async function StudentClassPage({
             classId={id}
             teacherName={`${cls.teacher.user.firstName} ${cls.teacher.user.lastName}`.trim()}
           />
+          <Button variant="outline" size="sm" asChild>
+            <Link href={`/student/classes/${id}/syllabus`}>
+              <ScrollText className="size-4" /> Syllabus
+            </Link>
+          </Button>
           <Button variant="outline" size="sm" asChild>
             <Link href={`/student/classes/${id}/history`}>
               <History className="size-4" /> Exam history

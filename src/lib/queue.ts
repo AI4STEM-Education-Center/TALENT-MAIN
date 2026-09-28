@@ -13,6 +13,7 @@ export const SIMULATIONS_QUEUE = "simulations";
 export const MESSAGE_EMAILS_QUEUE = "message-emails";
 export const CONSENT_EMAILS_QUEUE = "consent-emails";
 export const CONSENT_EXPORTS_QUEUE = "consent-exports";
+export const SYLLABUS_EXTRACTIONS_QUEUE = "syllabus-extractions";
 
 export type ExamResultsJobPayload = { examResultId: string };
 export type QuizExtractionJobPayload = { extractionId: string };
@@ -30,6 +31,12 @@ export type ConsentEmailJobPayload = { deliveryId: string };
 // One job per bulk admin PDF export (a ConsentExportJob row) — always run in
 // the worker, never inline in a web request; see src/lib/consent-export.ts.
 export type ConsentExportJobPayload = { jobId: string };
+// `revision` pins the upload the job was queued for: a job for a superseded
+// revision finds the row moved on and does nothing.
+export type SyllabusExtractionJobPayload = {
+  syllabusId: string;
+  revision: number;
+};
 
 /**
  * Queue options for MESSAGE_EMAILS_QUEUE, shared by the producer and the worker
@@ -178,4 +185,18 @@ export const QUIZ_VARIANTS_QUEUE = "quiz-variants";
 export function enqueueQuizVariant(versionId: string) {
   const db = honker.open(resolveQueueDbPath());
   db.queue(QUIZ_VARIANTS_QUEUE).enqueue({ versionId });
+}
+
+/**
+ * Enqueue vision-LLM extraction for a class syllabus. Callers must NOT swallow
+ * failures — like enqueueQuizExtraction, the job is the feature, so the caller
+ * marks the syllabus FAILED if this throws.
+ */
+export function enqueueSyllabusExtraction(
+  syllabusId: string,
+  revision: number,
+): void {
+  const db = honker.open(resolveQueueDbPath());
+  const payload: SyllabusExtractionJobPayload = { syllabusId, revision };
+  db.queue(SYLLABUS_EXTRACTIONS_QUEUE).enqueue(payload);
 }

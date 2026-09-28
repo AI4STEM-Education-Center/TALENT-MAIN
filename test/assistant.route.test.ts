@@ -1077,10 +1077,27 @@ describe("assistant settings", () => {
         audience: "student",
         enabled: true,
         enabledSkills: JSON.stringify(["removed-skill"]),
+        // Saved with every current skill in view, so none is "new" to it.
+        knownSkills: JSON.stringify(listSkills("student").map((s) => s.id)),
       },
     });
     const settings = await getAssistantSettings("student");
     expect(resolveSkills("student", settings.enabledSkills).tools.size).toBe(0);
+  });
+
+  it("switches on a skill that shipped after a legacy row was saved", async () => {
+    // A row from before knownSkills existed, with its one legacy skill off.
+    await prisma.assistantConfig.create({
+      data: { id: "student", audience: "student", enabledSkills: "[]" },
+    });
+    const settings = await getAssistantSettings("student");
+    expect(settings.enabledSkills).not.toContain("student-quiz-results");
+    expect(settings.enabledSkills).toContain("student-syllabus");
+  });
+
+  it("keeps a skill off once the admin has saved with it in view", async () => {
+    await saveAssistantSettings("student", { enabledSkills: [] });
+    expect((await getAssistantSettings("student")).enabledSkills).toEqual([]);
   });
 
   it("round-trips disabled tool names and drops unknown ones", async () => {
@@ -1132,7 +1149,8 @@ describe("assistant settings", () => {
       },
     });
     const settings = await getAssistantSettings("teacher");
-    expect(settings.enabledSkills).toEqual([]);
+    // The legacy allow-list reads as empty; only post-legacy skills come on.
+    expect(settings.enabledSkills).toEqual(["teacher-syllabus"]);
     expect(settings.attachmentKinds).toEqual([]);
   });
 });

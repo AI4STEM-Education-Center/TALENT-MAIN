@@ -12,6 +12,11 @@ export const USE_CASES = [
   "description_generation",
   "recommendation",
   "quiz_extraction",
+  // Class syllabus PDF -> structured course info and dates. Wants a vision
+  // model; falls back to the quiz_extraction assignment when left unassigned
+  // (see src/lib/syllabus-engine.ts), so a site that can already read quiz
+  // PDFs can read syllabi without another setup step.
+  "syllabus_extraction",
   "quiz_variants",
   "simulation_chat",
   "simulation_generation",

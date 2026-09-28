@@ -21,13 +21,15 @@ import type {
 } from "../types";
 import { studentQuizResultsSkill } from "./student-quiz-results";
 import { teacherClassInsightsSkill } from "./teacher-class-insights";
-
 import { simulationEditingSkill } from "./simulation-editing";
+import { studentSyllabusSkill, teacherSyllabusSkill } from "./syllabus";
 
 const REGISTRY: AssistantSkill[] = [
   simulationEditingSkill,
   studentQuizResultsSkill,
+  studentSyllabusSkill,
   teacherClassInsightsSkill,
+  teacherSyllabusSkill,
 ];
 
 /** Every skill registered for an audience, in registry order. */

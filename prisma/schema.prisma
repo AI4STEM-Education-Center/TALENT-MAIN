@@ -169,6 +169,76 @@ model Class {
   materialLinks  MaterialClass[]
   messages       Message[]
   consentExportRequests ConsentExportRequest[]
+  syllabus       ClassSyllabus?
+}
+
+// ─── Class syllabus ───────────────────────────────────────────────────────────
+// At most one syllabus per class. The teacher uploads a PDF, the browser slices
+// it into page images (same pipeline as learning materials), and the worker
+// extracts the course information and dates into `content` — a JSON document
+// the teacher can then edit by hand (see src/lib/syllabus.ts for its shape).
+//
+// Uploading a new version is a REVISION of the same row, not a new row: the
+// current content stays readable while the new PDF uploads and extracts, and is
+// replaced only when the new extraction succeeds.
+//
+//   revision        bumped by every upload started; the pending upload's S3
+//                   objects live under .../{id}/r{revision}/
+//   sourceRevision  the revision whose PDF + pages back storageKey/pageKeys;
+//                   null until the first upload completes
+//
+// The S3 garbage collector keeps exactly those two revision directories (see
+// src/lib/s3-gc.ts); anything older is swept once past the grace period.
+//
+// status: "PENDING_UPLOAD" | "EXTRACTING" | "READY" | "FAILED" — the state of
+// the LATEST operation. `content` being non-null is what says there is
+// something to show, whatever the status.
+model ClassSyllabus {
+  id        String @id @default(cuid())
+  classId   String @unique
+  teacherId String
+
+  revision          Int     @default(1)
+  sourceRevision    Int?
+  pendingStorageKey String?
+  pendingName       String?
+
+  originalName String?
+  sizeBytes    Int     @default(0)
+  storageKey   String?
+  bucket       String
+  totalPages   Int     @default(0)
+  // JSON array of page-image storage keys, in page order.
+  pageKeys     String  @default("[]")
+
+  status       String  @default("PENDING_UPLOAD")
+  errorMessage String?
+  // JSON array of reviewer-facing notes (low-confidence dates, safety flags).
+  warnings     String  @default("[]")
+
+  // Extracted + teacher-edited syllabus. null until the first extraction lands.
+  content     String?
+  extractedAt DateTime?
+  // Set when the teacher saves a manual edit; cleared by a fresh extraction.
+  editedAt    DateTime?
+
+  // AI generation metrics from the most recent extraction run.
+  aiModel         String?
+  aiProvider      String?
+  aiServiceTier   String?
+  aiThinkingLevel String?
+  aiTtftMs        Int?
+  aiTokens        Int?
+  aiTotalMs       Int?
+
+  class Class @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([teacherId])
+  // Stale-extraction sweep.
+  @@index([status, updatedAt])
 }
 
 model ClassStudentList {
@@ -958,6 +1028,13 @@ model AssistantConfig {
 
   // Per-user turn budget, enforced in-process like src/lib/rate-limit.ts.
   turnsPerHour Int @default(60)
+
+  // JSON array of every skill id registered for this audience when the row was
+  // last saved. A registered skill NOT in this list shipped after that save, so
+  // it is switched on rather than left dark until an admin re-saves — the same
+  // opt-out stance as disabledTools. "[]" marks a row saved before this column
+  // existed; see LEGACY_SKILL_IDS in src/lib/assistant/config.ts.
+  knownSkills String @default("[]")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

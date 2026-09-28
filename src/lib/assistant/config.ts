@@ -94,6 +94,36 @@ function parseStringArray(raw: string): string[] {
 }
 
 /**
+ * The skill ids that existed before AssistantConfig.knownSkills did. A row whose
+ * knownSkills is still "[]" was last saved when exactly these were registered,
+ * so they — and only they — are the ones its admin actually chose between.
+ * Frozen: never add to this list; new skills are tracked by knownSkills.
+ */
+export const LEGACY_SKILL_IDS: readonly string[] = [
+  "simulation-editing",
+  "student-quiz-results",
+  "teacher-class-insights",
+];
+
+/**
+ * Switch on every registered skill that shipped after the row was last saved.
+ * `enabledSkills` is an allow-list, so without this a skill added in a later
+ * release would stay dark on every existing install until an admin happened to
+ * re-save the form. A skill the admin has seen and left off stays off.
+ */
+export function withNewSkills(
+  audience: AssistantAudience,
+  enabled: string[],
+  known: string[],
+): string[] {
+  const seen = new Set(known.length > 0 ? known : LEGACY_SKILL_IDS);
+  const on = new Set(enabled);
+  return listSkills(audience)
+    .map((skill) => skill.id)
+    .filter((id) => on.has(id) || !seen.has(id));
+}
+
+/**
  * Keep only skill ids that are still registered for this audience. A skill
  * deleted from the code leaves a stale id in the DB; dropping it here means the
  * assistant degrades instead of failing to load.
@@ -138,9 +168,10 @@ export async function getAssistantSettings(
       0,
       MAX_EXTRA_INSTRUCTIONS_CHARS,
     ),
-    enabledSkills: reconcileSkills(
+    enabledSkills: withNewSkills(
       audience,
-      parseStringArray(row.enabledSkills),
+      reconcileSkills(audience, parseStringArray(row.enabledSkills)),
+      parseStringArray(row.knownSkills),
     ),
     disabledTools: reconcileToolNames(
       audience,
@@ -206,6 +237,8 @@ export async function saveAssistantSettings(
     enabledSkills: JSON.stringify(
       reconcileSkills(audience, next.enabledSkills),
     ),
+    // Everything registered right now has been put in front of the admin.
+    knownSkills: JSON.stringify(listSkills(audience).map((skill) => skill.id)),
     disabledTools: JSON.stringify(
       reconcileToolNames(audience, next.disabledTools),
     ),
