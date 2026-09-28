@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { hasResearchConsent } from "@/lib/consent";
 import { parseBody, simulationSessionUpdateSchema } from "@/lib/validation";
 import {
   mergeControlCounts,
@@ -40,6 +41,12 @@ export async function POST(
   }
   const parsed = parseBody(simulationSessionUpdateSchema, raw);
   if (!parsed.ok) return parsed.response;
+
+  // Consent may have changed since the session opened. A late fetch/beacon
+  // must not keep collecting telemetry after a decline or a new form version.
+  if (!(await hasResearchConsent(session.user.id))) {
+    return NextResponse.json({ ok: true });
+  }
 
   const [student, row] = await Promise.all([
     prisma.student.findUnique({ where: { userId: session.user.id } }),

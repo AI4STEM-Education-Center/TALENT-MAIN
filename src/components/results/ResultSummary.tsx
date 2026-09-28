@@ -6,15 +6,13 @@ import { Loader2, Sparkles } from "lucide-react";
 import { AiMetricsLine } from "@/components/ai-metrics-line";
 import {
   RESULT_STATUS,
+  isResultPending,
   type ResultComponentMetrics,
   type ResultStatus,
 } from "@/lib/exam-results";
 
 const MARKDOWN_CLASS =
   "text-sm [&_p]:mb-2 [&_p:last-child]:mb-0 [&_h3]:mb-1 [&_h3]:mt-3 [&_h3]:font-semibold [&_ul]:mb-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:mb-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:mb-1 [&_strong]:font-semibold";
-
-const isPending = (status: ResultStatus) =>
-  status === RESULT_STATUS.PENDING || status === RESULT_STATUS.GENERATING;
 
 /** AI-generated attempt summary shared by the student and teacher result views. */
 export function ResultSummary({
@@ -36,7 +34,7 @@ export function ResultSummary({
           <div className={MARKDOWN_CLASS} aria-live="polite">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{summary}</ReactMarkdown>
           </div>
-          {isPending(status) && (
+          {isResultPending(status) && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="size-3.5 animate-spin text-primary" /> Writing
               the summary…

@@ -149,11 +149,9 @@ export async function getUserConsentClaim(
 }
 
 /**
- * Gates the research-telemetry write paths ONLY — never grading. Concretely:
- * SimulationSession creation, and the exam-results-engine's summary /
- * recommendation / misconception-labeling generation. Quiz attempts, scores,
- * answers, and manual grades are always collected for every student
- * regardless of this check (see docs/plans/consent-compliance-plan.md §9).
+ * Gates research-only data collection: simulation interaction telemetry and
+ * teacher-only misconception diagnostics. It never gates student-facing AI
+ * summaries, recommendations, simulations, chat, or normal grading/history.
  *
  * Checked against the CURRENTLY ACTIVE student form version specifically —
  * an AGREE recorded under a since-superseded version does not carry over, so

@@ -14,7 +14,7 @@ import { MyFeedbackProvider } from "@/components/feedback/my-feedback";
 import { useContentFullWidth } from "@/components/dashboard/content-width";
 import { cn } from "@/lib/utils";
 import {
-  RESULT_STATUS,
+  isResultPending,
   type ResultComponentMetrics,
   type ResultStatus,
   type PresignedRecommendation,
@@ -33,9 +33,6 @@ type AiState = {
   recommendationMetrics: ResultComponentMetrics | null;
   truncated: boolean;
 };
-
-const isPending = (status: ResultStatus) =>
-  status === RESULT_STATUS.PENDING || status === RESULT_STATUS.GENERATING;
 
 export function ExamResultsView({
   attemptId,
@@ -59,7 +56,8 @@ export function ExamResultsView({
   // the whole page: the grid flips so the simulation takes the wide side.
   const [activeSimId, setActiveSimId] = useState<string | null>(null);
   const needPoll =
-    isPending(ai.summaryStatus) || isPending(ai.recommendationsStatus);
+    isResultPending(ai.summaryStatus) ||
+    isResultPending(ai.recommendationsStatus);
 
   useEffect(() => {
     if (!needPoll) return;
@@ -71,8 +69,8 @@ export function ExamResultsView({
     const applyUpdate = (data: AiState) => {
       if (!active) return;
       receivedTerminal =
-        !isPending(data.summaryStatus) &&
-        !isPending(data.recommendationsStatus);
+        !isResultPending(data.summaryStatus) &&
+        !isResultPending(data.recommendationsStatus);
       setAi({
         summary: data.summary ?? null,
         summaryStatus: data.summaryStatus,
