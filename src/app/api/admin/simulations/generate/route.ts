@@ -7,11 +7,13 @@ import { rateLimit } from "@/lib/rate-limit";
 export const runtime = "nodejs";
 
 type Scope =
+  | { scope: "all" }
   | { scope: "pool" }
   | { scope: "quiz"; quizId: string }
   | { scope: "question"; questionId: string; force: boolean };
 
 function parseScope(body: Record<string, unknown>): Scope | null {
+  if (body.scope === "all") return { scope: "all" };
   if (body.scope === "pool") return { scope: "pool" };
   if (
     body.scope === "quiz" &&
@@ -36,7 +38,8 @@ function parseScope(body: Record<string, unknown>): Scope | null {
 
 /**
  * POST /api/admin/simulations/generate
- * Enqueue simulation generation at one of three scopes:
+ * Enqueue simulation generation at one of four scopes:
+ *   { scope: "all" }                           — every pool and teacher question
  *   { scope: "pool" }                          — every global-pool question
  *   { scope: "quiz", quizId }                  — every question of one quiz
  *   { scope: "question", questionId, force? }  — one question; force re-generates
@@ -72,7 +75,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         error:
-          "scope must be 'pool', 'quiz' (with quizId), or 'question' (with questionId)",
+          "scope must be 'all', 'pool', 'quiz' (with quizId), or 'question' (with questionId)",
       },
       { status: 400 },
     );
@@ -80,9 +83,9 @@ export async function POST(req: NextRequest) {
 
   // Resolve the target question ids.
   let questionIds: string[];
-  if (scope.scope === "pool") {
+  if (scope.scope === "all" || scope.scope === "pool") {
     const questions = await prisma.question.findMany({
-      where: { quiz: { teacherId: null } },
+      where: scope.scope === "pool" ? { quiz: { teacherId: null } } : {},
       select: { id: true },
     });
     questionIds = questions.map((q) => q.id);
