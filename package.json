@@ -35,7 +35,7 @@
     "pressure:report": "tsx pressure/collect/summarize.ts"
   },
   "overrides": {
-    "undici": "^7.29.0",
+    "undici": "^7.30.0",
     "picomatch": "^4.0.3",
     "@radix-ui/react-slot": "1.3.3",
     "postcss": "$postcss",
