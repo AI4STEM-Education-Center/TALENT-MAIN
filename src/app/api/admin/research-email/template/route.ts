@@ -2,11 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
-  DEFAULT_RESEARCH_EMAIL_CONTENT,
+  DEFAULT_RESEARCH_EMAIL_VERSIONS,
   isResearchEmailKind,
   normalizePoolAudience,
   normalizePostSurveyAudience,
   parseAttachments,
+  parseVersions,
+  VERSION_KEYS,
+  type ResearchEmailVersions,
 } from "@/lib/research-email";
 import { parseResearchEmailInput } from "@/lib/research-email-input";
 
@@ -32,15 +35,16 @@ export async function GET(req: NextRequest) {
   const row = await prisma.researchEmailTemplate.findUnique({
     where: { kind },
   });
-  const defaults = DEFAULT_RESEARCH_EMAIL_CONTENT[kind];
+  // A version the admin never saved starts from the built-in copy.
+  const saved = parseVersions(kind, row?.versions ?? "{}");
+  const versions: ResearchEmailVersions = {};
+  for (const key of VERSION_KEYS[kind])
+    versions[key] = saved[key] ?? DEFAULT_RESEARCH_EMAIL_VERSIONS[kind][key];
   const audience = parseJson(row?.audience ?? "{}");
   return NextResponse.json({
     kind,
     replyTo: row?.replyTo ?? "",
-    irbSubject: row?.irbSubject || defaults.irbSubject,
-    irbBody: row?.irbBody || defaults.irbBody,
-    surveySubject: row?.surveySubject || defaults.surveySubject,
-    surveyBody: row?.surveyBody || defaults.surveyBody,
+    versions,
     attachments: parseAttachments(row?.attachments),
     audience:
       kind === "POOL"
@@ -64,10 +68,12 @@ export async function PUT(req: NextRequest) {
   const parsed = parseResearchEmailInput(body, false);
   if (!parsed.ok)
     return NextResponse.json({ error: parsed.error }, { status: 400 });
-  const { kind, attachments, ...rest } = parsed.value;
+  const { kind, replyTo, versions, attachments, audience } = parsed.value;
   const data = {
-    ...rest,
+    replyTo,
+    versions: JSON.stringify(versions),
     attachments: JSON.stringify(attachments),
+    audience,
     updatedById: session.user.id,
   };
   await prisma.researchEmailTemplate.upsert({

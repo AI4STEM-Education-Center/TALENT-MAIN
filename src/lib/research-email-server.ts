@@ -19,16 +19,19 @@ import {
 import { getS3Object } from "@/lib/storage";
 import {
   filterPool,
+  isResearchEmailKind,
+  legacyVersions,
   mergePoolEntries,
   normalizePoolAudience,
   normalizePostSurveyAudience,
   parseAttachments,
+  parseVersions,
   recipientVars,
   renderResearchEmail,
-  variantFor,
-  type EmailVariant,
+  versionKeyFor,
   type PoolEntry,
   type RecipientVars,
+  type VersionKey,
 } from "@/lib/research-email";
 import type { SurveyRole } from "@/lib/survey";
 import { getEnabledSurveyForm, newSurveyToken } from "@/lib/survey-server";
@@ -106,7 +109,8 @@ export async function loadResearchPool(): Promise<PoolEntry[]> {
 export type PlannedRecipient = {
   userId: string | null;
   email: string;
-  variant: EmailVariant;
+  /** The campaign version this person gets. */
+  variant: VersionKey;
   vars: RecipientVars;
   /** POST_SURVEY only: the form this person's link opens. */
   formId?: string;
@@ -136,7 +140,7 @@ async function planPoolRecipients(
         userId: entry.userId,
         email: entry.email,
         name: entry.name,
-        variant: variantFor(entry),
+        variant: versionKeyFor("POOL", entry),
         vars: recipientVars(entry, APP_NAME),
       })),
     ),
@@ -207,7 +211,7 @@ async function planPostSurveyRecipients(
         userId: user.id,
         email: entry?.email ?? user.email,
         name: `${user.firstName} ${user.lastName}`.trim(),
-        variant: variantFor(person),
+        variant: versionKeyFor("POST_SURVEY", person),
         vars: recipientVars(person, APP_NAME),
         formId: form.id,
       });
@@ -399,9 +403,12 @@ export async function deliverResearchEmail(
   }
 
   const vars = safeJson(delivery.vars) as RecipientVars;
+  const versions = isResearchEmailKind(campaign.kind)
+    ? parseVersions(campaign.kind, campaign.versions)
+    : {};
   const content = renderResearchEmail(
-    campaign,
-    delivery.variant === "IRB" ? "IRB" : "SURVEY",
+    Object.keys(versions).length ? versions : legacyVersions(campaign),
+    delivery.variant,
     vars,
   );
 

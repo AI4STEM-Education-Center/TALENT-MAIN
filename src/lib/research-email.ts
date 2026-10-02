@@ -11,6 +11,7 @@ import {
 } from "@/lib/consent-fields";
 import { isSurveyRole, type SurveyRole } from "@/lib/survey";
 
+/** POOL is the interview invitation to the research pool. */
 export const RESEARCH_EMAIL_KINDS = ["POOL", "POST_SURVEY"] as const;
 export type ResearchEmailKind = (typeof RESEARCH_EMAIL_KINDS)[number];
 
@@ -28,10 +29,9 @@ export const POOL_SOURCES = ["IRB", "SURVEY"] as const;
 export type PoolSource = (typeof POOL_SOURCES)[number];
 
 /**
- * Each campaign carries two versions of the email. People who agreed through
+ * Interview emails come in two versions per role: people who agreed through
  * the IRB consent form get the IRB version (so it can reference their consent
- * level); everyone else — pre-survey opt-ins, and for the post-survey email
- * anyone without an IRB agreement — gets the survey version.
+ * level); pre-survey opt-ins get the survey version.
  */
 export type EmailVariant = "IRB" | "SURVEY";
 
@@ -193,13 +193,132 @@ export function variantFor(entry: { viaIrb: boolean }): EmailVariant {
   return entry.viaIrb ? "IRB" : "SURVEY";
 }
 
+/** IRB consent levels that include an interview. */
+export const INTERVIEW_CONSENT_LEVELS = [
+  "VIDEO_AUDIO",
+  "AUDIO_ONLY",
+  "TRANSCRIPT_ONLY",
+] as const satisfies readonly InterviewRecordingChoice[];
+export type InterviewConsentLevel = (typeof INTERVIEW_CONSENT_LEVELS)[number];
+
+export function isInterviewConsentLevel(
+  value: unknown,
+): value is InterviewConsentLevel {
+  return (INTERVIEW_CONSENT_LEVELS as readonly unknown[]).includes(value);
+}
+
+// ─── Versions ────────────────────────────────────────────────────────────────
+
+/**
+ * Each email is written separately for students and teachers. The post-survey
+ * email has one version per role; the interview email has an IRB and a survey
+ * version per role.
+ */
+export const VERSION_KEYS = {
+  POST_SURVEY: ["STUDENT", "TEACHER"],
+  POOL: ["STUDENT_IRB", "STUDENT_SURVEY", "TEACHER_IRB", "TEACHER_SURVEY"],
+} as const satisfies Record<ResearchEmailKind, readonly string[]>;
+
+export type VersionKey =
+  | (typeof VERSION_KEYS.POST_SURVEY)[number]
+  | (typeof VERSION_KEYS.POOL)[number];
+
+export type EmailVersion = { subject: string; body: string };
+export type ResearchEmailVersions = Partial<Record<VersionKey, EmailVersion>>;
+
+export const VERSION_LABELS: Record<VersionKey, string> = {
+  STUDENT: "Student email",
+  TEACHER: "Teacher email",
+  STUDENT_IRB: "Student · IRB version",
+  STUDENT_SURVEY: "Student · survey version",
+  TEACHER_IRB: "Teacher · IRB version",
+  TEACHER_SURVEY: "Teacher · survey version",
+};
+
+export function isVersionKey(
+  kind: ResearchEmailKind,
+  value: unknown,
+): value is VersionKey {
+  return (VERSION_KEYS[kind] as readonly unknown[]).includes(value);
+}
+
+/** The versions a send to these roles uses, in display order. */
+export function versionKeysFor(
+  kind: ResearchEmailKind,
+  roles: readonly SurveyRole[],
+): VersionKey[] {
+  return VERSION_KEYS[kind].filter((k) =>
+    roles.some((role) => k === role || k.startsWith(`${role}_`)),
+  );
+}
+
+/** Which version one recipient gets. */
+export function versionKeyFor(
+  kind: ResearchEmailKind,
+  person: { role: SurveyRole; viaIrb: boolean },
+): VersionKey {
+  return kind === "POST_SURVEY"
+    ? person.role
+    : (`${person.role}_${variantFor(person)}` as VersionKey);
+}
+
+/** Keep only well-formed versions this kind uses. */
+export function parseVersions(
+  kind: ResearchEmailKind,
+  input: unknown,
+): ResearchEmailVersions {
+  let raw = input;
+  if (typeof raw === "string") {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      return {};
+    }
+  }
+  if (!raw || typeof raw !== "object") return {};
+  const out: ResearchEmailVersions = {};
+  for (const [key, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!isVersionKey(kind, key) || !v || typeof v !== "object") continue;
+    const { subject, body } = v as Record<string, unknown>;
+    out[key] = {
+      subject: typeof subject === "string" ? subject : "",
+      body: typeof body === "string" ? body : "",
+    };
+  }
+  return out;
+}
+
+/**
+ * Campaigns scheduled before per-role versions existed kept an IRB and a
+ * survey version in columns, keyed on the delivery's "IRB" | "SURVEY"
+ * variant. An empty one fell back to the other, so that is kept here.
+ */
+export function legacyVersions(row: {
+  irbSubject: string;
+  irbBody: string;
+  surveySubject: string;
+  surveyBody: string;
+}): Record<EmailVariant, EmailVersion> {
+  const irb = { subject: row.irbSubject, body: row.irbBody };
+  const survey = { subject: row.surveySubject, body: row.surveyBody };
+  const pick = (primary: EmailVersion, fallback: EmailVersion) => ({
+    subject: primary.subject.trim() ? primary.subject : fallback.subject,
+    body: primary.body.trim() ? primary.body : fallback.body,
+  });
+  return { IRB: pick(irb, survey), SURVEY: pick(survey, irb) };
+}
+
 // ─── Audience ────────────────────────────────────────────────────────────────
 
-/** "NONE" in consentLevels stands for pool members who did not agree via IRB. */
+/**
+ * Who gets the interview email. consentLevels narrows the IRB route (empty
+ * means any level that includes an interview); pre-survey opt-ins all agreed
+ * to an interview, so it does not apply to them.
+ */
 export type PoolAudience = {
   roles: SurveyRole[];
   sources: PoolSource[];
-  consentLevels: Array<InterviewRecordingChoice | "NONE">;
+  consentLevels: InterviewConsentLevel[];
 };
 
 /** Who receives a post-survey invitation, before per-person eligibility. */
@@ -228,10 +347,7 @@ export function normalizePoolAudience(input: unknown): PoolAudience {
   );
   const consentLevels = (
     Array.isArray(r.consentLevels) ? r.consentLevels : []
-  ).filter(
-    (c): c is InterviewRecordingChoice | "NONE" =>
-      c === "NONE" || isInterviewRecordingChoice(c),
-  );
+  ).filter(isInterviewConsentLevel);
   return {
     roles: roles.length ? [...new Set(roles)] : ["STUDENT"],
     sources: sources.length ? [...new Set(sources)] : ["IRB", "SURVEY"],
@@ -256,19 +372,25 @@ export function normalizePostSurveyAudience(
   };
 }
 
-/** Pool members an audience selects. An empty consentLevels list means any level. */
+/**
+ * Pool members the interview email reaches: people who agreed to an interview,
+ * either on the IRB consent form (a level other than "no interview") or by
+ * opting in on the pre-survey.
+ */
 export function filterPool(
   entries: readonly PoolEntry[],
   audience: PoolAudience,
 ): PoolEntry[] {
   return entries.filter((e) => {
     if (!audience.roles.includes(e.role)) return false;
-    const sourceMatch =
-      (e.viaIrb && audience.sources.includes("IRB")) ||
-      (e.viaSurvey && audience.sources.includes("SURVEY"));
-    if (!sourceMatch) return false;
-    if (audience.consentLevels.length === 0) return true;
-    return audience.consentLevels.includes(e.consentLevel ?? "NONE");
+    const viaIrb =
+      e.viaIrb &&
+      audience.sources.includes("IRB") &&
+      isInterviewConsentLevel(e.consentLevel) &&
+      (audience.consentLevels.length === 0 ||
+        audience.consentLevels.includes(e.consentLevel));
+    const viaSurvey = e.viaSurvey && audience.sources.includes("SURVEY");
+    return viaIrb || viaSurvey;
   });
 }
 
@@ -294,13 +416,13 @@ export const RESEARCH_EMAIL_VARIABLES: ReadonlyArray<{
     name: "agreedPlace",
     description:
       "Where they agreed: the IRB consent form, the pre-survey, or both",
-    kinds: ["POOL", "POST_SURVEY"],
+    kinds: ["POOL"],
   },
   {
     name: "consentLevel",
     description:
       "IRB consent level (blank for people who did not agree via IRB)",
-    kinds: ["POOL", "POST_SURVEY"],
+    kinds: ["POOL"],
   },
   {
     name: "role",
@@ -345,33 +467,18 @@ export function recipientVars(
   };
 }
 
-export type ResearchEmailContent = {
-  irbSubject: string;
-  irbBody: string;
-  surveySubject: string;
-  surveyBody: string;
-};
-
-/**
- * Render one recipient's message. An empty version falls back to the other,
- * so a campaign written for one audience still sends something sensible to
- * the rest.
- */
+/** Render one recipient's message from the version they get. */
 export function renderResearchEmail(
-  content: ResearchEmailContent,
-  variant: EmailVariant,
+  versions: Partial<Record<string, EmailVersion>>,
+  key: string,
   vars: RecipientVars,
 ): { subject: string; text: string } {
-  const irb = { subject: content.irbSubject, body: content.irbBody };
-  const survey = { subject: content.surveySubject, body: content.surveyBody };
-  const [primary, fallback] = variant === "IRB" ? [irb, survey] : [survey, irb];
-  const subject = primary.subject.trim() || fallback.subject.trim();
-  const body = primary.body.trim() ? primary.body : fallback.body;
+  const version = versions[key] ?? { subject: "", body: "" };
   return {
-    subject: renderTemplate(subject, vars)
+    subject: renderTemplate(version.subject.trim(), vars)
       .replace(/[\r\n]+/g, " ")
       .trim(),
-    text: renderTemplate(body, vars),
+    text: renderTemplate(version.body, vars),
   };
 }
 
@@ -418,47 +525,99 @@ export function parseAttachments(
   }
 }
 
-/** Starter copy for a fresh install; the admin edits it before first send. */
-export const DEFAULT_RESEARCH_EMAIL_CONTENT: Record<
-  ResearchEmailKind,
-  ResearchEmailContent
-> = {
-  POOL: {
-    irbSubject: "{{appName}} research study: follow-up",
-    irbBody: `Hi {{firstName}},
+const INTERVIEW_BOOKING_LINK =
+  "https://bookings.cloud.microsoft/book/AI4TalentStudentInterview@groups.uga.edu/?ismsaljsauthenabled";
 
-Thank you for agreeing to take part in the {{appName}} research study through {{agreedPlace}} (consent level: {{consentLevel}}).
+const INTERVIEW_SUBJECT =
+  "Invitation to share your experience with {{appName}}";
 
-We would like to follow up with you. This is for research purposes only, to help us improve the platform.
+const INTERVIEW_CLOSING = `If you would like to participate, please use the link below to choose a time that works best for you:
+${INTERVIEW_BOOKING_LINK}
 
-Simply reply to this email if you have any questions.`,
-    surveySubject: "{{appName}} research study: follow-up",
-    surveyBody: `Hi {{firstName}},
+If none of the available times work for you, please feel free to reply to this email.
 
-Thank you for letting us contact you through {{agreedPlace}}.
+Thank you very much for considering our invitation. We truly welcome and appreciate your feedback, and your input would be very valuable in helping us improve {{appName}}.
 
-We would like to follow up with you about a possible interview. This is for research purposes only, to help us improve the platform.
+Best,
+AI4Talent Research Team
+University of Georgia`;
 
-Simply reply to this email if you have any questions.`,
-  },
-  POST_SURVEY: {
-    irbSubject: "Please share your experience with {{appName}}",
-    irbBody: `Hi {{firstName}},
-
-Thank you for taking part in the {{appName}} research study. We'd appreciate a few minutes of your time for a short survey about your experience with the platform. This is for research purposes only, to help us improve the platform.
-
-Your personal survey link (no sign-in needed):
+const POST_SURVEY_LINK = `Your personal survey link (no sign-in needed):
 {{surveyLink}}
 
-Please don't forward this link — it is unique to you.`,
-    surveySubject: "Please share your experience with {{appName}}",
-    surveyBody: `Hi {{firstName}},
+Please don't forward this link — it is unique to you.`;
+
+/** Starter copy until the admin saves their own; every version is editable. */
+export const DEFAULT_RESEARCH_EMAIL_VERSIONS: Record<
+  ResearchEmailKind,
+  ResearchEmailVersions
+> = {
+  POOL: {
+    STUDENT_IRB: {
+      subject: INTERVIEW_SUBJECT,
+      body: `Hi {{firstName}},
+
+Thank you again for taking part in the {{appName}} research study and for using the platform.
+
+We would greatly appreciate the opportunity to hear more about your experience with {{appName}}. If you are willing, we would be very happy to invite you to participate in an interview and share your thoughts about what worked well, what was challenging, and how we could improve the platform.
+
+The interview is completely optional. There is no obligation to participate, and choosing not to participate will not affect your course or your participation in the study.
+
+${INTERVIEW_CLOSING}`,
+    },
+    STUDENT_SURVEY: {
+      subject: INTERVIEW_SUBJECT,
+      body: `Hi {{firstName}},
+
+Thank you for completing the {{appName}} pre-survey and for letting us know you would be open to an interview.
+
+We would greatly appreciate the opportunity to hear more about your experience with {{appName}}. If you are still willing, we would be very happy to invite you to participate in an interview and share your thoughts about what worked well, what was challenging, and how we could improve the platform.
+
+The interview is completely optional. There is no obligation to participate, and choosing not to participate will not affect your course in any way.
+
+${INTERVIEW_CLOSING}`,
+    },
+    TEACHER_IRB: {
+      subject: INTERVIEW_SUBJECT,
+      body: `Hi {{firstName}},
+
+Thank you again for taking part in the {{appName}} research study and for using the platform with your students.
+
+We would greatly appreciate the opportunity to hear more about your experience teaching with {{appName}}. If you are willing, we would be very happy to invite you to participate in an interview and share your thoughts about what worked well in your classes, what was challenging, and how we could improve the platform.
+
+The interview is completely optional. There is no obligation to participate, and choosing not to participate will not affect your use of the platform or your participation in the study.
+
+${INTERVIEW_CLOSING}`,
+    },
+    TEACHER_SURVEY: {
+      subject: INTERVIEW_SUBJECT,
+      body: `Hi {{firstName}},
+
+Thank you for completing the {{appName}} pre-survey and for letting us know you would be open to an interview.
+
+We would greatly appreciate the opportunity to hear more about your experience teaching with {{appName}}. If you are still willing, we would be very happy to invite you to participate in an interview and share your thoughts about what worked well in your classes, what was challenging, and how we could improve the platform.
+
+The interview is completely optional. There is no obligation to participate, and choosing not to participate will not affect your use of the platform in any way.
+
+${INTERVIEW_CLOSING}`,
+    },
+  },
+  POST_SURVEY: {
+    STUDENT: {
+      subject: "Please share your experience with {{appName}}",
+      body: `Hi {{firstName}},
 
 We'd appreciate a few minutes of your time for a short survey about your experience with {{appName}}. This is for research purposes only, to help us improve the platform.
 
-Your personal survey link (no sign-in needed):
-{{surveyLink}}
+${POST_SURVEY_LINK}`,
+    },
+    TEACHER: {
+      subject: "Please share your experience with {{appName}}",
+      body: `Hi {{firstName}},
 
-Please don't forward this link — it is unique to you.`,
+We'd appreciate a few minutes of your time for a short survey about your experience teaching with {{appName}}. This is for research purposes only, to help us improve the platform.
+
+${POST_SURVEY_LINK}`,
+    },
   },
 };

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
-export default function PostSurveyEmailRedirect() {
+export default function ResearchEmailPage() {
   redirect("/admin/research-email/post-survey");
 }

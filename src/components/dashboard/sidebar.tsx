@@ -219,8 +219,8 @@ const adminNavGroups: NavGroup[] = [
         icon: <UsersRound className="size-4" />,
       },
       {
-        href: "/admin/post-survey-email",
-        label: "Post-Survey Email",
+        href: "/admin/research-email",
+        label: "Research Emails",
         icon: <MailCheck className="size-4" />,
       },
     ],
