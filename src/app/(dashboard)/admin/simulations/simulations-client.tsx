@@ -7,22 +7,15 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { MathText } from "@/components/ui/math-text";
 import { useConfirm } from "@/components/ui/confirm-dialog";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
 import { SimulationStatusBadge } from "@/components/simulation/SimulationStatusBadge";
-import { SimulationViewer } from "@/components/simulation/SimulationViewer";
+import { SimulationPanel } from "@/components/simulation/SimulationPanel";
 import { AiMetricsLine } from "@/components/ai-metrics-line";
 import type { DisplayAiMetrics } from "@/lib/ai-metrics";
 import {
   Atom,
   ChevronDown,
   ChevronRight,
-  Eye,
+  Pencil,
   Loader2,
   Play,
   RefreshCw,
@@ -74,13 +67,9 @@ interface QuizDetail {
   questions: QuestionRow[];
 }
 
-interface PreviewState {
+interface EditorState {
   simulationId: string;
-  version: number;
-  title: string;
-  topic: string | null;
-  learningGoal: string | null;
-  aiMetrics: DisplayAiMetrics;
+  quizId: string;
 }
 
 /** How many of this quiz's questions a plain (non-force) generate would touch. */
@@ -98,7 +87,7 @@ export function AdminSimulationsClient() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [details, setDetails] = useState<Record<string, QuizDetail>>({});
   const [busy, setBusy] = useState<Set<string>>(new Set());
-  const [preview, setPreview] = useState<PreviewState | null>(null);
+  const [editing, setEditing] = useState<EditorState | null>(null);
 
   const refreshSummary = useCallback(async () => {
     try {
@@ -150,7 +139,7 @@ export function AdminSimulationsClient() {
 
   async function generate(
     payload:
-      | { scope: "pool" }
+      | { scope: "all" }
       | { scope: "quiz"; quizId: string }
       | { scope: "question"; questionId: string; force?: boolean },
     busyKey: string,
@@ -183,6 +172,9 @@ export function AdminSimulationsClient() {
       );
       await refreshSummary();
       if (detailQuizId) await refreshDetail(detailQuizId);
+      else await Promise.all([...expanded].map(refreshDetail));
+    } catch {
+      setMsg("Failed to start generation. Please try again.");
     } finally {
       setBusy((prev) => {
         const next = new Set(prev);
@@ -235,6 +227,8 @@ export function AdminSimulationsClient() {
       setMsg("Simulation deleted.");
       await refreshSummary();
       await refreshDetail(quizId);
+    } catch {
+      setMsg("Failed to delete simulation. Please try again.");
     } finally {
       setBusy((prev) => {
         const next = new Set(prev);
@@ -260,9 +254,7 @@ export function AdminSimulationsClient() {
   }
 
   const totals = summary.totals;
-  const poolGeneratable = summary.quizzes
-    .filter((quiz) => !quiz.teacher)
-    .reduce((sum, quiz) => sum + generatable(quiz.counts), 0);
+  const totalGeneratable = generatable(totals);
   const query = search.trim().toLowerCase();
   const quizzes = summary.quizzes.filter(
     (quiz) =>
@@ -286,8 +278,8 @@ export function AdminSimulationsClient() {
       <div>
         <h1 className="text-3xl font-bold">Simulations</h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Inspect simulations from the global pool and every teacher’s quizzes.
-          Search by quiz, topic, teacher name, or email.
+          Generate and edit simulations from the global pool and every teacher’s
+          quizzes. Search by quiz, topic, teacher name, or email.
         </p>
       </div>
 
@@ -302,7 +294,7 @@ export function AdminSimulationsClient() {
         </div>
       )}
 
-      {/* Pool-wide status + the global trigger */}
+      {/* Status and generation across all pool and teacher quizzes */}
       <Card>
         <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap items-center gap-2">
@@ -321,16 +313,16 @@ export function AdminSimulationsClient() {
             <Badge variant="outline">{totals.missing} without simulation</Badge>
           </div>
           <Button
-            onClick={() => generate({ scope: "pool" }, "pool")}
-            disabled={busy.has("pool") || poolGeneratable === 0}
+            onClick={() => generate({ scope: "all" }, "all")}
+            disabled={busy.has("all") || totalGeneratable === 0}
             className="shrink-0"
           >
-            {busy.has("pool") ? (
+            {busy.has("all") ? (
               <Loader2 className="size-4 animate-spin" />
             ) : (
               <Sparkles className="size-4" />
             )}
-            Generate missing in pool ({poolGeneratable})
+            Generate missing ({totalGeneratable})
           </Button>
         </CardContent>
       </Card>
@@ -369,7 +361,7 @@ export function AdminSimulationsClient() {
             const quizGeneratable = generatable(quiz.counts);
             return (
               <Card key={quiz.id}>
-                <div className="flex items-center gap-2 p-4">
+                <div className="flex flex-wrap items-center gap-2 p-4">
                   <button
                     type="button"
                     onClick={() => toggleQuiz(quiz.id)}
@@ -419,30 +411,28 @@ export function AdminSimulationsClient() {
                   <Button size="sm" variant="ghost" asChild>
                     <Link href={`/admin/quizzes/${quiz.id}`}>View quiz</Link>
                   </Button>
-                  {!quiz.teacher && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="shrink-0"
-                      disabled={
-                        busy.has(`quiz:${quiz.id}`) || quizGeneratable === 0
-                      }
-                      onClick={() =>
-                        generate(
-                          { scope: "quiz", quizId: quiz.id },
-                          `quiz:${quiz.id}`,
-                          quiz.id,
-                        )
-                      }
-                    >
-                      {busy.has(`quiz:${quiz.id}`) ? (
-                        <Loader2 className="size-3 animate-spin" />
-                      ) : (
-                        <Play className="size-3" />
-                      )}
-                      Generate ({quizGeneratable})
-                    </Button>
-                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="shrink-0"
+                    disabled={
+                      busy.has(`quiz:${quiz.id}`) || quizGeneratable === 0
+                    }
+                    onClick={() =>
+                      generate(
+                        { scope: "quiz", quizId: quiz.id },
+                        `quiz:${quiz.id}`,
+                        quiz.id,
+                      )
+                    }
+                  >
+                    {busy.has(`quiz:${quiz.id}`) ? (
+                      <Loader2 className="size-3 animate-spin" />
+                    ) : (
+                      <Play className="size-3" />
+                    )}
+                    Generate ({quizGeneratable})
+                  </Button>
                 </div>
 
                 {isOpen && (
@@ -516,70 +506,62 @@ export function AdminSimulationsClient() {
                                     size="sm"
                                     variant="ghost"
                                     onClick={() =>
-                                      setPreview({
+                                      setEditing({
                                         simulationId: sim.id,
-                                        version: sim.version,
-                                        title:
-                                          sim.title ?? "Simulation preview",
-                                        topic: sim.topic,
-                                        learningGoal: sim.learningGoal,
-                                        aiMetrics: sim.aiMetrics,
+                                        quizId: quiz.id,
                                       })
                                     }
                                   >
-                                    <Eye className="size-3" /> Preview
+                                    <Pencil className="size-3" /> View / edit
                                   </Button>
                                 )}
-                                {!quiz.teacher &&
-                                  (!sim || sim.status === "FAILED") && (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      disabled={qBusy}
-                                      onClick={() =>
-                                        generate(
-                                          {
-                                            scope: "question",
-                                            questionId: question.id,
-                                          },
-                                          `q:${question.id}`,
-                                          quiz.id,
-                                        )
-                                      }
-                                    >
-                                      {qBusy ? (
-                                        <Loader2 className="size-3 animate-spin" />
-                                      ) : (
-                                        <Play className="size-3" />
-                                      )}
-                                      {sim?.status === "FAILED"
-                                        ? "Retry"
-                                        : "Generate"}
-                                    </Button>
-                                  )}
-                                {!quiz.teacher &&
-                                  sim &&
-                                  sim.status !== "FAILED" && (
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      disabled={qBusy}
-                                      onClick={() =>
-                                        regenerate(question, quiz.id)
-                                      }
-                                    >
-                                      {qBusy ? (
-                                        <Loader2 className="size-3 animate-spin" />
-                                      ) : (
-                                        <RefreshCw className="size-3" />
-                                      )}
-                                      {sim.status === "PENDING" ||
-                                      sim.status === "REVISING"
-                                        ? "Restart"
-                                        : "Regenerate"}
-                                    </Button>
-                                  )}
-                                {!quiz.teacher && sim && (
+                                {(!sim || sim.status === "FAILED") && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={qBusy}
+                                    onClick={() =>
+                                      generate(
+                                        {
+                                          scope: "question",
+                                          questionId: question.id,
+                                        },
+                                        `q:${question.id}`,
+                                        quiz.id,
+                                      )
+                                    }
+                                  >
+                                    {qBusy ? (
+                                      <Loader2 className="size-3 animate-spin" />
+                                    ) : (
+                                      <Play className="size-3" />
+                                    )}
+                                    {sim?.status === "FAILED"
+                                      ? "Retry"
+                                      : "Generate"}
+                                  </Button>
+                                )}
+                                {sim && sim.status !== "FAILED" && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    disabled={qBusy}
+                                    onClick={() =>
+                                      regenerate(question, quiz.id)
+                                    }
+                                  >
+                                    {qBusy ? (
+                                      <Loader2 className="size-3 animate-spin" />
+                                    ) : (
+                                      <RefreshCw className="size-3" />
+                                    )}
+                                    {sim.status === "PENDING" ||
+                                    sim.status === "REVISING"
+                                      ? "Restart"
+                                      : "Regenerate"}
+                                  </Button>
+                                )}
+                                {sim && (
                                   <Button
                                     size="sm"
                                     variant="ghost"
@@ -604,41 +586,21 @@ export function AdminSimulationsClient() {
         </div>
       )}
 
-      {/* Full-size sandboxed preview */}
-      <Dialog
-        open={preview !== null}
-        onOpenChange={(open) => !open && setPreview(null)}
-      >
-        <DialogContent className="flex h-[85vh] max-w-5xl flex-col">
-          <DialogHeader>
-            <DialogTitle>{preview?.title}</DialogTitle>
-            {(preview?.topic || preview?.learningGoal) && (
-              <DialogDescription>
-                {preview?.topic}
-                {preview?.topic && preview?.learningGoal ? " — " : ""}
-                {preview?.learningGoal}
-              </DialogDescription>
-            )}
-            {preview && (
-              <AiMetricsLine
-                metrics={preview.aiMetrics}
-                prefix="Generated by "
-                className="text-xs text-muted-foreground"
-              />
-            )}
-          </DialogHeader>
-          <div className="min-h-0 flex-1">
-            {preview && (
-              <SimulationViewer
-                key={`${preview.simulationId}:${preview.version}`}
-                simulationId={preview.simulationId}
-                title={preview.title}
-                version={preview.version}
-              />
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+      {editing && (
+        <SimulationPanel
+          key={editing.simulationId}
+          simulationId={editing.simulationId}
+          canGiveFeedback
+          open
+          onOpenChange={(open) => {
+            if (!open) {
+              setEditing(null);
+              void refreshSummary();
+              void refreshDetail(editing.quizId);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

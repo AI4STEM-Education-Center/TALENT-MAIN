@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { canManageSimulation } from "@/lib/simulation-access";
 import {
   listSimulationVersions,
   snapshotSimulationVersions,
 } from "@/lib/simulation-versions";
-import { canManage, getContentActor } from "@/lib/quiz-access";
+import { getContentActor } from "@/lib/quiz-access";
 import {
   getAssistantSettings,
   type AssistantSettings,
@@ -112,7 +113,9 @@ async function access(id: string) {
       },
     },
   });
-  return sim && canManage(actor, sim.question.quiz) ? { actor, sim } : null;
+  return sim && canManageSimulation(actor, sim.question.quiz)
+    ? { actor, sim }
+    : null;
 }
 export async function GET(
   req: NextRequest,

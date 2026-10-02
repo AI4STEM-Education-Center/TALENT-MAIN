@@ -62,7 +62,7 @@ import { resolveProvider } from "@/lib/ai-provider";
 import { getS3ObjectAsString, putS3Object } from "@/lib/storage";
 import { readNdjson } from "@/lib/assistant/ndjson";
 import type { SimulationEditStreamEvent } from "@/lib/simulation-edit";
-import { resetDb, createTeacher } from "./db";
+import { resetDb, createTeacher, createAdmin } from "./db";
 const plan = {
   message: "Ready to replace the label and remove the timer.",
   name: "Explore speed",
@@ -144,12 +144,73 @@ beforeEach(async () => {
   });
 });
 describe("simulation editing", () => {
+  it("lets admins open and directly edit a teacher-owned simulation", async () => {
+    const admin = await createAdmin();
+    vi.mocked(auth).mockResolvedValue({
+      user: { id: admin.id, role: "ADMIN" },
+    } as never);
+    expect((await GET(request({}), params())).status).toBe(200);
+    const res = await POST(
+      request({
+        action: "patch",
+        version: 1,
+        patches: [
+          { kind: "text", before: "Wave speed", after: "Explore wave speed" },
+        ],
+      }),
+      params(),
+    );
+    expect(res.status).toBe(200);
+    expect(
+      await prisma.questionSimulation.findUnique({ where: { id } }),
+    ).toMatchObject({ version: 2 });
+    expect(
+      await prisma.simulationVersion.findUnique({
+        where: { simulationId_number: { simulationId: id, number: 2 } },
+      }),
+    ).toMatchObject({ parentNumber: 1, storageKey: "sims/v2.html" });
+    expect(putS3Object).toHaveBeenCalled();
+  });
+
+  it("lets admins discuss and apply a revision to a teacher-owned simulation", async () => {
+    const admin = await createAdmin();
+    vi.mocked(auth).mockResolvedValue({
+      user: { id: admin.id, role: "ADMIN" },
+    } as never);
+    const chatId = await chat();
+    expect(
+      (await POST(request({ action: "apply", version: 1, chatId }), params()))
+        .status,
+    ).toBe(202);
+    expect(await prisma.simulationFeedback.findFirst()).toMatchObject({
+      simulationId: id,
+      authorUserId: admin.id,
+      feedback: plan.revisionPrompt,
+    });
+    expect(enqueueSimulation).toHaveBeenCalledTimes(1);
+  });
+
   it("isolates teachers and denies students", async () => {
     const { user } = await createTeacher();
     vi.mocked(auth).mockResolvedValue({
       user: { id: user.id, role: "TEACHER" },
     } as never);
     expect((await GET(request({}), params())).status).toBe(404);
+    expect(
+      (
+        await POST(
+          request({
+            action: "patch",
+            version: 1,
+            patches: [
+              { kind: "text", before: "Wave speed", after: "Unauthorized" },
+            ],
+          }),
+          params(),
+        )
+      ).status,
+    ).toBe(404);
+    expect(putS3Object).not.toHaveBeenCalled();
     vi.mocked(auth).mockResolvedValue({
       user: { id: user.id, role: "STUDENT" },
     } as never);

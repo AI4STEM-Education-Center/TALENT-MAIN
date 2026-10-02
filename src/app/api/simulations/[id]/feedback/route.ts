@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { canManage, getContentActor } from "@/lib/quiz-access";
+import { canManageSimulation } from "@/lib/simulation-access";
+import { getContentActor } from "@/lib/quiz-access";
 import { enqueueSimulation } from "@/lib/queue";
 import { guardText } from "@/lib/guardrail-runner";
 import { rateLimit } from "@/lib/rate-limit";
@@ -13,7 +14,7 @@ class SimulationAlreadyClaimedError extends Error {}
 
 /**
  * POST /api/simulations/[id]/feedback
- * One review round: a teacher (on their own quiz copy) or an admin (on a pool
+ * One review round: a teacher (on their own quiz copy) or an admin (on any
  * quiz) reports a problem — a physics/math error, a layout issue, a correction
  * — and the worker revises the artifact. The simulation goes to REVISING; the
  * previous version keeps serving until the revision lands. The job is the
@@ -36,7 +37,7 @@ export async function POST(
       question: { select: { quiz: { select: { teacherId: true } } } },
     },
   });
-  if (!sim || !canManage(actor, sim.question.quiz)) {
+  if (!sim || !canManageSimulation(actor, sim.question.quiz)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 

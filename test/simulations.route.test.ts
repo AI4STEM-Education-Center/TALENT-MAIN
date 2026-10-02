@@ -3,8 +3,13 @@ import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 vi.mock("@/lib/auth", () => ({ auth: vi.fn() }));
 vi.mock("@/lib/queue", () => ({ enqueueSimulation: vi.fn() }));
 vi.mock("@/lib/storage", () => ({ deleteS3Object: vi.fn() }));
+vi.mock("@/lib/guardrail-runner", () => ({
+  guardText: vi.fn().mockResolvedValue({ blocked: false }),
+}));
 
 import { POST as GENERATE } from "@/app/api/simulations/generate/route";
+import { POST as ADMIN_GENERATE } from "@/app/api/admin/simulations/generate/route";
+import { POST as FEEDBACK } from "@/app/api/simulations/[id]/feedback/route";
 import { DELETE as DELETE_SIM } from "@/app/api/simulations/[id]/route";
 import { auth } from "@/lib/auth";
 import { enqueueSimulation } from "@/lib/queue";
@@ -211,7 +216,7 @@ describe("POST /api/simulations/generate", () => {
     ).toBe(404);
   });
 
-  it("lets an admin generate on the pool but not inside a teacher's quiz", async () => {
+  it("lets an admin generate on both pool and teacher quizzes", async () => {
     const { teacher } = await createTeacher();
     const pool = await seedQuiz(null, 1);
     const priv = await seedQuiz(teacher.id, 1);
@@ -222,8 +227,9 @@ describe("POST /api/simulations/generate", () => {
     ).toBe(202);
     expect(
       (await GENERATE(jsonReq({ scope: "quiz", quizId: priv.quiz.id }))).status,
-    ).toBe(404);
-    expect(await prisma.questionSimulation.count()).toBe(1);
+    ).toBe(202);
+    expect(await prisma.questionSimulation.count()).toBe(2);
+    expect(mockEnqueue).toHaveBeenCalledTimes(2);
   });
 
   it("marks a row FAILED when the job cannot be enqueued", async () => {
@@ -244,6 +250,137 @@ describe("POST /api/simulations/generate", () => {
     });
     expect(sim.status).toBe("FAILED");
     expect(sim.errorMessage).toBe("queue unavailable");
+  });
+});
+
+describe("POST /api/admin/simulations/generate", () => {
+  it("generates missing and failed simulations across all quizzes without replacing settled work", async () => {
+    const { teacher } = await createTeacher();
+    await seedQuiz(null, 1);
+    const { questions } = await seedQuiz(teacher.id, 5);
+    for (const [i, status] of [
+      "FAILED",
+      "READY",
+      "DECLINED",
+      "PENDING",
+    ].entries()) {
+      await prisma.questionSimulation.create({
+        data: { questionId: questions[i].id, status },
+      });
+    }
+    asAdmin();
+    const res = await ADMIN_GENERATE(jsonReq({ scope: "all", force: true }));
+    expect(res.status).toBe(202);
+    expect(await res.json()).toMatchObject({
+      totalQuestions: 6,
+      created: 2,
+      retried: 1,
+      skipped: 3,
+      enqueued: 3,
+    });
+    expect(mockEnqueue).toHaveBeenCalledTimes(3);
+    for (const [i, status] of [
+      "PENDING",
+      "READY",
+      "DECLINED",
+      "PENDING",
+    ].entries()) {
+      expect(
+        await prisma.questionSimulation.findUnique({
+          where: { questionId: questions[i].id },
+        }),
+      ).toMatchObject({ status });
+    }
+  });
+
+  it("keeps the explicit pool scope limited to pool questions", async () => {
+    const { teacher } = await createTeacher();
+    const pool = await seedQuiz(null, 1);
+    await seedQuiz(teacher.id, 1);
+    asAdmin();
+    expect((await ADMIN_GENERATE(jsonReq({ scope: "pool" }))).status).toBe(202);
+    expect(await prisma.questionSimulation.findMany()).toMatchObject([
+      { questionId: pool.questions[0].id },
+    ]);
+  });
+
+  it.each(["quiz", "question"])(
+    "lets admins target a teacher-owned %s",
+    async (scope) => {
+      const { teacher } = await createTeacher();
+      const { quiz, questions } = await seedQuiz(teacher.id, 1);
+      asAdmin();
+      const res = await ADMIN_GENERATE(
+        jsonReq({
+          scope,
+          quizId: quiz.id,
+          questionId: questions[0].id,
+        }),
+      );
+      expect(res.status).toBe(202);
+      expect(await res.json()).toMatchObject({ created: 1, enqueued: 1 });
+    },
+  );
+
+  it.each(["TEACHER", "STUDENT", null])(
+    "denies bulk generation to %s",
+    async (role) => {
+      mockAuth.mockResolvedValue(
+        role ? ({ user: { id: "not-admin", role } } as never) : (null as never),
+      );
+      expect((await ADMIN_GENERATE(jsonReq({ scope: "all" }))).status).toBe(
+        403,
+      );
+      expect(await prisma.questionSimulation.count()).toBe(0);
+      expect(mockEnqueue).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe("admin simulation management", () => {
+  it("lets admins revise a teacher-owned simulation", async () => {
+    const { teacher } = await createTeacher();
+    const { questions } = await seedQuiz(teacher.id);
+    const sim = await prisma.questionSimulation.create({
+      data: {
+        questionId: questions[0].id,
+        status: "READY",
+        storageKey: "k",
+        bucket: "b",
+      },
+    });
+    asAdmin();
+    expect(
+      (
+        await FEEDBACK(
+          jsonReq({ feedback: "Correct the units" }),
+          params(sim.id),
+        )
+      ).status,
+    ).toBe(202);
+    expect(await prisma.simulationFeedback.findFirst()).toMatchObject({
+      simulationId: sim.id,
+      authorUserId: "admin-1",
+      feedback: "Correct the units",
+    });
+    expect(mockEnqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets admins delete a teacher-owned simulation", async () => {
+    const { teacher } = await createTeacher();
+    const { questions } = await seedQuiz(teacher.id);
+    const sim = await prisma.questionSimulation.create({
+      data: {
+        questionId: questions[0].id,
+        status: "READY",
+        storageKey: "k",
+        bucket: "b",
+      },
+    });
+    asAdmin();
+    expect((await DELETE_SIM({} as never, params(sim.id))).status).toBe(200);
+    expect(await prisma.questionSimulation.count()).toBe(0);
+    expect(mockDeleteS3).toHaveBeenCalledWith("b", "k");
   });
 });
 

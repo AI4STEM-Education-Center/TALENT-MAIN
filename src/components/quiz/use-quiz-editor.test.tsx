@@ -18,6 +18,7 @@ const quiz: QuizDetail = {
   topic: null,
   teacherId: "teacher",
   editable: true,
+  simulationsEditable: true,
   questions: [
     {
       id: "question",

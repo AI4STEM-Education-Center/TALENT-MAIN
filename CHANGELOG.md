@@ -2,7 +2,8 @@
 
 ## v0.0.23 - 2026-10-02
 
-- Added read-only administrator previews of teachers' uploaded quizzes and simulations, with teacher identity and search filters in the simulation dashboard.
+- Added read-only administrator previews of teachers' uploaded quizzes, with teacher identity and search filters in the simulation dashboard.
+- Expanded administrator simulation management with generation, retries, and versioned editing for both pool and teacher quizzes.
 - Expanded administrator oversight with all-class statistics, per-quiz performance, individual student statistics, and detailed attempt reviews.
 - Added searchable, paginated student usage records for completed quizzes, unfinished quizzes, practice attempts, and simulation sessions, including archived results whose original accounts or content have been removed.
 - Improved student AI access so summaries and study recommendations remain available independently of research consent, while research diagnostics and simulation telemetry remain consent-gated.
