@@ -27,7 +27,7 @@ function tally(counts: SimulationCounts, status: string | null) {
 }
 
 /**
- * GET /api/admin/simulations            — global-pool coverage summary
+ * GET /api/admin/simulations            — coverage summary for pool and teacher quizzes
  * GET /api/admin/simulations?quizId=xxx — per-question detail for one quiz
  */
 export async function GET(req: NextRequest) {
@@ -85,9 +85,13 @@ export async function GET(req: NextRequest) {
   }
 
   const quizzes = await prisma.quiz.findMany({
-    where: { teacherId: null },
     include: {
       topic: { select: { name: true } },
+      teacher: {
+        select: {
+          user: { select: { firstName: true, lastName: true, email: true } },
+        },
+      },
       questions: { select: { simulation: { select: { status: true } } } },
     },
     orderBy: [{ order: "asc" }, { createdAt: "asc" }],
@@ -104,6 +108,7 @@ export async function GET(req: NextRequest) {
       id: quiz.id,
       name: quiz.name,
       topicName: quiz.topic?.name ?? null,
+      teacher: quiz.teacher?.user ?? null,
       questionCount: quiz.questions.length,
       counts,
     };

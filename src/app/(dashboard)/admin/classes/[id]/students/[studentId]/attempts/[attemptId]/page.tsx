@@ -5,5 +5,5 @@ export default function Page({
 }: {
   params: Promise<{ id: string; studentId: string; attemptId: string }>;
 }) {
-  return <AttemptDetailView params={params} audience="teacher" />;
+  return <AttemptDetailView params={params} audience="admin" />;
 }

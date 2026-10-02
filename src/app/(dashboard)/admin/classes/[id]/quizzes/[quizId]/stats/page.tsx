@@ -5,5 +5,5 @@ export default function Page({
 }: {
   params: Promise<{ id: string; quizId: string }>;
 }) {
-  return <QuizStatsView params={params} audience="teacher" />;
+  return <QuizStatsView params={params} audience="admin" />;
 }

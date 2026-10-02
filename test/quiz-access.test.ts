@@ -68,8 +68,8 @@ describe("canRead", () => {
     expect(canRead(teacherActor, { teacherId: "t1" })).toBe(true);
     expect(canRead(teacherActor, { teacherId: "t2" })).toBe(false);
   });
-  it("forbids an admin from reading a teacher's private content", () => {
-    expect(canRead(adminActor, { teacherId: "t1" })).toBe(false);
+  it("lets an admin inspect a teacher's private content", () => {
+    expect(canRead(adminActor, { teacherId: "t1" })).toBe(true);
   });
 });
 

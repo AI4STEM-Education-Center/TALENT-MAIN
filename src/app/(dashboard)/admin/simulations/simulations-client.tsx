@@ -1,5 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +41,7 @@ interface QuizRow {
   id: string;
   name: string;
   topicName: string | null;
+  teacher: { firstName: string; lastName: string; email: string } | null;
   questionCount: number;
   counts: Counts;
 }
@@ -87,6 +90,8 @@ function generatable(counts: Counts): number {
 
 export function AdminSimulationsClient() {
   const confirm = useConfirm();
+  const [scope, setScope] = useState("all");
+  const [search, setSearch] = useState("");
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loadError, setLoadError] = useState("");
   const [msg, setMsg] = useState("");
@@ -255,17 +260,34 @@ export function AdminSimulationsClient() {
   }
 
   const totals = summary.totals;
-  const poolGeneratable = generatable(totals);
+  const poolGeneratable = summary.quizzes
+    .filter((quiz) => !quiz.teacher)
+    .reduce((sum, quiz) => sum + generatable(quiz.counts), 0);
+  const query = search.trim().toLowerCase();
+  const quizzes = summary.quizzes.filter(
+    (quiz) =>
+      (scope === "all" ||
+        (scope === "teachers" ? !!quiz.teacher : !quiz.teacher)) &&
+      [
+        quiz.name,
+        quiz.topicName,
+        quiz.teacher?.firstName,
+        quiz.teacher?.lastName,
+        quiz.teacher?.email,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(query),
+  );
 
   return (
     <div className="p-4 md:p-6 space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Simulations</h1>
         <p className="text-muted-foreground text-sm mt-1">
-          AI-generated interactive simulations, one per pool question, teaching
-          each question&apos;s broad topic — never the question itself. Teachers
-          receive them with imported quizzes; students see them after submitting
-          a quiz.
+          Inspect simulations from the global pool and every teacher’s quizzes.
+          Search by quiz, topic, teacher name, or email.
         </p>
       </div>
 
@@ -308,21 +330,40 @@ export function AdminSimulationsClient() {
             ) : (
               <Sparkles className="size-4" />
             )}
-            Generate missing ({poolGeneratable})
+            Generate missing in pool ({poolGeneratable})
           </Button>
         </CardContent>
       </Card>
 
-      {summary.quizzes.length === 0 ? (
+      <div className="flex flex-wrap gap-3">
+        <Input
+          aria-label="Search simulations"
+          placeholder="Search quizzes or teachers…"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          className="max-w-md"
+        />
+        <select
+          aria-label="Simulation ownership"
+          value={scope}
+          onChange={(event) => setScope(event.target.value)}
+          className="rounded-md border bg-background px-3 py-2 text-sm"
+        >
+          <option value="all">All quizzes</option>
+          <option value="pool">Global pool</option>
+          <option value="teachers">Teacher quizzes</option>
+        </select>
+      </div>
+      {quizzes.length === 0 ? (
         <Card>
           <CardContent className="text-center py-12 text-muted-foreground">
             <Atom className="size-10 mx-auto mb-3" />
-            <p>The global pool has no quizzes yet.</p>
+            <p>No quizzes match these filters.</p>
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-3">
-          {summary.quizzes.map((quiz) => {
+          {quizzes.map((quiz) => {
             const isOpen = expanded.has(quiz.id);
             const detail = details[quiz.id];
             const quizGeneratable = generatable(quiz.counts);
@@ -345,6 +386,11 @@ export function AdminSimulationsClient() {
                         {quiz.name}
                       </span>
                       <span className="mt-1 flex flex-wrap gap-2">
+                        <Badge variant="secondary">
+                          {quiz.teacher
+                            ? `${quiz.teacher.firstName} ${quiz.teacher.lastName} · ${quiz.teacher.email}`
+                            : "Global pool"}
+                        </Badge>
                         {quiz.topicName && (
                           <Badge variant="outline">{quiz.topicName}</Badge>
                         )}
@@ -370,28 +416,33 @@ export function AdminSimulationsClient() {
                       </span>
                     </span>
                   </button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="shrink-0"
-                    disabled={
-                      busy.has(`quiz:${quiz.id}`) || quizGeneratable === 0
-                    }
-                    onClick={() =>
-                      generate(
-                        { scope: "quiz", quizId: quiz.id },
-                        `quiz:${quiz.id}`,
-                        quiz.id,
-                      )
-                    }
-                  >
-                    {busy.has(`quiz:${quiz.id}`) ? (
-                      <Loader2 className="size-3 animate-spin" />
-                    ) : (
-                      <Play className="size-3" />
-                    )}
-                    Generate ({quizGeneratable})
+                  <Button size="sm" variant="ghost" asChild>
+                    <Link href={`/admin/quizzes/${quiz.id}`}>View quiz</Link>
                   </Button>
+                  {!quiz.teacher && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0"
+                      disabled={
+                        busy.has(`quiz:${quiz.id}`) || quizGeneratable === 0
+                      }
+                      onClick={() =>
+                        generate(
+                          { scope: "quiz", quizId: quiz.id },
+                          `quiz:${quiz.id}`,
+                          quiz.id,
+                        )
+                      }
+                    >
+                      {busy.has(`quiz:${quiz.id}`) ? (
+                        <Loader2 className="size-3 animate-spin" />
+                      ) : (
+                        <Play className="size-3" />
+                      )}
+                      Generate ({quizGeneratable})
+                    </Button>
+                  )}
                 </div>
 
                 {isOpen && (
@@ -479,53 +530,56 @@ export function AdminSimulationsClient() {
                                     <Eye className="size-3" /> Preview
                                   </Button>
                                 )}
-                                {(!sim || sim.status === "FAILED") && (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    disabled={qBusy}
-                                    onClick={() =>
-                                      generate(
-                                        {
-                                          scope: "question",
-                                          questionId: question.id,
-                                        },
-                                        `q:${question.id}`,
-                                        quiz.id,
-                                      )
-                                    }
-                                  >
-                                    {qBusy ? (
-                                      <Loader2 className="size-3 animate-spin" />
-                                    ) : (
-                                      <Play className="size-3" />
-                                    )}
-                                    {sim?.status === "FAILED"
-                                      ? "Retry"
-                                      : "Generate"}
-                                  </Button>
-                                )}
-                                {sim && sim.status !== "FAILED" && (
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    disabled={qBusy}
-                                    onClick={() =>
-                                      regenerate(question, quiz.id)
-                                    }
-                                  >
-                                    {qBusy ? (
-                                      <Loader2 className="size-3 animate-spin" />
-                                    ) : (
-                                      <RefreshCw className="size-3" />
-                                    )}
-                                    {sim.status === "PENDING" ||
-                                    sim.status === "REVISING"
-                                      ? "Restart"
-                                      : "Regenerate"}
-                                  </Button>
-                                )}
-                                {sim && (
+                                {!quiz.teacher &&
+                                  (!sim || sim.status === "FAILED") && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      disabled={qBusy}
+                                      onClick={() =>
+                                        generate(
+                                          {
+                                            scope: "question",
+                                            questionId: question.id,
+                                          },
+                                          `q:${question.id}`,
+                                          quiz.id,
+                                        )
+                                      }
+                                    >
+                                      {qBusy ? (
+                                        <Loader2 className="size-3 animate-spin" />
+                                      ) : (
+                                        <Play className="size-3" />
+                                      )}
+                                      {sim?.status === "FAILED"
+                                        ? "Retry"
+                                        : "Generate"}
+                                    </Button>
+                                  )}
+                                {!quiz.teacher &&
+                                  sim &&
+                                  sim.status !== "FAILED" && (
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      disabled={qBusy}
+                                      onClick={() =>
+                                        regenerate(question, quiz.id)
+                                      }
+                                    >
+                                      {qBusy ? (
+                                        <Loader2 className="size-3 animate-spin" />
+                                      ) : (
+                                        <RefreshCw className="size-3" />
+                                      )}
+                                      {sim.status === "PENDING" ||
+                                      sim.status === "REVISING"
+                                        ? "Restart"
+                                        : "Regenerate"}
+                                    </Button>
+                                  )}
+                                {!quiz.teacher && sim && (
                                   <Button
                                     size="sm"
                                     variant="ghost"

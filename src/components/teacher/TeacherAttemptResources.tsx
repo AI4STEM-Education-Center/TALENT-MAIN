@@ -38,7 +38,7 @@ export function TeacherAttemptResources({
   simulations,
 }: {
   /** The attempt these resources belong to; enables the teacher's ratings. */
-  attemptId: string;
+  attemptId?: string;
   summary: string | null;
   summaryStatus: ResultStatus;
   summaryMetrics: ResultComponentMetrics | null;

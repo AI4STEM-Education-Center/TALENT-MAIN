@@ -143,12 +143,28 @@ interface NavGroup {
 // its own so the active item is never hidden.
 const adminNavGroups: NavGroup[] = [
   {
+    label: "Learning activity",
+    icon: <BarChart3 className="size-4" />,
+    items: [
+      {
+        href: "/admin/classes",
+        label: "Class Statistics",
+        icon: <GraduationCap className="size-4" />,
+      },
+      {
+        href: "/admin/usage",
+        label: "Student Usage",
+        icon: <History className="size-4" />,
+      },
+    ],
+  },
+  {
     label: "Content",
     icon: <FolderOpen className="size-4" />,
     items: [
       {
         href: "/admin/quizzes",
-        label: "Quiz Pool",
+        label: "Quizzes",
         icon: <FileQuestion className="size-4" />,
       },
       {
