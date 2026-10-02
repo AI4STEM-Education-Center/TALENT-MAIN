@@ -91,6 +91,9 @@ export function QuizEditorHeader({
         )}
         <div className="flex items-center gap-2 mt-2 flex-wrap">
           {isPoolQuiz && <Badge variant="secondary">Global pool</Badge>}
+          {readOnly && !isPoolQuiz && (
+            <Badge variant="secondary">Read only</Badge>
+          )}
           <Badge variant="outline">
             {quiz.questions.length} question
             {quiz.questions.length !== 1 ? "s" : ""}
@@ -122,12 +125,12 @@ export function QuizEditorHeader({
             </Link>
           </Button>
         )}
-        {readOnly ? (
+        {readOnly && isPoolQuiz ? (
           <Button onClick={importPoolCopy} disabled={poolImportBusy}>
             <Download className="size-4" />{" "}
             {poolImportBusy ? "Importing…" : "Import to my quizzes"}
           </Button>
-        ) : (
+        ) : !readOnly ? (
           <>
             <Button
               variant="outline"
@@ -161,7 +164,7 @@ export function QuizEditorHeader({
               </Button>
             )}
           </>
-        )}
+        ) : null}
       </div>
     </div>
   );

@@ -11,7 +11,7 @@ import { parseJsonBody, quizUpdateSchema } from "@/lib/validation";
 import { QUESTION_ORDER } from "@/lib/question-order";
 
 // GET: quiz detail with questions. Own quizzes are fully visible; pool quizzes
-// are readable by any teacher/admin (so the pool can be previewed before import).
+// are readable by any teacher/admin. Admins can also inspect teacher uploads.
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -36,7 +36,7 @@ export async function GET(
   if (!quiz || !canRead(actor, quiz)) {
     return NextResponse.json({ error: "Quiz not found" }, { status: 404 });
   }
-  // Teacher-only route: the numeric answer scalars (answerNumeric etc.) are fine
+  // Staff-only route: the numeric answer scalars (answerNumeric etc.) are fine
   // to return. Swap the raw figure/option-image key+bucket for transient
   // presigned URLs so the editor can show thumbnails without leaking storage keys.
   // The simulation is likewise reduced to a key-free summary (content is served

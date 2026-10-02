@@ -41,12 +41,16 @@ export function canManage(
   return content.teacherId === actor.teacherId;
 }
 
-/** Can the actor view this content? Own content, plus the pool is readable by everyone. */
+/** Admins can inspect all content; teachers can read their own and the pool. */
 export function canRead(
   actor: ContentActor,
   content: { teacherId: string | null },
 ): boolean {
-  return content.teacherId === null || content.teacherId === actor.teacherId;
+  return (
+    actor.role === "ADMIN" ||
+    content.teacherId === null ||
+    content.teacherId === actor.teacherId
+  );
 }
 
 /**
