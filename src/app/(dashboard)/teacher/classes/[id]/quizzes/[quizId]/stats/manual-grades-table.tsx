@@ -21,10 +21,14 @@ export function ManualGradesTable({
   classId,
   quizId,
   initialStudents,
+  readOnly = false,
+  classHref = `/teacher/classes/${classId}`,
 }: {
   classId: string;
   quizId: string;
   initialStudents: QuizStudentRow[];
+  readOnly?: boolean;
+  classHref?: string;
 }) {
   const alert = useAlert();
   const [students, setStudents] = useState(initialStudents);
@@ -146,7 +150,7 @@ export function ManualGradesTable({
               >
                 <td className="py-2 pr-3">
                   <Link
-                    href={`/teacher/classes/${classId}/students/${student.studentId}/stats`}
+                    href={`${classHref}/students/${student.studentId}/stats`}
                     className="text-primary hover:underline"
                   >
                     {student.name}
@@ -166,7 +170,7 @@ export function ManualGradesTable({
                   {student.attempts}
                 </td>
                 <td className="py-2 pl-3 text-right">
-                  {student.canEditManualGrade && (
+                  {!readOnly && student.canEditManualGrade && (
                     <Button
                       variant="ghost"
                       size="sm"

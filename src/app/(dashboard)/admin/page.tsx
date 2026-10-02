@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, GraduationCap, LayoutDashboard, Shield } from "lucide-react";
 import { auth } from "@/lib/auth";
@@ -24,6 +26,20 @@ export default async function AdminDashboardPage() {
         </p>
       </div>
 
+      <div className="mb-6 flex flex-wrap gap-3">
+        <Button asChild>
+          <Link href="/admin/classes">Class statistics</Link>
+        </Button>
+        <Button variant="outline" asChild>
+          <Link href="/admin/usage">Student usage records</Link>
+        </Button>
+        <Button variant="outline" asChild>
+          <Link href="/admin/quizzes">Teacher quizzes & pool</Link>
+        </Button>
+        <Button variant="outline" asChild>
+          <Link href="/admin/simulations">Simulations</Link>
+        </Button>
+      </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">

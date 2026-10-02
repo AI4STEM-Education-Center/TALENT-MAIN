@@ -537,7 +537,12 @@ export function AdminQuizPoolClient({
                                 </Badge>
                               </div>
                             </div>
-                            <div className="flex shrink-0 gap-1">
+                            <div className="flex shrink-0 flex-wrap gap-1">
+                              <Button size="sm" variant="outline" asChild>
+                                <Link href={`/admin/quizzes/${quiz.id}`}>
+                                  View quiz & simulations
+                                </Link>
+                              </Button>
                               <Button size="sm" variant="ghost" asChild>
                                 <Link href={`/admin/quizzes/${quiz.id}`}>
                                   <Pencil className="size-3" /> Edit
@@ -575,7 +580,12 @@ export function AdminQuizPoolClient({
             <Card key={quiz.id}>
               <CardContent className="flex items-center justify-between gap-3 p-4">
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold">{quiz.name}</p>
+                  <Link
+                    href={`/admin/quizzes/${quiz.id}`}
+                    className="font-semibold text-primary hover:underline"
+                  >
+                    {quiz.name}
+                  </Link>
                   <div className="flex gap-2 mt-1 flex-wrap">
                     <Badge variant="secondary">
                       {quiz.teacher.user.firstName} {quiz.teacher.user.lastName}
@@ -592,7 +602,12 @@ export function AdminQuizPoolClient({
                     )}
                   </div>
                 </div>
-                <div className="flex shrink-0 gap-1">
+                <div className="flex shrink-0 flex-wrap gap-1">
+                  <Button size="sm" variant="outline" asChild>
+                    <Link href={`/admin/quizzes/${quiz.id}`}>
+                      View quiz & simulations
+                    </Link>
+                  </Button>
                   <Button
                     size="sm"
                     variant="outline"
