@@ -224,7 +224,7 @@ export default function AdminSurveysPage() {
             </Link>
           </Button>
           <Button variant="outline" size="sm" asChild>
-            <Link href="/admin/post-survey-email">
+            <Link href="/admin/research-email/post-survey">
               <Mail className="size-4" /> Post-survey email
             </Link>
           </Button>

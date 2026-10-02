@@ -11,7 +11,7 @@ export const runtime = "nodejs";
 
 /**
  * POST /api/admin/research-email/preview { kind, audience } — who the email
- * would reach right now, split by version, with a sample for the preview.
+ * would reach right now, counted per version, with samples for the preview.
  */
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -31,10 +31,12 @@ export async function POST(req: NextRequest) {
       : normalizePostSurveyAudience(body.audience);
 
   const plan = await previewRecipients(body.kind, JSON.stringify(audience));
+  const byVersion: Record<string, number> = {};
+  for (const r of plan.recipients)
+    byVersion[r.variant] = (byVersion[r.variant] ?? 0) + 1;
   return NextResponse.json({
     count: plan.recipients.length,
-    irbCount: plan.recipients.filter((r) => r.variant === "IRB").length,
-    surveyCount: plan.recipients.filter((r) => r.variant === "SURVEY").length,
+    byVersion,
     skipped: plan.skipped,
     recipients: plan.recipients.slice(0, 200).map((r) => ({
       name: r.name,
