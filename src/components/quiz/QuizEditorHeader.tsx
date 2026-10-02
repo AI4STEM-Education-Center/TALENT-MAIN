@@ -131,40 +131,35 @@ export function QuizEditorHeader({
             {poolImportBusy ? "Importing…" : "Import to my quizzes"}
           </Button>
         ) : !readOnly ? (
-          <>
-            <Button
-              variant="outline"
-              onClick={() => duplicateQuiz(listHref)}
-              disabled={duplicateBusy}
-            >
-              {duplicateBusy ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Copy className="size-4" />
-              )}
-              {duplicateBusy ? "Duplicating…" : "Duplicate"}
-            </Button>
-            {missingSimulations > 0 && (
-              <Button
-                variant="outline"
-                onClick={() =>
-                  generateSimulations(
-                    { scope: "quiz", quizId: quiz.id },
-                    "quiz",
-                  )
-                }
-                disabled={simBusy.has("quiz")}
-              >
-                {simBusy.has("quiz") ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Sparkles className="size-4" />
-                )}
-                Generate simulations ({missingSimulations})
-              </Button>
+          <Button
+            variant="outline"
+            onClick={() => duplicateQuiz(listHref)}
+            disabled={duplicateBusy}
+          >
+            {duplicateBusy ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Copy className="size-4" />
             )}
-          </>
+            {duplicateBusy ? "Duplicating…" : "Duplicate"}
+          </Button>
         ) : null}
+        {quiz.simulationsEditable && missingSimulations > 0 && (
+          <Button
+            variant="outline"
+            onClick={() =>
+              generateSimulations({ scope: "quiz", quizId: quiz.id }, "quiz")
+            }
+            disabled={simBusy.has("quiz")}
+          >
+            {simBusy.has("quiz") ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Sparkles className="size-4" />
+            )}
+            Generate simulations ({missingSimulations})
+          </Button>
+        )}
       </div>
     </div>
   );

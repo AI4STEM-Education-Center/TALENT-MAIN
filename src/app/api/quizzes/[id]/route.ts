@@ -6,6 +6,7 @@ import {
   attachOptionImageUrls,
 } from "@/lib/question-figures";
 import { simulationMetricsView } from "@/lib/simulation-metrics";
+import { canManageSimulation } from "@/lib/simulation-access";
 
 import { parseJsonBody, quizUpdateSchema } from "@/lib/validation";
 import { QUESTION_ORDER } from "@/lib/question-order";
@@ -73,6 +74,7 @@ export async function GET(
     ...quiz,
     questions,
     editable: canManage(actor, quiz),
+    simulationsEditable: canManageSimulation(actor, quiz),
   });
 }
 

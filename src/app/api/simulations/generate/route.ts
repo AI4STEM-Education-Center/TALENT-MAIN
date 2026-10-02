@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { canManage, getContentActor } from "@/lib/quiz-access";
+import { canManageSimulation } from "@/lib/simulation-access";
+import { getContentActor } from "@/lib/quiz-access";
 import { triggerSimulations } from "@/lib/simulation-trigger";
 import { rateLimit } from "@/lib/rate-limit";
 
@@ -39,8 +40,8 @@ function parseScope(body: Record<string, unknown>): Scope | null {
  *   { scope: "question", questionId, force? }  — one question; force re-generates
  *                                                even a READY/DECLINED simulation
  *
- * Scoped by the usual canManage rule — a teacher may only generate on their own
- * quizzes, an admin only on the pool. A teacher who wants simulations on a pool
+ * Teachers may only generate on their own quizzes; admins may generate on any
+ * quiz. A teacher who wants simulations on a pool
  * quiz imports it first; that copy's artifacts are independent of the pool's
  * (see deepCopyQuiz), so regenerating here never touches the global version.
  * Force is question-scoped on purpose, so a whole-quiz trigger can never
@@ -79,7 +80,7 @@ export async function POST(req: NextRequest) {
     });
     // 404, not 403: an unmanageable quiz is indistinguishable from a missing
     // one here, matching /api/quizzes/[id].
-    if (!quiz || !canManage(actor, quiz)) {
+    if (!quiz || !canManageSimulation(actor, quiz)) {
       return NextResponse.json({ error: "Quiz not found" }, { status: 404 });
     }
     questionIds = quiz.questions.map((q) => q.id);
@@ -88,7 +89,7 @@ export async function POST(req: NextRequest) {
       where: { id: scope.questionId },
       include: { quiz: { select: { teacherId: true } } },
     });
-    if (!question || !canManage(actor, question.quiz)) {
+    if (!question || !canManageSimulation(actor, question.quiz)) {
       return NextResponse.json(
         { error: "Question not found" },
         { status: 404 },
