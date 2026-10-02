@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.0.23 - 2026-10-02
+
+- Added read-only administrator previews of teachers' uploaded quizzes and simulations, with teacher identity and search filters in the simulation dashboard.
+- Expanded administrator oversight with all-class statistics, per-quiz performance, individual student statistics, and detailed attempt reviews.
+- Added searchable, paginated student usage records for completed quizzes, unfinished quizzes, practice attempts, and simulation sessions, including archived results whose original accounts or content have been removed.
+- Improved student AI access so summaries and study recommendations remain available independently of research consent, while research diagnostics and simulation telemetry remain consent-gated.
+- Improved guardrail diagnostics with a real-content moderation test and removed an incorrect Cloudflare provider warning.
+- Improved assistant discovery with a prominent Study and Teaching assistant button in the sidebar.
+
 ## v0.0.22 - 2026-09-25
 
 - Added class syllabus upload with AI extraction of course details and dated schedule items, teacher editing and re-uploads, a read-only student view, and a syllabus skill for the chat assistants.
