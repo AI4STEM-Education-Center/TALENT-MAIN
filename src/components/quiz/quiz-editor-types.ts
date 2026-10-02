@@ -51,6 +51,7 @@ export interface QuizDetail {
   teacherId: string | null;
   questions: Question[];
   editable: boolean;
+  simulationsEditable: boolean;
 }
 export interface ImportSummary {
   importedCount: number;

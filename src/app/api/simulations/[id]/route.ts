@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { canManage, canRead, getContentActor } from "@/lib/quiz-access";
+import { canManageSimulation } from "@/lib/simulation-access";
+import { canRead, getContentActor } from "@/lib/quiz-access";
 import { deleteS3Object } from "@/lib/storage";
 import { simulationMetricsView } from "@/lib/simulation-metrics";
 
@@ -56,8 +57,8 @@ export async function GET(
 
 /**
  * DELETE /api/simulations/[id]
- * Remove a simulation entirely: an admin may delete a pool simulation, a
- * teacher one on their own quiz (same canManage rule as feedback). The row and
+ * Remove a simulation entirely: admins may delete any simulation, teachers
+ * only those on their own quizzes (same rule as editing and feedback). The row and
  * its feedback (cascade) are deleted, then each S3 artifact this row used — its
  * current key plus every previous version — is removed ONLY when no other
  * simulation or feedback row still references that key. Deep-copied quizzes
@@ -82,7 +83,7 @@ export async function DELETE(
       versions: true,
     },
   });
-  if (!sim || !canManage(actor, sim.question.quiz)) {
+  if (!sim || !canManageSimulation(actor, sim.question.quiz)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 

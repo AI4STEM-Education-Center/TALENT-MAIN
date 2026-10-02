@@ -179,7 +179,7 @@ function QuizEditorContent({
       {openSimulationId && (
         <SimulationPanel
           simulationId={openSimulationId}
-          canGiveFeedback={!readOnly}
+          canGiveFeedback={quiz.simulationsEditable}
           open
           onOpenChange={(open) => {
             if (!open) {

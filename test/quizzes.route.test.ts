@@ -196,6 +196,7 @@ describe("GET /api/quizzes/[id] (detail)", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.editable).toBe(true);
+    expect(body.simulationsEditable).toBe(true);
     expect(body.questions).toHaveLength(1);
     expect(body.questions[0]).not.toHaveProperty("figureStorageKey");
     expect(body.questions[0]).toHaveProperty("figureUrl", null);
@@ -209,6 +210,21 @@ describe("GET /api/quizzes/[id] (detail)", () => {
     asTeacher(user.id);
     const body = await (await DETAIL({} as never, params(pool.id))).json();
     expect(body.editable).toBe(false);
+    expect(body.simulationsEditable).toBe(false);
+  });
+
+  it("lets admins manage simulations without editing the teacher's quiz", async () => {
+    const { teacher } = await createTeacher();
+    const quiz = await prisma.quiz.create({
+      data: { name: "Teacher quiz", teacherId: teacher.id },
+    });
+    asAdmin();
+    const res = await DETAIL({} as never, params(quiz.id));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      editable: false,
+      simulationsEditable: true,
+    });
   });
 });
 

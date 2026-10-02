@@ -223,7 +223,7 @@ export function QuizQuestionCard({
               <QuestionFeedback q={q} />
               <QuestionSimulationActions
                 q={q}
-                readOnly={readOnly}
+                readOnly={!editor.quiz?.simulationsEditable}
                 editor={editor}
               />
             </div>
