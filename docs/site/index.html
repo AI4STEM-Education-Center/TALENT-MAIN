@@ -284,11 +284,11 @@
     <h2>What is AI4Talent?</h2>
     <p><strong>AI4Talent</strong> is a class-based quiz platform for science education. Teachers create classes from their official roster, import quizzes from a shared global pool (or build them from a PDF, which the AI reads for you), and invite students with a secure link. Students take quizzes online and, after each attempt, receive <strong>AI-generated feedback</strong>: a performance summary, targeted study recommendations pointing at specific pages of the class's learning materials, and interactive <strong>simulations</strong> that let them explore the concepts they struggled with.</p>
     <p>Results are intentionally <strong>“blind”</strong> — students see their overall score, the questions they missed, their own submitted responses, and personalized guidance, but never the correct answers or unselected choices. Quizzes stay reusable while students still know what to revisit.</p>
-    <p>This guide is written against the deployment at <a href="https://dev.ai4talent.org/">dev.ai4talent.org</a>. Every path in it (like <a class="path" href="https://dev.ai4talent.org/login"><code>/login</code></a>) is a live link — click it to open that screen directly. If your institution runs its own instance, the paths are the same under your own domain.</p>
+    <p>This guide is written against the deployment at <a href="https://ai4talent.org/">ai4talent.org</a>. Every path in it (like <a class="path" href="https://ai4talent.org/login"><code>/login</code></a>) is a live link — click it to open that screen directly. If your institution runs its own instance, the paths are the same under your own domain.</p>
   </div>
 
   <div class="about roles">
-    <h2>How a class comes together <a class="site" href="https://dev.ai4talent.org/">dev.ai4talent.org</a></h2>
+    <h2>How a class comes together <a class="site" href="https://ai4talent.org/">ai4talent.org</a></h2>
     <p>Each step picks up where the previous one leaves off. This is the order things happen in when a class goes live:</p>
     <ul class="ready">
       <li><span class="ck" aria-hidden="true">✓</span><span><strong>The platform administrator prepares the deployment.</strong> They connect an AI provider, assign a model to each AI feature, and stock the shared global quiz pool. This is done for you before you start — if something AI-powered reports “no provider”, they're who to ask.</span></li>
@@ -303,19 +303,19 @@
       <tr>
         <td><span class="rolechip t">Teacher</span></td>
         <td class="dim">Create a class from a roster, import and publish quizzes, build a quiz from a PDF, upload and review AI-labeled learning materials, monitor results, export grades.</td>
-        <td><a class="path" href="https://dev.ai4talent.org/teacher"><code>/teacher</code></a></td>
+        <td><a class="path" href="https://ai4talent.org/teacher"><code>/teacher</code></a></td>
       </tr>
       <tr>
         <td><span class="rolechip s">Student</span></td>
         <td class="dim">Join a class, take quizzes, and read the AI feedback, study recommendations and simulations produced for each attempt.</td>
-        <td><a class="path" href="https://dev.ai4talent.org/student"><code>/student</code></a></td>
+        <td><a class="path" href="https://ai4talent.org/student"><code>/student</code></a></td>
       </tr>
     </table></div>
     <div class="callout tip"><span class="ic">✓</span><p>Evaluating the platform from both sides? Use two browser profiles (or one normal window and one private window) to stay signed into a teacher and a student account at once — that way you can publish a quiz as the teacher and immediately take it as the student without signing out.</p></div>
     <div class="btn-row">
-      <a class="btn teacher" href="https://dev.ai4talent.org/login?callbackUrl=%2Fteacher">Sign in as a teacher →</a>
-      <a class="btn student" href="https://dev.ai4talent.org/login?callbackUrl=%2Fstudent">Sign in as a student →</a>
-      <a class="btn" href="https://dev.ai4talent.org/">Open dev.ai4talent.org</a>
+      <a class="btn teacher" href="https://ai4talent.org/login?callbackUrl=%2Fteacher">Sign in as a teacher →</a>
+      <a class="btn student" href="https://ai4talent.org/login?callbackUrl=%2Fstudent">Sign in as a student →</a>
+      <a class="btn" href="https://ai4talent.org/">Open ai4talent.org</a>
     </div>
   </div>
 
@@ -323,7 +323,7 @@
     <h2>A 15-minute tour</h2>
     <p>If the platform is already configured and you just want to see the full loop once, this is the shortest path through it:</p>
     <ol class="steps">
-      <li><p><strong>Sign in as a teacher</strong> and open a class from <a class="path" href="https://dev.ai4talent.org/teacher/classes"><code>My Classes</code></a> — or <a href="#teacher-create-class">create one from a roster CSV</a> if there isn't one yet.</p></li>
+      <li><p><strong>Sign in as a teacher</strong> and open a class from <a class="path" href="https://ai4talent.org/teacher/classes"><code>My Classes</code></a> — or <a href="#teacher-create-class">create one from a roster CSV</a> if there isn't one yet.</p></li>
       <li><p><a href="#teacher-materials"><strong>Open a learning material</strong></a> and read what the AI wrote: a document summary, key concepts, and a key concept + description for every page, with the core pages labeled.</p></li>
       <li><p><a href="#teacher-quizzes"><strong>Import a quiz from the global pool</strong></a>, add it to the class, and publish it.</p></li>
       <li><p><strong>Switch to a student account</strong> enrolled in that class and go straight to <a href="#student-quiz">taking the quiz</a> and reading the <a href="#student-results">AI feedback</a>.</p></li>
@@ -371,10 +371,10 @@
       <ol class="steps">
         <li><strong>Get the admin registration code.</strong>
           <p>Admin sign-up is protected by a registration code configured on the server. Get it from whoever operates your AI4Talent deployment.</p></li>
-        <li><strong>Open <a class="path" href="https://dev.ai4talent.org/admin-register"><code>/admin-register</code></a>.</strong>
+        <li><strong>Open <a class="path" href="https://ai4talent.org/admin-register"><code>/admin-register</code></a>.</strong>
           <p>Fill in your first name, last name, a username, your email, and a password, then enter the admin registration code and submit.</p></li>
-        <li><strong>Sign in at <a class="path" href="https://dev.ai4talent.org/login"><code>/login</code></a>.</strong>
-          <p>You can sign in with either your email or your username. You'll land on the admin overview at <a class="path" href="https://dev.ai4talent.org/admin"><code>/admin</code></a> with stat cards for users, quizzes, and more.</p></li>
+        <li><strong>Sign in at <a class="path" href="https://ai4talent.org/login"><code>/login</code></a>.</strong>
+          <p>You can sign in with either your email or your username. You'll land on the admin overview at <a class="path" href="https://ai4talent.org/admin"><code>/admin</code></a> with stat cards for users, quizzes, and more.</p></li>
       </ol>
     </section>
 
@@ -398,7 +398,7 @@
       <p class="lead">The quiz pool is the platform's shared library. Quizzes are grouped under <strong>topics</strong>; teachers browse this pool when adding quizzes to their classes.</p>
       <ol class="steps">
         <li><strong>Create topics.</strong>
-          <p>On <a class="path" href="https://dev.ai4talent.org/admin/quizzes"><code>Quiz Pool</code></a>, add topics (e.g. “Mechanics”, “Thermodynamics”) to organize the library.</p></li>
+          <p>On <a class="path" href="https://ai4talent.org/admin/quizzes"><code>Quiz Pool</code></a>, add topics (e.g. “Mechanics”, “Thermodynamics”) to organize the library.</p></li>
         <li><strong>Add quizzes.</strong>
           <p>Create a quiz under a topic, then open it to add questions in the quiz editor. Questions support single-select, multi-select (“select all that apply”), and numeric answers, with optional figures and image answer choices.</p></li>
         <li><strong>Or import from PDFs.</strong>
@@ -427,7 +427,7 @@
       <h2><span class="kicker">Content</span> Generate simulations</h2>
       <p class="lead">Simulations are small interactive explorations (e.g. a projectile-motion sandbox) shown to students after a quiz to teach the concepts behind questions they missed — without revealing the questions' answers.</p>
       <ol class="steps">
-        <li><strong>Open <a class="path" href="https://dev.ai4talent.org/admin/simulations"><code>Simulations</code></a></strong> and browse pool quizzes down to individual questions.</li>
+        <li><strong>Open <a class="path" href="https://ai4talent.org/admin/simulations"><code>Simulations</code></a></strong> and browse pool quizzes down to individual questions.</li>
         <li><strong>Generate.</strong>
           <p>Click generate on a question; a background worker builds a self-contained interactive simulation for its concept.</p></li>
         <li><strong>Preview and curate.</strong>
@@ -438,10 +438,10 @@
 
     <section class="block" id="admin-users">
       <h2><span class="kicker">People</span> Manage users</h2>
-      <p class="lead">The <a class="path" href="https://dev.ai4talent.org/admin/users"><code>Users</code></a> page lists every account, grouped into Admins, Teachers, and Students, with search across the lot.</p>
+      <p class="lead">The <a class="path" href="https://ai4talent.org/admin/users"><code>Users</code></a> page lists every account, grouped into Admins, Teachers, and Students, with search across the lot.</p>
       <ol class="steps">
         <li><strong>Onboard teachers.</strong>
-          <p>Teachers self-register at <a class="path" href="https://dev.ai4talent.org/register"><code>/register</code></a> using the <strong>teacher registration code</strong> configured on the server — share it only with your teaching staff. Students never register directly; they join through class invite links.</p></li>
+          <p>Teachers self-register at <a class="path" href="https://ai4talent.org/register"><code>/register</code></a> using the <strong>teacher registration code</strong> configured on the server — share it only with your teaching staff. Students never register directly; they join through class invite links.</p></li>
         <li><strong>Remove accounts carefully.</strong>
           <p>Deleting a user opens a confirmation explaining the consequences: removing a <em>teacher</em> also removes their classes and materials; removing a <em>student</em> removes their enrollments and progress. You cannot delete your own account.</p></li>
       </ol>
@@ -449,7 +449,7 @@
 
     <section class="block" id="admin-ai-config">
       <h2><span class="kicker">System</span> Configure the AI</h2>
-      <p class="lead">On <a class="path" href="https://dev.ai4talent.org/admin/ai-config"><code>AI Config</code></a> you connect model providers and decide which model powers each feature.</p>
+      <p class="lead">On <a class="path" href="https://ai4talent.org/admin/ai-config"><code>AI Config</code></a> you connect model providers and decide which model powers each feature.</p>
       <ol class="steps">
         <li><strong>Add a provider.</strong>
           <p>Enter the provider type, base URL, and API key for any OpenAI-compatible endpoint.</p></li>
@@ -472,13 +472,13 @@
     <section class="block" id="admin-ops">
       <h2><span class="kicker">System</span> Email, backups &amp; logs</h2>
       <h3>Email (SMTP)</h3>
-      <p class="lead">On <a class="path" href="https://dev.ai4talent.org/admin/email"><code>Email</code></a>, enter your SMTP host, port, username, password, from-address, and from-name, then use <strong>send test email</strong> to verify delivery. You can also cap how many emails each teacher may send.</p>
+      <p class="lead">On <a class="path" href="https://ai4talent.org/admin/email"><code>Email</code></a>, enter your SMTP host, port, username, password, from-address, and from-name, then use <strong>send test email</strong> to verify delivery. You can also cap how many emails each teacher may send.</p>
       <h3>Sender addresses</h3>
       <p class="lead">Under <strong>Sender addresses</strong>, set one shared sender domain (e.g. <code>example.net</code>) and give each kind of email its own prefix on it — <code>password-reset@</code>, <code>notification@</code>, <code>no-contact@</code>, and so on — plus an optional display name and reply-to. For the two emails the platform writes itself (the password reset link and the password-changed notice) you can also rewrite the subject and body, using placeholders such as <code>{{firstName}}</code> and <code>{{resetUrl}}</code>; leave them blank to keep the built-in wording. Your SMTP server must be permitted to send as that domain (SPF/DKIM). Leave the domain blank to send everything from the single from-address above.</p>
       <h3>Database backup</h3>
-      <p class="lead">On <a class="path" href="https://dev.ai4talent.org/admin/backup"><code>Backup</code></a>, run on-demand backups, list existing ones, test the storage connection (WebDAV / OneDrive / S3), and restore when needed.</p>
+      <p class="lead">On <a class="path" href="https://ai4talent.org/admin/backup"><code>Backup</code></a>, run on-demand backups, list existing ones, test the storage connection (WebDAV / OneDrive / S3), and restore when needed.</p>
       <h3>System logs</h3>
-      <p class="lead">On <a class="path" href="https://dev.ai4talent.org/admin/logs"><code>Logs</code></a>, audit everything the platform records — logins, API activity, worker jobs, system events. Filter by category (<code>AUTH</code>, <code>API</code>, <code>WORKER</code>, <code>USAGE</code>, <code>SYSTEM</code>) and severity (info / warning / error), or free-text search by message, type, or IP.</p>
+      <p class="lead">On <a class="path" href="https://ai4talent.org/admin/logs"><code>Logs</code></a>, audit everything the platform records — logins, API activity, worker jobs, system events. Filter by category (<code>AUTH</code>, <code>API</code>, <code>WORKER</code>, <code>USAGE</code>, <code>SYSTEM</code>) and severity (info / warning / error), or free-text search by message, type, or IP.</p>
     </section>
   </div>
   </template>
@@ -493,18 +493,18 @@
       <ol class="steps">
         <li><strong>Get the teacher registration code.</strong>
           <p>Teacher sign-up is gated by a registration code held by the platform administrator — ask them for it.</p></li>
-        <li><strong>Register at <a class="path" href="https://dev.ai4talent.org/register"><code>/register</code></a>,</strong>
-          <p>then sign in at <a class="path" href="https://dev.ai4talent.org/login"><code>/login</code></a> with either your email address or your username.</p></li>
-        <li><strong>You land on your dashboard at <a class="path" href="https://dev.ai4talent.org/teacher"><code>/teacher</code></a>.</strong>
-          <p>The sidebar has <a class="path" href="https://dev.ai4talent.org/teacher"><code>Dashboard</code></a>,
-            <a class="path" href="https://dev.ai4talent.org/teacher/classes"><code>My Classes</code></a>,
-            <a class="path" href="https://dev.ai4talent.org/teacher/stats"><code>Stats</code></a>,
-            <a class="path" href="https://dev.ai4talent.org/teacher/quizzes"><code>Quizzes</code></a>,
-            <a class="path" href="https://dev.ai4talent.org/teacher/messages"><code>Messages</code></a>, and
-            <a class="path" href="https://dev.ai4talent.org/profile"><code>My Profile</code></a>.</p></li>
+        <li><strong>Register at <a class="path" href="https://ai4talent.org/register"><code>/register</code></a>,</strong>
+          <p>then sign in at <a class="path" href="https://ai4talent.org/login"><code>/login</code></a> with either your email address or your username.</p></li>
+        <li><strong>You land on your dashboard at <a class="path" href="https://ai4talent.org/teacher"><code>/teacher</code></a>.</strong>
+          <p>The sidebar has <a class="path" href="https://ai4talent.org/teacher"><code>Dashboard</code></a>,
+            <a class="path" href="https://ai4talent.org/teacher/classes"><code>My Classes</code></a>,
+            <a class="path" href="https://ai4talent.org/teacher/stats"><code>Stats</code></a>,
+            <a class="path" href="https://ai4talent.org/teacher/quizzes"><code>Quizzes</code></a>,
+            <a class="path" href="https://ai4talent.org/teacher/messages"><code>Messages</code></a>, and
+            <a class="path" href="https://ai4talent.org/profile"><code>My Profile</code></a>.</p></li>
       </ol>
-      <div class="callout tip"><span class="ic">✓</span><p>If your account was provisioned for you — as it often is for a pilot or evaluation — skip straight to signing in; your class and its roster may already be waiting under <a class="path" href="https://dev.ai4talent.org/teacher/classes"><code>My Classes</code></a>.</p></div>
-      <div class="callout note"><span class="ic">!</span><p><strong>Your profile.</strong> <a class="path" href="https://dev.ai4talent.org/profile"><code>My Profile</code></a> — in the sidebar for every role — is where you update your name and email address and change your password. Forgot it? Use <strong>Forgot password?</strong> on the sign-in page and the platform emails you a link that's good for one hour and one use.</p></div>
+      <div class="callout tip"><span class="ic">✓</span><p>If your account was provisioned for you — as it often is for a pilot or evaluation — skip straight to signing in; your class and its roster may already be waiting under <a class="path" href="https://ai4talent.org/teacher/classes"><code>My Classes</code></a>.</p></div>
+      <div class="callout note"><span class="ic">!</span><p><strong>Your profile.</strong> <a class="path" href="https://ai4talent.org/profile"><code>My Profile</code></a> — in the sidebar for every role — is where you update your name and email address and change your password. Forgot it? Use <strong>Forgot password?</strong> on the sign-in page and the platform emails you a link that's good for one hour and one use.</p></div>
     </section>
 
     <section class="block" id="teacher-create-class">
@@ -521,7 +521,7 @@
             <tr><td>Email</td><td class="dim">Email</td></tr>
           </table></div>
           <p>If the file has no header row, columns are read in the order <em>ID, Last Name, First Name, Email</em>. Rows missing an ID, name, or email are skipped.</p></li>
-        <li><strong>Go to <a class="path" href="https://dev.ai4talent.org/teacher/classes"><code>My Classes</code></a> → <a class="path" href="https://dev.ai4talent.org/teacher/classes/new"><code>Create New Class</code></a>.</strong>
+        <li><strong>Go to <a class="path" href="https://ai4talent.org/teacher/classes"><code>My Classes</code></a> → <a class="path" href="https://ai4talent.org/teacher/classes/new"><code>Create New Class</code></a>.</strong>
           <p>Enter the <strong>Class Name</strong> (e.g. “CSCI4300 Web Programming – Spring 2026”) and an optional description.</p></li>
         <li><strong>Upload the roster CSV.</strong>
           <p>Click the <strong>Class List (CSV)</strong> upload area and pick your file. A live preview table shows every parsed student (last name, first name, email) so you can confirm the import looks right.</p></li>
@@ -533,7 +533,7 @@
 
     <section class="block" id="teacher-class">
       <h2><span class="kicker">Classes</span> Inside a class</h2>
-      <p class="lead">Open a class from <a class="path" href="https://dev.ai4talent.org/teacher/classes"><code>My Classes</code></a> and everything you run for it sits on one page:</p>
+      <p class="lead">Open a class from <a class="path" href="https://ai4talent.org/teacher/classes"><code>My Classes</code></a> and everything you run for it sits on one page:</p>
       <div class="grid">
         <div class="cell"><b>Quizzes → Manage Quizzes</b><span>Assign quizzes to the class, set their availability window and attempt cap, publish or unpublish them.</span></div>
         <div class="cell"><b>Learning Materials → Manage Materials</b><span>The PDFs uploaded for this class, each processed by the AI page by page.</span></div>
@@ -564,7 +564,7 @@
       <h2><span class="kicker">Content</span> Import a quiz from the global pool, then publish it</h2>
       <p class="lead">The platform ships with a <strong>global quiz pool</strong> curated by administrators. You import from it into your own quiz library, assign the copy to your class, and publish — a quiz is invisible to students until that last step.</p>
       <ol class="steps">
-        <li><strong>Open <a class="path" href="https://dev.ai4talent.org/teacher/quizzes"><code>Quizzes</code></a> in the sidebar and switch to the <em>Global Pool</em> tab.</strong>
+        <li><strong>Open <a class="path" href="https://ai4talent.org/teacher/quizzes"><code>Quizzes</code></a> in the sidebar and switch to the <em>Global Pool</em> tab.</strong>
           <p>Pool quizzes are grouped by topic, each showing its question count. Click a quiz name to preview its questions read-only before you commit to it.</p></li>
         <li><strong>Click <em>Import</em>.</strong>
           <p>You get <strong>your own independent, editable copy</strong> under <em>My Quizzes</em> — edit, reword or delete questions freely without touching the shared pool. Already-imported quizzes are badged <em>Imported</em>, and <em>Import again</em> gives you a second copy if you want to vary it.</p></li>
@@ -587,7 +587,7 @@
       <p class="lead"><strong>Any quiz you already have as a PDF can become a quiz on the platform.</strong> Upload the file and the AI reads it — question text, answer choices, numeric answers, figures and the answer key — and hands you the result to check before a single question goes live.</p>
       <ol class="steps">
         <li><strong>Open one of your own quizzes and find <em>Import from PDF</em>.</strong>
-          <p>Create or import a quiz first (a pool quiz you haven't imported is read-only, so it has no import card), open it from <a class="path" href="https://dev.ai4talent.org/teacher/quizzes"><code>Quizzes</code></a>, and click <strong>Choose PDF</strong>. Up to <strong>20 pages</strong> per file.</p></li>
+          <p>Create or import a quiz first (a pool quiz you haven't imported is read-only, so it has no import card), open it from <a class="path" href="https://ai4talent.org/teacher/quizzes"><code>Quizzes</code></a>, and click <strong>Choose PDF</strong>. Up to <strong>20 pages</strong> per file.</p></li>
         <li><strong>The pages are rendered, then extracted.</strong>
           <p>Your browser turns each page into an image, uploads it, and the AI extracts the questions server-side — so extraction keeps running even if you navigate away. Come back to the quiz and the in-progress import is picked up where it left off.</p></li>
         <li><strong>Review what the AI found.</strong>
@@ -630,13 +630,13 @@
       <h2><span class="kicker">Results</span> Monitor results &amp; message students</h2>
       <ol class="steps">
         <li><strong>Class statistics.</strong>
-          <p>Open <strong>Statistics</strong> on the class page, or <a class="path" href="https://dev.ai4talent.org/teacher/stats"><code>Stats</code></a> in the sidebar to see every class at once.</p></li>
+          <p>Open <strong>Statistics</strong> on the class page, or <a class="path" href="https://ai4talent.org/teacher/stats"><code>Stats</code></a> in the sidebar to see every class at once.</p></li>
         <li><strong>Per-quiz stats.</strong>
           <p>Each assigned quiz has its own stats page showing how the class did on it.</p></li>
         <li><strong>Per-student drill-down.</strong>
           <p>Click a student in the roster to see their progress and open any individual attempt.</p></li>
         <li><strong>Message students.</strong>
-          <p>Use <a class="path" href="https://dev.ai4talent.org/teacher/messages"><code>Messages</code></a> to send announcements. Write a subject and a message — every student in the class gets it under Notifications, and anyone with an email address on file is automatically emailed a short notice with a link that opens it. The message itself always lives on the platform, never in the email. Those notices are queued and retried until they go out, so the message history shows how many are still queued, delivered, or failed. Students can contact you back from their class page.</p></li>
+          <p>Use <a class="path" href="https://ai4talent.org/teacher/messages"><code>Messages</code></a> to send announcements. Write a subject and a message — every student in the class gets it under Notifications, and anyone with an email address on file is automatically emailed a short notice with a link that opens it. The message itself always lives on the platform, never in the email. Those notices are queued and retried until they go out, so the message history shows how many are still queued, delivered, or failed. Students can contact you back from their class page.</p></li>
       </ol>
     </section>
 
@@ -678,12 +678,12 @@
     <section class="block" id="student-signin">
       <h2><span class="kicker">Setup</span> Sign in &amp; find your way around</h2>
       <ol class="steps">
-        <li><strong>Sign in at <a class="path" href="https://dev.ai4talent.org/login"><code>/login</code></a></strong> with your email <em>or</em> username, plus your password.</li>
-        <li><strong>Your dashboard at <a class="path" href="https://dev.ai4talent.org/student"><code>/student</code></a></strong> shows your enrolled classes, how many quizzes you've completed, and recent notifications. The sidebar has
-          <a class="path" href="https://dev.ai4talent.org/student"><code>Dashboard</code></a>,
-          <a class="path" href="https://dev.ai4talent.org/student/classes"><code>My Classes</code></a>,
-          <a class="path" href="https://dev.ai4talent.org/student/notifications"><code>Notifications</code></a>, and
-          <a class="path" href="https://dev.ai4talent.org/student/history"><code>Exam History</code></a>.</li>
+        <li><strong>Sign in at <a class="path" href="https://ai4talent.org/login"><code>/login</code></a></strong> with your email <em>or</em> username, plus your password.</li>
+        <li><strong>Your dashboard at <a class="path" href="https://ai4talent.org/student"><code>/student</code></a></strong> shows your enrolled classes, how many quizzes you've completed, and recent notifications. The sidebar has
+          <a class="path" href="https://ai4talent.org/student"><code>Dashboard</code></a>,
+          <a class="path" href="https://ai4talent.org/student/classes"><code>My Classes</code></a>,
+          <a class="path" href="https://ai4talent.org/student/notifications"><code>Notifications</code></a>, and
+          <a class="path" href="https://ai4talent.org/student/history"><code>Exam History</code></a>.</li>
         <li><strong>Open a class</strong> to see its quizzes grouped by topic. Each quiz shows <strong>Start</strong>, <strong>Continue</strong> (you have an attempt in progress), or <strong>Retry</strong> (you've completed it); quizzes outside their availability window appear locked.</li>
       </ol>
     </section>
@@ -721,14 +721,14 @@
           <p>Hands-on concept explorations matched to the questions you saw — open one and experiment until the idea clicks.</p></li>
       </ol>
       <div class="callout note"><span class="ic">!</span><p>You won't see per-question correct answers or unselected choices — that's by design. Review what you submitted, follow the study guidance, and if retries are allowed hit <strong>Retry Quiz</strong> once you're ready.</p></div>
-      <div class="callout tip"><span class="ic">✓</span><p>Feedback keeps generating even if you close the page — find the missed-question review and AI guidance later under <a class="path" href="https://dev.ai4talent.org/student/history"><code>Exam History</code></a>, which stores the results of every attempt.</p></div>
+      <div class="callout tip"><span class="ic">✓</span><p>Feedback keeps generating even if you close the page — find the missed-question review and AI guidance later under <a class="path" href="https://ai4talent.org/student/history"><code>Exam History</code></a>, which stores the results of every attempt.</p></div>
     </section>
 
     <section class="block" id="student-progress">
       <h2><span class="kicker">Progress</span> Track progress &amp; get help</h2>
       <ol class="steps">
-        <li><strong><a class="path" href="https://dev.ai4talent.org/student/history"><code>Exam History</code></a></strong> lists all your past attempts — per class or across everything — with their saved results pages.</li>
-        <li><strong><a class="path" href="https://dev.ai4talent.org/student/notifications"><code>Notifications</code></a></strong> collects announcements and messages from your teachers (the sidebar badge shows unread count). When a new one arrives you get an email at the address on your account telling you it's waiting, with a link that opens it here.</li>
+        <li><strong><a class="path" href="https://ai4talent.org/student/history"><code>Exam History</code></a></strong> lists all your past attempts — per class or across everything — with their saved results pages.</li>
+        <li><strong><a class="path" href="https://ai4talent.org/student/notifications"><code>Notifications</code></a></strong> collects announcements and messages from your teachers (the sidebar badge shows unread count). When a new one arrives you get an email at the address on your account telling you it's waiting, with a link that opens it here.</li>
         <li><strong>Contact your teacher</strong> straight from the class page via the <strong>Contact teacher</strong> button.</li>
       </ol>
     </section>
@@ -738,8 +738,8 @@
 
 <footer>
   <p>AI4Talent · Adaptive Learning Platform — user guide</p>
-  <p><a href="https://dev.ai4talent.org/">dev.ai4talent.org</a> ·
-     <a href="https://dev.ai4talent.org/login">Sign in</a></p>
+  <p><a href="https://ai4talent.org/">ai4talent.org</a> ·
+     <a href="https://ai4talent.org/login">Sign in</a></p>
 </footer>
 
 <script>
