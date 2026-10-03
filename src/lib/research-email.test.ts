@@ -1,12 +1,17 @@
 import { describe, it, expect } from "vitest";
 import {
   agreedPlaceLabel,
+  DEFAULT_RESEARCH_EMAIL_VERSIONS,
   filterPool,
+  legacyVersions,
   mergePoolEntries,
   normalizePoolAudience,
+  parseVersions,
   recipientVars,
   renderResearchEmail,
   variantFor,
+  versionKeyFor,
+  versionKeysFor,
   type IrbPoolRow,
   type SurveyPoolRow,
 } from "@/lib/research-email";
@@ -94,35 +99,94 @@ describe("filterPool", () => {
     [
       irb({ userId: "a", interviewRecordingChoice: "NO_INTERVIEW" }),
       irb({ userId: "b", interviewRecordingChoice: "VIDEO_AUDIO" }),
+      irb({ userId: "d", interviewRecordingChoice: "NO_INTERVIEW" }),
       irb({ userId: "t", role: "TEACHER" }),
     ],
-    [optIn({ userId: "c" })],
+    [optIn({ userId: "c" }), optIn({ userId: "d" })],
   );
+  const keys = (a: unknown) =>
+    filterPool(pool, normalizePoolAudience(a))
+      .map((p) => p.key)
+      .sort();
 
-  it("filters by role, source and consent level", () => {
-    const keys = (a: unknown) =>
-      filterPool(pool, normalizePoolAudience(a))
-        .map((p) => p.key)
-        .sort();
-    expect(keys({ roles: ["STUDENT"] })).toEqual(["a", "b", "c"]);
+  it("only reaches people who agreed to an interview", () => {
+    // "a" agreed to the study but not to an interview; "d" said no interview
+    // on the IRB form but opted in on the pre-survey.
+    expect(keys({ roles: ["STUDENT"] })).toEqual(["b", "c", "d"]);
     expect(keys({ roles: ["TEACHER"] })).toEqual(["t"]);
-    expect(keys({ roles: ["STUDENT"], sources: ["SURVEY"] })).toEqual(["c"]);
+  });
+
+  it("filters by source, with the recording level narrowing the IRB route only", () => {
+    expect(keys({ roles: ["STUDENT"], sources: ["SURVEY"] })).toEqual([
+      "c",
+      "d",
+    ]);
+    expect(keys({ roles: ["STUDENT"], sources: ["IRB"] })).toEqual(["b"]);
     expect(
-      keys({ roles: ["STUDENT"], consentLevels: ["VIDEO_AUDIO", "NONE"] }),
-    ).toEqual(["b", "c"]);
+      keys({ roles: ["STUDENT"], consentLevels: ["AUDIO_ONLY", "NONE"] }),
+    ).toEqual(["c", "d"]);
+    expect(
+      normalizePoolAudience({ consentLevels: ["NO_INTERVIEW", "NONE"] })
+        .consentLevels,
+    ).toEqual([]);
+  });
+});
+
+describe("versions", () => {
+  it("gives post-survey one version per role and the interview two", () => {
+    expect(versionKeysFor("POST_SURVEY", ["STUDENT", "TEACHER"])).toEqual([
+      "STUDENT",
+      "TEACHER",
+    ]);
+    expect(versionKeysFor("POOL", ["TEACHER"])).toEqual([
+      "TEACHER_IRB",
+      "TEACHER_SURVEY",
+    ]);
+    expect(
+      versionKeyFor("POST_SURVEY", { role: "TEACHER", viaIrb: true }),
+    ).toBe("TEACHER");
+    expect(versionKeyFor("POOL", { role: "STUDENT", viaIrb: true })).toBe(
+      "STUDENT_IRB",
+    );
+    expect(versionKeyFor("POOL", { role: "TEACHER", viaIrb: false })).toBe(
+      "TEACHER_SURVEY",
+    );
+  });
+
+  it("ships a default for every version, with a survey link where needed", () => {
+    for (const kind of ["POOL", "POST_SURVEY"] as const)
+      for (const key of versionKeysFor(kind, ["STUDENT", "TEACHER"])) {
+        const v = DEFAULT_RESEARCH_EMAIL_VERSIONS[kind][key]!;
+        expect(v.subject.trim() && v.body.trim()).toBeTruthy();
+        if (kind === "POST_SURVEY") expect(v.body).toContain("{{surveyLink}}");
+      }
+    expect(DEFAULT_RESEARCH_EMAIL_VERSIONS.POOL.STUDENT_IRB?.subject).toBe(
+      "Invitation to share your experience with {{appName}}",
+    );
+  });
+
+  it("drops keys another kind uses", () => {
+    expect(
+      parseVersions(
+        "POST_SURVEY",
+        JSON.stringify({
+          STUDENT: { subject: "S", body: "B" },
+          STUDENT_IRB: { subject: "x", body: "y" },
+        }),
+      ),
+    ).toEqual({ STUDENT: { subject: "S", body: "B" } });
   });
 });
 
 describe("renderResearchEmail", () => {
-  const content = {
-    irbSubject: "Hi {{firstName}}",
-    irbBody:
-      "You agreed via {{agreedPlace}} ({{consentLevel}}). {{surveyLink}}",
-    surveySubject: "",
-    surveyBody: "",
+  const versions = {
+    STUDENT_SURVEY: {
+      subject: "Hi {{firstName}}",
+      body: "You agreed via {{agreedPlace}} ({{consentLevel}}). {{surveyLink}}",
+    },
   };
 
-  it("substitutes variables and falls back to the other version when one is blank", () => {
+  it("substitutes variables", () => {
     const vars = recipientVars(
       {
         firstName: "Bo",
@@ -135,7 +199,7 @@ describe("renderResearchEmail", () => {
       "AI4Talent",
       { surveyLink: "https://x/survey/abc" },
     );
-    const out = renderResearchEmail(content, "SURVEY", vars);
+    const out = renderResearchEmail(versions, "STUDENT_SURVEY", vars);
     expect(out.subject).toBe("Hi Bo");
     expect(out.text).toBe(
       "You agreed via the pre-survey (). https://x/survey/abc",
@@ -160,49 +224,90 @@ describe("renderResearchEmail", () => {
 
   it("keeps a subject on one line", () => {
     const out = renderResearchEmail(
-      { ...content, irbSubject: "{{name}}" },
-      "IRB",
+      { STUDENT: { subject: "{{name}}", body: "" } },
+      "STUDENT",
       { name: "Evil\r\nBcc: x@y.z" },
     );
     expect(out.subject).toBe("Evil Bcc: x@y.z");
   });
+
+  it("renders legacy campaigns, falling back to the other version", () => {
+    const legacy = legacyVersions({
+      irbSubject: "Hi {{firstName}}",
+      irbBody: "IRB body",
+      surveySubject: "",
+      surveyBody: "",
+    });
+    expect(renderResearchEmail(legacy, "SURVEY", { firstName: "Bo" })).toEqual({
+      subject: "Hi Bo",
+      text: "IRB body",
+    });
+  });
 });
 
 describe("parseResearchEmailInput", () => {
-  const base = {
+  const post = {
     kind: "POST_SURVEY",
-    replyTo: "team@uga.edu",
-    irbSubject: "S",
-    irbBody: "Go: {{surveyLink}}",
-    surveySubject: "",
-    surveyBody: "",
+    replyTo: "",
+    versions: {
+      STUDENT: { subject: "S", body: "Go: {{surveyLink}}" },
+      TEACHER: { subject: "T", body: "no link yet" },
+    },
     attachments: [],
     audience: { roles: ["STUDENT"], target: "ALL" },
   };
+  const interview = {
+    kind: "POOL",
+    replyTo: "team@uga.edu",
+    versions: {
+      STUDENT_IRB: { subject: "S", body: "B" },
+      STUDENT_SURVEY: { subject: "S", body: "B" },
+    },
+    attachments: [],
+    audience: { roles: ["STUDENT"] },
+  };
 
-  it("requires a reply-to address to send", () => {
-    const r = parseResearchEmailInput({ ...base, replyTo: "" }, true);
-    expect(r).toMatchObject({ ok: false });
-    expect(parseResearchEmailInput({ ...base, replyTo: "" }, false).ok).toBe(
-      true,
-    );
+  it("lets a post-survey email go out without a reply-to", () => {
+    expect(parseResearchEmailInput(post, true).ok).toBe(true);
   });
 
-  it("requires {{surveyLink}} in every written post-survey version", () => {
-    expect(parseResearchEmailInput(base, true).ok).toBe(true);
+  it("requires a reply-to address to send the interview email", () => {
+    expect(parseResearchEmailInput(interview, true).ok).toBe(true);
+    const r = parseResearchEmailInput({ ...interview, replyTo: "" }, true);
+    expect(r).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/reply-to/),
+    });
+    expect(
+      parseResearchEmailInput({ ...interview, replyTo: "" }, false).ok,
+    ).toBe(true);
+  });
+
+  it("requires {{surveyLink}} in every post-survey version that will send", () => {
     const r = parseResearchEmailInput(
-      { ...base, surveySubject: "S2", surveyBody: "no link" },
+      { ...post, audience: { roles: ["STUDENT", "TEACHER"], target: "ALL" } },
       true,
     );
     expect(r).toMatchObject({
       ok: false,
-      error: expect.stringMatching(/surveyLink/),
+      error: expect.stringMatching(/Teacher email.*surveyLink/),
+    });
+  });
+
+  it("requires both interview versions for each selected role", () => {
+    const r = parseResearchEmailInput(
+      { ...interview, audience: { roles: ["STUDENT", "TEACHER"] } },
+      true,
+    );
+    expect(r).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/Teacher · IRB version/),
     });
   });
 
   it("rejects an invalid reply-to even for drafts", () => {
     expect(
-      parseResearchEmailInput({ ...base, replyTo: "nope" }, false).ok,
+      parseResearchEmailInput({ ...post, replyTo: "nope" }, false).ok,
     ).toBe(false);
   });
 });

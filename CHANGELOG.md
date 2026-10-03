@@ -9,6 +9,8 @@
 - Improved student AI access so summaries and study recommendations remain available independently of research consent, while research diagnostics and simulation telemetry remain consent-gated.
 - Improved guardrail diagnostics with a real-content moderation test and removed an incorrect Cloudflare provider warning.
 - Improved assistant discovery with a prominent Study and Teaching assistant button in the sidebar.
+- Improved research emails with separate post-survey and interview pages, distinct student and teacher versions, interview invitations limited to people who agreed to an interview, and per-version recipient counts and previews.
+- Refreshed the validated production and development dependency sets.
 
 ## v0.0.22 - 2026-09-25
 

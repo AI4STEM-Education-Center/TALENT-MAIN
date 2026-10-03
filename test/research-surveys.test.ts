@@ -243,11 +243,14 @@ describe("post-survey email", () => {
     const created = await campaignPost(
       jsonReq("/api/admin/research-email/campaigns", {
         kind: "POST_SURVEY",
-        replyTo: "research@uga.edu",
-        irbSubject: "Thanks {{firstName}}",
-        irbBody: "Level: {{consentLevel}}\n{{surveyLink}}",
-        surveySubject: "Hello {{firstName}}",
-        surveyBody: "Via: {{agreedPlace}}\n{{surveyLink}}",
+        replyTo: "",
+        versions: {
+          STUDENT: {
+            subject: "Thanks {{firstName}}",
+            body: "Dear {{role}},\n{{surveyLink}}",
+          },
+          TEACHER: { subject: "", body: "" },
+        },
         attachments: [],
         audience: { roles: ["STUDENT"], target: "ALL" },
       }),
@@ -262,12 +265,13 @@ describe("post-survey email", () => {
     const byRecipient = new Map(
       mockSend.mock.calls.map(([opts]) => [opts.to, opts]),
     );
+    // One student version for everyone, IRB or not; no reply-to needed.
     const irbMail = byRecipient.get("agreed@uga.edu")!;
     expect(irbMail.subject).toBe("Thanks Stu");
-    expect(irbMail.replyTo).toBe("research@uga.edu");
-    expect(irbMail.text).toContain("audio-only");
+    expect(irbMail.replyTo).toBeUndefined();
+    expect(irbMail.text).toContain("Dear Student");
     const surveyMail = byRecipient.get("other@uga.edu")!;
-    expect(surveyMail.subject).toBe("Hello Stu");
+    expect(surveyMail.subject).toBe("Thanks Stu");
 
     const token = /\/survey\/([A-Za-z0-9_-]+)/.exec(irbMail.text)![1];
     const params = { params: Promise.resolve({ token }) };
@@ -310,11 +314,8 @@ describe("post-survey email", () => {
     await campaignPost(
       jsonReq("/api/admin/research-email/campaigns", {
         kind: "POST_SURVEY",
-        replyTo: "research@uga.edu",
-        irbSubject: "Reminder",
-        irbBody: "{{surveyLink}}",
-        surveySubject: "",
-        surveyBody: "",
+        replyTo: "",
+        versions: { STUDENT: { subject: "Reminder", body: "{{surveyLink}}" } },
         attachments: [],
         audience: { roles: ["STUDENT"], target: "ALL" },
       }),
@@ -331,6 +332,90 @@ describe("post-survey email", () => {
       { params: Promise.resolve({ token: "nope-nope-nope-nope" }) },
     );
     expect(res.status).toBe(404);
+  });
+});
+
+describe("interview email", () => {
+  it("reaches only people who agreed to an interview, with the version for their route", async () => {
+    const admin = await createAdmin();
+    const consent = await consentForm();
+    const pre = await enabledForm("PRE");
+    const { user: irbYes } = await createStudent({ email: "irb@uga.edu" });
+    const { user: irbNo } = await createStudent({
+      email: "nointerview@uga.edu",
+    });
+    const { user: optedIn } = await createStudent({ email: "optin@uga.edu" });
+    await createStudent({ email: "nobody@uga.edu" });
+    await decide(irbYes.id, consent.id, "AGREE");
+    await decide(irbNo.id, consent.id, "AGREE");
+    await prisma.consentRecord.updateMany({
+      where: { userId: irbNo.id },
+      data: { interviewRecordingChoice: "NO_INTERVIEW" },
+    });
+    asUser(optedIn);
+    expect(
+      (
+        await prePost(
+          jsonReq("/api/surveys/pre", {
+            formId: pre.id,
+            answers: answersFor(pre.questions),
+            interviewOptIn: true,
+            interviewEmail: "optin@uga.edu",
+          }),
+        )
+      ).status,
+    ).toBe(200);
+
+    asUser(admin);
+    const body = {
+      kind: "POOL",
+      replyTo: "",
+      versions: {
+        STUDENT_IRB: {
+          subject: "IRB {{firstName}}",
+          body: "Level: {{consentLevel}}",
+        },
+        STUDENT_SURVEY: {
+          subject: "Survey {{firstName}}",
+          body: "Via {{agreedPlace}}",
+        },
+      },
+      attachments: [],
+      audience: { roles: ["STUDENT"], sources: ["IRB", "SURVEY"] },
+    };
+    // The interview email needs somewhere for replies to go.
+    expect(
+      (await campaignPost(jsonReq("/api/admin/research-email/campaigns", body)))
+        .status,
+    ).toBe(400);
+    const created = await campaignPost(
+      jsonReq("/api/admin/research-email/campaigns", {
+        ...body,
+        replyTo: "interviews@uga.edu",
+      }),
+    );
+    expect(created.status).toBe(201);
+
+    const ids = await materializeDueCampaigns();
+    expect(ids).toHaveLength(2);
+    for (const id of ids)
+      expect(await deliverResearchEmail(id)).toEqual({ status: "SENT" });
+    const byRecipient = new Map(
+      mockSend.mock.calls.map(([opts]) => [opts.to, opts]),
+    );
+    expect([...byRecipient.keys()].sort()).toEqual([
+      "irb@uga.edu",
+      "optin@uga.edu",
+    ]);
+    expect(byRecipient.get("irb@uga.edu")).toMatchObject({
+      subject: "IRB Stu",
+      replyTo: "interviews@uga.edu",
+    });
+    expect(byRecipient.get("irb@uga.edu")!.text).toContain("audio-only");
+    expect(byRecipient.get("optin@uga.edu")).toMatchObject({
+      subject: "Survey Stu",
+      text: "Via the pre-survey",
+    });
   });
 });
 
@@ -369,10 +454,11 @@ describe("research contact email", () => {
         jsonReq("/api/admin/research-email/campaigns", {
           kind,
           replyTo: "research@uga.edu",
-          irbSubject: "Research",
-          irbBody: "Follow up {{surveyLink}}",
-          surveySubject: "Research",
-          surveyBody: "Follow up {{surveyLink}}",
+          versions: {
+            STUDENT: { subject: "Research", body: "Follow up {{surveyLink}}" },
+            STUDENT_IRB: { subject: "Research", body: "Follow up" },
+            STUDENT_SURVEY: { subject: "Research", body: "Follow up" },
+          },
           attachments: [],
           audience: { roles: ["STUDENT"], target, sources: ["IRB", "SURVEY"] },
         }),

@@ -291,7 +291,7 @@ export const EMAIL_PURPOSE_DEFINITIONS: Record<
     key: "RESEARCH",
     label: "Research study emails",
     description:
-      "Emails the research team sends to the participant pool and post-survey invitations. The message itself is written in Admin → Research Pool / Post-Survey Email; this wrapper goes around it.",
+      "Interview invitations to the research pool and post-survey invitations. The message itself is written in Admin → Research Emails; this wrapper goes around it.",
     defaultLocalPart: "research",
     template: RESEARCH_TEMPLATE,
     variables: ["appName", "subject", "body"],

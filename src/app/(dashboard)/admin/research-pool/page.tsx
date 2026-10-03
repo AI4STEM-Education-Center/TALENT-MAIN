@@ -69,8 +69,8 @@ export default function ResearchPoolPage() {
             </a>
           </Button>
           <Button asChild>
-            <Link href="/admin/research-pool/email">
-              <Mail className="size-4" /> Email the pool
+            <Link href="/admin/research-email/interview">
+              <Mail className="size-4" /> Interview email
             </Link>
           </Button>
         </div>

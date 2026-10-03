@@ -12,7 +12,11 @@ import {
   renderPurposeMessage,
 } from "@/lib/email-purposes";
 import { getS3Object } from "@/lib/storage";
-import { renderResearchEmail, type EmailVariant } from "@/lib/research-email";
+import {
+  renderResearchEmail,
+  VERSION_LABELS,
+  type VersionKey,
+} from "@/lib/research-email";
 import { parseResearchEmailInput } from "@/lib/research-email-input";
 import { errorMessage } from "@/lib/errors";
 import { rateLimit } from "@/lib/rate-limit";
@@ -20,9 +24,9 @@ import { rateLimit } from "@/lib/rate-limit";
 export const runtime = "nodejs";
 
 /**
- * POST /api/admin/research-email/test { ...email, to } — send both versions to
- * one address, with sample values, exactly as a recipient would get them
- * (reply-to and attachments included).
+ * POST /api/admin/research-email/test { ...email, to } — send every version the
+ * selected roles use to one address, with sample values, exactly as a
+ * recipient would get them (reply-to and attachments included).
  */
 export async function POST(req: NextRequest) {
   const limited = rateLimit(req, "research-email-test", 10, 60_000);
@@ -51,27 +55,19 @@ export async function POST(req: NextRequest) {
     name: `${session.user.firstName} ${session.user.lastName}`.trim(),
     firstName: session.user.firstName,
     lastName: session.user.lastName,
-    role: "Student",
     appName: APP_NAME,
     surveyLink: `${appOrigin(req)}/survey/example-link`,
   };
-  const variants: Array<{
-    variant: EmailVariant;
-    vars: Record<string, string>;
-  }> = [
-    {
-      variant: "IRB",
-      vars: {
-        ...sample,
-        agreedPlace: "the IRB consent form",
-        consentLevel: "Interview with audio-only recording",
-      },
-    },
-    {
-      variant: "SURVEY",
-      vars: { ...sample, agreedPlace: "the pre-survey", consentLevel: "" },
-    },
-  ];
+  const varsFor = (key: VersionKey): Record<string, string> => ({
+    ...sample,
+    role: key.startsWith("TEACHER") ? "Teacher" : "Student",
+    ...(key.endsWith("_SURVEY")
+      ? { agreedPlace: "the pre-survey", consentLevel: "" }
+      : {
+          agreedPlace: "the IRB consent form",
+          consentLevel: "Interview with audio-only recording",
+        }),
+  });
 
   try {
     const [override, attachments] = await Promise.all([
@@ -87,8 +83,8 @@ export async function POST(req: NextRequest) {
         }),
       ),
     ]);
-    for (const { variant, vars } of variants) {
-      const content = renderResearchEmail(email, variant, vars);
+    for (const key of email.sendKeys) {
+      const content = renderResearchEmail(email.versions, key, varsFor(key));
       const message = renderPurposeMessage(
         "RESEARCH",
         { appName: APP_NAME, subject: content.subject, body: content.text },
@@ -96,9 +92,9 @@ export async function POST(req: NextRequest) {
       );
       await sendEmailToRecipient({
         to,
-        subject: `[Test — ${variant === "IRB" ? "IRB" : "Survey"} version] ${message.subject}`,
+        subject: `[Test — ${VERSION_LABELS[key]}] ${message.subject}`,
         text: message.text,
-        replyTo: email.replyTo,
+        replyTo: email.replyTo || undefined,
         purpose: "RESEARCH",
         attachments,
       });
