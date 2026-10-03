@@ -2099,13 +2099,17 @@ model SurveyInvite {
   @@index([formId])
 }
 
-// The admin's working draft for each research email kind ("POOL" |
-// "POST_SURVEY"), so the editor reopens where it was left. Campaigns snapshot
-// it when scheduled. Two versions: the IRB version goes to people who agreed
-// via the IRB consent form, the survey version to everyone else.
+// The admin's working draft for each research email kind ("POOL" — the
+// interview invitation — | "POST_SURVEY"), so the editor reopens where it was
+// left. Campaigns snapshot it when scheduled. `versions` is JSON keyed by
+// version: one per role for the post-survey ("STUDENT" | "TEACHER"), and an
+// IRB and a survey version per role for the interview ("STUDENT_IRB" |
+// "STUDENT_SURVEY" | "TEACHER_IRB" | "TEACHER_SURVEY"). The irb*/survey*
+// columns are the pre-versions layout, kept so older campaigns still render.
 model ResearchEmailTemplate {
   kind          String   @id
   replyTo       String   @default("")
+  versions      String   @default("{}") // JSON ResearchEmailVersions
   irbSubject    String   @default("")
   irbBody       String   @default("")
   surveySubject String   @default("")
@@ -2123,10 +2127,11 @@ model ResearchEmailCampaign {
   id            String    @id @default(cuid())
   kind          String
   replyTo       String
-  irbSubject    String
-  irbBody       String
-  surveySubject String
-  surveyBody    String
+  versions      String    @default("{}") // JSON ResearchEmailVersions; "{}" on legacy rows
+  irbSubject    String    @default("")
+  irbBody       String    @default("")
+  surveySubject String    @default("")
+  surveyBody    String    @default("")
   attachments   String    @default("[]")
   audience      String    @default("{}")
   appOrigin     String // for {{surveyLink}}; the worker has no request to derive it from
@@ -2144,7 +2149,8 @@ model ResearchEmailCampaign {
 }
 
 // One recipient of a campaign, with the claim/backoff shape of
-// ConsentEmailDelivery. variant: "IRB" | "SURVEY". status: "PENDING" | "SENT" |
+// ConsentEmailDelivery. variant: the campaign version key this person gets
+// (legacy rows: "IRB" | "SURVEY"). status: "PENDING" | "SENT" |
 // "FAILED". vars holds the rendered template variables (incl. surveyLink,
 // scrubbed once sent).
 model ResearchEmailDelivery {

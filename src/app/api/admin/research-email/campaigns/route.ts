@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { appOrigin } from "@/lib/app-url";
-import { isResearchEmailKind } from "@/lib/research-email";
+import {
+  isResearchEmailKind,
+  legacyVersions,
+  parseVersions,
+} from "@/lib/research-email";
 import { parseResearchEmailInput } from "@/lib/research-email-input";
 
 export const runtime = "nodejs";
@@ -27,8 +31,11 @@ export async function GET(req: NextRequest) {
       startedAt: true,
       completedAt: true,
       error: true,
+      versions: true,
       irbSubject: true,
+      irbBody: true,
       surveySubject: true,
+      surveyBody: true,
       replyTo: true,
       audience: true,
       createdAt: true,
@@ -48,8 +55,16 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     campaigns: campaigns.map((c) => {
       const n = byCampaign.get(c.id) ?? {};
+      const { versions, irbBody, surveyBody, ...rest } = c;
+      const parsed = Object.values(parseVersions(kind, versions));
+      const subjects = parsed.length
+        ? parsed.map((v) => v.subject)
+        : Object.values(legacyVersions({ ...rest, irbBody, surveyBody })).map(
+            (v) => v.subject,
+          );
       return {
-        ...c,
+        ...rest,
+        subject: subjects.find((s) => s.trim()) ?? "",
         sent: n.SENT ?? 0,
         failed: n.FAILED ?? 0,
         pending: n.PENDING ?? 0,
@@ -88,7 +103,8 @@ export async function POST(req: NextRequest) {
     if (when > scheduledAt) scheduledAt = when;
   }
 
-  const { kind, attachments, ...content } = parsed.value;
+  const { kind, replyTo, versions, attachments, audience } = parsed.value;
+  const content = { replyTo, versions: JSON.stringify(versions), audience };
   const attachmentsJson = JSON.stringify(attachments);
   const [campaign] = await prisma.$transaction([
     prisma.researchEmailCampaign.create({
