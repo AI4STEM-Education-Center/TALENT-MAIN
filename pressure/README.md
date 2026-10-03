@@ -217,6 +217,70 @@ support packages are installed. Transient downloads are retried. A failed stage
 prints its marker, cloud-init status, recent boot log, and both EC2 instance
 states automatically; no follow-up SSH command is needed to discover the cause.
 
+### Warm-up, and why the SLOs describe steady state
+
+k6 is preceded by a short warm-up pass (`tools/warmup.sh`) that hits the static
+page, the student dashboard and both admin endpoints a few times.
+
+This is not cosmetic. The first request to a freshly started container pays costs
+no later request does — `readSpool()` parses every node's NDJSON uncached, Prisma
+prepares statements, nothing is JIT-warm. Measured on a real clone,
+`/api/admin/resources` took **2.89s cold against a steady-state p50 of 16.2ms and
+p95 of 45.8ms**. A single cold sample is bad enough on its own, but because every
+Prisma call is a synchronous better-sqlite3 call it also **blocks the event loop**,
+and whatever is queued behind it inherits the delay: in an `admin-observability`
+run it surfaced as `student_dashboard` p99 = 2.44s, breaching a 1500ms SLO whose
+p50 and p95 were 16.2ms and 520.9ms. The tail was measuring warm-up, not capacity.
+
+Excluding the first N seconds of samples inside k6 was rejected: `smoke` runs
+exactly one iteration, so that would drop its only sample and fire its
+`requireSteps` assertion — the check that exists to catch a journey which
+silently did nothing — against an empty dataset.
+
+So the SLOs in `config/tiers.json` describe **steady state**. Cold-start cost is
+real and worth knowing, but it is a different question from capacity, and leaving
+it in the tail of a capacity run answers neither. The warm-up prints each
+round's timings; if the last round is still seconds, that is a genuine finding
+rather than warm-up.
+
+### The seeded benchmark cohort
+
+The clone boots from production, and production currently contains one ADMIN and
+one TEACHER — no students, classes or quizzes. The scenarios drive load as
+concurrent students, so before sessions are minted the harness seeds a synthetic
+cohort into the clone: N students, one class per teacher, and one quiz of ten
+four-option questions, published and always open.
+
+Seeding happens on the load generator, against the database copy already pulled
+across for minting, and the seeded file is then installed on the clone. It is
+idempotent — every row it owns is prefixed `bench-` — so a re-run tops up rather
+than duplicating.
+
+**Read capacity numbers accordingly.** They describe uniform students answering
+one uniform quiz. That is a real measurement of row contention, the write path
+and event-loop cost, but it is not the shape of a real classroom, and it is not
+what "clone of production" implies on its own. When production has a genuine
+student population, drop `--students`/`--teachers` low enough that the seeder is
+a no-op and the run measures the real set.
+
+Production is never seeded. The seeder only ever touches the throwaway clone.
+
+### SSH keys
+
+The clone has no public IP, so the load generator talks to it directly — running
+commands and moving four payloads, two of which (`mint.db`, the container logs)
+carry production data and must never be routed through the operator's machine.
+
+The load generator therefore needs a credential for the clone, and it is
+deliberately **not** `EC2_KEY_NAME`: that key also opens production, and the load
+generator is the instance with a public IP. Each run mints a throwaway ed25519
+pair instead. Its public half is substituted into the clone's cloud-config and
+appended to the cloud user's `authorized_keys` in `bootcmd`; its private half is
+installed on the load generator at `/opt/pressure/sut-key`. It opens exactly one
+instance, which teardown destroys, and teardown shreds the local copy.
+
+Your own key pair never leaves your machine, and no SSH agent is forwarded.
+
 Prerequisites are AWS CLI credentials with EC2/AMI/EBS/security-group access,
 `jq`, `ssh`, `scp`, Node 24, and access to the configured EC2 key. `run.sh`
 uses the source instance's VPC, subnet, availability zone, and instance type
