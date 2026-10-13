@@ -21,10 +21,12 @@ import {
   filterPool,
   isResearchEmailKind,
   legacyVersions,
+  matchPeople,
   mergePoolEntries,
   normalizePoolAudience,
   normalizePostSurveyAudience,
   parseAttachments,
+  parsePeople,
   parseVersions,
   recipientVars,
   renderResearchEmail,
@@ -228,14 +230,48 @@ function safeJson(json: string): unknown {
   }
 }
 
+/**
+ * Who a campaign reaches: everyone matching the filters, narrowed to the
+ * listed people when the audience names any. Listed people still have to fit
+ * the filters, so naming someone never bypasses interview consent or sends a
+ * second post-survey link to someone who already finished.
+ */
+async function planRecipients(
+  kind: string,
+  audienceJson: string,
+): Promise<RecipientPlan> {
+  const plan =
+    kind === "POST_SURVEY"
+      ? await planPostSurveyRecipients(audienceJson)
+      : await planPoolRecipients(audienceJson);
+  const people = parsePeople(
+    (safeJson(audienceJson) as { people?: unknown } | null)?.people,
+  );
+  if (people.length === 0) return plan;
+
+  const accounts = await prisma.user.findMany({
+    where: { OR: [{ id: { in: people } }, { email: { in: people } }] },
+    select: { id: true, email: true },
+  });
+  const { matched, unmatched } = matchPeople(plan.recipients, people, accounts);
+  const why =
+    kind === "POST_SURVEY"
+      ? "no account in the selected roles, outside the selected group, or already submitted the post-survey"
+      : "not in the interview pool for the selected roles and agreement routes";
+  return {
+    recipients: matched,
+    skipped: unmatched.length
+      ? [...plan.skipped, `Not sent to ${unmatched.join(", ")} (${why}).`]
+      : plan.skipped,
+  };
+}
+
 /** Who a campaign would reach right now — for the composer's recipient count. */
 export async function previewRecipients(
   kind: string,
   audienceJson: string,
 ): Promise<RecipientPlan> {
-  return kind === "POST_SURVEY"
-    ? planPostSurveyRecipients(audienceJson)
-    : planPoolRecipients(audienceJson);
+  return planRecipients(kind, audienceJson);
 }
 
 // ─── Campaigns ───────────────────────────────────────────────────────────────
@@ -284,10 +320,7 @@ async function materializeCampaign(campaignId: string): Promise<string[]> {
   const campaign = await prisma.researchEmailCampaign.findUniqueOrThrow({
     where: { id: campaignId },
   });
-  const plan =
-    campaign.kind === "POST_SURVEY"
-      ? await planPostSurveyRecipients(campaign.audience)
-      : await planPoolRecipients(campaign.audience);
+  const plan = await planRecipients(campaign.kind, campaign.audience);
 
   const origin = campaign.appOrigin.replace(/\/+$/, "");
   const ids = await prisma.$transaction(async (tx) => {
