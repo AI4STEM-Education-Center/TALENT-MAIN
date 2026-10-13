@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.0.24 - 2026-10-09
+
+- Added a complete research dataset export for administrators as a ZIP of CSV files.
+- Added the option to send research interview and post-survey emails to specific people by email or user ID, while still respecting interview consent and skipping people who already finished the survey.
+- Refreshed the validated production and development dependency sets, including Next.js 16.4 and the React Doctor CI scanner.
+
 ## v0.0.23 - 2026-10-02
 
 - Added read-only administrator previews of teachers' uploaded quizzes, with teacher identity and search filters in the simulation dashboard.
