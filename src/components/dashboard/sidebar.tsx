@@ -41,6 +41,7 @@ import {
   ClipboardList,
   UsersRound,
   MailCheck,
+  Download,
 } from "lucide-react";
 
 interface NavItem {
@@ -202,6 +203,11 @@ const adminNavGroups: NavGroup[] = [
         href: "/admin/consent",
         label: "Consent Records",
         icon: <ShieldCheck className="size-4" />,
+      },
+      {
+        href: "/admin/research-export",
+        label: "Data Export",
+        icon: <Download className="size-4" />,
       },
       {
         href: "/admin/consent-requests",
