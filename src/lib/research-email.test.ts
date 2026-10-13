@@ -4,8 +4,11 @@ import {
   DEFAULT_RESEARCH_EMAIL_VERSIONS,
   filterPool,
   legacyVersions,
+  matchPeople,
   mergePoolEntries,
   normalizePoolAudience,
+  normalizePostSurveyAudience,
+  parsePeople,
   parseVersions,
   recipientVars,
   renderResearchEmail,
@@ -129,6 +132,48 @@ describe("filterPool", () => {
       normalizePoolAudience({ consentLevels: ["NO_INTERVIEW", "NONE"] })
         .consentLevels,
     ).toEqual([]);
+  });
+});
+
+describe("specific people", () => {
+  it("parses emails and IDs from text or arrays, lowercased and de-duplicated", () => {
+    expect(
+      parsePeople(" Ann@UGA.edu, bo@uga.edu;\n\nann@uga.edu  cuid1 "),
+    ).toEqual(["ann@uga.edu", "bo@uga.edu", "cuid1"]);
+    expect(parsePeople(["A@x.com", 3, "b@x.com"])).toEqual([
+      "a@x.com",
+      "b@x.com",
+    ]);
+    expect(normalizePoolAudience({}).people).toEqual([]);
+    expect(normalizePostSurveyAudience({ people: "x@uga.edu" }).people).toEqual(
+      ["x@uga.edu"],
+    );
+  });
+
+  it("matches by contact email, account email, or user ID and reports the rest", () => {
+    const recipients = [
+      { userId: "u1", email: "ann.contact@gmail.com" },
+      { userId: "u2", email: "bo@uga.edu" },
+      { userId: null, email: "gone@uga.edu" },
+    ];
+    const { matched, unmatched } = matchPeople(
+      recipients,
+      ["ann@uga.edu", "u2", "gone@uga.edu", "nobody@uga.edu"],
+      [
+        { id: "u1", email: "Ann@uga.edu" },
+        { id: "u2", email: "bo@uga.edu" },
+      ],
+    );
+    expect(matched).toEqual(recipients);
+    expect(unmatched).toEqual(["nobody@uga.edu"]);
+
+    expect(
+      matchPeople(
+        recipients,
+        ["bo@uga.edu"],
+        [{ id: "u2", email: "bo@uga.edu" }],
+      ).matched,
+    ).toEqual([recipients[1]]);
   });
 });
 
