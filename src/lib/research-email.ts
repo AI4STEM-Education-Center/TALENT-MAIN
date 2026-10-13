@@ -319,6 +319,8 @@ export type PoolAudience = {
   roles: SurveyRole[];
   sources: PoolSource[];
   consentLevels: InterviewConsentLevel[];
+  /** Emails or user IDs; when non-empty, only these people get the email. */
+  people: string[];
 };
 
 /** Who receives a post-survey invitation, before per-person eligibility. */
@@ -334,7 +336,61 @@ export const POST_SURVEY_TARGET_LABELS: Record<PostSurveyTarget, string> = {
 export type PostSurveyAudience = {
   roles: SurveyRole[];
   target: PostSurveyTarget;
+  /** Emails or user IDs; when non-empty, only these people get the email. */
+  people: string[];
 };
+
+export const MAX_AUDIENCE_PEOPLE = 200;
+
+/**
+ * Specific people to send to: emails or user IDs, from an array or free text
+ * split on commas, semicolons, and whitespace. Lowercased (emails are stored
+ * lowercase and user IDs are lowercase cuids) and de-duplicated.
+ */
+export function parsePeople(input: unknown): string[] {
+  const parts = Array.isArray(input)
+    ? input.filter((p): p is string => typeof p === "string")
+    : typeof input === "string"
+      ? [input]
+      : [];
+  const out = new Set<string>();
+  for (const part of parts)
+    for (const token of part.split(/[\s,;]+/)) {
+      const value = token.trim().toLowerCase().slice(0, 254);
+      if (value) out.add(value);
+    }
+  return [...out].slice(0, MAX_AUDIENCE_PEOPLE);
+}
+
+/**
+ * Narrow recipients to the listed people. `accounts` are the users whose id or
+ * email appears in `people`, so an account email also reaches someone who gave
+ * a different contact email. `unmatched` lists the entries nobody matched.
+ */
+export function matchPeople<T extends { userId: string | null; email: string }>(
+  recipients: readonly T[],
+  people: readonly string[],
+  accounts: ReadonlyArray<{ id: string; email: string }>,
+): { matched: T[]; unmatched: string[] } {
+  const userIdsFor = new Map<string, Set<string>>();
+  for (const p of people) userIdsFor.set(p, new Set());
+  for (const a of accounts)
+    for (const key of [a.id, a.email.toLowerCase()])
+      userIdsFor.get(key)?.add(a.id);
+
+  const hit = new Set<string>();
+  const matched = recipients.filter((r) => {
+    const email = r.email.trim().toLowerCase();
+    let found = false;
+    for (const [p, ids] of userIdsFor)
+      if (p === email || (r.userId !== null && ids.has(r.userId))) {
+        hit.add(p);
+        found = true;
+      }
+    return found;
+  });
+  return { matched, unmatched: people.filter((p) => !hit.has(p)) };
+}
 
 export function normalizePoolAudience(input: unknown): PoolAudience {
   const r =
@@ -352,6 +408,7 @@ export function normalizePoolAudience(input: unknown): PoolAudience {
     roles: roles.length ? [...new Set(roles)] : ["STUDENT"],
     sources: sources.length ? [...new Set(sources)] : ["IRB", "SURVEY"],
     consentLevels: [...new Set(consentLevels)],
+    people: parsePeople(r.people),
   };
 }
 
@@ -369,6 +426,7 @@ export function normalizePostSurveyAudience(
   return {
     roles: roles.length ? [...new Set(roles)] : ["STUDENT"],
     target,
+    people: parsePeople(r.people),
   };
 }
 

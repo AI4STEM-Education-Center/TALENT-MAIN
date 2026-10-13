@@ -26,6 +26,8 @@ import {
   CONSENT_LEVEL_LABELS,
   DEFAULT_RESEARCH_EMAIL_VERSIONS,
   INTERVIEW_CONSENT_LEVELS,
+  MAX_AUDIENCE_PEOPLE,
+  parsePeople,
   POST_SURVEY_TARGET_LABELS,
   POST_SURVEY_TARGETS,
   RESEARCH_EMAIL_VARIABLES,
@@ -570,6 +572,10 @@ function AudienceEditor({
             </label>
           ))}
         </fieldset>
+        <PeopleField
+          people={post.people}
+          onChange={(people) => onChange({ ...post, people })}
+        />
         <p className="text-xs text-muted-foreground">
           People who already submitted the enabled post-survey are skipped, so
           you can safely schedule reminders.
@@ -633,10 +639,53 @@ function AudienceEditor({
           </div>
         </fieldset>
       )}
+      <PeopleField
+        people={pool.people}
+        onChange={(people) => onChange({ ...pool, people })}
+      />
       <p className="text-xs text-muted-foreground">
         Only people who agreed to an interview are included — IRB participants
         who chose &ldquo;{CONSENT_LEVEL_LABELS.NO_INTERVIEW}&rdquo; are left out
         unless they also opted in on the pre-survey.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Optional list of emails or user IDs. The raw text is kept locally so typing
+ * a separator isn't swallowed; the audience gets the parsed list.
+ */
+function PeopleField({
+  people,
+  onChange,
+}: {
+  people: string[];
+  onChange: (people: string[]) => void;
+}) {
+  const [text, setText] = useState(() => people.join("\n"));
+  return (
+    <div className="space-y-1">
+      <Label
+        htmlFor="research-email-people"
+        className="text-xs font-medium text-muted-foreground"
+      >
+        Only these people (optional)
+      </Label>
+      <Textarea
+        id="research-email-people"
+        rows={2}
+        value={text}
+        placeholder="student@uga.edu, another@uga.edu"
+        onChange={(e) => {
+          setText(e.target.value);
+          onChange(parsePeople(e.target.value));
+        }}
+      />
+      <p className="text-xs text-muted-foreground">
+        Emails (account or interview contact) or user IDs, separated by commas
+        or new lines — up to {MAX_AUDIENCE_PEOPLE}. Leave empty to send to
+        everyone above. Listed people still have to match the filters above.
       </p>
     </div>
   );
