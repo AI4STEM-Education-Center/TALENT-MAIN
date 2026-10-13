@@ -1,0 +1,56 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
+import { Readable } from "node:stream";
+import { auth } from "@/lib/auth";
+import { createResearchExport } from "@/lib/research-export";
+import { rateLimit } from "@/lib/rate-limit";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+export async function GET(req: NextRequest) {
+  const session = await auth();
+  if (session?.user?.role !== "ADMIN") {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  let cleanup: (() => Promise<void>) | undefined;
+  const limited = rateLimit(req, "research-export", 2, 60_000, session.user.id);
+  if (limited) return limited;
+  try {
+    const result = await createResearchExport(session.user.id, req.signal);
+    cleanup = result.cleanup;
+    const { size } = await stat(result.path);
+    const stream = createReadStream(result.path, { signal: req.signal });
+    stream.once("close", () => {
+      void result
+        .cleanup()
+        .catch((error) =>
+          console.error("Research export cleanup failed", error),
+        );
+    });
+    return new NextResponse(
+      Readable.toWeb(stream) as ReadableStream<Uint8Array>,
+      {
+        headers: {
+          "Content-Type": "application/zip",
+          "Content-Disposition": `attachment; filename="${result.filename}"`,
+          "Content-Length": String(size),
+          "Cache-Control": "private, no-store",
+          "X-Content-Type-Options": "nosniff",
+        },
+      },
+    );
+  } catch (error) {
+    await cleanup?.();
+    console.error("Research export failed", error);
+    return NextResponse.json(
+      {
+        error:
+          "Could not create the research export. Please try again or check the server logs.",
+      },
+      { status: 500, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+}
