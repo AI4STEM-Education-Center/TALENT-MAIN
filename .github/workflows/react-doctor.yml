@@ -25,7 +25,7 @@ jobs:
       # Pinned to a stable release — `@main` regressed on 2026-06-10 (#769
       # "consolidate scan scope into one --scope flag") with "too many
       # arguments. Expected 1 argument but got 2".
-      - uses: millionco/react-doctor@v2.3.1
+      - uses: millionco/react-doctor@v2.4.0
         # Every input below is stated explicitly: the v2.2.9 defaults are
         # version=latest, scope=changed, blocking=none, which silently drifts
         # from local runs and never fails the job. See
