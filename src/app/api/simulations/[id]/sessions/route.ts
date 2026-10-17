@@ -62,7 +62,7 @@ export async function POST(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   // Every class of this student's the quiz is assigned to — access requires at
-  // least one, and the set is what a client-claimed classId is checked against.
+  // least one, and a claimed attempt's class must be among them.
   const assignments = await prisma.classQuiz.findMany({
     where: {
       quizId: sim.question.quizId,
@@ -75,27 +75,27 @@ export async function POST(
   const assignedClassIds = new Set(assignments.map((a) => a.classId));
 
   // Resolve class/attempt context from the attempt row, keeping it only when
-  // it really is this student's attempt.
+  // it really is this student's attempt OF THIS SIMULATION'S QUIZ, taken in a
+  // class that assigns that quiz to them — otherwise a session for simulation
+  // A could be filed under quiz A but attempt/class B. Library opens never
+  // carry class context (classId stays null): library browsing is not tied to
+  // a results page, and must not surface in instructor-facing class stats.
   let attemptId: string | null = null;
   let classId: string | null = null;
-  if (parsed.data.attemptId) {
+  if (parsed.data.attemptId && parsed.data.surface !== "library") {
     const attempt = await prisma.quizAttempt.findUnique({
       where: { id: parsed.data.attemptId },
-      select: { id: true, studentId: true, classId: true },
+      select: { id: true, studentId: true, classId: true, quizId: true },
     });
-    if (attempt && attempt.studentId === student.id) {
+    if (
+      attempt &&
+      attempt.studentId === student.id &&
+      attempt.quizId === sim.question.quizId &&
+      assignedClassIds.has(attempt.classId)
+    ) {
       attemptId = attempt.id;
       classId = attempt.classId;
     }
-  }
-  // Without an attempt (the library), attribute the session to the class the
-  // student opened it under — only if that class really assigns this quiz to
-  // them — or, failing that, to their only such class. This is what lets
-  // library opens show up in the teacher's class/quiz simulation stats.
-  if (!classId) {
-    if (parsed.data.classId && assignedClassIds.has(parsed.data.classId))
-      classId = parsed.data.classId;
-    else if (assignedClassIds.size === 1) classId = [...assignedClassIds][0];
   }
 
   const row = await prisma.simulationSession.create({

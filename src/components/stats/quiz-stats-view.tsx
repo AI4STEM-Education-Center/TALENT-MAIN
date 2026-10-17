@@ -141,8 +141,7 @@ export async function QuizStatsView({
                 <p className="mb-3 text-xs text-muted-foreground">
                   {simStats.uniqueStudents} student
                   {simStats.uniqueStudents !== 1 ? "s" : ""} opened a simulation
-                  from their results or the simulations library,{" "}
-                  {simStats.totalSessions} open
+                  from their results, {simStats.totalSessions} open
                   {simStats.totalSessions !== 1 ? "s" : ""} total.
                 </p>
                 <div className="mb-4">

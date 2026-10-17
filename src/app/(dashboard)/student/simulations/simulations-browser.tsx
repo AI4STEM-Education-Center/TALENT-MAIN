@@ -22,15 +22,15 @@ const displayTitle = (sim: StudentSimulation) =>
 /**
  * The student's simulation library, grouped class -> quiz. Opening one mounts
  * a single sandboxed viewer in the shared SimulationDialog pop-up (sessions
- * labelled `library`, attributed to the class it was opened under):
- * simulations are physics loops, so only ever one runs, and none boots until
- * the student asks for it.
+ * labelled `library` and deliberately carrying no class, so library browsing
+ * never shows up in instructor-facing class stats): simulations are physics
+ * loops, so only ever one runs, and none boots until the student asks for it.
  */
 export function SimulationsBrowser({ classes }: SimulationsBrowserProps) {
   const [classId, setClassId] = useState(ALL_CLASSES);
   // Keyed by class too: a quiz assigned to two of the student's classes lists
-  // the same simulation under both, and the session is attributed to the
-  // class it was opened under.
+  // the same simulation under both, and the pop-up names the class it was
+  // opened under (display only — the session itself records no class).
   const [activeKey, setActiveKey] = useState<{
     classId: string;
     simId: string;
@@ -142,7 +142,7 @@ export function SimulationsBrowser({ classes }: SimulationsBrowserProps) {
           onClose={() => setActiveKey(null)}
           description={active.sim.learningGoal}
           context={[active.quiz.quizName, active.cls.className].join(" · ")}
-          telemetry={{ surface: "library", classId: active.cls.classId }}
+          telemetry={{ surface: "library" }}
         />
       )}
     </div>

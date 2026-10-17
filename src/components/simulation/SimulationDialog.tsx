@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Atom } from "lucide-react";
 import {
   Dialog,
@@ -32,7 +32,8 @@ export type SimulationDialogTarget = {
  *
  * Outside clicks deliberately do NOT dismiss it: a stray click on the dimmed
  * page would throw away the student's set-up mid-experiment. Closing takes the
- * explicit close button or Escape.
+ * explicit close button or Escape — including Escape pressed while focus is
+ * inside the sandboxed simulation, which the served document forwards up.
  */
 export function SimulationDialog({
   simulation,
@@ -56,10 +57,26 @@ export function SimulationDialog({
   /** Student launches only — staff viewing a simulation is never recorded. */
   telemetry?: SimulationTelemetryContext;
 }) {
+  // The launchers are plain buttons (not a Radix DialogTrigger) because the
+  // dialog only exists while open, so Radix has no trigger to return focus to.
+  // Capture whatever was focused when the dialog mounted — the launcher that
+  // was just activated — and hand focus back to it on close.
+  const [opener] = useState<HTMLElement | null>(() =>
+    typeof document !== "undefined" &&
+    document.activeElement instanceof HTMLElement &&
+    document.activeElement !== document.body
+      ? document.activeElement
+      : null,
+  );
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent
         onInteractOutside={(event) => event.preventDefault()}
+        onCloseAutoFocus={(event) => {
+          if (!opener?.isConnected) return;
+          event.preventDefault();
+          opener.focus();
+        }}
         className="flex h-dvh w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:h-[92dvh] sm:w-[96vw] sm:max-w-[1600px] sm:rounded-lg sm:border"
       >
         <DialogHeader className="space-y-2 border-b px-4 py-3 pr-12 text-left sm:text-left">
@@ -90,6 +107,7 @@ export function SimulationDialog({
             title={simulation.title}
             version={simulation.version ?? undefined}
             telemetry={telemetry}
+            onEscape={onClose}
           />
         </div>
         {footer && (

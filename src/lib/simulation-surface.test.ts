@@ -4,6 +4,9 @@ import {
   LEGACY_SIMULATION_SURFACES,
   SIMULATION_SURFACES,
   SIMULATION_SURFACE_LABELS,
+  SIMULATION_ESCAPE_SNIPPET,
+  SIM_ESCAPE_MESSAGE_TYPE,
+  injectEscapeForwarder,
   classifyViewport,
   simulationSurfaceLabel,
   simulationViewportLabel,
@@ -72,13 +75,12 @@ describe("simulationSessionCreateSchema", () => {
   const parse = (body: unknown) =>
     simulationSessionCreateSchema.safeParse(body);
 
-  it("accepts every current surface with an optional viewport and class", () => {
+  it("accepts every current surface with an optional viewport, dropping any client classId", () => {
     for (const surface of SIMULATION_SURFACES) {
       const result = parse({ surface, viewport: "tablet", classId: "c1" });
       expect(result.success).toBe(true);
       expect(result.data).toEqual({
         attemptId: null,
-        classId: "c1",
         surface,
         viewport: "tablet",
       });
@@ -91,7 +93,6 @@ describe("simulationSessionCreateSchema", () => {
       expect(result.success).toBe(true);
       expect(result.data).toEqual({
         attemptId: "a1",
-        classId: null,
         surface,
         viewport: null,
       });
@@ -104,8 +105,22 @@ describe("simulationSessionCreateSchema", () => {
     expect(parse({ surface: "library", viewport: "watch" }).success).toBe(
       false,
     );
-    expect(parse({ surface: "library", classId: "x".repeat(65) }).success).toBe(
-      false,
+    expect(
+      parse({ surface: "library", attemptId: "x".repeat(65) }).success,
+    ).toBe(false);
+  });
+});
+
+describe("escape forwarder", () => {
+  it("injects a network-free script that posts sim-escape before </body>", () => {
+    const html = injectEscapeForwarder("<html><body><p>x</p></body></html>");
+    expect(html.indexOf(SIMULATION_ESCAPE_SNIPPET)).toBeLessThan(
+      html.indexOf("</body>"),
+    );
+    expect(SIMULATION_ESCAPE_SNIPPET).toContain(`"${SIM_ESCAPE_MESSAGE_TYPE}"`);
+    expect(SIMULATION_ESCAPE_SNIPPET).toContain("defaultPrevented");
+    expect(SIMULATION_ESCAPE_SNIPPET).not.toMatch(
+      /fetch|XMLHttpRequest|sendBeacon/,
     );
   });
 });

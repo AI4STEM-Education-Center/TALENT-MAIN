@@ -45,7 +45,7 @@ function Launcher() {
           description="How length sets the period"
           context="Forces · Physics"
           footer={<p>Rate this</p>}
-          telemetry={{ surface: "library", classId: "class-1" }}
+          telemetry={{ surface: "library" }}
         />
       )}
     </>
@@ -55,10 +55,17 @@ function Launcher() {
 const sessionOpens = () =>
   fetcher.mock.calls.filter(([url]) => url === "/api/simulations/sim/sessions");
 const dialog = () => document.querySelector('[role="dialog"]');
-const launch = () =>
-  act(async () =>
-    (host.querySelector('[data-testid="launch"]') as HTMLElement).click(),
-  );
+const launcher = () =>
+  host.querySelector('[data-testid="launch"]') as HTMLButtonElement;
+/** Focus + click like a real activation, then let the deferred create run. */
+const launch = async () => {
+  await act(async () => {
+    launcher().focus();
+    launcher().click();
+  });
+  await tick();
+};
+const tick = () => act(async () => new Promise((done) => setTimeout(done, 0)));
 
 it("renders the simulation with its header context and footer in a modal", async () => {
   await act(async () => root.render(<Launcher />));
@@ -78,8 +85,6 @@ it("renders the simulation with its header context and footer in a modal", async
 it("ignores outside clicks but closes on Escape, ending the session", async () => {
   await act(async () => root.render(<Launcher />));
   await launch();
-  // Radix registers its outside-pointer listener on the next tick.
-  await act(async () => new Promise((done) => setTimeout(done, 0)));
   await act(async () => {
     document.body.dispatchEvent(
       new MouseEvent("pointerdown", { bubbles: true }),
@@ -113,9 +118,48 @@ it("records one session per open", async () => {
   expect(sessionOpens()).toHaveLength(2);
   expect(beacon).toHaveBeenCalledTimes(2);
   for (const [, options] of sessionOpens()) {
-    expect(JSON.parse(options.body)).toMatchObject({
-      surface: "library",
-      classId: "class-1",
-    });
+    const body = JSON.parse(options.body);
+    expect(body).toMatchObject({ surface: "library" });
+    expect(body).not.toHaveProperty("classId");
   }
+});
+
+it("closes when Escape is forwarded from inside the simulation's iframe", async () => {
+  await act(async () => root.render(<Launcher />));
+  await launch();
+  const frame = dialog()!.querySelector("iframe")!;
+  // A look-alike message from anywhere else is ignored.
+  await act(async () => {
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: { type: "sim-escape" },
+        source: window,
+      }),
+    );
+  });
+  expect(dialog()).not.toBeNull();
+  await act(async () => {
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: { type: "sim-escape" },
+        source: frame.contentWindow,
+      }),
+    );
+  });
+  expect(dialog()).toBeNull();
+  expect(beacon).toHaveBeenCalledOnce();
+});
+
+it("returns focus to the launcher after closing", async () => {
+  await act(async () => root.render(<Launcher />));
+  await launch();
+  expect(document.activeElement).not.toBe(launcher());
+  await act(async () => {
+    dialog()!.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+    );
+  });
+  // Radix restores focus on the tick after unmount.
+  await tick();
+  expect(document.activeElement).toBe(launcher());
 });

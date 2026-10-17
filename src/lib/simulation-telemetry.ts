@@ -209,15 +209,43 @@ export const SIMULATION_TELEMETRY_SNIPPET = `<script>
  * telemetry existed report exactly like new ones.
  */
 export function injectTelemetryScript(html: string): string {
+  return injectBeforeBodyEnd(html, SIMULATION_TELEMETRY_SNIPPET);
+}
+
+function injectBeforeBodyEnd(html: string, snippet: string): string {
   const lower = html.toLowerCase();
   for (const closer of ["</body>", "</html>"]) {
     const idx = lower.lastIndexOf(closer);
-    if (idx !== -1)
-      return (
-        html.slice(0, idx) + SIMULATION_TELEMETRY_SNIPPET + html.slice(idx)
-      );
+    if (idx !== -1) return html.slice(0, idx) + snippet + html.slice(idx);
   }
-  return html + SIMULATION_TELEMETRY_SNIPPET;
+  return html + snippet;
+}
+
+/** postMessage `type` the escape forwarder uses. */
+export const SIM_ESCAPE_MESSAGE_TYPE = "sim-escape";
+
+/**
+ * Forwards Escape out of the sandboxed document. Key events inside an iframe
+ * never reach the parent, so without this a student whose focus is in the
+ * simulation could not close the pop-up with Escape. Not telemetry — it
+ * records nothing, so it is served to every viewer regardless of consent.
+ * Listens in the bubble phase and skips handled events, so a simulation (or
+ * the staff editing layer) that uses Escape itself keeps it.
+ */
+export const SIMULATION_ESCAPE_SNIPPET = `<script>
+(function () {
+  if (window.__simEscapeInstalled) return;
+  window.__simEscapeInstalled = true;
+  window.addEventListener("keydown", function (e) {
+    if (e.key !== "Escape" || e.defaultPrevented) return;
+    try { parent.postMessage({ type: "${SIM_ESCAPE_MESSAGE_TYPE}" }, "*"); } catch (err) {}
+  });
+})();
+</script>`;
+
+/** Insert the escape forwarder into a served artifact (see injectTelemetryScript). */
+export function injectEscapeForwarder(html: string): string {
+  return injectBeforeBodyEnd(html, SIMULATION_ESCAPE_SNIPPET);
 }
 
 const clampCount = (value: number, max: number): number =>

@@ -111,6 +111,8 @@ describe("simulation access without research collection", () => {
       const html = await response.text();
       expect(html).toContain("Run simulation");
       expect(html).not.toContain("__simTelemetryInstalled");
+      // The Escape forwarder records nothing, so everyone gets it.
+      expect(html).toContain("__simEscapeInstalled");
       expect(
         await (
           await openSession(request({ surface: "library" }), params)
@@ -184,48 +186,89 @@ describe("simulation session launch labels", () => {
     expect(row).toMatchObject({ surface: "rail", viewport: null });
   });
 
-  it("attributes library opens to the claimed class only when it assigns the quiz to the student", async () => {
-    const { student, teacher, cls, quiz, params } = await setup("AGREE");
-    const second = await prisma.class.create({
-      data: { name: "Physics B", teacherId: teacher.id },
+  const contextOf = async (
+    body: Record<string, unknown>,
+    params: { params: Promise<{ id: string }> },
+  ) => {
+    const res = await openSession(request(body), params);
+    expect(res.status).toBe(201);
+    const { sessionId } = await res.json();
+    return prisma.simulationSession.findUniqueOrThrow({
+      where: { id: sessionId },
+      select: { classId: true, attemptId: true, quizId: true },
     });
-    await prisma.classQuiz.create({
-      data: { classId: second.id, quizId: quiz.id },
-    });
-    await prisma.classEnrollment.create({
-      data: { classId: second.id, studentId: student.id },
-    });
-    const foreign = await prisma.class.create({
-      data: { name: "Not enrolled", teacherId: teacher.id },
-    });
-    await prisma.classQuiz.create({
-      data: { classId: foreign.id, quizId: quiz.id },
-    });
+  };
 
-    const open = async (classId?: string) => {
-      const res = await openSession(
-        request({ surface: "library", classId }),
+  it("never gives library opens a class, even when one (or an attempt) is supplied", async () => {
+    const { student, cls, quiz, params } = await setup("AGREE");
+    const attempt = await prisma.quizAttempt.create({
+      data: { studentId: student.id, classId: cls.id, quizId: quiz.id },
+    });
+    expect(
+      await contextOf({ surface: "library", classId: cls.id }, params),
+    ).toEqual({ classId: null, attemptId: null, quizId: quiz.id });
+    expect(
+      await contextOf(
+        { surface: "library", classId: cls.id, attemptId: attempt.id },
         params,
-      );
-      const { sessionId } = await res.json();
-      return (
-        await prisma.simulationSession.findUniqueOrThrow({
-          where: { id: sessionId },
-        })
-      ).classId;
-    };
-    expect(await open(second.id)).toBe(second.id);
-    expect(await open(cls.id)).toBe(cls.id);
-    // Not enrolled there / no claim: ambiguous between two classes → none.
-    expect(await open(foreign.id)).toBeNull();
-    expect(await open()).toBeNull();
+      ),
+    ).toEqual({ classId: null, attemptId: null, quizId: quiz.id });
   });
 
-  it("falls back to the student's only class assigning the quiz", async () => {
-    const { cls, params } = await setup("AGREE");
-    await openSession(request({ surface: "library" }), params);
-    expect((await prisma.simulationSession.findFirstOrThrow()).classId).toBe(
-      cls.id,
-    );
+  it("keeps a results-page attempt only when it is this quiz's attempt in an assigning class", async () => {
+    const { student, teacher, cls, quiz, params } = await setup("AGREE");
+    const own = await prisma.quizAttempt.create({
+      data: { studentId: student.id, classId: cls.id, quizId: quiz.id },
+    });
+    expect(
+      await contextOf({ surface: "results_page", attemptId: own.id }, params),
+    ).toEqual({ classId: cls.id, attemptId: own.id, quizId: quiz.id });
+
+    // Cross-quiz: the student's own attempt at a different quiz.
+    const otherQuiz = await prisma.quiz.create({
+      data: { name: "Energy", teacherId: teacher.id },
+    });
+    await prisma.classQuiz.create({
+      data: { classId: cls.id, quizId: otherQuiz.id },
+    });
+    const otherQuizAttempt = await prisma.quizAttempt.create({
+      data: { studentId: student.id, classId: cls.id, quizId: otherQuiz.id },
+    });
+    expect(
+      await contextOf(
+        { surface: "quiz_results", attemptId: otherQuizAttempt.id },
+        params,
+      ),
+    ).toEqual({ classId: null, attemptId: null, quizId: quiz.id });
+
+    // Cross-class: an attempt at this quiz filed under a class that does not
+    // assign it to the student (enrolled there, but no assignment).
+    const otherClass = await prisma.class.create({
+      data: { name: "Chemistry", teacherId: teacher.id },
+    });
+    await prisma.classEnrollment.create({
+      data: { classId: otherClass.id, studentId: student.id },
+    });
+    const crossClassAttempt = await prisma.quizAttempt.create({
+      data: { studentId: student.id, classId: otherClass.id, quizId: quiz.id },
+    });
+    expect(
+      await contextOf(
+        { surface: "results_page", attemptId: crossClassAttempt.id },
+        params,
+      ),
+    ).toEqual({ classId: null, attemptId: null, quizId: quiz.id });
+
+    // Someone else's attempt is still dropped.
+    const { student: other } = await createStudent();
+    const foreignAttempt = await prisma.quizAttempt.create({
+      data: { studentId: other.id, classId: cls.id, quizId: quiz.id },
+    });
+    expect(
+      await contextOf(
+        { surface: "results_page", attemptId: foreignAttempt.id },
+        params,
+      ),
+    ).toEqual({ classId: null, attemptId: null, quizId: quiz.id });
   });
 });

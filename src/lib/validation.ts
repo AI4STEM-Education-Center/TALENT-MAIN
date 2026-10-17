@@ -283,17 +283,8 @@ export const simulationSessionCreateSchema = z.object({
     .nullable()
     .optional()
     .transform((v) => v ?? null),
-  /**
-   * Class the student opened the simulation under, when the launch point
-   * knows it without an attempt (the library groups by class). Verified
-   * server-side against the student's enrollments; an attempt's class wins.
-   */
-  classId: z
-    .string()
-    .max(64)
-    .nullable()
-    .optional()
-    .transform((v) => v ?? null),
+  // No client-supplied classId: class context comes only from a verified
+  // attempt (unknown keys are stripped), so library opens stay class-less.
   /** Closed set; legacy values stay accepted for clients cached pre-pop-up. */
   surface: z.enum(ACCEPTED_SIMULATION_SURFACES),
   /** Absent from pre-pop-up clients, so optional; stored as null then. */
