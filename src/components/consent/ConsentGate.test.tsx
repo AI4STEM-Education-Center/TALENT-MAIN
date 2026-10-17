@@ -14,8 +14,7 @@ vi.mock("next-auth/react", () => ({
   }),
 }));
 
-import { ConsentGate } from "./ConsentGate";
-import { SurveyGate } from "@/components/survey/SurveyGate";
+import { ResearchGates } from "./ResearchGates";
 
 const activeForm = {
   id: "v1",
@@ -26,6 +25,8 @@ const activeForm = {
 
 // What the server says right now; the test flips it mid-session.
 let campaignStarted = false;
+/** Accounts the re-prompt applies to (all of them unless a test narrows it). */
+let repromptUsers: Set<string> | null = null;
 const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
   const url = String(input);
   const json = (body: unknown) =>
@@ -39,7 +40,10 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       role: "STUDENT",
       activeForm,
       priorDecision: { decision: "DECLINE" },
-      reprompt: campaignStarted ? { campaignKey: "p1", period: 1 } : null,
+      reprompt:
+        campaignStarted && (!repromptUsers || repromptUsers.has(userId))
+          ? { campaignKey: "p1", period: 1 }
+          : null,
     });
   if (url.startsWith("/api/surveys/due"))
     return json(
@@ -56,12 +60,8 @@ let root: Root;
 
 async function render() {
   await act(async () =>
-    root.render(
-      <>
-        <ConsentGate />
-        <SurveyGate />
-      </>,
-    ),
+    // Through the same keyed wrapper the dashboard layout renders.
+    root.render(<ResearchGates />),
   );
   // Let the fetch promises settle.
   await act(async () => {
@@ -75,6 +75,7 @@ beforeEach(() => {
   fetchMock.mockClear();
   sessionStorage.clear();
   campaignStarted = false;
+  repromptUsers = null;
   pathname = "/student";
   userId = "u1";
   host = document.createElement("div");
@@ -138,19 +139,30 @@ it("hides a closed re-prompt only for the student who closed it", async () => {
     "A new study period is starting",
   );
 
-  // Student A signs out; student B signs in on the same tab.
-  await act(async () => root.unmount());
+  // Student B signs in on the same tab — no remount, the session changes.
   userId = "u2";
-  root = createRoot(host);
   await render();
   expect(document.body.textContent).toContain("A new study period is starting");
 
-  // Student A back on the same tab: still hidden for them this session.
-  await act(async () => root.unmount());
+  // Student A again on the same tab: still hidden for them this session.
   userId = "u1";
-  root = createRoot(host);
   await render();
   expect(document.body.textContent).not.toContain(
     "A new study period is starting",
   );
+});
+
+it("drops the previous account's open prompt when the account changes", async () => {
+  campaignStarted = true;
+  repromptUsers = new Set(["u1"]);
+  await render();
+  expect(document.body.textContent).toContain("A new study period is starting");
+
+  userId = "u2";
+  await render();
+  expect(document.body.textContent).not.toContain(
+    "A new study period is starting",
+  );
+  // The new account got its own consent check.
+  expect(calls("/api/consent")).toBe(2);
 });

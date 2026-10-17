@@ -3,8 +3,7 @@ import { useState } from "react";
 import { signOut, useSession } from "next-auth/react";
 import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/dashboard/sidebar";
-import { ConsentGate } from "@/components/consent/ConsentGate";
-import { SurveyGate } from "@/components/survey/SurveyGate";
+import { ResearchGates } from "@/components/consent/ResearchGates";
 import { AssistantWidget } from "@/components/assistant/AssistantWidget";
 import { AssistantProvider } from "@/components/assistant/assistant-context";
 import { SessionProvider } from "next-auth/react";
@@ -37,8 +36,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
   return (
     <AssistantProvider>
       <div className="flex min-h-screen bg-background">
-        <ConsentGate />
-        <SurveyGate />
+        <ResearchGates />
         <Sidebar
           role={role}
           firstName={session.user.firstName}
