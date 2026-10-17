@@ -42,6 +42,16 @@ import {
   type TeacherCodeStatus,
   type TeacherCodeView,
 } from "@/lib/teacher-codes";
+import {
+  INVITE_CODE_ROLES,
+  ROLE_LABELS,
+  TEACHER,
+  isInviteCodeRole,
+  roleLabel,
+  type InviteCodeRole,
+} from "@/lib/roles";
+
+type RoleFilter = "ALL" | InviteCodeRole;
 
 /** Duration units the issuer offers, with the multiplier into minutes. */
 const UNITS = [
@@ -104,6 +114,14 @@ export function TeacherCodesClient() {
   const [amount, setAmount] = useState("");
   const [unit, setUnit] = useState<UnitValue>("days");
   const [maxUses, setMaxUses] = useState("");
+  // Account type the next minted code creates.
+  const [role, setRole] = useState<InviteCodeRole>(TEACHER);
+  const [roleFilter, setRoleFilter] = useState<RoleFilter>("ALL");
+  const visibleCodes = useMemo(
+    () =>
+      roleFilter === "ALL" ? codes : codes.filter((c) => c.role === roleFilter),
+    [codes, roleFilter],
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -177,6 +195,7 @@ export function TeacherCodesClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           label: label.trim() || null,
+          role,
           expiresInMinutes,
           maxUses: maxUses.trim() ? Number(maxUses) : null,
         }),
@@ -189,7 +208,7 @@ export function TeacherCodesClient() {
       const data = await res.json();
       setCodes((prev) => [data, ...prev]);
       setNotice(
-        `Code ${data.code} created — copy it now and share it with the teacher.`,
+        `${roleLabel(data.role)} code ${data.code} created — copy it now and share it with the person it is for.`,
       );
       setLabel("");
       setAmount("");
@@ -207,7 +226,7 @@ export function TeacherCodesClient() {
       const ok = await confirm({
         title: "Revoke this code?",
         description:
-          "Nobody will be able to register with it from now on. Teachers who already " +
+          "Nobody will be able to register with it from now on. People who already " +
           "signed up keep their accounts, and you can switch the code back on later.",
         confirmText: "Revoke",
         variant: "destructive",
@@ -269,12 +288,14 @@ export function TeacherCodesClient() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-            <KeyRound className="size-6" /> Teacher Codes
+            <KeyRound className="size-6" /> Invite Codes
           </h1>
           <p className="text-muted-foreground mt-1">
-            Registration codes teachers redeem at{" "}
-            <code className="text-xs">/register</code>. Each one carries its own
-            expiry and use limit, and can be revoked on its own.
+            Invite codes teachers and research scientists redeem at{" "}
+            <code className="text-xs">/register</code>. The code decides the
+            account type it creates. Each one carries its own expiry and use
+            limit, and can be revoked on its own. (Administrator accounts are
+            created only with the server&apos;s ADMIN_SIGNUP_TOKEN.)
           </p>
         </div>
         <Button
@@ -315,12 +336,32 @@ export function TeacherCodesClient() {
           <CardTitle>Issue a new code</CardTitle>
           <CardDescription>
             Leave a field empty for no limit: no duration means the code never
-            expires, no use limit means it registers any number of teachers.
+            expires, no use limit means it registers any number of accounts.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={createCode} className="space-y-4">
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+              <div className="space-y-2">
+                <Label htmlFor="code-role">Account type</Label>
+                <Select
+                  value={role}
+                  onValueChange={(v) => {
+                    if (isInviteCodeRole(v)) setRole(v);
+                  }}
+                >
+                  <SelectTrigger id="code-role">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {INVITE_CODE_ROLES.map((r) => (
+                      <SelectItem key={r} value={r}>
+                        {ROLE_LABELS[r]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="space-y-2 lg:col-span-2">
                 <Label htmlFor="code-label">Label (optional)</Label>
                 <Input
@@ -391,11 +432,36 @@ export function TeacherCodesClient() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Issued codes</CardTitle>
-          <CardDescription>
-            Share either the code itself or the link, which pre-fills it on the
-            registration form.
-          </CardDescription>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="space-y-1.5">
+              <CardTitle>Issued codes</CardTitle>
+              <CardDescription>
+                Share either the code itself or the link, which pre-fills it on
+                the registration form.
+              </CardDescription>
+            </div>
+            <Select
+              value={roleFilter}
+              onValueChange={(v) =>
+                setRoleFilter(isInviteCodeRole(v) ? v : "ALL")
+              }
+            >
+              <SelectTrigger
+                className="w-48"
+                aria-label="Filter by account type"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All account types</SelectItem>
+                {INVITE_CODE_ROLES.map((r) => (
+                  <SelectItem key={r} value={r}>
+                    {ROLE_LABELS[r]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </CardHeader>
         <CardContent className="space-y-3">
           {loading && codes.length === 0 && (
@@ -403,12 +469,21 @@ export function TeacherCodesClient() {
           )}
           {!loading && codes.length === 0 && (
             <p className="text-sm text-muted-foreground">
-              No codes yet. Teachers cannot register until you issue one
-              {envTokenActive ? " (or use the environment token above)" : ""}.
+              No codes yet. Teachers and research scientists cannot register
+              until you issue one
+              {envTokenActive
+                ? " (teachers can also use the environment token above)"
+                : ""}
+              .
+            </p>
+          )}
+          {!loading && codes.length > 0 && visibleCodes.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              No {roleLabel(roleFilter).toLowerCase()} codes.
             </p>
           )}
 
-          {codes.map((code) => (
+          {visibleCodes.map((code) => (
             <div key={code.id} className="p-3 rounded-lg border space-y-2">
               <div className="flex flex-wrap items-center gap-2">
                 <code className="text-sm bg-muted px-2 py-1 rounded font-mono tracking-wider">
@@ -420,6 +495,7 @@ export function TeacherCodesClient() {
                 >
                   {code.status}
                 </Badge>
+                <Badge variant="outline">{roleLabel(code.role)}</Badge>
                 {code.label && (
                   <span className="text-sm text-muted-foreground">
                     {code.label}

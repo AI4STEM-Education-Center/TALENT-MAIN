@@ -1,5 +1,5 @@
 /**
- * Teacher registration code helpers that are safe to import from a client
+ * Registration ("invite") code helpers that are safe to import from a client
  * component: string shaping, status naming and the admin-facing limits.
  *
  * Everything that touches crypto or the database lives in
@@ -31,6 +31,17 @@ export const MAX_EXPIRES_IN_MINUTES = 5 * 365 * 24 * 60;
 
 /** Bound on the admin-supplied use limit. */
 export const MAX_USES_LIMIT = 100_000;
+
+/**
+ * The invite code a /register?code=… link pre-fills, VERBATIM: no trimming,
+ * case-folding or normalization. The env-var invite codes
+ * (ADMIN_/TEACHER_SIGNUP_TOKEN) are compared exactly, so any reshaping here
+ * would turn a valid link into a rejected code. Panel-issued codes are
+ * normalized on the server either way.
+ */
+export function inviteCodeFromLink(raw: string | null | undefined): string {
+  return raw ?? "";
+}
 
 /**
  * Fold a typed code back to the stored form: upper-cased, punctuation and
@@ -94,6 +105,8 @@ export interface TeacherCodeView {
   /** Absolute /register link that pre-fills the code, ready to copy. */
   url: string;
   label: string | null;
+  /** Account role the code creates: "TEACHER" | "RESEARCHER". */
+  role: string;
   expiresAt: string | null;
   maxUses: number | null;
   usedCount: number;

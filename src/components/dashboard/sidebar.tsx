@@ -3,6 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { roleLabel, type Role } from "@/lib/roles";
 import { VersionModal } from "@/components/version-modal";
 import { NotificationsBadge } from "@/components/dashboard/notifications-badge";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -51,7 +52,7 @@ interface NavItem {
 }
 
 interface SidebarProps {
-  role: "TEACHER" | "STUDENT" | "ADMIN";
+  role: Role;
   firstName: string;
   lastName: string;
   onSignOut: () => void;
@@ -258,7 +259,7 @@ const adminNavGroups: NavGroup[] = [
       },
       {
         href: "/admin/teacher-codes",
-        label: "Teacher Codes",
+        label: "Invite Codes",
         icon: <KeyRound className="size-4" />,
       },
     ],
@@ -322,7 +323,7 @@ function SidebarContent({
   onNavigate,
   onCollapse,
 }: {
-  role: "TEACHER" | "STUDENT" | "ADMIN";
+  role: Role;
   firstName: string;
   lastName: string;
   onSignOut: () => void;
@@ -452,6 +453,11 @@ function SidebarContent({
             })}
             {renderLink(profileNav)}
           </>
+        ) : role === "RESEARCHER" ? (
+          // Research scientists use the admin dashboard, but the proxy only
+          // lets them onto the pages allowlisted for them (the overview, for
+          // now), so the rail shows just those rather than links that bounce.
+          [adminOverview, profileNav].map((item) => renderLink(item))
         ) : (
           [...(role === "TEACHER" ? teacherNav : studentNav), profileNav].map(
             (item) => renderLink(item),
@@ -473,8 +479,8 @@ function SidebarContent({
             <p className="text-sm font-medium text-sidebar-foreground truncate">
               {firstName} {lastName}
             </p>
-            <p className="text-xs text-sidebar-foreground/50 capitalize">
-              {role.toLowerCase()}
+            <p className="text-xs text-sidebar-foreground/50">
+              {roleLabel(role)}
             </p>
           </div>
         </div>

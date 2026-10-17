@@ -12,60 +12,56 @@ import { parseBody, registerSchema } from "@/lib/validation";
 import { logApiError, logSystemEvent } from "@/lib/system-log";
 import {
   claimTeacherCode,
-  findTeacherCode,
-  hasRedeemableTeacherCode,
   TeacherCodeUnavailableError,
 } from "@/lib/teacher-registration-codes";
-import { teacherCodeStatus } from "@/lib/teacher-codes";
+import {
+  INVALID_INVITE_CODE,
+  REGISTRATION_NOT_CONFIGURED,
+  resolveInviteCode,
+  submittedInviteCode,
+} from "@/lib/registration";
+import { TEACHER } from "@/lib/roles";
 
-/** Same text for a wrong code, an expired one and a used-up one. */
-const INVALID_CODE = "Invalid or expired teacher registration code.";
-
+/**
+ * The one self-registration endpoint for every non-student account. The
+ * submitted invite code decides the role — ADMIN, TEACHER or RESEARCHER; see
+ * src/lib/registration.ts for the resolution order. The registrant never picks
+ * a role. Students cannot self-register; they join via class invitation links.
+ */
 export async function POST(req: NextRequest) {
-  // Throttle signup-token guessing and account-creation abuse per IP.
+  // Throttle invite-code guessing and account-creation abuse per IP.
   const limited = rateLimit(req, "auth-register", 10, 60_000);
   if (limited) return limited;
 
   try {
     const body = await req.json();
 
-    // Students cannot self-register — they must use an invitation link.
-    // This endpoint is exclusively for teacher registration.
-    //
-    // Two things can authorize it: an admin-issued code from the panel
-    // (TeacherRegistrationCode, with its own expiry and use limit), or the
-    // legacy TEACHER_SIGNUP_TOKEN env var. The env var is still honoured when
-    // set so upgrading a deployment doesn't lock its admins out of onboarding
-    // teachers before they mint their first code.
-    const envToken = process.env.TEACHER_SIGNUP_TOKEN;
-    const submitted =
-      typeof body?.teacherToken === "string" ? body.teacherToken : "";
+    const resolution = await resolveInviteCode(submittedInviteCode(body));
 
-    if (!envToken && !(await hasRedeemableTeacherCode())) {
+    if (!resolution.ok && resolution.reason === "NOT_CONFIGURED") {
       return NextResponse.json(
-        { error: "Teacher registration is not configured on this server." },
+        { error: REGISTRATION_NOT_CONFIGURED },
         { status: 503 },
       );
     }
 
-    const envTokenMatches = !!envToken && submitted === envToken;
-    // Only look the code up when the env var didn't already authorize it, so a
-    // deployment still on the env var does no extra query per attempt.
-    const code =
-      envTokenMatches || !submitted ? null : await findTeacherCode(submitted);
-
-    if (!envTokenMatches && (!code || teacherCodeStatus(code) !== "ACTIVE")) {
+    if (!resolution.ok) {
+      const { code, status } = resolution;
       void logSystemEvent({
         category: "AUTH",
-        type: "TEACHER_CODE_REJECTED",
+        type: "REGISTRATION_CODE_REJECTED",
         severity: "WARNING",
         message: code
-          ? `Teacher registration refused: code is ${teacherCodeStatus(code).toLowerCase()}.`
-          : "Teacher registration refused: unrecognized code.",
-        metadata: code ? { codeId: code.id } : undefined,
+          ? `Registration refused: invite code is ${status.toLowerCase().replace("_", " ")}.`
+          : "Registration refused: unrecognized invite code.",
+        metadata: code ? { codeId: code.id, status } : undefined,
       });
-      return NextResponse.json({ error: INVALID_CODE }, { status: 403 });
+      // One generic answer for every unusable code, so the response never
+      // says whether a code exists, expired or was used up.
+      return NextResponse.json({ error: INVALID_INVITE_CODE }, { status: 403 });
     }
+
+    const { role, code, source } = resolution;
 
     const parsed = parseBody(registerSchema, body);
     if (!parsed.ok) return parsed.response;
@@ -103,30 +99,41 @@ export async function POST(req: NextRequest) {
 
     // SECURITY: consuming the code's slot and creating the account are one
     // transaction, so two concurrent registrations can't both pass the
-    // status check above and get two teachers out of a single-use code. A
+    // status check above and get two accounts out of a single-use code. A
     // duplicate email/username further down rolls the claim back with it,
     // which is why a failed signup doesn't burn a use.
-    await prisma.$transaction(async (tx) => {
+    const user = await prisma.$transaction(async (tx) => {
       if (code) await claimTeacherCode(tx, code.id);
-      await tx.user.create({
+      return tx.user.create({
         data: {
           email: normalizedEmail,
           username: normalizedUsername,
           hashedPassword,
           firstName: firstName.trim(),
           lastName: lastName.trim(),
-          role: "TEACHER",
-          teacher: { create: {} },
+          role,
+          // Only teachers own classes and content; ADMIN and RESEARCHER
+          // accounts get no Teacher row.
+          ...(role === TEACHER ? { teacher: { create: {} } } : {}),
         },
+        select: { id: true, username: true },
       });
     });
 
-    return NextResponse.json({ success: true }, { status: 201 });
+    void logSystemEvent({
+      category: "AUTH",
+      type: "ACCOUNT_REGISTERED",
+      message: `${user.username} registered as ${role}.`,
+      userId: user.id,
+      metadata: { role, source, ...(code ? { codeId: code.id } : {}) },
+    });
+
+    return NextResponse.json({ success: true, role }, { status: 201 });
   } catch (err) {
     // Lost the race for the code's last slot — report it like any other
     // unusable code rather than as a server fault.
     if (err instanceof TeacherCodeUnavailableError) {
-      return NextResponse.json({ error: INVALID_CODE }, { status: 403 });
+      return NextResponse.json({ error: INVALID_INVITE_CODE }, { status: 403 });
     }
 
     if (

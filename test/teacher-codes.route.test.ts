@@ -94,6 +94,34 @@ describe("/api/admin/teacher-codes", () => {
     expect(row?.createdById).toBe("admin-1");
   });
 
+  it("defaults a code's role to TEACHER", async () => {
+    const res = await POST(createReq({}));
+    expect((await res.json()).role).toBe("TEACHER");
+    expect((await prisma.teacherRegistrationCode.findFirst())?.role).toBe(
+      "TEACHER",
+    );
+  });
+
+  it("issues a RESEARCHER code and lists it with its role", async () => {
+    const res = await POST(createReq({ role: "RESEARCHER" }));
+    expect(res.status).toBe(201);
+    expect((await res.json()).role).toBe("RESEARCHER");
+
+    const list = await (await GET(listReq())).json();
+    expect(list.codes.map((c: { role: string }) => c.role)).toEqual([
+      "RESEARCHER",
+    ]);
+  });
+
+  it.each(["ADMIN", "STUDENT", "teacher", "nonsense"])(
+    "refuses to mint a code for role %s",
+    async (role) => {
+      const res = await POST(createReq({ role }));
+      expect(res.status).toBe(400);
+      expect(await prisma.teacherRegistrationCode.count()).toBe(0);
+    },
+  );
+
   it("stores the requested duration and use limit", async () => {
     const before = Date.now();
     const res = await POST(
