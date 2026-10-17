@@ -20,6 +20,201 @@ export const SURVEY_ROLE_LABELS: Record<SurveyRole, string> = {
   TEACHER: "Teacher",
 };
 
+// ─── Study periods ───────────────────────────────────────────────────────────
+// The study runs in periods; each closes with its own post-survey. A PRE form
+// always belongs to period 1 (it is taken once, on joining the study).
+
+export const SURVEY_PERIODS = [1, 2] as const;
+export type SurveyPeriod = (typeof SURVEY_PERIODS)[number];
+
+export const SURVEY_PERIOD_LABELS: Record<SurveyPeriod, string> = {
+  1: "Period 1 post-survey",
+  2: "Period 2 post-survey",
+};
+
+export function isSurveyPeriod(value: unknown): value is SurveyPeriod {
+  return (SURVEY_PERIODS as readonly unknown[]).includes(value);
+}
+
+/** A period from a number or numeric string; anything else is `fallback`. */
+export function parseSurveyPeriod(
+  value: unknown,
+  fallback: SurveyPeriod = 1,
+): SurveyPeriod {
+  const n = typeof value === "string" ? Number(value) : value;
+  return isSurveyPeriod(n) ? n : fallback;
+}
+
+/** The period a form of this kind is stored under: PRE is always period 1. */
+export function periodForKind(kind: SurveyKind, period: unknown): SurveyPeriod {
+  return kind === "PRE" ? 1 : parseSurveyPeriod(period);
+}
+
+/** How a form is named everywhere: "Pre-survey" / "Period 2 post-survey". */
+export function surveyFormLabel(kind: string, period: number): string {
+  if (kind === "PRE") return SURVEY_KIND_LABELS.PRE;
+  return isSurveyPeriod(period)
+    ? SURVEY_PERIOD_LABELS[period]
+    : SURVEY_KIND_LABELS.POST;
+}
+
+// ─── Who owes which survey (pure decision logic) ─────────────────────────────
+
+/** The user's latest decision on the ACTIVE consent form, or null for none. */
+export type IrbDecision = "AGREE" | "DECLINE" | null;
+
+export type PromptedPostForm = {
+  id: string;
+  period: number;
+  promptStartedAt: Date | null;
+};
+
+/** What a user's study participation looks like, for post-survey eligibility. */
+export type StudyHistory = {
+  /** Latest decision on the ACTIVE consent form. */
+  decision: IrbDecision;
+  /** Their earliest pre-survey response (any pre-survey form for the role). */
+  firstPreSubmittedAt: Date | null;
+  /** Their earliest AGREE on any consent form version for the role. */
+  firstAgreedAt: Date | null;
+};
+
+/**
+ * Whether someone belongs to an in-app post-survey's audience (answered or
+ * not) — they were in the study during the period it closes: their latest IRB
+ * decision is AGREE, and both an IRB AGREE and a pre-survey predate the
+ * form's prompt start. Requiring the earlier AGREE too matters because a
+ * decliner may have taken the optional pre-survey: if they re-consent now,
+ * they joined the study now, and must not get the earlier period's survey.
+ */
+export function isPostSurveyEligible(
+  history: StudyHistory,
+  form: Pick<PromptedPostForm, "promptStartedAt">,
+): boolean {
+  if (history.decision !== "AGREE" || !form.promptStartedAt) return false;
+  const start = form.promptStartedAt.getTime();
+  return (
+    history.firstPreSubmittedAt !== null &&
+    history.firstPreSubmittedAt.getTime() < start &&
+    history.firstAgreedAt !== null &&
+    history.firstAgreedAt.getTime() < start
+  );
+}
+
+/**
+ * The in-app post-survey a user owes, if any: the lowest-period
+ * prompt-enabled form they are eligible for (see isPostSurveyEligible) and
+ * have not answered, through the app or an emailed link.
+ */
+export function pickDuePostSurvey<T extends PromptedPostForm>(
+  input: StudyHistory & {
+    forms: readonly T[];
+    respondedFormIds: ReadonlySet<string>;
+  },
+): T | null {
+  const sorted = [...input.forms].sort((a, b) => a.period - b.period);
+  for (const form of sorted) {
+    if (input.respondedFormIds.has(form.id)) continue;
+    if (isPostSurveyEligible(input, form)) return form;
+  }
+  return null;
+}
+
+/**
+ * Which re-consent campaign is running for a role: the prompt-enabled POST
+ * form whose prompt started most recently (null when none is prompting). Its
+ * id is the campaign key, so a later period asks people who said "No thanks"
+ * to an earlier one again.
+ */
+export function repromptCampaignKey(
+  forms: readonly PromptedPostForm[],
+): string | null {
+  let latest: PromptedPostForm | null = null;
+  for (const form of forms) {
+    if (!form.promptStartedAt) continue;
+    if (
+      !latest ||
+      form.promptStartedAt.getTime() > latest.promptStartedAt!.getTime()
+    )
+      latest = form;
+  }
+  return latest?.id ?? null;
+}
+
+/** Whether a decliner should be asked to reconsider joining the study. */
+export function shouldRepromptConsent(input: {
+  decision: IrbDecision;
+  campaignKey: string | null;
+  dismissed: boolean;
+}): boolean {
+  return (
+    input.campaignKey !== null &&
+    input.decision === "DECLINE" &&
+    !input.dismissed
+  );
+}
+
+export type SurveyGateState =
+  | { state: "NONE" }
+  | { state: "CONSENT_PENDING" }
+  | { state: "DUE"; kind: "PRE"; formId: string; mandatory: boolean }
+  | {
+      state: "DUE";
+      kind: "POST";
+      formId: string;
+      period: SurveyPeriod;
+      mandatory: true;
+    };
+
+/**
+ * What the dashboard SurveyGate shows, in order:
+ *
+ * 1. Nothing while a consent modal is owed — no decision on the active form
+ *    yet, or the re-consent prompt is pending — so the two never stack.
+ * 2. The enabled pre-survey: mandatory after an IRB AGREE, otherwise optional
+ *    until answered or dismissed.
+ * 3. A due in-app post-survey (see pickDuePostSurvey), always mandatory.
+ */
+export function resolveSurveyGate(
+  input: StudyHistory & {
+    hasActiveConsentForm: boolean;
+    repromptPending: boolean;
+    preFormId: string | null;
+    preDismissed: boolean;
+    postForms: readonly PromptedPostForm[];
+    respondedFormIds: ReadonlySet<string>;
+  },
+): SurveyGateState {
+  if (input.repromptPending) return { state: "CONSENT_PENDING" };
+  const owesConsent = input.hasActiveConsentForm && input.decision === null;
+
+  if (input.preFormId) {
+    if (owesConsent) return { state: "CONSENT_PENDING" };
+    const agreed = input.decision === "AGREE";
+    if (
+      !input.respondedFormIds.has(input.preFormId) &&
+      (agreed || !input.preDismissed)
+    )
+      return {
+        state: "DUE",
+        kind: "PRE",
+        formId: input.preFormId,
+        mandatory: agreed,
+      };
+  }
+
+  const post = pickDuePostSurvey({ ...input, forms: input.postForms });
+  if (post)
+    return {
+      state: "DUE",
+      kind: "POST",
+      formId: post.id,
+      period: parseSurveyPeriod(post.period),
+      mandatory: true,
+    };
+  return { state: "NONE" };
+}
+
 export function isSurveyKind(value: unknown): value is SurveyKind {
   return (
     typeof value === "string" &&

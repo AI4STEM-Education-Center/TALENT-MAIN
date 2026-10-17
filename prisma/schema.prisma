@@ -30,6 +30,7 @@ model User {
   consentExportReviews  ConsentExportRequest[] @relation("ConsentExportReviewer")
   surveyResponses       SurveyResponse[]
   surveyDismissals      SurveyPromptDismissal[]
+  consentReprompts      ConsentRepromptDismissal[]
 
   @@index([role])
 }
@@ -2022,36 +2023,45 @@ model QuizPracticeAttempt {
 // ─── Research surveys & participant pool ────────────────────────────────────
 // Pre/post platform-use surveys for students and teachers, admin-uploaded as a
 // PDF and converted into editable questions (src/lib/survey.ts). At most one
-// form per (kind, role) is enabled at a time. The pre-survey is mandatory for
-// anyone who agreed to the IRB consent form and offered to everyone else; the
-// post-survey is never blocking — it is reached through a per-person emailed
-// link (SurveyInvite). See docs/features/research-surveys.md.
+// pre-survey per role, and one post-survey per (role, study period), is enabled
+// at a time. The pre-survey is mandatory for anyone who agreed to the IRB
+// consent form and offered to everyone else. A post-survey is reached through a
+// per-person emailed link (SurveyInvite) and, once the admin turns on
+// "Prompt in app", as a mandatory in-app popup for participants who were in
+// the study before the prompt started. See docs/features/research-surveys.md.
 
 // kind: "PRE" | "POST". role: "STUDENT" | "TEACHER".
 // status: "READY" | "EXTRACTING" | "FAILED" — EXTRACTING while the worker turns
 // the uploaded PDF's text into questions.
 model SurveyForm {
-  id           String   @id @default(cuid())
-  kind         String
-  role         String
-  title        String
-  description  String   @default("")
-  questions    String   @default("[]") // JSON SurveyQuestion[]
-  isEnabled    Boolean  @default(false)
-  status       String   @default("READY")
-  errorMessage String?
-  sourceText   String? // text extracted from the uploaded PDF, kept for re-runs
-  pdfBucket    String?
-  pdfKey       String?
-  pdfName      String?
-  createdById  String? // plain id, no FK — survives account deletion
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id              String    @id @default(cuid())
+  kind            String
+  role            String
+  /// Study period (1 | 2) a POST form closes; always 1 for PRE.
+  period          Int       @default(1)
+  /// POST only: also shown in-app (mandatory) to IRB participants whose pre-survey predates promptStartedAt.
+  promptInApp     Boolean   @default(false)
+  /// When the in-app prompt was first turned on — the cutoff for who was in the study during this period.
+  promptStartedAt DateTime?
+  title           String
+  description     String    @default("")
+  questions       String    @default("[]") // JSON SurveyQuestion[]
+  isEnabled       Boolean   @default(false)
+  status          String    @default("READY")
+  errorMessage    String?
+  sourceText      String?   // text extracted from the uploaded PDF, kept for re-runs
+  pdfBucket       String?
+  pdfKey          String?
+  pdfName         String?
+  createdById     String?   // plain id, no FK — survives account deletion
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   responses SurveyResponse[]
   invites   SurveyInvite[]
 
   @@index([kind, role, isEnabled])
+  @@index([kind, role, promptInApp])
 }
 
 // One submitted survey. userId is SetNull (research data outlives the account);
@@ -2092,6 +2102,21 @@ model SurveyPromptDismissal {
   dismissedAt DateTime @default(now())
 
   @@unique([userId, formId])
+}
+
+// "No thanks" on the IRB re-consent prompt shown to people who declined the
+// study when a new study period starts. campaignKey is the id of the in-app
+// post-survey form whose prompt started the campaign, so a later period asks
+// again.
+model ConsentRepromptDismissal {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Id of the in-app post-survey (SurveyForm) whose prompt started the re-consent campaign.
+  campaignKey String
+  dismissedAt DateTime @default(now())
+
+  @@unique([userId, campaignKey])
 }
 
 // Per-person post-survey link. Only the SHA-256 of the token is stored; the
