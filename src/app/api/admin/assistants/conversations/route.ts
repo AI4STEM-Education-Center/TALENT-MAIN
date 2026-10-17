@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminDataReader } from "@/lib/admin-access";
 import { logApiError } from "@/lib/system-log";
 import { listConversationsForAdmin } from "@/lib/assistant/conversation-store";
 import { isAssistantAudience } from "@/lib/assistant/types";
@@ -23,10 +23,8 @@ const MAX_PAGE_SIZE = 100;
  * letting an admin read "no results" as "it was never said".
  */
 export async function GET(req: Request) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAdminDataReader();
+  if (session instanceof Response) return session;
 
   try {
     const url = new URL(req.url);

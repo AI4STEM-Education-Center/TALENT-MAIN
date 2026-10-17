@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminApi } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 import { appOrigin } from "@/lib/app-url";
 import {
@@ -13,9 +13,8 @@ export const runtime = "nodejs";
 
 /** GET /api/admin/research-email/campaigns?kind= — send history with delivery counts. */
 export async function GET(req: NextRequest) {
-  const session = await auth();
-  if (session?.user?.role !== "ADMIN")
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
   const kind = req.nextUrl.searchParams.get("kind");
   if (!isResearchEmailKind(kind))
     return NextResponse.json({ error: "Unknown email type." }, { status: 400 });
@@ -79,9 +78,8 @@ export async function GET(req: NextRequest) {
  * Recipients are resolved when it goes out, not now. Also saves the draft.
  */
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (session?.user?.role !== "ADMIN")
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
   let body: Record<string, unknown>;
   try {
     body = await req.json();

@@ -55,8 +55,13 @@ describe("GET /api/admin/guardrails", () => {
   it("is admin-only", async () => {
     asTeacher();
     expect((await GET()).status).toBe(403);
-    mockAuth.mockResolvedValue(null as never);
+    // Config: a research scientist may not read it either.
+    mockAuth.mockResolvedValue({
+      user: { id: "r", role: "RESEARCHER" },
+    } as never);
     expect((await GET()).status).toBe(403);
+    mockAuth.mockResolvedValue(null as never);
+    expect((await GET()).status).toBe(401);
   });
 });
 

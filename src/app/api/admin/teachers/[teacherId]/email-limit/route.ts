@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminApi } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { parseJsonBody } from "@/lib/validation";
@@ -26,10 +26,8 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ teacherId: string }> },
 ) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   const { teacherId } = await params;
   const parsed = await parseJsonBody(

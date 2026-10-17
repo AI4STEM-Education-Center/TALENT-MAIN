@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminDataReader } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -10,10 +10,8 @@ export const runtime = "nodejs";
  * /api/pool-submissions reviewer-queue pattern.
  */
 export async function GET() {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const session = await requireAdminDataReader();
+  if (session instanceof Response) return session;
 
   const requests = await prisma.consentExportRequest.findMany({
     where: { reviewerId: session.user.id },

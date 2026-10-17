@@ -75,7 +75,7 @@ describe("admin research export", () => {
       vi.mocked(auth).mockResolvedValue(
         role ? ({ user: { id: "user", role } } as never) : (null as never),
       );
-      expect((await GET(request())).status).toBe(401);
+      expect((await GET(request())).status).toBe(role ? 403 : 401);
       expect(getS3ObjectAsString).not.toHaveBeenCalled();
     },
   );
@@ -477,6 +477,24 @@ describe("admin research export", () => {
         name.startsWith("talent-research-"),
       ),
     ).toEqual(before);
+  });
+
+  it("lets a research scientist download it and records the export in the audit log", async () => {
+    vi.mocked(auth).mockResolvedValue({
+      user: { id: "researcher-1", role: "RESEARCHER", email: "r@x.org" },
+    } as never);
+    const res = await GET(request());
+    expect(res.status).toBe(200);
+    await res.arrayBuffer();
+    const audit = await prisma.systemLog.findMany({
+      where: { category: "AUDIT", type: "DATA_EXPORT" },
+    });
+    expect(audit).toHaveLength(1);
+    expect(audit[0].userId).toBe("researcher-1");
+    expect(JSON.parse(audit[0].metadata!)).toMatchObject({
+      dataset: "research export ZIP",
+      role: "RESEARCHER",
+    });
   });
 
   it("cancels before generating data when the client has disconnected", async () => {

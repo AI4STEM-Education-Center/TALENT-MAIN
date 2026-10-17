@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { auth } from "@/lib/auth";
+import { requireAdminDataReader } from "@/lib/admin-access";
 import { logApiError } from "@/lib/system-log";
 
 const PAGE_SIZE_DEFAULT = 50;
@@ -14,10 +14,9 @@ const PAGE_SIZE_MAX = 200;
  */
 export async function GET(req: NextRequest) {
   try {
-    const session = await auth();
-    if (!session?.user || session.user.role !== "ADMIN") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    // Read-only: research scientists may view the log too.
+    const session = await requireAdminDataReader();
+    if (session instanceof Response) return session;
 
     const params = req.nextUrl.searchParams;
     const page = Math.max(1, Number(params.get("page")) || 1);

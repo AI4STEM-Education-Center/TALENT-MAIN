@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { auth } from "@/lib/auth";
+import { requireAdminDataReader } from "@/lib/admin-access";
 import { logApiError } from "@/lib/system-log";
 
 export async function GET() {
   try {
-    const session = await auth();
-    if (!session?.user || session.user.role !== "ADMIN") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const session = await requireAdminDataReader();
+    if (session instanceof Response) return session;
 
     const [students, teachers, admins, classes] = await Promise.all([
       prisma.user.count({ where: { role: "STUDENT" } }),

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminDataReader } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 import { renderConsentPdf } from "@/lib/consent-pdf";
 
@@ -16,10 +16,11 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const [session, { id }] = await Promise.all([auth(), params]);
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const [session, { id }] = await Promise.all([
+    requireAdminDataReader(),
+    params,
+  ]);
+  if (session instanceof Response) return session;
 
   const record = await prisma.consentRecord.findUnique({
     where: { id },

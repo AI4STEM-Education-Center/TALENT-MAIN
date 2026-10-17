@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { logDataExport, requireAdminDataReader } from "@/lib/admin-access";
 import { loadResearchPool } from "@/lib/research-email-server";
 import { buildPoolCsv, csvFilename } from "@/lib/survey-csv";
 
@@ -11,12 +11,14 @@ export const runtime = "nodejs";
  * download.
  */
 export async function GET(req: NextRequest) {
-  const session = await auth();
-  if (session?.user?.role !== "ADMIN")
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = await requireAdminDataReader();
+  if (session instanceof Response) return session;
 
   const entries = await loadResearchPool();
   if (req.nextUrl.searchParams.get("format") === "csv") {
+    await logDataExport(session.user, "research pool CSV", {
+      rows: entries.length,
+    });
     return new NextResponse(`﻿${buildPoolCsv(entries)}`, {
       headers: {
         "Content-Type": "text/csv; charset=utf-8",

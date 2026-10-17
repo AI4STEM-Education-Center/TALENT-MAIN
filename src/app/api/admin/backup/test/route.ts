@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminApi } from "@/lib/admin-access";
 import { resolveWebdav } from "@/lib/backup";
 import { testConnection } from "@/lib/webdav";
 
@@ -8,10 +8,8 @@ import { testConnection } from "@/lib/webdav";
  * Probe the configured WebDAV endpoint and report reachability.
  */
 export async function POST() {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   const cfg = await resolveWebdav();
   if (!cfg) {

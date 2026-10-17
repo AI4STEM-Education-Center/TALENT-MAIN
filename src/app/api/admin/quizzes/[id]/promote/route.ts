@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminApi } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 import { deepCopyQuiz } from "@/lib/quiz-access";
 
@@ -10,10 +10,8 @@ export async function POST(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const [session, { id }] = await Promise.all([auth(), params]);
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const [session, { id }] = await Promise.all([requireAdminApi(), params]);
+  if (session instanceof Response) return session;
 
   const source = await prisma.quiz.findUnique({ where: { id } });
   if (!source || source.teacherId === null) {

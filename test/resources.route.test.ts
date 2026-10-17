@@ -91,9 +91,14 @@ afterAll(async () => {
 });
 
 describe("GET /api/admin/resources", () => {
-  it("401s anyone who is not an admin", async () => {
+  it("refuses anyone who is not an admin", async () => {
     asTeacher();
-    expect((await ADMIN_GET(adminReq())).status).toBe(401);
+    expect((await ADMIN_GET(adminReq())).status).toBe(403);
+    // Infrastructure monitoring is admin-only, not research data.
+    mockAuth.mockResolvedValue({
+      user: { id: "r", role: "RESEARCHER" },
+    } as never);
+    expect((await ADMIN_GET(adminReq())).status).toBe(403);
     mockAuth.mockResolvedValue(null as never);
     expect((await ADMIN_GET(adminReq())).status).toBe(401);
   });

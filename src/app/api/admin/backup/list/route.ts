@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminApi } from "@/lib/admin-access";
 import { listBackupsForCurrentEnv } from "@/lib/backup";
 import { resolveAppEnv } from "@/lib/backup-core";
 import { logApiError } from "@/lib/system-log";
@@ -9,10 +9,8 @@ import { logApiError } from "@/lib/system-log";
  * List available backups in the current environment's folder, newest first.
  */
 export async function GET() {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   try {
     const backups = await listBackupsForCurrentEnv();

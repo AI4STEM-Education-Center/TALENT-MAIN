@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { Readable } from "node:stream";
-import { auth } from "@/lib/auth";
+import { logDataExport, requireAdminDataReader } from "@/lib/admin-access";
 import { createResearchExport } from "@/lib/research-export";
 import { rateLimit } from "@/lib/rate-limit";
 
@@ -10,10 +10,10 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const session = await auth();
-  if (session?.user?.role !== "ADMIN") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  // Research scientists may download the dataset too; every download is
+  // recorded in the audit log.
+  const session = await requireAdminDataReader();
+  if (session instanceof Response) return session;
 
   let cleanup: (() => Promise<void>) | undefined;
   const limited = rateLimit(req, "research-export", 2, 60_000, session.user.id);
@@ -22,6 +22,10 @@ export async function GET(req: NextRequest) {
     const result = await createResearchExport(session.user.id, req.signal);
     cleanup = result.cleanup;
     const { size } = await stat(result.path);
+    await logDataExport(session.user, "research export ZIP", {
+      filename: result.filename,
+      bytes: size,
+    });
     const stream = createReadStream(result.path, { signal: req.signal });
     stream.once("close", () => {
       void result

@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { canManage, getContentActor, ownScope } from "@/lib/quiz-access";
+import {
+  canManage,
+  getContentActor,
+  getContentReader,
+  ownScope,
+} from "@/lib/quiz-access";
 
 import {
   parseJsonBody,
@@ -19,7 +24,8 @@ function contentType(value: unknown): TopicContentType | null {
 // never appear in the material picker (and vice versa).
 
 export async function GET(req?: NextRequest) {
-  const actor = await getContentActor();
+  // Research scientists read the global pool's tags (read-only).
+  const actor = await getContentReader();
   if (!actor)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -27,7 +33,10 @@ export async function GET(req?: NextRequest) {
     contentType(req?.nextUrl.searchParams.get("contentType")) ?? "QUIZ";
 
   const topics = await prisma.topic.findMany({
-    where: { teacherId: ownScope(actor), contentType: requestedType },
+    where: {
+      teacherId: actor.role === "RESEARCHER" ? null : ownScope(actor),
+      contentType: requestedType,
+    },
     include: { _count: { select: { quizzes: true, learningMaterials: true } } },
     orderBy: [{ order: "asc" }, { createdAt: "asc" }],
   });

@@ -81,4 +81,16 @@ describe("student stats: learning-resource telemetry privacy", () => {
     expect(html).toContain("Learning materials opened");
     expect(html).toContain("Secret participation notes");
   });
+
+  it("research scientist page shows them too", async () => {
+    const { params } = await setup();
+    vi.mocked(auth).mockResolvedValue({
+      user: { id: "researcher-1", role: "RESEARCHER" },
+    } as never);
+    const html = renderToStaticMarkup(
+      await StudentStatsView({ params, audience: "admin" }),
+    );
+    expect(html).toContain("Learning materials opened");
+    expect(html).toContain("Secret participation notes");
+  });
 });

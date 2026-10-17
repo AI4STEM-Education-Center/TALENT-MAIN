@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminApi } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 import { encryptApiKey, maskApiKey, decryptApiKey } from "@/lib/crypto";
 import { logApiError } from "@/lib/system-log";
@@ -34,10 +34,8 @@ function parseTimeoutMs(
  * List all AI providers. API keys are returned masked.
  */
 export async function GET() {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   try {
     const providers = await prisma.aiProvider.findMany({
@@ -104,10 +102,8 @@ export async function GET() {
  * For cloudflare providers, apiKey holds the CF_AIG_TOKEN.
  */
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   try {
     const body = await req.json();
