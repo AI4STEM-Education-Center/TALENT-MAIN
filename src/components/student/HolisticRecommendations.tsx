@@ -8,6 +8,7 @@ import {
   type ResultStatus,
   type PresignedRecommendation,
 } from "@/lib/exam-results";
+import type { ResourceSurface } from "@/lib/resource-telemetry";
 
 /**
  * Study-material recommendations shared by student results and the authorized
@@ -21,6 +22,7 @@ export function HolisticRecommendations({
   metrics,
   audience = "student",
   attemptId,
+  telemetrySurface,
 }: {
   recommendations: PresignedRecommendation[];
   status: ResultStatus;
@@ -34,6 +36,11 @@ export function HolisticRecommendations({
    * "was this a good recommendation" is answerable (see /api/feedback).
    */
   attemptId?: string;
+  /**
+   * Set only on the student's own results: records each open of a card's
+   * pages as a LearningResourceSession labelled with this surface.
+   */
+  telemetrySurface?: ResourceSurface;
 }) {
   const pending = isResultPending(status);
 
@@ -55,6 +62,9 @@ export function HolisticRecommendations({
               rec={rec}
               attemptId={attemptId}
               audience={audience}
+              telemetrySurface={
+                audience === "student" ? telemetrySurface : undefined
+              }
             />
           ))}
         </div>
