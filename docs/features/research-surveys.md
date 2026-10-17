@@ -77,6 +77,12 @@ and offers two buttons:
   everywhere: research-data gating, the session claim, exports and the
   research pool. If they agree, the mandatory pre-survey follows.
 - **No thanks** hides the prompt until a later period's prompt starts.
+  Closing the prompt with "x" only hides it for the rest of the browser
+  session.
+
+  Both the consent prompt and the survey pop-up re-check on every page
+  navigation, so a campaign that starts while a student is already signed in
+  appears without a reload.
 
   The campaign starts at the most recent start time among the post-surveys
   that are currently prompting. The prompt shows only if all of these hold:

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
+import { usePathname } from "next/navigation";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ConsentForm, type ConsentFormActiveVersion } from "./ConsentForm";
@@ -16,6 +17,16 @@ type GateStatus =
   | "submitted";
 
 type Reprompt = { campaignKey: string; period: number };
+
+/** A modal is up: a re-check must never reset or close it. */
+const OPEN_STATUSES: readonly GateStatus[] = [
+  "needs-decision",
+  "reprompt",
+  "reprompt-form",
+];
+
+/** sessionStorage: re-prompt closed with "x" this session (its campaign key). */
+const REPROMPT_LATER_KEY = "consent-reprompt-later";
 
 /**
  * Mounted once in the dashboard layout (alongside its existing session
@@ -39,7 +50,14 @@ type Reprompt = { campaignKey: string; period: number };
  * to reconsider. "Review consent form" opens the same form (a new decision is
  * recorded; the latest one wins everywhere); "No thanks" records a dismissal
  * for this period. Either way the SurveyGate is told to re-check, since it
- * holds back while this prompt is pending.
+ * holds back while this prompt is pending. Closing it with "x" hides it for
+ * the rest of the browser session.
+ *
+ * Re-checks on every client-side navigation too (one GET, at most one in
+ * flight, skipped while a modal is open), so a campaign or form version that
+ * starts mid-session shows up without a reload. SurveyGate re-checks on
+ * navigation independently; neither gate triggers the other's fetch, so
+ * there is no request ping-pong.
  */
 export function ConsentGate() {
   const { data: session, status: sessionStatus } = useSession();
@@ -50,6 +68,20 @@ export function ConsentGate() {
   const [reprompt, setReprompt] = useState<Reprompt | null>(null);
 
   const role = session?.user?.role;
+  const pathname = usePathname();
+  // Read by the fetch effect without re-running it (not render inputs).
+  const statusRef = useRef<GateStatus>("checking");
+  const inFlight = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (sessionStatus !== "authenticated") return;
@@ -57,9 +89,14 @@ export function ConsentGate() {
       setStatus("clear");
       return;
     }
+    if (OPEN_STATUSES.includes(statusRef.current) || inFlight.current) return;
 
-    let cancelled = false;
-    fetch("/api/consent")
+    inFlight.current = true;
+    // Not cancelled by a navigation: the next path's check is skipped while
+    // this one is in flight, so its answer must still land.
+    const cancelled = () =>
+      !mounted.current || OPEN_STATUSES.includes(statusRef.current);
+    fetch("/api/consent", { cache: "no-store" })
       .then((res) =>
         res.ok ? res.json() : Promise.reject(new Error("status check failed")),
       )
@@ -69,11 +106,16 @@ export function ConsentGate() {
           activeForm: ConsentFormActiveVersion | null;
           reprompt?: Reprompt | null;
         }) => {
-          if (cancelled) return;
+          if (cancelled()) return;
           if (data.needsDecision && data.activeForm) {
             setActiveForm(data.activeForm);
             setStatus("needs-decision");
-          } else if (data.reprompt && data.activeForm) {
+          } else if (
+            data.reprompt &&
+            data.activeForm &&
+            sessionStorage.getItem(REPROMPT_LATER_KEY) !==
+              data.reprompt.campaignKey
+          ) {
             setActiveForm(data.activeForm);
             setReprompt(data.reprompt);
             setStatus("reprompt");
@@ -86,12 +128,12 @@ export function ConsentGate() {
         // Fail OPEN on a transient network error rather than locking a
         // student out of their whole dashboard over a blip — proxy.ts's
         // teacher hard-gate is the real backstop for TEACHER regardless.
-        if (!cancelled) setStatus("clear");
+        if (!cancelled()) setStatus("clear");
+      })
+      .finally(() => {
+        inFlight.current = false;
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [sessionStatus, role]);
+  }, [sessionStatus, role, pathname]);
 
   if (!activeForm || (role !== "STUDENT" && role !== "TEACHER")) return null;
 
@@ -102,9 +144,13 @@ export function ConsentGate() {
   };
 
   if (status === "reprompt" || status === "reprompt-form") {
-    // Closing without choosing just hides it for this page view; it comes
-    // back on the next load until they decide or say "No thanks".
-    const close = () => setStatus("clear");
+    // Closing without choosing hides it for this browser session; it comes
+    // back in a later session until they decide or say "No thanks".
+    const close = () => {
+      if (reprompt)
+        sessionStorage.setItem(REPROMPT_LATER_KEY, reprompt.campaignKey);
+      setStatus("clear");
+    };
     const noThanks = async () => {
       setStatus("clear");
       await fetch("/api/consent/reprompt/dismiss", { method: "POST" }).catch(
