@@ -88,6 +88,7 @@ export function useResourceTelemetry({
   // between sessions); replay it into each new tracker.
   const pageRef = useRef<number | null>(null);
 
+  // react-doctor-disable-next-line react-doctor/effect-needs-cleanup -- the only uncleared timer is sendFinal's bounded retry (≤2, ≤3s total), which is scheduled BY the cleanup (dialog close/unmount sends the final batch) and must outlive it; it is skipped after a real unload. The interval and listeners are cleaned up.
   useEffect(() => {
     if (!enabled || !materialId) return;
     const tracker = new ResourceTelemetryTracker(
