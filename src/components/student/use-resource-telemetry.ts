@@ -8,6 +8,17 @@ import {
   type ResourceTotals,
 } from "@/lib/resource-telemetry";
 
+/** Consecutive failed periodic batches before periodic sends stop. */
+const MAX_CONSECUTIVE_FAILURES = 5;
+/** Attempts (incl. the first) for the final batch, with linear backoff. */
+const MAX_FINAL_ATTEMPTS = 3;
+const FINAL_RETRY_MS = 1_000;
+
+/** keepalive fetch: Chromium/Safari, Firefox 133+. */
+function keepaliveSupported(): boolean {
+  return typeof Request !== "undefined" && "keepalive" in Request.prototype;
+}
+
 export type ResourceTelemetryOptions = {
   /**
    * Record while true: the viewer is open AND this is the student's own view.
@@ -39,13 +50,16 @@ export type ResourceTelemetryHandle = {
  *    sent after that — the tracker still runs locally but goes nowhere.
  * 2. While open, a ResourceTelemetryTracker accumulates dwell (paused while
  *    the tab is hidden), active time, presses inside the viewer, and per-page
- *    time. Cumulative totals flush every RESOURCE_FLUSH_MS when changed, and
- *    whenever the tab is hidden (mobile browsers may never fire pagehide).
+ *    time. Cumulative totals flush every RESOURCE_FLUSH_MS when they differ
+ *    from what the server last acknowledged, and whenever the tab is hidden
+ *    (mobile browsers may never fire pagehide). A rejected batch (409, 5xx,
+ *    network) stays pending and is resent on the next tick.
  * 3. On disable/unmount/unloading pagehide the final batch goes out via
- *    sendBeacon (falling back to keepalive fetch), frozen at the moment of closing — even
- *    if the session id only arrives afterwards. A pagehide into the
- *    back/forward cache only pauses and flushes; pageshow resumes the same
- *    session.
+ *    keepalive fetch (retried on rejection; sendBeacon only when keepalive
+ *    is unavailable or the request fails at the network level), frozen at
+ *    the moment of closing — even if the session id only arrives afterwards.
+ *    A pagehide into the back/forward cache only pauses and flushes;
+ *    pageshow resumes the same session.
  *
  * Best-effort throughout: failures never surface to the reader.
  */
@@ -72,36 +86,85 @@ export function useResourceTelemetry({
 
     let sessionId: string | null = null;
     let finalTotals: ResourceTotals | null = null;
+    // The final batch has been handed to the network (it retries itself).
     let finalSent = false;
-    let lastSent = "";
+    // Totals the server last ACKNOWLEDGED. Only a 2xx advances it, so a
+    // rejected or failed periodic batch stays pending and goes out again on
+    // the next tick (totals are cumulative, so resending is idempotent).
+    let delivered = "";
+    let inFlight = 0;
+    let failures = 0;
     const base = `/api/student/materials/${encodeURIComponent(materialId)}/sessions`;
 
-    const send = (body: string, beacon: boolean) => {
+    const beacon = (url: string, body: string): boolean =>
+      typeof navigator.sendBeacon === "function" &&
+      navigator.sendBeacon(url, new Blob([body], { type: "application/json" }));
+
+    /**
+     * POST one batch; resolves true when it was delivered. keepalive fetch
+     * first — it survives page teardown like a beacon but reports the
+     * response, so failures can be retried. sendBeacon (fire-and-forget,
+     * counted as delivered when queued) only when keepalive is unavailable or
+     * the fetch itself fails at the network level.
+     */
+    const post = (body: string): Promise<boolean> => {
       const url = `${base}/${encodeURIComponent(sessionId!)}`;
-      if (beacon && typeof navigator.sendBeacon === "function") {
-        const queued = navigator.sendBeacon(
-          url,
-          new Blob([body], { type: "application/json" }),
+      if (!keepaliveSupported()) return Promise.resolve(beacon(url, body));
+      try {
+        return fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+          keepalive: true,
+        }).then(
+          (res) => res.ok,
+          () => beacon(url, body),
         );
-        if (queued) return;
+      } catch {
+        return Promise.resolve(beacon(url, body));
       }
-      fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body,
-        keepalive: true,
-      }).catch(() => {});
     };
 
-    const flush = (ended: boolean, beacon = ended) => {
+    const sendFinal = (body: string, attempt: number) => {
+      void post(body).then((ok) => {
+        if (!ok && attempt + 1 < MAX_FINAL_ATTEMPTS) {
+          setTimeout(
+            () => sendFinal(body, attempt + 1),
+            FINAL_RETRY_MS * (attempt + 1),
+          );
+        }
+      });
+    };
+
+    /**
+     * `urgent` (tab hidden / page entering the bfcache) sends even while a
+     * periodic batch is in flight — the page may not get another chance.
+     */
+    const flush = (ended: boolean, urgent = false) => {
       if (finalSent) return;
       const totals = finalTotals ?? tracker.snapshot(Date.now());
       if (!sessionId) return;
+      if (ended) {
+        finalSent = true;
+        sendFinal(JSON.stringify({ ...totals, ended: true }), 0);
+        return;
+      }
+      // One periodic batch at a time; after repeated consecutive failures,
+      // stop periodic sends (the final batch is still attempted).
+      if ((inFlight > 0 && !urgent) || failures >= MAX_CONSECUTIVE_FAILURES)
+        return;
       const payload = JSON.stringify(totals);
-      if (!ended && payload === lastSent) return;
-      lastSent = payload;
-      if (ended) finalSent = true;
-      send(JSON.stringify({ ...totals, ended }), beacon);
+      if (payload === delivered) return;
+      inFlight += 1;
+      void post(JSON.stringify({ ...totals, ended: false })).then((ok) => {
+        inFlight -= 1;
+        if (ok) {
+          delivered = payload;
+          failures = 0;
+        } else {
+          failures += 1;
+        }
+      });
     };
 
     const close = () => {

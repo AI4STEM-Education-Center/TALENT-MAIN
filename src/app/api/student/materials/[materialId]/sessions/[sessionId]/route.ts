@@ -11,8 +11,22 @@ export const runtime = "nodejs";
 /** ~300 page entries at most, plus a few counters. */
 const MAX_BODY_BYTES = 16 * 1024;
 
-/** Conditional-write retries before answering 409 (see the loop below). */
-const MAX_WRITE_ATTEMPTS = 5;
+/**
+ * Conditional-write attempts (see the loop below). Every lost attempt means
+ * another batch for this same session committed in between, and a session
+ * only ever has a handful of batches in flight (one periodic + hide/close,
+ * all rate-limited), so contention drains long before these run out. The
+ * final batch gets a deeper budget: it is the one the client can least
+ * afford to have rejected, since the page may be gone.
+ */
+const MAX_WRITE_ATTEMPTS = 10;
+const MAX_FINAL_WRITE_ATTEMPTS = 30;
+
+/** Small jittered backoff so racing writers stop colliding in lockstep. */
+const backoff = (attempt: number) =>
+  new Promise((resolve) =>
+    setTimeout(resolve, Math.random() * Math.min(5 * 2 ** attempt, 50)),
+  );
 
 const notFound = () =>
   NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -82,7 +96,9 @@ async function recordBatch(
   // the row still has the version we merged against. When a concurrent batch
   // (typically the periodic fetch racing the close beacon) got there first,
   // re-read and merge again — the merge is a max, so retrying is always safe.
-  for (let attempt = 0; attempt < MAX_WRITE_ATTEMPTS; attempt += 1) {
+  const attempts = data.ended ? MAX_FINAL_WRITE_ATTEMPTS : MAX_WRITE_ATTEMPTS;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (attempt > 0) await backoff(attempt);
     const row = await prisma.learningResourceSession.findUnique({
       where: { id: sessionId },
     });
@@ -124,9 +140,10 @@ async function recordBatch(
     if (count === 1) return NextResponse.json({ ok: true });
   }
 
-  // Persistent contention means a flood of batches for one session; the
-  // client retries on its next flush with cumulative totals, so nothing is
-  // lost by asking it to back off.
+  // Reaching this needs 10 (30 for a final batch) other batches for this one
+  // session to commit while we retried — a flood, not a race the real client
+  // produces. The client treats 409 as "not delivered" and resends its
+  // cumulative totals (periodic: next tick; final: bounded retries).
   return NextResponse.json(
     { error: "Session busy, retry later" },
     { status: 409 },

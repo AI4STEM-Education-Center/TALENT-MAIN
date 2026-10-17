@@ -362,3 +362,55 @@ describe("report assembly", () => {
     expect(rows[2].label).toBe("legacy");
   });
 });
+
+describe("report assembly performance", () => {
+  // Regression guard: per-row array copies made assembly quadratic (~16s for
+  // 40k sessions of one material). Linear assembly does 50k in milliseconds;
+  // the 1s budget leaves ample headroom for slow CI machines.
+  const N = 50_000;
+
+  it("assembles 50k sessions of one material well under a second", () => {
+    const durations = Array.from({ length: N }, (_, i) => ({
+      materialId: "m1",
+      dwellMs: (i * 7919) % 600_000,
+      activeMs: (i * 104_729) % 300_000,
+    }));
+    const started = performance.now();
+    const [row] = assembleMaterialRows(
+      [
+        {
+          materialId: "m1",
+          opens: N,
+          totalDwellMs: 0,
+          totalClicks: 0,
+          lastOpenedAt: null,
+        },
+      ],
+      {
+        studentPairs: [],
+        recommended: [],
+        surfaces: [],
+        durations,
+        titles: new Map(),
+      },
+    );
+    expect(performance.now() - started).toBeLessThan(1_000);
+    const sorted = durations.map((d) => d.dwellMs).sort((a, b) => a - b);
+    expect(row.medianDwellMs).toBe((sorted[N / 2 - 1] + sorted[N / 2]) / 2);
+  });
+
+  it("assembles 50k sessions of one surface well under a second", () => {
+    const durations = Array.from({ length: N }, (_, i) => ({
+      surface: "materials_library",
+      dwellMs: (i * 7919) % 600_000,
+    }));
+    const started = performance.now();
+    const [row] = assembleSurfaceRows(
+      [{ surface: "materials_library", opens: N, totalClicks: 0 }],
+      [],
+      durations,
+    );
+    expect(performance.now() - started).toBeLessThan(1_000);
+    expect(row.opens).toBe(N);
+  });
+});

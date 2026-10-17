@@ -358,9 +358,10 @@ export class ResourceTelemetryTracker {
 /** Most materials the admin per-material table lists (most-opened first). */
 export const MAX_MATERIAL_ROWS = 200;
 
+/** Median via one copy + one numeric sort (typed-array sort, no comparator). */
 export function medianOf(values: number[]): number {
   if (values.length === 0) return 0;
-  const sorted = values.toSorted((a, b) => a - b);
+  const sorted = Float64Array.from(values).sort();
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 === 0
     ? (sorted[mid - 1] + sorted[mid]) / 2
@@ -422,6 +423,17 @@ const countBy = <T>(
   return out;
 };
 
+/**
+ * Append to a Map-of-arrays in place. The report folds tens of thousands of
+ * duration rows; copying the accumulated array per row (spread/concat) made
+ * assembly quadratic and blocked the event loop for seconds.
+ */
+function pushInto(map: Map<string, number[]>, key: string, value: number) {
+  const list = map.get(key);
+  if (list) list.push(value);
+  else map.set(key, [value]);
+}
+
 /** Combine grouped rows into one display row per material, in `groups` order. */
 export function assembleMaterialRows(
   groups: MaterialGroup[],
@@ -446,14 +458,8 @@ export function assembleMaterialRows(
   const dwell = new Map<string, number[]>();
   const active = new Map<string, number[]>();
   for (const row of breakdown.durations) {
-    dwell.set(row.materialId, [
-      ...(dwell.get(row.materialId) ?? []),
-      row.dwellMs,
-    ]);
-    active.set(row.materialId, [
-      ...(active.get(row.materialId) ?? []),
-      row.activeMs,
-    ]);
+    pushInto(dwell, row.materialId, row.dwellMs);
+    pushInto(active, row.materialId, row.activeMs);
   }
   return groups.map((group) => {
     const recommendedOpens = recommended.get(group.materialId) ?? 0;
@@ -495,8 +501,7 @@ export function assembleSurfaceRows(
     () => 1,
   );
   const dwell = new Map<string, number[]>();
-  for (const row of durations)
-    dwell.set(row.surface, [...(dwell.get(row.surface) ?? []), row.dwellMs]);
+  for (const row of durations) pushInto(dwell, row.surface, row.dwellMs);
   const order = (surface: string) => {
     const index = (RESOURCE_SURFACES as readonly string[]).indexOf(surface);
     return index === -1 ? RESOURCE_SURFACES.length : index;

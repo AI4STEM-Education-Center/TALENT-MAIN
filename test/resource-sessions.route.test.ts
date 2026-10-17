@@ -419,6 +419,40 @@ describe("recording telemetry batches", () => {
     expect(row.endedAt).not.toBeNull();
   });
 
+  it("keeps retrying a final batch that loses the version race instead of answering 409", async () => {
+    const { material, sessionId } = await opened();
+    const updateMany = vi.spyOn(prisma.learningResourceSession, "updateMany");
+    // Lose more races than a periodic batch would tolerate.
+    for (let i = 0; i < 12; i += 1)
+      updateMany.mockResolvedValueOnce({ count: 0 });
+    const res = await beaconSession(
+      json({ ...batch, ended: true }),
+      batchParams(material.id, sessionId),
+    );
+    expect(res.status).toBe(200);
+    expect(updateMany).toHaveBeenCalledTimes(13);
+    const row = await prisma.learningResourceSession.findUniqueOrThrow({
+      where: { id: sessionId },
+    });
+    expect(row).toMatchObject({ dwellMs: 30_000, clickCount: 4 });
+    expect(row.endedAt).not.toBeNull();
+    updateMany.mockRestore();
+  });
+
+  it("answers 409 (client resends) only after exhausting periodic retries", async () => {
+    const { material, sessionId } = await opened();
+    const updateMany = vi
+      .spyOn(prisma.learningResourceSession, "updateMany")
+      .mockResolvedValue({ count: 0 });
+    const res = await patchSession(
+      json(batch, "PATCH"),
+      batchParams(material.id, sessionId),
+    );
+    expect(res.status).toBe(409);
+    expect(updateMany).toHaveBeenCalledTimes(10);
+    updateMany.mockRestore();
+  });
+
   it("clamps dwell to the time since the session opened", async () => {
     const { material, sessionId } = await opened();
     await patchSession(
