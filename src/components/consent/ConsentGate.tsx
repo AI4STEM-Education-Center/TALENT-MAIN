@@ -25,8 +25,14 @@ const OPEN_STATUSES: readonly GateStatus[] = [
   "reprompt-form",
 ];
 
-/** sessionStorage: re-prompt closed with "x" this session (its campaign key). */
-const REPROMPT_LATER_KEY = "consent-reprompt-later";
+/**
+ * sessionStorage key marking a re-prompt closed with "x" this browser session.
+ * Scoped to the signed-in user and the campaign, so another account signing
+ * in on the same tab (shared sessionStorage) still sees its own prompt.
+ */
+function repromptHiddenKey(userId: string, campaignKey: string): string {
+  return `reconsent-hidden:${userId}:${campaignKey}`;
+}
 
 /**
  * Mounted once in the dashboard layout (alongside its existing session
@@ -68,6 +74,7 @@ export function ConsentGate() {
   const [reprompt, setReprompt] = useState<Reprompt | null>(null);
 
   const role = session?.user?.role;
+  const userId = session?.user?.id ?? "";
   const pathname = usePathname();
   // Read by the fetch effect without re-running it (not render inputs).
   const statusRef = useRef<GateStatus>("checking");
@@ -113,8 +120,9 @@ export function ConsentGate() {
           } else if (
             data.reprompt &&
             data.activeForm &&
-            sessionStorage.getItem(REPROMPT_LATER_KEY) !==
-              data.reprompt.campaignKey
+            !sessionStorage.getItem(
+              repromptHiddenKey(userId, data.reprompt.campaignKey),
+            )
           ) {
             setActiveForm(data.activeForm);
             setReprompt(data.reprompt);
@@ -133,7 +141,7 @@ export function ConsentGate() {
       .finally(() => {
         inFlight.current = false;
       });
-  }, [sessionStatus, role, pathname]);
+  }, [sessionStatus, role, userId, pathname]);
 
   if (!activeForm || (role !== "STUDENT" && role !== "TEACHER")) return null;
 
@@ -148,7 +156,10 @@ export function ConsentGate() {
     // back in a later session until they decide or say "No thanks".
     const close = () => {
       if (reprompt)
-        sessionStorage.setItem(REPROMPT_LATER_KEY, reprompt.campaignKey);
+        sessionStorage.setItem(
+          repromptHiddenKey(userId, reprompt.campaignKey),
+          "1",
+        );
       setStatus("clear");
     };
     const noThanks = async () => {

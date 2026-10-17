@@ -4,10 +4,11 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 let pathname = "/student";
+let userId = "u1";
 vi.mock("next/navigation", () => ({ usePathname: () => pathname }));
 vi.mock("next-auth/react", () => ({
   useSession: () => ({
-    data: { user: { id: "u1", role: "STUDENT", email: "stu@uga.edu" } },
+    data: { user: { id: userId, role: "STUDENT", email: "stu@uga.edu" } },
     status: "authenticated",
     update: vi.fn(),
   }),
@@ -75,6 +76,7 @@ beforeEach(() => {
   sessionStorage.clear();
   campaignStarted = false;
   pathname = "/student";
+  userId = "u1";
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -123,4 +125,32 @@ it("keeps an open consent form open across navigations", async () => {
   await render();
   expect(document.body.textContent).toContain("Consent text");
   expect(calls("/api/consent")).toBe(1);
+});
+
+it("hides a closed re-prompt only for the student who closed it", async () => {
+  campaignStarted = true;
+  await render();
+  const close = [...document.querySelectorAll("button")].find(
+    (b) => b.textContent === "Close",
+  )!;
+  await act(async () => close.click());
+  expect(document.body.textContent).not.toContain(
+    "A new study period is starting",
+  );
+
+  // Student A signs out; student B signs in on the same tab.
+  await act(async () => root.unmount());
+  userId = "u2";
+  root = createRoot(host);
+  await render();
+  expect(document.body.textContent).toContain("A new study period is starting");
+
+  // Student A back on the same tab: still hidden for them this session.
+  await act(async () => root.unmount());
+  userId = "u1";
+  root = createRoot(host);
+  await render();
+  expect(document.body.textContent).not.toContain(
+    "A new study period is starting",
+  );
 });
