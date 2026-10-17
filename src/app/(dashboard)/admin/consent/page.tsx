@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { Loader2, Download, Eye, Settings, FileText } from "lucide-react";
 import { useAlert } from "@/components/ui/confirm-dialog";
+import { useAdminCanEdit } from "@/components/admin/use-admin-can-edit";
 
 interface ConsentRecordRow {
   id: string;
@@ -40,6 +41,9 @@ type JobState = {
 
 export default function AdminConsentPage() {
   const alert = useAlert();
+  // Research scientists view and preview records; form publishing, export
+  // settings and the bulk ZIP export (a background job) stay admin-only.
+  const canEdit = useAdminCanEdit();
   const requestRef = useRef<AbortController | null>(null);
   const [records, setRecords] = useState<ConsentRecordRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -165,18 +169,20 @@ export default function AdminConsentPage() {
             run in the background so they never slow down the site.
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" asChild>
-            <Link href="/admin/consent/forms">
-              <FileText className="size-4" /> Form versions
-            </Link>
-          </Button>
-          <Button variant="outline" size="sm" asChild>
-            <Link href="/admin/consent/settings">
-              <Settings className="size-4" /> Export settings
-            </Link>
-          </Button>
-        </div>
+        {canEdit && (
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/admin/consent/forms">
+                <FileText className="size-4" /> Form versions
+              </Link>
+            </Button>
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/admin/consent/settings">
+                <Settings className="size-4" /> Export settings
+              </Link>
+            </Button>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-wrap items-end gap-4">
@@ -206,17 +212,21 @@ export default function AdminConsentPage() {
             </SelectContent>
           </Select>
         </div>
-        <Button
-          onClick={requestExport}
-          disabled={
-            selected.size === 0 ||
-            requestingExport ||
-            Boolean(job && job.status !== "COMPLETE" && job.status !== "FAILED")
-          }
-        >
-          <Download className="size-4" /> Download {selected.size || ""}{" "}
-          selected as ZIP
-        </Button>
+        {canEdit && (
+          <Button
+            onClick={requestExport}
+            disabled={
+              selected.size === 0 ||
+              requestingExport ||
+              Boolean(
+                job && job.status !== "COMPLETE" && job.status !== "FAILED",
+              )
+            }
+          >
+            <Download className="size-4" /> Download {selected.size || ""}{" "}
+            selected as ZIP
+          </Button>
+        )}
       </div>
 
       {job && (

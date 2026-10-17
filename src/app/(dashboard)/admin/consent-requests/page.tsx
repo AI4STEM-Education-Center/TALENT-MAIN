@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Check, Inbox, Loader2, X } from "lucide-react";
+import { useAdminCanEdit } from "@/components/admin/use-admin-can-edit";
 
 interface RequestRow {
   id: string;
@@ -19,6 +20,8 @@ interface RequestRow {
 }
 
 export default function AdminConsentRequestsPage() {
+  // Research scientists see the requests; approving/rejecting is admin-only.
+  const canEdit = useAdminCanEdit();
   const [requests, setRequests] = useState<RequestRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -147,7 +150,7 @@ export default function AdminConsentRequestsPage() {
                     </Badge>
                   </div>
 
-                  {pending ? (
+                  {pending && canEdit ? (
                     <div className="space-y-3">
                       <label className="flex items-start gap-2 rounded-md bg-amber-500/10 p-3 text-sm">
                         <input

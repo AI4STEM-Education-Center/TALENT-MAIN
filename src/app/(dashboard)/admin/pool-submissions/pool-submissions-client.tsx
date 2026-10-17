@@ -28,9 +28,12 @@ export interface Submission {
 export function PoolSubmissionsClient({
   initialSubmissions,
   requestedId,
+  canReview,
 }: {
   initialSubmissions: Submission[];
   requestedId: string | null;
+  /** False for research scientists: the list is shown without decisions. */
+  canReview: boolean;
 }) {
   const [submissions, setSubmissions] =
     useState<Submission[]>(initialSubmissions);
@@ -87,7 +90,9 @@ export function PoolSubmissionsClient({
       <div>
         <h1 className="text-3xl font-bold">Global pool approvals</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Review quiz and learning-material submissions assigned to you.
+          {canReview
+            ? "Review quiz and learning-material submissions assigned to you."
+            : "Quiz and learning-material submissions to the global pool."}
         </p>
       </div>
       {error && (
@@ -103,7 +108,9 @@ export function PoolSubmissionsClient({
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
             <Inbox className="mx-auto mb-3 size-10" />
-            No requests are assigned to you.
+            {canReview
+              ? "No requests are assigned to you."
+              : "No pool submissions yet."}
           </CardContent>
         </Card>
       ) : (
@@ -162,7 +169,7 @@ export function PoolSubmissionsClient({
                       {submission.status}
                     </Badge>
                   </div>
-                  {pending ? (
+                  {pending && canReview ? (
                     <div className="space-y-3">
                       <Textarea
                         value={notes[submission.id] || ""}

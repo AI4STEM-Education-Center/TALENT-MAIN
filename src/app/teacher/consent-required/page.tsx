@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { homePathForRole } from "@/lib/roles";
 import { prisma } from "@/lib/prisma";
 import { getActiveConsentVersion } from "@/lib/consent";
 import {
@@ -26,7 +27,7 @@ export default async function TeacherConsentRequiredPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
   if (session.user.role !== "TEACHER") {
-    redirect(session.user.role === "ADMIN" ? "/admin" : "/student");
+    redirect(homePathForRole(session.user.role));
   }
 
   const activeForm = await getActiveConsentVersion("TEACHER");

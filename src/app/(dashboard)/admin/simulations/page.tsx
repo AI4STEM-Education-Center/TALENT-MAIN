@@ -1,9 +1,9 @@
-import { redirect } from "next/navigation";
-import { getContentActor } from "@/lib/quiz-access";
+import { requireAdminDataPage } from "@/lib/admin-access";
+import { isAdmin } from "@/lib/roles";
 import { AdminSimulationsClient } from "./simulations-client";
 
 export default async function AdminSimulationsPage() {
-  const actor = await getContentActor();
-  if (!actor || actor.role !== "ADMIN") redirect("/login");
-  return <AdminSimulationsClient />;
+  // Research scientists browse the simulations read-only.
+  const session = await requireAdminDataPage();
+  return <AdminSimulationsClient canEdit={isAdmin(session.user.role)} />;
 }

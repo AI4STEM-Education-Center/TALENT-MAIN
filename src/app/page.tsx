@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { BookOpen, LineChart, Sparkles } from "lucide-react";
 import { auth } from "@/lib/auth";
+import { homePathForRole } from "@/lib/roles";
 import { redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
 
@@ -34,9 +35,7 @@ export default async function HomePage() {
   const session = await auth();
 
   if (session?.user) {
-    if (session.user.role === "TEACHER") redirect("/teacher");
-    else if (session.user.role === "ADMIN") redirect("/admin");
-    else redirect("/student");
+    redirect(homePathForRole(session.user.role));
   }
 
   return (

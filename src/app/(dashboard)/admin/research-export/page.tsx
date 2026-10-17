@@ -1,12 +1,10 @@
-import { redirect } from "next/navigation";
 import { Download } from "lucide-react";
-import { auth } from "@/lib/auth";
+import { requireAdminDataPage } from "@/lib/admin-access";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default async function ResearchExportPage() {
-  const session = await auth();
-  if (session?.user?.role !== "ADMIN") redirect("/login");
+  await requireAdminDataPage();
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-8">

@@ -125,7 +125,7 @@ export function QuizEditorHeader({
             </Link>
           </Button>
         )}
-        {readOnly && isPoolQuiz ? (
+        {quiz.viewOnly ? null : readOnly && isPoolQuiz ? (
           <Button onClick={importPoolCopy} disabled={poolImportBusy}>
             <Download className="size-4" />{" "}
             {poolImportBusy ? "Importing…" : "Import to my quizzes"}

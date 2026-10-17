@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import { isAdmin } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -56,6 +57,8 @@ const ROLE_GROUPS = [
 
 export default function AdminUsersPage() {
   const { data: session } = useSession();
+  // Research scientists get the user list read-only (no delete).
+  const canEdit = isAdmin(session?.user?.role);
   const alert = useAlert();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -199,24 +202,26 @@ export default function AdminUsersPage() {
                               {new Date(user.createdAt).toLocaleDateString()}
                             </td>
                             <td className="px-6 py-4 text-right">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => setDeleteUser(user)}
-                                disabled={user.id === session?.user?.id}
-                                className={cn(
-                                  "text-destructive hover:text-destructive hover:bg-destructive/10 size-8",
-                                  user.id === session?.user?.id &&
-                                    "opacity-50 cursor-not-allowed",
-                                )}
-                                title={
-                                  user.id === session?.user?.id
-                                    ? "Cannot delete yourself"
-                                    : "Delete user"
-                                }
-                              >
-                                <Trash2 className="size-4" />
-                              </Button>
+                              {canEdit && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => setDeleteUser(user)}
+                                  disabled={user.id === session?.user?.id}
+                                  className={cn(
+                                    "text-destructive hover:text-destructive hover:bg-destructive/10 size-8",
+                                    user.id === session?.user?.id &&
+                                      "opacity-50 cursor-not-allowed",
+                                  )}
+                                  title={
+                                    user.id === session?.user?.id
+                                      ? "Cannot delete yourself"
+                                      : "Delete user"
+                                  }
+                                >
+                                  <Trash2 className="size-4" />
+                                </Button>
+                              )}
                             </td>
                           </tr>
                         ))

@@ -1,11 +1,11 @@
-import { redirect } from "next/navigation";
-import { getContentActor } from "@/lib/quiz-access";
+import { requireAdminDataPage } from "@/lib/admin-access";
+import { isAdmin } from "@/lib/roles";
 import { MaterialPoolClient } from "./material-pool-client";
 import { prisma } from "@/lib/prisma";
 
 export default async function AdminMaterialPoolPage() {
-  const actor = await getContentActor();
-  if (!actor || actor.role !== "ADMIN") redirect("/login");
+  // Research scientists browse the pool read-only.
+  const session = await requireAdminDataPage();
   const [materials, tags] = await Promise.all([
     prisma.learningMaterial.findMany({
       where: {
@@ -36,6 +36,10 @@ export default async function AdminMaterialPoolPage() {
         : null,
   }));
   return (
-    <MaterialPoolClient initialMaterials={materialItems} initialTags={tags} />
+    <MaterialPoolClient
+      initialMaterials={materialItems}
+      initialTags={tags}
+      canEdit={isAdmin(session.user.role)}
+    />
   );
 }
