@@ -41,6 +41,11 @@ export default async function AdminDashboardPage() {
             <Link href="/admin/usage">Student usage records</Link>
           </Button>
           <Button variant="outline" asChild>
+            <Link href="/admin/resource-engagement">
+              Learning resource engagement
+            </Link>
+          </Button>
+          <Button variant="outline" asChild>
             <Link href="/admin/quizzes">Teacher quizzes & pool</Link>
           </Button>
           <Button variant="outline" asChild>

@@ -82,6 +82,8 @@ export const RESEARCH_EXPORT_FIELDS = {
     "id simulationId authorUserId authorName feedback status errorMessage previousStorageKey baseVersion versionName createdAt updatedAt",
   SimulationSession:
     "id simulationId studentId classId quizId attemptId surface viewport startedAt endedAt dwellMs activeMs interactionCount paramChanges controlsJson updatedAt",
+  LearningResourceSession:
+    "id studentId materialId materialTitle classId quizId attemptId surface recommended pageStart pageEnd openedAt endedAt dwellMs activeMs clickCount pdfOpenCount pagesViewed pagesViewedJson updatedAt",
   ContentFeedback:
     "id createdAt updatedAt audience subjectType rating comment authorUserId authorName authorEmail authorRole subjectId subjectLabel subjectDetail subjectKey routedTeacherId attemptId quizId quizName classId className",
   SystemLog: "id createdAt category type severity message userId ip metadata",
@@ -124,6 +126,44 @@ export const RESEARCH_EXPORT_FIELDS = {
   ResearchEmailDelivery:
     "id campaignId userId recipient variant status attempts lastError nextAttemptAt claimedAt sentAt createdAt",
 } as const;
+
+// Column descriptions for data_dictionary.csv. Prisma 7's runtime DMMF drops
+// `///` schema docs, so descriptions that matter for analysis live here.
+export const RESEARCH_EXPORT_FIELD_DOCS: Partial<
+  Record<keyof typeof RESEARCH_EXPORT_FIELDS, Record<string, string>>
+> = {
+  LearningResourceSession: {
+    id: "One row per time a student opened a learning material; open (click) counts are row counts",
+    studentId:
+      "Student.id of the reader (relation-free: survives account deletion)",
+    materialId:
+      "LearningMaterial.id opened (relation-free: survives material deletion)",
+    materialTitle: "Material title snapshot at open time",
+    classId:
+      "Recommending attempt's class, or the single enrolled class that shares the material; null when ambiguous",
+    quizId:
+      "Quiz whose results recommended the material; null for self-directed opens",
+    attemptId:
+      "QuizAttempt.id whose results recommended the material (verified to be the student's own)",
+    surface:
+      "Where it was opened: results_recommendation (results right after a quiz), history_recommendation (saved results page from Exam History), materials_library (Course Materials reader)",
+    recommended:
+      "True when opened from a post-quiz recommendation, verified against the attempt's stored recommendations",
+    pageStart: "First page of the recommended range (recommended opens only)",
+    pageEnd: "Last page of the recommended range (recommended opens only)",
+    openedAt: "When the viewer was opened",
+    endedAt:
+      "When the viewer was closed; empty if the final flush never arrived",
+    dwellMs:
+      "Milliseconds open with the browser tab visible (paused while hidden); bounded by wall-clock time since openedAt",
+    activeMs: "Milliseconds of dwell within 15s of scroll/pointer/key activity",
+    clickCount: "Pointer/key presses inside the viewer",
+    pdfOpenCount: "Times the original PDF was opened from the reader",
+    pagesViewed: "Number of distinct pages viewed",
+    pagesViewedJson: "JSON {pageNumber: visibleMs}; capped at 300 pages",
+    updatedAt: "Last telemetry batch received",
+  },
+};
 
 export const RESEARCH_EXPORT_EXCLUDED_MODELS = [
   "PasswordResetToken",
