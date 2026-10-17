@@ -13,6 +13,7 @@ import { choiceAllowsRecording, normalizeUgaId } from "@/lib/consent-fields";
 import { enqueueConsentConfirmationEmail } from "@/lib/consent-email";
 import { enqueueConsentEmails } from "@/lib/queue";
 import { sanitizeConsentHtml } from "@/lib/consent-html";
+import { getConsentReprompt } from "@/lib/survey-server";
 
 export const runtime = "nodejs";
 
@@ -24,6 +25,11 @@ export const runtime = "nodejs";
  * the same session, rather than waiting for the JWT to refresh at next
  * sign-in. See src/lib/consent.ts for why the JWT claim itself stays
  * eventually-consistent.
+ *
+ * `reprompt` is non-null for someone whose latest decision is DECLINE while a
+ * new study period is starting (an in-app post-survey is prompting for their
+ * role) and they haven't said "No thanks" to it — ConsentGate then offers a
+ * dismissible "would you reconsider?" prompt instead of the blocking modal.
  */
 export async function GET() {
   const session = await auth();
@@ -37,6 +43,7 @@ export async function GET() {
       role: null,
       activeForm: null,
       priorDecision: null,
+      reprompt: null,
     });
   }
 
@@ -49,12 +56,13 @@ export async function GET() {
       role,
       activeForm: null,
       priorDecision: null,
+      reprompt: null,
     });
   }
 
   const priorDecision = await prisma.consentRecord.findFirst({
     where: { userId: session.user.id, formVersionId: activeForm.id },
-    orderBy: { signedAt: "desc" },
+    orderBy: [{ signedAt: "desc" }, { id: "desc" }],
     select: {
       decision: true,
       signedAt: true,
@@ -63,6 +71,11 @@ export async function GET() {
       signatureTypedName: true,
     },
   });
+
+  const reprompt =
+    priorDecision?.decision === "DECLINE"
+      ? await getConsentReprompt(session.user.id, role, { decision: "DECLINE" })
+      : null;
 
   return NextResponse.json({
     needsDecision: !priorDecision,
@@ -74,6 +87,7 @@ export async function GET() {
       bodyHtml: sanitizeConsentHtml(activeForm.bodyHtml),
     },
     priorDecision: priorDecision ?? null,
+    reprompt,
   });
 }
 

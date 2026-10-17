@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { SurveyFormView, type SurveyFormData } from "./SurveyFormView";
+import { surveyFormLabel } from "@/lib/survey";
 
 /** Fired by ConsentGate once a consent decision is saved, so the survey can follow. */
 export const CONSENT_DECIDED_EVENT = "consent:decided";
@@ -13,31 +14,35 @@ const LATER_KEY = "survey-prompt-later";
 
 type Due = {
   state: "DUE";
+  kind: "PRE" | "POST";
+  period: number;
   mandatory: boolean;
   form: SurveyFormData;
   defaultEmail?: string;
 };
 
 /**
- * Mounted in the dashboard layout next to ConsentGate. Shows the enabled
- * pre-survey after the consent decision is on file:
+ * Mounted in the dashboard layout next to ConsentGate. Shows whichever survey
+ * GET /api/surveys/due says is owed, one at a time, after any consent prompt:
  *
- * - Mandatory — a non-dismissible modal — for students and teachers who agreed
- *   to the IRB consent form (opted in to data collection). The server refuses
- *   to record a dismissal for them too.
- * - Optional for everyone else: a prompt they can take, postpone for this
+ * - The enabled pre-survey. Mandatory — a non-dismissible modal — for
+ *   students and teachers who agreed to the IRB consent form (opted in to data
+ *   collection); the server refuses to record a dismissal for them too.
+ *   Optional for everyone else: a prompt they can take, postpone for this
  *   session ("Maybe later"), or decline for good ("No thanks").
+ * - Then an in-app post-survey the admin is prompting for the current study
+ *   period — always mandatory, and only for participants who were already in
+ *   the study before the prompt started.
  */
 export function SurveyGate() {
   const { data: session, status: sessionStatus } = useSession();
   const role = session?.user?.role;
   const [due, setDue] = useState<Due | null>(null);
   const [taking, setTaking] = useState(false);
-  const [done, setDone] = useState(false);
 
   const check = useCallback(async (signal?: AbortSignal) => {
     try {
-      const res = await fetch("/api/surveys/pre", {
+      const res = await fetch("/api/surveys/due", {
         cache: "no-store",
         signal,
       });
@@ -70,7 +75,7 @@ export function SurveyGate() {
     };
   }, [sessionStatus, role, check]);
 
-  if (!due || done) return null;
+  if (!due) return null;
 
   const later = () => {
     sessionStorage.setItem(LATER_KEY, due.form.id);
@@ -121,18 +126,28 @@ export function SurveyGate() {
           </div>
         ) : (
           <>
-            {due.mandatory && (
+            {due.kind === "POST" ? (
               <p className="rounded-md bg-muted/60 p-3 text-sm text-muted-foreground">
-                Because you agreed to take part in the research study, please
-                complete this short survey before continuing.
+                Before you continue, please complete the{" "}
+                {surveyFormLabel(due.kind, due.period)} about your experience
+                with the platform during this study period.
               </p>
+            ) : (
+              due.mandatory && (
+                <p className="rounded-md bg-muted/60 p-3 text-sm text-muted-foreground">
+                  Because you agreed to take part in the research study, please
+                  complete this short survey before continuing.
+                </p>
+              )
             )}
             <SurveyFormView
               key={due.form.id}
               form={due.form}
-              interviewDefaultEmail={due.defaultEmail ?? ""}
+              interviewDefaultEmail={
+                due.kind === "PRE" ? (due.defaultEmail ?? "") : undefined
+              }
               onSubmit={async (answers, interview) => {
-                const res = await fetch("/api/surveys/pre", {
+                const res = await fetch("/api/surveys/due", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
@@ -149,7 +164,10 @@ export function SurveyGate() {
                     error: data?.error ?? "Could not submit the survey.",
                     questionId: data?.questionId,
                   };
-                setDone(true);
+                setDue(null);
+                // Another survey may follow (e.g. a pre-survey, then the
+                // current period's post-survey).
+                void check();
                 return { ok: true };
               }}
               footer={
