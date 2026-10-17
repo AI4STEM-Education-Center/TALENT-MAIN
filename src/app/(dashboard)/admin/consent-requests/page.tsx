@@ -17,6 +17,7 @@ interface RequestRow {
   requestedAt: string;
   teacher: { user: { firstName: string; lastName: string; email: string } };
   class: { id: string; name: string };
+  reviewer: { firstName: string; lastName: string };
 }
 
 export default function AdminConsentRequestsPage() {
@@ -93,9 +94,10 @@ export default function AdminConsentRequestsPage() {
       <div>
         <h1 className="text-3xl font-bold">Consent Export Requests</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Teachers requesting a signed-students credit export, routed to you.
-          Approving an export releases only an aggregate credit-points outcome
-          to the teacher — never individual decision detail.
+          Teachers requesting a signed-students credit export,{" "}
+          {canEdit ? "routed to you" : "across every reviewer"}. Approving an
+          export releases only an aggregate credit-points outcome to the teacher
+          — never individual decision detail.
         </p>
       </div>
 
@@ -113,7 +115,9 @@ export default function AdminConsentRequestsPage() {
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
             <Inbox className="mx-auto mb-3 size-10" />
-            No requests are assigned to you.
+            {canEdit
+              ? "No requests are assigned to you."
+              : "No consent export requests yet."}
           </CardContent>
         </Card>
       ) : (
@@ -131,6 +135,12 @@ export default function AdminConsentRequestsPage() {
                         {request.teacher.user.lastName} (
                         {request.teacher.user.email})
                       </p>
+                      {!canEdit && (
+                        <p className="text-sm text-muted-foreground">
+                          Reviewer: {request.reviewer.firstName}{" "}
+                          {request.reviewer.lastName}
+                        </p>
+                      )}
                       <p className="mt-1 text-xs text-muted-foreground">
                         Grade column: {request.gradeColumnName} (
                         {request.pointsAwarded} points) ·{" "}

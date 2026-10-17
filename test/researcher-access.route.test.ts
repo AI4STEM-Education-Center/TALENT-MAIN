@@ -14,6 +14,8 @@ import {
   POST as surveysPost,
 } from "@/app/api/admin/surveys/route";
 import { GET as consentGet } from "@/app/api/admin/consent/route";
+import { GET as consentRequestsGet } from "@/app/api/admin/consent-requests/route";
+import { PATCH as consentRequestPatch } from "@/app/api/admin/consent-requests/[id]/route";
 import { DELETE as userDelete } from "@/app/api/admin/users/[id]/route";
 import { GET as smtpGet } from "@/app/api/admin/smtp/route";
 import { GET as backupGet } from "@/app/api/admin/backup/route";
@@ -30,7 +32,13 @@ import {
 import { GET as feedbackSummaryGet } from "@/app/api/feedback/summary/route";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { resetDb, createStudent, createTeacher } from "./db";
+import {
+  resetDb,
+  createAdmin,
+  createClass,
+  createStudent,
+  createTeacher,
+} from "./db";
 
 const mockAuth = vi.mocked(auth);
 
@@ -150,6 +158,62 @@ describe("RESEARCHER on a DATA route: reads allowed, writes refused", () => {
       where: { id: form.id },
     });
     expect(after.isEnabled).toBe(true);
+  });
+
+  it("sees a consent export request assigned to another admin, but cannot decide it", async () => {
+    const { teacher } = await createTeacher();
+    const cls = await createClass(teacher.id);
+    const reviewer = await createAdmin();
+    const otherAdmin = await createAdmin();
+    const request = await prisma.consentExportRequest.create({
+      data: {
+        teacherId: teacher.id,
+        classId: cls.id,
+        gradeColumnName: "IRB credit",
+        pointsAwarded: 1,
+        reviewerId: reviewer.id,
+      },
+    });
+
+    asResearcher();
+    const res = await consentRequestsGet();
+    expect(res.status).toBe(200);
+    const { requests } = await res.json();
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      id: request.id,
+      reviewer: { firstName: reviewer.firstName },
+    });
+
+    const patch = await consentRequestPatch(
+      req(`/api/admin/consent-requests/${request.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ decision: "REJECT" }),
+      }),
+      params({ id: request.id }),
+    );
+    expect(patch.status).toBe(403);
+    expect(
+      (
+        await prisma.consentExportRequest.findUniqueOrThrow({
+          where: { id: request.id },
+        })
+      ).status,
+    ).toBe("PENDING");
+
+    // An admin still sees only the requests routed to them.
+    mockAuth.mockResolvedValue({
+      user: { id: otherAdmin.id, role: "ADMIN" },
+    } as never);
+    expect((await (await consentRequestsGet()).json()).requests).toHaveLength(
+      0,
+    );
+    mockAuth.mockResolvedValue({
+      user: { id: reviewer.id, role: "ADMIN" },
+    } as never);
+    expect((await (await consentRequestsGet()).json()).requests).toHaveLength(
+      1,
+    );
   });
 
   it("reads consent records", async () => {
