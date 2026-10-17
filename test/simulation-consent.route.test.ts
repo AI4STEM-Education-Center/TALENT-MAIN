@@ -88,6 +88,10 @@ async function setup(decision: "AGREE" | "DECLINE" | null) {
   } as never);
   return {
     user,
+    student,
+    teacher,
+    cls,
+    quiz,
     sim,
     form,
     params: { params: Promise.resolve({ id: sim.id }) },
@@ -149,5 +153,79 @@ describe("simulation access without research collection", () => {
         where: { id: sessionId },
       }),
     ).toEqual(before);
+  });
+});
+
+describe("simulation session launch labels", () => {
+  it("stores the launch surface and viewport, and rejects surfaces outside the closed set", async () => {
+    const { params } = await setup("AGREE");
+    expect(
+      (await openSession(request({ surface: "kiosk" }), params)).status,
+    ).toBe(400);
+    const opened = await openSession(
+      request({ surface: "library", viewport: "phone" }),
+      params,
+    );
+    expect(opened.status).toBe(201);
+    const { sessionId } = await opened.json();
+    expect(
+      await prisma.simulationSession.findUniqueOrThrow({
+        where: { id: sessionId },
+        select: { surface: true, viewport: true },
+      }),
+    ).toEqual({ surface: "library", viewport: "phone" });
+  });
+
+  it("keeps accepting legacy surfaces from cached clients", async () => {
+    const { params } = await setup("AGREE");
+    const opened = await openSession(request({ surface: "rail" }), params);
+    expect(opened.status).toBe(201);
+    const row = await prisma.simulationSession.findFirstOrThrow();
+    expect(row).toMatchObject({ surface: "rail", viewport: null });
+  });
+
+  it("attributes library opens to the claimed class only when it assigns the quiz to the student", async () => {
+    const { student, teacher, cls, quiz, params } = await setup("AGREE");
+    const second = await prisma.class.create({
+      data: { name: "Physics B", teacherId: teacher.id },
+    });
+    await prisma.classQuiz.create({
+      data: { classId: second.id, quizId: quiz.id },
+    });
+    await prisma.classEnrollment.create({
+      data: { classId: second.id, studentId: student.id },
+    });
+    const foreign = await prisma.class.create({
+      data: { name: "Not enrolled", teacherId: teacher.id },
+    });
+    await prisma.classQuiz.create({
+      data: { classId: foreign.id, quizId: quiz.id },
+    });
+
+    const open = async (classId?: string) => {
+      const res = await openSession(
+        request({ surface: "library", classId }),
+        params,
+      );
+      const { sessionId } = await res.json();
+      return (
+        await prisma.simulationSession.findUniqueOrThrow({
+          where: { id: sessionId },
+        })
+      ).classId;
+    };
+    expect(await open(second.id)).toBe(second.id);
+    expect(await open(cls.id)).toBe(cls.id);
+    // Not enrolled there / no claim: ambiguous between two classes → none.
+    expect(await open(foreign.id)).toBeNull();
+    expect(await open()).toBeNull();
+  });
+
+  it("falls back to the student's only class assigning the quiz", async () => {
+    const { cls, params } = await setup("AGREE");
+    await openSession(request({ surface: "library" }), params);
+    expect((await prisma.simulationSession.findFirstOrThrow()).classId).toBe(
+      cls.id,
+    );
   });
 });

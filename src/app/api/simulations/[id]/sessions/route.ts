@@ -8,8 +8,9 @@ export const runtime = "nodejs";
 
 /**
  * POST /api/simulations/[id]/sessions
- * Open a telemetry session for a student viewing a simulation from their
- * results page. Student-only (staff previews are not tracked); access mirrors
+ * Open a telemetry session for a student opening a simulation pop-up, labelled
+ * with the launch surface and device viewport (closed sets, see
+ * simulation-telemetry.ts). Student-only (staff previews are not tracked); access mirrors
  * the content route — the student must be enrolled in a class the simulation's
  * quiz is assigned to. The optional attemptId links the session to the quiz
  * attempt whose results surfaced the simulation; it is verified to belong to
@@ -60,15 +61,18 @@ export async function POST(
   if (!student || !sim)
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const assignment = await prisma.classQuiz.findFirst({
+  // Every class of this student's the quiz is assigned to — access requires at
+  // least one, and the set is what a client-claimed classId is checked against.
+  const assignments = await prisma.classQuiz.findMany({
     where: {
       quizId: sim.question.quizId,
       class: { enrollments: { some: { studentId: student.id } } },
     },
-    select: { id: true },
+    select: { classId: true },
   });
-  if (!assignment)
+  if (assignments.length === 0)
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const assignedClassIds = new Set(assignments.map((a) => a.classId));
 
   // Resolve class/attempt context from the attempt row, keeping it only when
   // it really is this student's attempt.
@@ -84,6 +88,15 @@ export async function POST(
       classId = attempt.classId;
     }
   }
+  // Without an attempt (the library), attribute the session to the class the
+  // student opened it under — only if that class really assigns this quiz to
+  // them — or, failing that, to their only such class. This is what lets
+  // library opens show up in the teacher's class/quiz simulation stats.
+  if (!classId) {
+    if (parsed.data.classId && assignedClassIds.has(parsed.data.classId))
+      classId = parsed.data.classId;
+    else if (assignedClassIds.size === 1) classId = [...assignedClassIds][0];
+  }
 
   const row = await prisma.simulationSession.create({
     data: {
@@ -93,6 +106,7 @@ export async function POST(
       quizId: sim.question.quizId,
       attemptId,
       surface: parsed.data.surface,
+      viewport: parsed.data.viewport,
     },
     select: { id: true },
   });

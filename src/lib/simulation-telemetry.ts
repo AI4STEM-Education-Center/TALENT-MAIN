@@ -16,12 +16,118 @@
 /** postMessage `type` the injected script uses for its cumulative batches. */
 export const SIM_TELEMETRY_MESSAGE_TYPE = "sim-telemetry";
 
+// ─── Launch surfaces ─────────────────────────────────────────────────────────
+// Every student simulation opens in the same pop-up (SimulationDialog), so a
+// session's `surface` records WHERE it was launched from, and the separate
+// `viewport` records the device class it ran on. Both are closed sets: the
+// session route rejects anything else, and every stats view renders stored
+// values through `simulationSurfaceLabel` so legacy rows stay readable.
+
 /**
- * Where the student was viewing the simulation: the post-quiz results rail,
- * its full-screen phone/tablet form, or the standalone simulations library
- * under /student/simulations (opened outside any attempt).
+ * Launch points a student can open a simulation from (stored in
+ * SimulationSession.surface for every session recorded since the pop-up):
+ *
+ * - `quiz_results` — the results shown in the quiz player right after the
+ *   student submits a graded attempt (/student/classes/[id]/quiz/[quizId]).
+ * - `results_page` — the standalone results page for a past attempt
+ *   (/student/results/[attemptId], reached from the exam history).
+ * - `library` — the simulations library (/student/simulations), which lists
+ *   every simulation for the student's classes, outside any attempt.
  */
-export type SimulationSurface = "rail" | "mobile" | "library";
+export const SIMULATION_SURFACES = [
+  "quiz_results",
+  "results_page",
+  "library",
+] as const;
+export type SimulationSurface = (typeof SIMULATION_SURFACES)[number];
+
+/**
+ * Values written before the pop-up existed, when results-page simulations
+ * opened inline: `rail` = the desktop results rail (results right after
+ * submitting and the results page were not told apart), `mobile` = its
+ * full-screen phone/tablet form. (`library` kept its meaning and is a current
+ * value.) Still accepted from cached old clients and rendered by every view.
+ */
+export const LEGACY_SIMULATION_SURFACES = ["rail", "mobile"] as const;
+export type LegacySimulationSurface =
+  (typeof LEGACY_SIMULATION_SURFACES)[number];
+
+/** Everything the session route accepts: current surfaces plus legacy ones. */
+export const ACCEPTED_SIMULATION_SURFACES = [
+  ...SIMULATION_SURFACES,
+  ...LEGACY_SIMULATION_SURFACES,
+] as const;
+
+/** Human-readable label for every known stored surface value. */
+export const SIMULATION_SURFACE_LABELS: Record<
+  SimulationSurface | LegacySimulationSurface,
+  string
+> = {
+  quiz_results: "Quiz results (just submitted)",
+  results_page: "Results page (past attempt)",
+  library: "Simulations library",
+  rail: "Results rail (legacy, desktop)",
+  mobile: "Results rail (legacy, phone/tablet)",
+};
+
+/**
+ * Display label for a stored surface value. Unknown values (hand-edited rows,
+ * a value from a newer deploy) are shown verbatim rather than hidden.
+ */
+export function simulationSurfaceLabel(
+  surface: string | null | undefined,
+): string {
+  if (!surface) return "Unknown";
+  return Object.prototype.hasOwnProperty.call(
+    SIMULATION_SURFACE_LABELS,
+    surface,
+  )
+    ? SIMULATION_SURFACE_LABELS[surface as SimulationSurface]
+    : `Other (${surface})`;
+}
+
+/**
+ * Device class the simulation ran on, from the window width at launch. Breaks
+ * match Tailwind's `sm` (640px) and `lg` (1024px) — `lg` is where the results
+ * page switches from a stacked to a two-column layout.
+ */
+export const SIMULATION_VIEWPORTS = ["phone", "tablet", "desktop"] as const;
+export type SimulationViewport = (typeof SIMULATION_VIEWPORTS)[number];
+
+export const SIMULATION_VIEWPORT_LABELS: Record<SimulationViewport, string> = {
+  phone: "Phone",
+  tablet: "Tablet",
+  desktop: "Desktop",
+};
+
+/** Classify a CSS-pixel window width into a SimulationViewport. */
+export function classifyViewport(width: number): SimulationViewport {
+  if (width >= 1024) return "desktop";
+  if (width >= 640) return "tablet";
+  return "phone";
+}
+
+/**
+ * Display label for a session's device class. Sessions recorded before the
+ * `viewport` column existed have it null; their legacy surface still says
+ * which layout they ran in (`rail` was desktop-only, `mobile` below it).
+ */
+export function simulationViewportLabel(
+  viewport: string | null | undefined,
+  surface?: string | null,
+): string {
+  if (viewport) {
+    return Object.prototype.hasOwnProperty.call(
+      SIMULATION_VIEWPORT_LABELS,
+      viewport,
+    )
+      ? SIMULATION_VIEWPORT_LABELS[viewport as SimulationViewport]
+      : `Other (${viewport})`;
+  }
+  if (surface === "rail") return SIMULATION_VIEWPORT_LABELS.desktop;
+  if (surface === "mobile") return "Phone/tablet";
+  return "Unknown";
+}
 
 /** Cumulative in-simulation totals reported by the injected script. */
 export type SimTelemetryTotals = {

@@ -63,6 +63,7 @@ export default async function ExamResultsPage({
       attemptId={attemptId}
       score={examResult.score}
       mistakes={mistakes}
+      simulationSurface="results_page"
       initial={{
         summary: examResult.summary,
         summaryStatus: examResult.summaryStatus as ResultStatus,

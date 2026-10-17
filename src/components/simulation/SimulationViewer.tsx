@@ -7,6 +7,7 @@ import {
 } from "@/lib/simulation-preview-edit";
 import {
   SIM_TELEMETRY_MESSAGE_TYPE,
+  classifyViewport,
   type SimulationSurface,
   type SimTelemetryTotals,
 } from "@/lib/simulation-telemetry";
@@ -17,6 +18,9 @@ const FLUSH_MS = 10_000;
 export type SimulationTelemetryContext = {
   /** The quiz attempt whose results page surfaced this simulation. */
   attemptId?: string | null;
+  /** The class it was opened under, when known without an attempt (library). */
+  classId?: string | null;
+  /** Where the student launched it from — see SIMULATION_SURFACES. */
   surface: SimulationSurface;
 };
 
@@ -27,7 +31,7 @@ export type SimulationTelemetryContext = {
  * layer keeping AI-generated JS away from the app origin. Shared by the admin
  * dashboard, the teacher editor, and the student results view.
  *
- * When `telemetry` is passed (student results view only), the viewer opens a
+ * When `telemetry` is passed (student launches only, via SimulationDialog), the viewer opens a
  * SimulationSession and forwards the cumulative interaction totals that the
  * served document's injected script postMessages up — the sandboxed iframe has
  * no network access of its own. Messages are accepted only from this viewer's
@@ -110,11 +114,16 @@ export function SimulationViewer({
     return () => frame?.removeEventListener("load", send);
   }, [editable, editMode]);
   const attemptId = telemetry?.attemptId ?? null;
+  const classId = telemetry?.classId ?? null;
   const surface = telemetry?.surface ?? null;
 
+  // One session per mount: SimulationDialog mounts a fresh viewer on every
+  // open (and on every switch between simulations), so each launch is its own
+  // SimulationSession and closing the dialog runs the cleanup's final flush.
   useEffect(() => {
     if (!surface) return;
     const startedAt = Date.now();
+    const viewport = classifyViewport(window.innerWidth);
     let sessionId: string | null = null;
     let cancelled = false;
     let dirty = false;
@@ -130,7 +139,7 @@ export function SimulationViewer({
     fetch(`/api/simulations/${simulationId}/sessions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ attemptId, surface }),
+      body: JSON.stringify({ attemptId, classId, surface, viewport }),
     })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
@@ -211,7 +220,7 @@ export function SimulationViewer({
       window.removeEventListener("pagehide", onPageHide);
       onPageHide();
     };
-  }, [simulationId, attemptId, surface]);
+  }, [simulationId, attemptId, classId, surface]);
 
   return (
     <iframe

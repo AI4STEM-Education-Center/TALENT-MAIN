@@ -1,8 +1,10 @@
 import { z } from "zod";
 import { NextResponse } from "next/server";
 import {
+  ACCEPTED_SIMULATION_SURFACES,
   MAX_TELEMETRY_MS,
   MAX_TELEMETRY_COUNT,
+  SIMULATION_VIEWPORTS,
   sanitizeControlCounts,
 } from "./simulation-telemetry";
 import { MAX_LABEL_LENGTH } from "./teacher-codes";
@@ -281,7 +283,25 @@ export const simulationSessionCreateSchema = z.object({
     .nullable()
     .optional()
     .transform((v) => v ?? null),
-  surface: z.enum(["rail", "mobile", "library"]),
+  /**
+   * Class the student opened the simulation under, when the launch point
+   * knows it without an attempt (the library groups by class). Verified
+   * server-side against the student's enrollments; an attempt's class wins.
+   */
+  classId: z
+    .string()
+    .max(64)
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
+  /** Closed set; legacy values stay accepted for clients cached pre-pop-up. */
+  surface: z.enum(ACCEPTED_SIMULATION_SURFACES),
+  /** Absent from pre-pop-up clients, so optional; stored as null then. */
+  viewport: z
+    .enum(SIMULATION_VIEWPORTS)
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
 });
 
 export const simulationSessionUpdateSchema = z.object({

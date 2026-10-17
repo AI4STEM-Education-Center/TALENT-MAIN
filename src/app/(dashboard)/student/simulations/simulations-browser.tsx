@@ -3,14 +3,7 @@
 import { useMemo, useState } from "react";
 import { Atom, ChevronRight, FileQuestion } from "lucide-react";
 import { Card } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { SimulationViewer } from "@/components/simulation/SimulationViewer";
+import { SimulationDialog } from "@/components/simulation/SimulationDialog";
 import { cn } from "@/lib/utils";
 import type {
   StudentSimulation,
@@ -28,12 +21,20 @@ const displayTitle = (sim: StudentSimulation) =>
 
 /**
  * The student's simulation library, grouped class -> quiz. Opening one mounts
- * a single sandboxed viewer in a full-screen dialog: simulations are physics
- * loops, so only ever one runs, and none boots until the student asks for it.
+ * a single sandboxed viewer in the shared SimulationDialog pop-up (sessions
+ * labelled `library`, attributed to the class it was opened under):
+ * simulations are physics loops, so only ever one runs, and none boots until
+ * the student asks for it.
  */
 export function SimulationsBrowser({ classes }: SimulationsBrowserProps) {
   const [classId, setClassId] = useState(ALL_CLASSES);
-  const [activeId, setActiveId] = useState<string | null>(null);
+  // Keyed by class too: a quiz assigned to two of the student's classes lists
+  // the same simulation under both, and the session is attributed to the
+  // class it was opened under.
+  const [activeKey, setActiveKey] = useState<{
+    classId: string;
+    simId: string;
+  } | null>(null);
 
   const visible = useMemo(
     () =>
@@ -44,14 +45,14 @@ export function SimulationsBrowser({ classes }: SimulationsBrowserProps) {
   );
 
   const active = useMemo(() => {
-    for (const cls of classes) {
-      for (const quiz of cls.quizzes) {
-        const sim = quiz.simulations.find((s) => s.id === activeId);
-        if (sim) return sim;
-      }
+    if (!activeKey) return null;
+    const cls = classes.find((c) => c.classId === activeKey.classId);
+    for (const quiz of cls?.quizzes ?? []) {
+      const sim = quiz.simulations.find((s) => s.id === activeKey.simId);
+      if (cls && sim) return { cls, quiz, sim };
     }
     return null;
-  }, [classes, activeId]);
+  }, [classes, activeKey]);
 
   return (
     <div className="space-y-6">
@@ -99,7 +100,10 @@ export function SimulationsBrowser({ classes }: SimulationsBrowserProps) {
                   <Card key={sim.id} className="overflow-hidden">
                     <button
                       type="button"
-                      onClick={() => setActiveId(sim.id)}
+                      onClick={() =>
+                        setActiveKey({ classId: cls.classId, simId: sim.id })
+                      }
+                      aria-haspopup="dialog"
                       className="flex w-full items-center justify-between gap-3 p-4 text-left transition-colors hover:bg-muted/40"
                     >
                       <span className="flex min-w-0 items-start gap-3">
@@ -129,34 +133,17 @@ export function SimulationsBrowser({ classes }: SimulationsBrowserProps) {
       ))}
 
       {active && (
-        <Dialog open onOpenChange={(open) => !open && setActiveId(null)}>
-          <DialogContent className="inset-0 left-0 top-0 h-dvh w-full max-w-none translate-x-0 translate-y-0 grid-rows-[auto_minmax(0,1fr)] gap-0 rounded-none border-0 p-0 sm:rounded-none">
-            <DialogHeader className="border-b px-4 py-3 pr-12 text-left">
-              <DialogTitle className="text-base">
-                {displayTitle(active)}
-              </DialogTitle>
-              {active.learningGoal ? (
-                <DialogDescription className="text-xs">
-                  {active.learningGoal}
-                </DialogDescription>
-              ) : (
-                <DialogDescription className="sr-only">
-                  Interactive simulation
-                </DialogDescription>
-              )}
-            </DialogHeader>
-            <div className="min-h-0 p-2">
-              {/* Remount per simulation so switching restarts cleanly. */}
-              <SimulationViewer
-                key={`${active.id}:${active.version}`}
-                simulationId={active.id}
-                title={displayTitle(active)}
-                version={active.version}
-                telemetry={{ surface: "library" }}
-              />
-            </div>
-          </DialogContent>
-        </Dialog>
+        <SimulationDialog
+          simulation={{
+            simulationId: active.sim.id,
+            title: displayTitle(active.sim),
+            version: active.sim.version,
+          }}
+          onClose={() => setActiveKey(null)}
+          description={active.sim.learningGoal}
+          context={[active.quiz.quizName, active.cls.className].join(" · ")}
+          telemetry={{ surface: "library", classId: active.cls.classId }}
+        />
       )}
     </div>
   );

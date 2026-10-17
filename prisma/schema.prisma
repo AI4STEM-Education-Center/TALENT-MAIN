@@ -1537,19 +1537,23 @@ model SimulationFeedback {
 }
 
 // ─── Simulation telemetry ─────────────────────────────────────────────────────
-// One row per simulation open on the student results page. Deliberately
-// RELATION-FREE (plain id columns, like ExamResult) so engagement history
-// survives deletion of simulations/quizzes/students. Counters are cumulative
-// per-session totals reported by the client and clamped server-side — they are
-// engagement signal, not ground truth. surface: "rail" | "mobile".
+// One row per student simulation open (each pop-up open is a new session).
+// Deliberately RELATION-FREE (plain id columns, like ExamResult) so engagement
+// history survives deletion of simulations/quizzes/students. Counters are
+// cumulative per-session totals reported by the client and clamped
+// server-side — they are engagement signal, not ground truth. The surface and
+// viewport vocabularies live in src/lib/simulation-telemetry.ts.
 model SimulationSession {
-  id           String @id @default(cuid())
+  id           String  @id @default(cuid())
   simulationId String
   studentId    String
   classId      String?
   quizId       String?
   attemptId    String? // the quiz attempt whose results page surfaced the sim
+  /// Launch point: quiz_results (right after submitting), results_page (past attempt), library. Legacy pre-pop-up values: rail (desktop results rail), mobile (phone/tablet results rail).
   surface      String
+  /// Device class at launch: phone (<640px), tablet (<1024px), desktop. Null before this column existed.
+  viewport     String?
 
   startedAt DateTime  @default(now())
   endedAt   DateTime?
