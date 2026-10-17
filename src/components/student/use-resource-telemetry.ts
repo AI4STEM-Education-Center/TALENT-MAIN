@@ -8,8 +8,17 @@ import {
   type ResourceTotals,
 } from "@/lib/resource-telemetry";
 
-/** Consecutive failed periodic batches before periodic sends stop. */
-const MAX_CONSECUTIVE_FAILURES = 5;
+/** Most periodic ticks skipped after repeated failures (16 × 15s = 4 min). */
+const MAX_BACKOFF_TICKS = 16;
+
+/**
+ * Periodic ticks to skip after the n-th consecutive failure: 0, 1, 3, 7, 15
+ * (capped), i.e. the next probe comes 15s, 30s, 60s, 2min, 4min later. It
+ * never stops probing; a success resets it.
+ */
+export function backoffTicks(failures: number): number {
+  return Math.min(2 ** Math.max(0, failures - 1), MAX_BACKOFF_TICKS) - 1;
+}
 /** Attempts (incl. the first) for the final batch, with linear backoff. */
 const MAX_FINAL_ATTEMPTS = 3;
 const FINAL_RETRY_MS = 1_000;
@@ -53,10 +62,14 @@ export type ResourceTelemetryHandle = {
  *    time. Cumulative totals flush every RESOURCE_FLUSH_MS when they differ
  *    from what the server last acknowledged, and whenever the tab is hidden
  *    (mobile browsers may never fire pagehide). A rejected batch (409, 5xx,
- *    network) stays pending and is resent on the next tick.
+ *    network) stays pending; periodic retries back off exponentially (capped
+ *    at 4 min) and resume normal cadence after a success. Hide-time flushes
+ *    always go out.
  * 3. On disable/unmount/unloading pagehide the final batch goes out via
- *    keepalive fetch (retried on rejection; sendBeacon only when keepalive
- *    is unavailable or the request fails at the network level), frozen at
+ *    keepalive fetch (retried on rejection only while the document is still
+ *    alive — see sendFinal for the accepted unload limitation; sendBeacon
+ *    only when keepalive is unavailable or the request fails at the network
+ *    level), frozen at
  *    the moment of closing — even if the session id only arrives afterwards.
  *    A pagehide into the back/forward cache only pauses and flushes;
  *    pageshow resumes the same session.
@@ -93,7 +106,13 @@ export function useResourceTelemetry({
     // the next tick (totals are cumulative, so resending is idempotent).
     let delivered = "";
     let inFlight = 0;
+    // Consecutive periodic failures, and periodic ticks left to skip before
+    // probing again (capped exponential backoff; any success resets both).
     let failures = 0;
+    let skipTicks = 0;
+    // Set by a real (non-bfcache) pagehide: the document is going away, so
+    // no timer-based retry can be relied on after this point.
+    let unloading = false;
     const base = `/api/student/materials/${encodeURIComponent(materialId)}/sessions`;
 
     const beacon = (url: string, body: string): boolean =>
@@ -125,9 +144,24 @@ export function useResourceTelemetry({
       }
     };
 
+    /**
+     * The final batch. The first attempt is dispatched synchronously, in the
+     * caller's stack (pagehide handler / effect cleanup), with nothing awaited
+     * first — that single keepalive request is the reliable path on a real
+     * unload. Retries are timer-based, so they only happen while the document
+     * is still alive (dialog closed, component unmounted, late session id);
+     * after a real unload there are none.
+     *
+     * Known, accepted limitation: if that one request on a real unload is
+     * rejected (e.g. a 5xx), the final batch is lost. The server makes a
+     * contention loss practically impossible (up to 30 internal conditional
+     * retries for final batches), periodic and hide-time flushes cap the loss
+     * at the last ≤15s of totals, and only endedAt stays unset — the same
+     * best-effort contract as SimulationSession. No localStorage replay.
+     */
     const sendFinal = (body: string, attempt: number) => {
       void post(body).then((ok) => {
-        if (!ok && attempt + 1 < MAX_FINAL_ATTEMPTS) {
+        if (!ok && !unloading && attempt + 1 < MAX_FINAL_ATTEMPTS) {
           setTimeout(
             () => sendFinal(body, attempt + 1),
             FINAL_RETRY_MS * (attempt + 1),
@@ -137,8 +171,9 @@ export function useResourceTelemetry({
     };
 
     /**
-     * `urgent` (tab hidden / page entering the bfcache) sends even while a
-     * periodic batch is in flight — the page may not get another chance.
+     * `urgent` (tab hidden / page entering the bfcache) always sends — even
+     * while a periodic batch is in flight or periodic sends are backing off —
+     * because the page may not get another chance.
      */
     const flush = (ended: boolean, urgent = false) => {
       if (finalSent) return;
@@ -149,10 +184,14 @@ export function useResourceTelemetry({
         sendFinal(JSON.stringify({ ...totals, ended: true }), 0);
         return;
       }
-      // One periodic batch at a time; after repeated consecutive failures,
-      // stop periodic sends (the final batch is still attempted).
-      if ((inFlight > 0 && !urgent) || failures >= MAX_CONSECUTIVE_FAILURES)
-        return;
+      if (!urgent) {
+        // One periodic batch at a time, and back off after failures.
+        if (inFlight > 0) return;
+        if (skipTicks > 0) {
+          skipTicks -= 1;
+          return;
+        }
+      }
       const payload = JSON.stringify(totals);
       if (payload === delivered) return;
       inFlight += 1;
@@ -161,8 +200,10 @@ export function useResourceTelemetry({
         if (ok) {
           delivered = payload;
           failures = 0;
+          skipTicks = 0;
         } else {
           failures += 1;
+          skipTicks = backoffTicks(failures);
         }
       });
     };
@@ -199,6 +240,7 @@ export function useResourceTelemetry({
     // totals so far, and resume on pageshow. Only a real unload finalizes.
     const onPageHide = (event: PageTransitionEvent) => {
       if (!event.persisted) {
+        unloading = true;
         close();
         return;
       }

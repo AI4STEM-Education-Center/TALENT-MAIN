@@ -245,15 +245,66 @@ describe("RecommendationCard engagement telemetry", () => {
     ).toHaveLength(1);
   });
 
-  it("finalizes on a real unload (non-persisted pagehide)", async () => {
-    await renderOpen();
-    now = 4_000;
-    await act(async () => {
-      window.dispatchEvent(pageEvent("pagehide", false));
+  it("finalizes on a real unload with one synchronous keepalive request and no timer retries", async () => {
+    vi.useFakeTimers({
+      toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"],
     });
-    const sent = batches();
-    expect(sent).toHaveLength(1);
-    expect(sent[0]).toMatchObject({ ended: true, dwellMs: 3_000 });
+    await renderOpen();
+    batchStatuses = [500];
+    now = 4_000;
+    // Dispatched synchronously inside the pagehide handler — no act/await
+    // between the event and the request.
+    window.dispatchEvent(pageEvent("pagehide", false));
+    expect(batches()).toHaveLength(1);
+    expect(batches()[0]).toMatchObject({ ended: true, dwellMs: 3_000 });
+    // Rejected, but the document is gone: nothing may be scheduled after it.
+    await act(async () => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(batches()).toHaveLength(1);
+    expect(beacon).not.toHaveBeenCalled();
+  });
+
+  it("backs off after repeated periodic failures but keeps probing, and resumes after recovery", async () => {
+    vi.useFakeTimers({
+      toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"],
+    });
+    await renderOpen();
+    batchStatuses = [500, 500, 500, 500, 500];
+    const sentAtTick: number[] = [];
+    for (let tick = 1; tick <= 33; tick += 1) {
+      now = 1_000 + tick * 100; // totals change every tick
+      const before = batches().length;
+      await act(async () => {
+        vi.advanceTimersByTime(RESOURCE_FLUSH_MS);
+      });
+      if (batches().length > before) sentAtTick.push(tick);
+    }
+    // Fail at 1, 2, 4, 8, 16 (gaps 1, 2, 4, 8, 16 ticks), succeed at 32,
+    // then back to every tick.
+    expect(sentAtTick).toEqual([1, 2, 4, 8, 16, 32, 33]);
+  });
+
+  it("sends hide-time flushes even while periodic sends are backing off", async () => {
+    vi.useFakeTimers({
+      toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"],
+    });
+    await renderOpen();
+    batchStatuses = [500, 500, 500];
+    for (let tick = 1; tick <= 3; tick += 1) {
+      now = 1_000 + tick * 100;
+      await act(async () => {
+        vi.advanceTimersByTime(RESOURCE_FLUSH_MS);
+      });
+    }
+    // Failed at ticks 1 and 2; now skipping. An urgent flush still goes out.
+    expect(batches()).toHaveLength(2);
+    now = 9_000;
+    await act(async () => {
+      window.dispatchEvent(pageEvent("pagehide", true));
+    });
+    expect(batches()).toHaveLength(3);
+    expect(batches()[2]).toMatchObject({ ended: false });
   });
 
   it("never records the teacher's copy of the card", async () => {
