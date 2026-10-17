@@ -152,6 +152,7 @@ export async function StudentStatsView({
                   <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
                     <th className="py-2 pr-3 font-medium">Simulation</th>
                     <th className="py-2 px-3 font-medium">Quiz</th>
+                    <th className="py-2 px-3 font-medium">Opened from</th>
                     <th className="py-2 px-3 font-medium text-right">
                       Active time
                     </th>
@@ -167,6 +168,10 @@ export async function StudentStatsView({
                       <td className="py-2 pr-3">{s.title}</td>
                       <td className="py-2 px-3 text-muted-foreground">
                         {s.quizName ?? "—"}
+                      </td>
+                      <td className="py-2 px-3 text-muted-foreground">
+                        {s.surfaceLabel}
+                        <span className="opacity-70"> · {s.viewportLabel}</span>
                       </td>
                       <td className="py-2 px-3 text-right tabular-nums">
                         {formatDurationMs(s.activeMs)}

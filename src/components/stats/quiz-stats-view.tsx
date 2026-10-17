@@ -13,6 +13,7 @@ import {
 import { pct, ratePct } from "@/lib/stats-format";
 import { MathText } from "@/components/ui/math-text";
 import { formatDurationMs } from "@/lib/simulation-stats";
+import { SimulationSurfaceBreakdown } from "@/components/stats/simulation-surface-breakdown";
 import { ExportGradesDialog } from "@/app/(dashboard)/teacher/classes/[id]/quizzes/[quizId]/stats/export-grades-dialog";
 import { ManualGradesTable } from "@/app/(dashboard)/teacher/classes/[id]/quizzes/[quizId]/stats/manual-grades-table";
 
@@ -140,9 +141,13 @@ export async function QuizStatsView({
                 <p className="mb-3 text-xs text-muted-foreground">
                   {simStats.uniqueStudents} student
                   {simStats.uniqueStudents !== 1 ? "s" : ""} opened a simulation
-                  from their results, {simStats.totalSessions} session
+                  from their results or the simulations library,{" "}
+                  {simStats.totalSessions} open
                   {simStats.totalSessions !== 1 ? "s" : ""} total.
                 </p>
+                <div className="mb-4">
+                  <SimulationSurfaceBreakdown rows={simStats.bySurface} />
+                </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>

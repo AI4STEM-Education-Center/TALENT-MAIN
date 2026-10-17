@@ -239,6 +239,10 @@ describe("admin student usage records", () => {
       new Set([...first.records, ...second.records].map((row) => row.id)).size,
     ).toBe(51);
     expect(first.records[0].detail).toContain("2 interactions");
+    // Legacy surface values render through the label map, never raw.
+    expect(first.records[0].detail).toContain(
+      "Results rail (legacy, desktop) (Desktop)",
+    );
     expect((await getAdminUsage({ kind: "simulations" })).total).toBe(52);
     expect(
       (
