@@ -18,15 +18,15 @@ import {
   validatePassword,
 } from "@/lib/account-validation";
 import { roleLabel } from "@/lib/roles";
+import { inviteCodeFromLink } from "@/lib/teacher-codes";
 
 function RegisterForm() {
   const { push } = useRouter();
   // Codes issued in the admin panel are shared as /register?code=… links, so
   // the invitee only fills in their own details. A hand-typed code still works.
-  // Kept verbatim (not normalized): the env-var invite codes are compared
-  // exactly, so upper-casing one here would break it. Panel codes are
-  // normalized on the server either way.
-  const codeFromLink = (useSearchParams().get("code") ?? "").trim();
+  // Kept verbatim (see inviteCodeFromLink): env-var invite codes are compared
+  // exactly, so trimming or upper-casing one here would break the link.
+  const codeFromLink = inviteCodeFromLink(useSearchParams().get("code"));
   const [form, setForm] = useState({
     firstName: "",
     lastName: "",
