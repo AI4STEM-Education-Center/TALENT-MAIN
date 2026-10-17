@@ -131,6 +131,12 @@ export default async function AdminResourceEngagementPage({
       <Card>
         <CardHeader>
           <CardTitle className="text-base">By material</CardTitle>
+          {data.materialCount > data.materials.length && (
+            <p className="text-xs text-muted-foreground">
+              Showing the {data.materials.length} most-opened of{" "}
+              {data.materialCount} materials.
+            </p>
+          )}
         </CardHeader>
         <CardContent className="overflow-x-auto">
           {data.materials.length === 0 ? (

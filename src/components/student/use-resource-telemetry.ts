@@ -41,9 +41,11 @@ export type ResourceTelemetryHandle = {
  *    the tab is hidden), active time, presses inside the viewer, and per-page
  *    time. Cumulative totals flush every RESOURCE_FLUSH_MS when changed, and
  *    whenever the tab is hidden (mobile browsers may never fire pagehide).
- * 3. On disable/unmount/pagehide the final batch goes out via sendBeacon
- *    (falling back to keepalive fetch), frozen at the moment of closing — even
- *    if the session id only arrives afterwards.
+ * 3. On disable/unmount/unloading pagehide the final batch goes out via
+ *    sendBeacon (falling back to keepalive fetch), frozen at the moment of closing — even
+ *    if the session id only arrives afterwards. A pagehide into the
+ *    back/forward cache only pauses and flushes; pageshow resumes the same
+ *    session.
  *
  * Best-effort throughout: failures never surface to the reader.
  */
@@ -129,13 +131,30 @@ export function useResourceTelemetry({
       tracker.setVisible(visible, Date.now());
       if (!visible) flush(false, true);
     };
+    // A pagehide into the back/forward cache (persisted) is not the end of the
+    // read: the page — and this session — may come back. Pause and flush the
+    // totals so far, and resume on pageshow. Only a real unload finalizes.
+    const onPageHide = (event: PageTransitionEvent) => {
+      if (!event.persisted) {
+        close();
+        return;
+      }
+      tracker.setVisible(false, Date.now());
+      flush(false, true);
+    };
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+      tracker.setVisible(document.visibilityState !== "hidden", Date.now());
+    };
     document.addEventListener("visibilitychange", onVisibility);
-    window.addEventListener("pagehide", close);
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("pageshow", onPageShow);
 
     return () => {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisibility);
-      window.removeEventListener("pagehide", close);
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("pageshow", onPageShow);
       if (trackerRef.current === tracker) trackerRef.current = null;
       close();
     };

@@ -112,6 +112,84 @@ describe("RecommendationCard engagement telemetry", () => {
     expect(Object.keys(body.pages)).toContain("4");
   });
 
+  it("survives a back/forward-cache round trip: pauses on persisted pagehide, resumes on pageshow", async () => {
+    const pageEvent = (type: string, persisted: boolean) => {
+      const event = new Event(type);
+      Object.defineProperty(event, "persisted", { value: persisted });
+      return event;
+    };
+    await act(async () =>
+      root.render(
+        <RecommendationCard
+          rec={rec}
+          attemptId="attempt-1"
+          telemetrySurface="results_recommendation"
+        />,
+      ),
+    );
+    await act(async () => openButton().click());
+
+    // Navigating away into the bfcache: flush so far, don't finalize.
+    now = 5_000;
+    await act(async () => {
+      window.dispatchEvent(pageEvent("pagehide", true));
+    });
+    expect(beacon).toHaveBeenCalledOnce();
+    expect(await blobJson(beacon.mock.calls[0][1])).toMatchObject({
+      ended: false,
+      dwellMs: 4_000,
+    });
+
+    // Restored a minute later; the cached time is not reading time.
+    now = 65_000;
+    await act(async () => {
+      window.dispatchEvent(pageEvent("pageshow", true));
+    });
+    now = 68_000;
+    await act(async () => {
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+    });
+
+    expect(beacon).toHaveBeenCalledTimes(2);
+    expect(beacon.mock.calls[1][0]).toBe(
+      "/api/student/materials/mat-1/sessions/sess-1",
+    );
+    expect(await blobJson(beacon.mock.calls[1][1])).toMatchObject({
+      ended: true,
+      dwellMs: 7_000,
+    });
+    // Still one session: the restore resumed it rather than opening another.
+    expect(
+      fetcher.mock.calls.filter(([url]) => String(url).endsWith("/sessions")),
+    ).toHaveLength(1);
+  });
+
+  it("finalizes on a real unload (non-persisted pagehide)", async () => {
+    await act(async () =>
+      root.render(
+        <RecommendationCard
+          rec={rec}
+          attemptId="attempt-1"
+          telemetrySurface="results_recommendation"
+        />,
+      ),
+    );
+    await act(async () => openButton().click());
+    now = 4_000;
+    const unload = new Event("pagehide");
+    Object.defineProperty(unload, "persisted", { value: false });
+    await act(async () => {
+      window.dispatchEvent(unload);
+    });
+    expect(beacon).toHaveBeenCalledOnce();
+    expect(await blobJson(beacon.mock.calls[0][1])).toMatchObject({
+      ended: true,
+      dwellMs: 3_000,
+    });
+  });
+
   it("never records the teacher's copy of the card", async () => {
     await act(async () =>
       root.render(

@@ -57,6 +57,27 @@ export function isRecommendationSurface(surface: ResourceSurface): boolean {
   );
 }
 
+// ─── Who may see it ───────────────────────────────────────────────────────────
+
+/**
+ * Roles allowed to read individual LearningResourceSession data. Rows exist
+ * only for students who consented to research, so ANY row shown for a named
+ * student reveals their participation — and the consent form promises that
+ * participation "will not be known to your course instructor while you are
+ * enrolled". Teachers therefore never see per-student (or small-group)
+ * resource telemetry; only administrators (and, once that role exists, the
+ * research team) do. Every read path for per-student data must check this.
+ */
+export const RESOURCE_TELEMETRY_VIEWER_ROLES: ReadonlySet<string> = new Set([
+  "ADMIN",
+]);
+
+export function canViewResourceTelemetry(
+  role: string | null | undefined,
+): boolean {
+  return !!role && RESOURCE_TELEMETRY_VIEWER_ROLES.has(role);
+}
+
 // ─── Client timing constants ──────────────────────────────────────────────────
 
 /** Activity within this window counts the elapsed time as "active". */
@@ -330,18 +351,50 @@ export class ResourceTelemetryTracker {
 }
 
 // ─── Aggregation for reports ──────────────────────────────────────────────────
+// The admin report groups in the database (counts, sums, distinct pairs) and
+// only pulls narrow duration columns for medians; these pure assemblers turn
+// those grouped rows into display rows so the shaping stays unit-testable.
 
-/** The subset of LearningResourceSession the reports need. */
-export type ResourceSessionRecord = {
+/** Most materials the admin per-material table lists (most-opened first). */
+export const MAX_MATERIAL_ROWS = 200;
+
+export function medianOf(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = values.toSorted((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? (sorted[mid - 1] + sorted[mid]) / 2
+    : sorted[mid];
+}
+
+/** One material's totals, as returned by a groupBy on materialId. */
+export type MaterialGroup = {
   materialId: string;
-  materialTitle: string | null;
-  studentId: string;
-  surface: string;
-  recommended: boolean;
-  openedAt: Date;
-  dwellMs: number;
-  activeMs: number;
-  clickCount: number;
+  opens: number;
+  totalDwellMs: number;
+  totalClicks: number;
+  lastOpenedAt: Date | null;
+};
+
+/** Most-opened first, then most recently opened, then id for stability. */
+export function rankMaterialGroups(groups: MaterialGroup[]): MaterialGroup[] {
+  return groups.toSorted(
+    (a, b) =>
+      b.opens - a.opens ||
+      (b.lastOpenedAt?.getTime() ?? 0) - (a.lastOpenedAt?.getTime() ?? 0) ||
+      a.materialId.localeCompare(b.materialId),
+  );
+}
+
+export type MaterialBreakdown = {
+  /** One entry per distinct (material, student) pair. */
+  studentPairs: { materialId: string }[];
+  recommended: { materialId: string; count: number }[];
+  surfaces: { materialId: string; surface: string; count: number }[];
+  /** Narrow per-session duration columns, for medians. */
+  durations: { materialId: string; dwellMs: number; activeMs: number }[];
+  /** Display title per material (live title, else newest snapshot). */
+  titles: Map<string, string>;
 };
 
 export type ResourceEngagementRow = {
@@ -356,68 +409,69 @@ export type ResourceEngagementRow = {
   medianActiveMs: number;
   totalClicks: number;
   bySurface: Record<string, number>;
-  lastOpenedAt: Date;
+  lastOpenedAt: Date | null;
 };
 
-function medianOf(values: number[]): number {
-  if (values.length === 0) return 0;
-  const sorted = values.toSorted((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0
-    ? (sorted[mid - 1] + sorted[mid]) / 2
-    : sorted[mid];
-}
+const countBy = <T>(
+  rows: T[],
+  key: (row: T) => string,
+  n: (row: T) => number,
+) => {
+  const out = new Map<string, number>();
+  for (const row of rows) out.set(key(row), (out.get(key(row)) ?? 0) + n(row));
+  return out;
+};
 
-/**
- * Fold sessions into one row per material, most-opened first. The title is the
- * newest snapshot on the sessions (falling back to `titles`, then a
- * placeholder) so materials deleted since still report under their name.
- */
-export function summarizeResourceEngagement(
-  sessions: ResourceSessionRecord[],
-  titles: Map<string, string> = new Map(),
+/** Combine grouped rows into one display row per material, in `groups` order. */
+export function assembleMaterialRows(
+  groups: MaterialGroup[],
+  breakdown: MaterialBreakdown,
 ): ResourceEngagementRow[] {
-  const byMaterial = new Map<string, ResourceSessionRecord[]>();
-  for (const s of sessions) {
-    const rows = byMaterial.get(s.materialId) ?? [];
-    rows.push(s);
-    byMaterial.set(s.materialId, rows);
+  const students = countBy(
+    breakdown.studentPairs,
+    (r) => r.materialId,
+    () => 1,
+  );
+  const recommended = countBy(
+    breakdown.recommended,
+    (r) => r.materialId,
+    (r) => r.count,
+  );
+  const surfaces = new Map<string, Record<string, number>>();
+  for (const row of breakdown.surfaces) {
+    const entry = surfaces.get(row.materialId) ?? {};
+    entry[row.surface] = (entry[row.surface] ?? 0) + row.count;
+    surfaces.set(row.materialId, entry);
   }
-  return [...byMaterial.entries()]
-    .map(([materialId, rows]) => {
-      const newest = rows.reduce((a, b) => (b.openedAt > a.openedAt ? b : a));
-      const titled = rows
-        .filter((r) => r.materialTitle)
-        .reduce<ResourceSessionRecord | null>(
-          (a, b) => (!a || b.openedAt > a.openedAt ? b : a),
-          null,
-        );
-      const bySurface: Record<string, number> = {};
-      for (const r of rows)
-        bySurface[r.surface] = (bySurface[r.surface] ?? 0) + 1;
-      const recommendedOpens = rows.filter((r) => r.recommended).length;
-      return {
-        materialId,
-        title:
-          titles.get(materialId) ?? titled?.materialTitle ?? "Removed material",
-        opens: rows.length,
-        uniqueStudents: new Set(rows.map((r) => r.studentId)).size,
-        recommendedOpens,
-        selfDirectedOpens: rows.length - recommendedOpens,
-        totalDwellMs: rows.reduce((sum, r) => sum + r.dwellMs, 0),
-        medianDwellMs: medianOf(rows.map((r) => r.dwellMs)),
-        medianActiveMs: medianOf(rows.map((r) => r.activeMs)),
-        totalClicks: rows.reduce((sum, r) => sum + r.clickCount, 0),
-        bySurface,
-        lastOpenedAt: newest.openedAt,
-      };
-    })
-    .toSorted(
-      (a, b) =>
-        b.opens - a.opens ||
-        b.uniqueStudents - a.uniqueStudents ||
-        a.title.localeCompare(b.title),
-    );
+  const dwell = new Map<string, number[]>();
+  const active = new Map<string, number[]>();
+  for (const row of breakdown.durations) {
+    dwell.set(row.materialId, [
+      ...(dwell.get(row.materialId) ?? []),
+      row.dwellMs,
+    ]);
+    active.set(row.materialId, [
+      ...(active.get(row.materialId) ?? []),
+      row.activeMs,
+    ]);
+  }
+  return groups.map((group) => {
+    const recommendedOpens = recommended.get(group.materialId) ?? 0;
+    return {
+      materialId: group.materialId,
+      title: breakdown.titles.get(group.materialId) ?? "Removed material",
+      opens: group.opens,
+      uniqueStudents: students.get(group.materialId) ?? 0,
+      recommendedOpens,
+      selfDirectedOpens: group.opens - recommendedOpens,
+      totalDwellMs: group.totalDwellMs,
+      medianDwellMs: medianOf(dwell.get(group.materialId) ?? []),
+      medianActiveMs: medianOf(active.get(group.materialId) ?? []),
+      totalClicks: group.totalClicks,
+      bySurface: surfaces.get(group.materialId) ?? {},
+      lastOpenedAt: group.lastOpenedAt,
+    };
+  });
 }
 
 export type ResourceSurfaceRow = {
@@ -429,28 +483,32 @@ export type ResourceSurfaceRow = {
   totalClicks: number;
 };
 
-/** One row per surface (in RESOURCE_SURFACES order, unknown values last). */
-export function summarizeResourceSurfaces(
-  sessions: ResourceSessionRecord[],
+/** One row per surface, in RESOURCE_SURFACES order (unknown values last). */
+export function assembleSurfaceRows(
+  groups: { surface: string; opens: number; totalClicks: number }[],
+  studentPairs: { surface: string }[],
+  durations: { surface: string; dwellMs: number }[],
 ): ResourceSurfaceRow[] {
-  const bySurface = new Map<string, ResourceSessionRecord[]>();
-  for (const s of sessions) {
-    const rows = bySurface.get(s.surface) ?? [];
-    rows.push(s);
-    bySurface.set(s.surface, rows);
-  }
+  const students = countBy(
+    studentPairs,
+    (r) => r.surface,
+    () => 1,
+  );
+  const dwell = new Map<string, number[]>();
+  for (const row of durations)
+    dwell.set(row.surface, [...(dwell.get(row.surface) ?? []), row.dwellMs]);
   const order = (surface: string) => {
     const index = (RESOURCE_SURFACES as readonly string[]).indexOf(surface);
     return index === -1 ? RESOURCE_SURFACES.length : index;
   };
-  return [...bySurface.entries()]
-    .map(([surface, rows]) => ({
-      surface,
-      label: resourceSurfaceLabel(surface),
-      opens: rows.length,
-      uniqueStudents: new Set(rows.map((r) => r.studentId)).size,
-      medianDwellMs: medianOf(rows.map((r) => r.dwellMs)),
-      totalClicks: rows.reduce((sum, r) => sum + r.clickCount, 0),
+  return groups
+    .map((group) => ({
+      surface: group.surface,
+      label: resourceSurfaceLabel(group.surface),
+      opens: group.opens,
+      uniqueStudents: students.get(group.surface) ?? 0,
+      medianDwellMs: medianOf(dwell.get(group.surface) ?? []),
+      totalClicks: group.totalClicks,
     }))
     .toSorted(
       (a, b) =>

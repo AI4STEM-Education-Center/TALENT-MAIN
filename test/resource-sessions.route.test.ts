@@ -374,6 +374,51 @@ describe("recording telemetry batches", () => {
     expect(row.endedAt).not.toBeNull();
   });
 
+  it("serializes overlapping batches instead of letting one overwrite the other", async () => {
+    const { material, sessionId } = await opened();
+    // The periodic fetch and the close beacon racing: each carries data the
+    // other lacks (a higher dwell vs. a page the first never saw).
+    const fetchBatch = { ...batch, pages: { "1": 10_000 } };
+    const beaconBatch = {
+      ...batch,
+      dwellMs: 10_000,
+      activeMs: 5_000,
+      clickCount: 6,
+      pages: { "2": 4_000 },
+      ended: true,
+    };
+    for (let round = 0; round < 3; round += 1) {
+      const responses = await Promise.all([
+        patchSession(
+          json(fetchBatch, "PATCH"),
+          batchParams(material.id, sessionId),
+        ),
+        beaconSession(json(beaconBatch), batchParams(material.id, sessionId)),
+        patchSession(
+          json({ ...fetchBatch, pdfOpenCount: 2 }, "PATCH"),
+          batchParams(material.id, sessionId),
+        ),
+      ]);
+      expect(responses.map((r) => r.status)).toEqual([200, 200, 200]);
+    }
+    const row = await prisma.learningResourceSession.findUniqueOrThrow({
+      where: { id: sessionId },
+    });
+    expect(row).toMatchObject({
+      dwellMs: 30_000,
+      activeMs: 20_000,
+      clickCount: 6,
+      pdfOpenCount: 2,
+      pagesViewed: 2,
+    });
+    expect(JSON.parse(row.pagesViewedJson!)).toEqual({
+      "1": 10_000,
+      "2": 4_000,
+    });
+    expect(row.version).toBe(9);
+    expect(row.endedAt).not.toBeNull();
+  });
+
   it("clamps dwell to the time since the session opened", async () => {
     const { material, sessionId } = await opened();
     await patchSession(
@@ -473,9 +518,65 @@ describe("engagement reports", () => {
       selfDirectedOpens: 1,
     });
 
-    const rows = await getStudentResourceSessions(cls.id, student.id);
+    const rows = await getStudentResourceSessions(
+      { role: "ADMIN" },
+      cls.id,
+      student.id,
+    );
     expect(rows).toHaveLength(2);
     expect(rows.every((r) => r.title === "Kinematics notes")).toBe(true);
     expect(rows.find((r) => r.recommended)?.pageRange).toBe("pp. 1–2");
+  });
+
+  it("never queries per-student sessions for a teacher (consent privacy)", async () => {
+    const { student, cls, material } = await setup();
+    await prisma.learningResourceSession.create({
+      data: {
+        studentId: student.id,
+        materialId: material.id,
+        classId: cls.id,
+        surface: "materials_library",
+      },
+    });
+    const findMany = vi.spyOn(prisma.learningResourceSession, "findMany");
+    for (const role of ["TEACHER", "STUDENT", undefined]) {
+      expect(
+        await getStudentResourceSessions({ role }, cls.id, student.id),
+      ).toEqual([]);
+    }
+    expect(findMany).not.toHaveBeenCalled();
+    findMany.mockRestore();
+  });
+
+  it("windows and caps the admin report", async () => {
+    const { student, material } = await setup();
+    const now = new Date("2026-10-17T12:00:00Z");
+    await prisma.learningResourceSession.createMany({
+      data: [
+        {
+          studentId: student.id,
+          materialId: material.id,
+          surface: "materials_library",
+          openedAt: new Date("2026-10-15T12:00:00Z"),
+          dwellMs: 1_000,
+        },
+        {
+          studentId: student.id,
+          materialId: "deleted-material",
+          materialTitle: "Deleted notes",
+          surface: "materials_library",
+          openedAt: new Date("2026-01-01T12:00:00Z"),
+          dwellMs: 9_000,
+        },
+      ],
+    });
+    const week = await getAdminResourceEngagement("7", now);
+    expect(week).toMatchObject({ opens: 1, totalDwellMs: 1_000 });
+    const all = await getAdminResourceEngagement("all", now);
+    expect(all.materialCount).toBe(2);
+    expect(all.materials.map((m) => m.title).sort()).toEqual([
+      "Deleted notes",
+      "Kinematics notes",
+    ]);
   });
 });

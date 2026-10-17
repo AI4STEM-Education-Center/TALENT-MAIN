@@ -1,4 +1,8 @@
-import { requireStatsClass, type StatsAudience } from "@/lib/stats-access";
+import {
+  requireStatsClass,
+  requireStatsUser,
+  type StatsAudience,
+} from "@/lib/stats-access";
 import { prisma } from "@/lib/prisma";
 import { notFound } from "next/navigation";
 import Link from "next/link";
@@ -33,7 +37,10 @@ export async function StudentStatsView({
   params: Promise<{ id: string; studentId: string }>;
 }) {
   const { id, studentId } = await params;
-  await requireStatsClass(id, audience);
+  const [viewer] = await Promise.all([
+    requireStatsUser(audience),
+    requireStatsClass(id, audience),
+  ]);
   const basePath = `/${audience}/classes/${id}`;
 
   // The student must be enrolled in this class.
@@ -45,7 +52,13 @@ export async function StudentStatsView({
   const [stats, simSessions, resourceSessions] = await Promise.all([
     getStudentStats(id, studentId),
     getStudentSimulationSessions(id, studentId),
-    getStudentResourceSessions(id, studentId),
+    // Research access only: rows exist only for consenting students, so any
+    // row shown to a teacher would reveal participation. The function itself
+    // refuses non-research viewers; the audience check keeps the teacher
+    // route from even asking.
+    audience === "admin"
+      ? getStudentResourceSessions(viewer, id, studentId)
+      : Promise.resolve([]),
   ]);
   if (!stats) notFound();
 
@@ -194,7 +207,7 @@ export async function StudentStatsView({
       )}
 
       {/* Learning materials this student opened (client-reported telemetry,
-        consent-gated like the simulation sessions above). */}
+        consent-gated). Admin/research access only — never teachers. */}
       {resourceSessions.length > 0 && (
         <Card>
           <CardHeader>

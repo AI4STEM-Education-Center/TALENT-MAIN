@@ -15,9 +15,11 @@ import {
   parsePageDwell,
   resourceSurfaceLabel,
   sanitizePageDwell,
-  summarizeResourceEngagement,
-  summarizeResourceSurfaces,
-  type ResourceSessionRecord,
+  assembleMaterialRows,
+  assembleSurfaceRows,
+  canViewResourceTelemetry,
+  medianOf,
+  rankMaterialGroups,
   type ResourceTotals,
 } from "./resource-telemetry";
 import type { StoredRecommendation } from "./exam-results";
@@ -220,60 +222,95 @@ describe("ResourceTelemetryTracker", () => {
   });
 });
 
-describe("summaries", () => {
-  const at = (iso: string) => new Date(iso);
-  const sessions: ResourceSessionRecord[] = [
-    {
-      materialId: "m1",
-      materialTitle: "Old name",
-      studentId: "s1",
-      surface: "results_recommendation",
-      recommended: true,
-      openedAt: at("2026-10-01T10:00:00Z"),
-      dwellMs: 10_000,
-      activeMs: 5_000,
-      clickCount: 3,
-    },
-    {
-      materialId: "m1",
-      materialTitle: "New name",
-      studentId: "s1",
-      surface: "materials_library",
-      recommended: false,
-      openedAt: at("2026-10-02T10:00:00Z"),
-      dwellMs: 30_000,
-      activeMs: 15_000,
-      clickCount: 1,
-    },
-    {
-      materialId: "m1",
-      materialTitle: null,
-      studentId: "s2",
-      surface: "history_recommendation",
-      recommended: true,
-      openedAt: at("2026-10-03T10:00:00Z"),
-      dwellMs: 20_000,
-      activeMs: 1_000,
-      clickCount: 0,
-    },
-    {
-      materialId: "m2",
-      materialTitle: "Gone",
-      studentId: "s3",
-      surface: "materials_library",
-      recommended: false,
-      openedAt: at("2026-10-01T09:00:00Z"),
-      dwellMs: 1_000,
-      activeMs: 1_000,
-      clickCount: 9,
-    },
-  ];
+describe("canViewResourceTelemetry", () => {
+  it("admits admins only — never teachers or students", () => {
+    expect(canViewResourceTelemetry("ADMIN")).toBe(true);
+    expect(canViewResourceTelemetry("TEACHER")).toBe(false);
+    expect(canViewResourceTelemetry("STUDENT")).toBe(false);
+    expect(canViewResourceTelemetry(null)).toBe(false);
+    expect(canViewResourceTelemetry(undefined)).toBe(false);
+  });
+});
 
-  it("folds one row per material with recommended/self-directed and surface splits", () => {
-    const [m1, m2] = summarizeResourceEngagement(sessions);
-    expect(m1).toMatchObject({
+describe("report assembly", () => {
+  const at = (iso: string) => new Date(iso);
+
+  it("computes medians", () => {
+    expect(medianOf([])).toBe(0);
+    expect(medianOf([3, 1, 2])).toBe(2);
+    expect(medianOf([4, 1, 3, 2])).toBe(2.5);
+  });
+
+  it("ranks material groups by opens, then recency", () => {
+    const ranked = rankMaterialGroups([
+      {
+        materialId: "a",
+        opens: 1,
+        totalDwellMs: 0,
+        totalClicks: 0,
+        lastOpenedAt: at("2026-10-05T00:00:00Z"),
+      },
+      {
+        materialId: "b",
+        opens: 3,
+        totalDwellMs: 0,
+        totalClicks: 0,
+        lastOpenedAt: at("2026-10-01T00:00:00Z"),
+      },
+      {
+        materialId: "c",
+        opens: 1,
+        totalDwellMs: 0,
+        totalClicks: 0,
+        lastOpenedAt: at("2026-10-06T00:00:00Z"),
+      },
+    ]);
+    expect(ranked.map((g) => g.materialId)).toEqual(["b", "c", "a"]);
+  });
+
+  it("combines grouped rows into per-material rows", () => {
+    const [m1, m2] = assembleMaterialRows(
+      [
+        {
+          materialId: "m1",
+          opens: 3,
+          totalDwellMs: 60_000,
+          totalClicks: 4,
+          lastOpenedAt: at("2026-10-03T10:00:00Z"),
+        },
+        {
+          materialId: "m2",
+          opens: 1,
+          totalDwellMs: 1_000,
+          totalClicks: 9,
+          lastOpenedAt: null,
+        },
+      ],
+      {
+        studentPairs: [
+          { materialId: "m1" },
+          { materialId: "m1" },
+          { materialId: "m2" },
+        ],
+        recommended: [{ materialId: "m1", count: 2 }],
+        surfaces: [
+          { materialId: "m1", surface: "results_recommendation", count: 1 },
+          { materialId: "m1", surface: "history_recommendation", count: 1 },
+          { materialId: "m1", surface: "materials_library", count: 1 },
+          { materialId: "m2", surface: "materials_library", count: 1 },
+        ],
+        durations: [
+          { materialId: "m1", dwellMs: 10_000, activeMs: 5_000 },
+          { materialId: "m1", dwellMs: 30_000, activeMs: 15_000 },
+          { materialId: "m1", dwellMs: 20_000, activeMs: 1_000 },
+          { materialId: "m2", dwellMs: 1_000, activeMs: 1_000 },
+        ],
+        titles: new Map([["m1", "Kinematics"]]),
+      },
+    );
+    expect(m1).toEqual({
       materialId: "m1",
-      title: "New name",
+      title: "Kinematics",
       opens: 3,
       uniqueStudents: 2,
       recommendedOpens: 2,
@@ -284,29 +321,44 @@ describe("summaries", () => {
       totalClicks: 4,
       bySurface: {
         results_recommendation: 1,
-        materials_library: 1,
         history_recommendation: 1,
+        materials_library: 1,
       },
       lastOpenedAt: at("2026-10-03T10:00:00Z"),
     });
-    expect(m2.title).toBe("Gone");
+    expect(m2).toMatchObject({
+      title: "Removed material",
+      recommendedOpens: 0,
+      selfDirectedOpens: 1,
+      uniqueStudents: 1,
+    });
   });
 
-  it("prefers live titles when the material still exists", () => {
-    const rows = summarizeResourceEngagement(
-      sessions,
-      new Map([["m1", "Live title"]]),
+  it("assembles surfaces in their canonical order", () => {
+    const rows = assembleSurfaceRows(
+      [
+        { surface: "materials_library", opens: 2, totalClicks: 10 },
+        { surface: "legacy", opens: 1, totalClicks: 0 },
+        { surface: "results_recommendation", opens: 1, totalClicks: 3 },
+      ],
+      [
+        { surface: "materials_library" },
+        { surface: "materials_library" },
+        { surface: "results_recommendation" },
+      ],
+      [
+        { surface: "materials_library", dwellMs: 1_000 },
+        { surface: "materials_library", dwellMs: 3_000 },
+        { surface: "results_recommendation", dwellMs: 10_000 },
+      ],
     );
-    expect(rows[0].title).toBe("Live title");
-  });
-
-  it("summarizes surfaces in their canonical order", () => {
     expect(
-      summarizeResourceSurfaces(sessions).map((r) => [r.surface, r.opens]),
+      rows.map((r) => [r.surface, r.opens, r.uniqueStudents, r.medianDwellMs]),
     ).toEqual([
-      ["results_recommendation", 1],
-      ["history_recommendation", 1],
-      ["materials_library", 2],
+      ["results_recommendation", 1, 1, 10_000],
+      ["materials_library", 2, 2, 2_000],
+      ["legacy", 1, 0, 0],
     ]);
+    expect(rows[2].label).toBe("legacy");
   });
 });

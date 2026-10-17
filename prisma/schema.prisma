@@ -1610,8 +1610,13 @@ model LearningResourceSession {
   pagesViewed     Int     @default(0) // distinct pages viewed
   pagesViewedJson String? // JSON {pageNumber: visibleMs}, capped + sanitized
 
+  // Optimistic-concurrency token: every batch write is conditional on the
+  // version it read, so overlapping fetch/beacon batches can't overwrite
+  // each other (see the sessions/[sessionId] route).
+  version   Int      @default(0)
   updatedAt DateTime @updatedAt
 
+  @@index([openedAt])
   @@index([materialId, openedAt])
   @@index([studentId, openedAt])
   @@index([quizId, openedAt])
