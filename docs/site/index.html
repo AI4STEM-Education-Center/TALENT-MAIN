@@ -447,6 +447,19 @@
       </ol>
     </section>
 
+    <section class="block" id="admin-researchers">
+      <h2><span class="kicker">People</span> Research scientist access</h2>
+      <p class="lead">A <strong>Research scientist</strong> account signs in at <a class="path" href="https://dev.ai4talent.org/login"><code>/login</code></a>, lands on the admin overview, and can <em>view</em> all research data and materials — but never the configuration.</p>
+      <ol class="steps">
+        <li><strong>What they can see.</strong>
+          <p>Users, class statistics and student usage, quizzes, the material pool and materials, simulations, concepts, consent records and export requests, surveys and their responses, the research pool, feedback, chat transcripts, learning-resource engagement, and the system logs. They can download the research export ZIP and the survey, research-pool and feedback CSVs.</p></li>
+        <li><strong>What stays with administrators.</strong>
+          <p>AI config, e-mail/SMTP, database backups, invite codes, pressure tests, system resources, consent-form publishing and export settings, and research e-mail sending are hidden from them. On the pages they can open, every create, edit, delete, approve and toggle is hidden, and a <em>Research scientist access — view only</em> banner says so. The server refuses those actions as well.</p></li>
+        <li><strong>Downloads are audited.</strong>
+          <p>Every research-data download is logged under the <strong>AUDIT</strong> category in <a class="path" href="https://dev.ai4talent.org/admin/logs"><code>System Logs</code></a>, with who downloaded which dataset.</p></li>
+      </ol>
+    </section>
+
     <section class="block" id="admin-ai-config">
       <h2><span class="kicker">System</span> Configure the AI</h2>
       <p class="lead">On <a class="path" href="https://dev.ai4talent.org/admin/ai-config"><code>AI Config</code></a> you connect model providers and decide which model powers each feature.</p>

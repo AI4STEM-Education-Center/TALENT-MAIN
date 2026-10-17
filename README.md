@@ -430,6 +430,25 @@ Unknown tool names, unparseable arguments, schema violations, and handler throws
 *results* handed back to the model rather than exceptions, so it can correct itself instead of the
 turn dying.
 
+## Account roles
+
+| Role | How the account is created | What it can do |
+|------|----------------------------|----------------|
+| Student | Class invite link | Takes quizzes, reads materials, answers surveys |
+| Teacher | Admin-issued invite code (role Teacher) | Runs their own classes, quizzes and materials |
+| Research scientist (`RESEARCHER`) | Admin-issued invite code (role Research scientist) | **Read-only** access to the admin dashboard's data pages: users, class statistics, student usage, quizzes, material pool, materials, simulations, concepts, consent records and export requests, surveys and responses, research pool, feedback, chat transcripts, learning-resource engagement, system logs; can download the research export ZIP and the CSVs |
+| Administrator | `ADMIN_SIGNUP_TOKEN` | Everything, including configuration |
+
+Research scientists never see configuration or take actions: AI config, e-mail/SMTP, backups,
+invite codes, pressure tests, system resources, consent-form publishing and export settings,
+research e-mail sending, and every create/edit/delete/approve stay administrator-only. The proxy
+redirects them off those pages (`src/lib/researcher-access.ts`), the sidebar hides them, the data
+pages show a "view only" banner and hide their mutation controls, and every `/api/admin/*` route
+enforces the split server-side (`src/lib/admin-access.ts`: `requireAdminDataReader` for read-only
+GETs, `requireAdminApi` for config and all writes). Every research-data download (research export
+ZIP, survey-response, research-pool and feedback CSVs) is recorded in **System Logs** under the
+`AUDIT` category with the downloader's id and role.
+
 ## Project Structure
 
 ```
