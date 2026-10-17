@@ -16,6 +16,10 @@ import {
   RESEARCH_EXPORT_FIELD_DOCS,
   RESEARCH_EXPORT_TABLE_SCOPES,
 } from "@/lib/research-export-fields";
+import {
+  RESEARCHER_WITHHELD_MESSAGE,
+  toResearcherSafeLog,
+} from "@/lib/system-log-visibility";
 
 type Row = Record<string, unknown>;
 
@@ -105,12 +109,32 @@ function scalar(value: unknown, type: string): unknown {
   return value;
 }
 
+/**
+ * Per-row projection for an audience: the research scientist's system_log
+ * goes through the same researcher-safe view as /api/admin/logs.
+ */
+function rowProjection(
+  audience: ResearchExportAudience,
+  table: (typeof researchExportTables)[number],
+): (row: Row) => Row | null {
+  if (audience === "researcher" && table.model.name === "SystemLog")
+    return (row) =>
+      toResearcherSafeLog(
+        row as Row & { type: string; message: string; metadata?: null },
+      );
+  return (row) => row;
+}
+
 async function* tableCsv(
   db: Database.Database,
   table: (typeof researchExportTables)[number],
+  audience: ResearchExportAudience,
 ) {
+  const project = rowProjection(audience, table);
   yield "\uFEFF" + researchCsvRow(table.fields.map((f) => f.name));
-  for (const row of db.prepare(table.sql).iterate() as Iterable<Row>) {
+  for (const raw of db.prepare(table.sql).iterate() as Iterable<Row>) {
+    const row = project(raw);
+    if (!row) continue;
     yield researchCsvRow(table.fields.map((f) => scalar(row[f.name], f.type)));
   }
   if (table.model.name !== "AssistantMessage") return;
@@ -227,6 +251,13 @@ Admin setting columns are also dropped: ${Object.entries(
   )
     .map(([model, fields]) => `${model}.${fields!.join(`, ${model}.`)}`)
     .join(", ")}.
+system_log.csv is the research-scientist view of the log: no metadata
+column, no rows from admin-only configuration areas (AI config, providers,
+models and assignments, assistant/guardrail/SMTP/e-mail sender settings,
+backups, pressure tests, invite codes, resource monitoring), and on the
+remaining rows the message reads "${RESEARCHER_WITHHELD_MESSAGE}" unless the
+event type's message is known to hold no configuration. Its manifest row
+count is the number of rows actually written.
 Joins below that mention a withheld file do not apply to this extract.
 `;
 }
@@ -368,11 +399,20 @@ export async function createResearchExport(
                 .get() as { count: number }
             ).count
           : 0;
-      appendCsv(table.filename, tableCsv(snapshot!, table));
+      appendCsv(table.filename, tableCsv(snapshot!, table, audience));
+      const project = rowProjection(audience, table);
+      let visibleCount = count;
+      if (table.model.name === "SystemLog" && audience === "researcher") {
+        visibleCount = 0;
+        for (const row of snapshot!
+          .prepare(table.sql)
+          .iterate() as Iterable<Row>)
+          if (project(row)) visibleCount++;
+      }
       return {
         name: table.filename,
         model: table.model.name,
-        rows: count + coldCount,
+        rows: visibleCount + coldCount,
         columns: table.fields.map((f) => f.name),
         excludedFields: table.model.fields
           .filter(

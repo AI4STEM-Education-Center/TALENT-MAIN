@@ -268,6 +268,10 @@ export const RESEARCH_EXPORT_CONFIG_FIELDS: Partial<
   Record<keyof typeof RESEARCH_EXPORT_FIELDS, readonly string[]>
 > = {
   Teacher: ["emailDailyLimit", "emailMonthlyLimit"],
+  // Free-form event payloads (e.g. an AI-config import report). Rows are
+  // further filtered and messages redacted by toResearcherSafeLog
+  // (system-log-visibility.ts), the same projection /api/admin/logs uses.
+  SystemLog: ["metadata"],
 };
 
 export const RESEARCH_EXPORT_EXCLUDED_MODELS = [

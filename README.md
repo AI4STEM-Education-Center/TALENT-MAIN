@@ -40,6 +40,7 @@ in [.react-doctor/false-positives.md](.react-doctor/false-positives.md).
 Production deployment is fully containerized using **Docker** and **Docker Compose** on an **AWS EC2** instance.
 
 The production architecture consists of two services:
+
 1. **web**: The Next.js 16 web application.
 2. **worker**: A background worker powered by `honker-node` to run tasks asynchronously without blocking the Next.js API.
 
@@ -57,6 +58,7 @@ deployed from `main`. See `.github/workflows/ci.yml`, `deploy-dev.yml`, and
 `deploy.yml`.
 
 The deployment workflows:
+
 1. Builds the Docker image based on [docker/Dockerfile](docker/Dockerfile) (injecting release version/date from `version.json`).
 2. Pushes the image to **GitHub Container Registry (GHCR)**.
 3. SCPs the docker-compose file to the EC2 server (`~/app`).
@@ -132,7 +134,7 @@ Avoid `docker system prune -a --volumes`: it also deletes unused volumes, which 
 
 Reach for `docker image prune -af --filter "until=<age>"` only if you know what
 it does here, which is close to nothing. The box runs the containerd image
-store, where `until` is measured against the containerd image *record* rather
+store, where `until` is measured against the containerd image _record_ rather
 than the date the image was built — and superseding a tag re-registers the old
 image under a record created by the pull that displaced it. An image that has
 been on the box for a fortnight can therefore read as seconds old. Both deploy
@@ -149,16 +151,16 @@ Going forward, both compose stacks cap their container logs (`json-file`, 10 MiB
 
 The GitHub Actions workflow currently needs these repository secrets:
 
-| Secret | Description |
-|---|---|
-| `EC2_HOST` | Public host/IP of the deployment server |
-| `EC2_USER` | SSH username used for deploys |
-| `EC2_SSH_KEY` | Private SSH key for that server |
-| `DEV_TEST_STUDENT_LOGIN` / `DEV_TEST_STUDENT_PASSWORD` | Dedicated dev student used by live API checks |
-| `DEV_TEST_TEACHER_LOGIN` / `DEV_TEST_TEACHER_PASSWORD` | Dedicated dev teacher/developer account used by live API checks |
-| `DEV_TEST_ADMIN_LOGIN` / `DEV_TEST_ADMIN_PASSWORD` | Dedicated dev admin used by live API checks |
-| `DEV_PRESSURE_RESULTS_TOKEN` | Ingestion token generated on dev at **Admin → Pressure Tests** |
-| `PROD_PRESSURE_RESULTS_TOKEN` | Ingestion token generated on production at **Admin → Pressure Tests** |
+| Secret                                                 | Description                                                           |
+| ------------------------------------------------------ | --------------------------------------------------------------------- |
+| `EC2_HOST`                                             | Public host/IP of the deployment server                               |
+| `EC2_USER`                                             | SSH username used for deploys                                         |
+| `EC2_SSH_KEY`                                          | Private SSH key for that server                                       |
+| `DEV_TEST_STUDENT_LOGIN` / `DEV_TEST_STUDENT_PASSWORD` | Dedicated dev student used by live API checks                         |
+| `DEV_TEST_TEACHER_LOGIN` / `DEV_TEST_TEACHER_PASSWORD` | Dedicated dev teacher/developer account used by live API checks       |
+| `DEV_TEST_ADMIN_LOGIN` / `DEV_TEST_ADMIN_PASSWORD`     | Dedicated dev admin used by live API checks                           |
+| `DEV_PRESSURE_RESULTS_TOKEN`                           | Ingestion token generated on dev at **Admin → Pressure Tests**        |
+| `PROD_PRESSURE_RESULTS_TOKEN`                          | Ingestion token generated on production at **Admin → Pressure Tests** |
 
 `GITHUB_TOKEN` is used by the workflow too, but GitHub provides that automatically, so you do not need to create it manually.
 
@@ -212,32 +214,32 @@ CLOUDFRONT_PRIVATE_KEY="LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQo..."
 
 ## Environment Variables
 
-| Variable | Description |
-|---|---|
-| `DATABASE_URL` | SQLite connection string used by Prisma for local development (e.g., `file:./data/dev.db`) |
-| `PROD_DATABASE_URL` | Production SQLite connection string read by Docker Compose (maps to `DATABASE_URL` in production container) |
-| `DEV_DATABASE_URL` | Dev SQLite connection string read by Docker Compose (maps to `DATABASE_URL` in dev container) |
-| `DB_PROVIDER` | Set to `sqlite` to run WAL mode optimizations on startup |
-| `APP_URL` | Public base URL of the deployment (e.g. `https://dev.ai4talent.org`). New-message notification emails use it to link students straight to the message; without it (or `AUTH_URL` / `NEXTAUTH_URL`) those emails fall back to "sign in and open Notifications" |
-| `AUTH_SECRET` | Secret key used by NextAuth to sign session tokens |
-| `TEACHER_SIGNUP_TOKEN` | **Optional, legacy.** A single always-valid teacher invite code. Teacher and research-scientist codes are now issued in **Admin → Invite Codes**, each with its own role, expiry and use limit; a value set here works alongside them but never expires and cannot be revoked without a redeploy, so clear it once the first code has been issued |
-| `ADMIN_SIGNUP_TOKEN` | Invite code that creates an **administrator** account when entered at `/register` (the same form teachers and research scientists use — the code decides the account type). Admin accounts can only be created this way, never from a panel-issued code. The old `/admin-register` URL redirects to `/register` |
-| `API_KEY_ENCRYPTION_SECRET` | Hex-encoded 32-byte secret key used to encrypt AI Provider API keys stored in the database |
-| `LEARNING_MATERIAL_MAX_BYTES` | Max upload size for learning materials in bytes (default 52428800 = 50 MiB) |
-| `AWS_ACCESS_KEY_ID` | **Required.** Static access key for the app's IAM user. IAM instance roles are not used — the app throws rather than falling back to instance metadata |
-| `AWS_SECRET_ACCESS_KEY` | **Required.** Static secret key paired with the above |
-| `AWS_SESSION_TOKEN` | Optional: only when using temporary STS credentials |
-| `AWS_REGION` | AWS S3 region for bucket operations (e.g., `us-east-1`) |
-| `AWS_S3_BUCKET` | AWS S3 bucket name |
-| `S3_KEY_PREFIX` | Optional namespace for deployments sharing one bucket. Compose fixes prod at `prod/` and dev at `dev/` so their independent garbage collectors cannot delete each other's objects. Existing full keys stored in the database remain readable. |
-| `RESOURCE_SPOOL_DIR` | Directory every node writes its **System Resources** samples to, and reads every other node's from. Both compose stacks set it to `/app/metrics` and mount the shared `talent-resource-metrics` volume there, which is how each site charts all four nodes (prod and dev are separate deployments but one EC2 instance). Unset — outside Docker — each deployment keeps a private spool beside its data directory and charts only its own two nodes. |
-| `HOST_PROC_DIR` | Where to read the host's CPU/memory counters for the whole-machine panel (default `/proc`, which inside a container is already the host's). Only needs setting if something namespaces `/proc`. |
-| `RESOURCE_SAMPLE_INTERVAL_MS` | How often each node records CPU/RAM/storage (default 60000, floor 10000) |
-| `RESOURCE_SAMPLE_RETENTION_DAYS` | How long resource samples are kept before each node compacts its spool file (default 7 — the admin tab charts one week) |
-| `AWS_S3_ENDPOINT` | Optional: Endpoint URL for S3 alternative providers (MinIO / LocalStack) |
-| `CLOUDFRONT_DOMAIN` | CloudFront distribution domain serving images and PDFs (e.g. `d111111abcdef8.cloudfront.net`, or a custom CNAME). A `https://` prefix and trailing slash are tolerated |
-| `CLOUDFRONT_KEY_PAIR_ID` | Public key ID from the distribution's trusted key group, used to sign read URLs |
-| `CLOUDFRONT_PRIVATE_KEY` | Base64-encoded private key PEM for that key group (`base64 -w0 private_key.pem`); a PEM with literal `\n` escapes also works. **Secret** |
+| Variable                         | Description                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                   | SQLite connection string used by Prisma for local development (e.g., `file:./data/dev.db`)                                                                                                                                                                                                                                                                                                                                                           |
+| `PROD_DATABASE_URL`              | Production SQLite connection string read by Docker Compose (maps to `DATABASE_URL` in production container)                                                                                                                                                                                                                                                                                                                                          |
+| `DEV_DATABASE_URL`               | Dev SQLite connection string read by Docker Compose (maps to `DATABASE_URL` in dev container)                                                                                                                                                                                                                                                                                                                                                        |
+| `DB_PROVIDER`                    | Set to `sqlite` to run WAL mode optimizations on startup                                                                                                                                                                                                                                                                                                                                                                                             |
+| `APP_URL`                        | Public base URL of the deployment (e.g. `https://dev.ai4talent.org`). New-message notification emails use it to link students straight to the message; without it (or `AUTH_URL` / `NEXTAUTH_URL`) those emails fall back to "sign in and open Notifications"                                                                                                                                                                                        |
+| `AUTH_SECRET`                    | Secret key used by NextAuth to sign session tokens                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `TEACHER_SIGNUP_TOKEN`           | **Optional, legacy.** A single always-valid teacher invite code. Teacher and research-scientist codes are now issued in **Admin → Invite Codes**, each with its own role, expiry and use limit; a value set here works alongside them but never expires and cannot be revoked without a redeploy, so clear it once the first code has been issued                                                                                                    |
+| `ADMIN_SIGNUP_TOKEN`             | Invite code that creates an **administrator** account when entered at `/register` (the same form teachers and research scientists use — the code decides the account type). Admin accounts can only be created this way, never from a panel-issued code. The old `/admin-register` URL redirects to `/register`                                                                                                                                      |
+| `API_KEY_ENCRYPTION_SECRET`      | Hex-encoded 32-byte secret key used to encrypt AI Provider API keys stored in the database                                                                                                                                                                                                                                                                                                                                                           |
+| `LEARNING_MATERIAL_MAX_BYTES`    | Max upload size for learning materials in bytes (default 52428800 = 50 MiB)                                                                                                                                                                                                                                                                                                                                                                          |
+| `AWS_ACCESS_KEY_ID`              | **Required.** Static access key for the app's IAM user. IAM instance roles are not used — the app throws rather than falling back to instance metadata                                                                                                                                                                                                                                                                                               |
+| `AWS_SECRET_ACCESS_KEY`          | **Required.** Static secret key paired with the above                                                                                                                                                                                                                                                                                                                                                                                                |
+| `AWS_SESSION_TOKEN`              | Optional: only when using temporary STS credentials                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `AWS_REGION`                     | AWS S3 region for bucket operations (e.g., `us-east-1`)                                                                                                                                                                                                                                                                                                                                                                                              |
+| `AWS_S3_BUCKET`                  | AWS S3 bucket name                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `S3_KEY_PREFIX`                  | Optional namespace for deployments sharing one bucket. Compose fixes prod at `prod/` and dev at `dev/` so their independent garbage collectors cannot delete each other's objects. Existing full keys stored in the database remain readable.                                                                                                                                                                                                        |
+| `RESOURCE_SPOOL_DIR`             | Directory every node writes its **System Resources** samples to, and reads every other node's from. Both compose stacks set it to `/app/metrics` and mount the shared `talent-resource-metrics` volume there, which is how each site charts all four nodes (prod and dev are separate deployments but one EC2 instance). Unset — outside Docker — each deployment keeps a private spool beside its data directory and charts only its own two nodes. |
+| `HOST_PROC_DIR`                  | Where to read the host's CPU/memory counters for the whole-machine panel (default `/proc`, which inside a container is already the host's). Only needs setting if something namespaces `/proc`.                                                                                                                                                                                                                                                      |
+| `RESOURCE_SAMPLE_INTERVAL_MS`    | How often each node records CPU/RAM/storage (default 60000, floor 10000)                                                                                                                                                                                                                                                                                                                                                                             |
+| `RESOURCE_SAMPLE_RETENTION_DAYS` | How long resource samples are kept before each node compacts its spool file (default 7 — the admin tab charts one week)                                                                                                                                                                                                                                                                                                                              |
+| `AWS_S3_ENDPOINT`                | Optional: Endpoint URL for S3 alternative providers (MinIO / LocalStack)                                                                                                                                                                                                                                                                                                                                                                             |
+| `CLOUDFRONT_DOMAIN`              | CloudFront distribution domain serving images and PDFs (e.g. `d111111abcdef8.cloudfront.net`, or a custom CNAME). A `https://` prefix and trailing slash are tolerated                                                                                                                                                                                                                                                                               |
+| `CLOUDFRONT_KEY_PAIR_ID`         | Public key ID from the distribution's trusted key group, used to sign read URLs                                                                                                                                                                                                                                                                                                                                                                      |
+| `CLOUDFRONT_PRIVATE_KEY`         | Base64-encoded private key PEM for that key group (`base64 -w0 private_key.pem`); a PEM with literal `\n` escapes also works. **Secret**                                                                                                                                                                                                                                                                                                             |
 
 > [!NOTE]
 > AI configuration (such as API keys, base URLs, and model selection) is now fully database-backed and managed dynamically via the Admin Dashboard. No `OPENAI_API_KEY` environment variables are required!
@@ -323,7 +325,7 @@ Admins get neither — they configure the assistants rather than use one.
    types are accepted, per-message attachment and tool-call caps, how long attachments are kept, how
    much transcript is replayed, per-user hourly message budget, and extra prompt instructions.
 
-   Tool toggles are stored as an opt-*out* list (`disabledTools`), so a tool added to a skill in a
+   Tool toggles are stored as an opt-_out_ list (`disabledTools`), so a tool added to a skill in a
    later release is available to existing installs instead of staying dark until an admin re-saves.
    Disabling every tool in a skill drops the skill entirely — its prompt instructions describe
    abilities by tool name, and keeping them would have the model announce a tool it cannot call. The
@@ -364,7 +366,7 @@ them back, and the server re-reads those files on later turns, capped at the aud
 attachment limit so replaying a long conversation never costs more than sending the files once.
 
 `GET /api/assistant/attachments/:id` serves one back (a 302 to a short-lived signed URL) for the
-panel's thumbnails. Authorization *is* the lookup: the query filters on the session's user id and on
+panel's thumbnails. Authorization _is_ the lookup: the query filters on the session's user id and on
 the expiry, so someone else's id and an expired one are both indistinguishable from a nonexistent one.
 That matters because these ids live in a client-held transcript the user can edit freely.
 
@@ -377,10 +379,10 @@ cascade can orphan bytes in the bucket that nothing could then find.
 `src/lib/assistant/skills/` holds the registry. A skill is a declarative bundle — id, name,
 description, audience, prompt instructions, and a fixed list of tools:
 
-| Audience | Skill | Tools |
-| --- | --- | --- |
-| Student | `student-quiz-results` | `search_quiz_results`, `get_quiz_result_detail`, `summarize_performance` |
-| Teacher | `teacher-class-insights` | `list_classes`, `get_class_overview`, `get_quiz_breakdown`, `get_student_breakdown`, `find_struggling_students` |
+| Audience | Skill                    | Tools                                                                                                           |
+| -------- | ------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| Student  | `student-quiz-results`   | `search_quiz_results`, `get_quiz_result_detail`, `summarize_performance`                                        |
+| Teacher  | `teacher-class-insights` | `list_classes`, `get_class_overview`, `get_quiz_breakdown`, `get_student_breakdown`, `find_struggling_students` |
 
 Each tool's `input` is a zod schema that serves as both the JSON Schema advertised to the model
 (via `z.toJSONSchema`) and the runtime validator for the arguments it sends back, so the advertised
@@ -411,14 +413,14 @@ registry are the entire capability surface, and every one of them is scoped to t
 - `get_quiz_result_detail` releases the answer key only for a **final** attempt — one with nothing in
   progress and no retake left (attempts used up, quiz closed, or the quiz no longer offered to the
   class; see `src/lib/quiz-availability.ts`, shared with the student class page). While a retake is
-  possible the response omits the correct answers *and* the per-question correct/incorrect flags,
+  possible the response omits the correct answers _and_ the per-question correct/incorrect flags,
   because on a short option list "you got it wrong" is the answer. It sets `answerKeyWithheld` so the
   assistant explains rather than guesses. Every ambiguous case withholds: an unpublished quiz (one
   click republishes it) and a window that hasn't opened yet both count as retakeable.
 - The student prompt carries explicit academic-honesty rules: never hand over a direct answer, a
   rewritten one, or a hint narrow enough to be one, whatever the student claims about having already
   submitted or about what a teacher said. Enforcement is split on purpose — the tool controls what the
-  model can *see*, the prompt governs what it does with what it sees, and neither does the other's job.
+  model can _see_, the prompt governs what it does with what it sees, and neither does the other's job.
 - Teacher tools resolve every class through an owner-filtered lookup, and `get_student_breakdown`
   additionally checks enrollment — owning a class doesn't imply a given student is in it.
 - Teacher payloads drop student emails: the teacher sees them in the UI, but there's no reason to put
@@ -427,17 +429,17 @@ registry are the entire capability surface, and every one of them is scoped to t
   extra instructions are appended under a header stating they cannot override the built-in rules.
 
 Unknown tool names, unparseable arguments, schema violations, and handler throws all become error
-*results* handed back to the model rather than exceptions, so it can correct itself instead of the
+_results_ handed back to the model rather than exceptions, so it can correct itself instead of the
 turn dying.
 
 ## Account roles
 
-| Role | How the account is created | What it can do |
-|------|----------------------------|----------------|
-| Student | Class invite link | Takes quizzes, reads materials, answers surveys |
-| Teacher | Admin-issued invite code (role Teacher) | Runs their own classes, quizzes and materials |
+| Role                              | How the account is created                         | What it can do                                                                                                                                                                                                                                                                                                                                                                                     |
+| --------------------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Student                           | Class invite link                                  | Takes quizzes, reads materials, answers surveys                                                                                                                                                                                                                                                                                                                                                    |
+| Teacher                           | Admin-issued invite code (role Teacher)            | Runs their own classes, quizzes and materials                                                                                                                                                                                                                                                                                                                                                      |
 | Research scientist (`RESEARCHER`) | Admin-issued invite code (role Research scientist) | **Read-only** access to the admin dashboard's data pages: users, class statistics, student usage, quizzes, material pool, materials, simulations, concepts, consent records and export requests, surveys and responses, research pool, feedback, chat transcripts, learning-resource engagement, system logs; can download the CSVs and a research export ZIP that leaves out configuration tables |
-| Administrator | `ADMIN_SIGNUP_TOKEN` | Everything, including configuration |
+| Administrator                     | `ADMIN_SIGNUP_TOKEN`                               | Everything, including configuration                                                                                                                                                                                                                                                                                                                                                                |
 
 Research scientists never see configuration or take actions: AI config, e-mail/SMTP, backups,
 invite codes, pressure tests, system resources, consent-form publishing and export settings,
@@ -456,6 +458,13 @@ providers/models/assignments, assistant and guardrail settings, e-mail senders, 
 templates/campaigns/deliveries, consent export settings and jobs, invite codes, pressure tests,
 resource samples) and admin setting columns such as teacher e-mail limits. Its README and
 manifest list what was withheld.
+
+System logs go through one researcher-safe projection (`toResearcherSafeLog` in
+`src/lib/system-log-visibility.ts`), used by both `/api/admin/logs` and the researcher's
+`system_log.csv`: `metadata` is always dropped, rows from config areas (AI config, providers and
+assignments, assistant/guardrail/SMTP/e-mail sender settings, backups, pressure tests, invite codes,
+resource monitoring) are hidden, and messages are kept only for event types known not to embed
+configuration. Administrators see the raw log.
 
 ## Project Structure
 

@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdminDataReader } from "@/lib/admin-access";
 import { logApiError } from "@/lib/system-log";
+import { isAdmin } from "@/lib/roles";
+import {
+  RESEARCHER_MESSAGE_SAFE_LOG_TYPES,
+  researcherVisibleLogWhere,
+  toResearcherSafeLog,
+} from "@/lib/system-log-visibility";
 
 const PAGE_SIZE_DEFAULT = 50;
 const PAGE_SIZE_MAX = 200;
@@ -14,9 +20,12 @@ const PAGE_SIZE_MAX = 200;
  */
 export async function GET(req: NextRequest) {
   try {
-    // Read-only: research scientists may view the log too.
+    // Read-only: research scientists may view the log too, through the
+    // shared researcher-safe projection (no metadata, no config rows, raw
+    // error text withheld — see system-log-visibility.ts).
     const session = await requireAdminDataReader();
     if (session instanceof Response) return session;
+    const full = isAdmin(session.user.role);
 
     const params = req.nextUrl.searchParams;
     const page = Math.max(1, Number(params.get("page")) || 1);
@@ -28,13 +37,23 @@ export async function GET(req: NextRequest) {
     const severity = params.get("severity") || undefined;
     const q = params.get("q")?.trim();
 
+    // A researcher's free-text search only looks inside messages they can
+    // see, so it can't be used to probe withheld text.
+    const messageMatch = full
+      ? { message: { contains: q } }
+      : {
+          message: { contains: q },
+          type: { in: [...RESEARCHER_MESSAGE_SAFE_LOG_TYPES] },
+        };
+    const visible = full ? {} : researcherVisibleLogWhere();
     const where = {
+      ...visible,
       ...(category ? { category } : {}),
       ...(severity ? { severity } : {}),
       ...(q
         ? {
             OR: [
-              { message: { contains: q } },
+              messageMatch,
               { type: { contains: q } },
               { ip: { contains: q } },
             ],
@@ -53,10 +72,14 @@ export async function GET(req: NextRequest) {
         }),
         prisma.systemLog.count({ where }),
         prisma.systemLog.count({
-          where: { severity: "ERROR", createdAt: { gte: dayAgo } },
+          where: { ...visible, severity: "ERROR", createdAt: { gte: dayAgo } },
         }),
         prisma.systemLog.count({
-          where: { severity: "WARNING", createdAt: { gte: dayAgo } },
+          where: {
+            ...visible,
+            severity: "WARNING",
+            createdAt: { gte: dayAgo },
+          },
         }),
         prisma.systemLog.count({
           where: { type: "LOGIN_FAILED", createdAt: { gte: dayAgo } },
@@ -68,11 +91,17 @@ export async function GET(req: NextRequest) {
       ]);
 
     return NextResponse.json({
-      logs,
+      logs: full ? logs : logs.flatMap((log) => toResearcherSafeLog(log) ?? []),
       total,
       page,
       pageSize,
-      summary: { errors24h, warnings24h, failedLogins24h, lastUsage },
+      summary: {
+        errors24h,
+        warnings24h,
+        failedLogins24h,
+        lastUsage:
+          full || !lastUsage ? lastUsage : toResearcherSafeLog(lastUsage),
+      },
     });
   } catch (error) {
     logApiError("ADMIN_LOGS_GET", error);
