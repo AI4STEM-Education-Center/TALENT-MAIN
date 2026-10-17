@@ -13,6 +13,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { homePathForRole } from "@/lib/roles";
 
 // Accept only same-origin relative paths from the URL to prevent open redirects
 // (reject protocol-relative "//host" and absolute URLs).
@@ -57,15 +58,7 @@ function LoginForm() {
         }
         const session = await res.json();
         const role = session?.user?.role;
-        if (callbackUrl) {
-          push(callbackUrl);
-        } else if (role === "TEACHER") {
-          push("/teacher");
-        } else if (role === "ADMIN") {
-          push("/admin");
-        } else {
-          push("/student");
-        }
+        push(callbackUrl ?? homePathForRole(role));
         refresh();
       }
     } catch {
