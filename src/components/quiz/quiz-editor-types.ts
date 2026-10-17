@@ -52,6 +52,8 @@ export interface QuizDetail {
   questions: Question[];
   editable: boolean;
   simulationsEditable: boolean;
+  /** Research scientist: no write affordance at all (not even pool import). */
+  viewOnly?: boolean;
 }
 export interface ImportSummary {
   importedCount: number;

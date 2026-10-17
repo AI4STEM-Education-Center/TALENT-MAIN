@@ -43,6 +43,7 @@ import {
   type SurveyRole,
 } from "@/lib/survey";
 import { SurveyFormView } from "@/components/survey/SurveyFormView";
+import { useAdminCanEdit } from "@/components/admin/use-admin-can-edit";
 
 type FormDetail = {
   id: string;
@@ -89,6 +90,9 @@ export default function SurveyEditorPage({
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [preview, setPreview] = useState(false);
+  // Research scientists only ever see the read-only preview of the form.
+  const canEdit = useAdminCanEdit();
+  const showPreview = preview || !canEdit;
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/admin/surveys/${id}`, { cache: "no-store" });
@@ -253,7 +257,12 @@ export default function SurveyEditorPage({
             {form.promptInApp && (
               <Badge variant="secondary">Prompting in app</Badge>
             )}
-            {form.kind === "POST" && (
+            {form.kind === "POST" && !canEdit && (
+              <Badge variant="outline">
+                {surveyFormLabel("POST", form.period)}
+              </Badge>
+            )}
+            {form.kind === "POST" && canEdit && (
               <Select
                 value={String(form.period)}
                 onValueChange={(v) =>
@@ -285,37 +294,39 @@ export default function SurveyEditorPage({
             </p>
           )}
         </div>
-        <div className="flex flex-wrap gap-2">
-          {form.hasSourceText && form.responseCount === 0 && (
+        {canEdit && (
+          <div className="flex flex-wrap gap-2">
+            {form.hasSourceText && form.responseCount === 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={reextract}
+                disabled={extracting}
+              >
+                <Sparkles className="size-4" /> Convert PDF again
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
-              onClick={reextract}
-              disabled={extracting}
+              onClick={() => setPreview((p) => !p)}
             >
-              <Sparkles className="size-4" /> Convert PDF again
+              <Eye className="size-4" /> {preview ? "Edit" : "Preview"}
             </Button>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setPreview((p) => !p)}
-          >
-            <Eye className="size-4" /> {preview ? "Edit" : "Preview"}
-          </Button>
-          <Button
-            size="sm"
-            onClick={save}
-            disabled={!dirty || saving || extracting}
-          >
-            {saving ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Save className="size-4" />
-            )}
-            Save
-          </Button>
-        </div>
+            <Button
+              size="sm"
+              onClick={save}
+              disabled={!dirty || saving || extracting}
+            >
+              {saving ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Save className="size-4" />
+              )}
+              Save
+            </Button>
+          </div>
+        )}
       </div>
 
       {extracting && (
@@ -339,7 +350,7 @@ export default function SurveyEditorPage({
         </p>
       )}
 
-      {preview ? (
+      {showPreview ? (
         <Card>
           <CardContent className="pt-6">
             <SurveyFormView

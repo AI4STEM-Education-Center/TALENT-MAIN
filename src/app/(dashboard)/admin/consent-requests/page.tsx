@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Check, Inbox, Loader2, X } from "lucide-react";
+import { useAdminCanEdit } from "@/components/admin/use-admin-can-edit";
 
 interface RequestRow {
   id: string;
@@ -16,9 +17,12 @@ interface RequestRow {
   requestedAt: string;
   teacher: { user: { firstName: string; lastName: string; email: string } };
   class: { id: string; name: string };
+  reviewer: { firstName: string; lastName: string };
 }
 
 export default function AdminConsentRequestsPage() {
+  // Research scientists see the requests; approving/rejecting is admin-only.
+  const canEdit = useAdminCanEdit();
   const [requests, setRequests] = useState<RequestRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -90,9 +94,10 @@ export default function AdminConsentRequestsPage() {
       <div>
         <h1 className="text-3xl font-bold">Consent Export Requests</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Teachers requesting a signed-students credit export, routed to you.
-          Approving an export releases only an aggregate credit-points outcome
-          to the teacher — never individual decision detail.
+          Teachers requesting a signed-students credit export,{" "}
+          {canEdit ? "routed to you" : "across every reviewer"}. Approving an
+          export releases only an aggregate credit-points outcome to the teacher
+          — never individual decision detail.
         </p>
       </div>
 
@@ -110,7 +115,9 @@ export default function AdminConsentRequestsPage() {
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
             <Inbox className="mx-auto mb-3 size-10" />
-            No requests are assigned to you.
+            {canEdit
+              ? "No requests are assigned to you."
+              : "No consent export requests yet."}
           </CardContent>
         </Card>
       ) : (
@@ -128,6 +135,12 @@ export default function AdminConsentRequestsPage() {
                         {request.teacher.user.lastName} (
                         {request.teacher.user.email})
                       </p>
+                      {!canEdit && (
+                        <p className="text-sm text-muted-foreground">
+                          Reviewer: {request.reviewer.firstName}{" "}
+                          {request.reviewer.lastName}
+                        </p>
+                      )}
                       <p className="mt-1 text-xs text-muted-foreground">
                         Grade column: {request.gradeColumnName} (
                         {request.pointsAwarded} points) ·{" "}
@@ -147,7 +160,7 @@ export default function AdminConsentRequestsPage() {
                     </Badge>
                   </div>
 
-                  {pending ? (
+                  {pending && canEdit ? (
                     <div className="space-y-3">
                       <label className="flex items-start gap-2 rounded-md bg-amber-500/10 p-3 text-sm">
                         <input

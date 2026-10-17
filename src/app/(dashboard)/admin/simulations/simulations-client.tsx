@@ -15,6 +15,7 @@ import {
   Atom,
   ChevronDown,
   ChevronRight,
+  Eye,
   Pencil,
   Loader2,
   Play,
@@ -77,7 +78,12 @@ function generatable(counts: Counts): number {
   return counts.missing + counts.failed;
 }
 
-export function AdminSimulationsClient() {
+export function AdminSimulationsClient({
+  canEdit = true,
+}: {
+  /** False for research scientists: view only, no generate/edit/delete. */
+  canEdit?: boolean;
+}) {
   const confirm = useConfirm();
   const [scope, setScope] = useState("all");
   const [search, setSearch] = useState("");
@@ -312,18 +318,20 @@ export function AdminSimulationsClient() {
             )}
             <Badge variant="outline">{totals.missing} without simulation</Badge>
           </div>
-          <Button
-            onClick={() => generate({ scope: "all" }, "all")}
-            disabled={busy.has("all") || totalGeneratable === 0}
-            className="shrink-0"
-          >
-            {busy.has("all") ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Sparkles className="size-4" />
-            )}
-            Generate missing ({totalGeneratable})
-          </Button>
+          {canEdit && (
+            <Button
+              onClick={() => generate({ scope: "all" }, "all")}
+              disabled={busy.has("all") || totalGeneratable === 0}
+              className="shrink-0"
+            >
+              {busy.has("all") ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Sparkles className="size-4" />
+              )}
+              Generate missing ({totalGeneratable})
+            </Button>
+          )}
         </CardContent>
       </Card>
 
@@ -411,28 +419,30 @@ export function AdminSimulationsClient() {
                   <Button size="sm" variant="ghost" asChild>
                     <Link href={`/admin/quizzes/${quiz.id}`}>View quiz</Link>
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="shrink-0"
-                    disabled={
-                      busy.has(`quiz:${quiz.id}`) || quizGeneratable === 0
-                    }
-                    onClick={() =>
-                      generate(
-                        { scope: "quiz", quizId: quiz.id },
-                        `quiz:${quiz.id}`,
-                        quiz.id,
-                      )
-                    }
-                  >
-                    {busy.has(`quiz:${quiz.id}`) ? (
-                      <Loader2 className="size-3 animate-spin" />
-                    ) : (
-                      <Play className="size-3" />
-                    )}
-                    Generate ({quizGeneratable})
-                  </Button>
+                  {canEdit && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0"
+                      disabled={
+                        busy.has(`quiz:${quiz.id}`) || quizGeneratable === 0
+                      }
+                      onClick={() =>
+                        generate(
+                          { scope: "quiz", quizId: quiz.id },
+                          `quiz:${quiz.id}`,
+                          quiz.id,
+                        )
+                      }
+                    >
+                      {busy.has(`quiz:${quiz.id}`) ? (
+                        <Loader2 className="size-3 animate-spin" />
+                      ) : (
+                        <Play className="size-3" />
+                      )}
+                      Generate ({quizGeneratable})
+                    </Button>
+                  )}
                 </div>
 
                 {isOpen && (
@@ -512,36 +522,46 @@ export function AdminSimulationsClient() {
                                       })
                                     }
                                   >
-                                    <Pencil className="size-3" /> View / edit
-                                  </Button>
-                                )}
-                                {(!sim || sim.status === "FAILED") && (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    disabled={qBusy}
-                                    onClick={() =>
-                                      generate(
-                                        {
-                                          scope: "question",
-                                          questionId: question.id,
-                                        },
-                                        `q:${question.id}`,
-                                        quiz.id,
-                                      )
-                                    }
-                                  >
-                                    {qBusy ? (
-                                      <Loader2 className="size-3 animate-spin" />
+                                    {canEdit ? (
+                                      <>
+                                        <Pencil className="size-3" /> View /
+                                        edit
+                                      </>
                                     ) : (
-                                      <Play className="size-3" />
+                                      <>
+                                        <Eye className="size-3" /> View
+                                      </>
                                     )}
-                                    {sim?.status === "FAILED"
-                                      ? "Retry"
-                                      : "Generate"}
                                   </Button>
                                 )}
-                                {sim && sim.status !== "FAILED" && (
+                                {canEdit &&
+                                  (!sim || sim.status === "FAILED") && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      disabled={qBusy}
+                                      onClick={() =>
+                                        generate(
+                                          {
+                                            scope: "question",
+                                            questionId: question.id,
+                                          },
+                                          `q:${question.id}`,
+                                          quiz.id,
+                                        )
+                                      }
+                                    >
+                                      {qBusy ? (
+                                        <Loader2 className="size-3 animate-spin" />
+                                      ) : (
+                                        <Play className="size-3" />
+                                      )}
+                                      {sim?.status === "FAILED"
+                                        ? "Retry"
+                                        : "Generate"}
+                                    </Button>
+                                  )}
+                                {canEdit && sim && sim.status !== "FAILED" && (
                                   <Button
                                     size="sm"
                                     variant="ghost"
@@ -561,7 +581,7 @@ export function AdminSimulationsClient() {
                                       : "Regenerate"}
                                   </Button>
                                 )}
-                                {sim && (
+                                {canEdit && sim && (
                                   <Button
                                     size="sm"
                                     variant="ghost"
@@ -590,7 +610,7 @@ export function AdminSimulationsClient() {
         <SimulationPanel
           key={editing.simulationId}
           simulationId={editing.simulationId}
-          canGiveFeedback
+          canGiveFeedback={canEdit}
           open
           onOpenChange={(open) => {
             if (!open) {

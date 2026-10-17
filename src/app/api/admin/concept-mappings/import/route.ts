@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminApi } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rate-limit";
 import { parseBody, conceptMappingsImportSchema } from "@/lib/validation";
@@ -21,10 +21,8 @@ import { logApiError } from "@/lib/system-log";
 // Unknown references abort the entire transaction before the existing mapping
 // tables are touched. Admins get a validation error instead of a partial sync.
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   const limited = rateLimit(req, "admin-concept-mappings-import", 10, 60_000);
   if (limited) return limited;

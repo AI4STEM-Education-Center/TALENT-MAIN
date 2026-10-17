@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminApi } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 import {
   carryOverLegacyGuardrailAssignment,
@@ -50,10 +50,8 @@ async function carryOverLegacyThinkingLevels(): Promise<void> {
  * Return current use-case → provider+model+thinkingLevel mappings.
  */
 export async function GET() {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   try {
     await carryOverLegacyGuardrailAssignment();
@@ -118,10 +116,8 @@ export async function GET() {
  * `thinkingLevel` means "send no reasoning_effort for this use case".
  */
 export async function PUT(req: Request) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   try {
     const body = await req.json();

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminApi } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 import { triggerSimulations } from "@/lib/simulation-trigger";
 import { rateLimit } from "@/lib/rate-limit";
@@ -50,10 +50,8 @@ function parseScope(body: Record<string, unknown>): Scope | null {
  * Teachers use the ownership-checked ../../simulations/generate instead.
  */
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   const limited = rateLimit(
     req,

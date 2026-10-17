@@ -36,7 +36,7 @@ type UsageRecord = {
   href?: string;
 };
 
-/** Admin-only, paginated reads of the recorded activity, including durable archives. */
+/** Admin-data (admin + research scientist), paginated reads of the recorded activity, including durable archives. */
 export async function getAdminUsage(params: AdminSearchParams) {
   await requireStatsUser("admin");
   const requestedKind = searchValue(params.kind);

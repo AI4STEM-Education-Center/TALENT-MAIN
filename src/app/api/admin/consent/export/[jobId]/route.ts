@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminApi } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 import { presignGetUrl } from "@/lib/storage";
 
@@ -15,10 +15,8 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ jobId: string }> },
 ) {
-  const [session, { jobId }] = await Promise.all([auth(), params]);
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const [session, { jobId }] = await Promise.all([requireAdminApi(), params]);
+  if (session instanceof Response) return session;
 
   const job = await prisma.consentExportJob.findUnique({
     where: { id: jobId },

@@ -1,14 +1,23 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { notFound, redirect } from "next/navigation";
+import { canViewAdminData } from "@/lib/roles";
 
 export type StatsAudience = "teacher" | "admin";
 
-/** Read-only statistics access. Never use this to authorize class mutations. */
+/**
+ * Read-only statistics access. Never use this to authorize class mutations.
+ * The "admin" audience is the site-wide view: administrators and research
+ * scientists (canViewAdminData). The "teacher" audience is teachers only, and
+ * requireStatsClass further pins them to their own classes.
+ */
 export async function requireStatsUser(audience: StatsAudience) {
   const session = await auth();
-  const role = audience === "admin" ? "ADMIN" : "TEACHER";
-  if (!session?.user || session.user.role !== role) redirect("/login");
+  const allowed =
+    audience === "admin"
+      ? canViewAdminData(session?.user?.role)
+      : session?.user?.role === "TEACHER";
+  if (!session?.user || !allowed) redirect("/login");
   return session.user;
 }
 

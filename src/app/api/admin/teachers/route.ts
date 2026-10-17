@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminApi } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 import {
   getTeacherEmailQuota,
@@ -12,10 +12,8 @@ import {
 // for the admin "Email Limits" page. Includes the global defaults so the UI can
 // show them as placeholders when an override is unset.
 export async function GET() {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   const teachers = await prisma.teacher.findMany({
     include: {

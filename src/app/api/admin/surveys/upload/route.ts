@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminApi } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 import {
   MAX_SOURCE_TEXT,
@@ -32,9 +32,8 @@ export const runtime = "nodejs";
  * pass that replaces the draft with a cleaner conversion.
  */
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (session?.user?.role !== "ADMIN")
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   let data: FormData;
   try {

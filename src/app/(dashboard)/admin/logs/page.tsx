@@ -54,6 +54,7 @@ const CATEGORIES = [
   "USAGE",
   "SYSTEM",
   "GUARDRAIL",
+  "AUDIT",
 ] as const;
 const SEVERITIES = ["INFO", "WARNING", "ERROR"] as const;
 const ALL = "ALL";

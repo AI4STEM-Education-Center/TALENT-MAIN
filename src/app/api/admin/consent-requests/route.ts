@@ -1,23 +1,25 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminDataReader } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
+import { isAdmin } from "@/lib/roles";
 
 export const runtime = "nodejs";
 
 /**
  * GET /api/admin/consent-requests
- * Requests assigned to the signed-in admin — mirrors the existing
- * /api/pool-submissions reviewer-queue pattern.
+ * An admin sees the requests assigned to them — mirrors the existing
+ * /api/pool-submissions reviewer-queue pattern. Only admins can be reviewers,
+ * so a research scientist sees every request instead (read-only; deciding
+ * stays with the ADMIN-only PATCH on ./[id]).
  */
 export async function GET() {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const session = await requireAdminDataReader();
+  if (session instanceof Response) return session;
 
   const requests = await prisma.consentExportRequest.findMany({
-    where: { reviewerId: session.user.id },
+    where: isAdmin(session.user.role) ? { reviewerId: session.user.id } : {},
     include: {
+      reviewer: { select: { firstName: true, lastName: true } },
       teacher: {
         select: {
           user: { select: { firstName: true, lastName: true, email: true } },

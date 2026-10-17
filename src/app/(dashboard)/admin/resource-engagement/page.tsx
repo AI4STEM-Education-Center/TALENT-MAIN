@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
+import { requireAdminDataPage } from "@/lib/admin-access";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/teacher/stats-ui";
 import { cn } from "@/lib/utils";
@@ -19,15 +18,15 @@ export const dynamic = "force-dynamic";
  * one row per material, split by where it was opened and by recommended vs.
  * self-directed reading. Built from LearningResourceSession (one row per open,
  * consenting students only, client-reported and clamped). The proxy already
- * keeps non-admins out of /admin/*; this gate is the second layer.
+ * keeps everyone but admins and research scientists out; this gate is the
+ * second layer. Read-only, so research scientists see it too.
  */
 export default async function AdminResourceEngagementPage({
   searchParams,
 }: {
   searchParams: Promise<{ range?: string }>;
 }) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") redirect("/login");
+  await requireAdminDataPage();
 
   const range = parseEngagementRange((await searchParams).range);
   const data = await getAdminResourceEngagement(range);

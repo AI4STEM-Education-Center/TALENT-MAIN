@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminApi } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 import {
   EMAIL_PURPOSES,
@@ -84,10 +84,8 @@ async function buildPayload() {
 
 /** GET /api/admin/email-senders — per-purpose sender identities and templates. */
 export async function GET() {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   return NextResponse.json(await buildPayload());
 }
@@ -98,10 +96,8 @@ export async function GET() {
  * state matches exactly what the admin sees.
  */
 export async function PUT(req: Request) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   try {
     const parsed = parseBody(emailSendersUpdateSchema, await req.json());

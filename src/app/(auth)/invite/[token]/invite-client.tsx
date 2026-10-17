@@ -405,12 +405,13 @@ function InviteContent({
                       </Button>
                     </div>
                   ) : status === "authenticated" &&
-                    (session?.user?.role === "TEACHER" ||
-                      session?.user?.role === "ADMIN") ? (
+                    session?.user?.role !== "STUDENT" ? (
                     <div className="text-center py-4 text-muted-foreground text-sm">
                       {session?.user?.role === "TEACHER"
                         ? "Teachers"
-                        : "Admins"}{" "}
+                        : session?.user?.role === "RESEARCHER"
+                          ? "Research scientists"
+                          : "Admins"}{" "}
                       cannot join student classes.{" "}
                       <Link
                         href={

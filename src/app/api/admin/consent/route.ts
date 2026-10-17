@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminDataReader } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 import { isConsentDecision, isConsentRole } from "@/lib/consent";
 
@@ -15,10 +15,8 @@ const PAGE_SIZE_MAX = 200;
  * route may join or return it (see docs/plans/consent-compliance-plan.md §6).
  */
 export async function GET(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const session = await requireAdminDataReader();
+  if (session instanceof Response) return session;
 
   const params = req.nextUrl.searchParams;
   const role = params.get("role");

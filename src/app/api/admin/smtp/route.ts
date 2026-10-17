@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminApi } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 import { encryptApiKey, maskApiKey, decryptApiKey } from "@/lib/crypto";
 import { logApiError } from "@/lib/system-log";
@@ -11,10 +11,8 @@ const SINGLETON_ID = "singleton";
  * Return the singleton SMTP config (password masked). Returns null when unset.
  */
 export async function GET() {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   const cfg = await prisma.smtpConfig.findFirst();
   if (!cfg) return NextResponse.json({ config: null });
@@ -52,10 +50,8 @@ export async function GET() {
  * ("••••…") is left unchanged; an empty string clears it.
  */
 export async function PUT(req: Request) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   try {
     const body = await req.json();
