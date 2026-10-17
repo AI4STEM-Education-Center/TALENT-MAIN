@@ -2105,14 +2105,14 @@ model SurveyPromptDismissal {
 }
 
 // "No thanks" on the IRB re-consent prompt shown to people who declined the
-// study when a new study period starts. campaignKey is the id of the in-app
-// post-survey form whose prompt started the campaign, so a later period asks
-// again.
+// study when a new study period starts. Matching is by time: a dismissal at
+// or after the current campaign's start (the latest promptStartedAt among
+// prompting post-surveys) silences it; a later period's prompt asks again.
 model ConsentRepromptDismissal {
   id          String   @id @default(cuid())
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  /// Id of the in-app post-survey (SurveyForm) whose prompt started the re-consent campaign.
+  /// Id of the in-app post-survey (SurveyForm) whose prompt started the campaign (informational).
   campaignKey String
   dismissedAt DateTime @default(now())
 

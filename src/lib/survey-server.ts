@@ -11,7 +11,7 @@ import {
   isSurveyRole,
   parseSurveyPeriod,
   parseSurveyQuestions,
-  repromptCampaignKey,
+  repromptCampaign,
   resolveSurveyGate,
   shouldRepromptConsent,
   validateSurveyAnswers,
@@ -52,20 +52,31 @@ export async function getEnabledSurveyForm(
 export async function getIrbDecision(
   userId: string,
   role: SurveyRole,
-): Promise<{ hasActiveForm: boolean; decision: IrbDecision }> {
+): Promise<IrbStanding> {
   const active = await getActiveConsentVersion(role);
-  if (!active) return { hasActiveForm: false, decision: null };
+  if (!active) return { hasActiveForm: false, decision: null, decidedAt: null };
   const record = await prisma.consentRecord.findFirst({
     where: { userId, formVersionId: active.id },
     orderBy: [{ signedAt: "desc" }, { id: "desc" }],
-    select: { decision: true },
+    select: { decision: true, signedAt: true },
   });
   const decision =
     record?.decision === "AGREE" || record?.decision === "DECLINE"
       ? record.decision
       : null;
-  return { hasActiveForm: true, decision };
+  return {
+    hasActiveForm: true,
+    decision,
+    decidedAt: decision ? (record?.signedAt ?? null) : null,
+  };
 }
+
+export type IrbStanding = {
+  hasActiveForm: boolean;
+  decision: IrbDecision;
+  /** When that latest decision was signed. */
+  decidedAt: Date | null;
+};
 
 /**
  * Whether the user's latest decision on the ACTIVE consent form for their role
@@ -94,37 +105,51 @@ export async function getPromptedPostForms(role: SurveyRole) {
   });
 }
 
-export type ConsentReprompt = { campaignKey: string; period: SurveyPeriod };
+export type ConsentReprompt = {
+  /** The post-survey whose prompt started the campaign (informational). */
+  campaignKey: string;
+  period: SurveyPeriod;
+  startedAt: Date;
+};
 
 /**
  * The IRB re-consent prompt for someone who declined: shown while a
  * post-survey for their role is prompting in-app (a new study period is
- * starting), until they re-decide or choose "No thanks" for this campaign.
- * Students only: a teacher who declined is already hard-gated by src/proxy.ts
- * until they agree, so a softer prompt would never be reachable.
+ * starting) — see shouldRepromptConsent for the timestamp rules. Students
+ * only: a teacher who declined is already hard-gated by src/proxy.ts until
+ * they agree, so a softer prompt would never be reachable.
  */
 export async function getConsentReprompt(
   userId: string,
   role: SurveyRole,
-  known?: { decision: IrbDecision },
+  known?: Pick<IrbStanding, "decision" | "decidedAt">,
   promptedForms?: Awaited<ReturnType<typeof getPromptedPostForms>>,
 ): Promise<ConsentReprompt | null> {
   if (role !== "STUDENT") return null;
-  const decision = known
-    ? known.decision
-    : (await getIrbDecision(userId, role)).decision;
-  if (decision !== "DECLINE") return null;
-  const forms = promptedForms ?? (await getPromptedPostForms(role));
-  const campaignKey = repromptCampaignKey(forms);
-  if (!campaignKey) return null;
-  const dismissal = await prisma.consentRepromptDismissal.findUnique({
-    where: { userId_campaignKey: { userId, campaignKey } },
-    select: { id: true },
+  const irb = known ?? (await getIrbDecision(userId, role));
+  if (irb.decision !== "DECLINE") return null;
+  const campaign = repromptCampaign(
+    promptedForms ?? (await getPromptedPostForms(role)),
+  );
+  if (!campaign) return null;
+  const dismissal = await prisma.consentRepromptDismissal.findFirst({
+    where: { userId, dismissedAt: { gte: campaign.startedAt } },
+    select: { dismissedAt: true },
   });
-  if (!shouldRepromptConsent({ decision, campaignKey, dismissed: !!dismissal }))
+  if (
+    !shouldRepromptConsent({
+      decision: irb.decision,
+      decidedAt: irb.decidedAt,
+      campaignStart: campaign.startedAt,
+      lastDismissedAt: dismissal?.dismissedAt ?? null,
+    })
+  )
     return null;
-  const form = forms.find((f) => f.id === campaignKey);
-  return { campaignKey, period: parseSurveyPeriod(form?.period) };
+  return {
+    campaignKey: campaign.form.id,
+    period: parseSurveyPeriod(campaign.form.period),
+    startedAt: campaign.startedAt,
+  };
 }
 
 export type PublicSurveyForm = {
@@ -235,7 +260,7 @@ export async function getDueSurveyStatus(
     (id): id is string => !!id,
   );
   const needHistory = postForms.length > 0 && irb.decision === "AGREE";
-  const [responses, firstPre, firstAgree, preDismissal, reprompt] =
+  const [responses, firstPre, consentHistory, preDismissal, reprompt] =
     await Promise.all([
       prisma.surveyResponse.findMany({
         where: { userId, formId: { in: formIds } },
@@ -249,12 +274,12 @@ export async function getDueSurveyStatus(
           })
         : Promise.resolve(null),
       needHistory
-        ? prisma.consentRecord.findFirst({
-            where: { userId, role, decision: "AGREE" },
-            orderBy: { signedAt: "asc" },
-            select: { signedAt: true },
+        ? prisma.consentRecord.findMany({
+            where: { userId, role },
+            orderBy: [{ signedAt: "asc" }, { id: "asc" }],
+            select: { decision: true, signedAt: true },
           })
-        : Promise.resolve(null),
+        : Promise.resolve([]),
       preForm && irb.decision !== "AGREE"
         ? prisma.surveyPromptDismissal.findUnique({
             where: { userId_formId: { userId, formId: preForm.id } },
@@ -273,7 +298,7 @@ export async function getDueSurveyStatus(
     postForms,
     respondedFormIds: new Set(responses.map((r) => r.formId)),
     firstPreSubmittedAt: firstPre?.submittedAt ?? null,
-    firstAgreedAt: firstAgree?.signedAt ?? null,
+    consentHistory,
   });
   if (gate.state !== "DUE") return gate;
   const form =
@@ -290,9 +315,9 @@ export async function getDueSurveyStatus(
 
 /**
  * For the admin list: how many people an in-app post-survey prompt targets
- * (isPostSurveyEligible: latest IRB decision AGREE, plus an AGREE and a
- * pre-survey before the prompt started) and how many of them have answered
- * it, in the app or by emailed link.
+ * (isPostSurveyEligible: AGREE as their standing decision when the prompt
+ * started and on the active form now, plus a pre-survey before the start)
+ * and how many of them have answered it, in the app or by emailed link.
  */
 export async function countPostPromptAudience(form: {
   id: string;
@@ -302,7 +327,7 @@ export async function countPostPromptAudience(form: {
   if (!form.promptStartedAt || !isSurveyRole(form.role)) return null;
   const active = await getActiveConsentVersion(form.role);
   if (!active) return { eligible: 0, completed: 0 };
-  const [records, earlyAgrees, pres, done] = await Promise.all([
+  const [records, beforeStart, pres, done] = await Promise.all([
     prisma.consentRecord.findMany({
       where: { formVersionId: active.id, userId: { not: null } },
       orderBy: [{ signedAt: "desc" }, { id: "desc" }],
@@ -311,11 +336,11 @@ export async function countPostPromptAudience(form: {
     prisma.consentRecord.findMany({
       where: {
         role: form.role,
-        decision: "AGREE",
         userId: { not: null },
         signedAt: { lt: form.promptStartedAt },
       },
-      select: { userId: true },
+      orderBy: [{ signedAt: "desc" }, { id: "desc" }],
+      select: { userId: true, decision: true },
     }),
     prisma.surveyResponse.findMany({
       where: {
@@ -334,11 +359,17 @@ export async function countPostPromptAudience(form: {
   const latest = new Map<string, string>();
   for (const r of records)
     if (r.userId && !latest.has(r.userId)) latest.set(r.userId, r.decision);
-  const agreedEarly = new Set(earlyAgrees.map((r) => r.userId as string));
+  const standingAtStart = new Map<string, string>();
+  for (const r of beforeStart)
+    if (r.userId && !standingAtStart.has(r.userId))
+      standingAtStart.set(r.userId, r.decision);
   const eligible = new Set(
     pres
       .map((p) => p.userId as string)
-      .filter((id) => latest.get(id) === "AGREE" && agreedEarly.has(id)),
+      .filter(
+        (id) =>
+          latest.get(id) === "AGREE" && standingAtStart.get(id) === "AGREE",
+      ),
   );
   const completed = new Set(
     done.map((d) => d.userId as string).filter((id) => eligible.has(id)),

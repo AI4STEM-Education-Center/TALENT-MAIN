@@ -9,7 +9,8 @@ export const runtime = "nodejs";
 /**
  * POST /api/consent/reprompt/dismiss — "No thanks" on the IRB re-consent
  * prompt. The campaign is worked out server-side (never trusted from the
- * client), so the prompt comes back only when a later study period starts.
+ * client). The prompt then stays away until a newer period's prompt starts
+ * (see shouldRepromptConsent); campaignKey only records which form it was.
  */
 export async function POST() {
   const session = await auth();
@@ -29,7 +30,7 @@ export async function POST() {
       },
     },
     create: { userId: session.user.id, campaignKey: reprompt.campaignKey },
-    update: {},
+    update: { dismissedAt: new Date() },
   });
   return NextResponse.json({ ok: true });
 }

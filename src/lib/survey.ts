@@ -69,35 +69,57 @@ export type PromptedPostForm = {
   promptStartedAt: Date | null;
 };
 
+export type ConsentHistoryEntry = { decision: string; signedAt: Date };
+
 /** What a user's study participation looks like, for post-survey eligibility. */
 export type StudyHistory = {
   /** Latest decision on the ACTIVE consent form. */
   decision: IrbDecision;
   /** Their earliest pre-survey response (any pre-survey form for the role). */
   firstPreSubmittedAt: Date | null;
-  /** Their earliest AGREE on any consent form version for the role. */
-  firstAgreedAt: Date | null;
+  /** Every consent decision they made for the role, on any form version. */
+  consentHistory: readonly ConsentHistoryEntry[];
 };
 
 /**
+ * Their standing decision at a moment: the latest record signed strictly
+ * before it, across consent form versions (ties: the later entry wins, as
+ * rows are passed oldest first). null when they hadn't decided yet.
+ */
+export function decisionAsOf(
+  history: readonly ConsentHistoryEntry[],
+  at: Date,
+): string | null {
+  let latest: ConsentHistoryEntry | null = null;
+  for (const entry of history) {
+    if (entry.signedAt.getTime() >= at.getTime()) continue;
+    if (!latest || entry.signedAt.getTime() >= latest.signedAt.getTime())
+      latest = entry;
+  }
+  return latest?.decision ?? null;
+}
+
+/**
  * Whether someone belongs to an in-app post-survey's audience (answered or
- * not) — they were in the study during the period it closes: their latest IRB
- * decision is AGREE, and both an IRB AGREE and a pre-survey predate the
- * form's prompt start. Requiring the earlier AGREE too matters because a
- * decliner may have taken the optional pre-survey: if they re-consent now,
- * they joined the study now, and must not get the earlier period's survey.
+ * not) — they were in the study during the period it closes:
+ *
+ * - their standing consent decision when the prompt started was AGREE (so
+ *   AGREE → DECLINE before the cutoff → AGREE again doesn't count, and a
+ *   decliner who took the optional pre-survey and agrees now doesn't either);
+ * - their current decision on the active form is AGREE (still in the study;
+ *   also covers a consent version published between periods);
+ * - they submitted a pre-survey before the prompt started.
  */
 export function isPostSurveyEligible(
   history: StudyHistory,
   form: Pick<PromptedPostForm, "promptStartedAt">,
 ): boolean {
   if (history.decision !== "AGREE" || !form.promptStartedAt) return false;
-  const start = form.promptStartedAt.getTime();
+  const start = form.promptStartedAt;
   return (
     history.firstPreSubmittedAt !== null &&
-    history.firstPreSubmittedAt.getTime() < start &&
-    history.firstAgreedAt !== null &&
-    history.firstAgreedAt.getTime() < start
+    history.firstPreSubmittedAt.getTime() < start.getTime() &&
+    decisionAsOf(history.consentHistory, start) === "AGREE"
   );
 }
 
@@ -121,36 +143,41 @@ export function pickDuePostSurvey<T extends PromptedPostForm>(
 }
 
 /**
- * Which re-consent campaign is running for a role: the prompt-enabled POST
- * form whose prompt started most recently (null when none is prompting). Its
- * id is the campaign key, so a later period asks people who said "No thanks"
- * to an earlier one again.
+ * The re-consent campaign running for a role: it started when the most
+ * recent of the currently prompting post-surveys did (null when none is
+ * prompting). The form is informational (its period labels the prompt);
+ * eligibility runs on the start time, so turning a later period's prompt off
+ * never brings back an earlier campaign someone already said no to.
  */
-export function repromptCampaignKey(
-  forms: readonly PromptedPostForm[],
-): string | null {
-  let latest: PromptedPostForm | null = null;
+export function repromptCampaign<T extends PromptedPostForm>(
+  forms: readonly T[],
+): { form: T; startedAt: Date } | null {
+  let latest: { form: T; startedAt: Date } | null = null;
   for (const form of forms) {
     if (!form.promptStartedAt) continue;
-    if (
-      !latest ||
-      form.promptStartedAt.getTime() > latest.promptStartedAt!.getTime()
-    )
-      latest = form;
+    if (!latest || form.promptStartedAt.getTime() > latest.startedAt.getTime())
+      latest = { form, startedAt: form.promptStartedAt };
   }
-  return latest?.id ?? null;
+  return latest;
 }
 
-/** Whether a decliner should be asked to reconsider joining the study. */
+/**
+ * Whether a decliner should be asked to reconsider joining the study: their
+ * latest decision is a DECLINE made before the campaign started (a DECLINE
+ * after it — including in answer to this prompt — is their answer), and they
+ * haven't said "No thanks" since it started.
+ */
 export function shouldRepromptConsent(input: {
   decision: IrbDecision;
-  campaignKey: string | null;
-  dismissed: boolean;
+  decidedAt: Date | null;
+  campaignStart: Date | null;
+  lastDismissedAt: Date | null;
 }): boolean {
+  const { decision, decidedAt, campaignStart, lastDismissedAt } = input;
+  if (decision !== "DECLINE" || !decidedAt || !campaignStart) return false;
+  if (decidedAt.getTime() >= campaignStart.getTime()) return false;
   return (
-    input.campaignKey !== null &&
-    input.decision === "DECLINE" &&
-    !input.dismissed
+    !lastDismissedAt || lastDismissedAt.getTime() < campaignStart.getTime()
   );
 }
 

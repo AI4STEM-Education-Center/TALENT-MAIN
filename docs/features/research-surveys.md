@@ -33,22 +33,37 @@ There are two ways to deliver a post-survey:
    participant then gets a mandatory pop-up before they use the platform. The
    pop-up says "Before you continue, please complete the Period N
    post-survey". It goes to people who meet all of these:
-   - their latest decision on the active consent form is "agree";
-   - they agreed to the study (any consent form version) **and** took a
-     pre-survey before the prompt was first turned on;
+   - their decision was "agree" at the moment the prompt was first turned on.
+     This is their latest consent record from before that moment, on any
+     consent form version;
+   - their latest decision on the active consent form is still "agree";
+   - they took a pre-survey before the prompt was first turned on;
    - they haven't answered that form yet. A response through an emailed
      link counts.
 
    This means someone who joins the study after the prompt starts never gets
    the earlier period's post-survey. That includes a student who declined
    earlier and agrees now, even if they took the optional pre-survey while
-   they were declining. If you turn the prompt off and on again, the original
+   they were declining. It also includes someone who agreed, then declined
+   before the prompt started, then agreed again. Publishing a new consent
+   version between periods doesn't exclude anyone: once they agree to the
+   new version, their earlier "agree" still counts.
+
+   Once a post-survey has responses, emailed links or an in-app prompt, its
+   study period is locked. For the next period, create a new form. If you
+   turn the prompt off and on again, the original
    start time is kept. If more than one period is prompting, people see the
    lowest unanswered period first. The admin list shows how many eligible
    people have completed it.
 
 The in-app pre-survey always comes first. A post-survey pop-up only appears
 when no pre-survey is owed.
+
+If the survey API fails, the pop-ups fail open, the same way the consent
+form does, so an outage never locks students out. To stop one failed request
+from skipping a mandatory survey for a whole session, each check is retried
+(3 attempts, with backoff) and runs again on every page navigation in the
+app.
 
 ## IRB re-consent prompt (students)
 
@@ -62,8 +77,16 @@ and offers two buttons:
   everywhere: research-data gating, the session claim, exports and the
   research pool. If they agree, the mandatory pre-survey follows.
 - **No thanks** hides the prompt until a later period's prompt starts.
-  Dismissals are stored per campaign, keyed by the post-survey form whose
-  prompt started most recently.
+
+  The campaign starts at the most recent start time among the post-surveys
+  that are currently prompting. The prompt shows only if all of these hold:
+  - the student's latest decision is "decline";
+  - they made that decision before the campaign started;
+  - they haven't said "No thanks" since the campaign started.
+
+  A "decline" made after the campaign starts, including one made in answer
+  to this prompt, ends the prompt. Turning off a later period's prompt
+  doesn't bring back an earlier one for someone who already said no.
 
 Teachers aren't asked again: a teacher who declined is already blocked from
 instructor tools until they agree.

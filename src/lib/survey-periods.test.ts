@@ -1,10 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
+  decisionAsOf,
   isPostSurveyEligible,
   parseSurveyPeriod,
   periodForKind,
   pickDuePostSurvey,
-  repromptCampaignKey,
+  repromptCampaign,
   resolveSurveyGate,
   shouldRepromptConsent,
   surveyFormLabel,
@@ -15,6 +16,7 @@ const day = (n: number) => new Date(Date.UTC(2026, 9, n));
 
 const p1: PromptedPostForm = { id: "p1", period: 1, promptStartedAt: day(10) };
 const p2: PromptedPostForm = { id: "p2", period: 2, promptStartedAt: day(20) };
+const agreedOn = (n: number) => [{ decision: "AGREE", signedAt: day(n) }];
 
 describe("study period labels", () => {
   it("names forms by kind and period", () => {
@@ -40,7 +42,7 @@ describe("pickDuePostSurvey", () => {
   const base = {
     decision: "AGREE" as const,
     firstPreSubmittedAt: day(1),
-    firstAgreedAt: day(1),
+    consentHistory: agreedOn(1),
     forms: [p2, p1],
     respondedFormIds: new Set<string>(),
   };
@@ -84,7 +86,7 @@ describe("pickDuePostSurvey", () => {
   });
 
   it("treats a pre-survey at the exact prompt start as too late", () => {
-    const h = { decision: "AGREE" as const, firstAgreedAt: day(1) };
+    const h = { decision: "AGREE" as const, consentHistory: agreedOn(1) };
     expect(
       isPostSurveyEligible({ ...h, firstPreSubmittedAt: day(10) }, p1),
     ).toBe(false);
@@ -94,38 +96,83 @@ describe("pickDuePostSurvey", () => {
   });
 
   it("excludes a decliner who took the optional pre-survey and re-consents now", () => {
-    // Pre-survey during period 1, but the first AGREE comes after the prompt.
-    expect(pickDuePostSurvey({ ...base, firstAgreedAt: day(12) })?.id).toBe(
-      "p2",
-    );
-    expect(pickDuePostSurvey({ ...base, firstAgreedAt: day(22) })).toBeNull();
-    expect(pickDuePostSurvey({ ...base, firstAgreedAt: null })).toBeNull();
+    const history = (agreedDay: number) => [
+      { decision: "DECLINE", signedAt: day(1) },
+      { decision: "AGREE", signedAt: day(agreedDay) },
+    ];
+    // Agreed between the prompts: only period 2.
+    expect(
+      pickDuePostSurvey({ ...base, consentHistory: history(12) })?.id,
+    ).toBe("p2");
+    expect(
+      pickDuePostSurvey({ ...base, consentHistory: history(22) }),
+    ).toBeNull();
+    expect(pickDuePostSurvey({ ...base, consentHistory: [] })).toBeNull();
+  });
+
+  it("uses the standing decision at the cutoff, not any past AGREE", () => {
+    // AGREE → pre-survey → DECLINE before the cutoff → AGREE after it.
+    const consentHistory = [
+      { decision: "AGREE", signedAt: day(1) },
+      { decision: "DECLINE", signedAt: day(5) },
+      { decision: "AGREE", signedAt: day(12) },
+    ];
+    expect(decisionAsOf(consentHistory, day(10))).toBe("DECLINE");
+    expect(decisionAsOf(consentHistory, day(1))).toBeNull();
+    expect(pickDuePostSurvey({ ...base, consentHistory })?.id).toBe("p2");
+  });
+
+  it("carries an AGREE across a consent version change between periods", () => {
+    // v1 AGREE in period 1; v2 published later and agreed to again.
+    const consentHistory = [
+      { decision: "AGREE", signedAt: day(1) },
+      { decision: "AGREE", signedAt: day(15) },
+    ];
+    expect(pickDuePostSurvey({ ...base, consentHistory })?.id).toBe("p1");
   });
 });
 
 describe("IRB re-consent campaign", () => {
-  it("is keyed by the most recently started prompt", () => {
-    expect(repromptCampaignKey([])).toBeNull();
-    expect(repromptCampaignKey([p1, p2])).toBe("p2");
+  it("starts when the most recent current prompt did", () => {
+    expect(repromptCampaign([])).toBeNull();
+    expect(repromptCampaign([p1, p2])).toEqual({
+      form: p2,
+      startedAt: day(20),
+    });
     expect(
-      repromptCampaignKey([{ id: "x", period: 2, promptStartedAt: null }]),
+      repromptCampaign([{ id: "x", period: 2, promptStartedAt: null }]),
     ).toBeNull();
   });
 
-  it("asks only decliners who haven't said no to this campaign", () => {
-    const ask = (decision: "AGREE" | "DECLINE" | null, dismissed = false) =>
-      shouldRepromptConsent({ decision, campaignKey: "p2", dismissed });
-    expect(ask("DECLINE")).toBe(true);
-    expect(ask("DECLINE", true)).toBe(false);
-    expect(ask("AGREE")).toBe(false);
-    expect(ask(null)).toBe(false);
-    expect(
-      shouldRepromptConsent({
-        decision: "DECLINE",
-        campaignKey: null,
-        dismissed: false,
-      }),
-    ).toBe(false);
+  const ask = (over: Partial<Parameters<typeof shouldRepromptConsent>[0]>) =>
+    shouldRepromptConsent({
+      decision: "DECLINE",
+      decidedAt: day(5),
+      campaignStart: day(20),
+      lastDismissedAt: null,
+      ...over,
+    });
+
+  it("asks decliners whose DECLINE predates the campaign", () => {
+    expect(ask({})).toBe(true);
+    expect(ask({ decision: "AGREE" })).toBe(false);
+    expect(ask({ decision: null, decidedAt: null })).toBe(false);
+    expect(ask({ campaignStart: null })).toBe(false);
+  });
+
+  it("ends with a fresh DECLINE made after the campaign started", () => {
+    expect(ask({ decidedAt: day(21) })).toBe(false);
+  });
+
+  it("honours a dismissal made since the campaign started, even if a later prompt is turned off", () => {
+    expect(ask({ lastDismissedAt: day(22) })).toBe(false);
+    // Dismissed during period 2 (day 22); period 2's prompt turned off so the
+    // campaign falls back to period 1's start (day 10): still dismissed.
+    expect(ask({ campaignStart: day(10), lastDismissedAt: day(22) })).toBe(
+      false,
+    );
+    // A dismissal from an earlier campaign doesn't cover a new one.
+    expect(ask({ lastDismissedAt: day(12) })).toBe(true);
   });
 });
 
@@ -139,7 +186,7 @@ describe("resolveSurveyGate", () => {
     postForms: [p1],
     respondedFormIds: new Set<string>(["pre"]),
     firstPreSubmittedAt: day(1),
-    firstAgreedAt: day(1),
+    consentHistory: agreedOn(1),
   };
 
   it("shows the pre-survey before any post-survey", () => {
@@ -204,11 +251,19 @@ describe("resolveSurveyGate", () => {
       resolveSurveyGate({
         ...base,
         firstPreSubmittedAt: day(12),
-        firstAgreedAt: day(12),
+        consentHistory: agreedOn(12),
       }),
     ).toEqual({ state: "NONE" });
     // Took the optional pre-survey while declining, agreed only now.
-    expect(resolveSurveyGate({ ...base, firstAgreedAt: day(12) })).toEqual({
+    expect(
+      resolveSurveyGate({
+        ...base,
+        consentHistory: [
+          { decision: "DECLINE", signedAt: day(1) },
+          { decision: "AGREE", signedAt: day(12) },
+        ],
+      }),
+    ).toEqual({
       state: "NONE",
     });
   });

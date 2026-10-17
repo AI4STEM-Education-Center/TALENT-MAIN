@@ -74,7 +74,10 @@ export async function GET() {
 
   const reprompt =
     priorDecision?.decision === "DECLINE"
-      ? await getConsentReprompt(session.user.id, role, { decision: "DECLINE" })
+      ? await getConsentReprompt(session.user.id, role, {
+          decision: "DECLINE",
+          decidedAt: priorDecision.signedAt,
+        })
       : null;
 
   return NextResponse.json({

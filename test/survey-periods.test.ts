@@ -125,6 +125,22 @@ async function patch(id: string, body: unknown) {
 }
 
 const past = new Date(Date.now() - 30 * 86_400_000);
+const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000);
+/** Lets the clock move on, so "before"/"after" timestamps never tie. */
+const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
+
+async function enabledPerSlot() {
+  const enabled = await prisma.surveyForm.findMany({
+    where: { isEnabled: true },
+    select: { kind: true, role: true, period: true },
+  });
+  const counts = new Map<string, number>();
+  for (const f of enabled) {
+    const key = `${f.kind}-${f.role}-${f.period}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return Math.max(0, ...counts.values());
+}
 
 beforeEach(async () => {
   await resetDb();
@@ -304,6 +320,7 @@ describe("IRB re-consent prompt", () => {
     expect(await (await dueGet()).json()).toEqual({ state: "NONE" });
 
     // A later period asks again.
+    await tick();
     const p2 = await form("POST", 2);
     asUser(admin);
     await patch(p2.id, { promptInApp: true });
@@ -339,6 +356,176 @@ describe("IRB re-consent prompt", () => {
       }),
     );
     expect(await (await dueGet()).json()).toEqual({ state: "NONE" });
+  });
+});
+
+describe("study period lock", () => {
+  it("refuses to move a form with responses, links or a started prompt", async () => {
+    const admin = await createAdmin();
+    const { user } = await createStudent();
+    const answered = await form("POST", 1);
+    await respond(user.id, answered);
+    const linked = await form("POST", 1, false);
+    await prisma.surveyInvite.create({
+      data: {
+        tokenHash: "hash-1",
+        formId: linked.id,
+        email: "a@uga.edu",
+        name: "A",
+      },
+    });
+    const prompted = await form("POST", 1, false);
+    await prisma.surveyForm.update({
+      where: { id: prompted.id },
+      data: { promptStartedAt: past },
+    });
+    const fresh = await form("POST", 1, false);
+    asUser(admin);
+
+    for (const f of [answered, linked, prompted]) {
+      const res = await patch(f.id, { period: 2 });
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toMatch(/Create a new survey/);
+      expect(
+        (await prisma.surveyForm.findUniqueOrThrow({ where: { id: f.id } }))
+          .period,
+      ).toBe(1);
+    }
+    // Re-sending the current period is not a change.
+    expect((await patch(answered.id, { period: 1 })).status).toBe(200);
+    expect((await patch(fresh.id, { period: 2 })).status).toBe(200);
+  });
+});
+
+describe("slot invariant under concurrent edits", () => {
+  it.each([false, true])(
+    "enabling A in P1 while a parallel request moves A to P2 (reversed: %s)",
+    async (reversed) => {
+      const admin = await createAdmin();
+      const a = await form("POST", 1, false);
+      await form("POST", 2); // B holds the Period 2 slot
+      asUser(admin);
+      const requests = [
+        () => patch(a.id, { isEnabled: true }),
+        () => patch(a.id, { period: 2 }),
+      ];
+      if (reversed) requests.reverse();
+      const results = await Promise.all(requests.map((r) => r()));
+      expect(results.map((r) => r.status)).toEqual([200, 200]);
+      expect(await enabledPerSlot()).toBe(1);
+      expect(
+        await prisma.surveyForm.findUniqueOrThrow({ where: { id: a.id } }),
+      ).toMatchObject({ period: 2, isEnabled: true });
+    },
+  );
+});
+
+describe("post-survey eligibility across consent history", () => {
+  it("uses the standing decision when the prompt started", async () => {
+    const admin = await createAdmin();
+    const consent = await consentForm();
+    const pre = await form("PRE");
+    const p1 = await form("POST", 1);
+    const { user } = await createStudent();
+    // AGREE → PRE → DECLINE (before the cutoff) → AGREE (after).
+    await decide(user.id, consent.id, "AGREE", daysAgo(30));
+    await respond(user.id, pre, daysAgo(29));
+    await decide(user.id, consent.id, "DECLINE", daysAgo(10));
+    asUser(admin);
+    await patch(p1.id, { promptInApp: true });
+    await tick();
+    await decide(user.id, consent.id, "AGREE");
+
+    asUser(user);
+    expect(await (await dueGet()).json()).toEqual({ state: "NONE" });
+    asUser(admin);
+    const row = (await (await surveysGet()).json()).forms.find(
+      (f: { id: string }) => f.id === p1.id,
+    );
+    expect(row.promptAudience).toEqual({ eligible: 0, completed: 0 });
+  });
+
+  it("carries a period 1 AGREE across a consent version published later", async () => {
+    const admin = await createAdmin();
+    const v1 = await consentForm();
+    const pre = await form("PRE");
+    const p1 = await form("POST", 1);
+    const { user } = await createStudent();
+    await decide(user.id, v1.id, "AGREE", daysAgo(30));
+    await respond(user.id, pre, daysAgo(29));
+    asUser(admin);
+    await patch(p1.id, { promptInApp: true });
+
+    // v2 replaces v1; until they decide on it, consent comes first.
+    await prisma.consentFormVersion.update({
+      where: { id: v1.id },
+      data: { isActive: false },
+    });
+    const v2 = await prisma.consentFormVersion.create({
+      data: {
+        role: "STUDENT",
+        version: "v2",
+        title: "Student consent v2",
+        bodyHtml: "<p>y</p>",
+        isActive: true,
+      },
+    });
+    asUser(user);
+    expect(await (await dueGet()).json()).toEqual({ state: "CONSENT_PENDING" });
+    await tick();
+    await decide(user.id, v2.id, "AGREE");
+    expect(await (await dueGet()).json()).toMatchObject({
+      state: "DUE",
+      kind: "POST",
+      period: 1,
+    });
+  });
+});
+
+describe("re-consent prompt timing", () => {
+  it("ends when the student declines again after the campaign started", async () => {
+    const admin = await createAdmin();
+    const consent = await consentForm();
+    const pre = await form("PRE");
+    const p1 = await form("POST", 1);
+    const { user } = await createStudent();
+    await decide(user.id, consent.id, "DECLINE", past);
+    await respond(user.id, pre, past);
+    asUser(admin);
+    await patch(p1.id, { promptInApp: true });
+
+    asUser(user);
+    expect((await (await consentGet()).json()).reprompt).not.toBeNull();
+    await tick();
+    await decide(user.id, consent.id, "DECLINE"); // answered via the form
+    expect((await (await consentGet()).json()).reprompt).toBeNull();
+    // The survey gate isn't left waiting on consent.
+    expect(await (await dueGet()).json()).toEqual({ state: "NONE" });
+  });
+
+  it("doesn't bring period 1 back when period 2's prompt is turned off", async () => {
+    const admin = await createAdmin();
+    const consent = await consentForm();
+    const p1 = await form("POST", 1);
+    const p2 = await form("POST", 2);
+    const { user } = await createStudent();
+    await decide(user.id, consent.id, "DECLINE", past);
+    asUser(admin);
+    await patch(p1.id, { promptInApp: true });
+    await tick();
+    await patch(p2.id, { promptInApp: true });
+    await tick();
+
+    asUser(user);
+    expect((await (await consentGet()).json()).reprompt).toMatchObject({
+      campaignKey: p2.id,
+    });
+    expect((await repromptDismiss()).status).toBe(200);
+
+    asUser(admin);
+    await patch(p2.id, { promptInApp: false });
+    asUser(user);
+    expect((await (await consentGet()).json()).reprompt).toBeNull();
   });
 });
 

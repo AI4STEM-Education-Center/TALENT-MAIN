@@ -50,6 +50,7 @@ type FormDetail = {
   role: SurveyRole;
   period: number;
   promptInApp: boolean;
+  periodLocked: boolean;
   title: string;
   description: string;
   questions: SurveyQuestion[];
@@ -258,7 +259,7 @@ export default function SurveyEditorPage({
                 onValueChange={(v) =>
                   void changePeriod(Number(v) as SurveyPeriod)
                 }
-                disabled={extracting}
+                disabled={extracting || form.periodLocked}
               >
                 <SelectTrigger
                   className="h-7 w-48 text-xs"
@@ -276,6 +277,13 @@ export default function SurveyEditorPage({
               </Select>
             )}
           </div>
+          {form.kind === "POST" && form.periodLocked && (
+            <p className="max-w-xl text-xs text-muted-foreground">
+              The study period is locked because this survey already has
+              responses, emailed links or an in-app prompt. To survey the next
+              period, create a new post-survey for it.
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           {form.hasSourceText && form.responseCount === 0 && (
