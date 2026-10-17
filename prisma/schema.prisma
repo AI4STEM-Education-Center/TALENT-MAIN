@@ -1573,6 +1573,52 @@ model SimulationSession {
   @@index([classId, startedAt])
 }
 
+// ─── Learning-resource telemetry ──────────────────────────────────────────────
+// One row per OPEN of a learning material by a student: opening the recommended
+// pages from a quiz results page, or opening a document in the Course Materials
+// reader. "How many times did students click this resource" is therefore the
+// row count (openCount = COUNT(*)), and in-viewer clicks are clickCount.
+//
+// Mirrors SimulationSession: deliberately RELATION-FREE (plain id columns) so
+// the research record survives deletion of the material, class, quiz or
+// student; counters are cumulative per-open totals reported by the client and
+// clamped/merged server-side (src/lib/resource-telemetry.ts) — engagement
+// signal, not ground truth. Only written for students with research consent;
+// staff viewing materials are never recorded.
+model LearningResourceSession {
+  // Column descriptions for exports: RESEARCH_EXPORT_FIELD_DOCS in
+  // src/lib/research-export-fields.ts (Prisma 7 drops `///` docs at runtime).
+  id            String  @id @default(cuid())
+  studentId     String
+  materialId    String
+  materialTitle String? // title snapshot at open time, for exports after rename/deletion
+  classId       String? // attempt's class, or the single enrolled class sharing the material
+  quizId        String? // quiz whose results recommended it (recommended opens only)
+  attemptId     String? // verified QuizAttempt.id whose results recommended it
+  surface       String // RESOURCE_SURFACES in src/lib/resource-telemetry.ts
+  recommended   Boolean @default(false) // server-verified recommendation open
+  pageStart     Int? // recommended page range (recommended opens only)
+  pageEnd       Int?
+
+  openedAt DateTime  @default(now())
+  endedAt  DateTime?
+
+  dwellMs         Int     @default(0) // ms open with the tab visible (paused while hidden)
+  activeMs        Int     @default(0) // ms of dwell with recent scroll/pointer/key activity
+  clickCount      Int     @default(0) // pointer/key presses inside the viewer
+  pdfOpenCount    Int     @default(0) // original-PDF opens from the reader
+  pagesViewed     Int     @default(0) // distinct pages viewed
+  pagesViewedJson String? // JSON {pageNumber: visibleMs}, capped + sanitized
+
+  updatedAt DateTime @updatedAt
+
+  @@index([materialId, openedAt])
+  @@index([studentId, openedAt])
+  @@index([quizId, openedAt])
+  @@index([classId, openedAt])
+  @@index([attemptId])
+}
+
 // ─── Content feedback (5-point rating + written explanation) ──────────────────
 // One person's verdict on one piece of AI-produced content: a learning material
 // or simulation recommended to a student after a quiz, or a simulation a

@@ -7,6 +7,12 @@ import {
   SIMULATION_VIEWPORTS,
   sanitizeControlCounts,
 } from "./simulation-telemetry";
+import {
+  MAX_RESOURCE_COUNT,
+  MAX_RESOURCE_MS,
+  RESOURCE_SURFACES,
+  sanitizePageDwell,
+} from "./resource-telemetry";
 import { MAX_LABEL_LENGTH } from "./teacher-codes";
 import { BODY_TOO_LARGE, readBoundedText } from "./request-body";
 import { INTERVIEW_RECORDING_CHOICES } from "./consent-fields";
@@ -304,6 +310,46 @@ export const simulationSessionUpdateSchema = z.object({
     .record(z.string().max(200), z.number().int().min(0))
     .optional()
     .transform((v) => sanitizeControlCounts(v ?? {})),
+  ended: z.boolean().default(false),
+});
+
+// ─── Learning-resource telemetry ────────────────────────────────────────────
+// Payloads for /api/student/materials/[materialId]/sessions. Like simulation
+// telemetry, oversized counters are clamped rather than rejected; the route
+// then applies the monotonic merge + wall-clock bounds in resource-telemetry.ts.
+// The client never asserts `recommended`, page ranges, class or quiz — the
+// server derives all of them from the verified attempt.
+
+const resourceMs = z
+  .number()
+  .int()
+  .min(0)
+  .transform((v) => Math.min(v, MAX_RESOURCE_MS));
+const resourceCount = z
+  .number()
+  .int()
+  .min(0)
+  .transform((v) => Math.min(v, MAX_RESOURCE_COUNT));
+
+export const resourceSessionCreateSchema = z.object({
+  surface: z.enum(RESOURCE_SURFACES),
+  attemptId: z
+    .string()
+    .max(64)
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
+});
+
+export const resourceSessionUpdateSchema = z.object({
+  dwellMs: resourceMs,
+  activeMs: resourceMs,
+  clickCount: resourceCount,
+  pdfOpenCount: resourceCount.default(0),
+  pages: z
+    .record(z.string().max(12), z.number().int().min(0))
+    .optional()
+    .transform((v) => sanitizePageDwell(v ?? {})),
   ended: z.boolean().default(false),
 });
 

@@ -402,6 +402,12 @@ export function snapshotToSummaryAttempt(
 /** A page kept in the DB: storageKey (NOT a presigned URL — those expire). */
 export type StoredRecPage = { pageNumber: number; storageKey: string };
 export type StoredRecommendation = {
+  /**
+   * LearningMaterial.id the pages come from. Recorded since engagement
+   * telemetry was added; older snapshots lack it and are resolved from their
+   * page storageKeys (see resolveRecommendationMaterialIds).
+   */
+  materialId?: string;
   materialTitle: string;
   pageRange: { start: number; end: number };
   // Single holistic reason — never references a specific question or answer.
@@ -496,8 +502,16 @@ export type StoredRecommendations = {
 
 /** A page ready for the client: presigned, short-lived image URL. */
 export type PresignedRecPage = { pageNumber: number; imageUrl: string };
-export type PresignedRecommendation = Omit<StoredRecommendation, "pages"> & {
+export type PresignedRecommendation = Omit<
+  StoredRecommendation,
+  "pages" | "materialId"
+> & {
   pages: PresignedRecPage[];
+  /**
+   * The source material, when it can still be identified. Student surfaces use
+   * it to record a LearningResourceSession; null/absent means "don't track".
+   */
+  materialId?: string | null;
 };
 export type PresignedRecommendations = {
   items: PresignedRecommendation[];
