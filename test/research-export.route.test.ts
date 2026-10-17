@@ -14,6 +14,10 @@ import { getS3ObjectAsString } from "@/lib/storage";
 import { prisma } from "@/lib/prisma";
 import { parseCsvRecords } from "@/lib/concept-csv";
 import {
+  RESEARCH_EXPORT_FIELDS,
+  RESEARCH_EXPORT_FIELD_DOCS,
+} from "@/lib/research-export-fields";
+import {
   resetDb,
   createTeacher,
   createStudent,
@@ -46,6 +50,21 @@ describe("research CSV encoding", () => {
     expect(
       researchCsvRow(['a,"b"\nc', "=1+1", "  @SUM(1)", -2.5, null, true]),
     ).toBe('"a,""b""\nc","\t=1+1","\t  @SUM(1)",-2.5,,true\r\n');
+  });
+});
+
+describe("research export field docs", () => {
+  it("only documents exported columns, and documents every telemetry column", () => {
+    for (const [model, docs] of Object.entries(RESEARCH_EXPORT_FIELD_DOCS)) {
+      const exported =
+        RESEARCH_EXPORT_FIELDS[
+          model as keyof typeof RESEARCH_EXPORT_FIELDS
+        ].split(" ");
+      expect(exported).toEqual(expect.arrayContaining(Object.keys(docs!)));
+    }
+    expect(
+      Object.keys(RESEARCH_EXPORT_FIELD_DOCS.LearningResourceSession!).sort(),
+    ).toEqual(RESEARCH_EXPORT_FIELDS.LearningResourceSession.split(" ").sort());
   });
 });
 
@@ -104,6 +123,24 @@ describe("admin research export", () => {
         totalCount: 2,
         completedAt,
         reviewSnapshot: '{"questions":[]}',
+      },
+    });
+    await prisma.learningResourceSession.create({
+      data: {
+        studentId: student.id,
+        materialId: "deleted-material",
+        materialTitle: "Archived notes",
+        classId: cls.id,
+        quizId: quiz.id,
+        attemptId: attempt.id,
+        surface: "results_recommendation",
+        recommended: true,
+        pageStart: 2,
+        pageEnd: 4,
+        dwellMs: 12_345,
+        clickCount: 3,
+        pagesViewed: 2,
+        pagesViewedJson: '{"2":5000,"3":7345}',
       },
     });
     await prisma.invitation.create({
@@ -262,12 +299,32 @@ describe("admin research export", () => {
       position: "1",
       text: "How was learning?",
     });
+    expect(
+      (await records(zip, "learning_resource_session.csv"))[0],
+    ).toMatchObject({
+      studentId: student.id,
+      materialId: "deleted-material",
+      materialTitle: "Archived notes",
+      attemptId: attempt.id,
+      surface: "results_recommendation",
+      recommended: "true",
+      pageStart: "2",
+      pageEnd: "4",
+      dwellMs: "12345",
+      clickCount: "3",
+      pagesViewedJson: '{"2":5000,"3":7345}',
+    });
     expect(await records(zip, "data_dictionary.csv")).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           file: "quiz_answer.csv",
           column: "quizAttemptId",
           references: "QuizAttempt.id",
+        }),
+        expect.objectContaining({
+          file: "learning_resource_session.csv",
+          column: "dwellMs",
+          description: expect.stringContaining("tab visible"),
         }),
       ]),
     );
