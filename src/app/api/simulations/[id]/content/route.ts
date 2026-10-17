@@ -6,7 +6,10 @@ import { listSimulationVersions } from "@/lib/simulation-versions";
 import { getS3ObjectAsString } from "@/lib/storage";
 import { SIMULATION_CSP } from "@/lib/simulation";
 import { renderSimulationLatex } from "@/lib/simulation-math";
-import { injectTelemetryScript } from "@/lib/simulation-telemetry";
+import {
+  injectEscapeForwarder,
+  injectTelemetryScript,
+} from "@/lib/simulation-telemetry";
 import { buildSimulationEditorLayer } from "@/lib/simulation-editor-script";
 import { buildSimulationLayoutLayer } from "@/lib/simulation-layout";
 
@@ -114,6 +117,9 @@ export async function GET(
   html = renderSimulationLatex(html, { annotate: editing });
   html += buildSimulationLayoutLayer();
   if (editing) html += buildSimulationEditorLayer();
+  // Lets Escape inside the sandbox close the pop-up it runs in. Records
+  // nothing, so it is not consent-gated.
+  html = injectEscapeForwarder(html);
 
   // Consenting students get the interaction-telemetry snippet at serve time (the
   // stored artifact is never modified, and pre-telemetry artifacts report like

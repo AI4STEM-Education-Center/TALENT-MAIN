@@ -1,6 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import { requireStatsUser } from "@/lib/stats-access";
 import { formatDurationMs } from "@/lib/simulation-stats";
+import {
+  simulationSurfaceLabel,
+  simulationViewportLabel,
+} from "@/lib/simulation-telemetry";
 
 export const USAGE_KINDS = {
   results: "Completed quizzes",
@@ -173,6 +177,7 @@ export async function getAdminUsage(params: AdminSearchParams) {
           interactionCount: true,
           paramChanges: true,
           surface: true,
+          viewport: true,
         },
       }),
       prisma.simulationSession.count({ where }),
@@ -187,7 +192,7 @@ export async function getAdminUsage(params: AdminSearchParams) {
       ...row,
       title: titles.get(row.simulationId) || "Removed simulation",
       completedAt: row.endedAt,
-      detail: `${formatDurationMs(row.activeMs)} active / ${formatDurationMs(row.dwellMs)} open · ${row.interactionCount} interactions · ${row.paramChanges} control changes · ${row.surface}`,
+      detail: `${formatDurationMs(row.activeMs)} active / ${formatDurationMs(row.dwellMs)} open · ${row.interactionCount} interactions · ${row.paramChanges} control changes · ${simulationSurfaceLabel(row.surface)} (${simulationViewportLabel(row.viewport, row.surface)})`,
     }));
   }
 

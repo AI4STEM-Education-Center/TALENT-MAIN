@@ -6,7 +6,9 @@ import {
   type SimulationPreviewEdit,
 } from "@/lib/simulation-preview-edit";
 import {
+  SIM_ESCAPE_MESSAGE_TYPE,
   SIM_TELEMETRY_MESSAGE_TYPE,
+  classifyViewport,
   type SimulationSurface,
   type SimTelemetryTotals,
 } from "@/lib/simulation-telemetry";
@@ -17,6 +19,7 @@ const FLUSH_MS = 10_000;
 export type SimulationTelemetryContext = {
   /** The quiz attempt whose results page surfaced this simulation. */
   attemptId?: string | null;
+  /** Where the student launched it from — see SIMULATION_SURFACES. */
   surface: SimulationSurface;
 };
 
@@ -27,7 +30,7 @@ export type SimulationTelemetryContext = {
  * layer keeping AI-generated JS away from the app origin. Shared by the admin
  * dashboard, the teacher editor, and the student results view.
  *
- * When `telemetry` is passed (student results view only), the viewer opens a
+ * When `telemetry` is passed (student launches only, via SimulationDialog), the viewer opens a
  * SimulationSession and forwards the cumulative interaction totals that the
  * served document's injected script postMessages up — the sandboxed iframe has
  * no network access of its own. Messages are accepted only from this viewer's
@@ -44,6 +47,7 @@ export function SimulationViewer({
   editable,
   editMode,
   onPreviewEdit,
+  onEscape,
 }: {
   simulationId: string;
   title: string;
@@ -65,14 +69,16 @@ export function SimulationViewer({
    */
   editMode?: boolean;
   onPreviewEdit?: (edit: SimulationPreviewEdit) => void;
+  /** Escape pressed while focus is inside the simulation (forwarded up). */
+  onEscape?: () => void;
 }) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   // Held in a ref so a new inline handler on every parent render does not tear
   // down and re-add the listener. Only ever read from a user-driven message,
   // which cannot arrive before the commit that refreshed it.
-  const handlers = useRef({ onPreviewEdit });
+  const handlers = useRef({ onPreviewEdit, onEscape });
   useEffect(() => {
-    handlers.current = { onPreviewEdit };
+    handlers.current = { onPreviewEdit, onEscape };
   });
   useEffect(() => {
     if (!editable) return;
@@ -112,9 +118,13 @@ export function SimulationViewer({
   const attemptId = telemetry?.attemptId ?? null;
   const surface = telemetry?.surface ?? null;
 
+  // One session per mount: SimulationDialog mounts a fresh viewer on every
+  // open (and on every switch between simulations), so each launch is its own
+  // SimulationSession and closing the dialog runs the cleanup's final flush.
   useEffect(() => {
     if (!surface) return;
     const startedAt = Date.now();
+    const viewport = classifyViewport(window.innerWidth);
     let sessionId: string | null = null;
     let cancelled = false;
     let dirty = false;
@@ -127,21 +137,26 @@ export function SimulationViewer({
       controls: {},
     };
 
-    fetch(`/api/simulations/${simulationId}/sessions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ attemptId, surface }),
-    })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (typeof data?.sessionId === "string") {
-          sessionId = data.sessionId;
-          if (cancelled || endedAt !== null) flush(true);
-        }
+    // Deferred by a macrotask so React Strict Mode's synchronous
+    // mount → cleanup → mount in development cancels the first create instead
+    // of recording two sessions for one open.
+    const openTimer = setTimeout(() => {
+      fetch(`/api/simulations/${simulationId}/sessions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ attemptId, surface, viewport }),
       })
-      .catch(() => {
-        // Telemetry is best-effort — the simulation itself is unaffected.
-      });
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (typeof data?.sessionId === "string") {
+            sessionId = data.sessionId;
+            if (cancelled || endedAt !== null) flush(true);
+          }
+        })
+        .catch(() => {
+          // Telemetry is best-effort — the simulation itself is unaffected.
+        });
+    }, 0);
 
     const onMessage = (event: MessageEvent) => {
       if (
@@ -206,12 +221,33 @@ export function SimulationViewer({
     window.addEventListener("pagehide", onPageHide);
     return () => {
       cancelled = true;
+      clearTimeout(openTimer);
       clearInterval(interval);
       window.removeEventListener("message", onMessage);
       window.removeEventListener("pagehide", onPageHide);
       onPageHide();
     };
   }, [simulationId, attemptId, surface]);
+
+  // Escape pressed inside the sandboxed document never reaches the parent's
+  // key handlers (separate browsing context), so the injected forwarder posts
+  // it up; only messages from this viewer's own iframe are honoured.
+  const hasEscapeHandler = !!onEscape;
+  useEffect(() => {
+    if (!hasEscapeHandler) return;
+    const receive = (event: MessageEvent) => {
+      const frame = iframeRef.current;
+      if (!frame || event.source !== frame.contentWindow) return;
+      if (
+        (event.data as { type?: unknown } | null)?.type !==
+        SIM_ESCAPE_MESSAGE_TYPE
+      )
+        return;
+      handlers.current.onEscape?.();
+    };
+    window.addEventListener("message", receive);
+    return () => window.removeEventListener("message", receive);
+  }, [hasEscapeHandler]);
 
   return (
     <iframe

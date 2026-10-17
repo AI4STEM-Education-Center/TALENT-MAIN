@@ -18,10 +18,16 @@ import {
 } from "./quiz-stats";
 import {
   summarizeSimulationEngagement,
+  summarizeSessionsBySurface,
   retakeImprovementBySimUse,
   type SimulationEngagementRow,
+  type SimulationSurfaceRow,
   type RetakeImpact,
 } from "./simulation-stats";
+import {
+  simulationSurfaceLabel,
+  simulationViewportLabel,
+} from "./simulation-telemetry";
 import { QUESTION_ORDER } from "@/lib/question-order";
 
 const fullName = (u: { firstName: string; lastName: string }): string =>
@@ -456,6 +462,7 @@ const SESSION_SELECT = {
   activeMs: true,
   interactionCount: true,
   paramChanges: true,
+  surface: true,
 } as const;
 
 /** Display titles for a set of simulation ids (fallback handled by the caller). */
@@ -475,6 +482,8 @@ export type QuizSimulationStats = {
   totalSessions: number;
   uniqueStudents: number;
   engagement: SimulationEngagementRow[];
+  /** Opens per launch surface (results views, library, legacy rows). */
+  bySurface: SimulationSurfaceRow[];
 };
 
 /** Per-quiz simulation engagement for one class: one row per simulation. */
@@ -491,6 +500,7 @@ export async function getQuizSimulationStats(
     totalSessions: sessions.length,
     uniqueStudents: new Set(sessions.map((s) => s.studentId)).size,
     engagement: summarizeSimulationEngagement(sessions, titles),
+    bySurface: summarizeSessionsBySurface(sessions),
   };
 }
 
@@ -500,6 +510,8 @@ export type ClassSimulationInsights = {
   studentsAttempted: number;
   medianActiveMs: number;
   retake: RetakeImpact;
+  /** Opens per launch surface (results views, library, legacy rows). */
+  bySurface: SimulationSurfaceRow[];
 };
 
 /**
@@ -526,6 +538,7 @@ export async function getClassSimulationInsights(
     studentsAttempted: new Set(attempts.map((a) => a.studentId)).size,
     medianActiveMs: median(sessions.map((s) => s.activeMs)),
     retake: retakeImprovementBySimUse(attempts, sessions),
+    bySurface: summarizeSessionsBySurface(sessions),
   };
 }
 
@@ -534,6 +547,10 @@ export type StudentSimulationSessionRow = {
   title: string;
   quizName: string | null;
   surface: string;
+  /** Display label for `surface` (handles legacy values). */
+  surfaceLabel: string;
+  /** Device class label (inferred from the legacy surface for old rows). */
+  viewportLabel: string;
   startedAt: Date;
   activeMs: number;
   paramChanges: number;
@@ -569,6 +586,8 @@ export async function getStudentSimulationSessions(
     title: titles.get(s.simulationId) ?? "Removed simulation",
     quizName: s.quizId ? (quizNames.get(s.quizId) ?? null) : null,
     surface: s.surface,
+    surfaceLabel: simulationSurfaceLabel(s.surface),
+    viewportLabel: simulationViewportLabel(s.viewport, s.surface),
     startedAt: s.startedAt,
     activeMs: s.activeMs,
     paramChanges: s.paramChanges,

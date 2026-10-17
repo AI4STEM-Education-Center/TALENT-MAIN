@@ -287,6 +287,7 @@ export function QuizPlayer({
         }}
         backHref={backHref}
         backLabel={backLabel}
+        simulationSurface="quiz_results"
         actions={
           <>
             <Button variant="outline" asChild>

@@ -10,6 +10,7 @@ import {
 import { StatCard } from "@/components/teacher/stats-ui";
 import { pct, ratePct } from "@/lib/stats-format";
 import { formatDurationMs } from "@/lib/simulation-stats";
+import { SimulationSurfaceBreakdown } from "@/components/stats/simulation-surface-breakdown";
 import { RequestConsentExportDialog } from "@/app/(dashboard)/teacher/classes/[id]/stats/request-consent-export-dialog";
 import { ExportParticipationCreditDialog } from "@/app/(dashboard)/teacher/classes/[id]/stats/export-participation-credit-dialog";
 
@@ -118,7 +119,11 @@ export async function ClassStatsView({
                   : undefined
               }
             />
-            <StatCard label="Sessions" value={`${sim.totalSessions}`} />
+            <StatCard
+              label="Opens"
+              value={`${sim.totalSessions}`}
+              sub="each pop-up open is one session"
+            />
             <StatCard
               label="Median active time"
               value={formatDurationMs(sim.medianActiveMs)}
@@ -138,6 +143,11 @@ export async function ClassStatsView({
               }
             />
           </div>
+          <Card>
+            <CardContent className="py-3">
+              <SimulationSurfaceBreakdown rows={sim.bySurface} />
+            </CardContent>
+          </Card>
         </div>
       )}
 

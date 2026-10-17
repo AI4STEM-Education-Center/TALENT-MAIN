@@ -199,6 +199,13 @@ Useful joins:
   definition per form, including section headings.
 - consent_record.formVersionId -> consent_form_version.id
 
+simulation_session.csv has one row per simulation open. surface is where the
+student opened it: quiz_results (right after submitting a quiz), results_page
+(a past attempt's results), library (the simulations library). Rows recorded
+before simulations opened in a pop-up use legacy values: rail (desktop results
+view) and mobile (phone/tablet results view). viewport is phone, tablet or
+desktop, and is empty on rows recorded before it existed.
+
 exam_result.reviewSnapshot preserves submitted answers and question text after
 live content is edited/deleted. quiz_practice_attempt keeps its own questions
 and answers; practice is separate from graded quiz attempts. Relation-free
