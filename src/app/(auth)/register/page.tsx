@@ -12,20 +12,21 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { GraduationCap, Info } from "lucide-react";
+import { CheckCircle2, Info, UserPlus } from "lucide-react";
 import {
   PASSWORD_REQUIREMENTS,
   validatePassword,
 } from "@/lib/account-validation";
-import { formatTeacherCode, normalizeTeacherCode } from "@/lib/teacher-codes";
+import { roleLabel } from "@/lib/roles";
 
 function RegisterForm() {
   const { push } = useRouter();
   // Codes issued in the admin panel are shared as /register?code=… links, so
   // the invitee only fills in their own details. A hand-typed code still works.
-  const codeFromLink = normalizeTeacherCode(
-    useSearchParams().get("code") ?? "",
-  );
+  // Kept verbatim (not normalized): the env-var invite codes are compared
+  // exactly, so upper-casing one here would break it. Panel codes are
+  // normalized on the server either way.
+  const codeFromLink = (useSearchParams().get("code") ?? "").trim();
   const [form, setForm] = useState({
     firstName: "",
     lastName: "",
@@ -33,9 +34,11 @@ function RegisterForm() {
     email: "",
     password: "",
     confirmPassword: "",
-    teacherToken: codeFromLink,
+    inviteCode: codeFromLink,
   });
   const [error, setError] = useState("");
+  // The account type the code turned out to grant, once registration succeeds.
+  const [createdRole, setCreatedRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   function updateFormField(e: React.ChangeEvent<HTMLInputElement>) {
@@ -67,7 +70,7 @@ function RegisterForm() {
       if (!res.ok) {
         setError(data.error || "Registration failed.");
       } else {
-        push("/login?registered=1");
+        setCreatedRole(typeof data.role === "string" ? data.role : "");
       }
     } catch {
       setError("An unexpected error occurred.");
@@ -89,139 +92,169 @@ function RegisterForm() {
           </span>
         </div>
 
-        <Card>
-          <CardHeader className="space-y-1">
-            <div className="flex items-center gap-2">
-              <GraduationCap className="size-5 text-primary" />
-              <CardTitle className="text-2xl font-bold">
-                Teacher Registration
-              </CardTitle>
-            </div>
-            <CardDescription>
-              You need a teacher registration code to create an account.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {error && (
-                <div className="p-3 rounded-md bg-destructive/10 text-destructive text-sm">
-                  {error}
-                </div>
-              )}
+        {createdRole !== null ? (
+          <Card>
+            <CardHeader className="space-y-1">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="size-5 text-primary" />
+                <CardTitle className="text-2xl font-bold">
+                  Account created
+                </CardTitle>
+              </div>
+              <CardDescription>
+                {createdRole
+                  ? `Your ${roleLabel(createdRole).toLowerCase()} account is ready.`
+                  : "Your account is ready."}{" "}
+                Sign in with the username or email and password you just chose.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button
+                type="button"
+                className="w-full"
+                onClick={() => push("/login?registered=1")}
+              >
+                Continue to sign in
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardHeader className="space-y-1">
+              <div className="flex items-center gap-2">
+                <UserPlus className="size-5 text-primary" />
+                <CardTitle className="text-2xl font-bold">
+                  Create an account
+                </CardTitle>
+              </div>
+              <CardDescription>
+                Use the invite code you were given; it determines your account
+                type.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                {error && (
+                  <div className="p-3 rounded-md bg-destructive/10 text-destructive text-sm">
+                    {error}
+                  </div>
+                )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="firstName">First name</Label>
+                    <Input
+                      id="firstName"
+                      name="firstName"
+                      value={form.firstName}
+                      onChange={updateFormField}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="lastName">Last name</Label>
+                    <Input
+                      id="lastName"
+                      name="lastName"
+                      value={form.lastName}
+                      onChange={updateFormField}
+                      required
+                    />
+                  </div>
+                </div>
+
                 <div className="space-y-2">
-                  <Label htmlFor="firstName">First name</Label>
+                  <Label htmlFor="username">Username</Label>
                   <Input
-                    id="firstName"
-                    name="firstName"
-                    value={form.firstName}
+                    id="username"
+                    name="username"
+                    value={form.username}
+                    onChange={updateFormField}
+                    required
+                    placeholder="e.g. jsmith"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    name="email"
+                    type="email"
+                    value={form.email}
+                    onChange={updateFormField}
+                    required
+                    placeholder="you@school.edu"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="password">Password</Label>
+                  <Input
+                    id="password"
+                    name="password"
+                    type="password"
+                    value={form.password}
+                    onChange={updateFormField}
+                    required
+                    placeholder="Create a strong password"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {PASSWORD_REQUIREMENTS}
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="confirmPassword">Confirm password</Label>
+                  <Input
+                    id="confirmPassword"
+                    name="confirmPassword"
+                    type="password"
+                    value={form.confirmPassword}
                     onChange={updateFormField}
                     required
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="lastName">Last name</Label>
-                  <Input
-                    id="lastName"
-                    name="lastName"
-                    value={form.lastName}
-                    onChange={updateFormField}
-                    required
-                  />
-                </div>
-              </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="username">Username</Label>
-                <Input
-                  id="username"
-                  name="username"
-                  value={form.username}
-                  onChange={updateFormField}
-                  required
-                  placeholder="e.g. jsmith"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  name="email"
-                  type="email"
-                  value={form.email}
-                  onChange={updateFormField}
-                  required
-                  placeholder="you@school.edu"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  name="password"
-                  type="password"
-                  value={form.password}
-                  onChange={updateFormField}
-                  required
-                  placeholder="Create a strong password"
-                />
-                <p className="text-xs text-muted-foreground">
-                  {PASSWORD_REQUIREMENTS}
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="confirmPassword">Confirm password</Label>
-                <Input
-                  id="confirmPassword"
-                  name="confirmPassword"
-                  type="password"
-                  value={form.confirmPassword}
-                  onChange={updateFormField}
-                  required
-                />
-              </div>
-
-              <div className="space-y-2 pt-1">
-                <Label htmlFor="teacherToken">Teacher registration code</Label>
-                {/* A code that arrived in the link is already on screen in the
+                <div className="space-y-2 pt-1">
+                  <Label htmlFor="inviteCode">Invite code</Label>
+                  {/* A code that arrived in the link is already on screen in the
                     URL bar, so masking it would only stop the invitee checking
                     it against what they were sent. */}
-                <Input
-                  id="teacherToken"
-                  name="teacherToken"
-                  type={codeFromLink ? "text" : "password"}
-                  value={form.teacherToken}
-                  onChange={updateFormField}
-                  required
-                  placeholder="Enter the code provided by your administrator"
-                  className={
-                    codeFromLink ? "font-mono tracking-wider" : undefined
-                  }
-                />
-                <p className="text-xs text-muted-foreground">
-                  {codeFromLink
-                    ? `Filled in from your invitation link (${formatTeacherCode(codeFromLink)}).`
-                    : "This code is provided by the platform administrator."}
-                </p>
+                  <Input
+                    id="inviteCode"
+                    name="inviteCode"
+                    type={codeFromLink ? "text" : "password"}
+                    value={form.inviteCode}
+                    onChange={updateFormField}
+                    required
+                    autoComplete="off"
+                    placeholder="Enter the code provided by your administrator"
+                    className={
+                      codeFromLink ? "font-mono tracking-wider" : undefined
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {codeFromLink
+                      ? "Filled in from your invitation link."
+                      : "Your administrator gives you this code. Teachers, research scientists and administrators all sign up here."}
+                  </p>
+                </div>
+
+                <Button type="submit" className="w-full" disabled={loading}>
+                  {loading ? "Creating account..." : "Create account"}
+                </Button>
+              </form>
+
+              <div className="mt-4 text-center text-sm text-muted-foreground">
+                Already have an account?{" "}
+                <Link href="/login" className="text-primary hover:underline">
+                  Sign in
+                </Link>
               </div>
-
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? "Creating account..." : "Create teacher account"}
-              </Button>
-            </form>
-
-            <div className="mt-4 text-center text-sm text-muted-foreground">
-              Already have an account?{" "}
-              <Link href="/login" className="text-primary hover:underline">
-                Sign in
-              </Link>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

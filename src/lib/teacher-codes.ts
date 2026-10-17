@@ -1,5 +1,5 @@
 /**
- * Teacher registration code helpers that are safe to import from a client
+ * Registration ("invite") code helpers that are safe to import from a client
  * component: string shaping, status naming and the admin-facing limits.
  *
  * Everything that touches crypto or the database lives in
@@ -94,6 +94,8 @@ export interface TeacherCodeView {
   /** Absolute /register link that pre-fills the code, ready to copy. */
   url: string;
   label: string | null;
+  /** Account role the code creates: "TEACHER" | "RESEARCHER". */
+  role: string;
   expiresAt: string | null;
   maxUses: number | null;
   usedCount: number;

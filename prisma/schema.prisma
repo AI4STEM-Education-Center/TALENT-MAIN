@@ -7,7 +7,7 @@ datasource db {
 }
 
 // ─── Users ────────────────────────────────────────────────────────────────────
-// role: "TEACHER" | "STUDENT"
+// role: "STUDENT" | "TEACHER" | "RESEARCHER" | "ADMIN" (see src/lib/roles.ts)
 
 model User {
   id             String   @id @default(cuid())
@@ -293,10 +293,16 @@ model Invitation {
   @@index([classId])
 }
 
-// One admin-issued teacher registration code. Teachers self-register at
-// /register by presenting a code; each code carries its own expiry and use
-// limit so an administrator can hand out a single-use, week-long code for one
-// hire and an open code for a workshop, and revoke either independently.
+// One admin-issued registration ("invite") code. Teachers and research
+// scientists self-register at /register by presenting a code; the code's `role`
+// decides which kind of account is created. Each code carries its own expiry
+// and use limit so an administrator can hand out a single-use, week-long code
+// for one hire and an open code for a workshop, and revoke either
+// independently. Admin accounts are never minted from a code — only from the
+// ADMIN_SIGNUP_TOKEN env var (see src/lib/registration.ts).
+//
+// The model/table keeps its historical "Teacher" name: deploys apply the schema
+// with `prisma db push`, and a rename would drop the existing codes.
 //
 // Deliberately RELATION-FREE (createdById carries no FK, like
 // ConsentExportSettings.updatedById): deleting the admin who issued a code must
@@ -305,14 +311,17 @@ model Invitation {
 // The code is stored in plaintext rather than hashed, unlike
 // PasswordResetToken: an admin has to be able to re-read a code in the panel to
 // share it again, and the same trade-off is already made for Invitation.token.
-// It is still a BEARER CREDENTIAL — anyone holding it can create a TEACHER
-// account — so it is generated with crypto.randomBytes, never a cuid()
+// It is still a BEARER CREDENTIAL — anyone holding it can create an account of
+// its role — so it is generated with crypto.randomBytes, never a cuid()
 // default; see src/lib/teacher-registration-codes.ts.
 model TeacherRegistrationCode {
   id    String  @id @default(cuid())
   code  String  @unique
   /// Admin-facing note ("Fall 2026 TAs"), so a code list is readable.
   label String?
+  /// Account role the code creates: "TEACHER" | "RESEARCHER" (see
+  /// INVITE_CODE_ROLES in src/lib/roles.ts). Never "ADMIN".
+  role  String  @default("TEACHER")
 
   /// null = never expires.
   expiresAt DateTime?
