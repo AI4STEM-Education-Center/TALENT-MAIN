@@ -14,6 +14,7 @@
 // server clamps and merges monotonically so replays can't inflate it.
 
 import type { StoredRecommendation } from "./exam-results";
+import { isAdmin } from "./roles";
 
 // ─── Surfaces ─────────────────────────────────────────────────────────────────
 
@@ -65,17 +66,13 @@ export function isRecommendationSurface(surface: ResourceSurface): boolean {
  * student reveals their participation — and the consent form promises that
  * participation "will not be known to your course instructor while you are
  * enrolled". Teachers therefore never see per-student (or small-group)
- * resource telemetry; only administrators (and, once that role exists, the
- * research team) do. Every read path for per-student data must check this.
+ * resource telemetry; only administrators do for now. Widening this to the
+ * research team means switching to canViewAdminData (roles.ts) once
+ * RESEARCHER can reach these admin pages. Every read path for per-student
+ * data must check this.
  */
-export const RESOURCE_TELEMETRY_VIEWER_ROLES: ReadonlySet<string> = new Set([
-  "ADMIN",
-]);
-
-export function canViewResourceTelemetry(
-  role: string | null | undefined,
-): boolean {
-  return !!role && RESOURCE_TELEMETRY_VIEWER_ROLES.has(role);
+export function canViewResourceTelemetry(role: unknown): boolean {
+  return isAdmin(role);
 }
 
 // ─── Client timing constants ──────────────────────────────────────────────────
