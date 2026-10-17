@@ -196,7 +196,9 @@ Useful joins:
   the question IDs in survey_form.questions. survey_answers.csv is one row
   per response/question, with multi-select answers preserved as JSON arrays.
   survey_questions.csv provides the question wording, type, order, and full
-  definition per form, including section headings.
+  definition per form, including section headings. survey_form.period is the
+  study period (1 or 2) a POST form closes, so period 1 and period 2
+  post-survey responses separate on survey_response.formId -> survey_form.
 - consent_record.formVersionId -> consent_form_version.id
 
 simulation_session.csv has one row per simulation open. surface is where the

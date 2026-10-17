@@ -6,7 +6,8 @@ import {
   isSurveyKind,
   isSurveyRole,
   parseSurveyText,
-  SURVEY_KIND_LABELS,
+  periodForKind,
+  surveyFormLabel,
   SURVEY_ROLE_LABELS,
 } from "@/lib/survey";
 import {
@@ -22,7 +23,7 @@ import { MAX_ATTACHMENT_BYTES } from "@/lib/research-email";
 export const runtime = "nodejs";
 
 /**
- * POST /api/admin/surveys/upload (multipart: file, text, kind, role)
+ * POST /api/admin/surveys/upload (multipart: file, text, kind, role, period?)
  *
  * The browser extracts the PDF's text (pdfium, same library as the material
  * uploads) and sends it with the file. The server keeps the PDF as the
@@ -45,6 +46,7 @@ export async function POST(req: NextRequest) {
   const role = data.get("role");
   const file = data.get("file");
   const text = data.get("text");
+  const period = data.get("period");
   if (!isSurveyKind(kind) || !isSurveyRole(role))
     return NextResponse.json(
       { error: "Choose a survey type and audience." },
@@ -70,13 +72,15 @@ export async function POST(req: NextRequest) {
 
   const draft = parseSurveyText(sourceText);
   const provider = await resolveSurveyProvider();
+  const formPeriod = periodForKind(kind, period);
   const form = await prisma.surveyForm.create({
     data: {
       kind,
       role,
+      period: formPeriod,
       title:
         draft.title ||
-        `${SURVEY_ROLE_LABELS[role]} ${SURVEY_KIND_LABELS[kind].toLowerCase()}`,
+        `${SURVEY_ROLE_LABELS[role]} ${surveyFormLabel(kind, formPeriod).toLowerCase()}`,
       description: draft.description,
       questions: JSON.stringify(draft.questions),
       sourceText,

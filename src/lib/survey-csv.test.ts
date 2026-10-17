@@ -64,12 +64,38 @@ describe("buildSurveyResponsesCsv", () => {
     );
     const [header, row] = csv.trimEnd().split("\r\n");
     expect(header).toContain("Interview Contact OK");
+    expect(header).not.toContain("Study Period");
     expect(header).toContain("Q1: Pick");
     expect(header).toContain('"Q2: Many, please"');
     expect(header).not.toContain("Part 1");
     expect(row).toContain("Email link");
     expect(row).toContain("X; Y");
     expect(row).toContain('"\t=HYPERLINK(""x"")"');
+  });
+
+  it("labels the survey and study period when the form is given", () => {
+    const csv = buildSurveyResponsesCsv(
+      questions,
+      [
+        {
+          id: "r1",
+          submittedAt: new Date("2026-09-10T12:00:00Z"),
+          role: "STUDENT",
+          source: "APP",
+          nameSnapshot: "Ann Lee",
+          emailSnapshot: "ann@uga.edu",
+          userId: "u1",
+          irbAgreed: true,
+          interviewOptIn: false,
+          interviewEmail: null,
+          answers: { q1: "A" },
+        },
+      ],
+      { includeInterview: false, form: { kind: "POST", period: 2 } },
+    );
+    const [header, row] = csv.trimEnd().split("\r\n");
+    expect(header).toContain("Survey,Study Period,Role");
+    expect(row).toContain("Period 2 post-survey,2,STUDENT");
   });
 });
 

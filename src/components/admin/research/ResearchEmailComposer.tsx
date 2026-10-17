@@ -41,7 +41,12 @@ import {
   type ResearchEmailVersions,
   type VersionKey,
 } from "@/lib/research-email";
-import type { SurveyRole } from "@/lib/survey";
+import {
+  SURVEY_PERIODS,
+  surveyFormLabel,
+  type SurveyPeriod,
+  type SurveyRole,
+} from "@/lib/survey";
 
 type Draft = {
   replyTo: string;
@@ -56,6 +61,13 @@ type Preview = {
   count: number;
   byVersion: Partial<Record<VersionKey, number>>;
   skipped: string[];
+  /** POST_SURVEY: the form each role's links open. */
+  forms?: Array<{
+    role: SurveyRole;
+    formId: string;
+    period: number;
+    title: string;
+  }>;
   recipients: Array<{
     name: string;
     email: string;
@@ -557,6 +569,33 @@ function AudienceEditor({
         {roles}
         <fieldset className="space-y-1">
           <legend className="text-xs font-medium text-muted-foreground">
+            Survey the links open
+          </legend>
+          <label className="flex items-center gap-2">
+            <input
+              type="radio"
+              name="post-survey-period"
+              className="size-4"
+              checked={post.period === null}
+              onChange={() => onChange({ ...post, period: null })}
+            />
+            Lowest enabled study period (automatic)
+          </label>
+          {SURVEY_PERIODS.map((p: SurveyPeriod) => (
+            <label key={p} className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="post-survey-period"
+                className="size-4"
+                checked={post.period === p}
+                onChange={() => onChange({ ...post, period: p })}
+              />
+              {surveyFormLabel("POST", p)}
+            </label>
+          ))}
+        </fieldset>
+        <fieldset className="space-y-1">
+          <legend className="text-xs font-medium text-muted-foreground">
             Who
           </legend>
           {POST_SURVEY_TARGETS.map((t) => (
@@ -577,8 +616,9 @@ function AudienceEditor({
           onChange={(people) => onChange({ ...post, people })}
         />
         <p className="text-xs text-muted-foreground">
-          People who already submitted the enabled post-survey are skipped, so
-          you can safely schedule reminders.
+          People who already submitted the chosen period&apos;s post-survey (by
+          email link or in the app) are skipped, so you can safely schedule
+          reminders.
         </p>
       </div>
     );
@@ -718,6 +758,15 @@ function RecipientSummary({
               ))}
             </div>
           )}
+          {preview.forms?.map((f) => (
+            <p key={f.formId} className="text-muted-foreground">
+              {f.role === "TEACHER" ? "Teacher" : "Student"} links open the{" "}
+              <span className="font-medium text-foreground">
+                {surveyFormLabel("POST", f.period)}
+              </span>{" "}
+              “{f.title}”.
+            </p>
+          ))}
           {preview.skipped.map((s) => (
             <p key={s} className="text-amber-600 dark:text-amber-400">
               {s}

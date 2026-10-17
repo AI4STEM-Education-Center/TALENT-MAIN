@@ -140,7 +140,7 @@ export async function getUserConsentClaim(
 
   const record = await prisma.consentRecord.findFirst({
     where: { userId, formVersionId: active.id },
-    orderBy: { signedAt: "desc" },
+    orderBy: [{ signedAt: "desc" }, { id: "desc" }],
     select: { decision: true },
   });
   if (!record || !isConsentDecision(record.decision)) return null;

@@ -31,11 +31,13 @@ import {
   DEFAULT_LIKERT_SCALE,
   normalizeSurveyQuestions,
   questionTakesOptions,
-  SURVEY_KIND_LABELS,
+  SURVEY_PERIODS,
+  surveyFormLabel,
   SURVEY_QUESTION_TYPE_LABELS,
   SURVEY_QUESTION_TYPES,
   SURVEY_ROLE_LABELS,
   type SurveyKind,
+  type SurveyPeriod,
   type SurveyQuestion,
   type SurveyQuestionType,
   type SurveyRole,
@@ -46,6 +48,9 @@ type FormDetail = {
   id: string;
   kind: SurveyKind;
   role: SurveyRole;
+  period: number;
+  promptInApp: boolean;
+  periodLocked: boolean;
   title: string;
   description: string;
   questions: SurveyQuestion[];
@@ -173,6 +178,30 @@ export default function SurveyEditorPage({
     }
   }
 
+  async function changePeriod(period: SurveyPeriod) {
+    if (!form || period === form.period) return;
+    if (form.isEnabled) {
+      const ok = await confirm({
+        title: `Move to ${surveyFormLabel("POST", period)}?`,
+        description: `This survey is enabled, so any other enabled ${SURVEY_ROLE_LABELS[form.role].toLowerCase()} ${surveyFormLabel("POST", period).toLowerCase()} is turned off. Existing responses keep pointing at this form.`,
+        confirmText: "Move",
+      });
+      if (!ok) return;
+    }
+    const res = await fetch(`/api/admin/surveys/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ period }),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok)
+      await alert({
+        title: "Couldn't change the study period",
+        description: data?.error ?? "Unknown error.",
+      });
+    await load();
+  }
+
   async function reextract() {
     const ok = await confirm({
       title: "Convert the PDF again with AI?",
@@ -212,16 +241,49 @@ export default function SurveyEditorPage({
           </Link>
           <h1 className="text-2xl font-bold">
             {SURVEY_ROLE_LABELS[form.role]}{" "}
-            {SURVEY_KIND_LABELS[form.kind].toLowerCase()}
+            {surveyFormLabel(form.kind, form.period).toLowerCase()}
           </h1>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {form.isEnabled ? (
               <Badge>Enabled</Badge>
             ) : (
               <Badge variant="outline">Disabled</Badge>
             )}
             <Badge variant="secondary">{form.responseCount} responses</Badge>
+            {form.promptInApp && (
+              <Badge variant="secondary">Prompting in app</Badge>
+            )}
+            {form.kind === "POST" && (
+              <Select
+                value={String(form.period)}
+                onValueChange={(v) =>
+                  void changePeriod(Number(v) as SurveyPeriod)
+                }
+                disabled={extracting || form.periodLocked}
+              >
+                <SelectTrigger
+                  className="h-7 w-48 text-xs"
+                  aria-label="Study period"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SURVEY_PERIODS.map((p) => (
+                    <SelectItem key={p} value={String(p)}>
+                      {surveyFormLabel("POST", p)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
+          {form.kind === "POST" && form.periodLocked && (
+            <p className="max-w-xl text-xs text-muted-foreground">
+              The study period is locked because this survey already has
+              responses, emailed links or an in-app prompt. To survey the next
+              period, create a new post-survey for it.
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           {form.hasSourceText && form.responseCount === 0 && (
