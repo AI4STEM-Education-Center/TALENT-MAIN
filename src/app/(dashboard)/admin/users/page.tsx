@@ -12,7 +12,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useAlert } from "@/components/ui/confirm-dialog";
-import { Search, Trash2, Shield, Users, GraduationCap } from "lucide-react";
+import {
+  Search,
+  Trash2,
+  Shield,
+  Users,
+  GraduationCap,
+  FlaskConical,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface User {
@@ -31,14 +38,18 @@ const getRoleIcon = (role: string) => {
       return <Shield className="size-4 text-purple-500" />;
     case "TEACHER":
       return <Users className="size-4 text-blue-500" />;
+    case "RESEARCHER":
+      return <FlaskConical className="size-4 text-amber-500" />;
     default:
       return <GraduationCap className="size-4 text-green-500" />;
   }
 };
 
-// Boxes are rendered in this order: admins, then teachers, then students.
+// Boxes are rendered in this order: admins, research scientists, teachers,
+// then students.
 const ROLE_GROUPS = [
   { role: "ADMIN", label: "Admins" },
+  { role: "RESEARCHER", label: "Research scientists" },
   { role: "TEACHER", label: "Teachers" },
   { role: "STUDENT", label: "Students" },
 ] as const;

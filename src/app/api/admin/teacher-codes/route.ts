@@ -13,6 +13,12 @@ import {
 } from "@/lib/teacher-codes";
 import { parseBody, teacherCodeCreateSchema } from "@/lib/validation";
 import { logApiError, logSystemEvent } from "@/lib/system-log";
+import {
+  INVITE_CODE_ROLES,
+  ROLE_LABELS,
+  TEACHER,
+  isInviteCodeRole,
+} from "@/lib/roles";
 
 export const runtime = "nodejs";
 
@@ -20,8 +26,8 @@ export const runtime = "nodejs";
 const LIST_LIMIT = 200;
 
 /**
- * GET /api/admin/teacher-codes — every issued teacher registration code,
- * newest first, plus whether the legacy TEACHER_SIGNUP_TOKEN env var is still
+ * GET /api/admin/teacher-codes — every issued registration (invite) code, of
+ * every role, newest first, plus whether the legacy TEACHER_SIGNUP_TOKEN env var is still
  * accepted alongside them.
  */
 export async function GET(req: NextRequest) {
@@ -53,7 +59,11 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/** POST /api/admin/teacher-codes — mint a code with its own expiry and use limit. */
+/**
+ * POST /api/admin/teacher-codes — mint an invite code for one role (TEACHER or
+ * RESEARCHER) with its own expiry and use limit. Never ADMIN: admin accounts
+ * come only from the ADMIN_SIGNUP_TOKEN env var.
+ */
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user || session.user.role !== "ADMIN") {
@@ -64,6 +74,15 @@ export async function POST(req: NextRequest) {
     const parsed = parseBody(teacherCodeCreateSchema, await req.json());
     if (!parsed.ok) return parsed.response;
     const { label, expiresInMinutes, maxUses } = parsed.data;
+    const role = parsed.data.role ?? TEACHER;
+    if (!isInviteCodeRole(role)) {
+      return NextResponse.json(
+        {
+          error: `A code's account type must be one of: ${INVITE_CODE_ROLES.join(", ")}.`,
+        },
+        { status: 400 },
+      );
+    }
 
     // Ranges are checked here rather than in the zod schema so the admin sees
     // which bound they crossed instead of parseBody's uniform 400 text.
@@ -95,6 +114,7 @@ export async function POST(req: NextRequest) {
 
     const row = await createTeacherCode({
       label,
+      role,
       expiresInMinutes,
       maxUses,
       createdById: session.user.id,
@@ -103,12 +123,13 @@ export async function POST(req: NextRequest) {
     void logSystemEvent({
       category: "AUTH",
       type: "TEACHER_CODE_CREATED",
-      message: `Teacher registration code issued${label ? ` (${label})` : ""}.`,
+      message: `${ROLE_LABELS[role]} invite code issued${label ? ` (${label})` : ""}.`,
       userId: session.user.id,
       // Never the code itself — the admin log is readable by every admin and
       // the code is a bearer credential.
       metadata: {
         codeId: row.id,
+        role: row.role,
         expiresAt: row.expiresAt,
         maxUses: row.maxUses,
       },
