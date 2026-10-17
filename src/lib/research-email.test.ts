@@ -150,6 +150,13 @@ describe("specific people", () => {
     );
   });
 
+  it("keeps a chosen study period and defaults to the lowest enabled one", () => {
+    expect(normalizePostSurveyAudience({}).period).toBeNull();
+    expect(normalizePostSurveyAudience({ period: 2 }).period).toBe(2);
+    expect(normalizePostSurveyAudience({ period: "2" }).period).toBeNull();
+    expect(normalizePostSurveyAudience({ period: 5 }).period).toBeNull();
+  });
+
   it("matches by contact email, account email, or user ID and reports the rest", () => {
     const recipients = [
       { userId: "u1", email: "ann.contact@gmail.com" },
