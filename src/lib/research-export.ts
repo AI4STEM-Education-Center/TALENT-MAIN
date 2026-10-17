@@ -10,9 +10,11 @@ import { finished, pipeline } from "node:stream/promises";
 import { resolveDatabaseUrl } from "@/lib/db-url";
 import { getS3ObjectAsString } from "@/lib/storage";
 import {
+  RESEARCH_EXPORT_CONFIG_FIELDS,
   RESEARCH_EXPORT_FIELDS,
   RESEARCH_EXPORT_EXCLUDED_MODELS,
   RESEARCH_EXPORT_FIELD_DOCS,
+  RESEARCH_EXPORT_TABLE_SCOPES,
 } from "@/lib/research-export-fields";
 
 type Row = Record<string, unknown>;
@@ -39,23 +41,61 @@ function identifier(name: string): string {
   return `"${name.replaceAll('"', '""')}"`;
 }
 
-export const researchExportTables = Object.entries(RESEARCH_EXPORT_FIELDS).map(
-  ([name, selected]) => {
-    const model = Prisma.dmmf.datamodel.models.find((m) => m.name === name)!;
-    const fields = selected.split(" ").map((name) => {
-      const field = model.fields.find((f) => f.name === name);
-      if (!field || field.kind === "object")
-        throw new Error(`Invalid export field: ${model.name}.${name}`);
-      return field;
-    });
-    return {
-      model,
-      fields,
-      filename: `${name.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase()}.csv`,
-      sql: `SELECT ${fields.map((f) => `${identifier(f.dbName ?? f.name)} AS ${identifier(f.name)}`).join(", ")} FROM ${identifier(model.dbName ?? model.name)} ORDER BY ${identifier(fields[0].dbName ?? fields[0].name)}`,
-    };
-  },
+type ExportModelName = keyof typeof RESEARCH_EXPORT_FIELDS;
+
+/**
+ * Who the archive is for. "admin" gets every allowlisted table and column.
+ * "researcher" (a research scientist) gets only the tables scoped "data" in
+ * RESEARCH_EXPORT_TABLE_SCOPES, minus RESEARCH_EXPORT_CONFIG_FIELDS — the
+ * same split the dashboard enforces between data pages and config pages.
+ */
+export type ResearchExportAudience = "admin" | "researcher";
+
+function exportTable(name: ExportModelName, columns: readonly string[]) {
+  const model = Prisma.dmmf.datamodel.models.find((m) => m.name === name)!;
+  const fields = columns.map((column) => {
+    const field = model.fields.find((f) => f.name === column);
+    if (!field || field.kind === "object")
+      throw new Error(`Invalid export field: ${model.name}.${column}`);
+    return field;
+  });
+  return {
+    model,
+    fields,
+    filename: `${name.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase()}.csv`,
+    sql: `SELECT ${fields.map((f) => `${identifier(f.dbName ?? f.name)} AS ${identifier(f.name)}`).join(", ")} FROM ${identifier(model.dbName ?? model.name)} ORDER BY ${identifier(fields[0].dbName ?? fields[0].name)}`,
+  };
+}
+
+const exportModelNames = Object.keys(
+  RESEARCH_EXPORT_FIELDS,
+) as ExportModelName[];
+
+/** The administrator's full archive. */
+export const researchExportTables = exportModelNames.map((name) =>
+  exportTable(name, RESEARCH_EXPORT_FIELDS[name].split(" ")),
 );
+
+const researcherExportTables = exportModelNames
+  .filter((name) => RESEARCH_EXPORT_TABLE_SCOPES[name] === "data")
+  .map((name) => {
+    const dropped = RESEARCH_EXPORT_CONFIG_FIELDS[name] ?? [];
+    return exportTable(
+      name,
+      RESEARCH_EXPORT_FIELDS[name]
+        .split(" ")
+        .filter((column) => !dropped.includes(column)),
+    );
+  });
+
+/** Models whose CSV is withheld from the research scientist's archive. */
+export const researcherWithheldModels = exportModelNames.filter(
+  (name) => RESEARCH_EXPORT_TABLE_SCOPES[name] === "config",
+);
+
+export function researchExportTablesFor(audience: ResearchExportAudience) {
+  return audience === "admin" ? researchExportTables : researcherExportTables;
+}
 
 function scalar(value: unknown, type: string): unknown {
   if (value == null) return null;
@@ -167,13 +207,31 @@ async function* surveyQuestionsCsv(db: Database.Database) {
   }
 }
 
-const exportReadme = `TALENT research export (format version 1)
-
-Scope: all retained records in this deployment, without date, class, role, or
+const adminScope = `Scope: all retained records in this deployment, without date, class, role, or
 consent filtering. This identified administrative extract includes names,
 emails, consent decisions, signatures, and free text. Use consent_record.csv
 and survey_response.csv to establish the study's eligible cohort.
+`;
 
+function researcherScope() {
+  return `Scope: research-scientist extract. All retained research DATA in this
+deployment, without date, class, role, or consent filtering; it includes
+names, emails, consent decisions, signatures, and free text. Use
+consent_record.csv and survey_response.csv to establish the study's eligible
+cohort.
+
+Deployment configuration and admin-only operations are NOT included: no CSV
+for ${researcherWithheldModels.join(", ")}.
+Admin setting columns are also dropped: ${Object.entries(
+    RESEARCH_EXPORT_CONFIG_FIELDS,
+  )
+    .map(([model, fields]) => `${model}.${fields!.join(`, ${model}.`)}`)
+    .join(", ")}.
+Joins below that mention a withheld file do not apply to this extract.
+`;
+}
+
+const exportReadmeBody = `
 Each model has one CSV, even when empty. Column names use Prisma's logical
 names. IDs are unchanged, so joins across files are possible. data_dictionary.csv
 lists types, nullability, descriptions, and declared foreign-key targets.
@@ -239,13 +297,22 @@ are excluded. A SQLite online backup gives every database CSV one consistent
 snapshot; the source database is opened read-only.
 `;
 
+function exportReadme(audience: ResearchExportAudience) {
+  return `TALENT research export (format version 1)
+
+${audience === "admin" ? adminScope : researcherScope()}
+${exportReadmeBody}`;
+}
+
 /** Stage a complete ZIP on disk, so failures never produce a successful partial
  * download. SQLite and CSVs are streamed with bounded buffers; only one cold
  * conversation is loaded at a time. Clean up after download or cancellation. */
 export async function createResearchExport(
   requestedById: string,
   signal?: AbortSignal,
+  { audience = "admin" }: { audience?: ResearchExportAudience } = {},
 ) {
+  const tables = researchExportTablesFor(audience);
   const directory = await mkdtemp(join(tmpdir(), "talent-research-"));
   const cleanup = () => rm(directory, { recursive: true, force: true });
   let source: Database.Database | undefined;
@@ -285,7 +352,7 @@ export async function createResearchExport(
     writing = pipeline(zip, createWriteStream(path), { signal });
     // Attach a rejection handler immediately, including while entries are queued.
     void writing.catch(() => {});
-    const files = researchExportTables.map((table) => {
+    const files = tables.map((table) => {
       const { count } = snapshot!
         .prepare(
           `SELECT COUNT(*) AS count FROM ${identifier(table.model.dbName ?? table.model.name)}`,
@@ -328,7 +395,7 @@ export async function createResearchExport(
         "description",
       ]),
     ];
-    for (const table of researchExportTables) {
+    for (const table of tables) {
       // Prisma 7's runtime DMMF omits isRequired and relationFromFields. Read
       // constraints from the actual snapshot instead of inferring them.
       const tableName = identifier(table.model.dbName ?? table.model.name);
@@ -433,7 +500,7 @@ export async function createResearchExport(
     archive.append("\uFEFF" + dictionary.join(""), {
       name: "data_dictionary.csv",
     });
-    archive.append(exportReadme, { name: "README.txt" });
+    archive.append(exportReadme(audience), { name: "README.txt" });
     archive.append(
       JSON.stringify(
         {
@@ -441,10 +508,20 @@ export async function createResearchExport(
           startedAt,
           snapshotCompletedAt,
           requestedById,
-          scope: "All retained records; no consent filtering",
+          audience,
+          scope:
+            audience === "admin"
+              ? "All retained records; no consent filtering"
+              : "All retained research data, without deployment configuration; no consent filtering",
           files,
           derivedFiles,
-          excludedModels: RESEARCH_EXPORT_EXCLUDED_MODELS,
+          excludedModels:
+            audience === "admin"
+              ? RESEARCH_EXPORT_EXCLUDED_MODELS
+              : [
+                  ...RESEARCH_EXPORT_EXCLUDED_MODELS,
+                  ...researcherWithheldModels,
+                ],
         },
         null,
         2,

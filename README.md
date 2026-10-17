@@ -436,7 +436,7 @@ turn dying.
 |------|----------------------------|----------------|
 | Student | Class invite link | Takes quizzes, reads materials, answers surveys |
 | Teacher | Admin-issued invite code (role Teacher) | Runs their own classes, quizzes and materials |
-| Research scientist (`RESEARCHER`) | Admin-issued invite code (role Research scientist) | **Read-only** access to the admin dashboard's data pages: users, class statistics, student usage, quizzes, material pool, materials, simulations, concepts, consent records and export requests, surveys and responses, research pool, feedback, chat transcripts, learning-resource engagement, system logs; can download the research export ZIP and the CSVs |
+| Research scientist (`RESEARCHER`) | Admin-issued invite code (role Research scientist) | **Read-only** access to the admin dashboard's data pages: users, class statistics, student usage, quizzes, material pool, materials, simulations, concepts, consent records and export requests, surveys and responses, research pool, feedback, chat transcripts, learning-resource engagement, system logs; can download the CSVs and a research export ZIP that leaves out configuration tables |
 | Administrator | `ADMIN_SIGNUP_TOKEN` | Everything, including configuration |
 
 Research scientists never see configuration or take actions: AI config, e-mail/SMTP, backups,
@@ -448,6 +448,14 @@ enforces the split server-side (`src/lib/admin-access.ts`: `requireAdminDataRead
 GETs, `requireAdminApi` for config and all writes). Every research-data download (research export
 ZIP, survey-response, research-pool and feedback CSVs) is recorded in **System Logs** under the
 `AUDIT` category with the downloader's id and role.
+
+The research export ZIP is role-scoped: every table in `src/lib/research-export-fields.ts` is tagged
+`data` or `config` (`RESEARCH_EXPORT_TABLE_SCOPES`; an untagged table fails typecheck and tests).
+Administrators get every table; a research scientist's archive omits the `config` tables (AI
+providers/models/assignments, assistant and guardrail settings, e-mail senders, research e-mail
+templates/campaigns/deliveries, consent export settings and jobs, invite codes, pressure tests,
+resource samples) and admin setting columns such as teacher e-mail limits. Its README and
+manifest list what was withheld.
 
 ## Project Structure
 

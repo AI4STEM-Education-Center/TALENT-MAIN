@@ -165,6 +165,111 @@ export const RESEARCH_EXPORT_FIELD_DOCS: Partial<
   },
 };
 
+/**
+ * Every exported table is classified, so a new one cannot ship without a
+ * decision (the Record type makes a missing key a type error, and a test
+ * checks the keys match RESEARCH_EXPORT_FIELDS):
+ *
+ * - "data": research data and materials. In every archive.
+ * - "config": deployment configuration and admin-only operations (AI
+ *   providers/models/assignments, assistant and guardrail settings, e-mail
+ *   senders and research e-mail templates/campaigns, consent export settings
+ *   and jobs, invite codes, pressure tests, infrastructure samples). Only in
+ *   the administrator's archive — a research scientist gets 403 on all of
+ *   these in the dashboard, so their archive must not carry them either.
+ */
+export type ResearchExportScope = "data" | "config";
+
+export const RESEARCH_EXPORT_TABLE_SCOPES: Record<
+  keyof typeof RESEARCH_EXPORT_FIELDS,
+  ResearchExportScope
+> = {
+  User: "data",
+  Teacher: "data",
+  LearningMaterial: "data",
+  MaterialClass: "data",
+  MaterialPage: "data",
+  Student: "data",
+  Class: "data",
+  ClassSyllabus: "data",
+  ClassStudentList: "data",
+  ClassEnrollment: "data",
+  Invitation: "data",
+  TeacherRegistrationCode: "config",
+  Topic: "data",
+  Quiz: "data",
+  PoolSubmission: "data",
+  Question: "data",
+  QuestionImport: "data",
+  QuizPdfExtraction: "data",
+  QuizPdfExtractionPage: "data",
+  QuizPdfExtractionFigure: "data",
+  Option: "data",
+  ClassModule: "data",
+  ClassModuleQuiz: "data",
+  ClassQuiz: "data",
+  QuizProgress: "data",
+  QuizAttempt: "data",
+  QuizAnswer: "data",
+  ExamResult: "data",
+  AiProvider: "config",
+  AiModel: "config",
+  AiUseCaseAssignment: "config",
+  GuardrailConfig: "config",
+  GuardrailEvent: "data",
+  GuardrailFeedback: "data",
+  AssistantConfig: "config",
+  AssistantAttachment: "data",
+  AssistantConversation: "data",
+  AssistantMessage: "data",
+  EmailSender: "config",
+  Message: "data",
+  MessageEmailDelivery: "data",
+  Notification: "data",
+  Concept: "data",
+  Misconception: "data",
+  ConceptMisconception: "data",
+  ConceptExternalRef: "data",
+  QuestionSimulation: "data",
+  SimulationFeedback: "data",
+  SimulationSession: "data",
+  LearningResourceSession: "data",
+  ContentFeedback: "data",
+  SystemLog: "data",
+  ResourceSample: "config",
+  // The IRB form text participants agreed to: needed to read consent_record.
+  ConsentFormVersion: "data",
+  ConsentRecord: "data",
+  ConsentExportRequest: "data",
+  ConsentEmailDelivery: "data",
+  ConsentExportJob: "config",
+  ConsentExportSettings: "config",
+  PressureTestResult: "config",
+  SimulationVersion: "data",
+  SimulationEditChat: "data",
+  QuizPracticeVersion: "data",
+  QuizPracticeAttempt: "data",
+  SurveyForm: "data",
+  SurveyResponse: "data",
+  SurveyPromptDismissal: "data",
+  ConsentRepromptDismissal: "data",
+  SurveyInvite: "data",
+  ResearchEmailTemplate: "config",
+  ResearchEmailCampaign: "config",
+  ResearchEmailDelivery: "config",
+};
+
+/**
+ * Admin settings stored as columns on otherwise "data" tables; dropped from
+ * the research scientist's archive (Teacher e-mail limits are set on the
+ * admin-only Email page).
+ */
+export const RESEARCH_EXPORT_CONFIG_FIELDS: Partial<
+  Record<keyof typeof RESEARCH_EXPORT_FIELDS, readonly string[]>
+> = {
+  Teacher: ["emailDailyLimit", "emailMonthlyLimit"],
+};
+
 export const RESEARCH_EXPORT_EXCLUDED_MODELS = [
   "PasswordResetToken",
   "SmtpConfig",

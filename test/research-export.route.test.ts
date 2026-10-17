@@ -14,8 +14,10 @@ import { getS3ObjectAsString } from "@/lib/storage";
 import { prisma } from "@/lib/prisma";
 import { parseCsvRecords } from "@/lib/concept-csv";
 import {
+  RESEARCH_EXPORT_CONFIG_FIELDS,
   RESEARCH_EXPORT_FIELDS,
   RESEARCH_EXPORT_FIELD_DOCS,
+  RESEARCH_EXPORT_TABLE_SCOPES,
 } from "@/lib/research-export-fields";
 import {
   resetDb,
@@ -65,6 +67,46 @@ describe("research export field docs", () => {
     expect(
       Object.keys(RESEARCH_EXPORT_FIELD_DOCS.LearningResourceSession!).sort(),
     ).toEqual(RESEARCH_EXPORT_FIELDS.LearningResourceSession.split(" ").sort());
+  });
+});
+
+describe("research export table scopes", () => {
+  it("classifies every exported table as data or config, and nothing else", () => {
+    expect(Object.keys(RESEARCH_EXPORT_TABLE_SCOPES).sort()).toEqual(
+      Object.keys(RESEARCH_EXPORT_FIELDS).sort(),
+    );
+    for (const scope of Object.values(RESEARCH_EXPORT_TABLE_SCOPES)) {
+      expect(["data", "config"]).toContain(scope);
+    }
+  });
+
+  it("tags every admin settings table as config", () => {
+    for (const model of [
+      "AiProvider",
+      "AiModel",
+      "AiUseCaseAssignment",
+      "AssistantConfig",
+      "GuardrailConfig",
+      "EmailSender",
+      "ResearchEmailTemplate",
+      "ConsentExportSettings",
+      "TeacherRegistrationCode",
+      "PressureTestResult",
+    ] as const) {
+      expect(RESEARCH_EXPORT_TABLE_SCOPES[model]).toBe("config");
+    }
+  });
+
+  it("only strips config columns that are actually exported from data tables", () => {
+    for (const [model, fields] of Object.entries(
+      RESEARCH_EXPORT_CONFIG_FIELDS,
+    )) {
+      const name = model as keyof typeof RESEARCH_EXPORT_FIELDS;
+      expect(RESEARCH_EXPORT_TABLE_SCOPES[name]).toBe("data");
+      expect(RESEARCH_EXPORT_FIELDS[name].split(" ")).toEqual(
+        expect.arrayContaining([...fields!]),
+      );
+    }
   });
 });
 
@@ -495,6 +537,147 @@ describe("admin research export", () => {
       dataset: "research export ZIP",
       role: "RESEARCHER",
     });
+  });
+
+  it("gives a research scientist an archive without deployment configuration, and an admin the full one", async () => {
+    await prisma.teacher.update({
+      where: { id: (await createTeacher()).teacher.id },
+      data: { emailDailyLimit: 7, emailMonthlyLimit: 70 },
+    });
+    const provider = await prisma.aiProvider.create({
+      data: { name: "Secret provider", providerType: "openai" },
+    });
+    const model = await prisma.aiModel.create({
+      data: { providerId: provider.id, modelId: "secret-model" },
+    });
+    await prisma.aiUseCaseAssignment.create({
+      data: {
+        useCase: "TUTOR",
+        providerId: provider.id,
+        modelId: model.id,
+      },
+    });
+    await prisma.guardrailConfig.create({
+      data: { topicDescription: "SECRET_TOPIC" },
+    });
+    await prisma.assistantConfig.create({
+      data: {
+        id: "STUDENT",
+        audience: "STUDENT",
+        extraInstructions: "SECRET_INSTRUCTIONS",
+      },
+    });
+    await prisma.emailSender.create({
+      data: { purpose: "RESEARCH", localPart: "secret-sender" },
+    });
+    await prisma.researchEmailTemplate.create({
+      data: { kind: "INTERVIEW", irbBody: "SECRET_TEMPLATE" },
+    });
+    await prisma.consentExportSettings.create({ data: {} });
+    await prisma.teacherRegistrationCode.create({
+      data: { code: "SECRET-CODE", label: "SECRET_LABEL" },
+    });
+
+    const configFiles = [
+      "ai_provider.csv",
+      "ai_model.csv",
+      "ai_use_case_assignment.csv",
+      "guardrail_config.csv",
+      "assistant_config.csv",
+      "email_sender.csv",
+      "research_email_template.csv",
+      "consent_export_settings.csv",
+      "teacher_registration_code.csv",
+      "pressure_test_result.csv",
+      "resource_sample.csv",
+    ];
+    const secrets = [
+      "Secret provider",
+      "secret-model",
+      "SECRET_TOPIC",
+      "SECRET_INSTRUCTIONS",
+      "secret-sender",
+      "SECRET_TEMPLATE",
+      "SECRET_LABEL",
+    ];
+
+    const researcher = await createResearchExport("researcher-1", undefined, {
+      audience: "researcher",
+    });
+    try {
+      const zip = await JSZip.loadAsync(await readFile(researcher.path));
+      for (const file of configFiles) expect(zip.file(file)).toBeNull();
+      const everything = (
+        await Promise.all(
+          Object.values(zip.files).map((entry) => entry.async("string")),
+        )
+      ).join("\n");
+      for (const secret of secrets) expect(everything).not.toContain(secret);
+      const [teacher] = await records(zip, "teacher.csv");
+      expect(teacher).not.toHaveProperty("emailDailyLimit");
+      expect(teacher).not.toHaveProperty("emailMonthlyLimit");
+      expect(zip.file("user.csv")).not.toBeNull();
+      expect(zip.file("consent_record.csv")).not.toBeNull();
+      expect(zip.file("survey_response.csv")).not.toBeNull();
+      const manifest = JSON.parse(
+        await zip.file("manifest.json")!.async("string"),
+      );
+      expect(manifest.audience).toBe("researcher");
+      expect(manifest.excludedModels).toEqual(
+        expect.arrayContaining([
+          "AiProvider",
+          "AssistantConfig",
+          "EmailSender",
+        ]),
+      );
+      const dictionary = await zip.file("data_dictionary.csv")!.async("string");
+      expect(dictionary).not.toContain("assistant_config.csv");
+      expect(dictionary).not.toContain("emailDailyLimit");
+      const readme = await zip.file("README.txt")!.async("string");
+      expect(readme).toContain("research-scientist extract");
+      expect(readme).toContain("AssistantConfig");
+    } finally {
+      await researcher.cleanup();
+    }
+
+    const admin = await createResearchExport("admin-1");
+    try {
+      const zip = await JSZip.loadAsync(await readFile(admin.path));
+      for (const file of configFiles) expect(zip.file(file)).not.toBeNull();
+      const everything = (
+        await Promise.all(
+          Object.values(zip.files).map((entry) => entry.async("string")),
+        )
+      ).join("\n");
+      for (const secret of secrets) expect(everything).toContain(secret);
+      const [teacher] = await records(zip, "teacher.csv");
+      expect(teacher.emailDailyLimit).toBe("7");
+      const manifest = JSON.parse(
+        await zip.file("manifest.json")!.async("string"),
+      );
+      expect(manifest.audience).toBe("admin");
+      expect(manifest.excludedModels).not.toContain("AiProvider");
+    } finally {
+      await admin.cleanup();
+    }
+  });
+
+  it("serves the research scientist's scoped archive through the route", async () => {
+    await prisma.assistantConfig.create({
+      data: {
+        id: "STUDENT",
+        audience: "STUDENT",
+        extraInstructions: "SECRET_INSTRUCTIONS",
+      },
+    });
+    vi.mocked(auth).mockResolvedValue({
+      user: { id: "researcher-1", role: "RESEARCHER" },
+    } as never);
+    const res = await GET(request());
+    expect(res.status).toBe(200);
+    const zip = await JSZip.loadAsync(await res.arrayBuffer());
+    expect(zip.file("assistant_config.csv")).toBeNull();
+    expect(zip.file("user.csv")).not.toBeNull();
   });
 
   it("cancels before generating data when the client has disconnected", async () => {
