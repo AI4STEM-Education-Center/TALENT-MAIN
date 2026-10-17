@@ -16,7 +16,10 @@ export type SystemLogCategory =
   | "SYSTEM"
   // Guardrail decisions (moderation flags, skipped checks). Its own category
   // so an admin can filter the safety trail apart from ordinary API noise.
-  | "GUARDRAIL";
+  | "GUARDRAIL"
+  // Audit trail of who downloaded which research dataset (see
+  // logDataExport in src/lib/admin-access.ts).
+  | "AUDIT";
 export type SystemLogSeverity = "INFO" | "WARNING" | "ERROR";
 
 export interface SystemLogEvent {
