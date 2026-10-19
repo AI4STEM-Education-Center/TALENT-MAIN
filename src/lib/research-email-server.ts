@@ -35,7 +35,7 @@ import {
   type RecipientVars,
   type VersionKey,
 } from "@/lib/research-email";
-import type { SurveyRole } from "@/lib/survey";
+import { surveyFormLabel, type SurveyRole } from "@/lib/survey";
 import { getEnabledSurveyForm, newSurveyToken } from "@/lib/survey-server";
 import { enqueueResearchEmails } from "@/lib/queue";
 
@@ -119,7 +119,19 @@ export type PlannedRecipient = {
   name: string;
 };
 
-type RecipientPlan = { recipients: PlannedRecipient[]; skipped: string[] };
+/** POST_SURVEY only: the form each role's links open, for the composer. */
+export type PlannedSurveyForm = {
+  role: SurveyRole;
+  formId: string;
+  period: number;
+  title: string;
+};
+
+type RecipientPlan = {
+  recipients: PlannedRecipient[];
+  skipped: string[];
+  forms?: PlannedSurveyForm[];
+};
 
 function dedupeByEmail(list: PlannedRecipient[]): PlannedRecipient[] {
   const seen = new Set<string>();
@@ -152,9 +164,10 @@ async function planPoolRecipients(
 
 /**
  * Post-survey recipients: the selected roles, narrowed by target, minus anyone
- * who already submitted that role's enabled post-survey (so a reminder
- * campaign never nags people who are done). Links are minted later, at
- * materialization, so each carries its own token.
+ * who already submitted that role's enabled post-survey for the chosen study
+ * period (so a reminder campaign never nags people who are done). With no
+ * period chosen, each role's lowest enabled period is used. Links are minted
+ * later, at materialization, so each carries its own token.
  */
 async function planPostSurveyRecipients(
   audienceJson: string,
@@ -166,15 +179,29 @@ async function planPostSurveyRecipients(
   );
   const skipped: string[] = [];
   const recipients: PlannedRecipient[] = [];
+  const forms: PlannedSurveyForm[] = [];
 
   for (const role of audience.roles) {
-    const form = await getEnabledSurveyForm("POST", role);
+    const form = await getEnabledSurveyForm(
+      "POST",
+      role,
+      audience.period ?? undefined,
+    );
     if (!form) {
+      const which = audience.period
+        ? surveyFormLabel("POST", audience.period).toLowerCase()
+        : "post-survey";
       skipped.push(
-        `No ${role === "TEACHER" ? "teacher" : "student"} post-survey is enabled, so ${role === "TEACHER" ? "teachers" : "students"} were skipped.`,
+        `No ${role === "TEACHER" ? "teacher" : "student"} ${which} is enabled, so ${role === "TEACHER" ? "teachers" : "students"} were skipped.`,
       );
       continue;
     }
+    forms.push({
+      role,
+      formId: form.id,
+      period: form.period,
+      title: form.title,
+    });
 
     const [users, done, preDone] = await Promise.all([
       prisma.user.findMany({
@@ -219,7 +246,7 @@ async function planPostSurveyRecipients(
       });
     }
   }
-  return { recipients: dedupeByEmail(recipients), skipped };
+  return { recipients: dedupeByEmail(recipients), skipped, forms };
 }
 
 function safeJson(json: string): unknown {
@@ -259,6 +286,7 @@ async function planRecipients(
       ? "no account in the selected roles, outside the selected group, or already submitted the post-survey"
       : "not in the interview pool for the selected roles and agreement routes";
   return {
+    ...plan,
     recipients: matched,
     skipped: unmatched.length
       ? [...plan.skipped, `Not sent to ${unmatched.join(", ")} (${why}).`]

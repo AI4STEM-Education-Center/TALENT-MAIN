@@ -49,7 +49,12 @@ export async function POST(
 
   const claimed = await prisma.surveyForm.updateMany({
     where: { id, status: { not: "EXTRACTING" } },
-    data: { status: "EXTRACTING", errorMessage: null, isEnabled: false },
+    data: {
+      status: "EXTRACTING",
+      errorMessage: null,
+      isEnabled: false,
+      promptInApp: false,
+    },
   });
   if (claimed.count === 0)
     return NextResponse.json({ error: "Already extracting." }, { status: 409 });

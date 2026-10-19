@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Download, Loader2 } from "lucide-react";
 import {
   formatAnswer,
+  surveyFormLabel,
   type SurveyAnswers,
   type SurveyQuestion,
 } from "@/lib/survey";
@@ -24,7 +25,13 @@ type ResponseRow = {
 };
 
 type Data = {
-  form: { id: string; title: string; kind: string; role: string };
+  form: {
+    id: string;
+    title: string;
+    kind: string;
+    role: string;
+    period: number;
+  };
   questions: SurveyQuestion[];
   responses: ResponseRow[];
   total: number;
@@ -79,6 +86,10 @@ export default function SurveyResponsesPage({
             <ArrowLeft className="size-4" /> Surveys
           </Link>
           <h1 className="text-2xl font-bold">{data.form.title}</h1>
+          <p className="text-sm text-muted-foreground">
+            {data.form.role === "TEACHER" ? "Teacher" : "Student"}{" "}
+            {surveyFormLabel(data.form.kind, data.form.period).toLowerCase()}
+          </p>
           <p className="text-sm text-muted-foreground">
             {data.total} response{data.total === 1 ? "" : "s"}
             {data.total > data.responses.length

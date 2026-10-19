@@ -18,6 +18,7 @@ export async function resetDb() {
   await prisma.researchEmailTemplate.deleteMany();
   await prisma.surveyInvite.deleteMany();
   await prisma.surveyPromptDismissal.deleteMany();
+  await prisma.consentRepromptDismissal.deleteMany();
   await prisma.surveyResponse.deleteMany();
   await prisma.surveyForm.deleteMany();
   await prisma.consentExportJob.deleteMany();

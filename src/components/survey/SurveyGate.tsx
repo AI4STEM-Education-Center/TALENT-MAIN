@@ -1,59 +1,104 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
+import { usePathname } from "next/navigation";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { SurveyFormView, type SurveyFormData } from "./SurveyFormView";
+import { surveyFormLabel } from "@/lib/survey";
 
 /** Fired by ConsentGate once a consent decision is saved, so the survey can follow. */
 export const CONSENT_DECIDED_EVENT = "consent:decided";
 
 const LATER_KEY = "survey-prompt-later";
 
+/** Attempts per check, and the wait before each retry. */
+const RETRY_DELAYS_MS = [0, 1_000, 3_000];
+
+function wait(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (ms === 0 || signal?.aborted) return resolve();
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener("abort", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+
 type Due = {
   state: "DUE";
+  kind: "PRE" | "POST";
+  period: number;
   mandatory: boolean;
   form: SurveyFormData;
   defaultEmail?: string;
 };
 
 /**
- * Mounted in the dashboard layout next to ConsentGate. Shows the enabled
- * pre-survey after the consent decision is on file:
+ * Mounted in the dashboard layout next to ConsentGate. Shows whichever survey
+ * GET /api/surveys/due says is owed, one at a time, after any consent prompt:
  *
- * - Mandatory — a non-dismissible modal — for students and teachers who agreed
- *   to the IRB consent form (opted in to data collection). The server refuses
- *   to record a dismissal for them too.
- * - Optional for everyone else: a prompt they can take, postpone for this
+ * - The enabled pre-survey. Mandatory — a non-dismissible modal — for
+ *   students and teachers who agreed to the IRB consent form (opted in to data
+ *   collection); the server refuses to record a dismissal for them too.
+ *   Optional for everyone else: a prompt they can take, postpone for this
  *   session ("Maybe later"), or decline for good ("No thanks").
+ * - Then an in-app post-survey the admin is prompting for the current study
+ *   period — always mandatory, and only for participants who were already in
+ *   the study before the prompt started.
+ *
+ * Failure handling: like ConsentGate, this fails OPEN — an outage of the
+ * survey API must not lock every student out of the platform. To keep one
+ * failed request from skipping a mandatory survey for a whole session, each
+ * check retries network errors and 5xx/429 responses with backoff, and the
+ * check runs again on every client-side navigation (one cheap GET).
  */
 export function SurveyGate() {
   const { data: session, status: sessionStatus } = useSession();
   const role = session?.user?.role;
   const [due, setDue] = useState<Due | null>(null);
   const [taking, setTaking] = useState(false);
-  const [done, setDone] = useState(false);
+  const pathname = usePathname();
+  // Whether a modal is up, read by the navigation re-check (not a render input).
+  const showing = useRef(false);
+  useEffect(() => {
+    showing.current = due !== null;
+  }, [due]);
 
   const check = useCallback(async (signal?: AbortSignal) => {
-    try {
-      const res = await fetch("/api/surveys/pre", {
-        cache: "no-store",
-        signal,
-      });
-      if (!res.ok) return;
-      const data = await res.json();
+    for (const delay of RETRY_DELAYS_MS) {
+      await wait(delay, signal);
       if (signal?.aborted) return;
-      if (data.state !== "DUE") {
-        setDue(null);
+      try {
+        const res = await fetch("/api/surveys/due", {
+          cache: "no-store",
+          signal,
+        });
+        if (!res.ok) {
+          if (res.status >= 500 || res.status === 429) continue;
+          return;
+        }
+        const data = await res.json();
+        if (signal?.aborted) return;
+        if (data.state !== "DUE") {
+          setDue(null);
+          return;
+        }
+        if (
+          !data.mandatory &&
+          sessionStorage.getItem(LATER_KEY) === data.form.id
+        )
+          return;
+        setDue(data as Due);
+        setTaking(Boolean(data.mandatory));
         return;
+      } catch {
+        if (signal?.aborted) return;
+        // Network error: retry; after the last attempt, fail open until the
+        // next navigation.
       }
-      if (!data.mandatory && sessionStorage.getItem(LATER_KEY) === data.form.id)
-        return;
-      setDue(data as Due);
-      setTaking(Boolean(data.mandatory));
-    } catch {
-      // A transient failure just means no prompt this page load.
     }
   }, []);
 
@@ -61,16 +106,16 @@ export function SurveyGate() {
     if (sessionStatus !== "authenticated") return;
     if (role !== "STUDENT" && role !== "TEACHER") return;
     const controller = new AbortController();
-    void check(controller.signal);
+    if (!showing.current) void check(controller.signal);
     const onConsent = () => void check(controller.signal);
     window.addEventListener(CONSENT_DECIDED_EVENT, onConsent);
     return () => {
       controller.abort();
       window.removeEventListener(CONSENT_DECIDED_EVENT, onConsent);
     };
-  }, [sessionStatus, role, check]);
+  }, [sessionStatus, role, check, pathname]);
 
-  if (!due || done) return null;
+  if (!due) return null;
 
   const later = () => {
     sessionStorage.setItem(LATER_KEY, due.form.id);
@@ -121,18 +166,28 @@ export function SurveyGate() {
           </div>
         ) : (
           <>
-            {due.mandatory && (
+            {due.kind === "POST" ? (
               <p className="rounded-md bg-muted/60 p-3 text-sm text-muted-foreground">
-                Because you agreed to take part in the research study, please
-                complete this short survey before continuing.
+                Before you continue, please complete the{" "}
+                {surveyFormLabel(due.kind, due.period)} about your experience
+                with the platform during this study period.
               </p>
+            ) : (
+              due.mandatory && (
+                <p className="rounded-md bg-muted/60 p-3 text-sm text-muted-foreground">
+                  Because you agreed to take part in the research study, please
+                  complete this short survey before continuing.
+                </p>
+              )
             )}
             <SurveyFormView
               key={due.form.id}
               form={due.form}
-              interviewDefaultEmail={due.defaultEmail ?? ""}
+              interviewDefaultEmail={
+                due.kind === "PRE" ? (due.defaultEmail ?? "") : undefined
+              }
               onSubmit={async (answers, interview) => {
-                const res = await fetch("/api/surveys/pre", {
+                const res = await fetch("/api/surveys/due", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
@@ -149,7 +204,10 @@ export function SurveyGate() {
                     error: data?.error ?? "Could not submit the survey.",
                     questionId: data?.questionId,
                   };
-                setDone(true);
+                setDue(null);
+                // Another survey may follow (e.g. a pre-survey, then the
+                // current period's post-survey).
+                void check();
                 return { ok: true };
               }}
               footer={

@@ -9,7 +9,12 @@ import {
   isInterviewRecordingChoice,
   type InterviewRecordingChoice,
 } from "@/lib/consent-fields";
-import { isSurveyRole, type SurveyRole } from "@/lib/survey";
+import {
+  isSurveyPeriod,
+  isSurveyRole,
+  type SurveyPeriod,
+  type SurveyRole,
+} from "@/lib/survey";
 
 /** POOL is the interview invitation to the research pool. */
 export const RESEARCH_EMAIL_KINDS = ["POOL", "POST_SURVEY"] as const;
@@ -336,6 +341,12 @@ export const POST_SURVEY_TARGET_LABELS: Record<PostSurveyTarget, string> = {
 export type PostSurveyAudience = {
   roles: SurveyRole[];
   target: PostSurveyTarget;
+  /**
+   * Which study period's post-survey the links open. null (the default, and
+   * what campaigns saved before periods existed have) = the lowest period
+   * with an enabled form for each role.
+   */
+  period: SurveyPeriod | null;
   /** Emails or user IDs; when non-empty, only these people get the email. */
   people: string[];
 };
@@ -426,6 +437,7 @@ export function normalizePostSurveyAudience(
   return {
     roles: roles.length ? [...new Set(roles)] : ["STUDENT"],
     target,
+    period: isSurveyPeriod(r.period) ? r.period : null,
     people: parsePeople(r.people),
   };
 }
