@@ -3,6 +3,23 @@ import { NextResponse } from "next/server";
 import { clientIp } from "@/lib/rate-limit";
 import { trackRequest } from "@/lib/usage-tracker";
 import { isTeacherConsentBlocked } from "@/lib/consent-claim";
+import {
+  STUDENT,
+  TEACHER,
+  canViewAdminData,
+  homePathForRole,
+  isResearcher,
+} from "@/lib/roles";
+
+/**
+ * Admin-area pages a RESEARCHER may open. Read-only research access is being
+ * rolled out page by page; extend this list as each page's API grants it.
+ */
+const RESEARCHER_ADMIN_PATHS = ["/admin"];
+
+function isResearcherAdminPath(pathname: string): boolean {
+  return RESEARCHER_ADMIN_PATHS.includes(pathname);
+}
 
 const ALLOWED_HOSTS = [
   "dev.ai4talent.org",
@@ -77,6 +94,7 @@ export default auth((req) => {
     "/",
     "/login",
     "/register",
+    // Legacy link: redirects to /register (kept so old links keep working).
     "/admin-register",
     // Password recovery: reachable precisely when the user has no session.
     "/forgot-password",
@@ -128,29 +146,27 @@ export default auth((req) => {
   const role = session.user?.role;
 
   // Role-based path guards. Every dashboard area is listed: the admin pages are
-  // client components that fetch from /api/admin/* (which enforce ADMIN on their
-  // own), so a missing guard here did not leak data — but it did let any signed-in
-  // student or teacher load the admin UI and enumerate the admin surface.
-  // Matched exactly rather than by prefix so the public "/admin-register" page
-  // can never be swept up by it (that route returns above as a public route
-  // today — this keeps the guard correct regardless of that ordering).
-  if (
-    (pathname === "/admin" || pathname.startsWith("/admin/")) &&
-    role !== "ADMIN"
-  ) {
-    return NextResponse.redirect(
-      new URL(role === "TEACHER" ? "/teacher" : "/student", req.url),
-    );
+  // client components that fetch from /api/admin/* (which enforce their own
+  // role checks), so a missing guard here did not leak data — but it did let
+  // any signed-in student or teacher load the admin UI and enumerate the admin
+  // surface. Matched exactly rather than by prefix so a public sibling such as
+  // "/admin-register" (now a redirect to /register) is never swept up by it.
+  // Anyone on the wrong area goes to their own home (homePathForRole).
+  const isAdminArea = pathname === "/admin" || pathname.startsWith("/admin/");
+  if (isAdminArea && !canViewAdminData(role)) {
+    return NextResponse.redirect(new URL(homePathForRole(role), req.url));
   }
-  if (pathname.startsWith("/teacher") && role !== "TEACHER") {
-    return NextResponse.redirect(
-      new URL(role === "ADMIN" ? "/admin" : "/student", req.url),
-    );
+  // Research scientists live in the admin dashboard, but only on the pages
+  // allowlisted here (for now just the overview); every other admin page sends
+  // them back to it.
+  if (isAdminArea && isResearcher(role) && !isResearcherAdminPath(pathname)) {
+    return NextResponse.redirect(new URL(homePathForRole(role), req.url));
   }
-  if (pathname.startsWith("/student") && role !== "STUDENT") {
-    return NextResponse.redirect(
-      new URL(role === "ADMIN" ? "/admin" : "/teacher", req.url),
-    );
+  if (pathname.startsWith("/teacher") && role !== TEACHER) {
+    return NextResponse.redirect(new URL(homePathForRole(role), req.url));
+  }
+  if (pathname.startsWith("/student") && role !== STUDENT) {
+    return NextResponse.redirect(new URL(homePathForRole(role), req.url));
   }
 
   // --- IRB consent hard-gate: a teacher must agree to the research consent

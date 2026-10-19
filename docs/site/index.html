@@ -292,7 +292,7 @@
     <p>Each step picks up where the previous one leaves off. This is the order things happen in when a class goes live:</p>
     <ul class="ready">
       <li><span class="ck" aria-hidden="true">✓</span><span><strong>The platform administrator prepares the deployment.</strong> They connect an AI provider, assign a model to each AI feature, and stock the shared global quiz pool. This is done for you before you start — if something AI-powered reports “no provider”, they're who to ask.</span></li>
-      <li><span class="ck" aria-hidden="true">✓</span><span><strong>A teacher registers and creates a class.</strong> Sign-up uses a teacher registration code from the administrator; the class is created together with its official roster — see <a href="#teacher-create-class">Create a class</a>.</span></li>
+      <li><span class="ck" aria-hidden="true">✓</span><span><strong>A teacher registers and creates a class.</strong> Sign-up uses an invite code from the administrator; the class is created together with its official roster — see <a href="#teacher-create-class">Create a class</a>.</span></li>
       <li><span class="ck" aria-hidden="true">✓</span><span><strong>The teacher uploads learning materials.</strong> Each document gets an <strong>AI-generated summary</strong> and key-concept tags, and every page carries an AI-written key concept and description with the important pages labeled — see <a href="#teacher-materials">Learning materials</a>.</span></li>
       <li><span class="ck" aria-hidden="true">✓</span><span><strong>The teacher adds quizzes and publishes them.</strong> Import from the global pool with one click, build one from scratch, or turn an existing quiz PDF into a live quiz — see <a href="#teacher-quizzes">Import &amp; publish a quiz</a> and <a href="#teacher-quiz-pdf">Import a quiz from a PDF</a>.</span></li>
       <li><span class="ck" aria-hidden="true">✓</span><span><strong>Students join with an invite link and take the quizzes.</strong> There is no open student sign-up: an account is created when a student joins their first class and verifies their identity against the roster — see <a href="#student-join">How students join</a>.</span></li>
@@ -369,10 +369,10 @@
     <section class="block" id="admin-signup">
       <h2><span class="kicker">Setup</span> Create your admin account</h2>
       <ol class="steps">
-        <li><strong>Get the admin registration code.</strong>
-          <p>Admin sign-up is protected by a registration code configured on the server. Get it from whoever operates your AI4Talent deployment.</p></li>
-        <li><strong>Open <a class="path" href="https://dev.ai4talent.org/admin-register"><code>/admin-register</code></a>.</strong>
-          <p>Fill in your first name, last name, a username, your email, and a password, then enter the admin registration code and submit.</p></li>
+        <li><strong>Get the admin invite code.</strong>
+          <p>Admin sign-up is protected by an invite code configured on the server. Get it from whoever operates your AI4Talent deployment.</p></li>
+        <li><strong>Open <a class="path" href="https://dev.ai4talent.org/register"><code>/register</code></a>.</strong>
+          <p>Fill in your first name, last name, a username, your email, and a password, then enter the admin invite code and submit. Everyone except students signs up on this one form; the code decides which kind of account is created.</p></li>
         <li><strong>Sign in at <a class="path" href="https://dev.ai4talent.org/login"><code>/login</code></a>.</strong>
           <p>You can sign in with either your email or your username. You'll land on the admin overview at <a class="path" href="https://dev.ai4talent.org/admin"><code>/admin</code></a> with stat cards for users, quizzes, and more.</p></li>
       </ol>
@@ -438,10 +438,10 @@
 
     <section class="block" id="admin-users">
       <h2><span class="kicker">People</span> Manage users</h2>
-      <p class="lead">The <a class="path" href="https://dev.ai4talent.org/admin/users"><code>Users</code></a> page lists every account, grouped into Admins, Teachers, and Students, with search across the lot.</p>
+      <p class="lead">The <a class="path" href="https://dev.ai4talent.org/admin/users"><code>Users</code></a> page lists every account, grouped into Admins, Research scientists, Teachers, and Students, with search across the lot.</p>
       <ol class="steps">
         <li><strong>Onboard teachers.</strong>
-          <p>Teachers self-register at <a class="path" href="https://dev.ai4talent.org/register"><code>/register</code></a> using the <strong>teacher registration code</strong> configured on the server — share it only with your teaching staff. Students never register directly; they join through class invite links.</p></li>
+          <p>Teachers and research scientists self-register at <a class="path" href="https://dev.ai4talent.org/register"><code>/register</code></a> using an <strong>invite code</strong> you issue under <a class="path" href="https://dev.ai4talent.org/admin/teacher-codes"><code>Invite Codes</code></a>. Pick the account type (Teacher or Research scientist) when you generate the code — the code decides the account it creates — and share it, or its pre-filled link, only with the intended people. Students never register directly; they join through class invite links.</p></li>
         <li><strong>Remove accounts carefully.</strong>
           <p>Deleting a user opens a confirmation explaining the consequences: removing a <em>teacher</em> also removes their classes and materials; removing a <em>student</em> removes their enrollments and progress. You cannot delete your own account.</p></li>
       </ol>
@@ -491,8 +491,8 @@
     <section class="block" id="teacher-signup">
       <h2><span class="kicker">Setup</span> Create your teacher account</h2>
       <ol class="steps">
-        <li><strong>Get the teacher registration code.</strong>
-          <p>Teacher sign-up is gated by a registration code held by the platform administrator — ask them for it.</p></li>
+        <li><strong>Get a teacher invite code.</strong>
+          <p>Teacher sign-up is gated by an invite code issued by the platform administrator — ask them for one (it may arrive as a link that fills the code in for you).</p></li>
         <li><strong>Register at <a class="path" href="https://dev.ai4talent.org/register"><code>/register</code></a>,</strong>
           <p>then sign in at <a class="path" href="https://dev.ai4talent.org/login"><code>/login</code></a> with either your email address or your username.</p></li>
         <li><strong>You land on your dashboard at <a class="path" href="https://dev.ai4talent.org/teacher"><code>/teacher</code></a>.</strong>

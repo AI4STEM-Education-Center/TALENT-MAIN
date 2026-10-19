@@ -167,6 +167,74 @@ describe("middleware auth + routing", () => {
     );
     expect(res.headers.get("location")).toBeNull();
   });
+
+  it("lets anonymous users reach the legacy /admin-register page (it redirects to /register)", () => {
+    const res = run(
+      makeReq({ host: "dev.ai4talent.org", path: "/admin-register" }),
+    );
+    expect(res.headers.get("location")).toBeNull();
+  });
+
+  it("sends a TEACHER away from /admin to /teacher", () => {
+    const res = run(
+      makeReq({
+        host: "dev.ai4talent.org",
+        path: "/admin/users",
+        session: { user: { role: "TEACHER", consentDecision: "AGREE" } },
+      }),
+    );
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toContain("/teacher");
+  });
+});
+
+describe("middleware RESEARCHER routing", () => {
+  const researcher = { user: { role: "RESEARCHER" } };
+
+  it("lets a RESEARCHER open the admin overview", () => {
+    const res = run(
+      makeReq({
+        host: "dev.ai4talent.org",
+        path: "/admin",
+        session: researcher,
+      }),
+    );
+    expect(res.headers.get("location")).toBeNull();
+  });
+
+  it("sends a RESEARCHER back to /admin from admin pages not yet allowlisted", () => {
+    const res = run(
+      makeReq({
+        host: "dev.ai4talent.org",
+        path: "/admin/teacher-codes",
+        session: researcher,
+      }),
+    );
+    expect(res.status).toBe(307);
+    expect(new URL(res.headers.get("location")!).pathname).toBe("/admin");
+  });
+
+  it.each(["/teacher", "/teacher/classes", "/student"])(
+    "sends a RESEARCHER from %s to /admin",
+    (path) => {
+      const res = run(
+        makeReq({ host: "dev.ai4talent.org", path, session: researcher }),
+      );
+      expect(res.status).toBe(307);
+      expect(new URL(res.headers.get("location")!).pathname).toBe("/admin");
+    },
+  );
+
+  it("never applies the teacher consent gate to a RESEARCHER", () => {
+    const res = run(
+      makeReq({
+        host: "dev.ai4talent.org",
+        path: "/api/something",
+        session: { user: { role: "RESEARCHER", consentDecision: null } },
+      }),
+    );
+    expect(res.status).not.toBe(403);
+  });
 });
 
 describe("middleware IRB consent hard-gate", () => {

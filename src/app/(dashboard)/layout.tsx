@@ -11,6 +11,7 @@ import { AssistantProvider } from "@/components/assistant/assistant-context";
 import { SessionProvider } from "next-auth/react";
 import { Menu, BookOpen, PanelLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { isRole, type Role } from "@/lib/roles";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 function DashboardContent({ children }: { children: React.ReactNode }) {
@@ -33,7 +34,9 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     redirect("/login");
   }
 
-  const role = session.user.role as "TEACHER" | "STUDENT" | "ADMIN";
+  // An unrecognized value (a hand-edited row) falls back to the student rail,
+  // which links only to pages the proxy already guards.
+  const role: Role = isRole(session.user.role) ? session.user.role : "STUDENT";
 
   return (
     <AssistantProvider>

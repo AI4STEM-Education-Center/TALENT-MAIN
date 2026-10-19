@@ -5,10 +5,16 @@ import { Users, GraduationCap, LayoutDashboard, Shield } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
+import { canViewAdminData, isAdmin } from "@/lib/roles";
 
 export default async function AdminDashboardPage() {
   const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") redirect("/login");
+  // Read-only aggregate counts: research scientists see this overview too.
+  if (!session?.user || !canViewAdminData(session.user.role))
+    redirect("/login");
+  // The quick links lead to admin-only pages (the proxy sends a researcher
+  // straight back here), so only administrators get them for now.
+  const showAdminLinks = isAdmin(session.user.role);
 
   const [students, teachers, admins, classes] = await Promise.all([
     prisma.user.count({ where: { role: "STUDENT" } }),
@@ -26,23 +32,25 @@ export default async function AdminDashboardPage() {
         </p>
       </div>
 
-      <div className="mb-6 flex flex-wrap gap-3">
-        <Button asChild>
-          <Link href="/admin/classes">Class statistics</Link>
-        </Button>
-        <Button variant="outline" asChild>
-          <Link href="/admin/usage">Student usage records</Link>
-        </Button>
-        <Button variant="outline" asChild>
-          <Link href="/admin/quizzes">Teacher quizzes & pool</Link>
-        </Button>
-        <Button variant="outline" asChild>
-          <Link href="/admin/simulations">Simulations</Link>
-        </Button>
-        <Button variant="outline" asChild>
-          <Link href="/admin/research-export">Export research data</Link>
-        </Button>
-      </div>
+      {showAdminLinks && (
+        <div className="mb-6 flex flex-wrap gap-3">
+          <Button asChild>
+            <Link href="/admin/classes">Class statistics</Link>
+          </Button>
+          <Button variant="outline" asChild>
+            <Link href="/admin/usage">Student usage records</Link>
+          </Button>
+          <Button variant="outline" asChild>
+            <Link href="/admin/quizzes">Teacher quizzes & pool</Link>
+          </Button>
+          <Button variant="outline" asChild>
+            <Link href="/admin/simulations">Simulations</Link>
+          </Button>
+          <Button variant="outline" asChild>
+            <Link href="/admin/research-export">Export research data</Link>
+          </Button>
+        </div>
+      )}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">

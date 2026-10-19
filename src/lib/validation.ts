@@ -102,7 +102,7 @@ export const resetPasswordSchema = z.object({
   password: passwordField,
 });
 
-// ─── Teacher registration codes ─────────────────────────────────────────────
+// ─── Registration (invite) codes ────────────────────────────────────────────
 // Bodies for the admin panel's code issuer. The numeric bounds live in
 // src/lib/teacher-registration-codes.ts so the UI, the API and the docs quote
 // one set of limits.
@@ -128,6 +128,16 @@ export const teacherCodeCreateSchema = z.object({
   maxUses: z
     .number()
     .int()
+    .nullish()
+    .transform((v) => v ?? null),
+  /**
+   * Account role the code creates. Omitted = "TEACHER" (what every code meant
+   * before roles existed). The allowed values (INVITE_CODE_ROLES) are checked
+   * in the route so a bad value gets a message naming them.
+   */
+  role: z
+    .string()
+    .max(40)
     .nullish()
     .transform((v) => v ?? null),
 });
