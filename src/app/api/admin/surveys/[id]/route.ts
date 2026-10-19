@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminApi, requireAdminDataReader } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 import {
   isSurveyPeriod,
@@ -11,15 +11,12 @@ export const runtime = "nodejs";
 
 type Params = { params: Promise<{ id: string }> };
 
-async function requireAdmin() {
-  const session = await auth();
-  return session?.user?.role === "ADMIN" ? session : null;
-}
-
 export async function GET(_req: NextRequest, { params }: Params) {
-  const [session, { id }] = await Promise.all([requireAdmin(), params]);
-  if (!session)
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const [session, { id }] = await Promise.all([
+    requireAdminDataReader(),
+    params,
+  ]);
+  if (session instanceof Response) return session;
   const form = await prisma.surveyForm.findUnique({
     where: { id },
     include: { _count: { select: { responses: true, invites: true } } },
@@ -71,9 +68,8 @@ class PatchError extends Error {
  * in between. Disabling a form also stops its in-app prompt.
  */
 export async function PATCH(req: NextRequest, { params }: Params) {
-  const [session, { id }] = await Promise.all([requireAdmin(), params]);
-  if (!session)
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const [session, { id }] = await Promise.all([requireAdminApi(), params]);
+  if (session instanceof Response) return session;
 
   let body: Record<string, unknown>;
   try {
@@ -201,9 +197,8 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
 /** DELETE — only forms nobody has answered; answered forms are disabled instead. */
 export async function DELETE(_req: NextRequest, { params }: Params) {
-  const [session, { id }] = await Promise.all([requireAdmin(), params]);
-  if (!session)
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const [session, { id }] = await Promise.all([requireAdminApi(), params]);
+  if (session instanceof Response) return session;
   const responses = await prisma.surveyResponse.count({
     where: { formId: id },
   });

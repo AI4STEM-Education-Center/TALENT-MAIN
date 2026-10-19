@@ -92,9 +92,16 @@ describe("logApiError", () => {
 });
 
 describe("GET /api/admin/logs", () => {
-  it("401s a non-admin", async () => {
+  it("403s a teacher", async () => {
     mockAuth.mockResolvedValue({ user: { id: "t", role: "TEACHER" } } as never);
-    expect((await LOGS(logsRequest())).status).toBe(401);
+    expect((await LOGS(logsRequest())).status).toBe(403);
+  });
+
+  it("lets a research scientist view the log", async () => {
+    mockAuth.mockResolvedValue({
+      user: { id: "r", role: "RESEARCHER" },
+    } as never);
+    expect((await LOGS(logsRequest())).status).toBe(200);
   });
 
   it("returns newest-first logs with pagination and a 24h summary", async () => {

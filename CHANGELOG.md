@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.0.25 - 2026-10-16
+
+- Added a research scientist account type with read-only access to administrator data pages, statistics, and research exports, with research ZIP and CSV downloads recorded in the system log.
+- Improved sign-up with a single invite-code field, and expanded administrator invite codes so each code creates either a teacher or a research scientist account.
+- Improved student simulations so they open in a pop-up from quiz results, past results, and the simulations library, with class and quiz statistics showing where each simulation was opened.
+- Added study periods for research post-surveys, with an optional mandatory in-app post-survey for participants and a re-consent prompt for students who previously declined the study.
+- Added tracking of how students use recommended and library learning materials, including opens, time spent, and clicks, with an administrator engagement report and research export.
+
 ## v0.0.24 - 2026-10-09
 
 - Added a complete research dataset export for administrators as a ZIP of CSV files.

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminApi } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rate-limit";
 import { parseBody, conceptsImportSchema } from "@/lib/validation";
@@ -12,10 +12,8 @@ import { logApiError } from "@/lib/system-log";
 // deprecated. This preserves mapping history and prevents a partial import
 // from cascading into destructive data loss.
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   const limited = rateLimit(req, "admin-concepts-import", 10, 60_000);
   if (limited) return limited;

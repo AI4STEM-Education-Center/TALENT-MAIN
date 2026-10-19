@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminDataReader } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 import { simulationMetricsView } from "@/lib/simulation-metrics";
 import { QUESTION_ORDER } from "@/lib/question-order";
@@ -31,10 +31,8 @@ function tally(counts: SimulationCounts, status: string | null) {
  * GET /api/admin/simulations?quizId=xxx — per-question detail for one quiz
  */
 export async function GET(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAdminDataReader();
+  if (session instanceof Response) return session;
 
   const quizId = req.nextUrl.searchParams.get("quizId");
 

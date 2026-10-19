@@ -202,7 +202,63 @@ describe("middleware RESEARCHER routing", () => {
     expect(res.headers.get("location")).toBeNull();
   });
 
-  it("sends a RESEARCHER back to /admin from admin pages not yet allowlisted", () => {
+  it.each([
+    "/admin/users",
+    "/admin/classes",
+    "/admin/classes/c1/students/s1/stats",
+    "/admin/quizzes/q1",
+    "/admin/surveys/s1/responses",
+    "/admin/consent",
+    "/admin/consent-requests",
+    "/admin/research-export",
+    "/admin/research-pool",
+    "/admin/logs",
+    "/admin/assistant-chats",
+    "/admin/feedback",
+    "/admin/resource-engagement",
+  ])("lets a RESEARCHER open the read-only data page %s", (path) => {
+    const res = run(
+      makeReq({ host: "dev.ai4talent.org", path, session: researcher }),
+    );
+    expect(res.headers.get("location")).toBeNull();
+  });
+
+  it.each([
+    "/admin/ai-config",
+    "/admin/email",
+    "/admin/backup",
+    "/admin/teacher-codes",
+    "/admin/pressure-tests",
+    "/admin/resources",
+    "/admin/research-email",
+    "/admin/research-email/post-survey",
+    "/admin/post-survey-email",
+    "/admin/research-pool/email",
+    "/admin/consent/forms",
+    "/admin/consent/settings",
+    // Segment boundary: a lookalike of an allowlisted prefix is not allowed.
+    "/admin/users-export",
+  ])("redirects a RESEARCHER from the config page %s to /admin", (path) => {
+    const res = run(
+      makeReq({ host: "dev.ai4talent.org", path, session: researcher }),
+    );
+    expect(res.status).toBe(307);
+    expect(new URL(res.headers.get("location")!).pathname).toBe("/admin");
+  });
+
+  it("still keeps a TEACHER out of the researcher data pages", () => {
+    const res = run(
+      makeReq({
+        host: "dev.ai4talent.org",
+        path: "/admin/users",
+        session: { user: { role: "TEACHER", consentDecision: "AGREE" } },
+      }),
+    );
+    expect(res.status).toBe(307);
+    expect(new URL(res.headers.get("location")!).pathname).toBe("/teacher");
+  });
+
+  it("sends a RESEARCHER back to /admin from admin pages not allowlisted", () => {
     const res = run(
       makeReq({
         host: "dev.ai4talent.org",

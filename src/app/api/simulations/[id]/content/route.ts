@@ -22,7 +22,8 @@ export const runtime = "nodejs";
  * request and only our own pages may frame it. Never hand out a raw presigned
  * URL for these — S3 would serve the AI-generated document without this CSP.
  *
- * Access: admins always; teachers for their own quizzes and the pool; students
+ * Access: admins and research scientists (read-only — never the editor layer)
+ * always; teachers for their own quizzes and the pool; students
  * when they are enrolled in a class the quiz is assigned to (that is how the
  * simulation reaches them post-quiz).
  */
@@ -45,7 +46,7 @@ export async function GET(
   if (!sim) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const { role } = session.user;
-  let allowed = role === "ADMIN";
+  let allowed = role === "ADMIN" || role === "RESEARCHER";
   if (!allowed && role === "TEACHER") {
     const teacher = await prisma.teacher.findUnique({
       where: { userId: session.user.id },
@@ -81,7 +82,7 @@ export async function GET(
   let storageKey = sim.storageKey;
   let bucket = sim.bucket;
   if (selected) {
-    if (role !== "ADMIN" && role !== "TEACHER")
+    if (role !== "ADMIN" && role !== "TEACHER" && role !== "RESEARCHER")
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     const number = Number(selected);
     if (!Number.isSafeInteger(number) || number < 1)

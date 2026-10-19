@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rate-limit";
 import { logApiError } from "@/lib/system-log";
+import { logDataExport } from "@/lib/admin-access";
 import {
   feedbackWhere,
   getFeedbackViewer,
@@ -78,6 +79,16 @@ export async function GET(req: NextRequest) {
       view === "summary"
         ? buildFeedbackSummaryCsv(summarizeFeedbackBySubject(rows))
         : buildFeedbackCsv(rows);
+
+    // Site-wide downloads (admin / research scientist) go to the audit log; a
+    // teacher exporting their own class feedback is not a research export.
+    if (viewer.role !== "TEACHER") {
+      await logDataExport(
+        { id: viewer.userId, role: viewer.role },
+        `feedback ${view} CSV`,
+        { rows: rows.length },
+      );
+    }
 
     return new NextResponse(csv, {
       headers: {

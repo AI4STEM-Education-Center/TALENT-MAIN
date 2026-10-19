@@ -1,3 +1,4 @@
+import type { Session } from "next-auth";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { QUESTION_ORDER } from "@/lib/question-order";
@@ -15,7 +16,12 @@ export type ContentActor =
  * anonymous users, and TEACHER users missing their Teacher row.
  */
 export async function getContentActor(): Promise<ContentActor | null> {
-  const session = await auth();
+  return actorFromSession(await auth());
+}
+
+async function actorFromSession(
+  session: Session | null,
+): Promise<ContentActor | null> {
   if (!session?.user) return null;
   if (session.user.role === "ADMIN") {
     return { role: "ADMIN", teacherId: null, userId: session.user.id };
@@ -26,6 +32,29 @@ export async function getContentActor(): Promise<ContentActor | null> {
   });
   if (!teacher) return null;
   return { role: "TEACHER", teacherId: teacher.id, userId: session.user.id };
+}
+
+/**
+ * Someone who may READ content: a content actor, or a research scientist
+ * browsing the admin dashboard read-only. Deliberately a separate type from
+ * ContentActor — canManage/ownScope/canManageSimulation only accept a
+ * ContentActor, so a researcher can never be passed to an edit check (whose
+ * teacherId === null match would otherwise hand them the global pool).
+ */
+export type ContentReader =
+  ContentActor | { role: "RESEARCHER"; teacherId: null; userId: string };
+
+/**
+ * Resolve the session for a read-only content route: everything
+ * getContentActor accepts, plus RESEARCHER. Use ONLY in GET handlers / pages
+ * that render without mutating; writes keep using getContentActor.
+ */
+export async function getContentReader(): Promise<ContentReader | null> {
+  const session = await auth();
+  if (session?.user?.role === "RESEARCHER") {
+    return { role: "RESEARCHER", teacherId: null, userId: session.user.id };
+  }
+  return actorFromSession(session);
 }
 
 /** The teacherId an actor's own content carries (null = the global pool). */
@@ -41,13 +70,17 @@ export function canManage(
   return content.teacherId === actor.teacherId;
 }
 
-/** Admins can inspect all content; teachers can read their own and the pool. */
+/**
+ * Admins and research scientists can inspect all content; teachers can read
+ * their own and the pool.
+ */
 export function canRead(
-  actor: ContentActor,
+  actor: ContentReader,
   content: { teacherId: string | null },
 ): boolean {
   return (
     actor.role === "ADMIN" ||
+    actor.role === "RESEARCHER" ||
     content.teacherId === null ||
     content.teacherId === actor.teacherId
   );

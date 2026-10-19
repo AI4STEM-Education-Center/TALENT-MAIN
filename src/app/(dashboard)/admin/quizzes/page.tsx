@@ -1,15 +1,19 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { getContentActor, ownScope } from "@/lib/quiz-access";
+import { getContentReader } from "@/lib/quiz-access";
 import { AdminQuizPoolClient } from "./quizzes-client";
 
 export default async function AdminQuizPoolPage() {
-  const actor = await getContentActor();
-  if (!actor || actor.role !== "ADMIN") redirect("/login");
+  // Admins manage the pool; research scientists browse it read-only. Both
+  // read the global pool scope (teacherId null).
+  const actor = await getContentReader();
+  if (!actor || (actor.role !== "ADMIN" && actor.role !== "RESEARCHER"))
+    redirect("/login");
+  const canEdit = actor.role === "ADMIN";
 
   const [pool, teacherOwned, topics] = await Promise.all([
     prisma.quiz.findMany({
-      where: { teacherId: ownScope(actor) },
+      where: { teacherId: null },
       include: { topic: true, _count: { select: { questions: true } } },
       orderBy: [{ order: "asc" }, { createdAt: "asc" }],
     }),
@@ -27,7 +31,7 @@ export default async function AdminQuizPoolPage() {
       orderBy: { createdAt: "desc" },
     }),
     prisma.topic.findMany({
-      where: { teacherId: ownScope(actor), contentType: "QUIZ" },
+      where: { teacherId: null, contentType: "QUIZ" },
       include: { _count: { select: { quizzes: true } } },
       orderBy: [{ order: "asc" }, { createdAt: "asc" }],
     }),
@@ -53,6 +57,7 @@ export default async function AdminQuizPoolPage() {
       initialPool={pool}
       initialTeacherQuizzes={teacherQuizzes}
       initialTopics={topics}
+      canEdit={canEdit}
     />
   );
 }

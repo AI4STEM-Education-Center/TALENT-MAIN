@@ -1,21 +1,23 @@
 "use client";
 import { useState } from "react";
 import { signOut, useSession } from "next-auth/react";
-import { redirect } from "next/navigation";
+import { redirect, usePathname } from "next/navigation";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { ResearchGates } from "@/components/consent/ResearchGates";
 import { AssistantWidget } from "@/components/assistant/AssistantWidget";
 import { AssistantProvider } from "@/components/assistant/assistant-context";
 import { SessionProvider } from "next-auth/react";
-import { Menu, BookOpen, PanelLeft } from "lucide-react";
+import { Menu, BookOpen, PanelLeft, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isRole, type Role } from "@/lib/roles";
+import { RESEARCHER_VIEW_ONLY_NOTICE } from "@/lib/researcher-access";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 function DashboardContent({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
+  const pathname = usePathname();
 
   if (status === "loading") {
     return (
@@ -91,7 +93,20 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                 viewport, but stay left-aligned (no mx-auto) so content hugs the
                 sidebar instead of floating centered. Views that need the whole
                 viewport (simulations) open in a pop-up instead. */}
-            <div className="w-full max-w-7xl">{children}</div>
+            <div className="w-full max-w-7xl">
+              {/* Research scientists browse the admin data pages read-only;
+                  the APIs refuse their writes, and this says so up front. */}
+              {role === "RESEARCHER" && pathname?.startsWith("/admin") && (
+                <div
+                  role="note"
+                  className="mx-4 mt-4 md:mx-8 flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300"
+                >
+                  <Eye className="size-4 shrink-0" />
+                  {RESEARCHER_VIEW_ONLY_NOTICE}
+                </div>
+              )}
+              {children}
+            </div>
           </main>
         </div>
 

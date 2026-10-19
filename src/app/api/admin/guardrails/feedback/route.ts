@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminApi } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 import { logApiError } from "@/lib/system-log";
 import {
@@ -25,10 +25,8 @@ const PAGE_SIZE = 50;
  * fires, and only these say whether it was RIGHT.
  */
 export async function GET(req: Request) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   const status = new URL(req.url).searchParams.get("status");
 
@@ -114,10 +112,8 @@ export async function GET(req: Request) {
  * Mark one report reviewed or dismissed, so the queue empties as it is worked.
  */
 export async function PATCH(req: Request) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   let body: unknown;
   try {

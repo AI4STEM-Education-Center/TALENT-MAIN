@@ -322,14 +322,14 @@ describe("POST /api/admin/simulations/generate", () => {
     },
   );
 
-  it.each(["TEACHER", "STUDENT", null])(
+  it.each(["TEACHER", "STUDENT", "RESEARCHER", null])(
     "denies bulk generation to %s",
     async (role) => {
       mockAuth.mockResolvedValue(
         role ? ({ user: { id: "not-admin", role } } as never) : (null as never),
       );
       expect((await ADMIN_GENERATE(jsonReq({ scope: "all" }))).status).toBe(
-        403,
+        role ? 403 : 401,
       );
       expect(await prisma.questionSimulation.count()).toBe(0);
       expect(mockEnqueue).not.toHaveBeenCalled();

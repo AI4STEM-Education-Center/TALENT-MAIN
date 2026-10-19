@@ -39,9 +39,12 @@ function groupByTopic(materials: PoolMaterial[]) {
 export function MaterialPoolClient({
   initialMaterials,
   initialTags,
+  canEdit = true,
 }: {
   initialMaterials: PoolMaterial[];
   initialTags: MaterialTag[];
+  /** False for research scientists: browse only, no tagging or deleting. */
+  canEdit?: boolean;
 }) {
   const confirm = useConfirm();
   const [materials, setMaterials] = useState<PoolMaterial[]>(initialMaterials);
@@ -111,23 +114,25 @@ export function MaterialPoolClient({
           Shared, approved materials organized with material-only tags.
         </p>
       </div>
-      <Card>
-        <CardContent className="flex flex-col gap-3 p-4 sm:flex-row">
-          <Input
-            value={newTag}
-            onChange={(event) => setNewTag(event.target.value)}
-            placeholder="New material tag"
-            onKeyDown={(event) => event.key === "Enter" && createTag()}
-          />
-          <Button
-            variant="outline"
-            onClick={createTag}
-            disabled={!newTag.trim()}
-          >
-            <Plus className="size-4" /> Create new tag
-          </Button>
-        </CardContent>
-      </Card>
+      {canEdit && (
+        <Card>
+          <CardContent className="flex flex-col gap-3 p-4 sm:flex-row">
+            <Input
+              value={newTag}
+              onChange={(event) => setNewTag(event.target.value)}
+              placeholder="New material tag"
+              onKeyDown={(event) => event.key === "Enter" && createTag()}
+            />
+            <Button
+              variant="outline"
+              onClick={createTag}
+              disabled={!newTag.trim()}
+            >
+              <Plus className="size-4" /> Create new tag
+            </Button>
+          </CardContent>
+        </Card>
+      )}
       {error && (
         <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
           {error}
@@ -163,36 +168,42 @@ export function MaterialPoolClient({
                         {material.totalPages} pages
                       </p>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Tags className="size-4" />
-                        <span className="sr-only">
-                          Tag {material.title || material.originalName}
-                        </span>
-                        <select
-                          className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground"
-                          value={material.topic?.id ?? ""}
-                          onChange={(event) =>
-                            assignTag(material.id, event.target.value)
-                          }
+                    {canEdit ? (
+                      <div className="flex items-center gap-2">
+                        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <Tags className="size-4" />
+                          <span className="sr-only">
+                            Tag {material.title || material.originalName}
+                          </span>
+                          <select
+                            className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground"
+                            value={material.topic?.id ?? ""}
+                            onChange={(event) =>
+                              assignTag(material.id, event.target.value)
+                            }
+                          >
+                            <option value="">No tag</option>
+                            {tags.map((tag) => (
+                              <option key={tag.id} value={tag.id}>
+                                {tag.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <Button
+                          aria-label={`Delete ${material.title || material.originalName}`}
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => remove(material)}
                         >
-                          <option value="">No tag</option>
-                          {tags.map((tag) => (
-                            <option key={tag.id} value={tag.id}>
-                              {tag.name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <Button
-                        aria-label={`Delete ${material.title || material.originalName}`}
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => remove(material)}
-                      >
-                        <Trash2 className="size-4 text-destructive" />
-                      </Button>
-                    </div>
+                          <Trash2 className="size-4 text-destructive" />
+                        </Button>
+                      </div>
+                    ) : (
+                      material.topic && (
+                        <Badge variant="outline">{material.topic.name}</Badge>
+                      )
+                    )}
                   </CardContent>
                 </Card>
               ))}

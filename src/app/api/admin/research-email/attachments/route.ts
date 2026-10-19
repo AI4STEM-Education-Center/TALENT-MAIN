@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminApi } from "@/lib/admin-access";
 import {
   buildResearchAttachmentKey,
   getS3Config,
@@ -20,9 +20,8 @@ export const runtime = "nodejs";
  * the list and the campaign snapshots it.
  */
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (session?.user?.role !== "ADMIN")
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   let data: FormData;
   try {

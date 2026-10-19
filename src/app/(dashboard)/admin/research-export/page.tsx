@@ -1,12 +1,12 @@
-import { redirect } from "next/navigation";
 import { Download } from "lucide-react";
-import { auth } from "@/lib/auth";
+import { requireAdminDataPage } from "@/lib/admin-access";
+import { isAdmin } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default async function ResearchExportPage() {
-  const session = await auth();
-  if (session?.user?.role !== "ADMIN") redirect("/login");
+  const session = await requireAdminDataPage();
+  const fullArchive = isAdmin(session.user.role);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-8">
@@ -41,14 +41,25 @@ export default async function ResearchExportPage() {
               transcripts, messages, and attachment metadata.
             </li>
             <li>
-              Consent decisions and form versions, pre/post surveys and answers,
-              and research outreach records.
+              Consent decisions and form versions, pre/post surveys and answers
+              {fullArchive && ", and research outreach records"}.
             </li>
             <li>
-              AI configuration and generation metrics, guardrails, and retained
-              operational logs.
+              {fullArchive
+                ? "AI configuration and generation metrics, guardrails, and retained operational logs."
+                : "AI generation metrics, guardrail events, and retained operational logs."}
             </li>
           </ul>
+          {!fullArchive && (
+            <p className="text-sm text-muted-foreground">
+              Your research-scientist archive leaves out deployment
+              configuration — AI providers and assignments, assistant and
+              guardrail settings, e-mail senders, research e-mail templates and
+              campaigns, consent export settings and jobs, invite codes,
+              pressure tests and server monitoring. Its README and manifest list
+              exactly what was withheld.
+            </p>
+          )}
           <p className="text-sm text-muted-foreground">
             Stable IDs connect the files for analysis. The ZIP includes a data
             dictionary, a manifest with record counts, and a guide to joins and

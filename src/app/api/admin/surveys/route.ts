@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminApi, requireAdminDataReader } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 import {
   isSurveyKind,
@@ -17,9 +17,8 @@ export const runtime = "nodejs";
  * a post-survey prompting in-app, its audience size and how many finished.
  */
 export async function GET() {
-  const session = await auth();
-  if (session?.user?.role !== "ADMIN")
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = await requireAdminDataReader();
+  if (session instanceof Response) return session;
 
   const forms = await prisma.surveyForm.findMany({
     orderBy: [
@@ -88,9 +87,8 @@ function safeParse(json: string): unknown {
  * `period` (1 | 2, default 1) only applies to post-surveys.
  */
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (session?.user?.role !== "ADMIN")
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   let body: Record<string, unknown>;
   try {

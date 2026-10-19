@@ -26,6 +26,8 @@ interface ConceptsClientProps {
   misconceptions: MisconceptionRow[];
   mappings: MappingRow[];
   externalRefs: ExternalRefRow[];
+  /** Admins only: research scientists browse the catalog read-only. */
+  canImport: boolean;
 }
 
 export function ConceptsClient({
@@ -33,6 +35,7 @@ export function ConceptsClient({
   misconceptions,
   mappings,
   externalRefs,
+  canImport,
 }: ConceptsClientProps) {
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -54,39 +57,41 @@ export function ConceptsClient({
         </p>
       </div>
 
-      <div>
-        <p className="text-sm text-muted-foreground mb-3">
-          Recommended upload order:{" "}
-          <strong className="text-foreground">Concepts</strong> →{" "}
-          <strong className="text-foreground">Misconceptions</strong> →{" "}
-          <strong className="text-foreground">Mappings</strong>. Mapping rows
-          that reference an unknown concept or misconception ID are skipped and
-          reported after upload.
-        </p>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <UploadCard
-            title="1. Concepts"
-            description="Upload the Concepts CSV export."
-            ariaLabel="Upload Concepts CSV"
-            onFile={uploadConceptsCsv}
-            onSuccess={handleImported}
-          />
-          <UploadCard
-            title="2. Misconceptions"
-            description="Upload the Misconceptions CSV export."
-            ariaLabel="Upload Misconceptions CSV"
-            onFile={uploadMisconceptionsCsv}
-            onSuccess={handleImported}
-          />
-          <UploadCard
-            title="3. Concept ↔ Misconception Mappings"
-            description="Upload the mapping CSV (also contains external references)."
-            ariaLabel="Upload Concept Misconception Mappings CSV"
-            onFile={uploadMappingsCsv}
-            onSuccess={handleImported}
-          />
+      {canImport && (
+        <div>
+          <p className="text-sm text-muted-foreground mb-3">
+            Recommended upload order:{" "}
+            <strong className="text-foreground">Concepts</strong> →{" "}
+            <strong className="text-foreground">Misconceptions</strong> →{" "}
+            <strong className="text-foreground">Mappings</strong>. Mapping rows
+            that reference an unknown concept or misconception ID are skipped
+            and reported after upload.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <UploadCard
+              title="1. Concepts"
+              description="Upload the Concepts CSV export."
+              ariaLabel="Upload Concepts CSV"
+              onFile={uploadConceptsCsv}
+              onSuccess={handleImported}
+            />
+            <UploadCard
+              title="2. Misconceptions"
+              description="Upload the Misconceptions CSV export."
+              ariaLabel="Upload Misconceptions CSV"
+              onFile={uploadMisconceptionsCsv}
+              onSuccess={handleImported}
+            />
+            <UploadCard
+              title="3. Concept ↔ Misconception Mappings"
+              description="Upload the mapping CSV (also contains external references)."
+              ariaLabel="Upload Concept Misconception Mappings CSV"
+              onFile={uploadMappingsCsv}
+              onSuccess={handleImported}
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="flex items-center gap-4 flex-wrap">
         <div className="relative flex-1 min-w-[200px]">

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminApi } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 import { appOrigin } from "@/lib/app-url";
 import {
@@ -31,10 +31,8 @@ const LIST_LIMIT = 200;
  * accepted alongside them.
  */
 export async function GET(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   try {
     const rows = await prisma.teacherRegistrationCode.findMany({
@@ -65,10 +63,8 @@ export async function GET(req: NextRequest) {
  * come only from the ADMIN_SIGNUP_TOKEN env var.
  */
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   try {
     const parsed = parseBody(teacherCodeCreateSchema, await req.json());
