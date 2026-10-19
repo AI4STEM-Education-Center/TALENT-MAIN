@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { canManageSimulation } from "@/lib/simulation-access";
-import { canRead, getContentActor } from "@/lib/quiz-access";
+import { canRead, getContentActor, getContentReader } from "@/lib/quiz-access";
 import { deleteS3Object } from "@/lib/storage";
 import { simulationMetricsView } from "@/lib/simulation-metrics";
 
@@ -11,13 +11,14 @@ export const runtime = "nodejs";
  * GET /api/simulations/[id]
  * Staff detail for one simulation: metadata + full feedback history (no
  * storage keys — content is served only through ./content). Admins see
- * everything; teachers see sims on their own quizzes and pool quizzes.
+ * and research scientists see everything (read-only); teachers see sims on
+ * their own quizzes and pool quizzes.
  */
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const [actor, { id }] = await Promise.all([getContentActor(), params]);
+  const [actor, { id }] = await Promise.all([getContentReader(), params]);
   if (!actor)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -28,7 +29,7 @@ export async function GET(
       feedback: { orderBy: { createdAt: "asc" } },
     },
   });
-  if (!sim || (actor.role !== "ADMIN" && !canRead(actor, sim.question.quiz))) {
+  if (!sim || !canRead(actor, sim.question.quiz)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 

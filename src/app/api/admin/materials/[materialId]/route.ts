@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminApi, requireAdminDataReader } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 import {
   deleteS3Object,
@@ -20,10 +20,8 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ materialId: string }> },
 ) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const session = await requireAdminDataReader();
+  if (session instanceof Response) return session;
 
   const { materialId } = await params;
   const material = await prisma.learningMaterial.findUnique({
@@ -79,10 +77,8 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ materialId: string }> },
 ) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   const { materialId } = await params;
   let body: { topicId?: unknown };
@@ -136,10 +132,8 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ materialId: string }> },
 ) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   const { materialId } = await params;
 

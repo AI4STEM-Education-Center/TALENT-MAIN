@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { useAdminCanEdit } from "@/components/admin/use-admin-can-edit";
 import { AiMetricsLine } from "@/components/ai-metrics-line";
 import {
   Folder,
@@ -80,6 +81,8 @@ function totalMaterialCount(group: TeacherGroup): number {
 
 export default function AdminMaterialsPage() {
   const confirm = useConfirm();
+  // Research scientists see the processing table without the actions.
+  const canEdit = useAdminCanEdit();
   const [materials, setMaterials] = useState<Material[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTeacher, setSelectedTeacher] = useState<string | null>(null);
@@ -411,36 +414,38 @@ export default function AdminMaterialsPage() {
                         {mat.processedPages} / {mat.totalPages ?? "?"}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <div className="flex items-center justify-end gap-2">
-                          {mat.processingStatus === "FAILED" && (
+                        {canEdit && (
+                          <div className="flex items-center justify-end gap-2">
+                            {mat.processingStatus === "FAILED" && (
+                              <button
+                                type="button"
+                                onClick={() => handleRetry(mat.id)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors"
+                                title="Retry failed pages"
+                              >
+                                <RotateCcw className="size-3" /> Retry
+                              </button>
+                            )}
+                            {mat.processingStatus !== "PROCESSING" && (
+                              <button
+                                type="button"
+                                onClick={() => handleRegenerate(mat.id)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-orange-700 bg-orange-50 hover:bg-orange-100 rounded-md transition-colors"
+                                title="Re-process all pages from scratch"
+                              >
+                                <RefreshCw className="size-3" /> Regenerate
+                              </button>
+                            )}
                             <button
                               type="button"
-                              onClick={() => handleRetry(mat.id)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors"
-                              title="Retry failed pages"
+                              onClick={() => handleDelete(mat.id)}
+                              className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                              title="Delete material"
                             >
-                              <RotateCcw className="size-3" /> Retry
+                              <Trash2 className="size-4" />
                             </button>
-                          )}
-                          {mat.processingStatus !== "PROCESSING" && (
-                            <button
-                              type="button"
-                              onClick={() => handleRegenerate(mat.id)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-orange-700 bg-orange-50 hover:bg-orange-100 rounded-md transition-colors"
-                              title="Re-process all pages from scratch"
-                            >
-                              <RefreshCw className="size-3" /> Regenerate
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(mat.id)}
-                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                            title="Delete material"
-                          >
-                            <Trash2 className="size-4" />
-                          </button>
-                        </div>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))

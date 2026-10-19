@@ -1,5 +1,4 @@
-import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
+import { requireAdminPage } from "@/lib/admin-access";
 import { ResourcesClient } from "./resources-client";
 
 /**
@@ -8,8 +7,7 @@ import { ResourcesClient } from "./resources-client";
  * server gate is the third layer, matching the other admin pages.
  */
 export default async function AdminResourcesPage() {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") redirect("/login");
+  await requireAdminPage();
 
   return <ResourcesClient />;
 }

@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
+import { requireAdminDataPage } from "@/lib/admin-access";
+import { isAdmin } from "@/lib/roles";
 import { PoolSubmissionsClient } from "./pool-submissions-client";
 import { prisma } from "@/lib/prisma";
 
@@ -8,12 +8,14 @@ export default async function PoolSubmissionsPage({
 }: {
   searchParams: Promise<{ request?: string }>;
 }) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") redirect("/login");
+  const session = await requireAdminDataPage();
+  // An admin reviews the requests assigned to them; a research scientist
+  // sees every request, read-only.
+  const canReview = isAdmin(session.user.role);
   const [{ request }, submissions] = await Promise.all([
     searchParams,
     prisma.poolSubmission.findMany({
-      where: { reviewerId: session.user.id },
+      where: canReview ? { reviewerId: session.user.id } : {},
       include: {
         teacher: {
           select: {
@@ -43,6 +45,7 @@ export default async function PoolSubmissionsPage({
   return (
     <PoolSubmissionsClient
       requestedId={request ?? null}
+      canReview={canReview}
       initialSubmissions={submissions.map((submission) => ({
         ...submission,
         createdAt: submission.createdAt.toISOString(),

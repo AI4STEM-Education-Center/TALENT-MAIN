@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAlert, useConfirm } from "@/components/ui/confirm-dialog";
+import { useAdminCanEdit } from "@/components/admin/use-admin-can-edit";
 import {
   Loader2,
   Upload,
@@ -24,6 +25,7 @@ import {
   Mail,
   Users,
   BellRing,
+  Eye,
 } from "lucide-react";
 import {
   SURVEY_PERIODS,
@@ -76,6 +78,9 @@ function rolePlural(role: SurveyRole): string {
 
 export default function AdminSurveysPage() {
   const alert = useAlert();
+  // Research scientists read surveys and responses; creating, editing,
+  // enabling, prompting and e-mailing stay admin-only.
+  const canEdit = useAdminCanEdit();
   const confirm = useConfirm();
   const fileRef = useRef<HTMLInputElement>(null);
   const [forms, setForms] = useState<FormRow[]>([]);
@@ -277,128 +282,132 @@ export default function AdminSurveysPage() {
               <Users className="size-4" /> Research pool
             </Link>
           </Button>
-          <Button variant="outline" size="sm" asChild>
-            <Link href="/admin/research-email/post-survey">
-              <Mail className="size-4" /> Post-survey email
-            </Link>
-          </Button>
+          {canEdit && (
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/admin/research-email/post-survey">
+                <Mail className="size-4" /> Post-survey email
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Add a survey</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="space-y-1">
-              <Label className="text-xs">Survey</Label>
-              <Select
-                value={uploadKind}
-                onValueChange={(v) => setUploadKind(v as SurveyKind)}
-              >
-                <SelectTrigger className="w-36">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="PRE">Pre-survey</SelectItem>
-                  <SelectItem value="POST">Post-survey</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">For</Label>
-              <Select
-                value={uploadRole}
-                onValueChange={(v) => setUploadRole(v as SurveyRole)}
-              >
-                <SelectTrigger className="w-36">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="STUDENT">Students</SelectItem>
-                  <SelectItem value="TEACHER">Teachers</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Study period (post-surveys)</Label>
-              <Select
-                value={String(uploadPeriod)}
-                onValueChange={(v) =>
-                  setUploadPeriod(Number(v) as SurveyPeriod)
-                }
-              >
-                <SelectTrigger className="w-48">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SURVEY_PERIODS.map((p) => (
-                    <SelectItem key={p} value={String(p)}>
-                      {surveyFormLabel("POST", p)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="application/pdf"
-              className="hidden"
-              aria-label="Survey PDF"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) void upload(file);
-              }}
-            />
-            <Button
-              onClick={() => fileRef.current?.click()}
-              disabled={busy !== null}
-            >
-              {busy === "upload" ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Upload className="size-4" />
-              )}
-              Upload survey PDF
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            The PDF is converted into an editable online form (with AI when a
-            model is assigned to “Research Survey PDF Extraction” in AI Config).
-            Always review the questions before enabling it. The original PDF is
-            kept for reference. The study period applies to post-surveys
-            (uploaded or from a template) and can be changed later in the
-            editor.
-          </p>
-          {templates.length > 0 && (
-            <div className="space-y-2">
-              <p className="text-sm font-medium">
-                Or start from a study instrument
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {templates.map((t) => (
-                  <Button
-                    key={t.key}
-                    size="sm"
-                    variant="outline"
-                    disabled={busy !== null}
-                    onClick={() => createFromTemplate(t.key)}
-                  >
-                    {busy === t.key ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <FileText className="size-4" />
-                    )}
-                    {t.title}
-                  </Button>
-                ))}
+      {canEdit && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Add a survey</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Survey</Label>
+                <Select
+                  value={uploadKind}
+                  onValueChange={(v) => setUploadKind(v as SurveyKind)}
+                >
+                  <SelectTrigger className="w-36">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="PRE">Pre-survey</SelectItem>
+                    <SelectItem value="POST">Post-survey</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
+              <div className="space-y-1">
+                <Label className="text-xs">For</Label>
+                <Select
+                  value={uploadRole}
+                  onValueChange={(v) => setUploadRole(v as SurveyRole)}
+                >
+                  <SelectTrigger className="w-36">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="STUDENT">Students</SelectItem>
+                    <SelectItem value="TEACHER">Teachers</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Study period (post-surveys)</Label>
+                <Select
+                  value={String(uploadPeriod)}
+                  onValueChange={(v) =>
+                    setUploadPeriod(Number(v) as SurveyPeriod)
+                  }
+                >
+                  <SelectTrigger className="w-48">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SURVEY_PERIODS.map((p) => (
+                      <SelectItem key={p} value={String(p)}>
+                        {surveyFormLabel("POST", p)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="application/pdf"
+                className="hidden"
+                aria-label="Survey PDF"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void upload(file);
+                }}
+              />
+              <Button
+                onClick={() => fileRef.current?.click()}
+                disabled={busy !== null}
+              >
+                {busy === "upload" ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Upload className="size-4" />
+                )}
+                Upload survey PDF
+              </Button>
             </div>
-          )}
-        </CardContent>
-      </Card>
+            <p className="text-xs text-muted-foreground">
+              The PDF is converted into an editable online form (with AI when a
+              model is assigned to “Research Survey PDF Extraction” in AI
+              Config). Always review the questions before enabling it. The
+              original PDF is kept for reference. The study period applies to
+              post-surveys (uploaded or from a template) and can be changed
+              later in the editor.
+            </p>
+            {templates.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium">
+                  Or start from a study instrument
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {templates.map((t) => (
+                    <Button
+                      key={t.key}
+                      size="sm"
+                      variant="outline"
+                      disabled={busy !== null}
+                      onClick={() => createFromTemplate(t.key)}
+                    >
+                      {busy === t.key ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <FileText className="size-4" />
+                      )}
+                      {t.title}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {loading ? (
         <div className="flex justify-center py-12 text-muted-foreground">
@@ -474,15 +483,19 @@ export default function AdminSurveysPage() {
                         </p>
                       )}
                       <div className="flex flex-wrap gap-2">
-                        <Button
-                          size="sm"
-                          variant={f.isEnabled ? "outline" : "default"}
-                          disabled={busy !== null || f.status === "EXTRACTING"}
-                          onClick={() => setEnabled(f, !f.isEnabled)}
-                        >
-                          {f.isEnabled ? "Disable" : "Enable"}
-                        </Button>
-                        {f.kind === "POST" && f.isEnabled && (
+                        {canEdit && (
+                          <Button
+                            size="sm"
+                            variant={f.isEnabled ? "outline" : "default"}
+                            disabled={
+                              busy !== null || f.status === "EXTRACTING"
+                            }
+                            onClick={() => setEnabled(f, !f.isEnabled)}
+                          >
+                            {f.isEnabled ? "Disable" : "Enable"}
+                          </Button>
+                        )}
+                        {canEdit && f.kind === "POST" && f.isEnabled && (
                           <Button
                             size="sm"
                             variant={f.promptInApp ? "outline" : "secondary"}
@@ -497,7 +510,12 @@ export default function AdminSurveysPage() {
                         )}
                         <Button size="sm" variant="outline" asChild>
                           <Link href={`/admin/surveys/${f.id}`}>
-                            <Pencil className="size-4" /> Edit
+                            {canEdit ? (
+                              <Pencil className="size-4" />
+                            ) : (
+                              <Eye className="size-4" />
+                            )}{" "}
+                            {canEdit ? "Edit" : "View"}
                           </Link>
                         </Button>
                         <Button size="sm" variant="outline" asChild>
@@ -516,7 +534,7 @@ export default function AdminSurveysPage() {
                             </a>
                           </Button>
                         )}
-                        {f.responseCount === 0 && (
+                        {canEdit && f.responseCount === 0 && (
                           <Button
                             size="sm"
                             variant="ghost"

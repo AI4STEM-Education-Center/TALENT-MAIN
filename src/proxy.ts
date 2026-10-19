@@ -10,16 +10,7 @@ import {
   homePathForRole,
   isResearcher,
 } from "@/lib/roles";
-
-/**
- * Admin-area pages a RESEARCHER may open. Read-only research access is being
- * rolled out page by page; extend this list as each page's API grants it.
- */
-const RESEARCHER_ADMIN_PATHS = ["/admin"];
-
-function isResearcherAdminPath(pathname: string): boolean {
-  return RESEARCHER_ADMIN_PATHS.includes(pathname);
-}
+import { isResearcherAdminPath } from "@/lib/researcher-access";
 
 const ALLOWED_HOSTS = [
   "dev.ai4talent.org",
@@ -156,9 +147,9 @@ export default auth((req) => {
   if (isAdminArea && !canViewAdminData(role)) {
     return NextResponse.redirect(new URL(homePathForRole(role), req.url));
   }
-  // Research scientists live in the admin dashboard, but only on the pages
-  // allowlisted here (for now just the overview); every other admin page sends
-  // them back to it.
+  // Research scientists live in the admin dashboard, but only on the read-only
+  // data pages allowlisted in src/lib/researcher-access.ts; the config pages
+  // (AI config, e-mail, backups, invite codes, ...) send them back to /admin.
   if (isAdminArea && isResearcher(role) && !isResearcherAdminPath(pathname)) {
     return NextResponse.redirect(new URL(homePathForRole(role), req.url));
   }

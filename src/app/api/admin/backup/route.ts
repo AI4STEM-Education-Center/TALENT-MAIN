@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminApi } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 import { encryptApiKey, maskApiKey, decryptApiKey } from "@/lib/crypto";
 import { computeNextRun } from "@/lib/backup";
@@ -78,10 +78,8 @@ function serialize(cfg: {
  * Return the singleton backup config (WebDAV password masked) + current env.
  */
 export async function GET() {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   const cfg = await prisma.backupConfig.findFirst();
   return NextResponse.json({
@@ -96,10 +94,8 @@ export async function GET() {
  * ("••••…") is left unchanged; an empty string clears it. Recomputes nextRunAt.
  */
 export async function PUT(req: Request) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   try {
     const body = await req.json();

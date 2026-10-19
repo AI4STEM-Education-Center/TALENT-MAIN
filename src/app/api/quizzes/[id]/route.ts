@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { canManage, canRead, getContentActor } from "@/lib/quiz-access";
+import {
+  canManage,
+  canRead,
+  getContentActor,
+  getContentReader,
+} from "@/lib/quiz-access";
 import {
   attachFigureUrls,
   attachOptionImageUrls,
@@ -12,12 +17,13 @@ import { parseJsonBody, quizUpdateSchema } from "@/lib/validation";
 import { QUESTION_ORDER } from "@/lib/question-order";
 
 // GET: quiz detail with questions. Own quizzes are fully visible; pool quizzes
-// are readable by any teacher/admin. Admins can also inspect teacher uploads.
+// are readable by any teacher/admin. Admins can also inspect teacher uploads,
+// and research scientists can read everything (never edit: see viewOnly).
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const [actor, { id }] = await Promise.all([getContentActor(), params]);
+  const [actor, { id }] = await Promise.all([getContentReader(), params]);
   if (!actor)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -70,11 +76,16 @@ export async function GET(
         : null,
     };
   });
+  const viewOnly = actor.role === "RESEARCHER";
   return NextResponse.json({
     ...quiz,
     questions,
-    editable: canManage(actor, quiz),
-    simulationsEditable: canManageSimulation(actor, quiz),
+    editable: actor.role !== "RESEARCHER" && canManage(actor, quiz),
+    simulationsEditable:
+      actor.role !== "RESEARCHER" && canManageSimulation(actor, quiz),
+    // A research scientist gets no write affordance at all, including the
+    // "import to my quizzes" offered to readers of a pool quiz.
+    viewOnly,
   });
 }
 

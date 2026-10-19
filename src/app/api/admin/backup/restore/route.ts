@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminApi } from "@/lib/admin-access";
 import { stageRestoreForCurrentEnv } from "@/lib/backup";
 import { logApiError } from "@/lib/system-log";
 
@@ -10,10 +10,8 @@ import { logApiError } from "@/lib/system-log";
  * Docker entrypoint applies the staged file before connecting) completes it.
  */
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   try {
     const body = await req.json();

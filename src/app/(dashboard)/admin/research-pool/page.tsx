@@ -7,11 +7,14 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Download, Loader2, Mail } from "lucide-react";
 import { consentLevelLabel, type PoolEntry } from "@/lib/research-email";
+import { useAdminCanEdit } from "@/components/admin/use-admin-can-edit";
 
 export default function ResearchPoolPage() {
   const [entries, setEntries] = useState<PoolEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  // Sending the interview e-mail is admin-only; researchers view and export.
+  const canEdit = useAdminCanEdit();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -68,11 +71,13 @@ export default function ResearchPoolPage() {
               <Download className="size-4" /> Export CSV
             </a>
           </Button>
-          <Button asChild>
-            <Link href="/admin/research-email/interview">
-              <Mail className="size-4" /> Interview email
-            </Link>
-          </Button>
+          {canEdit && (
+            <Button asChild>
+              <Link href="/admin/research-email/interview">
+                <Mail className="size-4" /> Interview email
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
 

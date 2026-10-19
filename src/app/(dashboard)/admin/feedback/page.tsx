@@ -1,5 +1,4 @@
-import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
+import { requireAdminDataPage } from "@/lib/admin-access";
 import { FeedbackResultsPanel } from "@/components/feedback/FeedbackResultsPanel";
 
 /**
@@ -9,8 +8,8 @@ import { FeedbackResultsPanel } from "@/components/feedback/FeedbackResultsPanel
  * an admin session (see content-feedback-access.ts).
  */
 export default async function AdminFeedbackPage() {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") redirect("/login");
+  // Read-only: research scientists get the same site-wide view.
+  await requireAdminDataPage();
 
   return (
     <div className="p-4 md:p-8">

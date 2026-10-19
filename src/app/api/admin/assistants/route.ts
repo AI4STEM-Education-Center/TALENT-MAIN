@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { auth } from "@/lib/auth";
+import { requireAdminApi } from "@/lib/admin-access";
 import { logApiError } from "@/lib/system-log";
 import {
   getAssistantSettings,
@@ -26,10 +26,8 @@ export const runtime = "nodejs";
  * without a schema or UI change.
  */
 export async function GET() {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   try {
     const assistants = await Promise.all(
@@ -77,10 +75,8 @@ const patchSchema = z.object({
  * saveAssistantSettings, so a partial or stale form submit still lands cleanly.
  */
 export async function PUT(req: Request) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   try {
     const body = await req.json();

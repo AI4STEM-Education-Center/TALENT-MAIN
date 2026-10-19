@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { roleLabel, type Role } from "@/lib/roles";
+import { isResearcherAdminPath } from "@/lib/researcher-access";
 import { VersionModal } from "@/components/version-modal";
 import { NotificationsBadge } from "@/components/dashboard/notifications-badge";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -313,6 +314,15 @@ const adminNavGroups: NavGroup[] = [
   },
 ];
 
+// Research scientists see the same folders, trimmed to the read-only data
+// pages the proxy lets them open (config pages and empty folders drop out).
+const researcherNavGroups: NavGroup[] = adminNavGroups
+  .map((group) => ({
+    ...group,
+    items: group.items.filter((item) => isResearcherAdminPath(item.href)),
+  }))
+  .filter((group) => group.items.length > 0);
+
 // Shared by every role and rendered under the role's own items.
 const profileNav: NavItem = {
   href: "/profile",
@@ -347,7 +357,13 @@ function SidebarContent({
       href !== "/admin" &&
       pathname.startsWith(`${href}/`));
 
-  const activeGroup = adminNavGroups.find((g) =>
+  const navGroups =
+    role === "ADMIN"
+      ? adminNavGroups
+      : role === "RESEARCHER"
+        ? researcherNavGroups
+        : [];
+  const activeGroup = navGroups.find((g) =>
     g.items.some((item) => isActive(item.href)),
   )?.label;
   const [openGroups, setOpenGroups] = useState<Set<string>>(
@@ -418,10 +434,10 @@ function SidebarContent({
 
       {/* Nav */}
       <nav className="flex-1 p-4 space-y-1">
-        {role === "ADMIN" ? (
+        {role === "ADMIN" || role === "RESEARCHER" ? (
           <>
             {renderLink(adminOverview)}
-            {adminNavGroups.map((group) => {
+            {navGroups.map((group) => {
               const open = openGroups.has(group.label);
               const containsActive = group.label === activeGroup;
               const panelId = `admin-nav-${group.label.replace(/\W+/g, "-").toLowerCase()}`;
@@ -458,11 +474,6 @@ function SidebarContent({
             })}
             {renderLink(profileNav)}
           </>
-        ) : role === "RESEARCHER" ? (
-          // Research scientists use the admin dashboard, but the proxy only
-          // lets them onto the pages allowlisted for them (the overview, for
-          // now), so the rail shows just those rather than links that bounce.
-          [adminOverview, profileNav].map((item) => renderLink(item))
         ) : (
           [...(role === "TEACHER" ? teacherNav : studentNav), profileNav].map(
             (item) => renderLink(item),

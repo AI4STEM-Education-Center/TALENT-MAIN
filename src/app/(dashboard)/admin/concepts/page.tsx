@@ -1,6 +1,6 @@
-import { auth } from "@/lib/auth";
+import { requireAdminDataPage } from "@/lib/admin-access";
+import { isAdmin } from "@/lib/roles";
 import { prisma } from "@/lib/prisma";
-import { redirect } from "next/navigation";
 import { ConceptsClient } from "./concepts-client";
 import type {
   ConceptRow,
@@ -10,8 +10,7 @@ import type {
 } from "./types";
 
 export default async function AdminConceptsPage() {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") redirect("/login");
+  const session = await requireAdminDataPage();
 
   const [concepts, misconceptions, mappings, externalRefs] = await Promise.all([
     prisma.concept.findMany({
@@ -88,6 +87,7 @@ export default async function AdminConceptsPage() {
       misconceptions={misconceptionRows}
       mappings={mappingRows}
       externalRefs={externalRefRows}
+      canImport={isAdmin(session.user.role)}
     />
   );
 }

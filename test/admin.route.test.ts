@@ -31,9 +31,16 @@ afterAll(async () => {
 });
 
 describe("GET /api/admin/stats", () => {
-  it("401s a non-admin", async () => {
+  it("403s a teacher", async () => {
     asTeacher();
-    expect((await STATS()).status).toBe(401);
+    expect((await STATS()).status).toBe(403);
+  });
+
+  it("lets a research scientist read the counts", async () => {
+    mockAuth.mockResolvedValue({
+      user: { id: "r", role: "RESEARCHER" },
+    } as never);
+    expect((await STATS()).status).toBe(200);
   });
 
   it("401s an unauthenticated caller", async () => {
@@ -64,9 +71,19 @@ describe("GET /api/admin/stats", () => {
 });
 
 describe("GET /api/admin/users", () => {
-  it("401s a non-admin", async () => {
+  it("403s a teacher", async () => {
     asTeacher();
-    expect((await USERS()).status).toBe(401);
+    expect((await USERS()).status).toBe(403);
+  });
+
+  it("lets a research scientist read the user list", async () => {
+    await createTeacher();
+    mockAuth.mockResolvedValue({
+      user: { id: "r", role: "RESEARCHER" },
+    } as never);
+    const res = await USERS();
+    expect(res.status).toBe(200);
+    expect((await res.json()).length).toBeGreaterThanOrEqual(1);
   });
 
   it("lists users without exposing password hashes", async () => {

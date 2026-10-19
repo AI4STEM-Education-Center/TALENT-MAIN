@@ -65,7 +65,7 @@ type SubjectRow = FeedbackSummary & {
 };
 
 type SummaryResponse = {
-  viewerRole: "TEACHER" | "ADMIN";
+  viewerRole: "TEACHER" | "ADMIN" | "RESEARCHER";
   page: number;
   pageSize: number;
   total: number;

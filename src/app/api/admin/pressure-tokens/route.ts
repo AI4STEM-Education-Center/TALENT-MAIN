@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { auth } from "@/lib/auth";
+import { requireAdminApi } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 import {
   generatePressureToken,
@@ -27,10 +27,8 @@ const listSelect = {
 
 /** Lists this deployment's ingestion tokens. Secrets are never returned. */
 export async function GET() {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   try {
     const tokens = await prisma.pressureResultToken.findMany({
@@ -53,10 +51,8 @@ export async function GET() {
  * its digest is stored, so it cannot be shown again.
  */
 export async function POST(request: NextRequest) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   try {
     const parsed = createSchema.safeParse(

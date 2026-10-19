@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { logDataExport, requireAdminDataReader } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 import { parseSurveyQuestions, type SurveyAnswers } from "@/lib/survey";
 import { buildSurveyResponsesCsv, csvFilename } from "@/lib/survey-csv";
@@ -26,9 +26,11 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const [session, { id }] = await Promise.all([auth(), params]);
-  if (session?.user?.role !== "ADMIN")
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const [session, { id }] = await Promise.all([
+    requireAdminDataReader(),
+    params,
+  ]);
+  if (session instanceof Response) return session;
 
   const form = await prisma.surveyForm.findUnique({ where: { id } });
   if (!form) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -61,6 +63,11 @@ export async function GET(
     const csv = buildSurveyResponsesCsv(questions, responses, {
       includeInterview: form.kind === "PRE",
       form,
+    });
+    await logDataExport(session.user, "survey responses CSV", {
+      formId: form.id,
+      formTitle: form.title,
+      rows: responses.length,
     });
     return new NextResponse(`﻿${csv}`, {
       headers: {

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminApi } from "@/lib/admin-access";
 import { buildAiConfigExport } from "@/lib/ai-config-transfer";
 import { logApiError, logSystemEvent } from "@/lib/system-log";
 
@@ -12,10 +12,8 @@ export const runtime = "nodejs";
  * as one JSON file for /api/admin/ai-config/import on another site.
  */
 export async function GET() {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   try {
     const bundle = await buildAiConfigExport();

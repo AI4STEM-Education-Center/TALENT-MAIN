@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminDataReader } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 
 // GET: admin view of all teacher-owned quizzes (the candidates for promotion
 // into the global pool), with owner info and whether a pool copy already exists.
 export async function GET() {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const session = await requireAdminDataReader();
+  if (session instanceof Response) return session;
 
   const quizzes = await prisma.quiz.findMany({
     where: { teacherId: { not: null } },

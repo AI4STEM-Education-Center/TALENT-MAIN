@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminApi } from "@/lib/admin-access";
 import {
   getConsentExportSettings,
   updateConsentExportSettings,
@@ -9,10 +9,8 @@ import {
 export const runtime = "nodejs";
 
 export async function GET() {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
   return NextResponse.json(await getConsentExportSettings());
 }
 
@@ -26,10 +24,8 @@ const KEYS: (keyof ConsentExportSettingsValue)[] = [
 
 /** PATCH /api/admin/consent/settings — admin-configurable resource limits (see §8b of the plan). */
 export async function PATCH(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   let body: Record<string, unknown>;
   try {

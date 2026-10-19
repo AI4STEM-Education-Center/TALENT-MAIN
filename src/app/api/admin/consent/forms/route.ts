@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminApi } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 import { isConsentRole } from "@/lib/consent";
 import { sanitizeConsentHtml } from "@/lib/consent-html";
@@ -15,10 +15,8 @@ export const runtime = "nodejs";
  * publish screen needs both together and nothing else consumes it.
  */
 export async function GET() {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
   const versions = await prisma.consentFormVersion.findMany({
     orderBy: [{ role: "asc" }, { createdAt: "desc" }],
     select: {
@@ -43,10 +41,8 @@ export async function GET() {
  * decision no longer matches the new active version).
  */
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   let body: {
     role?: unknown;

@@ -7,7 +7,8 @@
  * The consolidation rule itself lives on the row as `routedTeacherId` (see
  * ContentFeedback in prisma/schema.prisma): a student's verdict is routed to
  * the owning teacher of the class the quiz was taken in, and a teacher's
- * verdict to that teacher. Admins are unscoped and read both.
+ * verdict to that teacher. Admins and research scientists are unscoped and
+ * read both. This module only authorizes READS.
  */
 
 import type { Prisma } from "@prisma/client";
@@ -23,6 +24,8 @@ import {
 
 export type FeedbackViewer =
   | { role: "ADMIN"; userId: string; teacherId: null }
+  // Research scientists read the same unscoped, site-wide view as admins.
+  | { role: "RESEARCHER"; userId: string; teacherId: null }
   | { role: "TEACHER"; userId: string; teacherId: string };
 
 /**
@@ -35,6 +38,9 @@ export async function getFeedbackViewer(): Promise<FeedbackViewer | null> {
   if (!session?.user) return null;
   if (session.user.role === "ADMIN") {
     return { role: "ADMIN", userId: session.user.id, teacherId: null };
+  }
+  if (session.user.role === "RESEARCHER") {
+    return { role: "RESEARCHER", userId: session.user.id, teacherId: null };
   }
   if (session.user.role !== "TEACHER") return null;
   const teacher = await prisma.teacher.findUnique({

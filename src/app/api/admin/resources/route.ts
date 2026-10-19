@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminApi } from "@/lib/admin-access";
 import { logApiError } from "@/lib/system-log";
 import { isResourceRange, type ResourceRange } from "@/lib/resource-metrics";
 import {
@@ -22,10 +22,8 @@ export const runtime = "nodejs";
  */
 export async function GET(req: NextRequest) {
   try {
-    const session = await auth();
-    if (!session?.user || session.user.role !== "ADMIN") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const session = await requireAdminApi();
+    if (session instanceof Response) return session;
 
     const requested = req.nextUrl.searchParams.get("range");
     const range: ResourceRange = isResourceRange(requested) ? requested : "24h";

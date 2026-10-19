@@ -223,11 +223,10 @@ describe("ResourceTelemetryTracker", () => {
 });
 
 describe("canViewResourceTelemetry", () => {
-  it("admits admins only — never teachers or students", () => {
+  it("admits the research team only — never teachers or students", () => {
     expect(canViewResourceTelemetry("ADMIN")).toBe(true);
     expect(canViewResourceTelemetry("TEACHER")).toBe(false);
-    // Not yet: researchers can't reach these admin pages (proxy allowlist).
-    expect(canViewResourceTelemetry("RESEARCHER")).toBe(false);
+    expect(canViewResourceTelemetry("RESEARCHER")).toBe(true);
     expect(canViewResourceTelemetry("STUDENT")).toBe(false);
     expect(canViewResourceTelemetry(null)).toBe(false);
     expect(canViewResourceTelemetry(undefined)).toBe(false);

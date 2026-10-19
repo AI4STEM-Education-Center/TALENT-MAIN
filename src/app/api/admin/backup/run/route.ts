@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminApi } from "@/lib/admin-access";
 import { resolveWebdav } from "@/lib/backup";
 import { enqueueBackup } from "@/lib/queue";
 import { getS3Config } from "@/lib/storage";
@@ -11,10 +11,8 @@ import { logApiError } from "@/lib/system-log";
  * Scheduled jobs deliberately remain database-only.
  */
 export async function POST() {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   const cfg = await resolveWebdav();
   if (!cfg) {
