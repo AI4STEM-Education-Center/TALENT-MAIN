@@ -3,10 +3,34 @@ import {
   CODE_ALPHABET,
   CODE_LENGTH,
   formatTeacherCode,
+  inviteCodeFromLink,
   normalizeTeacherCode,
   teacherCodeStatus,
 } from "./teacher-codes";
 import { generateTeacherCode } from "./teacher-registration-codes";
+
+describe("inviteCodeFromLink", () => {
+  it("keeps a ?code= value verbatim (env tokens are compared exactly)", () => {
+    for (const raw of [
+      " secret-admin ",
+      "MiXeD-case",
+      "\tTab\n",
+      "abcd-efgh",
+    ]) {
+      expect(inviteCodeFromLink(raw)).toBe(raw);
+    }
+    // As the register page reads it from the URL.
+    const fromUrl = new URLSearchParams(
+      `code=${encodeURIComponent("  Adm1n Tok3n ")}`,
+    ).get("code");
+    expect(inviteCodeFromLink(fromUrl)).toBe("  Adm1n Tok3n ");
+  });
+
+  it("is empty when the link carries no code", () => {
+    expect(inviteCodeFromLink(null)).toBe("");
+    expect(inviteCodeFromLink(undefined)).toBe("");
+  });
+});
 
 const NOW = new Date("2026-08-26T12:00:00Z");
 const base = { active: true, expiresAt: null, maxUses: null, usedCount: 0 };

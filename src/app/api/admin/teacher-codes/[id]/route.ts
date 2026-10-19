@@ -48,7 +48,7 @@ export async function PATCH(
       type: parsed.data.active
         ? "TEACHER_CODE_RESTORED"
         : "TEACHER_CODE_REVOKED",
-      message: `Teacher registration code ${parsed.data.active ? "restored" : "revoked"}${
+      message: `Invite code ${parsed.data.active ? "restored" : "revoked"}${
         row.label ? ` (${row.label})` : ""
       }.`,
       userId: session.user.id,
@@ -67,7 +67,7 @@ export async function PATCH(
 
 /**
  * DELETE /api/admin/teacher-codes/[id] — drop a code from the list entirely.
- * Teachers already registered with it keep their accounts; only the record of
+ * Accounts already registered with it keep them; only the record of
  * the code goes away, so the panel steers admins to revoke instead.
  */
 export async function DELETE(
@@ -94,7 +94,7 @@ export async function DELETE(
     void logSystemEvent({
       category: "AUTH",
       type: "TEACHER_CODE_DELETED",
-      message: "Teacher registration code deleted.",
+      message: "Invite code deleted.",
       userId: session.user.id,
       metadata: { codeId: id },
     });

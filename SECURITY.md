@@ -49,8 +49,7 @@ present-but-mismatched origin gets a 403.
 | Endpoint                          | Name                  | Limit |
 |-----------------------------------|-----------------------|-------|
 | Login (`authorize`)               | `login`               | 10    |
-| Teacher register                  | `auth-register`       | 10    |
-| Admin register                    | `auth-admin-register` | 10    |
+| Register (all roles, one endpoint)| `auth-register`       | 10    |
 | Invitation validate               | `invite-validate`     | 30    |
 | Invitation enroll                 | `invite-enroll`       | 15    |
 | Invitation roster lookup          | `invite-lookup`       | 20    |
@@ -162,8 +161,10 @@ refuses where they're missing, but verify them on each deploy:
 
 - `API_KEY_ENCRYPTION_SECRET` — 64-hex (32-byte) AES key. **Losing this makes
   all stored provider/SMTP/WebDAV secrets undecryptable.** Back it up securely.
-- `ADMIN_SIGNUP_TOKEN` / teacher signup token — gate self-registration. Treat
-  as secrets; rotate if leaked.
+- `ADMIN_SIGNUP_TOKEN` / `TEACHER_SIGNUP_TOKEN` — invite codes for
+  self-registration at `/register` (ADMIN and TEACHER accounts respectively;
+  compared in constant time). Treat as secrets; rotate if leaked. Panel-issued
+  invite codes can only ever create TEACHER or RESEARCHER accounts.
 - `AUTH_SECRET` — session signing. (Only this name is read; `NEXTAUTH_SECRET` is
   not referenced anywhere in the code.)
 - `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` — required; object storage fails

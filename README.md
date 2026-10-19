@@ -181,7 +181,10 @@ DEV_DATABASE_URL="file:./data/dev.db"
 
 # --- Authentication & Registration Security ---
 AUTH_SECRET="your-generated-nextauth-secret-here"
-# Optional legacy fallback — teacher codes are issued in Admin > Teacher Codes.
+# Everyone but students signs up at /register with an invite code; the code
+# decides the account type. ADMIN_SIGNUP_TOKEN is the invite code for admins.
+# Teacher and research-scientist codes are issued in Admin > Invite Codes;
+# TEACHER_SIGNUP_TOKEN is an optional legacy always-valid teacher code.
 TEACHER_SIGNUP_TOKEN=""
 ADMIN_SIGNUP_TOKEN="your-secret-admin-code"
 
@@ -217,8 +220,8 @@ CLOUDFRONT_PRIVATE_KEY="LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQo..."
 | `DB_PROVIDER` | Set to `sqlite` to run WAL mode optimizations on startup |
 | `APP_URL` | Public base URL of the deployment (e.g. `https://dev.ai4talent.org`). New-message notification emails use it to link students straight to the message; without it (or `AUTH_URL` / `NEXTAUTH_URL`) those emails fall back to "sign in and open Notifications" |
 | `AUTH_SECRET` | Secret key used by NextAuth to sign session tokens |
-| `TEACHER_SIGNUP_TOKEN` | **Optional, legacy.** A single always-valid teacher registration code. Codes are now issued in **Admin → Teacher Codes**, each with its own expiry and use limit; a code set here works alongside them but never expires and cannot be revoked without a redeploy, so clear it once the first code has been issued |
-| `ADMIN_SIGNUP_TOKEN` | Secret token admins must enter when registering at `/admin-register` |
+| `TEACHER_SIGNUP_TOKEN` | **Optional, legacy.** A single always-valid teacher invite code. Teacher and research-scientist codes are now issued in **Admin → Invite Codes**, each with its own role, expiry and use limit; a value set here works alongside them but never expires and cannot be revoked without a redeploy, so clear it once the first code has been issued |
+| `ADMIN_SIGNUP_TOKEN` | Invite code that creates an **administrator** account when entered at `/register` (the same form teachers and research scientists use — the code decides the account type). Admin accounts can only be created this way, never from a panel-issued code. The old `/admin-register` URL redirects to `/register` |
 | `API_KEY_ENCRYPTION_SECRET` | Hex-encoded 32-byte secret key used to encrypt AI Provider API keys stored in the database |
 | `LEARNING_MATERIAL_MAX_BYTES` | Max upload size for learning materials in bytes (default 52428800 = 50 MiB) |
 | `AWS_ACCESS_KEY_ID` | **Required.** Static access key for the app's IAM user. IAM instance roles are not used — the app throws rather than falling back to instance metadata |

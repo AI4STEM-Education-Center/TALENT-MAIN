@@ -10,9 +10,12 @@ import {
   teacherCodeStatus,
   type TeacherCodeView,
 } from "@/lib/teacher-codes";
+import { TEACHER, type InviteCodeRole } from "@/lib/roles";
 
 /**
- * Admin-issued teacher registration codes — the server half (crypto + database).
+ * Admin-issued registration ("invite") codes — the server half (crypto + database).
+ * Despite the historical "teacher" naming, a code carries a `role` (TEACHER or
+ * RESEARCHER) that decides which account it creates; see src/lib/registration.ts.
  * The client-safe string/limit helpers live in src/lib/teacher-codes.ts.
  *
  * Teacher self-registration used to accept exactly one value, the
@@ -28,8 +31,9 @@ import {
 /**
  * A fresh code in canonical (dash-free, upper-case) form.
  *
- * This is a BEARER CREDENTIAL — whoever holds it can create a TEACHER account —
- * so it comes from crypto.randomBytes rather than a `cuid()` schema default;
+ * This is a BEARER CREDENTIAL — whoever holds it can create an account of the
+ * code's role — so it comes from crypto.randomBytes rather than a `cuid()`
+ * schema default;
  * see the note on TeacherRegistrationCode in prisma/schema.prisma.
  */
 export function generateTeacherCode(): string {
@@ -51,6 +55,7 @@ export function toTeacherCodeView(
     code: formatTeacherCode(row.code),
     url: `${origin}/register?code=${encodeURIComponent(row.code)}`,
     label: row.label,
+    role: row.role,
     expiresAt: row.expiresAt?.toISOString() ?? null,
     maxUses: row.maxUses,
     usedCount: row.usedCount,
@@ -67,6 +72,7 @@ export function toTeacherCodeView(
  */
 export async function createTeacherCode(input: {
   label?: string | null;
+  role?: InviteCodeRole;
   expiresInMinutes?: number | null;
   maxUses?: number | null;
   createdById?: string | null;
@@ -84,6 +90,7 @@ export async function createTeacherCode(input: {
           label: input.label?.trim()
             ? input.label.trim().slice(0, MAX_LABEL_LENGTH)
             : null,
+          role: input.role ?? TEACHER,
           expiresAt,
           maxUses: input.maxUses ?? null,
           createdById: input.createdById ?? null,
@@ -115,8 +122,8 @@ export async function findTeacherCode(
 }
 
 /**
- * True when at least one code could plausibly be redeemed, i.e. teacher signup
- * is open even without TEACHER_SIGNUP_TOKEN. Exhaustion is not checked here:
+ * True when at least one code could plausibly be redeemed, i.e. registration
+ * is open even without the ADMIN_/TEACHER_SIGNUP_TOKEN env vars. Exhaustion is not checked here:
  * SQLite cannot compare usedCount to maxUses in a filter, and an exhausted code
  * should read as "wrong code" rather than "server not configured" anyway.
  */
@@ -135,7 +142,7 @@ export async function hasRedeemableTeacherCode(
 /** Thrown when a code lost its last slot between the preflight read and the claim. */
 export class TeacherCodeUnavailableError extends Error {
   constructor() {
-    super("Teacher registration code is no longer available.");
+    super("Registration code is no longer available.");
     this.name = "TeacherCodeUnavailableError";
   }
 }
@@ -145,7 +152,7 @@ export class TeacherCodeUnavailableError extends Error {
  *
  * SECURITY: claiming the slot and creating the account must be one transaction,
  * or two concurrent registrations both pass the preflight check and a
- * single-use code mints two teachers. The re-read plus the `usedCount` guard in
+ * single-use code mints two accounts. The re-read plus the `usedCount` guard in
  * the WHERE clause make the increment a compare-and-swap, so the loser of a
  * race updates zero rows and is rejected — the same shape as the class-invite
  * claim in src/app/api/invitations/[token]/route.ts.
