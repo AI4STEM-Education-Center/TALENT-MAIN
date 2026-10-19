@@ -88,6 +88,10 @@ async function setup(decision: "AGREE" | "DECLINE" | null) {
   } as never);
   return {
     user,
+    student,
+    teacher,
+    cls,
+    quiz,
     sim,
     form,
     params: { params: Promise.resolve({ id: sim.id }) },
@@ -107,6 +111,8 @@ describe("simulation access without research collection", () => {
       const html = await response.text();
       expect(html).toContain("Run simulation");
       expect(html).not.toContain("__simTelemetryInstalled");
+      // The Escape forwarder records nothing, so everyone gets it.
+      expect(html).toContain("__simEscapeInstalled");
       expect(
         await (
           await openSession(request({ surface: "library" }), params)
@@ -149,5 +155,120 @@ describe("simulation access without research collection", () => {
         where: { id: sessionId },
       }),
     ).toEqual(before);
+  });
+});
+
+describe("simulation session launch labels", () => {
+  it("stores the launch surface and viewport, and rejects surfaces outside the closed set", async () => {
+    const { params } = await setup("AGREE");
+    expect(
+      (await openSession(request({ surface: "kiosk" }), params)).status,
+    ).toBe(400);
+    const opened = await openSession(
+      request({ surface: "library", viewport: "phone" }),
+      params,
+    );
+    expect(opened.status).toBe(201);
+    const { sessionId } = await opened.json();
+    expect(
+      await prisma.simulationSession.findUniqueOrThrow({
+        where: { id: sessionId },
+        select: { surface: true, viewport: true },
+      }),
+    ).toEqual({ surface: "library", viewport: "phone" });
+  });
+
+  it("keeps accepting legacy surfaces from cached clients", async () => {
+    const { params } = await setup("AGREE");
+    const opened = await openSession(request({ surface: "rail" }), params);
+    expect(opened.status).toBe(201);
+    const row = await prisma.simulationSession.findFirstOrThrow();
+    expect(row).toMatchObject({ surface: "rail", viewport: null });
+  });
+
+  const contextOf = async (
+    body: Record<string, unknown>,
+    params: { params: Promise<{ id: string }> },
+  ) => {
+    const res = await openSession(request(body), params);
+    expect(res.status).toBe(201);
+    const { sessionId } = await res.json();
+    return prisma.simulationSession.findUniqueOrThrow({
+      where: { id: sessionId },
+      select: { classId: true, attemptId: true, quizId: true },
+    });
+  };
+
+  it("never gives library opens a class, even when one (or an attempt) is supplied", async () => {
+    const { student, cls, quiz, params } = await setup("AGREE");
+    const attempt = await prisma.quizAttempt.create({
+      data: { studentId: student.id, classId: cls.id, quizId: quiz.id },
+    });
+    expect(
+      await contextOf({ surface: "library", classId: cls.id }, params),
+    ).toEqual({ classId: null, attemptId: null, quizId: quiz.id });
+    expect(
+      await contextOf(
+        { surface: "library", classId: cls.id, attemptId: attempt.id },
+        params,
+      ),
+    ).toEqual({ classId: null, attemptId: null, quizId: quiz.id });
+  });
+
+  it("keeps a results-page attempt only when it is this quiz's attempt in an assigning class", async () => {
+    const { student, teacher, cls, quiz, params } = await setup("AGREE");
+    const own = await prisma.quizAttempt.create({
+      data: { studentId: student.id, classId: cls.id, quizId: quiz.id },
+    });
+    expect(
+      await contextOf({ surface: "results_page", attemptId: own.id }, params),
+    ).toEqual({ classId: cls.id, attemptId: own.id, quizId: quiz.id });
+
+    // Cross-quiz: the student's own attempt at a different quiz.
+    const otherQuiz = await prisma.quiz.create({
+      data: { name: "Energy", teacherId: teacher.id },
+    });
+    await prisma.classQuiz.create({
+      data: { classId: cls.id, quizId: otherQuiz.id },
+    });
+    const otherQuizAttempt = await prisma.quizAttempt.create({
+      data: { studentId: student.id, classId: cls.id, quizId: otherQuiz.id },
+    });
+    expect(
+      await contextOf(
+        { surface: "quiz_results", attemptId: otherQuizAttempt.id },
+        params,
+      ),
+    ).toEqual({ classId: null, attemptId: null, quizId: quiz.id });
+
+    // Cross-class: an attempt at this quiz filed under a class that does not
+    // assign it to the student (enrolled there, but no assignment).
+    const otherClass = await prisma.class.create({
+      data: { name: "Chemistry", teacherId: teacher.id },
+    });
+    await prisma.classEnrollment.create({
+      data: { classId: otherClass.id, studentId: student.id },
+    });
+    const crossClassAttempt = await prisma.quizAttempt.create({
+      data: { studentId: student.id, classId: otherClass.id, quizId: quiz.id },
+    });
+    expect(
+      await contextOf(
+        { surface: "results_page", attemptId: crossClassAttempt.id },
+        params,
+      ),
+    ).toEqual({ classId: null, attemptId: null, quizId: quiz.id });
+
+    // Someone else's attempt is still dropped.
+    const { student: other } = await createStudent();
+    const foreignAttempt = await prisma.quizAttempt.create({
+      data: { studentId: other.id, classId: cls.id, quizId: quiz.id },
+    });
+    expect(
+      await contextOf(
+        { surface: "results_page", attemptId: foreignAttempt.id },
+        params,
+      ),
+    ).toEqual({ classId: null, attemptId: null, quizId: quiz.id });
   });
 });

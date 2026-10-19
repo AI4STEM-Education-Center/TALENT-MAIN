@@ -3,7 +3,6 @@ import { useState } from "react";
 import { signOut, useSession } from "next-auth/react";
 import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/dashboard/sidebar";
-import { SetContentFullWidthContext } from "@/components/dashboard/content-width";
 import { ConsentGate } from "@/components/consent/ConsentGate";
 import { SurveyGate } from "@/components/survey/SurveyGate";
 import { AssistantWidget } from "@/components/assistant/AssistantWidget";
@@ -18,9 +17,6 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
-  // Pages toggle this via useContentFullWidth when they need the whole
-  // viewport (e.g. exam results while a simulation is open).
-  const [contentFullWidth, setContentFullWidth] = useState(false);
 
   if (status === "loading") {
     return (
@@ -95,13 +91,9 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
           <main className="flex-1 overflow-auto">
             {/* Cap content width so inputs/bars/boxes don't stretch the full
                 viewport, but stay left-aligned (no mx-auto) so content hugs the
-                sidebar instead of floating centered. Pages can lift the cap via
-                useContentFullWidth when they need the whole viewport. */}
-            <SetContentFullWidthContext.Provider value={setContentFullWidth}>
-              <div className={cn("w-full", !contentFullWidth && "max-w-7xl")}>
-                {children}
-              </div>
-            </SetContentFullWidthContext.Provider>
+                sidebar instead of floating centered. Views that need the whole
+                viewport (simulations) open in a pop-up instead. */}
+            <div className="w-full max-w-7xl">{children}</div>
           </main>
         </div>
 
