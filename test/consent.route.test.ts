@@ -78,6 +78,7 @@ describe("GET /api/consent", () => {
       role: null,
       activeForm: null,
       priorDecision: null,
+      reprompt: null,
     });
   });
 

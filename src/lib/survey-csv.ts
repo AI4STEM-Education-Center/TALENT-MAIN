@@ -6,6 +6,7 @@
 
 import {
   formatAnswer,
+  surveyFormLabel,
   type SurveyAnswers,
   type SurveyQuestion,
 } from "@/lib/survey";
@@ -56,16 +57,25 @@ function questionHeader(q: SurveyQuestion, index: number): string {
   return `Q${index + 1}: ${text.length > 120 ? `${text.slice(0, 117)}…` : text}`;
 }
 
-/** One line per response; one column per answerable question, in form order. */
+/**
+ * One line per response; one column per answerable question, in form order.
+ * `form` (when given) adds the survey and study-period columns, so files from
+ * the period 1 and period 2 post-surveys stay distinguishable once merged.
+ */
 export function buildSurveyResponsesCsv(
   questions: readonly SurveyQuestion[],
   rows: readonly SurveyResponseExportRow[],
-  options: { includeInterview: boolean },
+  options: {
+    includeInterview: boolean;
+    form?: { kind: string; period: number };
+  },
 ): string {
   const answerable = questions.filter((q) => q.type !== "section");
+  const form = options.form;
   const header = [
     "Response ID",
     "Submitted At (UTC)",
+    ...(form ? ["Survey", "Study Period"] : []),
     "Role",
     "Source",
     "Name",
@@ -83,6 +93,9 @@ export function buildSurveyResponsesCsv(
       csvRow([
         r.id,
         csvTimestamp(r.submittedAt),
+        ...(form
+          ? [surveyFormLabel(form.kind, form.period), String(form.period)]
+          : []),
         r.role,
         r.source === "LINK" ? "Email link" : "Signed in",
         r.nameSnapshot,

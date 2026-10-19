@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
     count: plan.recipients.length,
     byVersion,
     skipped: plan.skipped,
+    forms: plan.forms ?? [],
     recipients: plan.recipients.slice(0, 200).map((r) => ({
       name: r.name,
       email: r.email,

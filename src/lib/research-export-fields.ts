@@ -110,10 +110,11 @@ export const RESEARCH_EXPORT_FIELDS = {
   QuizPracticeAttempt:
     "id studentId classId quizId versionId versionName questions answers score startedAt completedAt activeKey",
   SurveyForm:
-    "id kind role title description questions isEnabled status errorMessage sourceText pdfBucket pdfKey pdfName createdById createdAt updatedAt",
+    "id kind role period promptInApp promptStartedAt title description questions isEnabled status errorMessage sourceText pdfBucket pdfKey pdfName createdById createdAt updatedAt",
   SurveyResponse:
     "id formId userId kind role answers interviewOptIn interviewEmail irbAgreed source nameSnapshot emailSnapshot submittedAt",
   SurveyPromptDismissal: "id userId formId dismissedAt",
+  ConsentRepromptDismissal: "id userId campaignKey dismissedAt",
   SurveyInvite:
     "id formId userId email name campaignId createdAt usedAt responseId",
   ResearchEmailTemplate:

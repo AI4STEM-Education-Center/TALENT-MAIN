@@ -60,6 +60,7 @@ export async function GET(
   if (asCsv) {
     const csv = buildSurveyResponsesCsv(questions, responses, {
       includeInterview: form.kind === "PRE",
+      form,
     });
     return new NextResponse(`﻿${csv}`, {
       headers: {
@@ -70,7 +71,13 @@ export async function GET(
     });
   }
   return NextResponse.json({
-    form: { id: form.id, title: form.title, kind: form.kind, role: form.role },
+    form: {
+      id: form.id,
+      title: form.title,
+      kind: form.kind,
+      role: form.role,
+      period: form.period,
+    },
     questions,
     responses,
     total,
