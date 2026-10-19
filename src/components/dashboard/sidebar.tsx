@@ -158,6 +158,11 @@ const adminNavGroups: NavGroup[] = [
         label: "Student Usage",
         icon: <History className="size-4" />,
       },
+      {
+        href: "/admin/resource-engagement",
+        label: "Resource Engagement",
+        icon: <BookOpen className="size-4" />,
+      },
     ],
   },
   {

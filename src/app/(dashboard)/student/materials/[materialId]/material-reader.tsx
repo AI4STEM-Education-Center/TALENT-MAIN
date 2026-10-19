@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { useResourceTelemetry } from "@/components/student/use-resource-telemetry";
 
 export type ReaderPage = {
   id: string;
@@ -30,6 +31,11 @@ interface MaterialReaderProps {
  * time by /api/student/materials/[materialId]/pages/[pageId]/image, so a long
  * reading session never runs into an expired batch of URLs and the enrollment
  * gate is re-checked on every fetch.
+ *
+ * Each visit records a LearningResourceSession (surface materials_library;
+ * consent-gated server-side): dwell, active time, presses inside the reader,
+ * time per page, and original-PDF opens. This page is student-only, so staff
+ * reading materials elsewhere are never tracked.
  */
 export function MaterialReader({
   materialId,
@@ -39,6 +45,16 @@ export function MaterialReader({
   const [index, setIndex] = useState(0);
   const current = pages[index];
   const pageId = current?.id;
+  const currentPageNumber = current?.pageNumber ?? null;
+
+  const { containerRef, viewPage, notePdfOpen } = useResourceTelemetry({
+    enabled: true,
+    materialId,
+    surface: "materials_library",
+  });
+  useEffect(() => {
+    viewPage(currentPageNumber);
+  }, [currentPageNumber, viewPage]);
 
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(pages.length > 0);
@@ -80,7 +96,7 @@ export function MaterialReader({
   }, [materialId, pageId]);
 
   return (
-    <div className="space-y-4">
+    <div ref={containerRef} className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="outline" size="sm" asChild>
           {/* The API mints the signature per click, so this href never goes stale. */}
@@ -88,6 +104,8 @@ export function MaterialReader({
             href={`/api/student/materials/${materialId}/file`}
             target="_blank"
             rel="noopener noreferrer"
+            onClick={notePdfOpen}
+            onAuxClick={notePdfOpen}
           >
             <ExternalLink className="size-4" /> Open original PDF
           </a>

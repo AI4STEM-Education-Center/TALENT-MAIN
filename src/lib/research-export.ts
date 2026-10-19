@@ -12,6 +12,7 @@ import { getS3ObjectAsString } from "@/lib/storage";
 import {
   RESEARCH_EXPORT_FIELDS,
   RESEARCH_EXPORT_EXCLUDED_MODELS,
+  RESEARCH_EXPORT_FIELD_DOCS,
 } from "@/lib/research-export-fields";
 
 type Row = Record<string, unknown>;
@@ -191,6 +192,17 @@ Useful joins:
 - quiz_attempt.id -> quiz_answer.quizAttemptId / exam_result.quizAttemptId
 - question.id -> quiz_answer.questionId; option.id -> selectedOptionId
 - simulation_session.studentId/classId/quizId/attemptId -> corresponding ids
+- learning_resource_session.studentId/materialId/classId/quizId/attemptId ->
+  corresponding ids. One row per time a student opened a learning material, so
+  open (click) counts are row counts; clickCount is presses inside the viewer.
+  surface says where it was opened (results_recommendation: results shown
+  right after a quiz; history_recommendation: a saved results page reopened
+  from Exam History; materials_library: the Course Materials reader), and
+  recommended is true for server-verified recommendation opens, with the
+  recommended page range in pageStart/pageEnd. dwellMs counts only time with
+  the tab visible; pagesViewedJson is {pageNumber: visibleMs}. Like
+  simulation_session, rows exist only for students with research consent and
+  all counters are client-reported, clamped engagement signals.
 - assistant_conversation.id -> assistant_message.conversationId
 - survey_form.id -> survey_response.formId; survey_answers.questionId matches
   the question IDs in survey_form.questions. survey_answers.csv is one row
@@ -346,7 +358,11 @@ export async function createResearchExport(
             foreignKey
               ? `${target?.name ?? foreignKey.table}.${targetField?.name ?? foreignKey.to}`
               : "",
-            field.documentation ?? "",
+            field.documentation ||
+              RESEARCH_EXPORT_FIELD_DOCS[
+                table.model.name as keyof typeof RESEARCH_EXPORT_FIELDS
+              ]?.[field.name] ||
+              "",
           ]),
         );
       }
