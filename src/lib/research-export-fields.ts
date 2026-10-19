@@ -81,7 +81,7 @@ export const RESEARCH_EXPORT_FIELDS = {
   SimulationFeedback:
     "id simulationId authorUserId authorName feedback status errorMessage previousStorageKey baseVersion versionName createdAt updatedAt",
   SimulationSession:
-    "id simulationId studentId classId quizId attemptId surface startedAt endedAt dwellMs activeMs interactionCount paramChanges controlsJson updatedAt",
+    "id simulationId studentId classId quizId attemptId surface viewport startedAt endedAt dwellMs activeMs interactionCount paramChanges controlsJson updatedAt",
   ContentFeedback:
     "id createdAt updatedAt audience subjectType rating comment authorUserId authorName authorEmail authorRole subjectId subjectLabel subjectDetail subjectKey routedTeacherId attemptId quizId quizName classId className",
   SystemLog: "id createdAt category type severity message userId ip metadata",

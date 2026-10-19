@@ -4,6 +4,7 @@ import {
   ENGAGED_ACTIVE_MS,
   formatDurationMs,
   summarizeSimulationEngagement,
+  summarizeSessionsBySurface,
   retakeImprovementBySimUse,
   type SimSessionRecord,
   type AttemptRecord,
@@ -17,6 +18,7 @@ const session = (over: Partial<SimSessionRecord>): SimSessionRecord => ({
   activeMs: 60_000,
   interactionCount: 12,
   paramChanges: 5,
+  surface: "results_page",
   ...over,
 });
 
@@ -26,6 +28,50 @@ const attempt = (over: Partial<AttemptRecord>): AttemptRecord => ({
   score: 50,
   completedAt: new Date("2026-07-01T09:00:00Z"),
   ...over,
+});
+
+describe("summarizeSessionsBySurface", () => {
+  it("counts opens, students and median activity per launch surface, most opens first", () => {
+    const rows = summarizeSessionsBySurface([
+      session({ surface: "library", studentId: "s1", activeMs: 10_000 }),
+      session({ surface: "library", studentId: "s1", activeMs: 30_000 }),
+      session({ surface: "library", studentId: "s2", activeMs: 20_000 }),
+      session({ surface: "quiz_results", studentId: "s3" }),
+    ]);
+    expect(rows).toEqual([
+      {
+        surface: "library",
+        label: "Simulations library",
+        opens: 3,
+        uniqueStudents: 2,
+        medianActiveMs: 20_000,
+      },
+      {
+        surface: "quiz_results",
+        label: "Quiz results (just submitted)",
+        opens: 1,
+        uniqueStudents: 1,
+        medianActiveMs: 60_000,
+      },
+    ]);
+  });
+
+  it("keeps legacy and unknown values as their own labelled rows", () => {
+    const rows = summarizeSessionsBySurface([
+      session({ surface: "rail" }),
+      session({ surface: "mobile" }),
+      session({ surface: "kiosk" }),
+    ]);
+    expect(rows.map((r) => [r.surface, r.label])).toEqual([
+      ["kiosk", "Other (kiosk)"],
+      ["mobile", "Results rail (legacy, phone/tablet)"],
+      ["rail", "Results rail (legacy, desktop)"],
+    ]);
+  });
+
+  it("returns no rows for no sessions", () => {
+    expect(summarizeSessionsBySurface([])).toEqual([]);
+  });
 });
 
 describe("formatDurationMs", () => {

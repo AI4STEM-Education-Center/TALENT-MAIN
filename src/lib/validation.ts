@@ -1,8 +1,10 @@
 import { z } from "zod";
 import { NextResponse } from "next/server";
 import {
+  ACCEPTED_SIMULATION_SURFACES,
   MAX_TELEMETRY_MS,
   MAX_TELEMETRY_COUNT,
+  SIMULATION_VIEWPORTS,
   sanitizeControlCounts,
 } from "./simulation-telemetry";
 import { MAX_LABEL_LENGTH } from "./teacher-codes";
@@ -281,7 +283,16 @@ export const simulationSessionCreateSchema = z.object({
     .nullable()
     .optional()
     .transform((v) => v ?? null),
-  surface: z.enum(["rail", "mobile", "library"]),
+  // No client-supplied classId: class context comes only from a verified
+  // attempt (unknown keys are stripped), so library opens stay class-less.
+  /** Closed set; legacy values stay accepted for clients cached pre-pop-up. */
+  surface: z.enum(ACCEPTED_SIMULATION_SURFACES),
+  /** Absent from pre-pop-up clients, so optional; stored as null then. */
+  viewport: z
+    .enum(SIMULATION_VIEWPORTS)
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
 });
 
 export const simulationSessionUpdateSchema = z.object({

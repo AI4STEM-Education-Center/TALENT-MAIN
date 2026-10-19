@@ -5,6 +5,7 @@
 // treat every number here as engagement signal, not ground truth.
 
 import { mean, median } from "./quiz-stats";
+import { simulationSurfaceLabel } from "./simulation-telemetry";
 
 /** A session spent below this much active time (or with no interactions) "bounced". */
 export const BOUNCE_ACTIVE_MS = 10_000;
@@ -21,6 +22,8 @@ export type SimSessionRecord = {
   activeMs: number;
   interactionCount: number;
   paramChanges: number;
+  /** Launch point as stored (current or legacy value — see simulation-telemetry). */
+  surface: string;
 };
 
 /** "1h 05m" / "4m 05s" / "32s" — compact duration for stat cells. */
@@ -74,6 +77,45 @@ export function summarizeSimulationEngagement(
     }))
     .toSorted(
       (a, b) => b.uniqueStudents - a.uniqueStudents || b.sessions - a.sessions,
+    );
+}
+
+export type SimulationSurfaceRow = {
+  /** Stored surface value (current or legacy). */
+  surface: string;
+  /** Display label from `simulationSurfaceLabel`. */
+  label: string;
+  /** Each session is one pop-up open, so this is the open count. */
+  opens: number;
+  uniqueStudents: number;
+  medianActiveMs: number;
+};
+
+/**
+ * Break sessions down by where they were launched from, most opens first.
+ * Legacy values stay their own rows (labelled as legacy) rather than being
+ * folded into a current surface: `rail` covered both kinds of results view,
+ * so there is no truthful single mapping.
+ */
+export function summarizeSessionsBySurface(
+  sessions: SimSessionRecord[],
+): SimulationSurfaceRow[] {
+  const bySurface = new Map<string, SimSessionRecord[]>();
+  for (const s of sessions) {
+    const arr = bySurface.get(s.surface) ?? [];
+    arr.push(s);
+    bySurface.set(s.surface, arr);
+  }
+  return [...bySurface.entries()]
+    .map(([surface, rows]) => ({
+      surface,
+      label: simulationSurfaceLabel(surface),
+      opens: rows.length,
+      uniqueStudents: new Set(rows.map((r) => r.studentId)).size,
+      medianActiveMs: median(rows.map((r) => r.activeMs)),
+    }))
+    .toSorted(
+      (a, b) => b.opens - a.opens || a.surface.localeCompare(b.surface),
     );
 }
 

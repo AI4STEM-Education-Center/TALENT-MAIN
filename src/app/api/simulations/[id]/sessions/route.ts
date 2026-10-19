@@ -8,8 +8,9 @@ export const runtime = "nodejs";
 
 /**
  * POST /api/simulations/[id]/sessions
- * Open a telemetry session for a student viewing a simulation from their
- * results page. Student-only (staff previews are not tracked); access mirrors
+ * Open a telemetry session for a student opening a simulation pop-up, labelled
+ * with the launch surface and device viewport (closed sets, see
+ * simulation-telemetry.ts). Student-only (staff previews are not tracked); access mirrors
  * the content route — the student must be enrolled in a class the simulation's
  * quiz is assigned to. The optional attemptId links the session to the quiz
  * attempt whose results surfaced the simulation; it is verified to belong to
@@ -60,26 +61,38 @@ export async function POST(
   if (!student || !sim)
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const assignment = await prisma.classQuiz.findFirst({
+  // Every class of this student's the quiz is assigned to — access requires at
+  // least one, and a claimed attempt's class must be among them.
+  const assignments = await prisma.classQuiz.findMany({
     where: {
       quizId: sim.question.quizId,
       class: { enrollments: { some: { studentId: student.id } } },
     },
-    select: { id: true },
+    select: { classId: true },
   });
-  if (!assignment)
+  if (assignments.length === 0)
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const assignedClassIds = new Set(assignments.map((a) => a.classId));
 
   // Resolve class/attempt context from the attempt row, keeping it only when
-  // it really is this student's attempt.
+  // it really is this student's attempt OF THIS SIMULATION'S QUIZ, taken in a
+  // class that assigns that quiz to them — otherwise a session for simulation
+  // A could be filed under quiz A but attempt/class B. Library opens never
+  // carry class context (classId stays null): library browsing is not tied to
+  // a results page, and must not surface in instructor-facing class stats.
   let attemptId: string | null = null;
   let classId: string | null = null;
-  if (parsed.data.attemptId) {
+  if (parsed.data.attemptId && parsed.data.surface !== "library") {
     const attempt = await prisma.quizAttempt.findUnique({
       where: { id: parsed.data.attemptId },
-      select: { id: true, studentId: true, classId: true },
+      select: { id: true, studentId: true, classId: true, quizId: true },
     });
-    if (attempt && attempt.studentId === student.id) {
+    if (
+      attempt &&
+      attempt.studentId === student.id &&
+      attempt.quizId === sim.question.quizId &&
+      assignedClassIds.has(attempt.classId)
+    ) {
       attemptId = attempt.id;
       classId = attempt.classId;
     }
@@ -93,6 +106,7 @@ export async function POST(
       quizId: sim.question.quizId,
       attemptId,
       surface: parsed.data.surface,
+      viewport: parsed.data.viewport,
     },
     select: { id: true },
   });

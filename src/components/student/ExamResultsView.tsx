@@ -11,8 +11,8 @@ import { HolisticRecommendations } from "@/components/student/HolisticRecommenda
 import { SimulationRail } from "@/components/student/SimulationRail";
 import { StudentMistakesReview } from "@/components/student/StudentMistakesReview";
 import { MyFeedbackProvider } from "@/components/feedback/my-feedback";
-import { useContentFullWidth } from "@/components/dashboard/content-width";
 import { cn } from "@/lib/utils";
+import type { SimulationSurface } from "@/lib/simulation-telemetry";
 import {
   isResultPending,
   type ResultComponentMetrics,
@@ -42,6 +42,7 @@ export function ExamResultsView({
   backHref,
   backLabel = "Back",
   actions,
+  simulationSurface,
 }: {
   attemptId: string;
   score: number;
@@ -50,11 +51,17 @@ export function ExamResultsView({
   backHref?: string;
   backLabel?: string;
   actions?: ReactNode;
+  /**
+   * Which results view this is, so simulation sessions opened from it are
+   * labelled with their launch point: `quiz_results` right after submitting,
+   * `results_page` when a past attempt is reopened.
+   */
+  simulationSurface: Extract<
+    SimulationSurface,
+    "quiz_results" | "results_page"
+  >;
 }) {
   const [ai, setAi] = useState<AiState>(initial);
-  // Owned here (not in SimulationRail) because an active simulation reshapes
-  // the whole page: the grid flips so the simulation takes the wide side.
-  const [activeSimId, setActiveSimId] = useState<string | null>(null);
   const needPoll =
     isResultPending(ai.summaryStatus) ||
     isResultPending(ai.recommendationsStatus);
@@ -133,10 +140,6 @@ export function ExamResultsView({
   }, [attemptId, needPoll]);
 
   const hasSimulations = ai.simulations.length > 0;
-  const simOpen = activeSimId !== null;
-  // The dashboard layout caps pages at max-w-7xl, which our own max-w-none
-  // can't escape — ask it to lift the cap while a simulation is open.
-  useContentFullWidth(simOpen);
 
   return (
     /* One lookup of "what have I already rated on this attempt", shared by
@@ -146,7 +149,7 @@ export function ExamResultsView({
       <div
         className={cn(
           "p-4 md:p-6 space-y-6",
-          simOpen ? "max-w-none" : hasSimulations ? "max-w-7xl" : "max-w-6xl",
+          hasSimulations ? "max-w-7xl" : "max-w-6xl",
         )}
       >
         {backHref && (
@@ -159,15 +162,11 @@ export function ExamResultsView({
 
         {/* With simulations, desktop splits into content (left) + simulation
           rail (right); on smaller screens the rail stacks below as a section.
-          While a simulation is open the columns flip: the summary shrinks
-          into the narrow column and the simulation gets the rest of the page. */}
+          Opening a simulation launches a pop-up, so the layout never flips. */}
         <div
           className={cn(
-            hasSimulations && "grid gap-6 lg:items-start",
             hasSimulations &&
-              (simOpen
-                ? "lg:grid-cols-[minmax(320px,26rem)_minmax(0,1fr)]"
-                : "lg:grid-cols-[minmax(0,1fr)_minmax(320px,26rem)]"),
+              "grid gap-6 lg:items-start lg:grid-cols-[minmax(0,1fr)_minmax(320px,26rem)]",
           )}
         >
           <div className="min-w-0 space-y-6">
@@ -204,9 +203,7 @@ export function ExamResultsView({
             <SimulationRail
               simulations={ai.simulations}
               attemptId={attemptId}
-              recordTelemetry
-              activeId={activeSimId}
-              onActiveChange={setActiveSimId}
+              telemetrySurface={simulationSurface}
             />
           )}
         </div>

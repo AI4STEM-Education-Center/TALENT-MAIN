@@ -39,9 +39,9 @@ export function HolisticRecommendations({
 
   return (
     /* Container for the card grid below: column count must follow the
-       available width, not the viewport — while a simulation is open this
-       section lives in the page's narrow column and the cards must stack
-       instead of splitting into slivers. */
+       available width, not the viewport — beside the simulation rail this
+       section gets only part of the page, and the cards must stack instead
+       of splitting into slivers. */
     <div className="space-y-3 @container">
       <h2 className="flex items-center gap-1.5 text-lg font-semibold">
         <Sparkles className="size-5 text-primary" /> Study recommendations
