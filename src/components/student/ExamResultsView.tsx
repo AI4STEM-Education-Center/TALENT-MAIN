@@ -21,8 +21,18 @@ import {
   type SimulationRecommendationView,
   type StudentMistakeView,
 } from "@/lib/exam-results";
+import type { ResourceSurface } from "@/lib/resource-telemetry";
 
 const RECONNECT_MS = 1000;
+
+/** The learning-resource surface label for each results view. */
+const RESOURCE_SURFACE_FOR: Record<
+  "quiz_results" | "results_page",
+  ResourceSurface
+> = {
+  quiz_results: "results_recommendation",
+  results_page: "history_recommendation",
+};
 type AiState = {
   summary: string | null;
   summaryStatus: ResultStatus;
@@ -54,7 +64,8 @@ export function ExamResultsView({
   /**
    * Which results view this is, so simulation sessions opened from it are
    * labelled with their launch point: `quiz_results` right after submitting,
-   * `results_page` when a past attempt is reopened.
+   * `results_page` when a past attempt is reopened. Recommended-material
+   * opens are labelled from the same value (see RESOURCE_SURFACE_FOR).
    */
   simulationSurface: Extract<
     SimulationSurface,
@@ -194,6 +205,7 @@ export function ExamResultsView({
               status={ai.recommendationsStatus}
               metrics={ai.recommendationMetrics}
               attemptId={attemptId}
+              telemetrySurface={RESOURCE_SURFACE_FOR[simulationSurface]}
             />
           </div>
 

@@ -121,6 +121,45 @@ export async function listStudentMaterials(
   return Array.from(byMaterial.values());
 }
 
+/** The library access rule: READY and shared with one of the student's classes. */
+function studentMaterialWhere(studentId: string, materialId: string) {
+  return {
+    id: materialId,
+    uploadStatus: "READY",
+    classLinks: { some: { class: { enrollments: { some: { studentId } } } } },
+  };
+}
+
+/**
+ * Lightweight form of getStudentMaterial's access check for routes that only
+ * need to know whether (and through which classes) a student may open a
+ * material — e.g. recording a reading session. Null means "no access" and
+ * callers turn it into a 404.
+ */
+export async function getStudentMaterialAccess(
+  studentId: string,
+  materialId: string,
+): Promise<{ id: string; title: string; classIds: string[] } | null> {
+  const material = await prisma.learningMaterial.findFirst({
+    where: studentMaterialWhere(studentId, materialId),
+    select: {
+      id: true,
+      title: true,
+      originalName: true,
+      classLinks: {
+        where: { class: { enrollments: { some: { studentId } } } },
+        select: { classId: true },
+      },
+    },
+  });
+  if (!material) return null;
+  return {
+    id: material.id,
+    title: material.title?.trim() || material.originalName,
+    classIds: material.classLinks.map((link) => link.classId),
+  };
+}
+
 /**
  * The material, if it is shared with a class the student is enrolled in.
  * Returns null otherwise — callers turn that into a 404, never a 403, so a
@@ -131,11 +170,7 @@ export async function getStudentMaterial(
   materialId: string,
 ) {
   const material = await prisma.learningMaterial.findFirst({
-    where: {
-      id: materialId,
-      uploadStatus: "READY",
-      classLinks: { some: { class: { enrollments: { some: { studentId } } } } },
-    },
+    where: studentMaterialWhere(studentId, materialId),
     include: {
       pages: {
         orderBy: { pageNumber: "asc" },

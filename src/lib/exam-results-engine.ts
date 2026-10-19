@@ -266,6 +266,7 @@ async function selectPagesForMaterial(
 
   return {
     recommendation: {
+      materialId: material.id,
       materialTitle: chosen.title,
       pageRange: range,
       reason: pageSelection.reasoning?.trim() || materialReason,
@@ -855,12 +856,56 @@ export async function presignStoredRecommendations(
     return { items: [], truncated: stored.truncated, ...passthrough };
   }
 
-  const mapped = await mapPresignedRecommendations(stored, (key) =>
-    signObjectReadUrl(bucket, key),
-  );
+  const [mapped, materialIds] = await Promise.all([
+    mapPresignedRecommendations(stored, (key) =>
+      signObjectReadUrl(bucket, key),
+    ),
+    resolveRecommendationMaterialIds(stored.items),
+  ]);
   // mapPresignedRecommendations operates on the durable snapshot. Override its
   // raw simulation refs with the live availability/version data resolved above.
-  return { ...mapped, ...passthrough };
+  return {
+    ...mapped,
+    items: mapped.items.map((item, i) => ({
+      ...item,
+      materialId: materialIds[i],
+    })),
+    ...passthrough,
+  };
+}
+
+/**
+ * The source material of each stored recommendation, index-aligned. Snapshots
+ * written since engagement telemetry carry materialId; older ones are
+ * resolved through their page storageKeys (MaterialPage rows are unique per
+ * material, so any surviving page identifies it). Null when the material can
+ * no longer be identified — the UI then simply doesn't record the open.
+ */
+export async function resolveRecommendationMaterialIds(
+  items: StoredRecommendation[],
+): Promise<(string | null)[]> {
+  const legacyKeys = items.flatMap((item) =>
+    item.materialId || !Array.isArray(item.pages)
+      ? []
+      : item.pages.map((page) => page.storageKey),
+  );
+  const keyToMaterial = new Map<string, string>();
+  if (legacyKeys.length > 0) {
+    const pages = await prisma.materialPage.findMany({
+      where: { storageKey: { in: [...new Set(legacyKeys)] } },
+      select: { storageKey: true, materialId: true },
+    });
+    for (const page of pages)
+      keyToMaterial.set(page.storageKey, page.materialId);
+  }
+  return items.map((item) => {
+    if (item.materialId) return item.materialId;
+    for (const page of Array.isArray(item.pages) ? item.pages : []) {
+      const materialId = keyToMaterial.get(page.storageKey);
+      if (materialId) return materialId;
+    }
+    return null;
+  });
 }
 
 /**

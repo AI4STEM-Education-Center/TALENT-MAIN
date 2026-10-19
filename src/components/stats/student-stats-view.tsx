@@ -1,10 +1,14 @@
-import { requireStatsClass, type StatsAudience } from "@/lib/stats-access";
+import {
+  requireStatsClass,
+  requireStatsUser,
+  type StatsAudience,
+} from "@/lib/stats-access";
 import { prisma } from "@/lib/prisma";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, ChevronRight, Atom } from "lucide-react";
+import { ArrowLeft, ChevronRight, Atom, BookOpen } from "lucide-react";
 import {
   getStudentStats,
   getStudentSimulationSessions,
@@ -12,6 +16,7 @@ import {
 import { StatCard } from "@/components/teacher/stats-ui";
 import { pct } from "@/lib/stats-format";
 import { formatDurationMs } from "@/lib/simulation-stats";
+import { getStudentResourceSessions } from "@/lib/resource-engagement-server";
 
 const fmtDateTime = (d: Date | null) =>
   d
@@ -32,7 +37,10 @@ export async function StudentStatsView({
   params: Promise<{ id: string; studentId: string }>;
 }) {
   const { id, studentId } = await params;
-  await requireStatsClass(id, audience);
+  const [viewer] = await Promise.all([
+    requireStatsUser(audience),
+    requireStatsClass(id, audience),
+  ]);
   const basePath = `/${audience}/classes/${id}`;
 
   // The student must be enrolled in this class.
@@ -41,9 +49,16 @@ export async function StudentStatsView({
   });
   if (!enrollment) notFound();
 
-  const [stats, simSessions] = await Promise.all([
+  const [stats, simSessions, resourceSessions] = await Promise.all([
     getStudentStats(id, studentId),
     getStudentSimulationSessions(id, studentId),
+    // Research access only: rows exist only for consenting students, so any
+    // row shown to a teacher would reveal participation. The function itself
+    // refuses non-research viewers; the audience check keeps the teacher
+    // route from even asking.
+    audience === "admin"
+      ? getStudentResourceSessions(viewer, id, studentId)
+      : Promise.resolve([]),
   ]);
   if (!stats) notFound();
 
@@ -181,6 +196,66 @@ export async function StudentStatsView({
                       </td>
                       <td className="py-2 px-3 text-right tabular-nums text-muted-foreground">
                         {fmtDateTime(s.startedAt)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Learning materials this student opened (client-reported telemetry,
+        consent-gated). Admin/research access only — never teachers. */}
+      {resourceSessions.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <BookOpen className="size-4" /> Learning materials opened (latest
+              50)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
+                    <th className="py-2 pr-3 font-medium">Material</th>
+                    <th className="py-2 px-3 font-medium">Opened from</th>
+                    <th className="py-2 px-3 font-medium text-right">
+                      Reading time
+                    </th>
+                    <th className="py-2 px-3 font-medium text-right">Pages</th>
+                    <th className="py-2 px-3 font-medium text-right">Clicks</th>
+                    <th className="py-2 px-3 font-medium text-right">When</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {resourceSessions.map((s) => (
+                    <tr key={s.sessionId} className="border-b last:border-0">
+                      <td className="py-2 pr-3">
+                        {s.title}
+                        {s.pageRange && (
+                          <span className="ml-1 text-muted-foreground">
+                            · {s.pageRange}
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2 px-3 text-muted-foreground">
+                        {s.surfaceLabel}
+                      </td>
+                      <td className="py-2 px-3 text-right tabular-nums">
+                        {formatDurationMs(s.dwellMs)}
+                      </td>
+                      <td className="py-2 px-3 text-right tabular-nums">
+                        {s.pagesViewed}
+                      </td>
+                      <td className="py-2 px-3 text-right tabular-nums">
+                        {s.clickCount}
+                      </td>
+                      <td className="py-2 px-3 text-right tabular-nums text-muted-foreground">
+                        {fmtDateTime(s.openedAt)}
                       </td>
                     </tr>
                   ))}

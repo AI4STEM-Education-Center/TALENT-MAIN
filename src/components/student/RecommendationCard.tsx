@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { BookOpen, Maximize2 } from "lucide-react";
 import {
   Dialog,
@@ -11,6 +11,8 @@ import {
 } from "@/components/ui/dialog";
 import { FeedbackRatingForm } from "@/components/feedback/FeedbackRatingForm";
 import type { PresignedRecommendation } from "@/lib/exam-results";
+import type { ResourceSurface } from "@/lib/resource-telemetry";
+import { useResourceTelemetry } from "@/components/student/use-resource-telemetry";
 
 /** "page 8" / "pages 8–12" for a recommendation's range. */
 function pageRangeLabel(rec: PresignedRecommendation): string {
@@ -29,21 +31,82 @@ function pageRangeLabel(rec: PresignedRecommendation): string {
  * open-viewer button rather than inside it: its radios and textarea are
  * interactive, and nesting controls inside a <button> is invalid HTML that
  * breaks both click handling and keyboard traversal.
+ *
+ * With `telemetrySurface` set (the student's own results only), each open of
+ * the viewer records a LearningResourceSession: dwell, active time, presses
+ * inside the dialog and time per recommended page. Teachers viewing the same
+ * card are never tracked.
  */
 export function RecommendationCard({
   rec,
   attemptId,
   audience = "student",
+  telemetrySurface,
 }: {
   rec: PresignedRecommendation;
   /** The attempt that recommended this card; turns on the rating footer. */
   attemptId?: string;
   /** Picks the rating wording: rating your own study aid vs. a student's. */
   audience?: "student" | "teacher";
+  /** Where this results view lives; enables engagement telemetry. */
+  telemetrySurface?: ResourceSurface;
 }) {
   const [open, setOpen] = useState(false);
   const cover = rec.pages[0];
   const pageCount = rec.pages.length;
+  const { containerRef, viewPage } = useResourceTelemetry({
+    enabled:
+      open &&
+      audience === "student" &&
+      !!attemptId &&
+      !!telemetrySurface &&
+      pageCount > 0,
+    materialId: rec.materialId,
+    surface: telemetrySurface ?? "results_recommendation",
+    attemptId,
+  });
+
+  // Which recommended page is in view: the one showing the most pixels of the
+  // scroll pane. Pages can be taller than the pane, so pixels beat ratios.
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!scroller) return;
+    const figures = [
+      ...scroller.querySelectorAll<HTMLElement>("[data-page-number]"),
+    ];
+    if (figures.length === 0) return;
+    if (typeof IntersectionObserver === "undefined") {
+      viewPage(Number(figures[0].dataset.pageNumber));
+      return () => viewPage(null);
+    }
+    const visiblePx = new Map<number, number>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const page = Number((entry.target as HTMLElement).dataset.pageNumber);
+          visiblePx.set(
+            page,
+            entry.isIntersecting ? entry.intersectionRect.height : 0,
+          );
+        }
+        let best: number | null = null;
+        let bestPx = 0;
+        for (const [page, px] of visiblePx) {
+          if (px > bestPx) {
+            best = page;
+            bestPx = px;
+          }
+        }
+        viewPage(best);
+      },
+      { root: scroller, threshold: [0, 0.1, 0.25, 0.5, 0.75, 1] },
+    );
+    for (const figure of figures) observer.observe(figure);
+    return () => {
+      observer.disconnect();
+      viewPage(null);
+    };
+  }, [scroller, viewPage]);
 
   const ratingFooter = attemptId ? (
     <div className="border-t px-4 py-3">
@@ -136,7 +199,10 @@ export function RecommendationCard({
 
       <Dialog open={open} onOpenChange={setOpen}>
         {/* Header stays put while the pages scroll under it. */}
-        <DialogContent className="grid max-h-[92vh] w-[95vw] max-w-5xl grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
+        <DialogContent
+          ref={containerRef}
+          className="grid max-h-[92vh] w-[95vw] max-w-5xl grid-rows-[auto_minmax(0,1fr)] overflow-hidden"
+        >
           <DialogHeader>
             <DialogTitle className="pr-8">{rec.materialTitle}</DialogTitle>
             <DialogDescription>
@@ -145,9 +211,16 @@ export function RecommendationCard({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="snap-y snap-mandatory space-y-4 overflow-y-auto rounded-lg bg-muted/30 p-3">
+          <div
+            ref={setScroller}
+            className="snap-y snap-mandatory space-y-4 overflow-y-auto rounded-lg bg-muted/30 p-3"
+          >
             {rec.pages.map((pg) => (
-              <figure key={pg.pageNumber} className="snap-start">
+              <figure
+                key={pg.pageNumber}
+                data-page-number={pg.pageNumber}
+                className="snap-start"
+              >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={pg.imageUrl}
