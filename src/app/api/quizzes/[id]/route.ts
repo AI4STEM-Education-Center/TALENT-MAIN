@@ -12,6 +12,7 @@ import {
 } from "@/lib/question-figures";
 import { simulationMetricsView } from "@/lib/simulation-metrics";
 import { canManageSimulation } from "@/lib/simulation-access";
+import { canManageQuizVariants } from "@/lib/quiz-variant-access";
 
 import { parseJsonBody, quizUpdateSchema } from "@/lib/validation";
 import { QUESTION_ORDER } from "@/lib/question-order";
@@ -83,6 +84,8 @@ export async function GET(
     editable: actor.role !== "RESEARCHER" && canManage(actor, quiz),
     simulationsEditable:
       actor.role !== "RESEARCHER" && canManageSimulation(actor, quiz),
+    variantsEditable:
+      actor.role !== "RESEARCHER" && canManageQuizVariants(actor, quiz),
     // A research scientist gets no write affordance at all, including the
     // "import to my quizzes" offered to readers of a pool quiz.
     viewOnly,

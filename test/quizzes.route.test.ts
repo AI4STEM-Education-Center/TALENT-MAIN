@@ -213,7 +213,7 @@ describe("GET /api/quizzes/[id] (detail)", () => {
     expect(body.simulationsEditable).toBe(false);
   });
 
-  it("lets admins manage simulations without editing the teacher's quiz", async () => {
+  it("lets admins manage simulations and variants without editing the teacher's quiz", async () => {
     const { teacher } = await createTeacher();
     const quiz = await prisma.quiz.create({
       data: { name: "Teacher quiz", teacherId: teacher.id },
@@ -224,6 +224,7 @@ describe("GET /api/quizzes/[id] (detail)", () => {
     expect(await res.json()).toMatchObject({
       editable: false,
       simulationsEditable: true,
+      variantsEditable: true,
     });
   });
 });

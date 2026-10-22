@@ -613,3 +613,64 @@ describe("generation rounds", () => {
     ).toEqual(f.questions);
   });
 });
+
+it("lets admins inspect, generate and save teacher quiz variants in the teacher's scope", async () => {
+  const f = await fixture();
+  login(f.teacher.user.id, "ADMIN");
+  const listed = await versions(req({}), ctx(f.quiz.id));
+  expect(listed.status).toBe(200);
+  expect((await listed.json()).versions[0].questions).toEqual(f.questions);
+  const generated = await generate(
+    req({
+      name: "Admin round",
+      variation: "NUMBERS",
+      objectives: [
+        {
+          sourceQuestionId: f.question.id,
+          objective: "Add whole numbers in one step.",
+        },
+      ],
+    }),
+    ctx(f.quiz.id),
+  );
+  expect(generated.status).toBe(202);
+  expect(enqueueQuizVariant).toHaveBeenCalledOnce();
+  await prisma.quizPracticeVersion.update({
+    where: { id: f.version.id },
+    data: { status: "REVIEW" },
+  });
+  const saved = await change(
+    req({ versionId: f.version.id, action: "standalone" }),
+    ctx(f.quiz.id),
+  );
+  expect(saved.status).toBe(200);
+  const { quizId } = await saved.json();
+  expect(
+    await prisma.quiz.findUniqueOrThrow({ where: { id: quizId } }),
+  ).toMatchObject({
+    teacherId: f.teacher.teacher.id,
+    sourceQuizId: f.quiz.id,
+  });
+});
+
+it("keeps other teachers, researchers and students out of variant management", async () => {
+  const f = await fixture();
+  const other = await createTeacher();
+  for (const [id, role] of [
+    [other.user.id, "TEACHER"],
+    [f.student.user.id, "STUDENT"],
+    [f.teacher.user.id, "RESEARCHER"],
+  ]) {
+    login(id, role);
+    expect((await versions(req({}), ctx(f.quiz.id))).status).toBe(404);
+    expect((await generate(req({}), ctx(f.quiz.id))).status).toBe(404);
+    expect(
+      (
+        await change(
+          req({ versionId: f.version.id, action: "retire" }),
+          ctx(f.quiz.id),
+        )
+      ).status,
+    ).toBe(404);
+  }
+});
