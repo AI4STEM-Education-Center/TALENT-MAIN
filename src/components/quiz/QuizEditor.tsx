@@ -90,7 +90,7 @@ function QuizEditorContent({
         />
       )}
 
-      {!readOnly && (
+      {(quiz.variantsEditable ?? !readOnly) && (
         <QuizVariants
           quizId={quiz.id}
           questions={quiz.questions}

@@ -92,7 +92,7 @@ export function QuizEditorHeader({
         <div className="flex items-center gap-2 mt-2 flex-wrap">
           {isPoolQuiz && <Badge variant="secondary">Global pool</Badge>}
           {readOnly && !isPoolQuiz && (
-            <Badge variant="secondary">Read only</Badge>
+            <Badge variant="secondary">Source questions · read only</Badge>
           )}
           <Badge variant="outline">
             {quiz.questions.length} question

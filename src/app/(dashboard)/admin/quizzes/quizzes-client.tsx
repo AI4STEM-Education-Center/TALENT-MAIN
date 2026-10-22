@@ -620,7 +620,7 @@ export function AdminQuizPoolClient({
                 <div className="flex shrink-0 flex-wrap gap-1">
                   <Button size="sm" variant="outline" asChild>
                     <Link href={`/admin/quizzes/${quiz.id}`}>
-                      View quiz & simulations
+                      View quiz, versions & simulations
                     </Link>
                   </Button>
                   {canEdit && (

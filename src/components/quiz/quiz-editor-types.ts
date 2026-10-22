@@ -52,6 +52,7 @@ export interface QuizDetail {
   questions: Question[];
   editable: boolean;
   simulationsEditable: boolean;
+  variantsEditable?: boolean;
   /** Research scientist: no write affordance at all (not even pool import). */
   viewOnly?: boolean;
 }

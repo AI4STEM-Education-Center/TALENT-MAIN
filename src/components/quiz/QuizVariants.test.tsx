@@ -216,3 +216,24 @@ it("disables generation for unsupported questions", async () => {
   await render([{ ...source, figureUrl: "/figure.png" } as typeof source]);
   expect(button("Generate new version")!.disabled).toBe(true);
 });
+
+it("shows saved version questions, answers and verification after a newer round exists", async () => {
+  versions.push(
+    version("NUMBERS", 0, {
+      status: "PUBLISHED",
+      batchId: "older-round",
+      validation: [
+        { sourceQuestionId: "q1", explanation: "Independently verified" },
+      ],
+    }),
+  );
+  await render();
+  const inspect = [...host.querySelectorAll("details")].find(
+    (el) => el.querySelector("summary")?.textContent === "Inspect NUMBERS 0",
+  );
+  expect(inspect).toBeTruthy();
+  expect(inspect?.textContent).toContain("NUMBERS example 0");
+  expect(inspect?.textContent).toContain("Correct");
+  expect(inspect?.textContent).toContain("Worked answer");
+  expect(inspect?.textContent).toContain("Independently verified");
+});
