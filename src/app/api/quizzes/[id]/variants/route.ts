@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { canManage, getContentActor } from "@/lib/quiz-access";
+import { getContentActor } from "@/lib/quiz-access";
+import { canManageQuizVariants } from "@/lib/quiz-variant-access";
 import { enqueueQuizVariant } from "@/lib/queue";
 import {
   objectiveSchema,
@@ -15,7 +16,7 @@ import { createStandaloneQuiz } from "@/lib/quiz-variant-standalone";
 const MAX_IN_FLIGHT = 8;
 
 type Context = { params: Promise<{ id: string }> };
-async function ownedQuiz(context: Context) {
+async function managedQuiz(context: Context) {
   const [actor, { id }] = await Promise.all([
     getContentActor(),
     context.params,
@@ -27,10 +28,12 @@ async function ownedQuiz(context: Context) {
       questions: { include: { options: true }, orderBy: QUESTION_ORDER },
     },
   });
-  return quiz && canManage(actor, quiz) ? Object.assign(quiz, { actor }) : null;
+  return quiz && canManageQuizVariants(actor, quiz)
+    ? Object.assign(quiz, { actor })
+    : null;
 }
 export async function GET(_req: NextRequest, context: Context) {
-  const quiz = await ownedQuiz(context);
+  const quiz = await managedQuiz(context);
   if (!quiz)
     return NextResponse.json({ error: "Quiz not found" }, { status: 404 });
   const versions = await prisma.quizPracticeVersion.findMany({
@@ -74,7 +77,7 @@ const createSchema = z.object({
   batchId: z.string().min(1).max(100).optional(),
 });
 export async function POST(req: NextRequest, context: Context) {
-  const quiz = await ownedQuiz(context);
+  const quiz = await managedQuiz(context);
   if (!quiz)
     return NextResponse.json({ error: "Quiz not found" }, { status: 404 });
   const body = createSchema.safeParse(await req.json().catch(() => null));
@@ -277,7 +280,7 @@ const conflict = () =>
     { status: 409 },
   );
 export async function PATCH(req: NextRequest, context: Context) {
-  const quiz = await ownedQuiz(context);
+  const quiz = await managedQuiz(context);
   if (!quiz)
     return NextResponse.json({ error: "Quiz not found" }, { status: 404 });
   const body = changeSchema.safeParse(await req.json().catch(() => null));

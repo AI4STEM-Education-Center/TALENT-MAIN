@@ -269,6 +269,7 @@ describe("RESEARCHER on content: read-only", () => {
       const body = await res.json();
       expect(body.editable).toBe(false);
       expect(body.simulationsEditable).toBe(false);
+      expect(body.variantsEditable).toBe(false);
       expect(body.viewOnly).toBe(true);
     }
     const patch = await quizPatch(

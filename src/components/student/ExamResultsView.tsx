@@ -213,9 +213,11 @@ export function ExamResultsView({
             so safe to show while the per-question review stays hidden. */}
           {hasSimulations && (
             <SimulationRail
+              key={attemptId}
               simulations={ai.simulations}
               attemptId={attemptId}
               telemetrySurface={simulationSurface}
+              autoOpen={simulationSurface === "quiz_results"}
             />
           )}
         </div>
