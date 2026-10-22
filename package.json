@@ -58,7 +58,7 @@
     "@aws-sdk/cloudfront-signer": "^3.1149.0",
     "@aws-sdk/lib-storage": "^3.1149.0",
     "@aws-sdk/s3-request-presigner": "^3.1149.0",
-    "@hyzyla/pdfium": "^2.1.13",
+    "@hyzyla/pdfium": "^3.0.0",
     "@prisma/adapter-better-sqlite3": "^7.10.0",
     "@prisma/client": "^7.10.0",
     "@radix-ui/react-dialog": "^1.2.0",
