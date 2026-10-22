@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.0.26 - 2026-10-23
+
+- Improved the end-of-quiz summary to automatically open the first available simulation, while respecting dismissal as recommendations refresh.
+- Expanded administrator oversight of teacher quizzes with alternative-version generation and review, keeping standalone exams under the source teacher’s ownership.
+- Added inspection of saved alternative versions, including questions, answer keys, worked solutions, and independent verification.
+
 ## v0.0.25 - 2026-10-16
 
 - Added a research scientist account type with read-only access to administrator data pages, statistics, and research exports, with research ZIP and CSV downloads recorded in the system log.

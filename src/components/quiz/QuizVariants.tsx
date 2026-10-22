@@ -5,7 +5,7 @@ import { Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { QuizVariantBatch } from "./QuizVariantBatch";
+import { QuestionPreview, QuizVariantBatch } from "./QuizVariantBatch";
 import {
   DEFAULT_OBJECTIVE,
   isGenerating,
@@ -392,6 +392,30 @@ function SavedVersions({
                 Open {v.standaloneQuiz.name}
               </Link>
             )}
+            <details className="w-full">
+              <summary className="cursor-pointer font-medium">
+                Inspect {v.name}
+              </summary>
+              <div className="mt-3 divide-y rounded-lg border">
+                {v.questions.map((question, index) => (
+                  <div key={question.id}>
+                    <h4 className="px-4 pt-4 font-medium">
+                      Question {index + 1}
+                    </h4>
+                    <QuestionPreview
+                      question={question}
+                      check={
+                        v.validation?.find(
+                          (check) =>
+                            check.sourceQuestionId ===
+                            question.sourceQuestionId,
+                        )?.explanation
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
+            </details>
           </li>
         ))}
       </ul>
