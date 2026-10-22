@@ -5,7 +5,7 @@
 const MAX_PAGES = 60;
 
 export async function extractPdfText(file: File): Promise<string> {
-  const { PDFiumLibrary } = await import("@hyzyla/pdfium/browser/base64");
+  const { PDFiumLibrary } = await import("@hyzyla/pdfium/inline");
   const library = await PDFiumLibrary.init({ disableBase64Warning: true });
   try {
     const doc = await library.loadDocument(
@@ -14,7 +14,14 @@ export async function extractPdfText(file: File): Promise<string> {
     try {
       const pages: string[] = [];
       const count = Math.min(doc.getPageCount(), MAX_PAGES);
-      for (let i = 0; i < count; i++) pages.push(doc.getPage(i).getText());
+      for (let i = 0; i < count; i++) {
+        const page = doc.getPage(i);
+        try {
+          pages.push(page.getText());
+        } finally {
+          page.close();
+        }
+      }
       return pages.join("\n");
     } finally {
       doc.destroy();
