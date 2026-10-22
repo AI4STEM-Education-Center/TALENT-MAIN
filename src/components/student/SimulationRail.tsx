@@ -169,7 +169,7 @@ function SimulationCardList({
  * (that constraint is enforced when the simulation is generated), so nothing
  * here hints at which answers were right or wrong beyond the topics to revisit.
  *
- * All simulations start collapsed (no physics loop boots with the page).
+ * Simulations start collapsed unless the post-quiz summary opts into auto-open.
  * Opening one launches it in the shared SimulationDialog pop-up, on every
  * screen size, with the rating form in the pop-up's footer. Only one iframe is
  * ever mounted at a time, and the page layout never changes around it.
@@ -179,6 +179,7 @@ export function SimulationRail({
   attemptId,
   telemetrySurface,
   audience = "student",
+  autoOpen = false,
 }: {
   simulations: SimulationRecommendationView[];
   /** The attempt whose results surfaced these sims. Enables the rating form. */
@@ -194,8 +195,14 @@ export function SimulationRail({
   telemetrySurface?: SimulationSurface;
   /** Picks the rating wording: rating your own study aid vs. a student's. */
   audience?: "student" | "teacher";
+  /** Open the first available simulation until the viewer closes or selects one. */
+  autoOpen?: boolean;
 }) {
-  const [activeId, setActiveId] = useState<string | null>(null);
+  // undefined means no interaction yet; null means explicitly closed. Keeping
+  // those distinct lets late recommendations open without undoing dismissal.
+  const [activeId, setActiveId] = useState<string | null | undefined>(
+    undefined,
+  );
   // Defensive render-time dedup: ExamResult snapshots are durable, so results
   // stored before generation-time dedup existed may still carry duplicates.
   const sims = dedupeStoredSimulations(simulations);
@@ -206,7 +213,10 @@ export function SimulationRail({
 
   if (sims.length === 0) return null;
 
-  const active = openable.find((sim) => sim.simulationId === activeId) ?? null;
+  const selectedId =
+    activeId === undefined && autoOpen ? openable[0]?.simulationId : activeId;
+  const active =
+    openable.find((sim) => sim.simulationId === selectedId) ?? null;
   const viewer = { attemptId, audience } as const;
 
   return (
