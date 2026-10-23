@@ -13,9 +13,24 @@
 # production data or credentials.
 
 bootcmd:
-  - [ sh, -c, "shutdown -h +300 'benchmark backstop' || true" ]
+  # This deadman NEVER FIRED. It was `shutdown -h +300 ... || true`, and a
+  # scheduled shutdown is a systemd-logind operation; bootcmd runs in cloud-init's
+  # pre-sysinit stage, before logind, so the call failed and `|| true` swallowed
+  # it. Verified on a live run: after 8 hours the instance reported
+  # NO SCHEDULED SHUTDOWN and was still billing. The fix for the clone (#364) was
+  # never applied here because the clone died first every time, so nobody
+  # observed that this one was unarmed too.
+  #
+  # A detached sleep needs no systemd and no logind, so it arms in the one stage
+  # where nothing else can. runcmd arms an inspectable systemd timer as well.
+  - [ sh, -c, "setsid sh -c 'sleep 18000; /usr/bin/systemctl poweroff || poweroff -f' </dev/null >/dev/null 2>&1 & true" ]
 
 runcmd:
+  # The inspectable half, armed as soon as it is safe to talk to systemd —
+  # cloud-final runs after multi-user.target, so logind is up and `list-timers`
+  # will show this. A leaked load generator is the expensive failure: it is the
+  # larger instance and it has no sanitize-stage deadman of its own.
+  - [ sh, -c, "systemd-run --on-active=300min --unit=pressure-backstop --description='benchmark backstop' /usr/bin/systemctl poweroff || true" ]
   # The staged script writes BOOT_STAGE continuously and BOOT_FAILED on error,
   # so the workstation can report the cause without waiting for a timeout.
   - [ bash, /opt/pressure/bootstrap-loadgen.sh ]
