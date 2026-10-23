@@ -112,6 +112,16 @@ export function MaterialPoolClient({
         <h1 className="text-3xl font-bold">Learning-material pool</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Shared, approved materials organized with material-only tags.
+          {canEdit && (
+            <>
+              {" "}
+              To add a teacher&apos;s material, open it under{" "}
+              <Link className="underline" href="/admin/materials">
+                Materials
+              </Link>{" "}
+              and choose Add to pool.
+            </>
+          )}
         </p>
       </div>
       {canEdit && (

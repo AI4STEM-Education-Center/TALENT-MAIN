@@ -5,6 +5,8 @@
 - Improved the end-of-quiz summary to automatically open the first available simulation, while respecting dismissal as recommendations refresh.
 - Expanded administrator oversight of teacher quizzes with alternative-version generation and review, keeping standalone exams under the source teacher’s ownership.
 - Added inspection of saved alternative versions, including questions, answer keys, worked solutions, and independent verification.
+- Added administrator tools to copy processed learning materials from a teacher's class into the global material pool, one at a time or for a whole class.
+- Refreshed the validated production and development dependency sets, including the PDFium 3 PDF renderer and the React Doctor CI scanner.
 
 ## v0.0.25 - 2026-10-16
 
