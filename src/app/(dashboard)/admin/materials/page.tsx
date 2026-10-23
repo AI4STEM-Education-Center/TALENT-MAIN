@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -91,6 +91,13 @@ export default function AdminMaterialsPage() {
   const [selectedTeacher, setSelectedTeacher] = useState<string | null>(null);
   const [selectedClass, setSelectedClass] = useState<string | null>(null);
   const [promotingIds, setPromotingIds] = useState<Set<string>>(new Set());
+  // "Add all" locks every promotion control until it finishes; the ref is the
+  // synchronous guard, the state drives the disabled buttons.
+  const bulkLock = useRef(false);
+  const [bulkPromoting, setBulkPromoting] = useState(false);
+  // Bumped per list request and on every successful promotion, so a poll that
+  // was already in flight can't overwrite a newer "in pool" state.
+  const listVersion = useRef(0);
   // Tagged with the class it was raised in, so it doesn't follow navigation.
   const [notice, setNotice] = useState<{
     classKey: string;
@@ -100,11 +107,12 @@ export default function AdminMaterialsPage() {
   const classKey = `${selectedTeacher}/${selectedClass}`;
 
   const fetchMaterials = useCallback(async () => {
+    const version = ++listVersion.current;
     try {
       const res = await fetch("/api/admin/materials", { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
-        setMaterials(data.materials);
+        if (version === listVersion.current) setMaterials(data.materials);
       }
     } catch (err) {
       console.error("Failed to fetch materials", err);
@@ -156,6 +164,7 @@ export default function AdminMaterialsPage() {
         const errorBody = await res.json().catch(() => null);
         return { ok: false, error: errorBody?.error as string | undefined };
       }
+      listVersion.current++;
       setMaterials((prev) =>
         prev.map((m) => (m.id === materialId ? { ...m, inPool: true } : m)),
       );
@@ -172,6 +181,7 @@ export default function AdminMaterialsPage() {
   };
 
   const handlePromote = async (mat: Material) => {
+    if (bulkLock.current) return;
     setNotice(null);
     const result = await promoteMaterial(mat.id);
     setNotice(
@@ -191,7 +201,19 @@ export default function AdminMaterialsPage() {
 
   const handlePromoteAll = async () => {
     const targets = promotableClassMaterials;
-    if (targets.length === 0) return;
+    if (targets.length === 0 || bulkLock.current || promotingIds.size > 0)
+      return;
+    bulkLock.current = true;
+    setBulkPromoting(true);
+    try {
+      await promoteAll(targets);
+    } finally {
+      bulkLock.current = false;
+      setBulkPromoting(false);
+    }
+  };
+
+  const promoteAll = async (targets: Material[]) => {
     const ok = await confirm({
       title: `Add ${targets.length} material${targets.length !== 1 ? "s" : ""} to the global pool?`,
       description:
@@ -428,7 +450,7 @@ export default function AdminMaterialsPage() {
               <button
                 type="button"
                 onClick={handlePromoteAll}
-                disabled={promotingIds.size > 0}
+                disabled={bulkPromoting || promotingIds.size > 0}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-md transition-colors disabled:opacity-50"
               >
                 <ArrowUpToLine className="size-4" />
@@ -543,7 +565,9 @@ export default function AdminMaterialsPage() {
                               <button
                                 type="button"
                                 onClick={() => handlePromote(mat)}
-                                disabled={promotingIds.has(mat.id)}
+                                disabled={
+                                  bulkPromoting || promotingIds.has(mat.id)
+                                }
                                 className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-md transition-colors disabled:opacity-50"
                                 title="Copy this material into the global pool"
                               >
