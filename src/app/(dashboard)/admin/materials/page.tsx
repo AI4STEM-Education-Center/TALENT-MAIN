@@ -95,9 +95,9 @@ export default function AdminMaterialsPage() {
   // synchronous guard, the state drives the disabled buttons.
   const bulkLock = useRef(false);
   const [bulkPromoting, setBulkPromoting] = useState(false);
-  // Bumped per list request and on every successful promotion, so a poll that
-  // was already in flight can't overwrite a newer "in pool" state.
-  const listVersion = useRef(0);
+  // Promotions confirmed in this session. Merged into every list response so a
+  // poll that was already in flight can't restore a stale "not in pool" state.
+  const promotedIds = useRef<Set<string>>(new Set());
   // Tagged with the class it was raised in, so it doesn't follow navigation.
   const [notice, setNotice] = useState<{
     classKey: string;
@@ -107,12 +107,15 @@ export default function AdminMaterialsPage() {
   const classKey = `${selectedTeacher}/${selectedClass}`;
 
   const fetchMaterials = useCallback(async () => {
-    const version = ++listVersion.current;
     try {
       const res = await fetch("/api/admin/materials", { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
-        if (version === listVersion.current) setMaterials(data.materials);
+        setMaterials(
+          (data.materials as Material[]).map((m) =>
+            promotedIds.current.has(m.id) ? { ...m, inPool: true } : m,
+          ),
+        );
       }
     } catch (err) {
       console.error("Failed to fetch materials", err);
@@ -164,7 +167,7 @@ export default function AdminMaterialsPage() {
         const errorBody = await res.json().catch(() => null);
         return { ok: false, error: errorBody?.error as string | undefined };
       }
-      listVersion.current++;
+      promotedIds.current.add(materialId);
       setMaterials((prev) =>
         prev.map((m) => (m.id === materialId ? { ...m, inPool: true } : m)),
       );
