@@ -12,6 +12,7 @@ import {
   ChevronRight,
   ArrowLeft,
   AlertTriangle,
+  ArrowUpToLine,
   CheckCircle,
   RefreshCw,
   RotateCcw,
@@ -33,6 +34,8 @@ interface Material {
   aiTtftMs: number | null;
   aiTokens: number | null;
   aiTotalMs: number | null;
+  /** Already copied into (or imported from) the global material pool. */
+  inPool: boolean;
   teacher: {
     user: {
       username: string;
@@ -87,6 +90,14 @@ export default function AdminMaterialsPage() {
   const [loading, setLoading] = useState(true);
   const [selectedTeacher, setSelectedTeacher] = useState<string | null>(null);
   const [selectedClass, setSelectedClass] = useState<string | null>(null);
+  const [promotingIds, setPromotingIds] = useState<Set<string>>(new Set());
+  // Tagged with the class it was raised in, so it doesn't follow navigation.
+  const [notice, setNotice] = useState<{
+    classKey: string;
+    tone: "success" | "error";
+    text: string;
+  } | null>(null);
+  const classKey = `${selectedTeacher}/${selectedClass}`;
 
   const fetchMaterials = useCallback(async () => {
     try {
@@ -127,6 +138,88 @@ export default function AdminMaterialsPage() {
     const interval = setInterval(fetchMaterials, 2000);
     return () => clearInterval(interval);
   }, [selectedTeacher, selectedClass, hasActiveMaterial, fetchMaterials]);
+
+  // Promotable = processed and not yet in the pool; drives "Add all to pool".
+  const promotableClassMaterials = currentClassMaterials.filter(
+    (m) => m.processingStatus === "SUCCESS" && !m.inPool,
+  );
+
+  // Copies one material into the global pool. Returns whether it succeeded so
+  // the bulk action can count results; refreshing the list is left to callers.
+  const promoteMaterial = async (materialId: string) => {
+    setPromotingIds((prev) => new Set(prev).add(materialId));
+    try {
+      const res = await fetch(`/api/admin/materials/${materialId}/promote`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const errorBody = await res.json().catch(() => null);
+        return { ok: false, error: errorBody?.error as string | undefined };
+      }
+      setMaterials((prev) =>
+        prev.map((m) => (m.id === materialId ? { ...m, inPool: true } : m)),
+      );
+      return { ok: true };
+    } catch {
+      return { ok: false };
+    } finally {
+      setPromotingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(materialId);
+        return next;
+      });
+    }
+  };
+
+  const handlePromote = async (mat: Material) => {
+    setNotice(null);
+    const result = await promoteMaterial(mat.id);
+    setNotice(
+      result.ok
+        ? {
+            classKey,
+            tone: "success",
+            text: `"${mat.title || mat.originalName}" copied to the global pool. The teacher's original stays independent.`,
+          }
+        : {
+            classKey,
+            tone: "error",
+            text: result.error ?? "Could not add to the pool.",
+          },
+    );
+  };
+
+  const handlePromoteAll = async () => {
+    const targets = promotableClassMaterials;
+    if (targets.length === 0) return;
+    const ok = await confirm({
+      title: `Add ${targets.length} material${targets.length !== 1 ? "s" : ""} to the global pool?`,
+      description:
+        "Each processed material in this class that isn't already in the pool is copied. The teacher's originals stay independent.",
+      confirmText: "Add to pool",
+    });
+    if (!ok) return;
+    setNotice(null);
+    // Sequential: each copy duplicates every page image in S3.
+    let copied = 0;
+    for (const mat of targets) {
+      if ((await promoteMaterial(mat.id)).ok) copied++;
+    }
+    const failed = targets.length - copied;
+    setNotice(
+      failed === 0
+        ? {
+            classKey,
+            tone: "success",
+            text: `Copied ${copied} material${copied !== 1 ? "s" : ""} to the global pool.`,
+          }
+        : {
+            classKey,
+            tone: "error",
+            text: `Copied ${copied} of ${targets.length} materials; ${failed} failed.`,
+          },
+    );
+  };
 
   const handleRetry = async (materialId: string) => {
     try {
@@ -322,14 +415,39 @@ export default function AdminMaterialsPage() {
         </>
       ) : (
         <>
-          <button
-            type="button"
-            onClick={() => setSelectedClass(null)}
-            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
-          >
-            <ArrowLeft className="size-4" />
-            Back to classes
-          </button>
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => setSelectedClass(null)}
+              className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <ArrowLeft className="size-4" />
+              Back to classes
+            </button>
+            {canEdit && promotableClassMaterials.length > 0 && (
+              <button
+                type="button"
+                onClick={handlePromoteAll}
+                disabled={promotingIds.size > 0}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-md transition-colors disabled:opacity-50"
+              >
+                <ArrowUpToLine className="size-4" />
+                Add all to pool ({promotableClassMaterials.length})
+              </button>
+            )}
+          </div>
+          {notice?.classKey === classKey && (
+            <div
+              role="status"
+              className={`mb-4 rounded-md p-3 text-sm ${
+                notice.tone === "success"
+                  ? "bg-emerald-50 text-emerald-800"
+                  : "bg-destructive/10 text-destructive"
+              }`}
+            >
+              {notice.text}
+            </div>
+          )}
           <div className="bg-white border rounded-lg overflow-hidden shadow-xs">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
@@ -390,6 +508,11 @@ export default function AdminMaterialsPage() {
                             <CheckCircle className="size-4 mr-1" /> Success
                           </span>
                         )}
+                        {mat.inPool && (
+                          <span className="ml-2 inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                            In pool
+                          </span>
+                        )}
                         {mat.processingStatus === "FAILED" && (
                           <span
                             className="inline-flex items-center text-red-600"
@@ -416,6 +539,22 @@ export default function AdminMaterialsPage() {
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         {canEdit && (
                           <div className="flex items-center justify-end gap-2">
+                            {mat.processingStatus === "SUCCESS" && (
+                              <button
+                                type="button"
+                                onClick={() => handlePromote(mat)}
+                                disabled={promotingIds.has(mat.id)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-md transition-colors disabled:opacity-50"
+                                title="Copy this material into the global pool"
+                              >
+                                <ArrowUpToLine className="size-3" />
+                                {promotingIds.has(mat.id)
+                                  ? "Copying…"
+                                  : mat.inPool
+                                    ? "Copy again"
+                                    : "Add to pool"}
+                              </button>
+                            )}
                             {mat.processingStatus === "FAILED" && (
                               <button
                                 type="button"
