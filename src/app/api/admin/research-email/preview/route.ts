@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/admin-access";
-import {
-  isResearchEmailKind,
-  normalizePoolAudience,
-  normalizePostSurveyAudience,
-} from "@/lib/research-email";
+import { isResearchEmailKind, normalizeAudience } from "@/lib/research-email";
 import { previewRecipients } from "@/lib/research-email-server";
 
 export const runtime = "nodejs";
@@ -24,10 +20,7 @@ export async function POST(req: NextRequest) {
   }
   if (!isResearchEmailKind(body.kind))
     return NextResponse.json({ error: "Unknown email type." }, { status: 400 });
-  const audience =
-    body.kind === "POOL"
-      ? normalizePoolAudience(body.audience)
-      : normalizePostSurveyAudience(body.audience);
+  const audience = normalizeAudience(body.kind, body.audience);
 
   const plan = await previewRecipients(body.kind, JSON.stringify(audience));
   const byVersion: Record<string, number> = {};

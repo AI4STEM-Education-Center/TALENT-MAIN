@@ -20,12 +20,21 @@ import {
   POST as invitePost,
 } from "@/app/api/surveys/invite/[token]/route";
 import { POST as campaignPost } from "@/app/api/admin/research-email/campaigns/route";
+import {
+  GET as templateGet,
+  PUT as templatePut,
+} from "@/app/api/admin/research-email/template/route";
+import { POST as previewPost } from "@/app/api/admin/research-email/preview/route";
+import { POST as testPost } from "@/app/api/admin/research-email/test/route";
+import { GET as campaignsGet } from "@/app/api/admin/research-email/campaigns/route";
+import { DELETE as campaignDelete } from "@/app/api/admin/research-email/campaigns/[id]/route";
 import { GET as poolGet } from "@/app/api/admin/research-pool/route";
 import { GET as responsesGet } from "@/app/api/admin/surveys/[id]/responses/route";
 import { PATCH as surveyPatch } from "@/app/api/admin/surveys/[id]/route";
 import {
   deliverResearchEmail,
   materializeDueCampaigns,
+  previewRecipients,
 } from "@/lib/research-email-server";
 import { auth } from "@/lib/auth";
 import { sendEmailToRecipient } from "@/lib/email";
@@ -497,4 +506,223 @@ describe("research contact email", () => {
       expect(await prisma.surveyResponse.count()).toBe(0);
     },
   );
+});
+
+describe("compensation email", () => {
+  async function completed(
+    userId: string | null,
+    email: string,
+    period: number,
+    role = "STUDENT",
+  ) {
+    const form = await prisma.surveyForm.create({
+      data: {
+        kind: "POST",
+        role,
+        period,
+        title: "Old post-survey",
+        isEnabled: false,
+      },
+    });
+    return prisma.surveyResponse.create({
+      data: {
+        formId: form.id,
+        userId,
+        kind: "POST",
+        role,
+        nameSnapshot: "Snapshot Student",
+        emailSnapshot: email,
+        answers: "{}",
+      },
+    });
+  }
+  const audience = (extra = {}) => JSON.stringify({ ...extra });
+  const body = {
+    kind: "COMPENSATION",
+    replyTo: "research@uga.edu",
+    versions: {
+      STUDENT: {
+        subject: "Thanks {{firstName}}",
+        body: "Thank you for {{completedSurveys}} ({{completedCount}}). Please reply.",
+      },
+    },
+    audience: { roles: ["TEACHER"], periods: [1], match: "ANY" },
+  };
+
+  it("matches ANY/ALL across old forms, uses live details, and describes all completions", async () => {
+    const { user } = await createStudent({ email: "live@uga.edu" });
+    await completed(user.id, "old@uga.edu", 1);
+    await completed(user.id, "old@uga.edu", 2);
+    await completed(user.id, "old@uga.edu", 1); // same period, different form
+    await completed(null, "GONE@uga.edu", 1);
+    await completed(null, "gone@uga.edu", 2);
+    await completed(null, "only2@uga.edu", 2);
+    await completed(null, "teacher@uga.edu", 1, "TEACHER");
+    const plan = await previewRecipients(
+      "COMPENSATION",
+      audience({ periods: [1] }),
+    );
+    expect(plan.recipients).toHaveLength(2);
+    expect(plan.forms).toEqual([]);
+    expect(plan.recipients.find((r) => r.userId === user.id)).toMatchObject({
+      email: user.email,
+      name: "Stu Student",
+      variant: "STUDENT",
+      vars: {
+        completedCount: "2",
+        completedSurveys:
+          "the Period 1 post-survey and the Period 2 post-survey",
+      },
+    });
+    expect(
+      (await previewRecipients("COMPENSATION", audience({ match: "ALL" })))
+        .recipients,
+    ).toHaveLength(2);
+    expect(
+      (await previewRecipients("COMPENSATION", audience({ match: "ANY" })))
+        .recipients,
+    ).toHaveLength(3);
+    const chosen = await previewRecipients(
+      "COMPENSATION",
+      audience({ people: [user.id, "missing@uga.edu"] }),
+    );
+    expect(chosen.recipients).toHaveLength(1);
+    expect(chosen.skipped.join()).toContain(
+      "no completed post-survey in the selected periods, or already emailed",
+    );
+  });
+
+  it("skips prior sent/pending by user ID or case-insensitive email, but permits failed and other kinds", async () => {
+    const { user } = await createStudent();
+    await completed(user.id, user.email, 1);
+    for (const email of ["gone@uga.edu", "failed@uga.edu", "pool@uga.edu"])
+      await completed(null, email, 1);
+    const prior = await prisma.researchEmailCampaign.create({
+      data: {
+        kind: "COMPENSATION",
+        replyTo: "r@uga.edu",
+        appOrigin: "http://localhost",
+        scheduledAt: new Date(),
+        status: "SENT",
+      },
+    });
+    for (const data of [
+      { userId: user.id, recipient: "old@uga.edu", status: "PENDING" },
+      { userId: null, recipient: "GONE@UGA.EDU", status: "SENT" },
+      { userId: null, recipient: "failed@uga.edu", status: "FAILED" },
+    ])
+      await prisma.researchEmailDelivery.create({
+        data: { ...data, campaignId: prior.id, variant: "STUDENT" },
+      });
+    const pool = await prisma.researchEmailCampaign.create({
+      data: {
+        kind: "POOL",
+        replyTo: "r@uga.edu",
+        appOrigin: "http://localhost",
+        scheduledAt: new Date(),
+        status: "SENT",
+      },
+    });
+    await prisma.researchEmailDelivery.create({
+      data: {
+        campaignId: pool.id,
+        recipient: "pool@uga.edu",
+        variant: "STUDENT_SURVEY",
+        status: "SENT",
+      },
+    });
+    const plan = await previewRecipients("COMPENSATION", audience());
+    expect(plan.recipients.map((r) => r.email).sort()).toEqual([
+      "failed@uga.edu",
+      "pool@uga.edu",
+    ]);
+    expect(plan.skipped.join()).toContain("2 students were skipped");
+    expect(
+      (
+        await previewRecipients(
+          "COMPENSATION",
+          audience({ excludePreviouslyEmailed: false }),
+        )
+      ).recipients,
+    ).toHaveLength(4);
+  });
+
+  it("supports drafts, previews, test sends, history, cancellation and background delivery without invites", async () => {
+    const admin = await createAdmin();
+    const { user } = await createStudent();
+    await completed(user.id, user.email, 1);
+    asUser(admin);
+    expect(
+      (
+        await templatePut(
+          jsonReq("/api/admin/research-email/template", body, "PUT"),
+        )
+      ).status,
+    ).toBe(200);
+    const template = await (
+      await templateGet(
+        new NextRequest(
+          "http://localhost/api/admin/research-email/template?kind=COMPENSATION",
+        ),
+      )
+    ).json();
+    expect(template.audience).toMatchObject({
+      roles: ["STUDENT"],
+      periods: [1],
+      match: "ANY",
+      excludePreviouslyEmailed: true,
+    });
+    expect(
+      await (
+        await previewPost(jsonReq("/api/admin/research-email/preview", body))
+      ).json(),
+    ).toMatchObject({ count: 1, byVersion: { STUDENT: 1 }, forms: [] });
+    expect(
+      (
+        await testPost(
+          jsonReq("/api/admin/research-email/test", {
+            ...body,
+            to: "admin@uga.edu",
+          }),
+        )
+      ).status,
+    ).toBe(200);
+    expect(mockSend.mock.calls[0][0].text).toContain(
+      "the Period 1 post-survey and the Period 2 post-survey (2)",
+    );
+    const created = await campaignPost(
+      jsonReq("/api/admin/research-email/campaigns", body),
+    );
+    expect(created.status).toBe(201);
+    const ids = await materializeDueCampaigns();
+    expect(ids).toHaveLength(1);
+    expect(await prisma.surveyInvite.count()).toBe(0);
+    expect(await deliverResearchEmail(ids[0])).toEqual({ status: "SENT" });
+    expect(mockSend.mock.calls.at(-1)![0]).toMatchObject({
+      to: user.email,
+      replyTo: body.replyTo,
+      text: "Thank you for the Period 1 post-survey (1). Please reply.",
+    });
+    expect(
+      (await previewRecipients("COMPENSATION", audience())).recipients,
+    ).toEqual([]);
+    const history = await (
+      await campaignsGet(
+        new NextRequest(
+          "http://localhost/api/admin/research-email/campaigns?kind=COMPENSATION",
+        ),
+      )
+    ).json();
+    expect(history.campaigns[0]).toMatchObject({ sent: 1, pending: 0 });
+    const next = await (
+      await campaignPost(jsonReq("/api/admin/research-email/campaigns", body))
+    ).json();
+    expect(
+      (
+        await campaignDelete(new NextRequest("http://localhost"), {
+          params: Promise.resolve({ id: next.campaign.id }),
+        })
+      ).status,
+    ).toBe(200);
+  });
 });

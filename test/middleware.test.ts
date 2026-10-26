@@ -232,6 +232,7 @@ describe("middleware RESEARCHER routing", () => {
     "/admin/resources",
     "/admin/research-email",
     "/admin/research-email/post-survey",
+    "/admin/research-email/compensation",
     "/admin/post-survey-email",
     "/admin/research-pool/email",
     "/admin/consent/forms",

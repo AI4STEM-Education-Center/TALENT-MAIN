@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CalendarCheck, ClipboardCheck } from "lucide-react";
+import { CalendarCheck, ClipboardCheck, HandCoins } from "lucide-react";
 
 const PAGES = [
   {
@@ -15,9 +15,14 @@ const PAGES = [
     label: "Interview email",
     icon: CalendarCheck,
   },
+  {
+    href: "/admin/research-email/compensation",
+    label: "Compensation email",
+    icon: HandCoins,
+  },
 ];
 
-/** Switches between the post-survey and interview email pages. */
+/** Switches between the post-survey, interview and compensation email pages. */
 export function ResearchEmailSwitch() {
   const pathname = usePathname();
   return (

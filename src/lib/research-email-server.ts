@@ -18,11 +18,13 @@ import {
 } from "@/lib/email-purposes";
 import { getS3Object } from "@/lib/storage";
 import {
+  completedSurveysLabel,
   filterPool,
   isResearchEmailKind,
   legacyVersions,
   matchPeople,
   mergePoolEntries,
+  normalizeCompensationAudience,
   normalizePoolAudience,
   normalizePostSurveyAudience,
   parseAttachments,
@@ -35,7 +37,7 @@ import {
   type RecipientVars,
   type VersionKey,
 } from "@/lib/research-email";
-import { surveyFormLabel, type SurveyRole } from "@/lib/survey";
+import { isSurveyPeriod, surveyFormLabel, type SurveyRole } from "@/lib/survey";
 import { getEnabledSurveyForm, newSurveyToken } from "@/lib/survey-server";
 import { enqueueResearchEmails } from "@/lib/queue";
 
@@ -249,6 +251,100 @@ async function planPostSurveyRecipients(
   return { recipients: dedupeByEmail(recipients), skipped, forms };
 }
 
+/** Completed post-surveys count even when the original form is no longer enabled. */
+export async function planCompensationRecipients(
+  audienceJson: string,
+): Promise<RecipientPlan> {
+  const audience = normalizeCompensationAudience(safeJson(audienceJson));
+  const rows = await prisma.surveyResponse.findMany({
+    where: { kind: "POST", role: "STUDENT" },
+    orderBy: [{ submittedAt: "desc" }, { id: "desc" }],
+    select: {
+      userId: true,
+      emailSnapshot: true,
+      nameSnapshot: true,
+      form: { select: { period: true } },
+      user: { select: { email: true, firstName: true, lastName: true } },
+    },
+  });
+  const people = new Map<
+    string,
+    { row: (typeof rows)[number]; periods: Set<number> }
+  >();
+  for (const row of rows) {
+    if (!isSurveyPeriod(row.form.period)) continue;
+    const key = row.userId ?? row.emailSnapshot.trim().toLowerCase();
+    if (!key) continue;
+    const person = people.get(key) ?? { row, periods: new Set<number>() };
+    person.periods.add(row.form.period);
+    people.set(key, person);
+  }
+  const candidates: PlannedRecipient[] = [];
+  for (const { row, periods } of people.values()) {
+    const matches =
+      audience.match === "ALL"
+        ? audience.periods.every((period) => periods.has(period))
+        : audience.periods.some((period) => periods.has(period));
+    if (!matches) continue;
+    const [firstName = "", ...lastName] = row.nameSnapshot.trim().split(/\s+/);
+    const person = {
+      firstName: row.user?.firstName ?? firstName,
+      lastName: row.user?.lastName ?? lastName.join(" "),
+      role: "STUDENT" as const,
+      viaIrb: false,
+      viaSurvey: false,
+      consentLevel: null,
+    };
+    candidates.push({
+      userId: row.userId,
+      email: row.user?.email ?? row.emailSnapshot,
+      name: `${person.firstName} ${person.lastName}`.trim(),
+      variant: versionKeyFor("COMPENSATION", person),
+      vars: recipientVars(person, APP_NAME, {
+        completedSurveys: completedSurveysLabel([...periods]),
+        completedCount: String(periods.size),
+      }),
+    });
+  }
+  // Compare normalized addresses in memory: SQLite does not support Prisma's
+  // case-insensitive string-filter mode, and historical snapshots may use capitals.
+  const previous = audience.excludePreviouslyEmailed
+    ? await prisma.researchEmailDelivery.findMany({
+        where: {
+          campaign: { kind: "COMPENSATION" },
+          status: { in: ["SENT", "PENDING"] },
+        },
+        select: { userId: true, recipient: true },
+      })
+    : [];
+  const emailedUsers = new Set(
+    previous.flatMap((row) => (row.userId ? [row.userId] : [])),
+  );
+  const emailedAddresses = new Set(
+    previous.map((row) => row.recipient.trim().toLowerCase()),
+  );
+  let skipped = 0;
+  const recipients = dedupeByEmail(candidates).filter((person) => {
+    if (
+      (person.userId && emailedUsers.has(person.userId)) ||
+      emailedAddresses.has(person.email.trim().toLowerCase())
+    ) {
+      skipped++;
+      return false;
+    }
+    return true;
+  });
+  return {
+    recipients,
+    skipped: skipped
+      ? [
+          `${skipped} ${skipped === 1 ? "student was" : "students were"} skipped because an earlier compensation email already reached them or is pending.`,
+        ]
+      : [],
+    forms: [],
+  };
+}
+
 function safeJson(json: string): unknown {
   try {
     return JSON.parse(json);
@@ -268,9 +364,11 @@ async function planRecipients(
   audienceJson: string,
 ): Promise<RecipientPlan> {
   const plan =
-    kind === "POST_SURVEY"
-      ? await planPostSurveyRecipients(audienceJson)
-      : await planPoolRecipients(audienceJson);
+    kind === "COMPENSATION"
+      ? await planCompensationRecipients(audienceJson)
+      : kind === "POST_SURVEY"
+        ? await planPostSurveyRecipients(audienceJson)
+        : await planPoolRecipients(audienceJson);
   const people = parsePeople(
     (safeJson(audienceJson) as { people?: unknown } | null)?.people,
   );
@@ -282,9 +380,11 @@ async function planRecipients(
   });
   const { matched, unmatched } = matchPeople(plan.recipients, people, accounts);
   const why =
-    kind === "POST_SURVEY"
-      ? "no account in the selected roles, outside the selected group, or already submitted the post-survey"
-      : "not in the interview pool for the selected roles and agreement routes";
+    kind === "COMPENSATION"
+      ? "no completed post-survey in the selected periods, or already emailed"
+      : kind === "POST_SURVEY"
+        ? "no account in the selected roles, outside the selected group, or already submitted the post-survey"
+        : "not in the interview pool for the selected roles and agreement routes";
   return {
     ...plan,
     recipients: matched,
