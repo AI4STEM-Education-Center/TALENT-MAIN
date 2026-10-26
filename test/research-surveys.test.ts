@@ -593,6 +593,100 @@ describe("compensation email", () => {
   });
 
   it.each([false, true])(
+    "merges historical snapshots after re-registration and an email change (accountless response newer: %s)",
+    async (accountlessNewer) => {
+      const { user: original } = await createStudent({ email: "old@x.edu" });
+      const historical = await completed(original.id, " OLD@X.EDU ", 1);
+      await prisma.user.delete({ where: { id: original.id } });
+      const { user } = await createStudent({ email: "old@x.edu" });
+      await completed(user.id, "old@x.edu", 2);
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { email: "new@x.edu" },
+      });
+      await prisma.surveyResponse.update({
+        where: { id: historical.id },
+        data: {
+          submittedAt: new Date(accountlessNewer ? "2100-01-01" : "2000-01-01"),
+        },
+      });
+
+      for (const match of ["ANY", "ALL"]) {
+        const plan = await previewRecipients(
+          "COMPENSATION",
+          audience({ periods: [1, 2], match }),
+        );
+        expect(plan.recipients).toHaveLength(1);
+        expect(plan.recipients[0]).toMatchObject({
+          userId: user.id,
+          email: "new@x.edu",
+          name: "Stu Student",
+          vars: { completedCount: "2" },
+        });
+      }
+    },
+  );
+
+  it.each([false, true])(
+    "keeps live users with a shared snapshot separate (current email owner newer: %s)",
+    async (currentOwnerNewer) => {
+      const { user: first } = await createStudent({ email: "old@x.edu" });
+      const firstResponse = await completed(first.id, " OLD@X.EDU ", 1);
+      await prisma.user.update({
+        where: { id: first.id },
+        data: { email: "new@x.edu" },
+      });
+      const { user: second } = await createStudent({ email: "old@x.edu" });
+      await completed(second.id, "old@x.edu", 2);
+      await prisma.surveyResponse.update({
+        where: { id: firstResponse.id },
+        data: {
+          submittedAt: new Date(
+            currentOwnerNewer ? "2000-01-01" : "2100-01-01",
+          ),
+        },
+      });
+
+      const plan = await previewRecipients(
+        "COMPENSATION",
+        audience({ periods: [1, 2], match: "ANY" }),
+      );
+      expect(plan.recipients).toHaveLength(2);
+      expect(plan.recipients).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            userId: first.id,
+            email: "new@x.edu",
+            vars: expect.objectContaining({ completedCount: "1" }),
+          }),
+          expect.objectContaining({
+            userId: second.id,
+            email: "old@x.edu",
+            vars: expect.objectContaining({ completedCount: "1" }),
+          }),
+        ]),
+      );
+      expect(
+        (await previewRecipients("COMPENSATION", audience({ match: "ALL" })))
+          .recipients,
+      ).toHaveLength(0);
+
+      // An ambiguous historical response belongs to the current email owner.
+      await completed(null, "old@x.edu", 1);
+      const historical = await previewRecipients(
+        "COMPENSATION",
+        audience({ periods: [1, 2], match: "ALL" }),
+      );
+      expect(historical.recipients).toHaveLength(1);
+      expect(historical.recipients[0]).toMatchObject({
+        userId: second.id,
+        email: "old@x.edu",
+        vars: { completedCount: "2" },
+      });
+    },
+  );
+
+  it.each([false, true])(
     "merges completions after re-registration and prefers live details (accountless response newer: %s)",
     async (accountlessNewer) => {
       const { user: original } = await createStudent({

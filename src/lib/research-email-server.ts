@@ -270,41 +270,42 @@ export async function planCompensationRecipients(
   type Person = {
     row: (typeof rows)[number];
     periods: Set<number>;
-    identities: Set<string>;
   };
   const people = new Set<Person>();
-  const byIdentity = new Map<string, Person>();
-  for (const row of rows) {
+  const byUser = new Map<string, Person>();
+  const byEmail = new Map<string, Set<Person>>();
+  // Collect every live account's aliases first, so accountless history cannot
+  // bridge distinct user IDs or attach before the current email owner is known.
+  const orderedRows = [
+    ...rows.filter((row) => row.userId !== null),
+    ...rows.filter((row) => row.userId === null),
+  ];
+  for (const row of orderedRows) {
     if (!isSurveyPeriod(row.form.period)) continue;
-    const email = (row.user?.email ?? row.emailSnapshot).trim().toLowerCase();
-    const identities = [
-      ...(row.userId ? [`user:${row.userId}`] : []),
-      ...(email ? [`email:${email}`] : []),
-    ];
-    if (!identities.length) continue;
-    const matches = new Set(
-      identities.flatMap((key) => {
-        const person = byIdentity.get(key);
-        return person ? [person] : [];
-      }),
+    const snapshotEmail = row.emailSnapshot.trim().toLowerCase();
+    const emails = new Set(
+      [snapshotEmail, row.user?.email.trim().toLowerCase() ?? ""].filter(
+        Boolean,
+      ),
     );
-    const person = matches.values().next().value ?? {
+    if (!row.userId && !emails.size) continue;
+    const matches = [...(byEmail.get(snapshotEmail) ?? [])];
+    const existing = row.userId
+      ? byUser.get(row.userId)
+      : (matches.find((person) =>
+          emails.has(person.row.user?.email.trim().toLowerCase() ?? ""),
+        ) ?? matches[0]);
+    const person = existing ?? {
       row,
       periods: new Set<number>(),
-      identities: new Set<string>(),
     };
-    // Merge all aliases before checking ANY/ALL, preserving live account details
-    // even when a newer accountless response was encountered first.
-    for (const match of matches) {
-      for (const period of match.periods) person.periods.add(period);
-      for (const key of match.identities) person.identities.add(key);
-      if (!person.row.user && match.row.user) person.row = match.row;
-      people.delete(match);
-    }
-    if (!person.row.user && row.user) person.row = row;
     person.periods.add(row.form.period);
-    for (const key of identities) person.identities.add(key);
-    for (const key of person.identities) byIdentity.set(key, person);
+    if (row.userId) byUser.set(row.userId, person);
+    for (const email of emails) {
+      const aliases = byEmail.get(email) ?? new Set<Person>();
+      aliases.add(person);
+      byEmail.set(email, aliases);
+    }
     people.add(person);
   }
   const candidates: PlannedRecipient[] = [];
