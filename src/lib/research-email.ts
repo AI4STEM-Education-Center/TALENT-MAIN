@@ -11,13 +11,18 @@ import {
 } from "@/lib/consent-fields";
 import {
   isSurveyPeriod,
+  surveyFormLabel,
   isSurveyRole,
   type SurveyPeriod,
   type SurveyRole,
 } from "@/lib/survey";
 
 /** POOL is the interview invitation to the research pool. */
-export const RESEARCH_EMAIL_KINDS = ["POOL", "POST_SURVEY"] as const;
+export const RESEARCH_EMAIL_KINDS = [
+  "POOL",
+  "POST_SURVEY",
+  "COMPENSATION",
+] as const;
 export type ResearchEmailKind = (typeof RESEARCH_EMAIL_KINDS)[number];
 
 export function isResearchEmailKind(
@@ -221,6 +226,7 @@ export function isInterviewConsentLevel(
  */
 export const VERSION_KEYS = {
   POST_SURVEY: ["STUDENT", "TEACHER"],
+  COMPENSATION: ["STUDENT"],
   POOL: ["STUDENT_IRB", "STUDENT_SURVEY", "TEACHER_IRB", "TEACHER_SURVEY"],
 } as const satisfies Record<ResearchEmailKind, readonly string[]>;
 
@@ -262,7 +268,7 @@ export function versionKeyFor(
   kind: ResearchEmailKind,
   person: { role: SurveyRole; viaIrb: boolean },
 ): VersionKey {
-  return kind === "POST_SURVEY"
+  return kind !== "POOL"
     ? person.role
     : (`${person.role}_${variantFor(person)}` as VersionKey);
 }
@@ -350,6 +356,65 @@ export type PostSurveyAudience = {
   /** Emails or user IDs; when non-empty, only these people get the email. */
   people: string[];
 };
+
+export const COMPENSATION_MATCHES = ["ANY", "ALL"] as const;
+export type CompensationMatch = (typeof COMPENSATION_MATCHES)[number];
+
+export type CompensationAudience = {
+  /** Always ["STUDENT"] — compensation is for students only. */
+  roles: SurveyRole[];
+  /** Non-empty; defaults to both study periods. */
+  periods: SurveyPeriod[];
+  /** ANY = at least one selected period; ALL = every selected period. */
+  match: CompensationMatch;
+  /** Skip students with a SENT or PENDING compensation delivery. */
+  excludePreviouslyEmailed: boolean;
+  /** Emails or user IDs; when non-empty, only these people get the email. */
+  people: string[];
+};
+
+export function normalizeCompensationAudience(
+  input: unknown,
+): CompensationAudience {
+  const r =
+    input && typeof input === "object"
+      ? (input as Record<string, unknown>)
+      : {};
+  const periods = [
+    ...new Set(
+      (Array.isArray(r.periods) ? r.periods : []).filter(isSurveyPeriod),
+    ),
+  ].sort();
+  return {
+    roles: ["STUDENT"],
+    periods: periods.length ? periods : [1, 2],
+    match: r.match === "ALL" ? "ALL" : "ANY",
+    excludePreviouslyEmailed: r.excludePreviouslyEmailed !== false,
+    people: parsePeople(r.people),
+  };
+}
+
+export function normalizeAudience(
+  kind: ResearchEmailKind,
+  input: unknown,
+): PoolAudience | PostSurveyAudience | CompensationAudience {
+  switch (kind) {
+    case "POOL":
+      return normalizePoolAudience(input);
+    case "POST_SURVEY":
+      return normalizePostSurveyAudience(input);
+    case "COMPENSATION":
+      return normalizeCompensationAudience(input);
+  }
+}
+
+/** Completed post-surveys, in study order, suitable for a thank-you sentence. */
+export function completedSurveysLabel(periods: number[]): string {
+  return [...new Set(periods.filter(isSurveyPeriod))]
+    .sort()
+    .map((period) => `the ${surveyFormLabel("POST", period)}`)
+    .join(" and ");
+}
 
 export const MAX_AUDIENCE_PEOPLE = 200;
 
@@ -471,16 +536,20 @@ export const RESEARCH_EMAIL_VARIABLES: ReadonlyArray<{
   description: string;
   kinds: readonly ResearchEmailKind[];
 }> = [
-  { name: "name", description: "Full name", kinds: ["POOL", "POST_SURVEY"] },
+  {
+    name: "name",
+    description: "Full name",
+    kinds: ["POOL", "POST_SURVEY", "COMPENSATION"],
+  },
   {
     name: "firstName",
     description: "First name",
-    kinds: ["POOL", "POST_SURVEY"],
+    kinds: ["POOL", "POST_SURVEY", "COMPENSATION"],
   },
   {
     name: "lastName",
     description: "Last name",
-    kinds: ["POOL", "POST_SURVEY"],
+    kinds: ["POOL", "POST_SURVEY", "COMPENSATION"],
   },
   {
     name: "agreedPlace",
@@ -497,12 +566,22 @@ export const RESEARCH_EMAIL_VARIABLES: ReadonlyArray<{
   {
     name: "role",
     description: "Student or Teacher",
-    kinds: ["POOL", "POST_SURVEY"],
+    kinds: ["POOL", "POST_SURVEY", "COMPENSATION"],
   },
   {
     name: "appName",
     description: "Platform name",
-    kinds: ["POOL", "POST_SURVEY"],
+    kinds: ["POOL", "POST_SURVEY", "COMPENSATION"],
+  },
+  {
+    name: "completedSurveys",
+    description: "Post-surveys they completed",
+    kinds: ["COMPENSATION"],
+  },
+  {
+    name: "completedCount",
+    description: "Number of post-surveys completed",
+    kinds: ["COMPENSATION"],
   },
   {
     name: "surveyLink",
@@ -622,6 +701,22 @@ export const DEFAULT_RESEARCH_EMAIL_VERSIONS: Record<
   ResearchEmailKind,
   ResearchEmailVersions
 > = {
+  COMPENSATION: {
+    STUDENT: {
+      subject: "Thank you for completing the {{appName}} survey — compensation",
+      body: `Hi {{firstName}},
+
+Thank you for completing {{completedSurveys}} and for taking part in the {{appName}} research study. We appreciate the time and insights you shared with us.
+
+As a thank-you for your participation, you are eligible for compensation. Please reply to this email to arrange it and confirm the best email address and details for receiving your compensation.
+
+Thank you again for contributing to our research.
+
+Best,
+AI4Talent Research Team
+University of Georgia`,
+    },
+  },
   POOL: {
     STUDENT_IRB: {
       subject: INTERVIEW_SUBJECT,
