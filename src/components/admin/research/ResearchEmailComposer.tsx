@@ -233,8 +233,12 @@ export function ResearchEmailComposer({ kind }: { kind: ResearchEmailKind }) {
     return () => clearInterval(timer);
   }, [active, loadCampaigns]);
 
-  // Recipient count + samples follow the audience.
+  // Recipient count + samples follow the audience, and are recounted as sends
+  // progress — a compensation send changes who is still eligible.
   const audienceKey = draft ? JSON.stringify(draft.audience) : "";
+  const campaignsKey = campaigns
+    .map((c) => `${c.id}:${c.status}:${c.sent}:${c.pending}:${c.failed}`)
+    .join(",");
   useEffect(() => {
     if (!audienceKey) return;
     const controller = new AbortController();
@@ -255,7 +259,7 @@ export function ResearchEmailComposer({ kind }: { kind: ResearchEmailKind }) {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [audienceKey, kind]);
+  }, [audienceKey, campaignsKey, kind]);
 
   if (loadFailed)
     return (

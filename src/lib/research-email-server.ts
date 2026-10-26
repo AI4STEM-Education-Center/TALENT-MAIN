@@ -267,17 +267,45 @@ export async function planCompensationRecipients(
       user: { select: { email: true, firstName: true, lastName: true } },
     },
   });
-  const people = new Map<
-    string,
-    { row: (typeof rows)[number]; periods: Set<number> }
-  >();
+  type Person = {
+    row: (typeof rows)[number];
+    periods: Set<number>;
+    identities: Set<string>;
+  };
+  const people = new Set<Person>();
+  const byIdentity = new Map<string, Person>();
   for (const row of rows) {
     if (!isSurveyPeriod(row.form.period)) continue;
-    const key = row.userId ?? row.emailSnapshot.trim().toLowerCase();
-    if (!key) continue;
-    const person = people.get(key) ?? { row, periods: new Set<number>() };
+    const email = (row.user?.email ?? row.emailSnapshot).trim().toLowerCase();
+    const identities = [
+      ...(row.userId ? [`user:${row.userId}`] : []),
+      ...(email ? [`email:${email}`] : []),
+    ];
+    if (!identities.length) continue;
+    const matches = new Set(
+      identities.flatMap((key) => {
+        const person = byIdentity.get(key);
+        return person ? [person] : [];
+      }),
+    );
+    const person = matches.values().next().value ?? {
+      row,
+      periods: new Set<number>(),
+      identities: new Set<string>(),
+    };
+    // Merge all aliases before checking ANY/ALL, preserving live account details
+    // even when a newer accountless response was encountered first.
+    for (const match of matches) {
+      for (const period of match.periods) person.periods.add(period);
+      for (const key of match.identities) person.identities.add(key);
+      if (!person.row.user && match.row.user) person.row = match.row;
+      people.delete(match);
+    }
+    if (!person.row.user && row.user) person.row = row;
     person.periods.add(row.form.period);
-    people.set(key, person);
+    for (const key of identities) person.identities.add(key);
+    for (const key of person.identities) byIdentity.set(key, person);
+    people.add(person);
   }
   const candidates: PlannedRecipient[] = [];
   for (const { row, periods } of people.values()) {
@@ -312,7 +340,10 @@ export async function planCompensationRecipients(
     ? await prisma.researchEmailDelivery.findMany({
         where: {
           campaign: { kind: "COMPENSATION" },
-          status: { in: ["SENT", "PENDING"] },
+          OR: [
+            { status: "SENT" },
+            { status: "PENDING", campaign: { status: { not: "CANCELLED" } } },
+          ],
         },
         select: { userId: true, recipient: true },
       })

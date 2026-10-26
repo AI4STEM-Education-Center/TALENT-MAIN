@@ -592,6 +592,101 @@ describe("compensation email", () => {
     );
   });
 
+  it.each([false, true])(
+    "merges completions after re-registration and prefers live details (accountless response newer: %s)",
+    async (accountlessNewer) => {
+      const { user: original } = await createStudent({
+        email: "return@uga.edu",
+      });
+      const oldResponse = await completed(original.id, " RETURN@UGA.EDU ", 1);
+      await prisma.user.delete({ where: { id: original.id } });
+      expect(
+        await prisma.surveyResponse.findUniqueOrThrow({
+          where: { id: oldResponse.id },
+        }),
+      ).toMatchObject({ userId: null });
+      const { user } = await createStudent({ email: "return@uga.edu" });
+      await completed(user.id, "outdated@uga.edu", 2);
+      await prisma.surveyResponse.update({
+        where: { id: oldResponse.id },
+        data: {
+          submittedAt: new Date(accountlessNewer ? "2100-01-01" : "2000-01-01"),
+        },
+      });
+
+      for (const match of ["ANY", "ALL"]) {
+        for (const people of [[], [user.id]]) {
+          const plan = await previewRecipients(
+            "COMPENSATION",
+            audience({ periods: [1, 2], match, people }),
+          );
+          expect(plan.recipients).toHaveLength(1);
+          expect(plan.recipients[0]).toMatchObject({
+            userId: user.id,
+            email: user.email,
+            name: "Stu Student",
+            vars: {
+              firstName: "Stu",
+              completedCount: "2",
+              completedSurveys:
+                "the Period 1 post-survey and the Period 2 post-survey",
+            },
+          });
+          expect(plan.skipped).toEqual([]);
+        }
+      }
+    },
+  );
+
+  it("allows pending deliveries from cancelled campaigns but still excludes sent deliveries", async () => {
+    const admin = await createAdmin();
+    asUser(admin);
+    const campaign = await prisma.researchEmailCampaign.create({
+      data: {
+        kind: "COMPENSATION",
+        replyTo: "r@uga.edu",
+        appOrigin: "http://localhost",
+        scheduledAt: new Date(),
+        status: "SENDING",
+      },
+    });
+    for (const status of ["PENDING", "SENT", "FAILED"]) {
+      const email = `${status.toLowerCase()}@uga.edu`;
+      await completed(null, email, 1);
+      await prisma.researchEmailDelivery.create({
+        data: {
+          campaignId: campaign.id,
+          recipient: email,
+          variant: "STUDENT",
+          status,
+        },
+      });
+    }
+    expect(
+      (await previewRecipients("COMPENSATION", audience())).recipients.map(
+        (r) => r.email,
+      ),
+    ).toEqual(["failed@uga.edu"]);
+    expect(
+      (
+        await campaignDelete(new NextRequest("http://localhost"), {
+          params: Promise.resolve({ id: campaign.id }),
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      await prisma.researchEmailDelivery.count({
+        where: { campaignId: campaign.id, status: "PENDING" },
+      }),
+    ).toBe(1);
+    const replacement = await previewRecipients("COMPENSATION", audience());
+    expect(replacement.recipients.map((r) => r.email).sort()).toEqual([
+      "failed@uga.edu",
+      "pending@uga.edu",
+    ]);
+    expect(replacement.skipped.join()).toContain("1 student was skipped");
+  });
+
   it("skips prior sent/pending by user ID or case-insensitive email, but permits failed and other kinds", async () => {
     const { user } = await createStudent();
     await completed(user.id, user.email, 1);
