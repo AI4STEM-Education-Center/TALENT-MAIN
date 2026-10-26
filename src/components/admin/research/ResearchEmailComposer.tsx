@@ -23,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import {
+  COMPENSATION_MATCHES,
   CONSENT_LEVEL_LABELS,
   DEFAULT_RESEARCH_EMAIL_VERSIONS,
   INTERVIEW_CONSENT_LEVELS,
@@ -34,6 +35,8 @@ import {
   renderResearchEmail,
   VERSION_LABELS,
   versionKeysFor,
+  type CompensationAudience,
+  type CompensationMatch,
   type PoolAudience,
   type PostSurveyAudience,
   type ResearchEmailAttachment,
@@ -52,8 +55,10 @@ type Draft = {
   replyTo: string;
   versions: ResearchEmailVersions;
   attachments: ResearchEmailAttachment[];
-  audience: PoolAudience | PostSurveyAudience;
+  audience: Audience;
 };
+
+type Audience = PoolAudience | PostSurveyAudience | CompensationAudience;
 
 type Part = "subject" | "body";
 
@@ -103,6 +108,18 @@ const ROLES: Array<{
   { value: "TEACHER", label: "Teacher", plural: "Teachers", icon: School },
 ];
 
+/** Compensation is for students only; the other emails go to both roles. */
+function rolesFor(kind: ResearchEmailKind) {
+  return kind === "COMPENSATION"
+    ? ROLES.filter((r) => r.value === "STUDENT")
+    : ROLES;
+}
+
+const COMPENSATION_MATCH_LABELS: Record<CompensationMatch, string> = {
+  ANY: "Completed any of the selected periods",
+  ALL: "Completed every selected period",
+};
+
 const VERSION_HINTS: Partial<Record<VersionKey, string>> = {
   STUDENT_IRB:
     "For students who agreed to an interview on the IRB consent form. {{consentLevel}} is filled in.",
@@ -144,6 +161,8 @@ function sampleVarsFor(key: VersionKey): Record<string, string> {
     consentLevel: survey ? "" : "Interview with audio-only recording",
     role: key.startsWith("TEACHER") ? "Teacher" : "Student",
     appName: "AI4Talent",
+    completedSurveys: "the Period 1 post-survey",
+    completedCount: "1",
   };
 }
 
@@ -151,7 +170,9 @@ function sampleVarsFor(key: VersionKey): Record<string, string> {
  * Compose, test, send or schedule a research email. `kind` POST_SURVEY invites
  * people to the post-survey with a personal no-sign-in link ({{surveyLink}}) —
  * one version per role. POOL is the interview invitation to people who agreed
- * to an interview — an IRB and a survey version per role.
+ * to an interview — an IRB and a survey version per role. COMPENSATION thanks
+ * students who completed a post-survey and asks them to reply to arrange
+ * their compensation — one student version.
  */
 export function ResearchEmailComposer({ kind }: { kind: ResearchEmailKind }) {
   const alert = useAlert();
@@ -168,8 +189,6 @@ export function ResearchEmailComposer({ kind }: { kind: ResearchEmailKind }) {
     part: Part;
     el: HTMLInputElement | HTMLTextAreaElement;
   } | null>(null);
-  const isInterview = kind === "POOL";
-
   const loadCampaigns = useCallback(async () => {
     const res = await fetch(
       `/api/admin/research-email/campaigns?kind=${kind}`,
@@ -214,8 +233,12 @@ export function ResearchEmailComposer({ kind }: { kind: ResearchEmailKind }) {
     return () => clearInterval(timer);
   }, [active, loadCampaigns]);
 
-  // Recipient count + samples follow the audience.
+  // Recipient count + samples follow the audience, and are recounted as sends
+  // progress — a compensation send changes who is still eligible.
   const audienceKey = draft ? JSON.stringify(draft.audience) : "";
+  const campaignsKey = campaigns
+    .map((c) => `${c.id}:${c.status}:${c.sent}:${c.pending}:${c.failed}`)
+    .join(",");
   useEffect(() => {
     if (!audienceKey) return;
     const controller = new AbortController();
@@ -236,7 +259,7 @@ export function ResearchEmailComposer({ kind }: { kind: ResearchEmailKind }) {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [audienceKey, kind]);
+  }, [audienceKey, campaignsKey, kind]);
 
   if (loadFailed)
     return (
@@ -419,7 +442,8 @@ export function ResearchEmailComposer({ kind }: { kind: ResearchEmailKind }) {
   const dirty = JSON.stringify(draft) !== savedJson;
   const editKeys = keysForRole(kind, editRole);
   const roleSelected = draft.audience.roles.includes(editRole);
-  const editRoleInfo = ROLES.find((r) => r.value === editRole)!;
+  const editRoleInfo =
+    rolesFor(kind).find((r) => r.value === editRole) ?? rolesFor(kind)[0];
 
   const fieldProps = (key: VersionKey, part: Part) => ({
     value: draft.versions[key]?.[part] ?? "",
@@ -459,6 +483,7 @@ export function ResearchEmailComposer({ kind }: { kind: ResearchEmailKind }) {
 
           <div className="space-y-3">
             <RoleTabs
+              kind={kind}
               value={editRole}
               sendingRoles={draft.audience.roles}
               onChange={setEditRole}
@@ -535,8 +560,8 @@ function AudienceEditor({
   onChange,
 }: {
   kind: ResearchEmailKind;
-  audience: PoolAudience | PostSurveyAudience;
-  onChange: (audience: PoolAudience | PostSurveyAudience) => void;
+  audience: Audience;
+  onChange: (audience: Audience) => void;
 }) {
   const roles = (
     <fieldset className="space-y-1">
@@ -561,6 +586,80 @@ function AudienceEditor({
       </div>
     </fieldset>
   );
+
+  if (kind === "COMPENSATION") {
+    const comp = audience as CompensationAudience;
+    return (
+      <div className="space-y-3">
+        <p className="text-xs text-muted-foreground">
+          Students only — teachers aren&apos;t compensated through this email.
+        </p>
+        <fieldset className="space-y-1">
+          <legend className="text-xs font-medium text-muted-foreground">
+            Post-surveys that count
+          </legend>
+          <div className="flex flex-wrap gap-4">
+            {SURVEY_PERIODS.map((p: SurveyPeriod) => (
+              <label key={p} className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  className="size-4"
+                  checked={comp.periods.includes(p)}
+                  onChange={() => {
+                    const next = toggle(comp.periods, p).sort((a, b) => a - b);
+                    if (next.length) onChange({ ...comp, periods: next });
+                  }}
+                />
+                {surveyFormLabel("POST", p)}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        {comp.periods.length > 1 && (
+          <fieldset className="space-y-1">
+            <legend className="text-xs font-medium text-muted-foreground">
+              Who
+            </legend>
+            {COMPENSATION_MATCHES.map((m) => (
+              <label key={m} className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="compensation-match"
+                  className="size-4"
+                  checked={comp.match === m}
+                  onChange={() => onChange({ ...comp, match: m })}
+                />
+                {COMPENSATION_MATCH_LABELS[m]}
+              </label>
+            ))}
+          </fieldset>
+        )}
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            className="size-4"
+            checked={comp.excludePreviouslyEmailed}
+            onChange={() =>
+              onChange({
+                ...comp,
+                excludePreviouslyEmailed: !comp.excludePreviouslyEmailed,
+              })
+            }
+          />
+          Skip students an earlier compensation email already reached
+        </label>
+        <PeopleField
+          people={comp.people}
+          onChange={(people) => onChange({ ...comp, people })}
+        />
+        <p className="text-xs text-muted-foreground">
+          A post-survey counts whether it was submitted in the app or by email
+          link. Use {"{{completedSurveys}}"} to name the surveys each student
+          completed.
+        </p>
+      </div>
+    );
+  }
 
   if (kind === "POST_SURVEY") {
     const post = audience as PostSurveyAudience;
@@ -783,10 +882,12 @@ function RecipientSummary({
 }
 
 function RoleTabs({
+  kind,
   value,
   sendingRoles,
   onChange,
 }: {
+  kind: ResearchEmailKind;
   value: SurveyRole;
   sendingRoles: SurveyRole[];
   onChange: (role: SurveyRole) => void;
@@ -797,7 +898,7 @@ function RoleTabs({
       aria-label="Which role's email to edit"
       className="flex flex-wrap gap-1 border-b"
     >
-      {ROLES.map((r) => {
+      {rolesFor(kind).map((r) => {
         const selected = value === r.value;
         return (
           <button
@@ -863,8 +964,10 @@ function VersionCard({
         <div>
           <p className="text-sm font-semibold">{title}</p>
           <p className="text-xs text-muted-foreground">
-            {VERSION_HINTS[versionKey] ??
-              `Sent to every ${roleLabel.toLowerCase()} who gets the post-survey email. Must include {{surveyLink}}.`}
+            {kind === "COMPENSATION"
+              ? "Sent to every student who completed a selected post-survey. Ask them to reply to arrange their compensation."
+              : (VERSION_HINTS[versionKey] ??
+                `Sent to every ${roleLabel.toLowerCase()} who gets the post-survey email. Must include {{surveyLink}}.`)}
           </p>
         </div>
         <Button
@@ -986,7 +1089,7 @@ function ReplyToField({
   value: string;
   onChange: (value: string) => void;
 }) {
-  const required = kind === "POOL";
+  const required = kind !== "POST_SURVEY";
   return (
     <div className="max-w-md space-y-1">
       <Label htmlFor={`${kind}-reply-to`}>
@@ -1005,9 +1108,11 @@ function ReplyToField({
         onChange={(e) => onChange(e.target.value)}
       />
       <p className="text-xs text-muted-foreground">
-        {required
-          ? "Required — people reply here when none of the interview times work."
-          : "Leave blank to use the default sender's reply-to address."}
+        {kind === "COMPENSATION"
+          ? "Required — students reply here to arrange their compensation."
+          : required
+            ? "Required — people reply here when none of the interview times work."
+            : "Leave blank to use the default sender's reply-to address."}
       </p>
     </div>
   );
@@ -1288,6 +1393,8 @@ function SendCard({
               Recipients are worked out again when it goes out.
               {kind === "POST_SURVEY" &&
                 " People who already submitted the post-survey are skipped."}
+              {kind === "COMPENSATION" &&
+                " Only students who completed a selected post-survey are included."}
             </p>
             <div className="flex flex-wrap gap-2">
               <Input

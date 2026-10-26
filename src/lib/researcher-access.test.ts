@@ -27,6 +27,7 @@ describe("isResearcherAdminPath", () => {
     "/admin/resources",
     "/admin/research-email",
     "/admin/research-email/interview",
+    "/admin/research-email/compensation",
     "/admin/post-survey-email",
     "/admin/consent/forms",
     "/admin/consent/settings",

@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.0.27 - 2026-10-30
+
+- Added a compensation email for researchers to thank students who completed the Period 1 or Period 2 post-survey (or both) and invite them to reply to arrange their compensation, automatically skipping students an earlier compensation email already reached.
+- Refreshed production dependencies to patch the undici and brace-expansion security advisories.
+
 ## v0.0.26 - 2026-10-23
 
 - Improved the end-of-quiz summary to automatically open the first available simulation, while respecting dismissal as recommendations refresh.

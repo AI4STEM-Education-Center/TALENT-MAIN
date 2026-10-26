@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
   agreedPlaceLabel,
+  completedSurveysLabel,
+  normalizeCompensationAudience,
+  normalizeAudience,
+  RESEARCH_EMAIL_KINDS,
+  RESEARCH_EMAIL_VARIABLES,
   DEFAULT_RESEARCH_EMAIL_VERSIONS,
   filterPool,
   legacyVersions,
@@ -206,7 +211,7 @@ describe("versions", () => {
   });
 
   it("ships a default for every version, with a survey link where needed", () => {
-    for (const kind of ["POOL", "POST_SURVEY"] as const)
+    for (const kind of RESEARCH_EMAIL_KINDS)
       for (const key of versionKeysFor(kind, ["STUDENT", "TEACHER"])) {
         const v = DEFAULT_RESEARCH_EMAIL_VERSIONS[kind][key]!;
         expect(v.subject.trim() && v.body.trim()).toBeTruthy();
@@ -361,5 +366,118 @@ describe("parseResearchEmailInput", () => {
     expect(
       parseResearchEmailInput({ ...post, replyTo: "nope" }, false).ok,
     ).toBe(false);
+  });
+});
+
+describe("compensation emails", () => {
+  it("normalizes a student-only audience with safe defaults", () => {
+    expect(normalizeCompensationAudience(null)).toEqual({
+      roles: ["STUDENT"],
+      periods: [1, 2],
+      match: "ANY",
+      excludePreviouslyEmailed: true,
+      people: [],
+    });
+    expect(
+      normalizeCompensationAudience({
+        roles: ["TEACHER"],
+        periods: [2, 1, 2, "1", 9],
+        match: "ALL",
+        excludePreviouslyEmailed: false,
+        people: "ANN@uga.edu; ann@uga.edu",
+      }),
+    ).toEqual({
+      roles: ["STUDENT"],
+      periods: [1, 2],
+      match: "ALL",
+      excludePreviouslyEmailed: false,
+      people: ["ann@uga.edu"],
+    });
+    expect(
+      normalizeAudience("COMPENSATION", {
+        periods: ["2"],
+        match: "bad",
+        excludePreviouslyEmailed: "false",
+      }),
+    ).toEqual(normalizeCompensationAudience({}));
+    expect(normalizeAudience("POOL", {})).toEqual(normalizePoolAudience({}));
+    expect(normalizeAudience("POST_SURVEY", {})).toEqual(
+      normalizePostSurveyAudience({}),
+    );
+  });
+
+  it("labels completed periods once in study order", () => {
+    expect(completedSurveysLabel([])).toBe("");
+    expect(completedSurveysLabel([1])).toBe("the Period 1 post-survey");
+    expect(completedSurveysLabel([2])).toBe("the Period 2 post-survey");
+    expect(completedSurveysLabel([2, 1, 2, 0, 3])).toBe(
+      "the Period 1 post-survey and the Period 2 post-survey",
+    );
+  });
+
+  it("has one student version and compensation-specific variables", () => {
+    expect(versionKeysFor("COMPENSATION", ["STUDENT", "TEACHER"])).toEqual([
+      "STUDENT",
+    ]);
+    expect(
+      versionKeyFor("COMPENSATION", { role: "STUDENT", viaIrb: false }),
+    ).toBe("STUDENT");
+    expect(
+      parseVersions("COMPENSATION", {
+        STUDENT: { subject: "S", body: "B" },
+        TEACHER: { subject: "T", body: "B" },
+      }),
+    ).toEqual({ STUDENT: { subject: "S", body: "B" } });
+    const variables = RESEARCH_EMAIL_VARIABLES.filter((v) =>
+      v.kinds.includes("COMPENSATION"),
+    ).map((v) => v.name);
+    expect(variables).toEqual([
+      "name",
+      "firstName",
+      "lastName",
+      "role",
+      "appName",
+      "completedSurveys",
+      "completedCount",
+    ]);
+  });
+
+  it("requires a valid reply-to and student copy for sends, without a survey link", () => {
+    const input = {
+      kind: "COMPENSATION",
+      replyTo: "research@uga.edu",
+      versions: DEFAULT_RESEARCH_EMAIL_VERSIONS.COMPENSATION,
+      audience: { roles: ["TEACHER"] },
+    };
+    const parsed = parseResearchEmailInput(input, true);
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(parsed.value.sendKeys).toEqual(["STUDENT"]);
+    expect(
+      parseResearchEmailInput({ ...input, replyTo: "" }, true),
+    ).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/reply-to.*compensation/),
+    });
+    expect(parseResearchEmailInput({ ...input, replyTo: "" }, false).ok).toBe(
+      true,
+    );
+    expect(parseResearchEmailInput({ ...input, replyTo: "bad" }, true).ok).toBe(
+      false,
+    );
+    for (const version of [
+      { subject: "", body: "B" },
+      { subject: "S", body: "" },
+    ]) {
+      expect(
+        parseResearchEmailInput(
+          { ...input, versions: { STUDENT: version } },
+          true,
+        ),
+      ).toMatchObject({
+        ok: false,
+        error: expect.stringContaining("Student email"),
+      });
+    }
+    expect(input.versions.STUDENT?.body).not.toContain("surveyLink");
   });
 });
