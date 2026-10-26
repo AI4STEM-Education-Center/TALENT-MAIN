@@ -13,6 +13,7 @@ import {
 } from "@/lib/email-purposes";
 import { getS3Object } from "@/lib/storage";
 import {
+  completedSurveysLabel,
   renderResearchEmail,
   VERSION_LABELS,
   type VersionKey,
@@ -55,6 +56,9 @@ export async function POST(req: NextRequest) {
     firstName: session.user.firstName,
     lastName: session.user.lastName,
     appName: APP_NAME,
+    ...(email.kind === "COMPENSATION"
+      ? { completedSurveys: completedSurveysLabel([1, 2]), completedCount: "2" }
+      : {}),
     surveyLink: `${appOrigin(req)}/survey/example-link`,
   };
   const varsFor = (key: VersionKey): Record<string, string> => ({

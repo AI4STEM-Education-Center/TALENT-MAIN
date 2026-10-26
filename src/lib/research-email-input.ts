@@ -6,8 +6,7 @@ import { isEmailAddress } from "@/lib/email-purposes";
 import {
   isResearchEmailKind,
   MAX_TOTAL_ATTACHMENT_BYTES,
-  normalizePoolAudience,
-  normalizePostSurveyAudience,
+  normalizeAudience,
   parseAttachments,
   parseVersions,
   VERSION_LABELS,
@@ -60,10 +59,7 @@ export function parseResearchEmailInput(
       body: str(v.body, MAX_BODY),
     };
   }
-  const audience =
-    kind === "POOL"
-      ? normalizePoolAudience(body.audience)
-      : normalizePostSurveyAudience(body.audience);
+  const audience = normalizeAudience(kind, body.audience);
   const value: ResearchEmailInput = {
     kind,
     replyTo,
@@ -83,6 +79,12 @@ export function parseResearchEmailInput(
         ok: false,
         error:
           "Enter a reply-to address so people can reply to the interview invitation.",
+      };
+    if (kind === "COMPENSATION" && !replyTo)
+      return {
+        ok: false,
+        error:
+          "Enter a reply-to address so students can reply to arrange their compensation.",
       };
     for (const key of value.sendKeys) {
       const v = versions[key];

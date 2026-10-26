@@ -4,8 +4,7 @@ import { prisma } from "@/lib/prisma";
 import {
   DEFAULT_RESEARCH_EMAIL_VERSIONS,
   isResearchEmailKind,
-  normalizePoolAudience,
-  normalizePostSurveyAudience,
+  normalizeAudience,
   parseAttachments,
   parseVersions,
   VERSION_KEYS,
@@ -23,7 +22,7 @@ function parseJson(json: string): unknown {
   }
 }
 
-/** GET /api/admin/research-email/template?kind=POOL|POST_SURVEY — the saved draft. */
+/** GET /api/admin/research-email/template?kind=POOL|POST_SURVEY|COMPENSATION — the saved draft. */
 export async function GET(req: NextRequest) {
   const session = await requireAdminApi();
   if (session instanceof Response) return session;
@@ -45,10 +44,7 @@ export async function GET(req: NextRequest) {
     replyTo: row?.replyTo ?? "",
     versions,
     attachments: parseAttachments(row?.attachments),
-    audience:
-      kind === "POOL"
-        ? normalizePoolAudience(audience)
-        : normalizePostSurveyAudience(audience),
+    audience: normalizeAudience(kind, audience),
     updatedAt: row?.updatedAt ?? null,
   });
 }
