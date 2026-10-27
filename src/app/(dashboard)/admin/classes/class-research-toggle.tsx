@@ -14,15 +14,19 @@ import { useAdminCanEdit } from "@/components/admin/use-admin-can-edit";
  * every class they belong to is excluded (see src/lib/research-exclusion.ts).
  * Research scientists see the state read-only.
  */
-export function ClassResearchToggle({
+export function ClassResearchToggle(props: ToggleProps) {
+  // Remount when the server value changes (router.refresh after another
+  // admin's edit) so the local state never shows a stale value.
+  return <ToggleInner key={String(props.excluded)} {...props} />;
+}
+
+type ToggleProps = { classId: string; className: string; excluded: boolean };
+
+function ToggleInner({
   classId,
   className,
   excluded: initialExcluded,
-}: {
-  classId: string;
-  className: string;
-  excluded: boolean;
-}) {
+}: ToggleProps) {
   const router = useRouter();
   const confirm = useConfirm();
   const alert = useAlert();
