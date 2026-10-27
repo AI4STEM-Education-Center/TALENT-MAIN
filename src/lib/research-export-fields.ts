@@ -9,7 +9,8 @@ export const RESEARCH_EXPORT_FIELDS = {
   MaterialPage:
     "id materialId pageNumber storageKey needed keyConcept description createdAt",
   Student: "id userId",
-  Class: "id name description teacherId createdAt modulesRevision",
+  Class:
+    "id name description teacherId createdAt modulesRevision researchExcluded researchExcludedAt researchExcludedById",
   ClassSyllabus:
     "id classId teacherId revision sourceRevision pendingStorageKey pendingName originalName sizeBytes storageKey bucket totalPages pageKeys status errorMessage warnings content extractedAt editedAt aiModel aiProvider aiServiceTier aiThinkingLevel aiTtftMs aiTokens aiTotalMs createdAt updatedAt",
   ClassStudentList:

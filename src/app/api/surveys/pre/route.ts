@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isResearchExempt } from "@/lib/research-exclusion";
 import { auth } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limit";
 import { isSurveyRole } from "@/lib/survey";
@@ -53,7 +54,11 @@ export async function POST(req: NextRequest) {
   }
 
   const form = await getEnabledSurveyForm("PRE", role);
-  if (!form || body.formId !== form.id) {
+  if (
+    !form ||
+    body.formId !== form.id ||
+    (await isResearchExempt(session.user.id, role))
+  ) {
     return NextResponse.json(
       { error: "This survey has changed. Reload the page and try again." },
       { status: 409 },

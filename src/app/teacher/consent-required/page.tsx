@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { isResearchExempt } from "@/lib/research-exclusion";
 import { auth } from "@/lib/auth";
 import { homePathForRole } from "@/lib/roles";
 import { prisma } from "@/lib/prisma";
@@ -31,6 +32,9 @@ export default async function TeacherConsentRequiredPage() {
   }
 
   const activeForm = await getActiveConsentVersion("TEACHER");
+  if (await isResearchExempt(session.user.id, "TEACHER")) {
+    return <ConsentClaimSync reason="excluded" />;
+  }
   if (!activeForm) {
     // No instructor form published yet — there is nothing to enforce and
     // nothing to render, so refresh the claim (it becomes NOT_REQUIRED) and
