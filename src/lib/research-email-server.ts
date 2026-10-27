@@ -4,6 +4,7 @@
 // a claim lease so duplicate jobs never double-send, bounded retries, and a
 // sweeper backstop for lost jobs. Everything runs in the background worker.
 
+import { researchParticipantWhere } from "@/lib/research-exclusion";
 import { prisma } from "@/lib/prisma";
 import {
   getSenderOverride,
@@ -207,7 +208,7 @@ async function planPostSurveyRecipients(
 
     const [users, done, preDone] = await Promise.all([
       prisma.user.findMany({
-        where: { role },
+        where: researchParticipantWhere(role),
         select: { id: true, firstName: true, lastName: true, email: true },
       }),
       prisma.surveyResponse.findMany({

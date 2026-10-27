@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isResearchExempt } from "@/lib/research-exclusion";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
@@ -41,6 +42,17 @@ export async function GET() {
     return NextResponse.json({
       needsDecision: false,
       role: null,
+      activeForm: null,
+      priorDecision: null,
+      reprompt: null,
+    });
+  }
+
+  if (await isResearchExempt(session.user.id, role)) {
+    return NextResponse.json({
+      needsDecision: false,
+      exempt: true,
+      role,
       activeForm: null,
       priorDecision: null,
       reprompt: null,
