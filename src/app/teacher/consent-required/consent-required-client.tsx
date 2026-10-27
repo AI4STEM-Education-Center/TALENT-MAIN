@@ -104,7 +104,7 @@ export function ConsentRequiredClient(props: {
 function ConsentClaimSyncInner({
   reason,
 }: {
-  reason: "no-form" | "already-agreed";
+  reason: "no-form" | "already-agreed" | "excluded";
 }) {
   const { update, status } = useSession();
   const [stuck, setStuck] = useState(false);
@@ -156,7 +156,9 @@ function ConsentClaimSyncInner({
                 Your instructor access is already cleared
                 {reason === "no-form"
                   ? " (there is no research consent form published for instructors right now)"
-                  : " (your agreement is on file)"}
+                  : reason === "excluded"
+                    ? " (your classes are excluded from research)"
+                    : " (your agreement is on file)"}
                 , but this browser session is still carrying an out-of-date copy
                 of it. Signing out and back in will pick up the current one.
               </>
@@ -194,7 +196,7 @@ function ConsentClaimSyncInner({
 
 /**
  * Shown instead of a server redirect when this page has nothing to ask the
- * teacher (no published instructor form, or an AGREE already on record).
+ * teacher (no published instructor form, excluded classes, or an AGREE on record).
  * Re-stamps the session's consent claim once so src/proxy.ts stops bouncing
  * them here, then leaves for /teacher — and degrades to a plain "sign out and
  * back in" screen rather than looping if the claim still disagrees.
@@ -202,7 +204,7 @@ function ConsentClaimSyncInner({
 export function ConsentClaimSync({
   reason,
 }: {
-  reason: "no-form" | "already-agreed";
+  reason: "no-form" | "already-agreed" | "excluded";
 }) {
   return (
     <SessionProvider>

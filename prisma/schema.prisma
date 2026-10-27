@@ -159,6 +159,11 @@ model Class {
   teacherId   String
   createdAt   DateTime @default(now())
 
+  // Prompt suppression only; existing consent and research records are retained.
+  researchExcluded     Boolean   @default(false)
+  researchExcludedAt   DateTime?
+  researchExcludedById String?
+
   teacher        Teacher           @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   enrollments    ClassEnrollment[]
   invitations    Invitation[]

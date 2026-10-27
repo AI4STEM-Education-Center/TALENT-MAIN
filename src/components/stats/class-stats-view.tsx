@@ -13,6 +13,7 @@ import { formatDurationMs } from "@/lib/simulation-stats";
 import { SimulationSurfaceBreakdown } from "@/components/stats/simulation-surface-breakdown";
 import { RequestConsentExportDialog } from "@/app/(dashboard)/teacher/classes/[id]/stats/request-consent-export-dialog";
 import { ExportParticipationCreditDialog } from "@/app/(dashboard)/teacher/classes/[id]/stats/export-participation-credit-dialog";
+import { ClassResearchToggle } from "@/app/(dashboard)/admin/classes/class-research-toggle";
 
 const nameKey = (firstName: string, lastName: string) =>
   `${firstName.trim().toLowerCase()}|${lastName.trim().toLowerCase()}`;
@@ -87,6 +88,16 @@ export async function ClassStatsView({
         <div className="flex flex-wrap gap-2">
           {audience === "teacher" && (
             <RequestConsentExportDialog classId={id} />
+          )}
+          {audience === "admin" && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              Research prompts:
+              <ClassResearchToggle
+                classId={id}
+                className={cls.name}
+                excluded={cls.researchExcluded}
+              />
+            </div>
           )}
           {audience === "admin" && (
             <Button variant="outline" asChild>
