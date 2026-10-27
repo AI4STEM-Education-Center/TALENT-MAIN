@@ -4,6 +4,10 @@
 // pure question/answer model and the decision rules.
 
 import { createHash, randomBytes } from "node:crypto";
+import {
+  isResearchExempt,
+  researchParticipantWhere,
+} from "@/lib/research-exclusion";
 import { prisma } from "@/lib/prisma";
 import { getActiveConsentVersion } from "@/lib/consent";
 import { isEmailAddress } from "@/lib/email-purposes";
@@ -125,7 +129,7 @@ export async function getConsentReprompt(
   known?: Pick<IrbStanding, "decision" | "decidedAt">,
   promptedForms?: Awaited<ReturnType<typeof getPromptedPostForms>>,
 ): Promise<ConsentReprompt | null> {
-  if (role !== "STUDENT") return null;
+  if (role !== "STUDENT" || (await isResearchExempt(userId, role))) return null;
   const irb = known ?? (await getIrbDecision(userId, role));
   if (irb.decision !== "DECLINE") return null;
   const campaign = repromptCampaign(
@@ -203,6 +207,7 @@ export async function getPreSurveyStatus(
   userId: string,
   role: SurveyRole,
 ): Promise<PreSurveyStatus> {
+  if (await isResearchExempt(userId, role)) return { state: "NONE" };
   const form = await getEnabledSurveyForm("PRE", role);
   if (!form) return { state: "NONE" };
 
@@ -249,6 +254,7 @@ export async function getDueSurveyStatus(
   userId: string,
   role: SurveyRole,
 ): Promise<DueSurveyStatus> {
+  if (await isResearchExempt(userId, role)) return { state: "NONE" };
   const [preForm, postForms, irb] = await Promise.all([
     getEnabledSurveyForm("PRE", role),
     getPromptedPostForms(role),
@@ -329,7 +335,10 @@ export async function countPostPromptAudience(form: {
   if (!active) return { eligible: 0, completed: 0 };
   const [records, beforeStart, pres, done] = await Promise.all([
     prisma.consentRecord.findMany({
-      where: { formVersionId: active.id, userId: { not: null } },
+      where: {
+        formVersionId: active.id,
+        user: researchParticipantWhere(form.role),
+      },
       orderBy: [{ signedAt: "desc" }, { id: "desc" }],
       select: { userId: true, decision: true },
     }),

@@ -1,3 +1,4 @@
+import { isResearchExempt } from "@/lib/research-exclusion";
 import { prisma } from "@/lib/prisma";
 import { CONSENT_NOT_REQUIRED } from "@/lib/consent-claim";
 
@@ -121,7 +122,8 @@ export interface ConsentClaim {
  * What to stamp on a session's JWT at sign-in and on an explicit
  * `update()` refresh (see src/lib/auth.ts). Null means "this user still owes
  * us an answer on the currently active form"; a NOT_REQUIRED decision means
- * the role has no published form at all, which must NOT gate anyone (see
+ * the role has no published form or all the user's classes are excluded
+ * from research, which must NOT gate anyone (see
  * src/lib/consent-claim.ts).
  *
  * Deliberately NOT called from src/proxy.ts on every request: proxy.ts only
@@ -135,6 +137,8 @@ export async function getUserConsentClaim(
   userId: string,
   role: ConsentRole,
 ): Promise<ConsentClaim | null> {
+  if (await isResearchExempt(userId, role))
+    return { version: null, decision: CONSENT_NOT_REQUIRED };
   const active = await getActiveConsentVersion(role);
   if (!active) return { version: null, decision: CONSENT_NOT_REQUIRED };
 
