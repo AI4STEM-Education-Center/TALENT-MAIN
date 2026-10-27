@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.0.28 - 2026-11-06
+
+- Added an administrator option to exclude a class from research, so its students and teacher are no longer prompted for the IRB consent form, the IRB re-consent request, or the pre- and post-surveys once every class they belong to is excluded, while keeping consent records and survey answers already on file.
+
 ## v0.0.27 - 2026-10-30
 
 - Added a compensation email for researchers to thank students who completed the Period 1 or Period 2 post-survey (or both) and invite them to reply to arrange their compensation, automatically skipping students an earlier compensation email already reached.
