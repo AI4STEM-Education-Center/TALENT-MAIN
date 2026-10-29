@@ -30,6 +30,9 @@ set -euo pipefail
 API="https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/firewall/access_rules/rules"
 MARKER="github-actions-runner-allowlist"
 RUN_MARKER="${MARKER} run=${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}-${GITHUB_JOB:-job}"
+# Notes are written as "<RUN_MARKER> <workflow>"; matching the trailing space
+# keeps job "check" from matching a rule written by job "check2".
+RUN_MARKER_NOTE="${RUN_MARKER} "
 STALE_AFTER_SECONDS=$((2 * 60 * 60))
 WAIT_FOR_OTHER_RUN_SECONDS=$((20 * 60))
 
@@ -54,7 +57,7 @@ rules_for_ip() {
 # Ids of rules whose notes contain the given text (exits on API failure).
 rule_ids_with_note() {
   local response
-  response=$(cf -G "${API}" --data-urlencode "notes=$1" --data "per_page=100")
+  response=$(cf -G "${API}" --data-urlencode "notes=${MARKER}" --data "per_page=100")
   jq -e '.success == true' >/dev/null <<<"$response" || {
     echo "Failed to list IP Access rules: $(jq -c '.errors? // .' <<<"$response" 2>/dev/null || echo "$response")" >&2
     exit 1
@@ -100,7 +103,7 @@ add() {
   echo "Runner IPv4: ${ip}"
   sweep || echo "Warning: stale-rule sweep incomplete; the scheduled sweep will retry." >&2
 
-  body=$(jq -n --arg ip "$ip" --arg notes "${RUN_MARKER} ${GITHUB_WORKFLOW:-}" \
+  body=$(jq -n --arg ip "$ip" --arg notes "${RUN_MARKER_NOTE}${GITHUB_WORKFLOW:-}" \
     '{mode: "whitelist", configuration: {target: "ip", value: $ip}, notes: $notes}')
   deadline=$(($(date -u +%s) + WAIT_FOR_OTHER_RUN_SECONDS))
   while :; do
@@ -113,7 +116,7 @@ add() {
 
     # Creation failed or its response was lost: reconcile against what exists.
     existing=$(rules_for_ip "$ip")
-    rule_id=$(jq -r --arg m "$RUN_MARKER" '.[] | select((.notes // "") | contains($m)) | .id' <<<"$existing" | head -n1)
+    rule_id=$(jq -r --arg m "$RUN_MARKER_NOTE" '.[] | select((.notes // "") | contains($m)) | .id' <<<"$existing" | head -n1)
     if [ -n "$rule_id" ]; then
       export_owned "$rule_id" # our create succeeded despite the error
       break
@@ -160,18 +163,18 @@ add() {
 }
 
 remove() {
-  local ids failed=0
+  local discovered="" ids failed=0
   # Every rule tagged with this run's marker, which includes CF_ALLOWLIST_RULE_ID
-  # and any rule whose create response never reached us.
-  ids=$(
-    {
-      [ -n "${CF_ALLOWLIST_RULE_ID:-}" ] && echo "$CF_ALLOWLIST_RULE_ID"
-      rule_ids_with_note "$RUN_MARKER"
-    } | sort -u
-  )
+  # and any rule whose create response never reached us. A failed lookup must
+  # not stop the delete of the id we already know.
+  if ! discovered=$(rule_ids_with_note "$RUN_MARKER_NOTE"); then
+    echo "Could not look up this run's rules; deleting the exported rule only." >&2
+    failed=1
+  fi
+  ids=$(printf '%s\n%s\n' "${CF_ALLOWLIST_RULE_ID:-}" "$discovered" | sed '/^$/d' | sort -u)
   if [ -z "$ids" ]; then
     echo "No allowlist rule owned by this job; nothing to remove."
-    return 0
+    return "$failed"
   fi
   for id in $ids; do delete_rule "$id" || failed=1; done
   return "$failed"
