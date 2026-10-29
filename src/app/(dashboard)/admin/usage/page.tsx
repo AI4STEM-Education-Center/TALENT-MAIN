@@ -29,15 +29,26 @@ export default async function AdminUsagePage({
         <h1 className="text-3xl font-bold">Student usage records</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Quiz results, unfinished quizzes, practice attempts, and recorded
-          simulation sessions across all classes. Simulation activity is
-          client-reported and is recorded only when research consent allows it.
+          simulation sessions and learning material views across all classes.
+          Simulation and material activity is client-reported and is recorded
+          only when research consent allows it. Opens from the Simulations or
+          Course Materials library are self-directed and are not filed under a
+          class.
         </p>
-        <Link
-          href="/admin/assistant-chats"
-          className="text-sm text-primary hover:underline"
-        >
-          View assistant chat transcripts
-        </Link>
+        <div className="flex flex-wrap gap-x-4 gap-y-1">
+          <Link
+            href="/admin/assistant-chats"
+            className="text-sm text-primary hover:underline"
+          >
+            View assistant chat transcripts
+          </Link>
+          <Link
+            href="/admin/resource-engagement"
+            className="text-sm text-primary hover:underline"
+          >
+            View learning resource engagement summary
+          </Link>
+        </div>
       </div>
       <form className="flex flex-wrap items-end gap-3" action="/admin/usage">
         <label className="grid gap-1 text-sm">
@@ -105,7 +116,11 @@ export default async function AdminUsagePage({
                   <th className="p-2">Class</th>
                   <th className="p-2">Activity</th>
                   <th className="p-2">
-                    {usage.kind === "results" ? "Completed" : "Started"}
+                    {usage.kind === "results"
+                      ? "Completed"
+                      : usage.kind === "materials"
+                        ? "Opened"
+                        : "Started"}
                   </th>
                   <th className="p-2">Details</th>
                 </tr>
@@ -135,6 +150,11 @@ export default async function AdminUsagePage({
                       ) : (
                         row.className
                       )}
+                      {row.classNote && (
+                        <p className="text-xs text-muted-foreground">
+                          {row.classNote}
+                        </p>
+                      )}
                     </td>
                     <td className="p-2">
                       {row.href ? (
@@ -149,7 +169,7 @@ export default async function AdminUsagePage({
                       )}
                       {usage.kind !== "results" && (
                         <p className="text-xs text-muted-foreground">
-                          {row.quizName}
+                          {row.subtitle ?? row.quizName}
                         </p>
                       )}
                     </td>
