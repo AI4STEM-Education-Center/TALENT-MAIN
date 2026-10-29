@@ -31,9 +31,10 @@ export default async function AdminUsagePage({
           Quiz results, unfinished quizzes, practice attempts, and recorded
           simulation sessions and learning material views across all classes.
           Simulation and material activity is client-reported and is recorded
-          only when research consent allows it. Opens from the Simulations or
-          Course Materials library are self-directed and are not filed under a
-          class.
+          only when research consent allows it. Simulations opened from the
+          Simulations library are self-directed and never filed under a class; a
+          Course Materials library open is filed under a class only when exactly
+          one of the student&apos;s classes shares that material.
         </p>
         <div className="flex flex-wrap gap-x-4 gap-y-1">
           <Link

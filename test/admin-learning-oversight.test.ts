@@ -403,6 +403,83 @@ describe("admin student usage records", () => {
     expect(records[0]).not.toHaveProperty("surface");
   });
 
+  it.each([
+    [
+      "library",
+      null,
+      "Simulations library",
+      "Self-directed open, not tied to a class",
+    ],
+    [
+      "quiz_results",
+      null,
+      "No class recorded",
+      "Opened from quiz results without a verified attempt",
+    ],
+    [
+      "results_page",
+      "attempt",
+      "No class recorded",
+      "Opened from quiz results whose class no longer assigns this quiz",
+    ],
+    [
+      "rail",
+      null,
+      "No class recorded",
+      "Opened from quiz results without a verified attempt",
+    ],
+    [
+      "mobile",
+      "attempt",
+      "No class recorded",
+      "Opened from quiz results whose class no longer assigns this quiz",
+    ],
+  ])(
+    "labels a class-less %s simulation session (attempt %s)",
+    async (surface, attemptId, className, note) => {
+      const { student } = await createStudent();
+      await prisma.simulationSession.create({
+        data: {
+          simulationId: "sim",
+          studentId: student.id,
+          surface,
+          attemptId,
+        },
+      });
+      asRole("ADMIN");
+      const [row] = (await getAdminUsage({ kind: "simulations" })).records;
+      expect(row.className).toBe(className);
+      expect(row.classNote).toBe(
+        `${note}. Student is not enrolled in any class`,
+      );
+    },
+  );
+
+  it("limits learning material views to admins and research scientists", async () => {
+    const { student } = await createStudent();
+    await prisma.learningResourceSession.create({
+      data: {
+        studentId: student.id,
+        materialId: "material",
+        surface: "materials_library",
+      },
+    });
+    for (const role of ["ADMIN", "RESEARCHER"]) {
+      asRole(role);
+      expect((await getAdminUsage({ kind: "materials" })).total).toBe(1);
+    }
+    for (const role of ["TEACHER", "STUDENT"]) {
+      asRole(role);
+      await expect(getAdminUsage({ kind: "materials" })).rejects.toThrow(
+        "redirect:/login",
+      );
+    }
+    vi.mocked(auth).mockResolvedValue(null as never);
+    await expect(getAdminUsage({ kind: "materials" })).rejects.toThrow(
+      "redirect:/login",
+    );
+  });
+
   it("lists learning material views with recommendation context and reading detail", async () => {
     const { teacher, cls, student, quiz } = await seed();
     const other = await createStudent();
