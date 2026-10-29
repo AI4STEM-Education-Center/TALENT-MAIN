@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.0.29 - 2026-11-13
+
+- Added learning material views to the administrator student usage records, listing each time a student opened a material with whether it was recommended after a quiz (including the page range) or self-directed, along with reading time, pages viewed, clicks, and PDF opens, with links between these individual views and the learning resource engagement summary.
+- Improved how student usage records show simulation sessions and material views that are not tied to a class, naming the Simulations or Course Materials library they were opened from (or why no class was recorded) and listing the student's current classes, instead of the misleading "Outside a class".
+
 ## v0.0.28 - 2026-11-06
 
 - Added an administrator option to exclude a class from research, so its students and teacher are no longer prompted for the IRB consent form, the IRB re-consent request, or the pre- and post-surveys once every class they belong to is excluded, while keeping consent records and survey answers already on file.
