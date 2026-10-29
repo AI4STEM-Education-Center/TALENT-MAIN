@@ -76,6 +76,15 @@ jobs:
             # cannot do this job on the containerd image store.
             bash prune-docker.sh
 
+      - name: Allowlist runner IP on Cloudflare
+        # Bot Fight Mode challenges GitHub's datacenter IPs and cannot be
+        # skipped by WAF rules; see .github/scripts/cf-runner-allowlist.sh.
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_CI_ALLOWLIST_TOKEN }}
+          CLOUDFLARE_ZONE_ID: 16ecabb8765cf2e527c99fa5ac1f8165
+          ALLOWLIST_PROBE_URL: https://dev.ai4talent.org/
+        run: bash .github/scripts/cf-runner-allowlist.sh add
+
       - name: Run critical live-site checks
         env:
           TEST_PROFILE: critical
@@ -104,3 +113,10 @@ jobs:
           path: pressure/.tmp/api/*.json
           if-no-files-found: warn
           retention-days: 30
+
+      - name: Remove runner IP allowlist
+        if: always()
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_CI_ALLOWLIST_TOKEN }}
+          CLOUDFLARE_ZONE_ID: 16ecabb8765cf2e527c99fa5ac1f8165
+        run: bash .github/scripts/cf-runner-allowlist.sh remove
