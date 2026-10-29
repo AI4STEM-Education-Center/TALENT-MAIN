@@ -55,28 +55,39 @@ rules_for_ip() {
 }
 
 # Every rule whose notes match the API's `notes` search, across all pages, as
-# one JSON array. Exits non-zero if any page can't be read, so callers never
-# act on a partial list.
+# one JSON array. Rules stream through a temp file (not argv) so large lists
+# can't hit argument-size limits. Paging stops at `total_pages` when present,
+# otherwise at the first short page. Fails if any page can't be read or
+# parsed, so callers never act on a partial list.
 rules_with_note_search() {
-  local page=1 pages=1 response all="[]"
-  while [ "$page" -le "$pages" ]; do
-    response=$(cf -G "${API}" --data-urlencode "notes=$1" --data "per_page=100" --data "page=${page}")
-    jq -e '.success == true' >/dev/null 2>&1 <<<"$response" || {
+  local page=1 per_page=100 response count total_pages tmp
+  tmp=$(mktemp) || return 1
+  while :; do
+    response=$(cf -G "${API}" --data-urlencode "notes=$1" --data "per_page=${per_page}" --data "page=${page}")
+    if ! jq -e '.success == true and (.result | type == "array")' >/dev/null 2>&1 <<<"$response"; then
       echo "Failed to list IP Access rules (page ${page}): $(jq -c '.errors? // .' <<<"$response" 2>/dev/null || echo "${response:-no response}")" >&2
+      rm -f "$tmp"
       return 1
-    }
-    all=$(jq -c --argjson acc "$all" '$acc + .result' <<<"$response")
-    pages=$(jq -r '.result_info.total_pages // 1' <<<"$response")
+    fi
+    jq -c '.result[]' <<<"$response" >>"$tmp" || { rm -f "$tmp"; return 1; }
+    count=$(jq -r '.result | length' <<<"$response") || { rm -f "$tmp"; return 1; }
+    total_pages=$(jq -r '.result_info.total_pages // empty' <<<"$response") || { rm -f "$tmp"; return 1; }
+    if [ -n "$total_pages" ]; then
+      [ "$page" -ge "$total_pages" ] && break
+    elif [ "$count" -lt "$per_page" ]; then
+      break
+    fi
     page=$((page + 1))
   done
-  echo "$all"
+  jq -s '.' "$tmp" || { rm -f "$tmp"; return 1; }
+  rm -f "$tmp"
 }
 
 # Ids of rules whose notes contain the given text (fails on API failure).
 rule_ids_with_note() {
   local rules
   rules=$(rules_with_note_search "${RUN_MARKER}") || return 1
-  jq -r --arg note "$1" '.[] | select((.notes // "") | contains($note)) | .id' <<<"$rules"
+  jq -r --arg note "$1" '.[] | select((.notes // "") | contains($note)) | .id' <<<"$rules" || return 1
 }
 
 delete_rule() {
@@ -97,7 +108,10 @@ sweep() {
   }
   ids=$(jq -r --argjson cutoff "$cutoff" --arg marker "$MARKER" '
     .[] | select((.notes // "") | startswith($marker))
-    | select((.created_on | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) < $cutoff) | .id' <<<"$response")
+    | select((.created_on | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) < $cutoff) | .id' <<<"$response") || {
+    echo "Failed to parse IP Access rules for sweep" >&2
+    return 1
+  }
   for id in $ids; do
     echo "Sweeping stale runner allowlist rule ${id}"
     delete_rule "$id" || failed=1
