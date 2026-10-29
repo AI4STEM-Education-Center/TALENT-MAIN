@@ -1,0 +1,32 @@
+name: Sweep Cloudflare Runner Allowlist
+
+# Backstop for .github/scripts/cf-runner-allowlist.sh: jobs remove their own
+# IP Access allow rule in an always() step, but a runner killed mid-job can't.
+# Such a rule bypasses the zone's security features for that IP, so delete any
+# CI-created rule older than two hours on a schedule rather than waiting for
+# the next live-site check to sweep it.
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cf-allowlist-sweep
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Remove stale runner allowlist rules
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_CI_ALLOWLIST_TOKEN }}
+          CLOUDFLARE_ZONE_ID: 16ecabb8765cf2e527c99fa5ac1f8165
+        run: bash .github/scripts/cf-runner-allowlist.sh sweep
