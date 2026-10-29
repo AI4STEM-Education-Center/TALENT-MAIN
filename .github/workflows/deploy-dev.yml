@@ -103,6 +103,8 @@ jobs:
           DEV_PRESSURE_RESULTS_TOKEN: ${{ secrets.DEV_PRESSURE_RESULTS_TOKEN }}
           PROD_RESULTS_URL: https://ai4talent.org
           PROD_PRESSURE_RESULTS_TOKEN: ${{ secrets.PROD_PRESSURE_RESULTS_TOKEN }}
+          # The runner allowlist rule matches the IPv4 address only.
+          NODE_OPTIONS: --dns-result-order=ipv4first
         run: node pressure/api-test.mjs
 
       - name: Upload critical-check result
