@@ -35,6 +35,8 @@ RUN_MARKER="${MARKER} run=${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}-${GIT
 RUN_MARKER_NOTE="${RUN_MARKER} "
 STALE_AFTER_SECONDS=$((2 * 60 * 60))
 WAIT_FOR_OTHER_RUN_SECONDS=$((20 * 60))
+# Hard stop for paginated listings (5,000 rules); CI never holds more than a few.
+MAX_PAGES=50
 
 # Prints the response body; never exits non-zero on transport errors so
 # callers can reconcile ambiguous outcomes (an empty body means "unknown").
@@ -58,17 +60,30 @@ rules_for_ip() {
 # one JSON array. Rules stream through a temp file (not argv) so large lists
 # can't hit argument-size limits. Paging stops at `total_pages` when present,
 # otherwise at the first short page. Fails if any page can't be read or
-# parsed, so callers never act on a partial list.
+# parsed, if a page repeats the previous one (the API ignoring `page`), or past
+# MAX_PAGES, so callers never act on a partial list or loop forever.
 rules_with_note_search() {
-  local page=1 per_page=100 response count total_pages tmp
+  local page=1 per_page=100 response count total_pages tmp first_id prev_first_id=""
   tmp=$(mktemp) || return 1
   while :; do
+    if [ "$page" -gt "$MAX_PAGES" ]; then
+      echo "IP Access rule listing exceeded ${MAX_PAGES} pages; refusing to act on it" >&2
+      rm -f "$tmp"
+      return 1
+    fi
     response=$(cf -G "${API}" --data-urlencode "notes=$1" --data "per_page=${per_page}" --data "page=${page}")
     if ! jq -e '.success == true and (.result | type == "array")' >/dev/null 2>&1 <<<"$response"; then
       echo "Failed to list IP Access rules (page ${page}): $(jq -c '.errors? // .' <<<"$response" 2>/dev/null || echo "${response:-no response}")" >&2
       rm -f "$tmp"
       return 1
     fi
+    first_id=$(jq -r '.result[0].id // empty' <<<"$response") || { rm -f "$tmp"; return 1; }
+    if [ -n "$first_id" ] && [ "$first_id" = "$prev_first_id" ]; then
+      echo "IP Access rule page ${page} repeats page $((page - 1)); pagination is not advancing" >&2
+      rm -f "$tmp"
+      return 1
+    fi
+    prev_first_id=$first_id
     jq -c '.result[]' <<<"$response" >>"$tmp" || { rm -f "$tmp"; return 1; }
     count=$(jq -r '.result | length' <<<"$response") || { rm -f "$tmp"; return 1; }
     total_pages=$(jq -r '.result_info.total_pages // empty' <<<"$response") || { rm -f "$tmp"; return 1; }
