@@ -42,6 +42,12 @@ export default async function AdminResourceEngagementPage({
           only while the tab is visible. Activity is client-reported and
           recorded only for students whose research consent allows it.
         </p>
+        <Link
+          href="/admin/usage?kind=materials"
+          className="text-sm text-primary hover:underline"
+        >
+          View individual material views by student
+        </Link>
       </div>
 
       <nav aria-label="Report window" className="flex flex-wrap gap-2">
