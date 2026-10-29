@@ -244,14 +244,17 @@ describe("admin student usage records", () => {
       "Results rail (legacy, desktop) (Desktop)",
     );
     expect((await getAdminUsage({ kind: "simulations" })).total).toBe(52);
-    expect(
-      (
-        await getAdminUsage({
-          kind: "simulations",
-          studentId: other.student.id,
-        })
-      ).records[0].className,
-    ).toBe("Outside a class");
+    const library = (
+      await getAdminUsage({
+        kind: "simulations",
+        studentId: other.student.id,
+      })
+    ).records[0];
+    expect(library.className).toBe("Simulations library");
+    expect(library.classHref).toBeNull();
+    expect(library.classNote).toBe(
+      "Self-directed open, not tied to a class. Student is not enrolled in any class",
+    );
     expect(
       (await getAdminUsage({ kind: "simulations", q: other.user.email })).total,
     ).toBe(1);
@@ -340,6 +343,238 @@ describe("admin student usage records", () => {
       expect.arrayContaining(["In progress", "Completed · 90%"]),
     );
     expect(practice.records[0]).not.toHaveProperty("questions");
+  });
+
+  it("explains class-less simulation sessions and lists the student's current classes", async () => {
+    const { cls, student, quiz } = await seed();
+    await prisma.classEnrollment.create({
+      data: { classId: cls.id, studentId: student.id },
+    });
+    await prisma.simulationSession.createMany({
+      data: [
+        {
+          id: "s-library",
+          simulationId: "sim",
+          studentId: student.id,
+          quizId: quiz.id,
+          surface: "library",
+          startedAt: new Date("2026-01-03"),
+        },
+        {
+          id: "s-unverified",
+          simulationId: "sim",
+          studentId: student.id,
+          quizId: quiz.id,
+          surface: "rail",
+          startedAt: new Date("2026-01-02"),
+        },
+        {
+          id: "s-class",
+          simulationId: "sim",
+          studentId: student.id,
+          classId: cls.id,
+          quizId: quiz.id,
+          surface: "quiz_results",
+          startedAt: new Date("2026-01-01"),
+        },
+      ],
+    });
+    asRole("ADMIN");
+    const { records } = await getAdminUsage({ kind: "simulations" });
+    expect(
+      records.map(({ id, className, classNote }) => ({
+        id,
+        className,
+        classNote,
+      })),
+    ).toEqual([
+      {
+        id: "s-library",
+        className: "Simulations library",
+        classNote: `Self-directed open, not tied to a class. Student's classes: ${cls.name}`,
+      },
+      {
+        id: "s-unverified",
+        className: "No class recorded",
+        classNote: `Opened from quiz results without a verified attempt. Student's classes: ${cls.name}`,
+      },
+      { id: "s-class", className: cls.name, classNote: null },
+    ]);
+    expect(records[0]).not.toHaveProperty("surface");
+  });
+
+  it.each([
+    [
+      "library",
+      null,
+      "Simulations library",
+      "Self-directed open, not tied to a class",
+    ],
+    [
+      "quiz_results",
+      null,
+      "No class recorded",
+      "Opened from quiz results without a verified attempt",
+    ],
+    [
+      "results_page",
+      "attempt",
+      "No class recorded",
+      "Opened from quiz results whose class no longer assigns this quiz",
+    ],
+    [
+      "rail",
+      null,
+      "No class recorded",
+      "Opened from quiz results without a verified attempt",
+    ],
+    [
+      "mobile",
+      "attempt",
+      "No class recorded",
+      "Opened from quiz results whose class no longer assigns this quiz",
+    ],
+  ])(
+    "labels a class-less %s simulation session (attempt %s)",
+    async (surface, attemptId, className, note) => {
+      const { student } = await createStudent();
+      await prisma.simulationSession.create({
+        data: {
+          simulationId: "sim",
+          studentId: student.id,
+          surface,
+          attemptId,
+        },
+      });
+      asRole("ADMIN");
+      const [row] = (await getAdminUsage({ kind: "simulations" })).records;
+      expect(row.className).toBe(className);
+      expect(row.classNote).toBe(
+        `${note}. Student is not enrolled in any class`,
+      );
+    },
+  );
+
+  it("limits learning material views to admins and research scientists", async () => {
+    const { student } = await createStudent();
+    await prisma.learningResourceSession.create({
+      data: {
+        studentId: student.id,
+        materialId: "material",
+        surface: "materials_library",
+      },
+    });
+    for (const role of ["ADMIN", "RESEARCHER"]) {
+      asRole(role);
+      expect((await getAdminUsage({ kind: "materials" })).total).toBe(1);
+    }
+    for (const role of ["TEACHER", "STUDENT"]) {
+      asRole(role);
+      await expect(getAdminUsage({ kind: "materials" })).rejects.toThrow(
+        "redirect:/login",
+      );
+    }
+    vi.mocked(auth).mockResolvedValue(null as never);
+    await expect(getAdminUsage({ kind: "materials" })).rejects.toThrow(
+      "redirect:/login",
+    );
+  });
+
+  it("lists learning material views with recommendation context and reading detail", async () => {
+    const { teacher, cls, student, quiz } = await seed();
+    const other = await createStudent();
+    const material = await prisma.learningMaterial.create({
+      data: {
+        teacherId: teacher.id,
+        classId: cls.id,
+        title: "Forces handout",
+        originalName: "forces.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 10,
+        storageKey: "forces.pdf",
+        bucket: "test",
+      },
+    });
+    await prisma.learningResourceSession.createMany({
+      data: [
+        {
+          id: "m-rec",
+          studentId: student.id,
+          materialId: material.id,
+          materialTitle: "Old title",
+          classId: cls.id,
+          quizId: quiz.id,
+          attemptId: "attempt",
+          surface: "results_recommendation",
+          recommended: true,
+          pageStart: 2,
+          pageEnd: 4,
+          openedAt: new Date("2026-01-03"),
+          endedAt: new Date("2026-01-03T00:05:00Z"),
+          activeMs: 60_000,
+          dwellMs: 90_000,
+          clickCount: 7,
+          pdfOpenCount: 1,
+          pagesViewed: 3,
+        },
+        {
+          id: "m-library",
+          studentId: student.id,
+          materialId: material.id,
+          surface: "materials_library",
+          openedAt: new Date("2026-01-02"),
+          pagesViewed: 1,
+        },
+        {
+          id: "m-removed",
+          studentId: other.student.id,
+          materialId: "gone",
+          materialTitle: "Deleted notes",
+          classId: cls.id,
+          surface: "materials_library",
+          openedAt: new Date("2026-01-01"),
+        },
+      ],
+    });
+    asRole("ADMIN");
+    const usage = await getAdminUsage({ kind: "materials" });
+    expect(usage.kind).toBe("materials");
+    expect(usage.total).toBe(3);
+    const [rec, library, removed] = usage.records;
+    expect(rec).toMatchObject({
+      title: "Forces handout",
+      href: `/admin/materials/${material.id}`,
+      className: cls.name,
+      classHref: `/admin/classes/${cls.id}/stats`,
+      subtitle: `Recommended pp. 2–4 after ${quiz.name}`,
+      completedAt: new Date("2026-01-03T00:05:00Z"),
+    });
+    expect(rec.detail).toBe(
+      "1m 00s active / 1m 30s visible · 3 pages viewed · 7 clicks · 1 PDF opens · Quiz results (recommended)",
+    );
+    expect(library).toMatchObject({
+      className: "Course materials library",
+      subtitle: "Self-directed reading",
+      quizName: "—",
+    });
+    expect(library.detail).toContain("1 page viewed");
+    expect(library.classNote).toContain("Student is not enrolled in any class");
+    expect(removed).toMatchObject({
+      title: "Deleted notes (removed)",
+      href: undefined,
+    });
+    expect(
+      (await getAdminUsage({ kind: "materials", q: other.user.email })).total,
+    ).toBe(1);
+    expect(
+      (
+        await getAdminUsage({
+          kind: "materials",
+          classId: cls.id,
+          studentId: student.id,
+        })
+      ).total,
+    ).toBe(1);
   });
 
   it("normalizes malformed kinds and pagination", async () => {
