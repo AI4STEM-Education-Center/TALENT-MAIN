@@ -11,6 +11,10 @@ export type ExamHistoryItem = {
   topicName: string;
   quizName: string;
   score: number;
+  /** Alternative version this retake was taken on; null for the quiz itself. */
+  alternativeVersion?: string | null;
+  /** Previously-correct questions left out of an alternative retake. */
+  excludedCount?: number;
   /** ISO string — formatted on the client to avoid SSR/runtime mismatch. */
   completedAt: string;
 };
@@ -67,6 +71,14 @@ export function ExamHistoryList({
                 <div className="min-w-0 flex-1">
                   <p className="font-medium text-sm truncate">
                     {item.quizName}
+                    {item.alternativeVersion && (
+                      <>
+                        {" "}
+                        <Badge variant="outline">
+                          Alternative: {item.alternativeVersion}
+                        </Badge>
+                      </>
+                    )}
                   </p>
                   <p className="text-xs text-muted-foreground truncate">
                     {showClass && (
@@ -80,6 +92,9 @@ export function ExamHistoryList({
                     {/* topicName can be empty — quizzes may be ungrouped */}
                     {item.topicName && <>{item.topicName} · </>}
                     {item.completedAt && formatDate(item.completedAt)}
+                    {!!item.excludedCount && (
+                      <> · {item.excludedCount} previously correct left out</>
+                    )}
                   </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
