@@ -8,6 +8,8 @@ Each change mode shows the original next to its two newest drafts, question by q
 
 Students use **Practice alternatives** on a class quiz, or **Practice another version** after a graded attempt. The practice landing page lists their recent practice scores. New attempts prefer unseen published versions; once exhausted, they avoid the immediately previous version when another is available. Reloading a started attempt resumes exactly the same questions and choice order. Completing practice never updates graded progress, consumes graded attempts, or changes grade exports.
 
+Students who miss a question can also **Chat with assistant** about it from their results. The assistant can offer the existing alternative-version question for that exact question, answerable inline, without generating anything new. See [Wrong-answer coach](wrong-answer-coach.md).
+
 ## Setup
 
 - Deploy the web application and worker together. The additive Prisma schema creates `QuizPracticeVersion` and `QuizPracticeAttempt`, plus the round/purpose/feedback/standalone columns on `QuizPracticeVersion`. Existing records need no backfill; versions from before rounds existed appear only under **Saved versions**.
