@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Loader2, MessageCircle, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -132,6 +132,7 @@ export function WrongAnswerCoachButton({
   questionNumber: number;
 }) {
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   // Stable across the parent's re-renders (the results page polls), so the open
   // dialog's transcript is not re-rendered for nothing.
   const target = useMemo<CoachTarget>(
@@ -141,6 +142,7 @@ export function WrongAnswerCoachButton({
   return (
     <>
       <Button
+        ref={triggerRef}
         type="button"
         variant="outline"
         size="sm"
@@ -153,6 +155,10 @@ export function WrongAnswerCoachButton({
       {open && (
         <Dialog open onOpenChange={setOpen}>
           <DialogContent
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              triggerRef.current?.focus();
+            }}
             // Closing mid-experiment loses nothing (the server keeps the
             // chat), but a stray click on the dimmed page should not dismiss it.
             onInteractOutside={(event) => event.preventDefault()}
@@ -167,7 +173,10 @@ export function WrongAnswerCoachButton({
                 visible while you chat.
               </DialogDescription>
             </DialogHeader>
-            <CoachDialogBody target={target} />
+            <CoachDialogBody
+              key={`${attemptId}:${questionNumber}`}
+              target={target}
+            />
           </DialogContent>
         </Dialog>
       )}

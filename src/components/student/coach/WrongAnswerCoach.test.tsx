@@ -182,6 +182,30 @@ describe("coach dialog", () => {
     ).toContain("attemptId=att-1&questionNumber=3");
   });
 
+  it("restores focus to the opening button after closing", async () => {
+    await open({});
+    const trigger = button(/chat with assistant about question 3/i)!;
+    await act(async () => button(/\bClose\b/i)!.click());
+    await flush();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("reports a stream that ends without a terminal event", async () => {
+    await open({
+      "/api/assistant/coach/chat": () =>
+        ndjson([{ type: "delta", text: "Partial reply" }]),
+    });
+    await type("Help me reason about this");
+    await act(async () => button(/send message/i)!.click());
+    await flush();
+    expect(document.querySelector('[role="dialog"]')!.textContent).toContain(
+      "The connection dropped before the answer finished.",
+    );
+    await type("Please continue");
+    expect(button(/send message/i)?.disabled).toBe(false);
+  });
+
   it("keeps the original question on screen while chatting and renders a streamed practice card", async () => {
     const calls = await open({
       "/api/assistant/coach/chat": () =>

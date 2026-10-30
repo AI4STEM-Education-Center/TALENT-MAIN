@@ -129,7 +129,7 @@ function PracticeQuestion({
           status: "error",
           message:
             res.status === 429
-              ? "Too many tries — wait a moment and try again."
+              ? "This practice question has already been checked today. Try another question."
               : "That practice question is not available right now.",
         });
         return;

@@ -127,6 +127,7 @@ export function useCoachChat(target: CoachTarget) {
           return;
         }
 
+        let completed = false;
         for await (const event of readNdjson<AssistantStreamEvent>(res.body)) {
           if (controller.signal.aborted) break;
           if (event.type === "delta") {
@@ -155,6 +156,7 @@ export function useCoachChat(target: CoachTarget) {
               ),
             );
           } else if (event.type === "done") {
+            completed = true;
             const stats: DisplayAiMetrics = {
               model: event.model,
               provider: event.provider,
@@ -172,8 +174,12 @@ export function useCoachChat(target: CoachTarget) {
               ),
             );
           } else if (event.type === "error") {
+            completed = true;
             fail(event.message, event.guardrailEventId);
           }
+        }
+        if (!completed && !controller.signal.aborted) {
+          fail("The connection dropped before the answer finished.");
         }
       } catch {
         if (!controller.signal.aborted) {
