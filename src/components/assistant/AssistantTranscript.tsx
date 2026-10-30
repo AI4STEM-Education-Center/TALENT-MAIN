@@ -13,13 +13,14 @@
  * and typing re-renders nothing here at all.
  */
 
-import { memo } from "react";
+import { memo, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Loader2, Paperclip, Wrench } from "lucide-react";
 import { AiMetricsLine } from "@/components/ai-metrics-line";
 import { GuardrailFeedbackButton } from "@/components/guardrails/GuardrailFeedbackButton";
 import { cn } from "@/lib/utils";
+import type { CoachActionView } from "@/lib/assistant/coach-types";
 import type { AssistantTurn, StoredAttachmentRef } from "@/lib/assistant/types";
 import type { DisplayAiMetrics } from "@/lib/ai-metrics";
 
@@ -47,7 +48,15 @@ export type Bubble = AssistantTurn & {
    * numbers are a dev-site aid for checking which model answered and how fast.
    */
   stats?: DisplayAiMetrics;
+  /**
+   * Assistant turns of a wrong-answer coach chat: the structured cards the
+   * coach showed with this reply. Drawn by the transcript's `renderCards`.
+   */
+  cards?: CoachActionView[];
 };
+
+/** How a transcript draws a bubble's cards; only the coach dialog supplies one. */
+export type RenderCards = (cards: CoachActionView[]) => ReactNode;
 
 /** A tool the assistant is running (or just ran) during the pending turn. */
 export type ToolActivity = {
@@ -58,8 +67,10 @@ export type ToolActivity = {
 
 const MessageBubble = memo(function MessageBubble({
   bubble,
+  renderCards,
 }: {
   bubble: Bubble;
+  renderCards?: RenderCards;
 }) {
   const isUser = bubble.role === "user";
   return (
@@ -67,6 +78,8 @@ const MessageBubble = memo(function MessageBubble({
       <div
         className={cn(
           "max-w-[85%] rounded-lg px-3 py-2",
+          // Cards need the room; a plain reply keeps the narrower bubble.
+          bubble.cards && bubble.cards.length > 0 && "w-full max-w-full",
           isUser
             ? "bg-primary text-primary-foreground"
             : "bg-muted text-foreground",
@@ -104,6 +117,10 @@ const MessageBubble = memo(function MessageBubble({
           </p>
         )}
 
+        {renderCards && bubble.cards && bubble.cards.length > 0 && (
+          <div className="mt-2 space-y-2">{renderCards(bubble.cards)}</div>
+        )}
+
         {bubble.stats && (
           <AiMetricsLine
             metrics={bubble.stats}
@@ -136,10 +153,12 @@ export const AssistantTranscript = memo(function AssistantTranscript({
   bubbles,
   activity,
   greeting,
+  renderCards,
 }: {
   bubbles: Bubble[];
   activity: ToolActivity[];
   greeting: string | undefined;
+  renderCards?: RenderCards;
 }) {
   return (
     <>
@@ -151,7 +170,7 @@ export const AssistantTranscript = memo(function AssistantTranscript({
 
       {bubbles.map((bubble, index) => (
         // react-doctor-disable-next-line react-doctor/no-array-index-as-key -- bubbles is append-only; entries are never inserted, removed, or reordered
-        <MessageBubble key={index} bubble={bubble} />
+        <MessageBubble key={index} bubble={bubble} renderCards={renderCards} />
       ))}
 
       {activity.length > 0 && (

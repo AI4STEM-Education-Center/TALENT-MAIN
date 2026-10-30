@@ -1,6 +1,7 @@
 import { XCircle } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { MathText } from "@/components/ui/math-text";
+import { WrongAnswerCoachSlot } from "@/components/student/coach/WrongAnswerCoach";
 import type { StudentMistakeView } from "@/lib/exam-results";
 
 function NumericResponse({
@@ -16,8 +17,15 @@ function NumericResponse({
 
 export function StudentMistakesReview({
   mistakes,
+  coachAttemptId,
 }: {
   mistakes: StudentMistakeView[];
+  /**
+   * The graded attempt these mistakes belong to. When set, each missed question
+   * offers "Chat with assistant" (if the student assistant is on). Omitted for
+   * practice and preview results, which have no stored attempt to coach on.
+   */
+  coachAttemptId?: string;
 }) {
   if (mistakes.length === 0) return null;
 
@@ -51,6 +59,15 @@ export function StudentMistakesReview({
                   {mistake.questionNumber}. <MathText text={mistake.text} />
                 </p>
               </div>
+
+              {coachAttemptId && (
+                <div className="ml-6">
+                  <WrongAnswerCoachSlot
+                    attemptId={coachAttemptId}
+                    questionNumber={mistake.questionNumber}
+                  />
+                </div>
+              )}
 
               <div className="ml-6 space-y-2">
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
