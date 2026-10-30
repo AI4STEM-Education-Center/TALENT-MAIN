@@ -20,7 +20,8 @@ import {
 } from "@/lib/session-recording";
 import { cn } from "@/lib/utils";
 
-type ReplayerInstance = InstanceType<typeof import("@rrweb/replay").Replayer>;
+type ReplayerConstructor = typeof import("@rrweb/replay").Replayer;
+type ReplayerInstance = InstanceType<ReplayerConstructor>;
 
 const SPEEDS = [0.5, 1, 2, 4, 8] as const;
 const KIND_TONE: Record<TimelineKind, string> = {
@@ -176,48 +177,68 @@ function LoadedPlayer({
     events.length > 0 ? events[events.length - 1].timestamp - start : 0,
   );
 
-  // Build the replayer once per recording.
+  // rrweb's replayer is loaded on demand; the effect below builds one per
+  // recording once the class is available, so its subscriptions are created
+  // and released in the same synchronous effect.
+  const [ReplayerClass, setReplayerClass] =
+    useState<ReplayerConstructor | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    import("@rrweb/replay")
+      .then((mod) => {
+        if (!cancelled) setReplayerClass(() => mod.Replayer);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setFailed(
+            err instanceof Error ? err.message : "Could not start replay.",
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
     const host = hostRef.current;
-    if (!host) return;
-    let disposed = false;
-    let replayer: ReplayerInstance | null = null;
-    (async () => {
-      const { Replayer } = await import("@rrweb/replay");
-      if (disposed) return;
-      replayer = new Replayer(events as never, {
+    if (!host || !ReplayerClass) return;
+    const onResize = (size: unknown) => {
+      const { width, height } = size as { width: number; height: number };
+      if (width > 0 && height > 0) setDims({ width, height });
+    };
+    const onFinish = () => setPlaying(false);
+    let replayer: ReplayerInstance;
+    try {
+      replayer = new ReplayerClass(events as never, {
         root: host,
         skipInactive: true,
         showWarning: false,
         mouseTail: { strokeStyle: "#ef4444", lineWidth: 2 },
         UNSAFE_replayCanvas: false,
       });
-      replayer.on("resize", (size: unknown) => {
-        const { width, height } = size as { width: number; height: number };
-        if (width > 0 && height > 0) setDims({ width, height });
-      });
-      replayer.on("finish", () => setPlaying(false));
-      replayerRef.current = replayer;
-      replayer.pause(0);
-      setReady(true);
-    })().catch((err: unknown) => {
-      if (!disposed) {
-        setFailed(
-          err instanceof Error ? err.message : "Could not start replay.",
-        );
-      }
-    });
+    } catch (err) {
+      setFailed(err instanceof Error ? err.message : "Could not start replay.");
+      return;
+    }
+    replayer.on("resize", onResize);
+    replayer.on("finish", onFinish);
+    replayerRef.current = replayer;
+    replayer.pause(0);
+    setReady(true);
     return () => {
-      disposed = true;
       replayerRef.current = null;
+      replayer.off("resize", onResize);
+      replayer.off("finish", onFinish);
       try {
-        replayer?.destroy();
+        replayer.destroy();
       } catch {
         // The replayer may already be torn down with its host.
       }
       host.replaceChildren();
+      setReady(false);
     };
-  }, [events]);
+  }, [ReplayerClass, events]);
 
   // Keep the stage's width so the recorded viewport can be scaled to fit.
   useEffect(() => {
