@@ -53,12 +53,16 @@ export async function GET(_req: Request, { params }: Ctx) {
     if (!recording) return notFound();
 
     const { student, ...rest } = recording;
-    return NextResponse.json({
-      ...rest,
-      areas: parseAreas(recording.areas),
-      studentName: `${student.user.firstName} ${student.user.lastName}`.trim(),
-      studentEmail: student.user.email,
-    });
+    return NextResponse.json(
+      {
+        ...rest,
+        areas: parseAreas(recording.areas),
+        studentName:
+          `${student.user.firstName} ${student.user.lastName}`.trim(),
+        studentEmail: student.user.email,
+      },
+      { headers: { "Cache-Control": "private, no-store" } },
+    );
   } catch (error) {
     logApiError("SESSION_RECORDING_GET", error);
     return NextResponse.json({ error: "Failed to load" }, { status: 500 });

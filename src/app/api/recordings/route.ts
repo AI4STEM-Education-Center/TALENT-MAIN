@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasResearchConsent, parseDeviceType } from "@/lib/consent";
+import {
+  isResearchExempt,
+  allClassesResearchExcluded,
+} from "@/lib/research-exclusion";
 import { rateLimit } from "@/lib/rate-limit";
 import { parseJsonBody } from "@/lib/validation";
 import { logApiError } from "@/lib/system-log";
@@ -27,8 +30,16 @@ export const runtime = "nodejs";
 
 const uploadSchema = z.object({
   recordingId: z.string().regex(RECORDING_ID_PATTERN),
-  seq: z.number().int().min(0).max(RECORDING_MAX_CHUNKS),
-  startedAt: z.number().int().positive(),
+  seq: z
+    .number()
+    .int()
+    .min(0)
+    .max(RECORDING_MAX_CHUNKS - 1),
+  startedAt: z
+    .number()
+    .int()
+    .positive()
+    .max(Date.UTC(2100, 0, 1)),
   entryPath: z.string().max(300),
   path: z.string().max(300).optional(),
   viewport: z.object({
@@ -52,6 +63,22 @@ type StopReason = "no_consent" | "recording_full" | "quota" | "restart";
 
 const stop = (reason: StopReason) =>
   NextResponse.json({ ok: true, accepted: false, stop: reason });
+
+/** Check before capturing anything; POST still checks current consent atomically. */
+export async function GET() {
+  const session = await auth();
+  if (!session?.user)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (session.user.role !== "STUDENT")
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const allowed =
+    !(await isResearchExempt(session.user.id, "STUDENT")) &&
+    (await hasResearchConsent(session.user.id));
+  return NextResponse.json(
+    { allowed },
+    { headers: { "Cache-Control": "private, no-store" } },
+  );
+}
 
 /**
  * POST /api/recordings
@@ -114,112 +141,147 @@ export async function POST(req: NextRequest) {
     const { events, gzip } = decoded;
     const range = eventTimeRange(events);
 
-    const existing = await prisma.sessionRecording.findUnique({
-      where: { id: body.recordingId },
-      select: { studentId: true, byteCount: true, chunkCount: true },
-    });
-    if (existing && existing.studentId !== student.id) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-    // A replay is built from the opening snapshot, so a recording can only
-    // begin with a batch that carries one.
-    if (!existing && !hasFullSnapshot(events)) return stop("restart");
-
-    if (
-      existing &&
-      (existing.byteCount + gzip.length > RECORDING_MAX_BYTES ||
-        existing.chunkCount >= RECORDING_MAX_CHUNKS)
-    ) {
-      return stop("recording_full");
-    }
-    const stored = await prisma.sessionRecording.aggregate({
-      where: { studentId: student.id },
-      _sum: { byteCount: true },
-    });
-    if (
-      (stored._sum.byteCount ?? 0) + gzip.length >
-      RECORDING_MAX_BYTES_PER_STUDENT
-    ) {
-      return stop("quota");
-    }
-
     const userAgent = (req.headers.get("user-agent") ?? "").slice(0, 400);
-    try {
-      await prisma.$transaction(async (tx) => {
-        const batchAreas = areasInEvents(
-          events,
-          body.path ?? (!existing ? body.entryPath : undefined),
-        );
-        const storedAreas = (previous: string) => {
-          const union = new Set([...parseAreas(previous), ...batchAreas]);
-          const areas = REPLAY_AREAS.filter((area) => union.has(area));
-          return areas.length ? `,${areas.join(",")},` : "";
-        };
-        const chunk = {
-          recordingId: body.recordingId,
-          seq: body.seq,
-          firstEventAt: new Date(range.first),
-          lastEventAt: new Date(range.last),
-          eventCount: events.length,
-          byteCount: gzip.length,
-          data: new Uint8Array(gzip),
-        };
-        if (!existing) {
-          // The recording row first: the chunk references it.
-          await tx.sessionRecording.create({
-            data: {
-              id: body.recordingId,
-              studentId: student.id,
-              startedAt: new Date(Math.min(body.startedAt, range.first)),
-              lastEventAt: new Date(range.last),
-              endedAt: body.final ? new Date(range.last) : null,
-              entryPath: body.entryPath,
-              areas: storedAreas(""),
-              userAgent,
-              deviceType: parseDeviceType(userAgent),
-              viewportWidth: body.viewport.width,
-              viewportHeight: body.viewport.height,
-              chunkCount: 1,
-              eventCount: events.length,
-              byteCount: gzip.length,
-            },
-          });
-          await tx.sessionRecordingChunk.create({ data: chunk });
-          return;
-        }
-        await tx.sessionRecordingChunk.create({ data: chunk });
-        const current = await tx.sessionRecording.findUniqueOrThrow({
-          where: { id: body.recordingId },
-          select: { lastEventAt: true, areas: true },
-        });
-        await tx.sessionRecording.update({
-          where: { id: body.recordingId },
+    return await prisma.$transaction(async (tx) => {
+      // Take SQLite's writer lock BEFORE reading consent, ownership or quotas.
+      // This serializes uploads (including across processes) and consent writes,
+      // avoiding stale reads and deferred read-to-write lock upgrades.
+      await tx.student.update({
+        where: { id: student.id },
+        data: { id: student.id },
+      });
+      const enrollments = await tx.classEnrollment.findMany({
+        where: { studentId: student.id },
+        select: { class: { select: { researchExcluded: true } } },
+      });
+      if (
+        allClassesResearchExcluded(
+          "STUDENT",
+          enrollments.map((e) => e.class),
+        ) ||
+        !(await hasResearchConsent(
+          session.user.id,
+          tx,
+          Math.min(body.startedAt, range.first),
+        ))
+      )
+        return stop("no_consent");
+
+      const existing = await tx.sessionRecording.findUnique({
+        where: { id: body.recordingId },
+      });
+      if (existing && existing.studentId !== student.id) {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+      // Check duplicates before quotas: a retry consumes no additional space.
+      const duplicate = await tx.sessionRecordingChunk.findUnique({
+        where: {
+          recordingId_seq: { recordingId: body.recordingId, seq: body.seq },
+        },
+        select: { seq: true },
+      });
+      if (duplicate)
+        return NextResponse.json({ ok: true, accepted: true, duplicate: true });
+      if (!existing && (body.seq !== 0 || !hasFullSnapshot(events)))
+        return stop("restart");
+      if (
+        (existing?.byteCount ?? 0) + gzip.length > RECORDING_MAX_BYTES ||
+        (existing?.chunkCount ?? 0) >= RECORDING_MAX_CHUNKS
+      )
+        return stop("recording_full");
+      const stored = await tx.sessionRecording.aggregate({
+        where: { studentId: student.id },
+        _sum: { byteCount: true },
+      });
+      if (
+        (stored._sum.byteCount ?? 0) + gzip.length >
+        RECORDING_MAX_BYTES_PER_STUDENT
+      )
+        return stop("quota");
+      const batchAreas = areasInEvents(
+        events,
+        body.path ?? (!existing ? body.entryPath : undefined),
+      );
+      const storedAreas = (previous: string) => {
+        const union = new Set([...parseAreas(previous), ...batchAreas]);
+        const areas = REPLAY_AREAS.filter((area) => union.has(area));
+        return areas.length ? `,${areas.join(",")},` : "";
+      };
+      const chunk = {
+        recordingId: body.recordingId,
+        seq: body.seq,
+        firstEventAt: new Date(Math.min(range.first, Date.now())),
+        lastEventAt: new Date(Math.min(range.last, Date.now())),
+        eventCount: events.length,
+        byteCount: gzip.length,
+        data: new Uint8Array(gzip),
+      };
+      if (!existing) {
+        // The recording row first: the chunk references it.
+        await tx.sessionRecording.create({
           data: {
-            areas: storedAreas(current.areas),
-            chunkCount: { increment: 1 },
-            eventCount: { increment: events.length },
-            byteCount: { increment: gzip.length },
-            lastEventAt: new Date(
-              Math.max(current.lastEventAt.getTime(), range.last),
+            id: body.recordingId,
+            studentId: student.id,
+            startedAt: new Date(
+              Math.min(body.startedAt, range.first, Date.now()),
             ),
-            ...(body.final ? { endedAt: new Date(range.last) } : {}),
+            lastEventAt: new Date(Math.min(range.last, Date.now())),
+            endedAt: body.final
+              ? new Date(Math.min(range.last, Date.now()))
+              : null,
+            entryPath: body.entryPath,
+            areas: storedAreas(""),
+            userAgent,
+            deviceType: parseDeviceType(userAgent),
+            viewportWidth: body.viewport.width,
+            viewportHeight: body.viewport.height,
+            chunkCount: 1,
+            eventCount: events.length,
+            byteCount: gzip.length,
           },
         });
-      });
-    } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === "P2002"
-      ) {
-        // A retried upload of a batch we already stored.
-        return NextResponse.json({ ok: true, accepted: true, duplicate: true });
+        await tx.sessionRecordingChunk.create({ data: chunk });
+        return NextResponse.json({ ok: true, accepted: true });
       }
-      throw error;
-    }
-
-    return NextResponse.json({ ok: true, accepted: true });
+      await tx.sessionRecordingChunk.create({ data: chunk });
+      const current = existing;
+      await tx.sessionRecording.update({
+        where: { id: body.recordingId },
+        data: {
+          areas: storedAreas(current.areas),
+          chunkCount: { increment: 1 },
+          eventCount: { increment: events.length },
+          byteCount: { increment: gzip.length },
+          lastEventAt: new Date(
+            Math.min(
+              Date.now(),
+              Math.max(current.lastEventAt.getTime(), range.last),
+            ),
+          ),
+          ...(body.final || current.endedAt
+            ? {
+                endedAt: new Date(
+                  Math.min(
+                    Date.now(),
+                    Math.max(current.lastEventAt.getTime(), range.last),
+                  ),
+                ),
+              }
+            : {}),
+        },
+      });
+      return NextResponse.json({ ok: true, accepted: true });
+    });
   } catch (error) {
-    logApiError("RECORDING_UPLOAD", error);
+    // Prisma errors can embed the submitted DOM in their message/stack.
+    logApiError(
+      "RECORDING_UPLOAD",
+      new Error(
+        error instanceof Error
+          ? `Upload failed (${error.name})`
+          : "Upload failed",
+      ),
+    );
     return NextResponse.json({ error: "Upload failed" }, { status: 500 });
   }
 }

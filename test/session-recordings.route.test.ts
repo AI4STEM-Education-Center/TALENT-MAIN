@@ -3,7 +3,7 @@ import { gzipSync } from "node:zlib";
 
 vi.mock("@/lib/auth", () => ({ auth: vi.fn() }));
 
-import { POST } from "@/app/api/recordings/route";
+import { GET as ELIGIBILITY, POST } from "@/app/api/recordings/route";
 import {
   GET as GET_RECORDING,
   DELETE as DELETE_RECORDING,
@@ -11,10 +11,13 @@ import {
 import { GET as GET_CHUNK } from "@/app/api/admin/session-recordings/[id]/chunks/[seq]/route";
 import { areaWhere, parseAreas } from "@/lib/session-recording-server";
 import { auth } from "@/lib/auth";
+import * as consentHelpers from "@/lib/consent";
 import { prisma } from "@/lib/prisma";
 import { purgeExpiredSessionRecordings } from "@/lib/session-recording-retention";
 import {
   RECORDING_MAX_BYTES,
+  RECORDING_MAX_BYTES_PER_STUDENT,
+  RECORDING_MAX_CHUNK_RAW_BYTES,
   RECORDING_RETENTION_DAYS,
 } from "@/lib/session-recording";
 import { createAdmin, createStudent, createTeacher, resetDb } from "./db";
@@ -71,6 +74,7 @@ async function consent(userId: string, decision = "AGREE") {
       role: "STUDENT",
       formVersionId: form.id,
       decision,
+      signedAt: new Date(T0 - 1000),
       signatureTypedName: "Stu Student",
       ipAddress: "127.0.0.1",
       userAgent: "test",
@@ -215,6 +219,212 @@ describe("POST /api/recordings", () => {
       accepted: false,
       stop: "recording_full",
     });
+  });
+
+  it("checks eligibility before capture and excludes research-exempt students with old consent", async () => {
+    const { user, student } = await createStudent();
+    asUser(user.id, "STUDENT");
+    expect(await (await ELIGIBILITY()).json()).toEqual({ allowed: false });
+    await consent(user.id);
+    expect(await (await ELIGIBILITY()).json()).toEqual({ allowed: true });
+    const { teacher } = await createTeacher();
+    const cls = await prisma.class.create({
+      data: { name: "Excluded", teacherId: teacher.id, researchExcluded: true },
+    });
+    await prisma.classEnrollment.create({
+      data: { classId: cls.id, studentId: student.id },
+    });
+    expect(await (await ELIGIBILITY()).json()).toEqual({ allowed: false });
+    expect(await (await POST(upload())).json()).toMatchObject({
+      stop: "no_consent",
+    });
+    expect(await prisma.sessionRecording.count()).toBe(0);
+  });
+
+  it("rejects withdrawal mid-session, superseded forms and events captured before agreement", async () => {
+    const { user } = await createStudent();
+    await consent(user.id);
+    asUser(user.id, "STUDENT");
+    await POST(upload());
+    await prisma.consentRecord.updateMany({ data: { decision: "DECLINE" } });
+    expect(
+      await (await POST(upload({ seq: 1 }, increments as never))).json(),
+    ).toMatchObject({ stop: "no_consent" });
+    await prisma.consentRecord.updateMany({
+      data: { decision: "AGREE", signedAt: new Date(T0 + 5000) },
+    });
+    expect(
+      await (await POST(upload({ seq: 1 }, increments as never))).json(),
+    ).toMatchObject({ stop: "no_consent" });
+    await prisma.consentFormVersion.updateMany({ data: { isActive: false } });
+    expect(
+      await (await POST(upload({ seq: 1 }, increments as never))).json(),
+    ).toMatchObject({ stop: "no_consent" });
+    expect(await prisma.sessionRecordingChunk.count()).toBe(1);
+  });
+
+  it("serializes concurrent first uploads and acknowledges only an actual duplicate", async () => {
+    const { user } = await createStudent();
+    await consent(user.id);
+    asUser(user.id, "STUDENT");
+    const results = await Promise.all([POST(upload()), POST(upload())]);
+    const bodies = await Promise.all(results.map((r) => r.json()));
+    expect(bodies).toContainEqual({ ok: true, accepted: true });
+    expect(bodies).toContainEqual({
+      ok: true,
+      accepted: true,
+      duplicate: true,
+    });
+    expect(await prisma.sessionRecordingChunk.count()).toBe(1);
+    const other = await createStudent();
+    await consent(other.user.id);
+    await prisma.sessionRecording.deleteMany();
+    mockAuth
+      .mockResolvedValueOnce({
+        user: { id: user.id, role: "STUDENT" },
+      } as never)
+      .mockResolvedValueOnce({
+        user: { id: other.user.id, role: "STUDENT" },
+      } as never);
+    const collision = await Promise.all([POST(upload()), POST(upload())]);
+    expect(collision.map((r) => r.status).sort()).toEqual([200, 404]);
+    expect(await prisma.sessionRecordingChunk.count()).toBe(1);
+  });
+
+  it("checks duplicates before caps and enforces quotas across concurrent appends", async () => {
+    const { user } = await createStudent();
+    await consent(user.id);
+    asUser(user.id, "STUDENT");
+    await POST(upload());
+    const size = gzipSync(JSON.stringify(increments)).length;
+    await prisma.sessionRecording.update({
+      where: { id: REC },
+      data: { byteCount: RECORDING_MAX_BYTES - size },
+    });
+    const results = await Promise.all([
+      POST(upload({ seq: 1 }, increments as never)),
+      POST(upload({ seq: 2 }, increments as never)),
+    ]);
+    expect(await Promise.all(results.map((r) => r.json()))).toContainEqual({
+      ok: true,
+      accepted: false,
+      stop: "recording_full",
+    });
+    expect(
+      (await prisma.sessionRecording.findUniqueOrThrow({ where: { id: REC } }))
+        .byteCount,
+    ).toBe(RECORDING_MAX_BYTES);
+    expect(await (await POST(upload())).json()).toMatchObject({
+      duplicate: true,
+    });
+    await prisma.sessionRecording.update({
+      where: { id: REC },
+      data: { byteCount: RECORDING_MAX_BYTES_PER_STUDENT },
+    });
+    expect(
+      await (
+        await POST(
+          upload({ recordingId: "aaaaaaaa-2222-4333-8444-555555555555" }),
+        )
+      ).json(),
+    ).toMatchObject({ stop: "quota" });
+    expect(await (await POST(upload())).json()).toMatchObject({
+      duplicate: true,
+    });
+  });
+
+  it("rechecks consent after an intervening withdrawal before the write transaction", async () => {
+    const { user } = await createStudent();
+    await consent(user.id);
+    asUser(user.id, "STUDENT");
+    const spy = vi
+      .spyOn(consentHelpers, "hasResearchConsent")
+      .mockImplementationOnce(async () => {
+        await prisma.consentRecord.updateMany({
+          data: { decision: "DECLINE" },
+        });
+        return true;
+      });
+    try {
+      expect(await (await POST(upload())).json()).toMatchObject({
+        stop: "no_consent",
+      });
+      expect(await prisma.sessionRecording.count()).toBe(0);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("serializes per-student quota across distinct recordings and preserves area unions", async () => {
+    const { user } = await createStudent();
+    await consent(user.id);
+    asUser(user.id, "STUDENT");
+    await POST(upload());
+    await Promise.all([
+      POST(
+        upload({ seq: 1, path: "/student/simulations" }, increments as never),
+      ),
+      POST(upload({ seq: 2, path: "/student/materials" }, increments as never)),
+    ]);
+    expect(
+      (await prisma.sessionRecording.findUniqueOrThrow({ where: { id: REC } }))
+        .areas,
+    ).toBe(",simulation,material,");
+    const size = gzipSync(JSON.stringify(snapshot)).length;
+    await prisma.sessionRecording.update({
+      where: { id: REC },
+      data: { byteCount: RECORDING_MAX_BYTES_PER_STUDENT - size },
+    });
+    const results = await Promise.all([
+      POST(upload({ recordingId: "aaaaaaaa-2222-4333-8444-555555555555" })),
+      POST(upload({ recordingId: "bbbbbbbb-2222-4333-8444-555555555555" })),
+    ]);
+    expect(await Promise.all(results.map((r) => r.json()))).toContainEqual({
+      ok: true,
+      accepted: false,
+      stop: "quota",
+    });
+    expect(
+      (await prisma.sessionRecording.aggregate({ _sum: { byteCount: true } }))
+        ._sum.byteCount,
+    ).toBe(RECORDING_MAX_BYTES_PER_STUDENT);
+  });
+
+  it("keeps end timestamps monotonic when final and earlier batches arrive out of order", async () => {
+    const { user } = await createStudent();
+    await consent(user.id);
+    asUser(user.id, "STUDENT");
+    await POST(upload());
+    await POST(upload({ seq: 2, final: true }, increments as never));
+    await POST(upload({ seq: 1, final: true }));
+    const row = await prisma.sessionRecording.findUniqueOrThrow({
+      where: { id: REC },
+    });
+    expect(row.endedAt).toEqual(row.lastEventAt);
+  });
+
+  it("rejects zip bombs and invalid dates and clamps untrusted future retention timestamps", async () => {
+    const { user } = await createStudent();
+    await consent(user.id);
+    asUser(user.id, "STUDENT");
+    const bomb = gzipSync(
+      " ".repeat(RECORDING_MAX_CHUNK_RAW_BYTES + 1),
+    ).toString("base64");
+    expect((await POST(upload({ data: bomb }))).status).toBe(400);
+    expect(
+      (await POST(upload({ startedAt: Number.MAX_SAFE_INTEGER }))).status,
+    ).toBe(400);
+    const before = Date.now();
+    await POST(
+      upload({}, [
+        { type: 2, timestamp: Date.UTC(2099, 0, 1), data: {} },
+      ] as never),
+    );
+    const row = await prisma.sessionRecording.findUniqueOrThrow({
+      where: { id: REC },
+    });
+    expect(row.lastEventAt.getTime()).toBeGreaterThanOrEqual(before);
+    expect(row.lastEventAt.getTime()).toBeLessThanOrEqual(Date.now());
   });
 
   it("rejects malformed payloads", async () => {
