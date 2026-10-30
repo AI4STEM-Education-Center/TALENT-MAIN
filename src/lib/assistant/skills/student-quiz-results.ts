@@ -19,6 +19,7 @@ import {
   PASS_THRESHOLD,
 } from "@/lib/quiz-stats";
 import { canAttemptAgain } from "@/lib/quiz-availability";
+import { GRADED_ATTEMPTS } from "@/lib/alternative-retake";
 import type {
   AssistantSkill,
   AssistantTool,
@@ -147,6 +148,7 @@ const searchQuizResults: AssistantTool<typeof searchInput> = {
       select: {
         quizAttemptId: true,
         quizName: true,
+        practiceVersionName: true,
         topicName: true,
         className: true,
         score: true,
@@ -169,6 +171,7 @@ const searchQuizResults: AssistantTool<typeof searchInput> = {
       results: filtered.slice(0, limit).map((row) => ({
         resultId: row.quizAttemptId,
         quizName: row.quizName,
+        alternativeVersion: row.practiceVersionName,
         topic: row.topicName || null,
         className: row.className,
         score: row.score,
@@ -209,10 +212,22 @@ async function retakeStillPossible(
       },
     }),
     prisma.quizAttempt.count({
-      where: { studentId, classId, quizId, completedAt: { not: null } },
+      where: {
+        studentId,
+        classId,
+        quizId,
+        completedAt: { not: null },
+        ...GRADED_ATTEMPTS,
+      },
     }),
     prisma.quizAttempt.count({
-      where: { studentId, classId, quizId, completedAt: null },
+      where: {
+        studentId,
+        classId,
+        quizId,
+        completedAt: null,
+        ...GRADED_ATTEMPTS,
+      },
     }),
   ]);
 
@@ -264,21 +279,24 @@ const getQuizResultDetail: AssistantTool<typeof detailInput> = {
     }
 
     const snapshot = parseReviewSnapshot(row.reviewSnapshot);
-    const retakeable = await retakeStillPossible(
-      studentId,
-      row.classId,
-      row.quizId,
-    );
+    // An alternative-version result is never final: the student can practise
+    // more versions, so its answer key stays withheld regardless of the graded
+    // attempt allowance.
+    const retakeable =
+      row.practiceVersionName !== null ||
+      (await retakeStillPossible(studentId, row.classId, row.quizId));
 
     return {
       found: true,
       resultId: row.quizAttemptId,
       quizName: row.quizName,
+      alternativeVersion: row.practiceVersionName,
       topic: row.topicName || null,
       className: row.className,
       score: row.score,
       correctCount: row.correctCount,
       totalCount: row.totalCount,
+      excludedCount: row.excludedCount,
       completedAt: row.completedAt.toISOString(),
       summary: row.summary,
       attemptState: retakeable ? "retake_possible" : "final",
@@ -353,8 +371,15 @@ const summarizePerformance: AssistantTool<typeof trendInput> = {
   input: trendInput,
   handler: async (args, ctx) => {
     const studentId = requireStudent(ctx);
+    // Graded attempts only: alternative-version retakes can cover a subset of
+    // the questions, so averaging them in would misstate performance. They are
+    // still listed by search_quiz_results.
     const rows = await prisma.examResult.findMany({
-      where: { studentId, classId: { notIn: await getDisabledClassIds() } },
+      where: {
+        studentId,
+        practiceVersionName: null,
+        classId: { notIn: await getDisabledClassIds() },
+      },
       orderBy: { completedAt: "desc" },
       select: {
         quizName: true,

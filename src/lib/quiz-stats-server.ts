@@ -29,6 +29,7 @@ import {
   simulationViewportLabel,
 } from "./simulation-telemetry";
 import { QUESTION_ORDER } from "@/lib/question-order";
+import { GRADED_ATTEMPTS } from "@/lib/alternative-retake";
 
 const fullName = (u: { firstName: string; lastName: string }): string =>
   [u.firstName, u.lastName].filter(Boolean).join(" ").trim() ||
@@ -42,6 +43,8 @@ export type QuizStudentRow = {
   bestScore: number | null;
   manualGrade: number | null;
   attempts: number;
+  /** Completed alternative-version retakes; not in `attempts`, best score or grade. */
+  alternativeAttempts: number;
   canEditManualGrade: boolean;
 };
 
@@ -57,6 +60,8 @@ export type QuizStats = {
   quizId: string;
   quizName: string;
   attemptsTotal: number;
+  /** Completed alternative-version retakes (excluded from every figure below). */
+  alternativeAttemptsTotal: number;
   studentsAttempted: number;
   mean: number;
   median: number;
@@ -85,42 +90,70 @@ export async function getQuizStats(
   });
   if (!quiz) return null;
 
-  const [attempts, questions, grouped, enrollments, manualGrades] =
-    await Promise.all([
-      prisma.quizAttempt.findMany({
-        where: { classId, quizId, completedAt: { not: null } },
-        select: {
-          studentId: true,
-          score: true,
-          student: {
-            select: { user: { select: { firstName: true, lastName: true } } },
-          },
+  const [
+    attempts,
+    questions,
+    grouped,
+    enrollments,
+    manualGrades,
+    alternativeGroups,
+  ] = await Promise.all([
+    prisma.quizAttempt.findMany({
+      where: {
+        classId,
+        quizId,
+        completedAt: { not: null },
+        ...GRADED_ATTEMPTS,
+      },
+      select: {
+        studentId: true,
+        score: true,
+        student: {
+          select: { user: { select: { firstName: true, lastName: true } } },
         },
-      }),
-      prisma.question.findMany({
-        where: { quizId },
-        select: { id: true, text: true },
-        orderBy: QUESTION_ORDER,
-      }),
-      prisma.quizAnswer.groupBy({
-        by: ["questionId", "isCorrect"],
-        where: { quizAttempt: { classId, quizId, completedAt: { not: null } } },
-        _count: { _all: true },
-      }),
-      prisma.classEnrollment.findMany({
-        where: { classId },
-        select: {
-          studentId: true,
-          student: {
-            select: { user: { select: { firstName: true, lastName: true } } },
-          },
+      },
+    }),
+    prisma.question.findMany({
+      where: { quizId },
+      select: { id: true, text: true },
+      orderBy: QUESTION_ORDER,
+    }),
+    prisma.quizAnswer.groupBy({
+      by: ["questionId", "isCorrect"],
+      where: {
+        quizAttempt: {
+          classId,
+          quizId,
+          completedAt: { not: null },
+          ...GRADED_ATTEMPTS,
         },
-      }),
-      prisma.quizProgress.findMany({
-        where: { classId, quizId, manualGrade: { not: null } },
-        select: { studentId: true, manualGrade: true },
-      }),
-    ]);
+      },
+      _count: { _all: true },
+    }),
+    prisma.classEnrollment.findMany({
+      where: { classId },
+      select: {
+        studentId: true,
+        student: {
+          select: { user: { select: { firstName: true, lastName: true } } },
+        },
+      },
+    }),
+    prisma.quizProgress.findMany({
+      where: { classId, quizId, manualGrade: { not: null } },
+      select: { studentId: true, manualGrade: true },
+    }),
+    prisma.quizAttempt.groupBy({
+      by: ["studentId"],
+      where: {
+        classId,
+        quizId,
+        completedAt: { not: null },
+        practiceVersionId: { not: null },
+      },
+      _count: { _all: true },
+    }),
+  ]);
 
   // Collapse attempts into one row per student (best score + attempt count).
   const byStudent = new Map<
@@ -140,6 +173,9 @@ export async function getQuizStats(
   const manualByStudent = new Map(
     manualGrades.map((row) => [row.studentId, row.manualGrade]),
   );
+  const alternativeByStudent = new Map(
+    alternativeGroups.map((g) => [g.studentId, g._count._all]),
+  );
   const enrolledIds = new Set(enrollments.map((row) => row.studentId));
   const students: QuizStudentRow[] = enrollments.map((enrollment) => {
     const attempt = byStudent.get(enrollment.studentId);
@@ -149,6 +185,7 @@ export async function getQuizStats(
       bestScore: attempt ? max(attempt.scores) : null,
       manualGrade: manualByStudent.get(enrollment.studentId) ?? null,
       attempts: attempt?.attempts ?? 0,
+      alternativeAttempts: alternativeByStudent.get(enrollment.studentId) ?? 0,
       canEditManualGrade: true,
     };
   });
@@ -161,6 +198,7 @@ export async function getQuizStats(
         bestScore: max(attempt.scores),
         manualGrade: manualByStudent.get(studentId) ?? null,
         attempts: attempt.attempts,
+        alternativeAttempts: alternativeByStudent.get(studentId) ?? 0,
         canEditManualGrade: false,
       });
     }
@@ -198,6 +236,10 @@ export async function getQuizStats(
     quizId,
     quizName: quiz.name,
     attemptsTotal: attempts.length,
+    alternativeAttemptsTotal: alternativeGroups.reduce(
+      (sum, g) => sum + g._count._all,
+      0,
+    ),
     studentsAttempted: byStudent.size,
     mean: mean(bestScores),
     median: median(bestScores),
@@ -227,6 +269,8 @@ export type StudentAttemptRow = {
   quizName: string;
   score: number;
   completedAt: Date;
+  /** Name of the alternative version, for a retake taken on one; else null. */
+  alternativeVersion: string | null;
 };
 
 export type StudentStats = {
@@ -259,7 +303,7 @@ export async function getStudentStats(
   });
   if (!student) return null;
 
-  const [classQuizzes, attempts] = await Promise.all([
+  const [classQuizzes, allAttempts] = await Promise.all([
     prisma.classQuiz.findMany({
       where: { classId },
       select: { quizId: true, quiz: { select: { name: true } } },
@@ -272,11 +316,16 @@ export async function getStudentStats(
         quizId: true,
         score: true,
         completedAt: true,
+        practiceVersionId: true,
+        practiceVersionName: true,
         quiz: { select: { name: true } },
       },
       orderBy: { completedAt: "desc" },
     }),
   ]);
+  // Alternative-version retakes are listed below but stay out of every graded
+  // aggregate (see GRADED_ATTEMPTS).
+  const attempts = allAttempts.filter((a) => a.practiceVersionId === null);
 
   // Group attempts by quiz to compute per-quiz best/latest/count. Attempts are
   // already newest-first, so the first seen per quiz is the latest.
@@ -314,12 +363,15 @@ export async function getStudentStats(
   const bestScores = [...byQuiz.values()].map((r) => max(r.scores));
   const completedQuizCount = byQuiz.size;
 
-  const attemptRows: StudentAttemptRow[] = attempts.map((a) => ({
+  const attemptRows: StudentAttemptRow[] = allAttempts.map((a) => ({
     attemptId: a.id,
     quizId: a.quizId,
     quizName: a.quiz?.name ?? "Removed quiz",
     score: a.score ?? 0,
     completedAt: a.completedAt!,
+    alternativeVersion: a.practiceVersionId
+      ? (a.practiceVersionName ?? "Alternative version")
+      : null,
   }));
 
   return {
@@ -394,7 +446,7 @@ export async function getClassStatsOverview(
       },
     }),
     prisma.quizAttempt.findMany({
-      where: { classId, completedAt: { not: null } },
+      where: { classId, completedAt: { not: null }, ...GRADED_ATTEMPTS },
       select: { studentId: true, quizId: true, score: true, completedAt: true },
     }),
   ]);
@@ -528,7 +580,7 @@ export async function getClassSimulationInsights(
       select: SESSION_SELECT,
     }),
     prisma.quizAttempt.findMany({
-      where: { classId, completedAt: { not: null } },
+      where: { classId, completedAt: { not: null }, ...GRADED_ATTEMPTS },
       select: { studentId: true, quizId: true, score: true, completedAt: true },
     }),
   ]);

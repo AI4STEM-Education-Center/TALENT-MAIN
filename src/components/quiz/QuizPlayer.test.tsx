@@ -5,8 +5,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QuizPlayer } from "./QuizPlayer";
 
 vi.mock("@/components/student/ExamResultsView", () => ({
-  ExamResultsView: ({ attemptId }: { attemptId: string }) => (
-    <div>Student results for {attemptId}</div>
+  ExamResultsView: ({
+    attemptId,
+    notice,
+    actions,
+  }: {
+    attemptId: string;
+    notice?: React.ReactNode;
+    actions?: React.ReactNode;
+  }) => (
+    <div>
+      Student results for {attemptId}
+      <p>{notice}</p>
+      {actions}
+    </div>
   ),
 }));
 
@@ -224,28 +236,29 @@ describe("QuizPlayer", () => {
 });
 
 describe("alternative practice player", () => {
-  it("uses practice endpoints, shows ungraded results, and can start another version", async () => {
+  it("records a retake, shows the standard results and recommendations, and returns to practice options", async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
           attemptId: "practice-1",
+          quizAttemptId: "attempt-1",
           versionName: "Version A",
+          excludedCount: 2,
+          exclusionIgnored: false,
           questions: [questions[0]],
         }),
       ),
-    );
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ score: 100, incorrectQuestionIds: [] })),
     );
     fetchMock.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
-          attemptId: "practice-2",
-          versionName: "Version B",
-          questions: [questions[0]],
+          score: 100,
+          quizAttemptId: "attempt-1",
+          incorrectQuestionIds: [],
         }),
       ),
     );
+    const onPracticeAgain = vi.fn();
     await act(async () =>
       root.render(
         <StrictMode>
@@ -253,27 +266,40 @@ describe("alternative practice player", () => {
             mode="practice"
             classId="class"
             quizId="quiz"
+            excludeCorrect
+            onPracticeAgain={onPracticeAgain}
             backHref="/student/classes/class"
             backLabel="Back to class"
           />
         </StrictMode>,
       ),
     );
-    expect(host.textContent).toContain("Version A · Ungraded practice");
+    expect(host.textContent).toContain("Version A · Alternative version");
+    expect(host.textContent).toContain("Recorded as a retake");
+    expect(host.textContent).toContain(
+      "2 questions you answered correctly before are left out",
+    );
     await click("Correct choice");
     await click("Submit Quiz");
-    expect(host.textContent).toContain("Version A results");
+    // Same results view (summary + recommendations) as an ordinary attempt,
+    // keyed by the recorded QuizAttempt rather than the practice id.
+    expect(host.textContent).toContain("Student results for attempt-1");
     expect(host.textContent).toContain(
-      "Your grade and graded attempt allowance are unchanged",
+      "Alternative version: Version A. Recorded as a retake",
     );
-    expect(host.textContent).not.toContain("Student results for");
     await click("Practice another version");
-    expect(host.textContent).toContain("Version B · Ungraded practice");
-    expect(host.textContent).toContain("0 answered");
+    expect(onPracticeAgain).toHaveBeenCalledOnce();
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       "/api/quiz/practice",
       "/api/quiz/practice",
-      "/api/quiz/practice",
     ]);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      classId: "class",
+      quizId: "quiz",
+      excludeCorrect: true,
+    });
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({
+      attemptId: "practice-1",
+    });
   });
 });

@@ -28,6 +28,8 @@ export default async function StudentHistoryPage() {
       className: true,
       topicName: true,
       quizName: true,
+      practiceVersionName: true,
+      excludedCount: true,
       score: true,
       completedAt: true,
     },
@@ -38,6 +40,8 @@ export default async function StudentHistoryPage() {
     className: r.className,
     topicName: r.topicName,
     quizName: r.quizName,
+    alternativeVersion: r.practiceVersionName,
+    excludedCount: r.excludedCount,
     score: r.score,
     completedAt: r.completedAt.toISOString(),
   }));
