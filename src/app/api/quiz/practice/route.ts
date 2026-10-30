@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { studentCanPractice } from "@/lib/quiz-practice-access";
 import {
   scoreVariant,
   studentVariantQuestions,
@@ -12,22 +13,6 @@ async function studentActor() {
   const session = await auth();
   if (session?.user?.role !== "STUDENT") return null;
   return prisma.student.findUnique({ where: { userId: session.user.id } });
-}
-async function access(studentId: string, classId: string, quizId: string) {
-  const [enrollment, assignment] = await Promise.all([
-    prisma.classEnrollment.findUnique({
-      where: { classId_studentId: { classId, studentId } },
-    }),
-    prisma.classQuiz.findUnique({
-      where: { classId_quizId: { classId, quizId } },
-    }),
-  ]);
-  if (!enrollment || !assignment?.published) return false;
-  const now = new Date();
-  return (
-    !(assignment.availableFrom && now < assignment.availableFrom) &&
-    !(assignment.availableUntil && now > assignment.availableUntil)
-  );
 }
 const startSchema = z.object({
   classId: z.string().min(1),
@@ -46,7 +31,7 @@ export async function GET(req: NextRequest) {
       { status: 400 },
     );
   const { classId, quizId } = input.data;
-  if (!(await access(student.id, classId, quizId)))
+  if (!(await studentCanPractice(student.id, classId, quizId)))
     return NextResponse.json(
       { error: "Practice is unavailable for this class or quiz." },
       { status: 403 },
@@ -81,7 +66,7 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
   const { classId, quizId } = input.data;
-  if (!(await access(student.id, classId, quizId)))
+  if (!(await studentCanPractice(student.id, classId, quizId)))
     return NextResponse.json(
       { error: "Practice is unavailable for this class or quiz." },
       { status: 403 },
