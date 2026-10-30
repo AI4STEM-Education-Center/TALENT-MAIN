@@ -2088,7 +2088,9 @@ model QuizPracticeAttempt {
   versionName String
   // The QuizAttempt this practice run is recorded as (a retake of the quiz).
   // Null only for rows started before retakes were recorded.
-  quizAttemptId String? @unique
+  // A normal index keeps db push additive on populated databases: a new
+  // unique constraint prompts for destructive-change approval even for NULLs.
+  quizAttemptId String?
   questions String
   answers String @default("[]")
   score Float?
@@ -2098,6 +2100,7 @@ model QuizPracticeAttempt {
   // per student/class/quiz even under concurrent start requests.
   activeKey String? @unique
   @@index([studentId, classId, quizId])
+  @@index([quizAttemptId])
 }
 
 // ─── Research surveys & participant pool ────────────────────────────────────
