@@ -201,7 +201,10 @@ export function ExamResultsView({
               </CardContent>
             </Card>
 
-            <StudentMistakesReview mistakes={mistakes} />
+            <StudentMistakesReview
+              mistakes={mistakes}
+              coachAttemptId={attemptId}
+            />
 
             {/* Holistic study recommendations — up to 3 cards chosen across the
               whole attempt, with NO per-question correctness or correct answers

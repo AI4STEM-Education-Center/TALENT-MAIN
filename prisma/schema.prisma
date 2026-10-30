@@ -1155,6 +1155,18 @@ model AssistantConversation {
   createdAt     DateTime @default(now())
   lastMessageAt DateTime @default(now())
 
+  // Set only for a per-question "wrong-answer coach" conversation (student
+  // audience): the graded attempt (QuizAttempt.id, same key as ExamResult) and
+  // the 1-based question number the student asked about. Plain columns, no
+  // relation: the ExamResult snapshot outlives the quiz rows. Coach
+  // conversations are resumed by this pair and never appear in the assistant
+  // widget's history list. See src/lib/assistant/coach.ts.
+  coachResultId       String?
+  coachQuestionNumber Int?
+  // Slot for a HOT coach conversation, including its answer-key policy.
+  // Nullable so existing/widget/expired conversations need no backfill.
+  coachActiveKey String?
+
   // Cold-tier location. All three are set together, and only by the archiver.
   archivedAt DateTime?
   storageKey String?
@@ -1168,6 +1180,9 @@ model AssistantConversation {
   @@index([audience, lastMessageAt])
   // Archive sweep: hot rows whose window has closed.
   @@index([archivedAt, lastMessageAt])
+  // Resuming one question's coach conversation.
+  @@index([userId, coachResultId, coachQuestionNumber])
+  @@index([coachActiveKey])
 }
 
 // One turn of a HOT conversation. Rows exist only while the conversation is in
@@ -1193,6 +1208,13 @@ model AssistantMessage {
   // own (shorter) retention so an expired file still reads as "they sent one".
   attachmentIds   String @default("[]")
   attachmentNames String @default("[]")
+
+  // Assistant turns of a coach conversation: JSON array of the structured
+  // action REFERENCES the model emitted (material / simulation how-to /
+  // practice question — see src/lib/assistant/coach-types.ts). References, not
+  // rendered cards: presigned URLs expire and access is re-checked each time
+  // the transcript is reopened.
+  actions String @default("[]")
 
   createdAt DateTime @default(now())
 
