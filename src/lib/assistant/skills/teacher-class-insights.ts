@@ -151,6 +151,7 @@ const getQuizBreakdown: AssistantTool<typeof quizStatsInput> = {
       quizId: stats.quizId,
       quizName: stats.quizName,
       attemptsTotal: stats.attemptsTotal,
+      alternativeAttemptsTotal: stats.alternativeAttemptsTotal,
       studentsAttempted: stats.studentsAttempted,
       mean: stats.mean,
       median: stats.median,
@@ -217,6 +218,7 @@ const getStudentBreakdown: AssistantTool<typeof studentStatsInput> = {
       lastActivity: stats.lastActivity?.toISOString() ?? null,
       attempts: stats.attempts.map((attempt) => ({
         quizName: attempt.quizName,
+        alternativeVersion: attempt.alternativeVersion,
         score: attempt.score,
         completedAt: attempt.completedAt.toISOString(),
       })),

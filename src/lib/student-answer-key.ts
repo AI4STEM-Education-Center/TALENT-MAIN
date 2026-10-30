@@ -2,6 +2,7 @@
 // key may be revealed (the assistant's result lookup and the wrong-answer coach).
 import { prisma } from "@/lib/prisma";
 import { canAttemptAgain } from "@/lib/quiz-availability";
+import { GRADED_ATTEMPTS } from "@/lib/alternative-retake";
 
 /**
  * Can this student still submit another graded answer for the quiz an archived
@@ -24,10 +25,22 @@ export async function retakeStillPossible(
       },
     }),
     prisma.quizAttempt.count({
-      where: { studentId, classId, quizId, completedAt: { not: null } },
+      where: {
+        studentId,
+        classId,
+        quizId,
+        completedAt: { not: null },
+        ...GRADED_ATTEMPTS,
+      },
     }),
     prisma.quizAttempt.count({
-      where: { studentId, classId, quizId, completedAt: null },
+      where: {
+        studentId,
+        classId,
+        quizId,
+        completedAt: null,
+        ...GRADED_ATTEMPTS,
+      },
     }),
   ]);
 

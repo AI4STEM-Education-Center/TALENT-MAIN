@@ -52,6 +52,7 @@ export function ExamResultsView({
   backHref,
   backLabel = "Back",
   actions,
+  notice,
   simulationSurface,
 }: {
   attemptId: string;
@@ -61,6 +62,8 @@ export function ExamResultsView({
   backHref?: string;
   backLabel?: string;
   actions?: ReactNode;
+  /** Context line above the score, e.g. which alternative version this was. */
+  notice?: ReactNode;
   /**
    * Which results view this is, so simulation sessions opened from it are
    * labelled with their launch point: `quiz_results` right after submitting,
@@ -185,6 +188,9 @@ export function ExamResultsView({
               count) and the AI summary live in one full-width card. */}
             <Card>
               <CardContent className="space-y-4 py-5">
+                {notice && (
+                  <p className="text-sm text-muted-foreground">{notice}</p>
+                )}
                 <ScoreBanner score={score} />
                 <div className="border-t" />
                 <ResultSummary
