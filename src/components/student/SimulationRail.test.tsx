@@ -89,3 +89,15 @@ it("keeps other results views collapsed until clicked", async () => {
   );
   expect(dialog()?.textContent).toContain("Pendulum");
 });
+
+it("does not open on top of another pop-up the student already opened", async () => {
+  await render([]);
+  const other = document.createElement("div");
+  other.setAttribute("role", "dialog");
+  document.body.appendChild(other);
+  await render();
+  other.remove();
+  expect(dialog()).toBeNull();
+  await render([...sims]);
+  expect(dialog()).toBeNull();
+});

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Atom, ChevronRight, CircleOff } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { SimulationDialog } from "@/components/simulation/SimulationDialog";
@@ -210,13 +210,23 @@ export function SimulationRail({
   // listed as an unavailable card (never activatable), so the student sees
   // why it's gone instead of a dead iframe.
   const openable = sims.filter((sim) => !sim.unavailable);
+  const firstOpenableId = openable[0]?.simulationId;
+
+  // Auto-open once the first simulation arrives — unless the viewer already
+  // has another pop-up open (e.g. the wrong-answer coach). Pop-ups never stack:
+  // recommendations finishing later must not cover what the student opened.
+  useEffect(() => {
+    if (!autoOpen || activeId !== undefined || !firstOpenableId) return;
+    setActiveId(
+      document.querySelector('[role="dialog"], [role="alertdialog"]')
+        ? null
+        : firstOpenableId,
+    );
+  }, [autoOpen, activeId, firstOpenableId]);
 
   if (sims.length === 0) return null;
 
-  const selectedId =
-    activeId === undefined && autoOpen ? openable[0]?.simulationId : activeId;
-  const active =
-    openable.find((sim) => sim.simulationId === selectedId) ?? null;
+  const active = openable.find((sim) => sim.simulationId === activeId) ?? null;
   const viewer = { attemptId, audience } as const;
 
   return (

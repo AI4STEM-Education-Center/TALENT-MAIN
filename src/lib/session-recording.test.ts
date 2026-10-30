@@ -10,6 +10,9 @@ import {
   displayPath,
   eventTimeRange,
   formatOffset,
+  fromSegmentTime,
+  segmentsDuration,
+  toSegmentTime,
   hasFullSnapshot,
   validateReplayEvents,
   type ReplayEvent,
@@ -275,5 +278,29 @@ describe("replay areas", () => {
     ]);
     expect(areasInEvents(events, "/student/materials")).toEqual(["material"]);
     expect(performance.now() - started).toBeLessThan(5_000);
+  });
+});
+
+describe("stitched segment time", () => {
+  const segments = [
+    { area: "quiz" as const, startMs: 1000, endMs: 3000 },
+    { area: "quiz" as const, startMs: 5000, endMs: 6000 },
+  ];
+  it("measures the segments back to back", () => {
+    expect(segmentsDuration(segments)).toBe(3000);
+  });
+  it("maps recording offsets onto the stitched timeline", () => {
+    expect(toSegmentTime(segments, 0)).toBe(0);
+    expect(toSegmentTime(segments, 2000)).toBe(1000);
+    expect(toSegmentTime(segments, 4000)).toBe(2000);
+    expect(toSegmentTime(segments, 5500)).toBe(2500);
+    expect(toSegmentTime(segments, 9000)).toBe(3000);
+  });
+  it("maps stitched offsets back to the recording", () => {
+    expect(fromSegmentTime(segments, 0)).toBe(1000);
+    expect(fromSegmentTime(segments, 2000)).toBe(5000);
+    expect(fromSegmentTime(segments, 2500)).toBe(5500);
+    expect(fromSegmentTime(segments, 3000)).toBe(6000);
+    expect(fromSegmentTime([], 10)).toBe(0);
   });
 });

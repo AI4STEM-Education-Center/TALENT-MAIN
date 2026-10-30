@@ -12,7 +12,10 @@ import {
   buildAreaSegments,
   buildTimeline,
   formatOffset,
+  fromSegmentTime,
   recordingStart,
+  segmentsDuration,
+  toSegmentTime,
   type AreaSegment,
   type ReplayArea,
   type ReplayEvent,
@@ -171,6 +174,8 @@ function LoadedPlayer({
   useEffect(() => {
     focusRef.current = focusSegments;
   }, [focusSegments]);
+  // Each tab is its own replay: remember where each one was left.
+  const positionsRef = useRef<Partial<Record<ReplayArea | "all", number>>>({});
   const start = recordingStart(events);
   const durationMs = Math.max(
     stats.durationMs,
@@ -324,23 +329,49 @@ function LoadedPlayer({
     replayerRef.current?.setConfig({ skipInactive: next });
   };
 
-  // Opened on a specific area: start at its first moment once playable.
+  // Opened on a specific area: start at its first moment once playable. Tab
+  // switches after that position the replayer themselves (see chooseArea).
   useEffect(() => {
-    if (!ready || !area) return;
+    if (!ready) return;
     const first = focusRef.current[0];
     if (first) {
       replayerRef.current?.pause(first.startMs);
       setTimeMs(first.startMs);
     }
-  }, [ready, area]);
+  }, [ready]);
 
   const chooseArea = (next: ReplayArea | null) => {
+    const replayer = replayerRef.current;
+    if (next === area || !replayer) return;
+    positionsRef.current[area ?? "all"] = timeMs;
+    const segments = next
+      ? allSegments.filter((segment) => segment.area === next)
+      : [];
+    let target = positionsRef.current[next ?? "all"] ?? 0;
+    if (segments.length > 0) {
+      // Resume where this part was left, or from its start (also once it ended).
+      const resume = segmentAtOrAfter(segments, target);
+      target = resume ? Math.max(target, resume.startMs) : segments[0].startMs;
+    } else if (target >= durationMs) {
+      target = 0;
+    }
+    // Update now so the playhead poll never hops using the old tab's segments.
+    focusRef.current = segments;
     setArea(next);
-    const first = next
-      ? allSegments.find((segment) => segment.area === next)
-      : null;
-    if (first) seek(first.startMs);
+    // Keep playing if the replay was playing; otherwise just move there.
+    if (playing) replayer.play(target);
+    else replayer.pause(target);
+    setTimeMs(target);
   };
+
+  // A focused tab is its own replay: its clock and scrubber run over just that
+  // part's segments, played back to back.
+  const focused = focusSegments.length > 0;
+  const shownDurationMs = focused
+    ? segmentsDuration(focusSegments)
+    : durationMs;
+  const shownTime = (ms: number) =>
+    focused ? toSegmentTime(focusSegments, ms) : ms;
 
   const visible = entries.filter(
     (entry) => shown.has(entry.kind) && (!area || entry.area === area),
@@ -440,16 +471,19 @@ function LoadedPlayer({
             {playing ? "Pause" : "Play"}
           </Button>
           <span className="w-24 text-sm tabular-nums text-muted-foreground">
-            {formatOffset(timeMs)} / {formatOffset(durationMs)}
+            {formatOffset(shownTime(timeMs))} / {formatOffset(shownDurationMs)}
           </span>
           <input
             type="range"
             min={0}
-            max={Math.max(1, durationMs)}
-            value={timeMs}
+            max={Math.max(1, shownDurationMs)}
+            value={shownTime(timeMs)}
             disabled={!ready}
             aria-label="Playback position"
-            onChange={(event) => seek(Number(event.target.value))}
+            onChange={(event) => {
+              const value = Number(event.target.value);
+              seek(focused ? fromSegmentTime(focusSegments, value) : value);
+            }}
             className="min-w-40 flex-1"
           />
           <label className="flex items-center gap-1 text-sm">
@@ -480,21 +514,25 @@ function LoadedPlayer({
             aria-hidden="true"
             className="relative h-2.5 w-full overflow-hidden rounded-full bg-muted"
           >
-            {allSegments.map((segment) => (
-              <span
-                key={`${segment.area}-${segment.startMs}`}
-                title={`${REPLAY_AREA_LABELS[segment.area]} ${formatOffset(segment.startMs)}–${formatOffset(segment.endMs)}`}
-                className={cn(
-                  "absolute inset-y-0",
-                  AREA_TONE[segment.area],
-                  area && segment.area !== area && "opacity-25",
-                )}
-                style={{
-                  left: `${(segment.startMs / Math.max(1, durationMs)) * 100}%`,
-                  width: `${Math.max(0.5, ((segment.endMs - segment.startMs) / Math.max(1, durationMs)) * 100)}%`,
-                }}
-              />
-            ))}
+            {(focused ? focusSegments : allSegments).map((segment) => {
+              // Focused: the part's visits laid end to end, split by thin gaps.
+              const left = shownTime(segment.startMs);
+              return (
+                <span
+                  key={`${segment.area}-${segment.startMs}`}
+                  title={`${REPLAY_AREA_LABELS[segment.area]} ${formatOffset(segment.startMs)}–${formatOffset(segment.endMs)}`}
+                  className={cn(
+                    "absolute inset-y-0",
+                    AREA_TONE[segment.area],
+                    focused && "border-l-2 border-background first:border-l-0",
+                  )}
+                  style={{
+                    left: `${(left / Math.max(1, shownDurationMs)) * 100}%`,
+                    width: `${Math.max(0.5, ((segment.endMs - segment.startMs) / Math.max(1, shownDurationMs)) * 100)}%`,
+                  }}
+                />
+              );
+            })}
           </div>
         )}
         <dl className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-5">
@@ -551,7 +589,7 @@ function LoadedPlayer({
                   )}
                 >
                   <span className="w-11 shrink-0 pt-0.5 text-xs tabular-nums text-muted-foreground">
-                    {formatOffset(entry.offsetMs)}
+                    {formatOffset(shownTime(entry.offsetMs))}
                   </span>
                   <span
                     className={cn(
