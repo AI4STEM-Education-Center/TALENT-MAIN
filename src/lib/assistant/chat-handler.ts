@@ -1,0 +1,394 @@
+// The assistant chat pipeline, shared by the widget route and the per-question
+// wrong-answer coach route. One implementation means one set of guardrails, rate
+// limits, streaming, transcript storage and error handling — the coach differs
+// only in WHAT it is given (a verified question, its own tools and prompt, a
+// per-question conversation, no attachments).
+
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { readBoundedText, BODY_TOO_LARGE } from "@/lib/request-body";
+import { rateLimit } from "@/lib/rate-limit";
+import { auditText, guardChatTurn } from "@/lib/guardrail-runner";
+import { logApiError, logSystemEvent } from "@/lib/system-log";
+import { resolveAssistantSession } from "@/lib/assistant/session";
+import {
+  buildUserContent,
+  validateAttachments,
+} from "@/lib/assistant/attachments";
+import {
+  loadStoredAttachments,
+  persistAttachments,
+} from "@/lib/assistant/attachment-store";
+import {
+  appendTurn,
+  loadConversationHistory,
+  resolveConversation,
+} from "@/lib/assistant/conversation-store";
+import { runAssistantTurn, MAX_MESSAGE_CHARS } from "@/lib/assistant/agent";
+import type { AssistantStreamEvent } from "@/lib/assistant/types";
+import {
+  buildCoachContext,
+  coachActionText,
+  coachConversationTitle,
+  coachOpening,
+  resolveCoachScope,
+} from "@/lib/assistant/coach";
+import { COACH_MAX_ACTIONS_PER_TURN } from "@/lib/assistant/coach-types";
+import { buildCoachSystemPrompt } from "@/lib/assistant/prompt";
+import { coachTools } from "@/lib/assistant/skills/coach";
+
+const HOUR_MS = 60 * 60 * 1000;
+
+/** Slack over the attachment budget for the message, history, and JSON framing. */
+const BODY_OVERHEAD_BYTES = 256 * 1024;
+
+const turnSchema = z.object({
+  role: z.enum(["user", "assistant"]),
+  content: z.string().max(MAX_MESSAGE_CHARS + 200),
+  attachmentNames: z.array(z.string().max(200)).max(8).optional(),
+  // Ids the server minted on an earlier turn. Safe to take from the client
+  // because every read is re-scoped to the caller's own userId — an id that
+  // isn't theirs (or has expired) simply loads nothing.
+  attachmentIds: z.array(z.string().max(64)).max(8).optional(),
+});
+
+const bodySchema = z.object({
+  message: z.string().min(1).max(MAX_MESSAGE_CHARS),
+  // The transcript this turn continues. Safe to take from the client for the
+  // same reason the attachment ids are: it is re-scoped to the caller's own
+  // conversations, so an id that isn't theirs (or has aged out of their history
+  // window) starts a new conversation instead of reaching anything.
+  //
+  // Nullable, not merely optional: the panel holds "no conversation yet" as
+  // null and serialises it, so an `.optional()` field would reject the very
+  // first message of every chat.
+  conversationId: z.string().max(64).nullish(),
+  // Client-held transcript, used ONLY as a fallback for when the server has no
+  // stored conversation to replay (persistence unavailable). It is context and
+  // nothing else — nothing security-relevant is read from it, and the agent
+  // trims it to the configured window — so a tampered history can at worst
+  // confuse the model about itself.
+  history: z.array(turnSchema).max(60).optional(),
+  attachments: z
+    .array(
+      z.object({
+        name: z.string().min(1).max(200),
+        mimeType: z.string().min(1).max(100),
+        dataBase64: z.string().min(1),
+      }),
+    )
+    .max(16)
+    .optional(),
+});
+
+/**
+ * A coach request is one short message about one question: no attachments and
+ * no client-held transcript, so its body is bounded far below the widget's.
+ */
+const COACH_BODY_CAP = 32 * 1024;
+
+const coachBodySchema = z.object({
+  message: z.string().min(1).max(MAX_MESSAGE_CHARS),
+  attemptId: z.string().min(1).max(64),
+  questionNumber: z.number().int().min(1).max(500),
+});
+
+/**
+ * Run one assistant turn and stream it back as NDJSON. `mode` "coach" scopes
+ * the turn to one verified wrong answer (see ./coach.ts); the widget mode is
+ * the original behavior, unchanged.
+ */
+export async function handleAssistantChat(
+  req: Request,
+  mode: "widget" | "coach",
+): Promise<Response> {
+  const isCoach = mode === "coach";
+  let session;
+  try {
+    session = await resolveAssistantSession();
+  } catch (error) {
+    logApiError("ASSISTANT_CHAT", error);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
+  }
+
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const { ctx, settings } = session;
+  // The coach is a student-only surface; anyone else gets the same answer as
+  // for a question that does not exist.
+  if (isCoach && !ctx.studentId) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  if (!settings.enabled) {
+    return NextResponse.json(
+      { error: "This assistant is currently turned off." },
+      { status: 503 },
+    );
+  }
+
+  // Keyed by user, not IP: a shared classroom NAT must not make one student's
+  // questions exhaust the whole room's budget. The coach shares the widget's
+  // bucket on purpose: it is the same assistant, so opening a dialog is not a
+  // way around the admin's turns-per-hour limit.
+  const limited = rateLimit(
+    req,
+    "assistant-chat",
+    settings.turnsPerHour,
+    HOUR_MS,
+    ctx.userId,
+  );
+  if (limited) return limited;
+
+  // The cap follows the admin's own attachment limits (base64 inflates ~4/3),
+  // so raising them in the panel raises what the endpoint will read — and
+  // nothing more.
+  const bodyCap = isCoach
+    ? COACH_BODY_CAP
+    : BODY_OVERHEAD_BYTES +
+      Math.ceil(
+        (settings.maxAttachments * settings.maxAttachmentBytes * 4) / 3,
+      );
+  const raw = await readBoundedText(req, bodyCap);
+  if (raw === BODY_TOO_LARGE) {
+    return NextResponse.json({ error: "Request too large." }, { status: 413 });
+  }
+
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+  }
+  const parsedBody = isCoach
+    ? coachBodySchema.safeParse(json)
+    : bodySchema.safeParse(json);
+  if (!parsedBody.success) {
+    return NextResponse.json(
+      { error: "Invalid request body." },
+      { status: 400 },
+    );
+  }
+  // One shape for the pipeline below; the coach has no attachments, history or
+  // client-chosen conversation to carry.
+  const parsed = {
+    data: {
+      message: parsedBody.data.message,
+      conversationId: null as string | null | undefined,
+      history: undefined as z.infer<typeof turnSchema>[] | undefined,
+      attachments: undefined as
+        z.infer<typeof bodySchema>["attachments"] | undefined,
+      ...(isCoach ? {} : parsedBody.data),
+    },
+  };
+
+  // Verified here, before the stream opens, so a missing/foreign/correct
+  // question is a plain 404 and nothing is stored or sent to the model.
+  let coach: Awaited<ReturnType<typeof resolveCoachScope>> = null;
+  if (isCoach) {
+    const body = parsedBody.data as z.infer<typeof coachBodySchema>;
+    coach = await resolveCoachScope(
+      ctx.studentId!,
+      body.attemptId,
+      body.questionNumber,
+    );
+    if (!coach) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+  }
+
+  const { accepted, rejected } = validateAttachments(
+    parsed.data.attachments ?? [],
+    {
+      allowedKinds: settings.attachmentKinds,
+      maxAttachments: settings.maxAttachments,
+      maxAttachmentBytes: settings.maxAttachmentBytes,
+    },
+  );
+
+  const notices = rejected.map(
+    (rejection) =>
+      `the attachment "${rejection.name}" was not read: ${rejection.reason}`,
+  );
+
+  const encoder = new TextEncoder();
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      let closed = false;
+      const emit = (event: AssistantStreamEvent) => {
+        if (closed || req.signal.aborted) return;
+        controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+      };
+
+      void (async () => {
+        try {
+          // Open the transcript first: the id goes out ahead of the answer so a
+          // client that disconnects mid-stream still knows which conversation to
+          // resume. Null means persistence is unavailable — the turn then runs
+          // unrecorded rather than failing.
+          const conversationId = await resolveConversation(
+            { userId: ctx.userId, audience: ctx.audience },
+            parsed.data.conversationId ?? null,
+            parsed.data.message,
+            settings.historyRetentionDays,
+            undefined,
+            coach
+              ? {
+                  resultId: coach.resultId,
+                  questionNumber: coach.questionNumber,
+                  title: coachConversationTitle(coach),
+                }
+              : undefined,
+          );
+          if (conversationId)
+            emit({ type: "conversation", id: conversationId });
+
+          // Both guardrails, under the admin's current settings, before
+          // anything is stored or sent upstream. Moderation sees exactly what
+          // the model would be given (message plus every accepted attachment,
+          // images included); the LLM check reads the message text.
+          const guard = await guardChatTurn(
+            parsed.data.message,
+            buildUserContent(parsed.data.message, accepted),
+            {
+              surface: "assistant_chat",
+              id: conversationId,
+              userId: ctx.userId,
+            },
+          );
+          if (guard.blocked) {
+            emit({
+              type: "error",
+              message: guard.message ?? "This message was blocked.",
+              guardrailEventId: guard.eventId,
+            });
+            return;
+          }
+
+          // Keep the turn's files before answering, so the ids can go out ahead
+          // of the reply and the client can reference them next turn. Best
+          // effort by design: persistAttachments swallows storage failures, and
+          // a turn whose attachments could not be kept still gets answered from
+          // the inline copies below.
+          const stored = await persistAttachments(
+            { userId: ctx.userId, audience: ctx.audience },
+            accepted,
+            settings.attachmentRetentionDays,
+          );
+          if (stored.length > 0) emit({ type: "attachments", stored });
+
+          // Replay what the server recorded, not what the client sent back. The
+          // client copy is only reached for when there is no stored transcript
+          // to read, so a conversation still has context on a box where
+          // persistence is down.
+          const history = conversationId
+            ? await loadConversationHistory(
+                conversationId,
+                settings.maxHistoryMessages,
+              )
+            : (parsed.data.history ?? []);
+
+          // The coach's tools and prompt replace the widget's for this turn;
+          // everything else about the turn is shared.
+          const tools = coach ? coachTools() : null;
+          const override =
+            coach && tools
+              ? {
+                  systemPrompt: buildCoachSystemPrompt({
+                    toolNames: [...tools.keys()],
+                    context: await buildCoachContext(coach),
+                    opening: coachOpening(coach.questionNumber),
+                    extraInstructions: settings.extraInstructions,
+                  }),
+                  tools,
+                  maxActions: COACH_MAX_ACTIONS_PER_TURN,
+                }
+              : undefined;
+
+          const result = await runAssistantTurn({
+            settings,
+            ctx: coach ? { ...ctx, coach } : ctx,
+            override,
+            history,
+            message: parsed.data.message,
+            attachments: accepted,
+            notices,
+            loadHistoryAttachments: (ids, limit) =>
+              loadStoredAttachments(ctx.userId, ids, limit),
+            emit,
+            signal: req.signal,
+          });
+
+          // Only a completed exchange is recorded. A turn the model failed to
+          // answer leaves the conversation row at messageCount 0, which every
+          // listing filters out — better than a transcript with a question and
+          // a blank reply under it.
+          // The reply streamed as it was generated, so this is an AUDIT trail
+          // rather than a block — by the time a verdict exists the user has
+          // already read the text. It still matters: a flagged reply is the
+          // signal an admin needs to tighten the prompt or the model choice.
+          if (result.text.trim()) {
+            void auditText(
+              [result.text, ...coachActionText(result.actions)].join("\n"),
+              {
+                surface: "assistant_reply",
+                id: conversationId,
+                userId: ctx.userId,
+              },
+            );
+          }
+
+          if (conversationId && result.text.trim()) {
+            await appendTurn(
+              conversationId,
+              {
+                content: parsed.data.message,
+                attachmentIds: stored.map((item) => item.id),
+                attachmentNames: accepted.map((item) => item.name),
+              },
+              result.text,
+              undefined,
+              result.actions ?? [],
+            );
+          }
+        } catch (error) {
+          // A provider outage or a malformed upstream response lands here. The
+          // detail goes to the admin log; the user gets a plain sentence.
+          logApiError("ASSISTANT_CHAT", error);
+          void logSystemEvent({
+            category: "API",
+            type: "ASSISTANT_TURN_FAILED",
+            severity: "ERROR",
+            message: error instanceof Error ? error.message : String(error),
+            userId: ctx.userId,
+            metadata: { audience: ctx.audience },
+          });
+          emit({
+            type: "error",
+            message:
+              "The assistant could not answer right now. Please try again.",
+          });
+        } finally {
+          closed = true;
+          try {
+            controller.close();
+          } catch {
+            // Already closed by a client disconnect — nothing to do.
+          }
+        }
+      })();
+    },
+  });
+
+  return new Response(body, {
+    headers: {
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      "Cache-Control": "no-store",
+      "X-Accel-Buffering": "no",
+    },
+  });
+}

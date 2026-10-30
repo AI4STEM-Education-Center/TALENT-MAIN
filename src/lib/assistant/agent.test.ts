@@ -12,10 +12,15 @@ vi.mock("@/lib/ai-provider", async (importOriginal) => ({
 import { runAssistantTurn, toolParameterSchema } from "./agent";
 import { defaultSettings } from "./config";
 import { listSkills } from "./skills";
+import { z } from "zod";
 import { resolveProvider, createOpenAIClient } from "@/lib/ai-provider";
 import { resetSurfaceMemo } from "@/lib/ai-streaming";
 import type { ResolvedProvider } from "@/lib/ai-provider";
-import type { AssistantStreamEvent, AssistantToolContext } from "./types";
+import type {
+  AssistantStreamEvent,
+  AssistantTool,
+  AssistantToolContext,
+} from "./types";
 
 const mockResolve = vi.mocked(resolveProvider);
 const mockClient = vi.mocked(createOpenAIClient);
@@ -690,5 +695,108 @@ describe("toolParameterSchema", () => {
       .flatMap((skill) => skill.tools)
       .find((tool) => tool.name === "list_classes")!;
     expect(toolParameterSchema(listTool).properties).toEqual({});
+  });
+});
+
+describe("runAssistantTurn — card-producing tools (coach override)", () => {
+  const card = {
+    stored: { kind: "practice", versionId: "v", variantQuestionId: "q" },
+    view: {
+      kind: "practice" as const,
+      reason: "try it",
+      question: {
+        versionId: "v",
+        questionId: "q",
+        text: "t",
+        answerMode: "SINGLE_SELECT" as const,
+        answerUnit: null,
+        options: [],
+      },
+    },
+  };
+  const cardTool: AssistantTool = {
+    name: "show_card",
+    description: "shows a card",
+    activityLabel: "Showing a card",
+    surfacesActions: true,
+    input: z.object({}),
+    handler: async () => ({ ok: true, shown: "a card", action: card }),
+  };
+
+  async function runWith(rounds: Round[], maxActions: number) {
+    const { client, calls } = fakeClient(rounds);
+    mockResolve.mockResolvedValue(provider);
+    mockClient.mockResolvedValue(client as never);
+    const events: AssistantStreamEvent[] = [];
+    const result = await runAssistantTurn({
+      settings: defaultSettings("student"),
+      ctx: studentCtx,
+      history: [],
+      message: "I thought it was B",
+      attachments: [],
+      notices: [],
+      override: {
+        systemPrompt: "COACH PROMPT",
+        tools: new Map([[cardTool.name, cardTool]]),
+        maxActions,
+      },
+      emit: (event) => {
+        events.push(event);
+      },
+    });
+    return { result, events, calls };
+  }
+
+  it("uses the override prompt and tools instead of the audience skills", async () => {
+    const { calls } = await runWith([{ text: "hi" }], 2);
+    const messages = calls[0].messages as Array<{
+      role: string;
+      content: string;
+    }>;
+    expect(messages[0]).toEqual({ role: "system", content: "COACH PROMPT" });
+    const tools = calls[0].tools as Array<{ function: { name: string } }>;
+    expect(tools.map((t) => t.function.name)).toEqual(["show_card"]);
+  });
+
+  it("streams the card to the client and keeps it out of the model's tool result", async () => {
+    const { result, events, calls } = await runWith(
+      [
+        { toolCalls: [{ name: "show_card", args: "{}" }] },
+        { text: "Give it a go." },
+      ],
+      2,
+    );
+    expect(events).toContainEqual({ type: "action", action: card.view });
+    expect(result.actions).toEqual([card.stored]);
+    const second = calls[1].messages as Array<{
+      role: string;
+      content: string;
+    }>;
+    const toolMessage = second.find((m) => m.role === "tool")!;
+    expect(toolMessage.content).toContain("a card");
+    expect(toolMessage.content).not.toContain("variantQuestionId");
+  });
+
+  it("drops cards past the per-reply cap and tells the model to finish in prose", async () => {
+    const { result, events, calls } = await runWith(
+      [
+        {
+          toolCalls: [
+            { name: "show_card", args: "{}" },
+            { name: "show_card", args: "{}" },
+          ],
+        },
+        { text: "Done." },
+      ],
+      1,
+    );
+    expect(events.filter((e) => e.type === "action")).toHaveLength(1);
+    expect(result.actions).toHaveLength(1);
+    const second = calls[1].messages as Array<{
+      role: string;
+      content: string;
+    }>;
+    const toolMessages = second.filter((m) => m.role === "tool");
+    expect(toolMessages[1].content).toContain("Enough cards");
   });
 });

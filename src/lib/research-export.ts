@@ -164,6 +164,7 @@ async function* tableCsv(
         content: turn.content,
         attachmentIds: JSON.stringify(turn.attachmentIds ?? []),
         attachmentNames: JSON.stringify(turn.attachmentNames ?? []),
+        actions: JSON.stringify(turn.actions ?? []),
         createdAt: turn.createdAt,
       };
       yield researchCsvRow(
