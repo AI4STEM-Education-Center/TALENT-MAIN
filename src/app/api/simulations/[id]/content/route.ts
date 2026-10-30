@@ -61,7 +61,10 @@ export async function GET(
       const assignment = await prisma.classQuiz.findFirst({
         where: {
           quizId: sim.question.quizId,
-          class: { enrollments: { some: { studentId: student.id } } },
+          class: {
+            disabledAt: null,
+            enrollments: { some: { studentId: student.id } },
+          },
         },
         select: { id: true },
       });

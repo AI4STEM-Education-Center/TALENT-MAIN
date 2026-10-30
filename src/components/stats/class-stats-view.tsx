@@ -1,6 +1,7 @@
 import { requireStatsClass, type StatsAudience } from "@/lib/stats-access";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, BookOpen, Users, ChevronRight, Atom } from "lucide-react";
 import {
@@ -14,6 +15,7 @@ import { SimulationSurfaceBreakdown } from "@/components/stats/simulation-surfac
 import { RequestConsentExportDialog } from "@/app/(dashboard)/teacher/classes/[id]/stats/request-consent-export-dialog";
 import { ExportParticipationCreditDialog } from "@/app/(dashboard)/teacher/classes/[id]/stats/export-participation-credit-dialog";
 import { ClassResearchToggle } from "@/app/(dashboard)/admin/classes/class-research-toggle";
+import { ClassAccessToggle } from "@/app/(dashboard)/admin/classes/class-access-toggle";
 
 const nameKey = (firstName: string, lastName: string) =>
   `${firstName.trim().toLowerCase()}|${lastName.trim().toLowerCase()}`;
@@ -98,6 +100,19 @@ export async function ClassStatsView({
                 excluded={cls.researchExcluded}
               />
             </div>
+          )}
+          {audience === "admin" && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              Student access:
+              <ClassAccessToggle
+                classId={id}
+                className={cls.name}
+                disabled={cls.disabledAt !== null}
+              />
+            </div>
+          )}
+          {audience === "teacher" && cls.disabledAt && (
+            <Badge variant="warning">Access paused by admin</Badge>
           )}
           {audience === "admin" && (
             <Button variant="outline" asChild>

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { pausedClassResponse } from "@/lib/class-access-guard";
 import { prisma } from "@/lib/prisma";
 import { scoreQuiz, type ScorableQuestion } from "@/lib/quiz-scoring";
 import { buildReviewSnapshot } from "@/lib/exam-results";
@@ -46,6 +47,10 @@ export async function POST(req: NextRequest) {
       { error: "Not enrolled in this class" },
       { status: 403 },
     );
+
+  // A disabled class is paused for its students (admin "disable class").
+  const paused = await pausedClassResponse(classId);
+  if (paused) return paused;
 
   // Verify the quiz is published for this class
   const classQuiz = await prisma.classQuiz.findUnique({
@@ -233,6 +238,8 @@ export async function PATCH(req: NextRequest) {
   if (!attempt || attempt.studentId !== student.id) {
     return NextResponse.json({ error: "Attempt not found" }, { status: 404 });
   }
+  const paused = await pausedClassResponse(attempt.classId);
+  if (paused) return paused;
   // Alternative-version retakes carry different questions; grading one against
   // the quiz's own would corrupt it. They submit through /api/quiz/practice.
   if (attempt.practiceVersionId) {

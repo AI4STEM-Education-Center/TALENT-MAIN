@@ -41,6 +41,13 @@ export default async function ExamResultsPage({
     where: { quizAttemptId: attemptId },
   });
   if (!examResult || examResult.studentId !== student.id) notFound();
+  // Results of a disabled class are hidden while it is paused (a student with
+  // no active class never gets here: the proxy sends them to /student/paused).
+  const resultClass = await prisma.class.findUnique({
+    where: { id: examResult.classId },
+    select: { disabledAt: true },
+  });
+  if (resultClass?.disabledAt) redirect("/student/classes");
 
   // Build the student-safe review before crossing the server/client boundary.
   // The transform keeps missed prompts and submitted responses only; correct

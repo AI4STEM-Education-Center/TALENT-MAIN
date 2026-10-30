@@ -22,7 +22,7 @@ export default async function StudentDashboard() {
 
   const [enrollments, completedCount, notifications] = await Promise.all([
     prisma.classEnrollment.findMany({
-      where: { studentId: student.id },
+      where: { studentId: student.id, class: { disabledAt: null } },
       include: {
         class: {
           include: {
@@ -34,7 +34,11 @@ export default async function StudentDashboard() {
     }),
     // Get overall progress counts
     prisma.quizProgress.count({
-      where: { studentId: student.id, status: "COMPLETED" },
+      where: {
+        studentId: student.id,
+        status: "COMPLETED",
+        class: { disabledAt: null },
+      },
     }),
     // Most recent notifications for the dashboard mailbox preview
     prisma.notification.findMany({

@@ -87,6 +87,15 @@ export async function resolveCoachScope(
     },
   });
   if (!result || result.studentId !== studentId) return null;
+  // A class an admin has paused hides its content even from a student who is
+  // still in another active class (the proxy only blocks fully paused ones).
+  if (result.classId) {
+    const cls = await prisma.class.findUnique({
+      where: { id: result.classId },
+      select: { disabledAt: true },
+    });
+    if (cls?.disabledAt) return null;
+  }
 
   const question = parseReviewSnapshot(result.reviewSnapshot).questions[
     questionNumber - 1

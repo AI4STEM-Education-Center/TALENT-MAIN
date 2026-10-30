@@ -7,6 +7,7 @@ import { ResearchGates } from "@/components/consent/ResearchGates";
 import { SessionRecorder } from "@/components/session-recorder/SessionRecorder";
 import { flushSessionRecording } from "@/components/session-recorder/recorder";
 import { AssistantWidget } from "@/components/assistant/AssistantWidget";
+import { PausedFetchGuard } from "@/components/student/PausedFetchGuard";
 import { AssistantProvider } from "@/components/assistant/assistant-context";
 import { SessionProvider } from "next-auth/react";
 import { Menu, BookOpen, PanelLeft, Eye } from "lucide-react";
@@ -14,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { isRole, type Role } from "@/lib/roles";
 import { RESEARCHER_VIEW_ONLY_NOTICE } from "@/lib/researcher-access";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { PAUSED_PAGE_PATH } from "@/lib/platform-paused";
 
 function DashboardContent({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
@@ -37,9 +39,16 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
   // which links only to pages the proxy already guards.
   const role: Role = isRole(session.user.role) ? session.user.role : "STUDENT";
 
+  // A paused student gets a bare page: no sidebar, assistant or research
+  // prompts, so nothing on screen calls an API the proxy is refusing.
+  if (role === "STUDENT" && pathname === PAUSED_PAGE_PATH) {
+    return <main className="min-h-screen bg-background">{children}</main>;
+  }
+
   return (
     <AssistantProvider>
       <div className="flex min-h-screen bg-background">
+        {role === "STUDENT" && <PausedFetchGuard />}
         <ResearchGates />
         {/* Research session replay: students only, server-gated on consent. */}
         {role === "STUDENT" && <SessionRecorder />}

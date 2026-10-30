@@ -1,3 +1,5 @@
+import { platformPausedResponse } from "@/lib/class-access-guard";
+import { invalidateStudentPauseCache } from "@/lib/class-access-pause";
 import { USER_PROFILE_SELECT } from "@/lib/user-profile";
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
@@ -16,6 +18,7 @@ import {
 import { rateLimit } from "@/lib/rate-limit";
 import { logApiError } from "@/lib/system-log";
 
+class ClassDisabledError extends Error {}
 class InvitationUnavailableError extends Error {}
 class RosterAlreadyClaimedError extends Error {}
 
@@ -44,6 +47,10 @@ export async function GET(
     return NextResponse.json(
       { error: "Invalid invitation link." },
       { status: 404 },
+    );
+  if (invitation.class.disabledAt)
+    return platformPausedResponse(
+      invitation.class.disabledMessage || undefined,
     );
   if (!invitation.active)
     return NextResponse.json(
@@ -106,6 +113,11 @@ export async function POST(
         { status: 410 },
       );
     }
+
+    if (invitation.class.disabledAt)
+      return platformPausedResponse(
+        invitation.class.disabledMessage || undefined,
+      );
 
     const body = await req.json();
     const rawOrgId = (body.orgDefinedId || "").replace(/^#/, "").trim();
@@ -248,6 +260,11 @@ export async function POST(
       const currentInvitation = await tx.invitation.findUnique({
         where: { id: invitation.id },
       });
+      const currentClass = await tx.class.findUnique({
+        where: { id: invitation.classId },
+        select: { disabledAt: true },
+      });
+      if (currentClass?.disabledAt) throw new ClassDisabledError();
       const now = new Date();
       if (
         !currentInvitation ||
@@ -306,6 +323,7 @@ export async function POST(
       });
     });
 
+    invalidateStudentPauseCache();
     return NextResponse.json({
       success: true,
       classId: invitation.classId,
@@ -313,6 +331,7 @@ export async function POST(
       lastName,
     });
   } catch (err) {
+    if (err instanceof ClassDisabledError) return platformPausedResponse();
     if (err instanceof InvitationUnavailableError) {
       return NextResponse.json(
         { error: "Invitation limit reached." },

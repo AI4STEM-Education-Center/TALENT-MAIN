@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { ClassResearchToggle } from "./class-research-toggle";
+import { ClassAccessToggle } from "./class-access-toggle";
 
 const RESEARCH_FILTERS = {
   all: "All classes",
@@ -66,6 +67,7 @@ export default async function AdminClassesPage({
         id: true,
         name: true,
         researchExcluded: true,
+        disabledAt: true,
         teacher: {
           select: {
             user: { select: { firstName: true, lastName: true, email: true } },
@@ -147,6 +149,7 @@ export default async function AdminClassesPage({
                   <th className="p-2">Simulation sessions</th>
                   <th className="p-2">Usage</th>
                   <th className="p-2">Research prompts</th>
+                  <th className="p-2">Student access</th>
                 </tr>
               </thead>
               <tbody>
@@ -183,6 +186,13 @@ export default async function AdminClassesPage({
                         classId={cls.id}
                         className={cls.name}
                         excluded={cls.researchExcluded}
+                      />
+                    </td>
+                    <td className="p-2">
+                      <ClassAccessToggle
+                        classId={cls.id}
+                        className={cls.name}
+                        disabled={cls.disabledAt !== null}
                       />
                     </td>
                   </tr>

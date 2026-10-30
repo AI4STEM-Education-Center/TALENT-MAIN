@@ -33,7 +33,7 @@ async function reachableClasses(
 ): Promise<ReachableClass[]> {
   if (ctx.audience === "student" && ctx.studentId) {
     const rows = await prisma.classEnrollment.findMany({
-      where: { studentId: ctx.studentId },
+      where: { studentId: ctx.studentId, class: { disabledAt: null } },
       orderBy: { joinedAt: "desc" },
       select: { class: { select: { id: true, name: true } } },
     });
