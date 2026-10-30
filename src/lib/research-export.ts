@@ -311,7 +311,13 @@ desktop, and is empty on rows recorded before it existed.
 
 exam_result.reviewSnapshot preserves submitted answers and question text after
 live content is edited/deleted. quiz_practice_attempt keeps its own questions
-and answers; practice is separate from graded quiz attempts. Relation-free
+and answers. An alternative-version run is also a quiz_attempt/exam_result:
+quiz_attempt.practiceVersionId (non-empty) marks it as a retake on that
+quiz_practice_version, quiz_practice_attempt.quizAttemptId links the payload,
+and excludedQuestionIds lists the previously-correct source questions the
+student left out (score covers only the questions asked). Its quiz_answer rows
+use the source question's id with the alternative's choice ids in
+selectedOptionIds. Relation-free
 archives can refer to deleted users/classes/content: retain these rows.
 
 assistant_message.csv contains both hot database turns and cold S3 transcripts.
