@@ -239,6 +239,36 @@ export function buildAreaSegments(
   return segments;
 }
 
+/** Total length of `segments` played back to back. */
+export function segmentsDuration(segments: AreaSegment[]): number {
+  return segments.reduce((sum, s) => sum + (s.endMs - s.startMs), 0);
+}
+
+/**
+ * Maps a recording offset onto the stitched timeline of `segments` (played
+ * back to back, gaps removed). Offsets in a gap map to the next segment's start.
+ */
+export function toSegmentTime(segments: AreaSegment[], ms: number): number {
+  let elapsed = 0;
+  for (const segment of segments) {
+    if (ms < segment.startMs) return elapsed;
+    if (ms < segment.endMs) return elapsed + (ms - segment.startMs);
+    elapsed += segment.endMs - segment.startMs;
+  }
+  return elapsed;
+}
+
+/** Inverse of `toSegmentTime`: a stitched-timeline offset back to the recording's. */
+export function fromSegmentTime(segments: AreaSegment[], ms: number): number {
+  let remaining = Math.max(0, ms);
+  for (const segment of segments) {
+    const length = segment.endMs - segment.startMs;
+    if (remaining < length) return segment.startMs + remaining;
+    remaining -= length;
+  }
+  return segments.at(-1)?.endMs ?? 0;
+}
+
 /** Includes instantaneous touches, even at the final timestamp, in stable area order. */
 export function areasInEvents(
   events: ReplayEvent[],
