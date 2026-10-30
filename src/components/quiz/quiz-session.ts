@@ -19,12 +19,18 @@ export interface QuizQuestion {
 export interface QuizResult {
   score: number;
   incorrectQuestionIds: string[];
+  /** Practice only: the recorded retake's attempt id (results are keyed by it). */
+  quizAttemptId?: string;
 }
 
 export interface QuizSession {
   // Only real student sessions have a persisted attempt and AI results.
   attemptId?: string;
   versionName?: string;
+  /** Practice only: previously-correct questions left out of this retake. */
+  excludedCount?: number;
+  /** Practice only: exclusion was requested but nothing would remain. */
+  exclusionIgnored?: boolean;
   questions: QuizQuestion[];
   submit: (answers: SubmittedAnswer[]) => Promise<QuizResult>;
 }
@@ -122,20 +128,26 @@ export async function startQuizPreview(quizId: string): Promise<QuizSession> {
 export async function startPracticeQuiz(
   classId: string,
   quizId: string,
+  excludeCorrect = false,
 ): Promise<QuizSession> {
   const data = await readResponse<{
     attemptId: string;
+    quizAttemptId: string | null;
     versionName: string;
+    excludedCount: number;
+    exclusionIgnored: boolean;
     questions: QuizQuestion[];
   }>(
     await fetch("/api/quiz/practice", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ classId, quizId }),
+      body: JSON.stringify({ classId, quizId, excludeCorrect }),
     }),
   );
   return {
     ...data,
+    // Results are keyed by the recorded QuizAttempt; submit by the practice id.
+    attemptId: data.quizAttemptId ?? undefined,
     submit: async (answers) =>
       readResponse<QuizResult>(
         await fetch("/api/quiz/practice", {

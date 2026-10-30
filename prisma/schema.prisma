@@ -700,6 +700,19 @@ model QuizAttempt {
   startedAt   DateTime  @default(now())
   completedAt DateTime?
 
+  // Alternative-version retake. NULL = an ordinary attempt on the quiz itself.
+  // Non-null = a retake taken on that QuizPracticeVersion (see
+  // docs/features/alternative-quiz-versions.md): it is recorded like any other
+  // attempt but does not count toward the graded best score, the attempt cap,
+  // or grade exports (src/lib/alternative-retake.ts: GRADED_ATTEMPTS).
+  // practiceVersionName is a snapshot so labels survive version deletion.
+  // excludedQuestionIds: JSON array of source Question ids the student chose
+  // to leave out because they answered them correctly before; the score is
+  // over the remaining questions only.
+  practiceVersionId   String?
+  practiceVersionName String?
+  excludedQuestionIds String  @default("[]")
+
   student Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
   class   Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
   // SetNull (not Cascade): deleting a quiz — e.g. an admin pruning the global
@@ -759,6 +772,12 @@ model ExamResult {
   correctCount Int
   totalCount   Int
   completedAt  DateTime
+
+  // Alternative-version retake label (null for ordinary attempts) and how many
+  // previously-correct questions the student left out. totalCount already
+  // excludes them, so score is correctCount / totalCount of the questions asked.
+  practiceVersionName String?
+  excludedCount       Int     @default(0)
 
   // self-contained per-question review snapshot (JSON string)
   reviewSnapshot String
@@ -2058,7 +2077,9 @@ model QuizPracticeVersion {
 }
 
 // Self-contained attempt archive: no content cascade can alter a student's
-// submitted practice. No grade/progress/export code reads this table.
+// submitted practice. It holds the immutable question payload; the student's
+// graded-pipeline record of the same run is the QuizAttempt/ExamResult linked
+// by quizAttemptId. Grade/progress code reads only the QuizAttempt side.
 model QuizPracticeAttempt {
   id String @id @default(cuid())
   studentId String
@@ -2066,6 +2087,11 @@ model QuizPracticeAttempt {
   quizId String
   versionId String
   versionName String
+  // The QuizAttempt this practice run is recorded as (a retake of the quiz).
+  // Null only for rows started before retakes were recorded.
+  // A normal index keeps db push additive on populated databases: a new
+  // unique constraint prompts for destructive-change approval even for NULLs.
+  quizAttemptId String?
   questions String
   answers String @default("[]")
   score Float?
@@ -2075,6 +2101,7 @@ model QuizPracticeAttempt {
   // per student/class/quiz even under concurrent start requests.
   activeKey String? @unique
   @@index([studentId, classId, quizId])
+  @@index([quizAttemptId])
 }
 
 // ─── Research surveys & participant pool ────────────────────────────────────
