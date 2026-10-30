@@ -2,16 +2,10 @@
 // click / input / form / navigation events a person can read on the admin
 // timeline, and uploads the stream to /api/recordings in gzip batches.
 //
-// rrweb is imported lazily so it costs nothing until a recording starts. The
-// server decides who is recorded (research consent) — it answers the first
-// upload with a `stop` reason when someone shouldn't be — so this file never
-// stores anything on the device and sends nothing a non-consenting student
-// could be identified by beyond that one rejected batch, which the server
-// discards.
-//
-// Privacy defaults: password fields are masked by rrweb; anything inside an
-// element with the `rr-block` class (the consent form's signature and UGA ID)
-// is not captured at all, and `rr-mask` hides text and values.
+// rrweb is imported only after a fresh server consent check. Every upload also
+// rechecks consent, so withdrawal or form changes stop storage mid-visit.
+// Sensitive regions and password/file inputs are blocked in both the DOM
+// stream and custom interaction labels.
 
 import {
   CUSTOM_TAG,
@@ -19,6 +13,8 @@ import {
   RECORDING_FLUSH_INTERVAL_MS,
   RECORDING_MAX_AGE_MS,
   RECORDING_MAX_BODY_BYTES,
+  RECORDING_MAX_CHUNK_RAW_BYTES,
+  RECORDING_MAX_EVENTS_PER_CHUNK,
   type ReplayEvent,
 } from "@/lib/session-recording";
 
@@ -28,9 +24,12 @@ const ENDPOINT = "/api/recordings";
 const RETRY_DELAYS_MS = [2_000, 4_000, 8_000, 16_000];
 /** sendBeacon payloads are capped near 64 KB. */
 const BEACON_MAX_BYTES = 60_000;
-const PRIVATE_SELECTOR = ".rr-block, .rr-mask, .rr-ignore";
+const PRIVATE_SELECTOR =
+  '.rr-block, .rr-mask, .rr-ignore, input[type="password"], input[data-rr-is-password], input[type="file"]';
+const MAX_QUEUED_BYTES = 2 * RECORDING_MAX_CHUNK_RAW_BYTES;
 
 type StopReason = "no_consent" | "recording_full" | "quota" | "restart";
+type ClientStopReason = StopReason | "unauthorized" | "overflow" | "invalid";
 type UploadOutcome = "ok" | "rotate" | "stop" | "retry";
 
 let active: SessionRecorder | null = null;
@@ -57,18 +56,25 @@ const CLICK_TARGET =
   "button, a, input, select, textarea, label, summary, [role='button'], [role='tab'], [role='menuitem'], [role='checkbox'], [role='switch'], [role='option'], [data-replay-label]";
 
 /** A short human label for the element a person interacted with. */
+function publicText(el: Element): string {
+  if (el.closest(PRIVATE_SELECTOR)) return "";
+  const copy = el.cloneNode(true) as Element;
+  copy.querySelectorAll(PRIVATE_SELECTOR).forEach((node) => node.remove());
+  return copy.textContent ?? "";
+}
+
 export function describeElement(el: Element): string {
   if (el.closest(PRIVATE_SELECTOR)) return el.tagName.toLowerCase();
   const attr = (name: string) => el.getAttribute(name)?.trim() || "";
   const labelled = el as HTMLElement & {
     labels?: NodeListOf<HTMLLabelElement>;
   };
-  const fromLabels = labelled.labels?.[0]?.textContent ?? "";
+  const fromLabels = labelled.labels?.[0] ? publicText(labelled.labels[0]) : "";
   const rawText =
     el instanceof HTMLInputElement &&
     ["button", "submit", "reset"].includes(el.type)
       ? el.value
-      : (el.textContent ?? "");
+      : publicText(el);
   // A click on a layout container would otherwise be labeled with everything
   // inside it; only controls and short text are worth naming.
   const text =
@@ -102,7 +108,10 @@ function inputValue(el: Element): string | undefined {
   }
   if (el instanceof HTMLTextAreaElement) return truncate(el.value, 200);
   if (el instanceof HTMLSelectElement) {
-    return truncate(el.selectedOptions[0]?.textContent ?? el.value, 200);
+    return truncate(
+      el.selectedOptions[0] ? publicText(el.selectedOptions[0]) : "",
+      200,
+    );
   }
   return undefined;
 }
@@ -130,6 +139,7 @@ class SessionRecorder {
   private entryPath = "";
   private seq = 0;
   private buffer: ReplayEvent[] = [];
+  private bufferBytes = 0;
   // The page the student was on, and where the buffered batch began, so the
   // server can attribute a batch with no navigation event to the right area.
   private pathNow = "";
@@ -140,13 +150,28 @@ class SessionRecorder {
   private uploads: Promise<void> = Promise.resolve();
   private timer: ReturnType<typeof setInterval> | null = null;
   private disposed = false;
-  private onStop: (reason: StopReason | "unauthorized") => void;
+  private rotating = false;
+  private queuedBytes = 0;
+  private onStop: (reason: ClientStopReason) => void;
 
-  constructor(onStop: (reason: StopReason | "unauthorized") => void) {
+  constructor(onStop: (reason: ClientStopReason) => void) {
     this.onStop = onStop;
   }
 
   async start(): Promise<void> {
+    const eligibility = await fetch(ENDPOINT, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (this.disposed) return;
+    if (!eligibility.ok) {
+      this.stopWith("unauthorized");
+      return;
+    }
+    if (!(await eligibility.json()).allowed) {
+      this.stopWith("no_consent");
+      return;
+    }
     const { record } = await import("@rrweb/record");
     if (this.disposed) return;
     this.record = record;
@@ -170,31 +195,38 @@ class SessionRecorder {
     this.pathNow = this.entryPath;
     this.seq = 0;
     this.buffer = [];
-    this.stopRrweb =
-      this.record({
-        emit: (event) => this.onEvent(event as unknown as ReplayEvent),
-        maskInputOptions: { password: true },
-        blockClass: "rr-block",
-        maskTextClass: "rr-mask",
-        ignoreClass: "rr-ignore",
-        sampling: { mousemove: 100, scroll: 150, input: "last" },
-        recordCanvas: false,
-        collectFonts: false,
-      }) ?? null;
+    this.bufferBytes = 0;
+    const stop = this.record({
+      emit: (event) => this.onEvent(event as unknown as ReplayEvent),
+      maskInputOptions: { password: true },
+      blockSelector: PRIVATE_SELECTOR,
+      blockClass: "rr-block",
+      maskTextClass: "rr-mask",
+      ignoreClass: "rr-ignore",
+      sampling: { mousemove: 100, scroll: 150, input: "last" },
+      recordCanvas: false,
+      collectFonts: false,
+    });
+    if (this.disposed) stop?.();
+    else this.stopRrweb = stop ?? null;
   }
 
   custom(tag: string, payload: Record<string, unknown>) {
-    if (this.disposed || !this.record) return;
-    this.record.addCustomEvent(tag, payload);
+    if (this.disposed) return;
+    if (this.record && this.stopRrweb) this.record.addCustomEvent(tag, payload);
     if (tag === CUSTOM_TAG.Navigate && typeof payload.path === "string") {
       this.pathNow = payload.path.slice(0, 300);
     } else if (tag === CUSTOM_TAG.Area && typeof payload.area === "string") {
       if (payload.state === "leave") this.openAreas.delete(payload.area);
-      else this.openAreas.add(payload.area);
+      else {
+        this.openAreas.delete(payload.area);
+        this.openAreas.add(payload.area);
+      }
     }
   }
 
   private onEvent(event: ReplayEvent) {
+    if (this.disposed) return;
     if (this.buffer.length === 0) {
       this.bufferStartPath = this.pathNow;
       for (const area of this.openAreas) {
@@ -205,12 +237,26 @@ class SessionRecorder {
         });
       }
     }
+    const bytes = new Blob([JSON.stringify(event)]).size;
+    if (
+      bytes > RECORDING_MAX_CHUNK_RAW_BYTES ||
+      this.queuedBytes + this.bufferBytes + bytes > MAX_QUEUED_BYTES
+    ) {
+      this.stopWith("overflow");
+      return;
+    }
+    this.bufferBytes += bytes;
     this.buffer.push(event);
-    if (this.buffer.length >= RECORDING_FLUSH_EVENT_COUNT) void this.flush();
+    if (
+      this.buffer.length >= RECORDING_FLUSH_EVENT_COUNT ||
+      this.bufferBytes >= RECORDING_MAX_BODY_BYTES
+    )
+      void this.flush();
   }
 
   private onClick = (event: MouseEvent) => {
     if (!(event.target instanceof Element)) return;
+    if (event.target.closest(PRIVATE_SELECTOR)) return;
     const target = event.target.closest(CLICK_TARGET) ?? event.target;
     this.custom(CUSTOM_TAG.Click, {
       label: describeElement(target),
@@ -224,7 +270,7 @@ class SessionRecorder {
 
   private onChange = (event: Event) => {
     const el = event.target;
-    if (!(el instanceof Element)) return;
+    if (!(el instanceof Element) || el.closest(PRIVATE_SELECTOR)) return;
     this.custom(CUSTOM_TAG.Input, {
       label: describeElement(el),
       value: inputValue(el),
@@ -233,7 +279,8 @@ class SessionRecorder {
 
   private onSubmit = (event: SubmitEvent) => {
     const form = event.target;
-    if (!(form instanceof HTMLFormElement)) return;
+    if (!(form instanceof HTMLFormElement) || form.closest(PRIVATE_SELECTOR))
+      return;
     this.custom(CUSTOM_TAG.Submit, {
       label:
         form.getAttribute("aria-label") || form.getAttribute("name") || "form",
@@ -246,29 +293,40 @@ class SessionRecorder {
 
   /** Last chance on unload: only a small plain-JSON beacon can still leave. */
   private onPageHide = () => {
-    if (this.buffer.length === 0 || !this.recordingId) return;
-    const events = this.buffer;
-    this.buffer = [];
+    // A beacon must not overtake an in-flight opening snapshot or split batch.
+    if (
+      this.disposed ||
+      this.queuedBytes > 0 ||
+      this.buffer.length === 0 ||
+      !this.recordingId
+    )
+      return;
     const body = JSON.stringify(
       this.payload(
-        this.seq++,
+        this.seq,
         "json",
-        JSON.stringify(events),
+        JSON.stringify(this.buffer),
         true,
         this.bufferStartPath,
       ),
     );
-    if (body.length <= BEACON_MAX_BYTES) {
+    if (
+      new Blob([body]).size <= BEACON_MAX_BYTES &&
       navigator.sendBeacon(
         ENDPOINT,
         new Blob([body], { type: "application/json" }),
-      );
+      )
+    ) {
+      this.seq++;
+      this.buffer = [];
+      this.bufferBytes = 0;
     }
   };
 
   private async tick() {
     if (this.disposed) return;
     const aged = Date.now() - this.startedAt >= RECORDING_MAX_AGE_MS;
+    if (this.rotating) return;
     if (aged && this.buffer.length > 0) {
       await this.rotate();
     } else {
@@ -278,10 +336,14 @@ class SessionRecorder {
 
   /** Close this recording and begin a new one with a fresh opening snapshot. */
   private async rotate() {
-    await this.flush(true, true);
+    if (this.rotating) return;
+    this.rotating = true;
+    const previousId = this.recordingId;
     this.stopRrweb?.();
     this.stopRrweb = null;
-    this.begin();
+    await this.flush(true, true);
+    if (this.recordingId === previousId) this.begin();
+    this.rotating = false;
   }
 
   private payload(
@@ -306,14 +368,25 @@ class SessionRecorder {
 
   /** Queue everything buffered for upload; resolves when the queue drains. */
   flush(keepalive = false, final = false): Promise<void> {
+    if (this.disposed) return this.uploads;
     if (this.buffer.length > 0 || final) {
       const events = this.buffer;
       this.buffer = [];
+      this.bufferBytes = 0;
       const recordingId = this.recordingId;
       const path = this.bufferStartPath;
-      this.uploads = this.uploads.then(() =>
-        this.send(recordingId, events, keepalive, final, path),
-      );
+      const bytes = new Blob([JSON.stringify(events)]).size;
+      this.queuedBytes += bytes;
+      if (this.queuedBytes > MAX_QUEUED_BYTES) {
+        this.stopWith("overflow");
+        return this.uploads;
+      }
+      this.uploads = this.uploads
+        .then(() => this.send(recordingId, events, keepalive, final, path))
+        .catch(() => this.stopWith("invalid"))
+        .finally(() => {
+          this.queuedBytes -= bytes;
+        });
     }
     return this.uploads;
   }
@@ -325,14 +398,38 @@ class SessionRecorder {
     final: boolean,
     path?: string,
   ) {
-    if (this.disposed || events.length === 0) return;
+    if (
+      this.disposed ||
+      recordingId !== this.recordingId ||
+      events.length === 0
+    )
+      return;
     const json = JSON.stringify(events);
-    const gz = await gzipBase64(json);
+    const gz = await gzipBase64(json).catch(() => null);
     const encoding = gz === null ? "json" : "gzip";
     const data = gz ?? json;
-    if (data.length > RECORDING_MAX_BODY_BYTES) {
+    if (
+      data.length > RECORDING_MAX_BODY_BYTES ||
+      new Blob([
+        JSON.stringify(this.payload(this.seq, encoding, data, final, path)),
+      ]).size >
+        RECORDING_MAX_BODY_BYTES + 4096 ||
+      new Blob([json]).size > RECORDING_MAX_CHUNK_RAW_BYTES ||
+      events.length > RECORDING_MAX_EVENTS_PER_CHUNK
+    ) {
       if (events.length > 1) {
-        const mid = Math.ceil(events.length / 2);
+        // Never split the opening metadata away from its required snapshot.
+        const mid =
+          this.seq === 0
+            ? Math.max(
+                Math.ceil(events.length / 2),
+                events.findIndex((event) => event.type === 2) + 1,
+              )
+            : Math.ceil(events.length / 2);
+        if (mid >= events.length) {
+          this.stopWith("overflow");
+          return;
+        }
         await this.send(
           recordingId,
           events.slice(0, mid),
@@ -340,11 +437,14 @@ class SessionRecorder {
           false,
           path,
         );
-        await this.send(recordingId, events.slice(mid), keepalive, final);
+        await this.send(recordingId, events.slice(mid), keepalive, final, path);
+      } else {
+        this.stopWith("overflow");
       }
       return;
     }
 
+    if (this.disposed || recordingId !== this.recordingId) return;
     const seq = this.seq++;
     const body = JSON.stringify({
       ...this.payload(seq, encoding, data, final, path),
@@ -383,14 +483,18 @@ class SessionRecorder {
         method: "POST",
         headers: { "content-type": "application/json" },
         body,
-        keepalive: keepalive && body.length < BEACON_MAX_BYTES,
+        keepalive: keepalive && new Blob([body]).size < BEACON_MAX_BYTES,
+        signal: AbortSignal.timeout(15_000),
       });
       if (res.status === 401 || res.status === 403) {
         this.stopWith("unauthorized");
         return "stop";
       }
-      if (!res.ok)
-        return res.status >= 500 || res.status === 429 ? "retry" : "stop";
+      if (!res.ok) {
+        if (res.status >= 500 || res.status === 429) return "retry";
+        this.stopWith("invalid");
+        return "stop";
+      }
       const result = (await res.json()) as {
         accepted?: boolean;
         stop?: StopReason;
@@ -406,7 +510,7 @@ class SessionRecorder {
     }
   }
 
-  private stopWith(reason: StopReason | "unauthorized") {
+  private stopWith(reason: ClientStopReason) {
     this.dispose();
     this.onStop(reason);
   }
@@ -415,6 +519,9 @@ class SessionRecorder {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
+    this.buffer = [];
+    this.bufferBytes = 0;
+    this.openAreas.clear();
     if (active === this) active = null;
     if (this.timer) clearInterval(this.timer);
     this.stopRrweb?.();
@@ -425,25 +532,18 @@ class SessionRecorder {
     document.removeEventListener("visibilitychange", this.onVisibility);
     window.removeEventListener("pagehide", this.onPageHide);
   }
-
-  /** End the recording cleanly: upload the tail and mark it finished. */
-  async finish() {
-    if (this.disposed) return;
-    await this.flush(true, true);
-    this.dispose();
-  }
 }
 
 /**
- * Begin recording this tab. Returns a function that finishes the recording.
+ * Begin recording this tab. Returns a function that immediately discards and stops capture.
  * `onStop` fires when the server or the session says to stop (no consent,
  * quota, signed out), after which nothing more is captured.
  */
 export function startSessionRecording(
-  onStop: (reason: StopReason | "unauthorized") => void,
+  onStop: (reason: ClientStopReason) => void,
 ): () => void {
   const recorder = new SessionRecorder(onStop);
   active = recorder;
   void recorder.start().catch(() => recorder.dispose());
-  return () => void recorder.finish();
+  return () => recorder.dispose();
 }

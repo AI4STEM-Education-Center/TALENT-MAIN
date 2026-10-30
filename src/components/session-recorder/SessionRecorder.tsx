@@ -11,9 +11,8 @@ import { startSessionRecording, trackReplayEvent } from "./recorder";
  * src/lib/session-recording.ts). Mounted once in the dashboard layout for
  * students only. It renders nothing.
  *
- * The server decides whether anyone is recorded: a student without research
- * consent gets a `no_consent` answer to the first upload, which stops the
- * recorder; it starts again when the consent modal reports a decision.
+ * Capture begins only after a fresh server consent check. Every consent decision
+ * discards the old buffer and rechecks eligibility before restarting.
  */
 export function SessionRecorder() {
   const pathname = usePathname();
@@ -21,21 +20,11 @@ export function SessionRecorder() {
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    let waitForConsent: (() => void) | null = null;
-    const stop = startSessionRecording((reason) => {
-      if (reason !== "no_consent") return;
-      const onDecided = () => {
-        window.removeEventListener(CONSENT_DECIDED_EVENT, onDecided);
-        waitForConsent = null;
-        setAttempt((n) => n + 1);
-      };
-      window.addEventListener(CONSENT_DECIDED_EVENT, onDecided);
-      waitForConsent = onDecided;
-    });
+    const onDecided = () => setAttempt((n) => n + 1);
+    window.addEventListener(CONSENT_DECIDED_EVENT, onDecided);
+    const stop = startSessionRecording(() => {});
     return () => {
-      if (waitForConsent) {
-        window.removeEventListener(CONSENT_DECIDED_EVENT, waitForConsent);
-      }
+      window.removeEventListener(CONSENT_DECIDED_EVENT, onDecided);
       stop();
     };
   }, [attempt]);
