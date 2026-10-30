@@ -12,6 +12,9 @@ import {
   POST as join,
   GET as invite,
 } from "@/app/api/invitations/[token]/route";
+import { POST as quizStart, PATCH as quizSubmit } from "@/app/api/quiz/route";
+import { POST as practiceStart } from "@/app/api/quiz/practice/route";
+import { GET as attemptResults } from "@/app/api/student/attempts/[attemptId]/results/route";
 import { GET as lookup } from "@/app/api/invitations/[token]/lookup/route";
 import { prisma } from "@/lib/prisma";
 import {
@@ -184,46 +187,97 @@ describe("class access contract and central proxy enforcement", () => {
     await toggle(cls.id, false);
     expect((await request("/api/assistant/chat", user.id)).status).toBe(200);
   });
-  it("keeps mixed-class access but blocks disabled class and persisted quiz attempts", async () => {
+  it("keeps mixed-class access but blocks the disabled class by URL, quiz body and attempt", async () => {
     const { cls, user, student, admin, teacher } = await setup();
     const active = await createClass(teacher.id, "Active");
     await prisma.classEnrollment.create({
       data: { classId: active.id, studentId: student.id },
     });
     const { quiz } = await createPublishedQuiz({ classId: cls.id });
+    const { quiz: activeQuiz } = await createPublishedQuiz({
+      classId: active.id,
+    });
     const attempt = await prisma.quizAttempt.create({
       data: { classId: cls.id, studentId: student.id, quizId: quiz.id },
     });
     as(admin.id, "ADMIN");
-    await toggle(cls.id, true);
+    await toggle(cls.id, true, "Class paused");
+
+    // Proxy: class id in the URL.
     expect(
       (await request(`/api/classes/${active.id}/modules`, user.id)).status,
     ).toBe(200);
-    expect(
-      (await request(`/api/classes/${cls.id}/modules`, user.id)).status,
-    ).toBe(403);
-    expect(
-      (
-        await request("/api/quiz", user.id, "STUDENT", {
-          classId: cls.id,
-          quizId: quiz.id,
-        })
-      ).status,
-    ).toBe(403);
-    expect(
-      (
-        await request("/api/quiz", user.id, "STUDENT", {
-          classId: active.id,
-          attemptId: attempt.id,
-          answers: [],
-        })
-      ).status,
-    ).toBe(403);
-    expect(
-      (await request(`/api/student/attempts/${attempt.id}/results`, user.id))
-        .status,
-    ).toBe(403);
+    const blocked = await request(`/api/classes/${cls.id}/modules`, user.id);
+    expect(blocked.status).toBe(403);
+    expect(await blocked.json()).toEqual({
+      error: "Class paused",
+      code: "PLATFORM_PAUSED",
+    });
+    const classPage = await request(`/student/classes/${cls.id}`, user.id);
+    expect(new URL(classPage.headers.get("location")!).pathname).toBe(
+      "/student/classes",
+    );
+    // Student is not fully paused: generic APIs stay reachable.
     expect((await request("/api/notifications", user.id)).status).toBe(200);
+    expect((await request(`/api/student/access`, user.id)).status).toBe(200);
+
+    // Routes: class id in the body or on the persisted attempt.
+    as(user.id, "STUDENT");
+    const json = (body: unknown, method = "POST") =>
+      new NextRequest("http://localhost/api/quiz", {
+        method,
+        body: JSON.stringify(body),
+      });
+    const start = await quizStart(json({ classId: cls.id, quizId: quiz.id }));
+    expect(start.status).toBe(403);
+    expect(await start.json()).toMatchObject({ code: "PLATFORM_PAUSED" });
+    expect(
+      (
+        await quizSubmit(
+          json(
+            { classId: active.id, attemptId: attempt.id, answers: [] },
+            "PATCH",
+          ),
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (await practiceStart(json({ classId: cls.id, quizId: quiz.id }))).status,
+    ).toBe(403);
+    const results = await attemptResults(
+      new Request("http://localhost/api/x"),
+      { params: Promise.resolve({ attemptId: attempt.id }) },
+    );
+    // No archived result yet => 404, not 403; the paused case is below.
+    expect(results.status).toBe(404);
+    await prisma.examResult.create({
+      data: {
+        quizAttemptId: attempt.id,
+        studentId: student.id,
+        classId: cls.id,
+        quizId: quiz.id,
+        className: cls.name,
+        topicName: "Topic",
+        quizName: "Quiz",
+        score: 1,
+        correctCount: 1,
+        totalCount: 1,
+        completedAt: new Date(),
+        reviewSnapshot: "{}",
+      },
+    });
+    expect(
+      (
+        await attemptResults(new Request("http://localhost/api/x"), {
+          params: Promise.resolve({ attemptId: attempt.id }),
+        })
+      ).status,
+    ).toBe(403);
+    // The other, active class still works.
+    expect(
+      (await quizStart(json({ classId: active.id, quizId: activeQuiz.id })))
+        .status,
+    ).toBe(200);
   });
   it("refuses disabled invitations before signup, roster lookup or enrollment", async () => {
     const { cls, admin } = await setup();

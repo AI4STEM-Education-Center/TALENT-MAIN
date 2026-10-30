@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { pausedClassResponse } from "@/lib/class-access-guard";
 import { prisma } from "@/lib/prisma";
 import { presignStoredRecommendations } from "@/lib/exam-results-engine";
 import { RESULT_STATUS } from "@/lib/exam-results";
@@ -201,6 +202,8 @@ export async function GET(
   if (!examResult || examResult.studentId !== student.id) {
     return NextResponse.json({ error: "Result not found" }, { status: 404 });
   }
+  const paused = await pausedClassResponse(examResult.classId);
+  if (paused) return paused;
 
   // Self-heal: if a section is PENDING/legacy-skipped, or has been GENERATING/FAILED
   // beyond the stale window, re-enqueue so a (re)started worker picks it up.

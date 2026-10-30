@@ -99,6 +99,18 @@ export default async function ClassDetailPage({
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-3xl font-bold">{cls.name}</h1>
+          {cls.disabledAt && (
+            <p
+              role="status"
+              className="mt-2 inline-block rounded-md border border-yellow-300 bg-yellow-50 px-3 py-1.5 text-sm text-yellow-900 dark:border-yellow-500/30 dark:bg-yellow-500/10 dark:text-yellow-300"
+            >
+              <Badge variant="warning" className="mr-2">
+                Access paused by admin
+              </Badge>
+              Students in this class cannot use the platform right now. You can
+              still manage the class.
+            </p>
+          )}
           {cls.description && (
             <p className="text-muted-foreground mt-1">{cls.description}</p>
           )}

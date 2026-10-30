@@ -153,9 +153,6 @@ model Student {
 // ─── Classes ──────────────────────────────────────────────────────────────────
 
 model Class {
-  disabledAt DateTime?
-  disabledMessage String?
-  disabledByUserId String?
   id          String   @id @default(cuid())
   name        String
   description String?
@@ -166,6 +163,12 @@ model Class {
   researchExcluded     Boolean   @default(false)
   researchExcludedAt   DateTime?
   researchExcludedById String?
+
+  // Admin "disable class": a student whose enrolled classes are ALL disabled is
+  // paused platform-wide (src/lib/class-access-pause.ts). Data is never touched.
+  disabledAt       DateTime?
+  disabledMessage  String?
+  disabledByUserId String?
 
   teacher        Teacher           @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   enrollments    ClassEnrollment[]

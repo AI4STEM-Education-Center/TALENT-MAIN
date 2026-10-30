@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
+import { pausedClassResponse } from "@/lib/class-access-guard";
 import { prisma } from "@/lib/prisma";
 import {
   scoreVariant,
@@ -62,6 +63,8 @@ export async function GET(req: NextRequest) {
       { status: 400 },
     );
   const { classId, quizId } = input.data;
+  const paused = await pausedClassResponse(classId);
+  if (paused) return paused;
   if (!(await access(student.id, classId, quizId)))
     return NextResponse.json(
       { error: "Practice is unavailable for this class or quiz." },
@@ -110,6 +113,8 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
   const { classId, quizId, excludeCorrect = false } = input.data;
+  const paused = await pausedClassResponse(classId);
+  if (paused) return paused;
   if (!(await access(student.id, classId, quizId)))
     return NextResponse.json(
       { error: "Practice is unavailable for this class or quiz." },
@@ -223,6 +228,8 @@ export async function PATCH(req: NextRequest) {
   });
   if (!attempt)
     return NextResponse.json({ error: "Attempt not found" }, { status: 404 });
+  const paused = await pausedClassResponse(attempt.classId);
+  if (paused) return paused;
   if (attempt.completedAt)
     return NextResponse.json(
       { error: "This practice was already submitted." },

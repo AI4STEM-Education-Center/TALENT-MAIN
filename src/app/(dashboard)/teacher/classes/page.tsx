@@ -20,6 +20,7 @@ interface ClassItem {
   name: string;
   description: string | null;
   createdAt: string;
+  disabledAt?: string | null;
   _count: {
     enrollments: number;
     classQuizzes: number;
@@ -126,7 +127,12 @@ export default function ClassesPage() {
             <Card key={cls.id} className="hover:shadow-md transition-shadow">
               <CardContent className="flex items-start justify-between gap-3 flex-wrap p-5">
                 <div className="space-y-1 min-w-0 flex-1">
-                  <h2 className="text-lg font-semibold">{cls.name}</h2>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-lg font-semibold">{cls.name}</h2>
+                    {cls.disabledAt && (
+                      <Badge variant="warning">Access paused by admin</Badge>
+                    )}
+                  </div>
                   {cls.description && (
                     <p className="text-sm text-muted-foreground">
                       {cls.description}
