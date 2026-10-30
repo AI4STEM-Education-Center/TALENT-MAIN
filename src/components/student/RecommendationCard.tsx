@@ -13,6 +13,7 @@ import { FeedbackRatingForm } from "@/components/feedback/FeedbackRatingForm";
 import type { PresignedRecommendation } from "@/lib/exam-results";
 import type { ResourceSurface } from "@/lib/resource-telemetry";
 import { useResourceTelemetry } from "@/components/student/use-resource-telemetry";
+import { useReplayArea } from "@/components/session-recorder/use-replay-area";
 
 /** "page 8" / "pages 8–12" for a recommendation's range. */
 function pageRangeLabel(rec: PresignedRecommendation): string {
@@ -54,6 +55,7 @@ export function RecommendationCard({
   const [open, setOpen] = useState(false);
   const cover = rec.pages[0];
   const pageCount = rec.pages.length;
+  useReplayArea("material", open);
   const { containerRef, viewPage } = useResourceTelemetry({
     enabled:
       open &&
