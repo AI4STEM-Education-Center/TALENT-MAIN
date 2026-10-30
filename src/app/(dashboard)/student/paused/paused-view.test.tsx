@@ -4,10 +4,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const replace = vi.fn();
-const signOut = vi.fn(async () => undefined);
+const signOut = vi.fn(async (_opts?: unknown) => undefined);
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace }) }));
 vi.mock("next-auth/react", () => ({
-  signOut: (...a: unknown[]) => signOut(...a),
+  signOut: (opts?: unknown) => signOut(opts),
 }));
 
 import { PausedView, POLL_INTERVAL_MS } from "./paused-view";

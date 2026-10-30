@@ -67,15 +67,16 @@ function ToggleInner({
           next ? { disabled: true, message: text } : { disabled: false },
         ),
       });
-      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        const failure = await res.json().catch(() => ({}));
         await alert({
           title: "Could not update the class",
           description:
-            typeof data.error === "string" ? data.error : "Try again.",
+            typeof failure.error === "string" ? failure.error : "Try again.",
         });
         return false;
       }
+      const data = await res.json();
       setDisabled(data.disabledAt != null);
       router.refresh();
       return true;
