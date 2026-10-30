@@ -16,7 +16,8 @@
 // still retake the quiz the coach keeps to that — the model is told the key is
 // withheld and is not given the unselected choices. Once the attempt is final
 // (same `retakeStillPossible` test as the assistant's get_quiz_result_detail)
-// the full question, key and teacher explanation are shared as review.
+// the full question, key and teacher explanation are shared as review. An
+// alternative-version retake is never final, so its key is always withheld.
 
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
@@ -82,6 +83,7 @@ export async function resolveCoachScope(
       topicName: true,
       className: true,
       reviewSnapshot: true,
+      practiceVersionName: true,
     },
   });
   if (!result || result.studentId !== studentId) return null;
@@ -91,6 +93,20 @@ export async function resolveCoachScope(
   ];
   // Strictly false: a snapshot row with no verdict is not "wrong".
   if (!question || question.isCorrect !== false) return null;
+
+  // An alternative retake is recorded in the same pipeline as a graded attempt
+  // but is never final, so its key stays withheld (same rule as the assistant's
+  // get_quiz_result_detail). The version it ran on is kept so the coach does
+  // not offer that very question back as a fresh practice question.
+  const alternative = result.practiceVersionName !== null;
+  const ownVersionId = alternative
+    ? ((
+        await prisma.quizPracticeAttempt.findFirst({
+          where: { quizAttemptId: resultId, studentId },
+          select: { versionId: true },
+        })
+      )?.versionId ?? null)
+    : null;
 
   return {
     studentId,
@@ -104,11 +120,11 @@ export async function resolveCoachScope(
     questionId:
       typeof question.questionId === "string" ? question.questionId : null,
     question,
-    answerKeyAvailable: !(await retakeStillPossible(
-      studentId,
-      result.classId,
-      result.quizId,
-    )),
+    alternativeVersionName: result.practiceVersionName,
+    ownVersionId,
+    answerKeyAvailable:
+      !alternative &&
+      !(await retakeStillPossible(studentId, result.classId, result.quizId)),
   };
 }
 
@@ -390,6 +406,7 @@ async function findPracticeOffer(
   const seen = new Set(attempts.map((attempt) => attempt.versionId));
 
   const matches = versions.flatMap<PracticeMatch>((version) => {
+    if (version.id === scope.ownVersionId) return [];
     const variant = parseVariantFor(version.questions, scope.questionId!);
     return variant ? [{ versionId: version.id, variant }] : [];
   });
@@ -431,6 +448,8 @@ async function findPracticeMatch(
   if (!scope.questionId) return null;
   if (!(await studentCanPractice(scope.studentId, scope.classId, scope.quizId)))
     return null;
+  // The version an alternative retake ran on is its own question, not practice.
+  if (versionId === scope.ownVersionId) return null;
   const version = await prisma.quizPracticeVersion.findFirst({
     where: { id: versionId, quizId: scope.quizId, status: "PUBLISHED" },
     select: { id: true, questions: true },

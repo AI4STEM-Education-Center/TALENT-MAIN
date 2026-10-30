@@ -55,6 +55,15 @@ export type CoachScope = {
   questionId: string | null;
   question: SnapshotQuestion;
   /**
+   * Set when the attempt is an alternative-version retake. Its snapshot holds
+   * the variant's questions under their SOURCE question ids, and it is never
+   * final: the student can always practise another version, so the key stays
+   * withheld (like get_quiz_result_detail) whatever the graded allowance says.
+   */
+  alternativeVersionName: string | null;
+  /** The version that retake was run on; never offered back as "new" practice. */
+  ownVersionId: string | null;
+  /**
    * False while the student could still retake the quiz. The results page is
    * deliberately answer-key-free, so the coach is too until the attempt is
    * final (same rule as the assistant's get_quiz_result_detail tool).

@@ -879,3 +879,248 @@ describe("POST /api/assistant/coach/practice", () => {
     expect((await POST_PRACTICE(answer(f))).status).toBe(401);
   });
 });
+
+describe("coach on alternative-version retakes", () => {
+  const ALT = "attempt-alt-1";
+
+  /**
+   * Records a completed alternative retake of the fixture quiz the way the
+   * practice route does: a QuizAttempt with practiceVersionId, the linked
+   * QuizPracticeAttempt, and an ExamResult whose snapshot uses the SOURCE
+   * question id and the variant's text. Question 1 of that snapshot is missed.
+   */
+  async function alternativeRetake(f: Awaited<ReturnType<typeof fixture>>) {
+    await prisma.quizAttempt.create({
+      data: {
+        id: ALT,
+        studentId: f.student.student.id,
+        classId: f.cls.id,
+        quizId: f.quiz.id,
+        score: 0,
+        completedAt: new Date(),
+        practiceVersionId: f.version.id,
+        practiceVersionName: f.version.name,
+      },
+    });
+    await prisma.quizPracticeAttempt.create({
+      data: {
+        studentId: f.student.student.id,
+        classId: f.cls.id,
+        quizId: f.quiz.id,
+        versionId: f.version.id,
+        versionName: f.version.name,
+        quizAttemptId: ALT,
+        questions: f.version.questions,
+        completedAt: new Date(),
+      },
+    });
+    const original = await prisma.examResult.findUniqueOrThrow({
+      where: { quizAttemptId: ATTEMPT },
+    });
+    const { id: _id, ...copy } = original;
+    await prisma.examResult.create({
+      data: {
+        ...copy,
+        quizAttemptId: ALT,
+        practiceVersionName: f.version.name,
+        reviewSnapshot: JSON.stringify({
+          questions: [
+            {
+              questionId: f.question.id,
+              text: "What is 3 + 3?",
+              isCorrect: false,
+              options: [
+                { text: "7", isCorrect: false, selected: true },
+                { text: "6", isCorrect: true, selected: false },
+              ],
+            },
+          ],
+        }),
+      },
+    });
+  }
+
+  /** A second published version that also stands in for the fixture question. */
+  async function secondVersion(f: Awaited<ReturnType<typeof fixture>>) {
+    return prisma.quizPracticeVersion.create({
+      data: {
+        quizId: f.quiz.id,
+        name: "Alt B",
+        status: "PUBLISHED",
+        variation: "NUMBERS",
+        sourceSnapshot: "[]",
+        objectives: "[]",
+        questions: JSON.stringify([
+          {
+            id: "variant-b",
+            sourceQuestionId: f.question.id,
+            text: "What is 5 + 5?",
+            answerMode: "SINGLE_SELECT",
+            answerUnit: null,
+            answerNumeric: null,
+            answerTolerance: null,
+            options: [
+              { id: "b-a", text: "10", isCorrect: true },
+              { id: "b-b", text: "11", isCorrect: false },
+            ],
+            solution: "Add them.",
+            intentExplanation: "Same skill.",
+          },
+        ]),
+      },
+    });
+  }
+
+  it("coaches a missed alternative question and never reveals its key, even once the graded allowance is used up", async () => {
+    const f = await fixture({ final: true });
+    await alternativeRetake(f);
+    // The ordinary attempt on the same quiz is final: key shown.
+    const graded = (await (
+      await GET_COACH(getCoach(ATTEMPT, 1))
+    ).json()) as CoachSessionView;
+    expect(graded.question.review).not.toBeNull();
+    // The alternative retake never is.
+    const res = await GET_COACH(getCoach(ALT, 1));
+    expect(res.status).toBe(200);
+    const alt = (await res.json()) as CoachSessionView;
+    expect(alt.question.text).toBe("What is 3 + 3?");
+    expect(alt.question.review).toBeNull();
+    expect(JSON.stringify(alt)).not.toContain('"6"');
+
+    // Nor does the model get the key.
+    const calls = scriptModel([{ text: "Walk me through the sum." }]);
+    await (
+      await POST_COACH_CHAT(
+        post("/api/assistant/coach/chat", {
+          message: "I guessed",
+          attemptId: ALT,
+          questionNumber: 1,
+        }),
+      )
+    ).text();
+    const system = calls[0].messages[0].content;
+    expect(system).toContain("ANSWER KEY: withheld");
+    expect(system).not.toContain("[correct");
+  });
+
+  it("keeps coach conversations of an alternative retake apart from the graded attempt's", async () => {
+    const f = await fixture();
+    await alternativeRetake(f);
+    scriptModel([{ text: "ok" }]);
+    await (
+      await POST_COACH_CHAT(
+        post("/api/assistant/coach/chat", {
+          message: "hi",
+          attemptId: ALT,
+          questionNumber: 1,
+        }),
+      )
+    ).text();
+    const graded = (await (
+      await GET_COACH(getCoach(ATTEMPT, 1))
+    ).json()) as CoachSessionView;
+    expect(graded.turns).toEqual([]);
+    const alt = (await (
+      await GET_COACH(getCoach(ALT, 1))
+    ).json()) as CoachSessionView;
+    expect(alt.turns).toHaveLength(2);
+  });
+
+  it("404s another student's alternative retake", async () => {
+    const f = await fixture();
+    await alternativeRetake(f);
+    const other = await createStudent();
+    asStudent(other.user.id);
+    expect((await GET_COACH(getCoach(ALT, 1))).status).toBe(404);
+    asTeacher(f.teacher.user.id);
+    expect((await GET_COACH(getCoach(ALT, 1))).status).toBe(404);
+  });
+
+  it("does not hand the retake's own version back as practice, but offers another", async () => {
+    const f = await fixture();
+    await alternativeRetake(f);
+    const ask = async () => {
+      const calls = scriptModel([
+        {
+          toolCalls: [
+            { name: "offer_practice_question", args: { reason: "Try." } },
+          ],
+        },
+        { text: "Give it a go." },
+      ]);
+      const out = await events(
+        await POST_COACH_CHAT(
+          post("/api/assistant/coach/chat", {
+            message: "again",
+            attemptId: ALT,
+            questionNumber: 1,
+          }),
+        ),
+      );
+      return { calls, out };
+    };
+
+    // Only the version the retake ran on exists: nothing to offer.
+    const none = await ask();
+    expect(none.calls[0].messages[0].content).toContain(
+      "Practice question: none available",
+    );
+    expect(none.out.some((e) => e.type === "action")).toBe(false);
+    const own = await POST_PRACTICE(
+      post("/api/assistant/coach/practice", {
+        attemptId: ALT,
+        questionNumber: 1,
+        versionId: f.version.id,
+        questionId: "variant-q",
+        selectedOptionId: "v-a",
+      }),
+    );
+    expect(own.status).toBe(404);
+
+    // A second version is a legitimate fresh question, mapped through the
+    // source question id.
+    const other = await secondVersion(f);
+    const offered = await ask();
+    expect(offered.out.find((e) => e.type === "action")).toMatchObject({
+      action: {
+        kind: "practice",
+        question: { versionId: other.id, questionId: "variant-b" },
+      },
+    });
+    const graded = await POST_PRACTICE(
+      post("/api/assistant/coach/practice", {
+        attemptId: ALT,
+        questionNumber: 1,
+        versionId: other.id,
+        questionId: "variant-b",
+        selectedOptionId: "b-a",
+      }),
+    );
+    expect(graded.status).toBe(200);
+    expect(await graded.json()).toEqual({ correct: true });
+  });
+
+  it("does not let alternative retakes use up the graded allowance and unlock the key", async () => {
+    const f = await fixture();
+    // Two graded attempts allowed; one is used. An alternative retake would
+    // have made two completed attempts and revealed the key if it counted.
+    await prisma.classQuiz.update({
+      where: { classId_quizId: { classId: f.cls.id, quizId: f.quiz.id } },
+      data: { maxAttempts: 2 },
+    });
+    await prisma.quizAttempt.create({
+      data: {
+        studentId: f.student.student.id,
+        classId: f.cls.id,
+        quizId: f.quiz.id,
+        score: 50,
+        completedAt: new Date(),
+      },
+    });
+    await alternativeRetake(f);
+    const body = (await (
+      await GET_COACH(getCoach(ATTEMPT, 1))
+    ).json()) as CoachSessionView;
+    expect(body.question.review).toBeNull();
+  });
+});
