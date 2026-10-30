@@ -20,9 +20,9 @@ Card tools accept only bounded references and text. The server revalidates every
 
 Coach transcripts are isolated from the widget's history and resume API. A write-first SQLite transaction atomically reserves one active conversation per student, attempt, question and answer-key policy using the indexed, nullable `AssistantConversation.coachActiveKey`. Expired slots are released without deleting their transcripts. `coachResultId` and `coachQuestionNumber` retain the durable coordinates, and `AssistantMessage.actions` stores validated card references. Cold archives and research exports preserve the references. The nullable columns and default-empty actions column can be added to an existing database with `prisma db push`.
 
-## Alternative-retake integration
+## Alternative retakes
 
-When integrating the separate alternative-retake branch, apply its graded-attempt filter to the shared `retakeStillPossible` helper and always withhold keys for alternative-version results. Alternative QuizAttempt rows must not consume the graded allowance. Their snapshots use source question ids, so ownership, wrong-question checks and simulation mapping continue to work; question numbers remain positions in the possibly reduced alternative snapshot. Avoid offering that result's own published question again as a fresh practice question.
+The coach also works on missed questions of an alternative-version retake (an `ExamResult` with `practiceVersionName`). Ownership, wrong-question checks and simulation lookup are unchanged: the snapshot uses source question ids, and question numbers are positions in the possibly reduced alternative snapshot. An alternative result is never final, so the answer key is always withheld for it, like the assistant's result lookup. The shared `retakeStillPossible` helper counts only graded attempts (`GRADED_ATTEMPTS`), so alternative retakes neither consume the allowance nor unlock the key of an ordinary result. A retake's own version is never offered back as practice; other published versions are, matched through the source question id.
 
 ## Validation
 

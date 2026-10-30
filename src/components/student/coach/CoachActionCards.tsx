@@ -54,8 +54,9 @@ function SimulationCard({ card }: { card: CardOf<"simulation"> }) {
       <p className="font-medium">{simulation.title}</p>
       <p className="text-xs text-muted-foreground">{card.goal}</p>
       <ol className="list-decimal space-y-1 pl-5">
-        {card.steps.map((step) => (
-          <li key={step}>{step}</li>
+        {card.steps.map((step, index) => (
+          // react-doctor-disable-next-line react-doctor/no-array-index-as-key -- fixed, ordered steps; model text can repeat
+          <li key={`${index}-${step}`}>{step}</li>
         ))}
       </ol>
       <p>
@@ -275,26 +276,30 @@ export function CoachActionCards({
 }) {
   return (
     <>
-      {actions.map((action) => {
+      {actions.map((action, index) => {
+        // Index-suffixed: the model may surface the same material twice.
         switch (action.kind) {
           case "material":
             return (
               <MaterialCard
-                key={`m-${action.recommendation.materialId ?? action.recommendation.materialTitle}`}
+                // react-doctor-disable-next-line react-doctor/no-array-index-as-key -- a card list that is append-only; the model may repeat an id
+                key={`m-${index}-${action.recommendation.materialId ?? action.recommendation.materialTitle}`}
                 card={action}
               />
             );
           case "simulation":
             return (
               <SimulationCard
-                key={`s-${action.simulation.simulationId}`}
+                // react-doctor-disable-next-line react-doctor/no-array-index-as-key -- a card list that is append-only; the model may repeat an id
+                key={`s-${index}-${action.simulation.simulationId}`}
                 card={action}
               />
             );
           case "practice":
             return (
               <PracticeCard
-                key={`p-${action.question.versionId}-${action.question.questionId}`}
+                // react-doctor-disable-next-line react-doctor/no-array-index-as-key -- a card list that is append-only; the model may repeat an id
+                key={`p-${index}-${action.question.versionId}-${action.question.questionId}`}
                 card={action}
                 target={target}
                 onReport={onReport}
