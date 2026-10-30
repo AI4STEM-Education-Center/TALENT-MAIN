@@ -1143,6 +1143,9 @@ model AssistantConversation {
   // widget's history list. See src/lib/assistant/coach.ts.
   coachResultId       String?
   coachQuestionNumber Int?
+  // Slot for a HOT coach conversation, including its answer-key policy.
+  // Nullable so existing/widget/expired conversations need no backfill.
+  coachActiveKey String?
 
   // Cold-tier location. All three are set together, and only by the archiver.
   archivedAt DateTime?
@@ -1159,6 +1162,7 @@ model AssistantConversation {
   @@index([archivedAt, lastMessageAt])
   // Resuming one question's coach conversation.
   @@index([userId, coachResultId, coachQuestionNumber])
+  @@index([coachActiveKey])
 }
 
 // One turn of a HOT conversation. Rows exist only while the conversation is in

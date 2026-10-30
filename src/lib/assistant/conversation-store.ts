@@ -22,6 +22,7 @@
 //  3. NEVER FATAL. Persisting a turn must not be able to fail the turn. The
 //     writer swallows and logs; the answer the user asked for still goes out.
 
+import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import {
   buildAssistantTranscriptKey,
@@ -68,7 +69,28 @@ export type CoachConversationKey = {
   resultId: string;
   questionNumber: number;
   title: string;
+  answerKeyAvailable: boolean;
 };
+
+function coachActiveKey(
+  target: ConversationTarget,
+  coach: Pick<
+    CoachConversationKey,
+    "resultId" | "questionNumber" | "answerKeyAvailable"
+  >,
+): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify([
+        target.userId,
+        target.audience,
+        coach.resultId,
+        coach.questionNumber,
+        coach.answerKeyAvailable,
+      ]),
+    )
+    .digest("hex");
+}
 
 /** The instant before which a conversation is out of its owner's window. */
 export function historyCutoff(retentionDays: number, now = new Date()): Date {
@@ -115,7 +137,10 @@ function parseActionArray(raw: string | undefined): unknown[] {
  */
 export async function findCoachConversation(
   target: ConversationTarget,
-  coach: Pick<CoachConversationKey, "resultId" | "questionNumber">,
+  coach: Pick<
+    CoachConversationKey,
+    "resultId" | "questionNumber" | "answerKeyAvailable"
+  >,
   retentionDays: number,
   now = new Date(),
 ): Promise<{ id: string } | null> {
@@ -125,6 +150,7 @@ export async function findCoachConversation(
       audience: target.audience,
       coachResultId: coach.resultId,
       coachQuestionNumber: coach.questionNumber,
+      coachActiveKey: coachActiveKey(target, coach),
       archivedAt: null,
       lastMessageAt: { gte: historyCutoff(retentionDays, now) },
     },
@@ -153,25 +179,39 @@ export async function resolveConversation(
 ): Promise<string | null> {
   try {
     if (coach) {
-      // One conversation per (attempt, question): the dialog reopens where it
-      // left off, so the client never needs to remember an id.
-      const existing = await findCoachConversation(
-        target,
-        coach,
-        retentionDays,
-        now,
-      );
-      if (existing) return existing.id;
-      const created = await prisma.assistantConversation.create({
-        data: {
-          userId: target.userId,
-          audience: target.audience,
-          title: coach.title,
-          lastMessageAt: now,
-          coachResultId: coach.resultId,
-          coachQuestionNumber: coach.questionNumber,
-        },
-        select: { id: true },
+      const key = coachActiveKey(target, coach);
+      // A write-first transaction serializes concurrent first turns in SQLite.
+      // Releasing an expired slot preserves its transcript for the archiver.
+      // Key policy is part of the slot: a final-review reply must never be
+      // replayed to the student or model after a teacher enables more retakes.
+      const created = await prisma.$transaction(async (tx) => {
+        await tx.assistantConversation.updateMany({
+          where: {
+            coachActiveKey: key,
+            OR: [
+              { archivedAt: { not: null } },
+              { lastMessageAt: { lt: historyCutoff(retentionDays, now) } },
+            ],
+          },
+          data: { coachActiveKey: null },
+        });
+        const existing = await tx.assistantConversation.findFirst({
+          where: { coachActiveKey: key },
+          select: { id: true },
+        });
+        if (existing) return existing;
+        return tx.assistantConversation.create({
+          data: {
+            userId: target.userId,
+            audience: target.audience,
+            title: coach.title,
+            lastMessageAt: now,
+            coachResultId: coach.resultId,
+            coachQuestionNumber: coach.questionNumber,
+            coachActiveKey: key,
+          },
+          select: { id: true },
+        });
       });
       return created.id;
     }

@@ -241,6 +241,7 @@ export async function handleAssistantChat(
                   resultId: coach.resultId,
                   questionNumber: coach.questionNumber,
                   title: coachConversationTitle(coach),
+                  answerKeyAvailable: coach.answerKeyAvailable,
                 }
               : undefined,
           );
@@ -331,7 +332,7 @@ export async function handleAssistantChat(
           // rather than a block — by the time a verdict exists the user has
           // already read the text. It still matters: a flagged reply is the
           // signal an admin needs to tighten the prompt or the model choice.
-          if (result.text.trim()) {
+          if (result.text.trim() || result.actions?.length) {
             void auditText(
               [result.text, ...coachActionText(result.actions)].join("\n"),
               {
@@ -342,7 +343,10 @@ export async function handleAssistantChat(
             );
           }
 
-          if (conversationId && result.text.trim()) {
+          if (
+            conversationId &&
+            (result.text.trim() || result.actions?.length)
+          ) {
             await appendTurn(
               conversationId,
               {

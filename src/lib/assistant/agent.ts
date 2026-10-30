@@ -529,7 +529,7 @@ export async function runAssistantTurn(
 
   const metrics = aggregateMetrics(parts);
 
-  if (!finalText.trim()) {
+  if (!finalText.trim() && actions.length === 0) {
     await emit({
       type: "error",
       message:

@@ -60,7 +60,7 @@ export const RESEARCH_EXPORT_FIELDS = {
   AssistantAttachment:
     "id userId audience name mimeType kind bytes storageKey bucket createdAt expiresAt",
   AssistantConversation:
-    "id userId audience title messageCount createdAt lastMessageAt coachResultId coachQuestionNumber archivedAt storageKey bucket",
+    "id userId audience title messageCount createdAt lastMessageAt coachResultId coachQuestionNumber coachActiveKey archivedAt storageKey bucket",
   AssistantMessage:
     "id conversationId seq role content attachmentIds attachmentNames actions createdAt",
   EmailSender:

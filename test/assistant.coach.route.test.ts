@@ -34,6 +34,7 @@ import type { ResolvedProvider } from "@/lib/ai-provider";
 import { resetSurfaceMemo } from "@/lib/ai-streaming";
 import { guardChatTurn } from "@/lib/guardrail-runner";
 import { saveAssistantSettings } from "@/lib/assistant/config";
+import { resolveConversation } from "@/lib/assistant/conversation-store";
 import type { AssistantStreamEvent } from "@/lib/assistant/types";
 import type {
   CoachPracticeResult,
@@ -380,6 +381,82 @@ describe("POST /api/assistant/coach/chat", () => {
     questionNumber: 1,
   };
 
+  it("atomically resumes one conversation for concurrent first messages and rotates expired slots", async () => {
+    const f = await fixture();
+    const target = { userId: f.student.user.id, audience: "student" as const };
+    const coach = {
+      resultId: ATTEMPT,
+      questionNumber: 1,
+      title: "Coach",
+      answerKeyAvailable: false,
+    };
+    const open = () =>
+      resolveConversation(target, null, "hello", 30, undefined, coach);
+    const ids = await Promise.all(Array.from({ length: 6 }, open));
+    expect(ids[0]).toBeTruthy();
+    expect(new Set(ids).size).toBe(1);
+    expect(await prisma.assistantConversation.count()).toBe(1);
+    await prisma.assistantConversation.update({
+      where: { id: ids[0]! },
+      data: { lastMessageAt: new Date(0) },
+    });
+    const next = await open();
+    expect(next).toBeTruthy();
+    expect(next).not.toBe(ids[0]);
+    expect(await prisma.assistantConversation.count()).toBe(2);
+  });
+
+  it("never replays a final-review transcript after a teacher enables more retakes", async () => {
+    const f = await fixture({ final: true });
+    scriptModel([{ text: "The correct answer is 4." }]);
+    await (
+      await POST_COACH_CHAT(post("/api/assistant/coach/chat", body))
+    ).text();
+    const before = await prisma.assistantConversation.findFirstOrThrow();
+    await prisma.classQuiz.updateMany({ data: { maxAttempts: 2 } });
+    const reopened = (await (
+      await GET_COACH(getCoach(ATTEMPT, 1))
+    ).json()) as CoachSessionView;
+    expect(reopened.question.review).toBeNull();
+    expect(reopened.turns).toEqual([]);
+    expect(reopened.conversationId).toBeNull();
+    const calls = scriptModel([{ text: "Try a different example." }]);
+    await (
+      await POST_COACH_CHAT(post("/api/assistant/coach/chat", body))
+    ).text();
+    expect(JSON.stringify(calls)).not.toContain("The correct answer is 4.");
+    expect(await prisma.assistantConversation.count()).toBe(2);
+    expect(
+      await prisma.assistantMessage.count({
+        where: { conversationId: before.id },
+      }),
+    ).toBe(2);
+  });
+
+  it("persists and rehydrates a card-only reply", async () => {
+    await fixture();
+    scriptModel([
+      {
+        toolCalls: [
+          { name: "offer_practice_question", args: { reason: "Try this." } },
+        ],
+      },
+      { text: "" },
+    ]);
+    const out = await events(
+      await POST_COACH_CHAT(post("/api/assistant/coach/chat", body)),
+    );
+    expect(out.some((e) => e.type === "action")).toBe(true);
+    expect(out.some((e) => e.type === "error")).toBe(false);
+    expect(out.at(-1)?.type).toBe("done");
+    const reopened = (await (
+      await GET_COACH(getCoach(ATTEMPT, 1))
+    ).json()) as CoachSessionView;
+    expect(reopened.turns).toHaveLength(2);
+    expect(reopened.turns[1].content).toBe("");
+    expect(reopened.turns[1].actions[0]).toMatchObject({ kind: "practice" });
+  });
+
   it("404s an unverifiable question before anything reaches the model", async () => {
     await fixture();
     const calls = scriptModel([{ text: "hi" }]);
@@ -715,18 +792,43 @@ describe("POST /api/assistant/coach/practice", () => {
       ...over,
     });
 
-  it("grades right and wrong answers and returns nothing else", async () => {
+  it.each([
+    ["v-a", true],
+    ["v-b", false],
+  ])(
+    "grades %s and returns only its verdict",
+    async (selectedOptionId, correct) => {
+      const f = await fixture();
+      const right = await POST_PRACTICE(answer(f, { selectedOptionId }));
+      expect(right.status).toBe(200);
+      expect((await right.json()) as CoachPracticeResult).toEqual({
+        correct,
+      });
+      // Stateless: no practice attempt, no graded attempt, no grade change.
+      expect(await prisma.quizPracticeAttempt.count()).toBe(0);
+      expect(await prisma.quizProgress.count()).toBe(0);
+    },
+  );
+
+  it("limits grading per student and variant across source attempts", async () => {
     const f = await fixture();
-    const right = await POST_PRACTICE(answer(f));
-    expect(right.status).toBe(200);
-    expect((await right.json()) as CoachPracticeResult).toEqual({
-      correct: true,
+    expect((await POST_PRACTICE(answer(f))).status).toBe(200);
+    const original = await prisma.examResult.findUniqueOrThrow({
+      where: { quizAttemptId: ATTEMPT },
     });
-    const wrong = await POST_PRACTICE(answer(f, { selectedOptionId: "v-b" }));
-    expect(await wrong.json()).toEqual({ correct: false });
-    // Stateless: no practice attempt, no graded attempt, no grade change.
-    expect(await prisma.quizPracticeAttempt.count()).toBe(0);
-    expect(await prisma.quizProgress.count()).toBe(0);
+    const { id: _id, ...copy } = original;
+    await prisma.examResult.create({
+      data: { ...copy, quizAttemptId: "another-source-attempt" },
+    });
+    const again = await POST_PRACTICE(
+      answer(f, {
+        attemptId: "another-source-attempt",
+        selectedOptionId: "v-b",
+      }),
+    );
+    expect(again.status).toBe(429);
+    expect(again.headers.get("Retry-After")).toBeTruthy();
+    expect(await again.json()).not.toHaveProperty("correct");
   });
 
   it("404s an unknown version, a mismatched question, an invalid choice and a retired version", async () => {

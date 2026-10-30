@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { rateLimit } from "@/lib/rate-limit";
+import { checkRateLimit, rateLimit } from "@/lib/rate-limit";
 import { parseJsonBody } from "@/lib/validation";
 import { logApiError } from "@/lib/system-log";
 import { resolveAssistantSession } from "@/lib/assistant/session";
@@ -70,6 +70,30 @@ export async function POST(req: Request) {
     const graded = scope ? await gradeCoachPractice(scope, parsed.data) : null;
     if (!graded) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    // The account-wide budget alone allows enumeration of every choice. One
+    // verdict per published question per day, across ALL source attempts and
+    // classes, prevents simply reopening the dialog or changing attemptId to
+    // get another guess. Like the shared limiter this is process-local, for
+    // the current single-instance deployment, and resets on process restart.
+    const verdictBudget = checkRateLimit(
+      JSON.stringify([
+        "coach-verdict",
+        ctx.userId,
+        parsed.data.versionId,
+        parsed.data.questionId,
+      ]),
+      1,
+      24 * HOUR_MS,
+    );
+    if (!verdictBudget.allowed) {
+      return NextResponse.json(
+        { error: "You have already checked this practice question today." },
+        {
+          status: 429,
+          headers: { "Retry-After": String(verdictBudget.retryAfterSeconds) },
+        },
+      );
     }
     const body: CoachPracticeResult = { correct: graded.correct };
     return NextResponse.json(body, {
