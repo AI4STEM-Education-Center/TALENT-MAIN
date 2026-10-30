@@ -17,7 +17,6 @@ import {
 import { buildReviewSnapshot } from "@/lib/exam-results";
 import { enqueueExamResult } from "@/lib/queue";
 import { logApiError } from "@/lib/system-log";
-import { QUESTION_ORDER } from "@/lib/question-order";
 
 class AlreadySubmittedError extends Error {}
 
@@ -250,22 +249,10 @@ export async function PATCH(req: NextRequest) {
     );
   }
   const completedAt = new Date();
-  // Source questions that still exist: QuizAnswer rows are filed under them.
-  const existingSources = new Set(
-    (
-      await prisma.question.findMany({
-        where: {
-          quizId: attempt.quizId,
-          id: { in: questions.map((q) => q.sourceQuestionId) },
-        },
-        select: { id: true },
-        orderBy: QUESTION_ORDER,
-      })
-    ).map((q) => q.id),
-  );
   let quizAttemptId: string;
+  let examResultId: string;
   try {
-    quizAttemptId = await prisma.$transaction(async (tx) => {
+    const recorded = await prisma.$transaction(async (tx) => {
       let recordedId = attempt.quizAttemptId;
       // Single-use claim first (see the normal quiz route): parallel PATCHes
       // cannot both record the same practice run.
@@ -280,21 +267,29 @@ export async function PATCH(req: NextRequest) {
       });
       if (!saved.count) throw new AlreadySubmittedError();
       if (recordedId) {
-        await tx.quizAttempt.updateMany({
+        const claimed = await tx.quizAttempt.updateMany({
           where: {
             id: recordedId,
             studentId: student.id,
+            classId: attempt.classId,
+            OR: [{ quizId: attempt.quizId }, { quizId: null }],
+            practiceVersionId: attempt.versionId,
             completedAt: null,
           },
           data: { score: result.score, completedAt },
         });
+        if (claimed.count !== 1) throw new AlreadySubmittedError();
       } else {
         // Started before retakes were recorded: file it now so it is not lost.
+        const quiz = await tx.quiz.findUnique({
+          where: { id: attempt.quizId },
+          select: { id: true },
+        });
         const created = await tx.quizAttempt.create({
           data: {
             studentId: student.id,
             classId: attempt.classId,
-            quizId: attempt.quizId,
+            quizId: quiz?.id ?? null,
             practiceVersionId: attempt.versionId,
             practiceVersionName: attempt.versionName,
             score: result.score,
@@ -309,6 +304,19 @@ export async function PATCH(req: NextRequest) {
           data: { quizAttemptId: recordedId },
         });
       }
+      // Read source FKs inside the write transaction: a concurrent deletion
+      // cannot invalidate the set between this read and answer insertion.
+      const existingSources = new Set(
+        (
+          await tx.question.findMany({
+            where: {
+              quizId: attempt.quizId,
+              id: { in: questions.map((q) => q.sourceQuestionId) },
+            },
+            select: { id: true },
+          })
+        ).map((q) => q.id),
+      );
       await tx.quizAnswer.createMany({
         data: variantAnswerRows(
           recordedId,
@@ -317,74 +325,68 @@ export async function PATCH(req: NextRequest) {
           existingSources,
         ),
       });
-      return recordedId;
+      const [names, user] = await Promise.all([
+        tx.quizAttempt.findUnique({
+          where: { id: recordedId },
+          select: {
+            class: { select: { name: true } },
+            quiz: { select: { name: true, topic: { select: { name: true } } } },
+            excludedQuestionIds: true,
+          },
+        }),
+        tx.user.findUnique({
+          where: { id: student.userId },
+          select: { firstName: true, lastName: true },
+        }),
+      ]);
+      const snapshotInput = variantSnapshotInputs(
+        questions,
+        result.answerRecords,
+      );
+      const examResult = await tx.examResult.create({
+        data: {
+          quizAttemptId: recordedId,
+          studentId: student.id,
+          classId: attempt.classId,
+          quizId: attempt.quizId,
+          studentName:
+            [user?.firstName, user?.lastName].filter(Boolean).join(" ") || null,
+          className: names?.class.name ?? "",
+          topicName: names?.quiz?.topic?.name ?? "",
+          quizName: names?.quiz?.name ?? "",
+          practiceVersionName: attempt.versionName,
+          excludedCount: excludedCountOf(names?.excludedQuestionIds),
+          score: result.score,
+          correctCount: result.correct,
+          totalCount: questions.length,
+          completedAt,
+          reviewSnapshot: JSON.stringify(
+            buildReviewSnapshot(snapshotInput.questions, snapshotInput.answers),
+          ),
+        },
+      });
+      return { quizAttemptId: recordedId, examResultId: examResult.id };
     });
+    quizAttemptId = recorded.quizAttemptId;
+    examResultId = recorded.examResultId;
   } catch (error) {
     if (error instanceof AlreadySubmittedError)
       return NextResponse.json(
-        { error: "This practice was already submitted." },
+        { error: "This practice was already submitted or is no longer valid." },
         { status: 409 },
       );
     throw error;
   }
 
-  // Same durable ExamResult + background summary/recommendation job as an
-  // ordinary attempt. Best-effort: a failure here must never fail submission.
+  // Queue delivery is best-effort; the committed PENDING result can be retried
+  // by the results endpoint if enqueueing fails.
   try {
-    const [names, user] = await Promise.all([
-      prisma.quizAttempt.findUnique({
-        where: { id: quizAttemptId },
-        select: {
-          class: { select: { name: true } },
-          quiz: { select: { name: true, topic: { select: { name: true } } } },
-          excludedQuestionIds: true,
-        },
-      }),
-      prisma.user.findUnique({
-        where: { id: student.userId },
-        select: { firstName: true, lastName: true },
-      }),
-    ]);
-    const snapshotInput = variantSnapshotInputs(
-      questions,
-      result.answerRecords,
-    );
-    const examResult = await prisma.examResult.create({
-      data: {
-        quizAttemptId,
-        studentId: student.id,
-        classId: attempt.classId,
-        quizId: attempt.quizId,
-        studentName:
-          [user?.firstName, user?.lastName].filter(Boolean).join(" ") || null,
-        className: names?.class.name ?? "",
-        topicName: names?.quiz?.topic?.name ?? "",
-        quizName: names?.quiz?.name ?? "",
-        practiceVersionName: attempt.versionName,
-        excludedCount: excludedCountOf(names?.excludedQuestionIds),
-        score: result.score,
-        correctCount: result.correct,
-        totalCount: questions.length,
-        completedAt,
-        reviewSnapshot: JSON.stringify(
-          buildReviewSnapshot(snapshotInput.questions, snapshotInput.answers),
-        ),
-      },
-    });
-    try {
-      enqueueExamResult(examResult.id);
-    } catch (err) {
-      logApiError(
-        "QUIZ_PRACTICE_SUBMIT",
-        err,
-        "Failed to enqueue exam-result generation",
-      );
-    }
+    enqueueExamResult(examResultId);
   } catch (err) {
     logApiError(
       "QUIZ_PRACTICE_SUBMIT",
       err,
-      "Failed to create ExamResult snapshot",
+      "Failed to enqueue exam-result generation",
     );
   }
   return NextResponse.json({

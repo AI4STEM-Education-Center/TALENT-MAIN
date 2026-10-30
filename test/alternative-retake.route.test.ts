@@ -8,6 +8,7 @@ vi.mock("@/lib/queue", () => ({
 import { auth } from "@/lib/auth";
 import { enqueueExamResult } from "@/lib/queue";
 import { prisma } from "@/lib/prisma";
+import * as examResults from "@/lib/exam-results";
 import {
   GET as history,
   POST as start,
@@ -424,4 +425,127 @@ describe("how alternative retakes relate to graded attempts", () => {
       }),
     ).toBe(1);
   });
+});
+
+describe("atomic alternative submission", () => {
+  it("rolls back the claim and answers if the durable snapshot fails, then permits retry", async () => {
+    const f = await fixture();
+    const started = await (await start(req(f.input))).json();
+    const body = { attemptId: started.attemptId, answers: [] };
+    const snapshot = vi
+      .spyOn(examResults, "buildReviewSnapshot")
+      .mockImplementationOnce(() => {
+        throw new Error("snapshot failed");
+      });
+    try {
+      await expect(submit(req(body, "PATCH"))).rejects.toThrow(
+        "snapshot failed",
+      );
+    } finally {
+      snapshot.mockRestore();
+    }
+    expect(
+      await prisma.quizPracticeAttempt.findUniqueOrThrow({
+        where: { id: started.attemptId },
+      }),
+    ).toMatchObject({
+      completedAt: null,
+      score: null,
+      activeKey: JSON.stringify([f.student.student.id, f.cls.id, f.quiz.id]),
+    });
+    expect(
+      await prisma.quizAttempt.findUniqueOrThrow({
+        where: { id: started.quizAttemptId },
+      }),
+    ).toMatchObject({ completedAt: null, score: null });
+    expect(await prisma.quizAnswer.count()).toBe(0);
+    expect(await prisma.examResult.count()).toBe(0);
+    expect(enqueueExamResult).not.toHaveBeenCalled();
+    expect((await submit(req(body, "PATCH"))).status).toBe(200);
+    expect(await prisma.examResult.count()).toBe(1);
+  });
+
+  it("refuses a broken retake link without completing the practice archive", async () => {
+    const f = await fixture();
+    const started = await (await start(req(f.input))).json();
+    await prisma.quizAttempt.delete({ where: { id: started.quizAttemptId } });
+    expect(
+      (
+        await submit(
+          req({ attemptId: started.attemptId, answers: [] }, "PATCH"),
+        )
+      ).status,
+    ).toBe(409);
+    expect(
+      await prisma.quizPracticeAttempt.findUniqueOrThrow({
+        where: { id: started.attemptId },
+      }),
+    ).toMatchObject({ completedAt: null, score: null });
+    expect(await prisma.quizAnswer.count()).toBe(0);
+    expect(await prisma.examResult.count()).toBe(0);
+  });
+
+  it("records exactly one result and one answer set under concurrent submits", async () => {
+    const f = await fixture();
+    const started = await (await start(req(f.input))).json();
+    const body = { attemptId: started.attemptId, answers: [] };
+    const responses = await Promise.all([
+      submit(req(body, "PATCH")),
+      submit(req(body, "PATCH")),
+    ]);
+    expect(responses.map((r) => r.status).sort()).toEqual([200, 409]);
+    expect(await prisma.examResult.count()).toBe(1);
+    expect(await prisma.quizAnswer.count()).toBe(2);
+    expect(enqueueExamResult).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("in-flight archival submission after quiz deletion", () => {
+  it.each([false, true])(
+    "preserves the immutable result (legacy: %s)",
+    async (legacy) => {
+      const f = await fixture();
+      const started = await (await start(req(f.input))).json();
+      if (legacy) {
+        await prisma.quizPracticeAttempt.update({
+          where: { id: started.attemptId },
+          data: { quizAttemptId: null },
+        });
+        await prisma.quizAttempt.delete({
+          where: { id: started.quizAttemptId },
+        });
+      }
+      await prisma.quiz.delete({ where: { id: f.quiz.id } });
+      const response = await submit(
+        req(
+          {
+            attemptId: started.attemptId,
+            answers: [{ questionId: "v1", selectedOptionIds: ["v1-right"] }],
+          },
+          "PATCH",
+        ),
+      );
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(
+        await prisma.quizAttempt.findUniqueOrThrow({
+          where: { id: body.quizAttemptId },
+        }),
+      ).toMatchObject({
+        quizId: null,
+        score: 50,
+        practiceVersionId: f.version.id,
+      });
+      const result = await prisma.examResult.findUniqueOrThrow({
+        where: { quizAttemptId: body.quizAttemptId },
+      });
+      expect(result).toMatchObject({
+        score: 50,
+        totalCount: 2,
+        practiceVersionName: "Version A",
+      });
+      expect(JSON.parse(result.reviewSnapshot).questions).toHaveLength(2);
+      expect(await prisma.quizAnswer.count()).toBe(0);
+    },
+  );
 });
