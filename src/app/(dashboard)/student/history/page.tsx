@@ -1,3 +1,4 @@
+import { getDisabledClassIds } from "@/lib/class-access-pause";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
@@ -17,7 +18,10 @@ export default async function StudentHistoryPage() {
   if (!student) redirect("/login");
 
   const results = await prisma.examResult.findMany({
-    where: { studentId: student.id },
+    where: {
+      studentId: student.id,
+      classId: { notIn: await getDisabledClassIds() },
+    },
     orderBy: { completedAt: "desc" },
     select: {
       quizAttemptId: true,

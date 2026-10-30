@@ -66,7 +66,10 @@ export async function POST(
   const assignments = await prisma.classQuiz.findMany({
     where: {
       quizId: sim.question.quizId,
-      class: { enrollments: { some: { studentId: student.id } } },
+      class: {
+        disabledAt: null,
+        enrollments: { some: { studentId: student.id } },
+      },
     },
     select: { classId: true },
   });

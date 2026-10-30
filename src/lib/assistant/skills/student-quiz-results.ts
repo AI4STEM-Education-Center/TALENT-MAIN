@@ -1,3 +1,4 @@
+import { getDisabledClassIds } from "@/lib/class-access-pause";
 // Student skill: search and interpret the student's OWN past quiz results.
 //
 // Every query is anchored on `ctx.studentId`, which the API route derives from
@@ -124,6 +125,7 @@ const searchQuizResults: AssistantTool<typeof searchInput> = {
     const rows = await prisma.examResult.findMany({
       where: {
         studentId,
+        classId: { notIn: await getDisabledClassIds() },
         ...(after || before
           ? {
               completedAt: {
@@ -250,7 +252,11 @@ const getQuizResultDetail: AssistantTool<typeof detailInput> = {
     });
     // Ownership is re-checked here, not just in the caller: a fabricated
     // resultId must read as "not found", never as another student's attempt.
-    if (!row || row.studentId !== studentId) {
+    if (
+      !row ||
+      row.studentId !== studentId ||
+      (await getDisabledClassIds()).includes(row.classId)
+    ) {
       return {
         found: false,
         message: "No result of yours matches that resultId.",
@@ -348,7 +354,7 @@ const summarizePerformance: AssistantTool<typeof trendInput> = {
   handler: async (args, ctx) => {
     const studentId = requireStudent(ctx);
     const rows = await prisma.examResult.findMany({
-      where: { studentId },
+      where: { studentId, classId: { notIn: await getDisabledClassIds() } },
       orderBy: { completedAt: "desc" },
       select: {
         quizName: true,

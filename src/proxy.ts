@@ -1,3 +1,4 @@
+import { guardStudentClassAccess } from "@/lib/class-access-guard";
 import { auth } from "@/lib/auth";
 import { NextResponse } from "next/server";
 import { clientIp } from "@/lib/rate-limit";
@@ -31,7 +32,7 @@ function wantsDocument(req: { headers: { get(name: string): string | null } }) {
   );
 }
 
-export default auth((req) => {
+export default auth(async (req) => {
   // --- Host validation: reject requests from unknown domains ---
   const host = (
     req.headers.get("x-forwarded-host") ||
@@ -79,6 +80,10 @@ export default auth((req) => {
   }
 
   const session = req.auth;
+
+  // Node-runtime proxy: check live enrollment state, never a stale JWT claim.
+  const pauseResponse = await guardStudentClassAccess(req, session);
+  if (pauseResponse) return pauseResponse;
 
   // Public routes
   const publicRoutes = [
@@ -202,5 +207,5 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|public).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };

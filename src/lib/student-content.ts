@@ -75,7 +75,7 @@ export async function listStudentMaterials(
 ): Promise<StudentMaterial[]> {
   const links = await prisma.materialClass.findMany({
     where: {
-      class: { enrollments: { some: { studentId } } },
+      class: { disabledAt: null, enrollments: { some: { studentId } } },
       material: { uploadStatus: "READY" },
     },
     orderBy: { material: { createdAt: "desc" } },
@@ -126,7 +126,11 @@ function studentMaterialWhere(studentId: string, materialId: string) {
   return {
     id: materialId,
     uploadStatus: "READY",
-    classLinks: { some: { class: { enrollments: { some: { studentId } } } } },
+    classLinks: {
+      some: {
+        class: { disabledAt: null, enrollments: { some: { studentId } } },
+      },
+    },
   };
 }
 
@@ -147,7 +151,9 @@ export async function getStudentMaterialAccess(
       title: true,
       originalName: true,
       classLinks: {
-        where: { class: { enrollments: { some: { studentId } } } },
+        where: {
+          class: { disabledAt: null, enrollments: { some: { studentId } } },
+        },
         select: { classId: true },
       },
     },
@@ -182,7 +188,9 @@ export async function getStudentMaterial(
         },
       },
       classLinks: {
-        where: { class: { enrollments: { some: { studentId } } } },
+        where: {
+          class: { disabledAt: null, enrollments: { some: { studentId } } },
+        },
         select: { class: { select: { id: true, name: true } } },
       },
       topic: { select: { id: true, name: true, contentType: true } },
@@ -217,7 +225,7 @@ export async function listStudentSimulations(
   const assignments = await prisma.classQuiz.findMany({
     where: {
       published: true,
-      class: { enrollments: { some: { studentId } } },
+      class: { disabledAt: null, enrollments: { some: { studentId } } },
       quiz: {
         questions: {
           some: {

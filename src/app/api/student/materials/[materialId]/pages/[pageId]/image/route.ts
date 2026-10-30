@@ -34,7 +34,12 @@ export async function GET(
       id: materialId,
       uploadStatus: "READY",
       classLinks: {
-        some: { class: { enrollments: { some: { studentId: student.id } } } },
+        some: {
+          class: {
+            disabledAt: null,
+            enrollments: { some: { studentId: student.id } },
+          },
+        },
       },
     },
     select: { bucket: true },

@@ -66,6 +66,8 @@ export default async function AdminClassesPage({
         id: true,
         name: true,
         researchExcluded: true,
+        disabledAt: true,
+        disabledMessage: true,
         teacher: {
           select: {
             user: { select: { firstName: true, lastName: true, email: true } },
