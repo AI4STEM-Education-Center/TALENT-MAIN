@@ -8,6 +8,7 @@ import {
   formatGrade,
   type GradeExportMode,
 } from "@/lib/grades-csv";
+import { GRADED_ATTEMPTS } from "@/lib/alternative-retake";
 
 const nameKey = (first: string, last: string) =>
   `${first.trim().toLowerCase()}|${last.trim().toLowerCase()}`;
@@ -89,7 +90,12 @@ export async function GET(
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     }),
     prisma.quizAttempt.findMany({
-      where: { classId: id, quizId, completedAt: { not: null } },
+      where: {
+        classId: id,
+        quizId,
+        completedAt: { not: null },
+        ...GRADED_ATTEMPTS,
+      },
       select: {
         score: true,
         student: {
