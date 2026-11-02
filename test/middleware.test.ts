@@ -39,64 +39,70 @@ function makeReq({
 
 // middleware is the unwrapped handler thanks to the mock above.
 const run = (req: ReturnType<typeof makeReq>) =>
-  (middleware as unknown as (r: never) => Response)(req);
+  (middleware as unknown as (r: never) => Promise<Response>)(req);
 
 describe("middleware host validation", () => {
-  it("forbids an unknown host", () => {
-    const res = run(makeReq({ host: "evil.com", path: "/" }));
+  it("forbids an unknown host", async () => {
+    const res = await run(makeReq({ host: "evil.com", path: "/" }));
     expect(res.status).toBe(403);
   });
 
-  it("allows the apex ai4talent.org and its subdomains", () => {
-    expect(run(makeReq({ host: "ai4talent.org", path: "/" })).status).not.toBe(
-      403,
-    );
+  it("allows the apex ai4talent.org and its subdomains", async () => {
     expect(
-      run(makeReq({ host: "dev.ai4talent.org", path: "/" })).status,
+      (await run(makeReq({ host: "ai4talent.org", path: "/" }))).status,
+    ).not.toBe(403);
+    expect(
+      (await run(makeReq({ host: "dev.ai4talent.org", path: "/" }))).status,
     ).not.toBe(403);
   });
 
-  it("allows localhost", () => {
-    expect(run(makeReq({ host: "localhost:3000", path: "/" })).status).not.toBe(
-      403,
-    );
+  it("allows localhost", async () => {
+    expect(
+      (await run(makeReq({ host: "localhost:3000", path: "/" }))).status,
+    ).not.toBe(403);
   });
 });
 
 describe("middleware auth + routing", () => {
-  it("lets anonymous users hit public routes", () => {
-    const res = run(makeReq({ host: "localhost", path: "/login" }));
+  it("lets anonymous users hit public routes", async () => {
+    const res = await run(makeReq({ host: "localhost", path: "/login" }));
     expect(res.headers.get("location")).toBeNull(); // NextResponse.next()
   });
 
-  it("lets anonymous users reach the password recovery pages", () => {
+  it("lets anonymous users reach the password recovery pages", async () => {
     for (const path of ["/forgot-password", "/reset-password"]) {
       expect(
-        run(makeReq({ host: "localhost", path })).headers.get("location"),
+        (await run(makeReq({ host: "localhost", path }))).headers.get(
+          "location",
+        ),
       ).toBeNull();
     }
   });
 
-  it("treats the password reset API as public (it lives under /api/auth)", () => {
+  it("treats the password reset API as public (it lives under /api/auth)", async () => {
     for (const path of [
       "/api/auth/forgot-password",
       "/api/auth/reset-password",
     ]) {
       expect(
-        run(makeReq({ host: "localhost", path })).headers.get("location"),
+        (await run(makeReq({ host: "localhost", path }))).headers.get(
+          "location",
+        ),
       ).toBeNull();
     }
   });
 
-  it("treats the invitations API as public", () => {
-    const res = run(
+  it("treats the invitations API as public", async () => {
+    const res = await run(
       makeReq({ host: "localhost", path: "/api/invitations/abc" }),
     );
     expect(res.headers.get("location")).toBeNull();
   });
 
-  it("redirects anonymous users away from protected routes to /login", () => {
-    const res = run(makeReq({ host: "dev.ai4talent.org", path: "/teacher" }));
+  it("redirects anonymous users away from protected routes to /login", async () => {
+    const res = await run(
+      makeReq({ host: "dev.ai4talent.org", path: "/teacher" }),
+    );
     expect(res.status).toBe(307);
     const location = res.headers.get("location")!;
     expect(location).toContain("/login");
@@ -104,7 +110,7 @@ describe("middleware auth + routing", () => {
   });
 
   it("answers an anonymous API fetch with JSON, not the login page", async () => {
-    const res = run(
+    const res = await run(
       makeReq({ host: "dev.ai4talent.org", path: "/api/simulations/abc/edit" }),
     );
     expect(res.status).toBe(401);
@@ -114,14 +120,14 @@ describe("middleware auth + routing", () => {
     });
   });
 
-  it("still sends an anonymous API navigation to the login page", () => {
+  it("still sends an anonymous API navigation to the login page", async () => {
     // A download link opened in a tab can use the form; a fetch cannot.
     const navigations: Record<string, string>[] = [
       { "sec-fetch-mode": "navigate" },
       { accept: "text/html,application/xhtml+xml" },
     ];
     for (const headers of navigations) {
-      const res = run(
+      const res = await run(
         makeReq({
           host: "dev.ai4talent.org",
           path: "/api/quizzes/abc/export",
@@ -133,8 +139,8 @@ describe("middleware auth + routing", () => {
     }
   });
 
-  it("redirects a STUDENT away from /teacher to /student", () => {
-    const res = run(
+  it("redirects a STUDENT away from /teacher to /student", async () => {
+    const res = await run(
       makeReq({
         host: "dev.ai4talent.org",
         path: "/teacher",
@@ -145,8 +151,8 @@ describe("middleware auth + routing", () => {
     expect(res.headers.get("location")).toContain("/student");
   });
 
-  it("redirects a TEACHER away from /student to /teacher", () => {
-    const res = run(
+  it("redirects a TEACHER away from /student to /teacher", async () => {
+    const res = await run(
       makeReq({
         host: "dev.ai4talent.org",
         path: "/student",
@@ -157,8 +163,8 @@ describe("middleware auth + routing", () => {
     expect(res.headers.get("location")).toContain("/teacher");
   });
 
-  it("lets a consented TEACHER through to a teacher route", () => {
-    const res = run(
+  it("lets a consented TEACHER through to a teacher route", async () => {
+    const res = await run(
       makeReq({
         host: "dev.ai4talent.org",
         path: "/teacher",
@@ -168,15 +174,15 @@ describe("middleware auth + routing", () => {
     expect(res.headers.get("location")).toBeNull();
   });
 
-  it("lets anonymous users reach the legacy /admin-register page (it redirects to /register)", () => {
-    const res = run(
+  it("lets anonymous users reach the legacy /admin-register page (it redirects to /register)", async () => {
+    const res = await run(
       makeReq({ host: "dev.ai4talent.org", path: "/admin-register" }),
     );
     expect(res.headers.get("location")).toBeNull();
   });
 
-  it("sends a TEACHER away from /admin to /teacher", () => {
-    const res = run(
+  it("sends a TEACHER away from /admin to /teacher", async () => {
+    const res = await run(
       makeReq({
         host: "dev.ai4talent.org",
         path: "/admin/users",
@@ -191,8 +197,8 @@ describe("middleware auth + routing", () => {
 describe("middleware RESEARCHER routing", () => {
   const researcher = { user: { role: "RESEARCHER" } };
 
-  it("lets a RESEARCHER open the admin overview", () => {
-    const res = run(
+  it("lets a RESEARCHER open the admin overview", async () => {
+    const res = await run(
       makeReq({
         host: "dev.ai4talent.org",
         path: "/admin",
@@ -216,8 +222,8 @@ describe("middleware RESEARCHER routing", () => {
     "/admin/assistant-chats",
     "/admin/feedback",
     "/admin/resource-engagement",
-  ])("lets a RESEARCHER open the read-only data page %s", (path) => {
-    const res = run(
+  ])("lets a RESEARCHER open the read-only data page %s", async (path) => {
+    const res = await run(
       makeReq({ host: "dev.ai4talent.org", path, session: researcher }),
     );
     expect(res.headers.get("location")).toBeNull();
@@ -239,16 +245,19 @@ describe("middleware RESEARCHER routing", () => {
     "/admin/consent/settings",
     // Segment boundary: a lookalike of an allowlisted prefix is not allowed.
     "/admin/users-export",
-  ])("redirects a RESEARCHER from the config page %s to /admin", (path) => {
-    const res = run(
-      makeReq({ host: "dev.ai4talent.org", path, session: researcher }),
-    );
-    expect(res.status).toBe(307);
-    expect(new URL(res.headers.get("location")!).pathname).toBe("/admin");
-  });
+  ])(
+    "redirects a RESEARCHER from the config page %s to /admin",
+    async (path) => {
+      const res = await run(
+        makeReq({ host: "dev.ai4talent.org", path, session: researcher }),
+      );
+      expect(res.status).toBe(307);
+      expect(new URL(res.headers.get("location")!).pathname).toBe("/admin");
+    },
+  );
 
-  it("still keeps a TEACHER out of the researcher data pages", () => {
-    const res = run(
+  it("still keeps a TEACHER out of the researcher data pages", async () => {
+    const res = await run(
       makeReq({
         host: "dev.ai4talent.org",
         path: "/admin/users",
@@ -259,8 +268,8 @@ describe("middleware RESEARCHER routing", () => {
     expect(new URL(res.headers.get("location")!).pathname).toBe("/teacher");
   });
 
-  it("sends a RESEARCHER back to /admin from admin pages not allowlisted", () => {
-    const res = run(
+  it("sends a RESEARCHER back to /admin from admin pages not allowlisted", async () => {
+    const res = await run(
       makeReq({
         host: "dev.ai4talent.org",
         path: "/admin/teacher-codes",
@@ -273,8 +282,8 @@ describe("middleware RESEARCHER routing", () => {
 
   it.each(["/teacher", "/teacher/classes", "/student"])(
     "sends a RESEARCHER from %s to /admin",
-    (path) => {
-      const res = run(
+    async (path) => {
+      const res = await run(
         makeReq({ host: "dev.ai4talent.org", path, session: researcher }),
       );
       expect(res.status).toBe(307);
@@ -282,8 +291,8 @@ describe("middleware RESEARCHER routing", () => {
     },
   );
 
-  it("never applies the teacher consent gate to a RESEARCHER", () => {
-    const res = run(
+  it("never applies the teacher consent gate to a RESEARCHER", async () => {
+    const res = await run(
       makeReq({
         host: "dev.ai4talent.org",
         path: "/api/something",
@@ -295,8 +304,8 @@ describe("middleware RESEARCHER routing", () => {
 });
 
 describe("middleware IRB consent hard-gate", () => {
-  it("redirects an undecided TEACHER's page load to /teacher/consent-required", () => {
-    const res = run(
+  it("redirects an undecided TEACHER's page load to /teacher/consent-required", async () => {
+    const res = await run(
       makeReq({
         host: "dev.ai4talent.org",
         path: "/teacher/classes",
@@ -307,8 +316,8 @@ describe("middleware IRB consent hard-gate", () => {
     expect(res.headers.get("location")).toContain("/teacher/consent-required");
   });
 
-  it("redirects a TEACHER who explicitly declined the same way as one who never decided", () => {
-    const res = run(
+  it("redirects a TEACHER who explicitly declined the same way as one who never decided", async () => {
+    const res = await run(
       makeReq({
         host: "dev.ai4talent.org",
         path: "/teacher",
@@ -318,8 +327,8 @@ describe("middleware IRB consent hard-gate", () => {
     expect(res.headers.get("location")).toContain("/teacher/consent-required");
   });
 
-  it("never redirects away from the consent-required page itself (no loop)", () => {
-    const res = run(
+  it("never redirects away from the consent-required page itself (no loop)", async () => {
+    const res = await run(
       makeReq({
         host: "dev.ai4talent.org",
         path: "/teacher/consent-required",
@@ -329,8 +338,8 @@ describe("middleware IRB consent hard-gate", () => {
     expect(res.headers.get("location")).toBeNull();
   });
 
-  it("returns 403 JSON (not a redirect) for a blocked teacher's API calls", () => {
-    const res = run(
+  it("returns 403 JSON (not a redirect) for a blocked teacher's API calls", async () => {
+    const res = await run(
       makeReq({
         host: "dev.ai4talent.org",
         path: "/api/classes",
@@ -341,12 +350,12 @@ describe("middleware IRB consent hard-gate", () => {
     expect(res.headers.get("location")).toBeNull();
   });
 
-  it("lets a TEACHER through when no instructor form is published (no redirect loop)", () => {
+  it("lets a TEACHER through when no instructor form is published (no redirect loop)", async () => {
     // The claim is stamped NOT_REQUIRED when the role has no active form.
     // Gating here would bounce them to /teacher/consent-required, which has
     // no form to show and sends them straight back — ERR_TOO_MANY_REDIRECTS.
     for (const path of ["/teacher", "/teacher/classes"]) {
-      const res = run(
+      const res = await run(
         makeReq({
           host: "dev.ai4talent.org",
           path,
@@ -359,8 +368,8 @@ describe("middleware IRB consent hard-gate", () => {
     }
   });
 
-  it("does not 403 a TEACHER's API calls when no instructor form is published", () => {
-    const res = run(
+  it("does not 403 a TEACHER's API calls when no instructor form is published", async () => {
+    const res = await run(
       makeReq({
         host: "dev.ai4talent.org",
         path: "/api/classes",
@@ -370,8 +379,8 @@ describe("middleware IRB consent hard-gate", () => {
     expect(res.status).not.toBe(403);
   });
 
-  it("never blocks /api/consent itself, even for an undecided teacher", () => {
-    const res = run(
+  it("never blocks /api/consent itself, even for an undecided teacher", async () => {
+    const res = await run(
       makeReq({
         host: "dev.ai4talent.org",
         path: "/api/consent",
@@ -381,8 +390,8 @@ describe("middleware IRB consent hard-gate", () => {
     expect(res.status).not.toBe(403);
   });
 
-  it("never gates a STUDENT — declining is a complete answer, not a block", () => {
-    const res = run(
+  it("never gates a STUDENT — declining is a complete answer, not a block", async () => {
+    const res = await run(
       makeReq({
         host: "dev.ai4talent.org",
         path: "/student",

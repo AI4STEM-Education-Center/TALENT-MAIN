@@ -456,3 +456,8 @@ export async function parseJsonBody<T>(
   }
   return parseBody(schema, data);
 }
+
+export const classAccessUpdateSchema = z.strictObject({
+  disabled: z.boolean(),
+  message: z.string().max(500).optional(),
+});

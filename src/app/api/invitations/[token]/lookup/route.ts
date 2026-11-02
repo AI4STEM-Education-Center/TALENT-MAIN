@@ -1,3 +1,4 @@
+import { platformPausedResponse } from "@/lib/class-access-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isValidEmail } from "@/lib/csv-roster";
@@ -27,6 +28,7 @@ export async function GET(
   // Validate the invitation token
   const invitation = await prisma.invitation.findUnique({
     where: { token },
+    include: { class: true },
   });
 
   if (!invitation || !invitation.active) {
@@ -35,6 +37,10 @@ export async function GET(
       { status: 404 },
     );
   }
+  if (invitation.class.disabledAt)
+    return platformPausedResponse(
+      invitation.class.disabledMessage || undefined,
+    );
   if (invitation.expiresAt && invitation.expiresAt < new Date()) {
     return NextResponse.json(
       { found: false, error: "Invitation expired." },

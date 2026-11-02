@@ -1,3 +1,4 @@
+import { guardStudentClassAccess } from "@/lib/class-access-guard";
 import { auth } from "@/lib/auth";
 import { NextResponse } from "next/server";
 import { clientIp } from "@/lib/rate-limit";
@@ -31,7 +32,7 @@ function wantsDocument(req: { headers: { get(name: string): string | null } }) {
   );
 }
 
-export default auth((req) => {
+export default auth(async (req) => {
   // --- Host validation: reject requests from unknown domains ---
   const host = (
     req.headers.get("x-forwarded-host") ||
@@ -135,6 +136,16 @@ export default auth((req) => {
   }
 
   const role = session.user?.role;
+
+  // --- Class access pause (admin "disable class"). Next 16 runs this proxy on
+  // the Node.js runtime and this file already imports Prisma through
+  // @/lib/auth, so a short-cached DB lookup is fine here. It reads live
+  // enrollment state on every request, so already-signed-in students are cut
+  // off on their next request and re-enabling takes effect within the cache
+  // TTL; a JWT claim could do neither. Blocks every /api/* call and student
+  // page for a paused student; see src/lib/class-access-guard.ts.
+  const pauseResponse = await guardStudentClassAccess(req, session);
+  if (pauseResponse) return pauseResponse;
 
   // Role-based path guards. Every dashboard area is listed: the admin pages are
   // client components that fetch from /api/admin/* (which enforce their own

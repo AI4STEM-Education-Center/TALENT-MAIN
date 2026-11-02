@@ -36,7 +36,12 @@ export async function canReadClass(
     const enrollment = await prisma.classEnrollment.findUnique({
       where: { classId_studentId: { classId, studentId: student.id } },
     });
-    return enrollment !== null;
+    if (!enrollment) return false;
+    const cls = await prisma.class.findUnique({
+      where: { id: classId },
+      select: { disabledAt: true },
+    });
+    return !!cls && cls.disabledAt === null;
   }
   return false;
 }

@@ -25,7 +25,8 @@ export default async function StudentClassesPage() {
 
   const [enrollments, completedGroups] = await Promise.all([
     prisma.classEnrollment.findMany({
-      where: { studentId: student.id },
+      // A disabled class is paused for its students: hide it from the list.
+      where: { studentId: student.id, class: { disabledAt: null } },
       include: {
         class: {
           include: {
