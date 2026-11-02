@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
+import { UsageFilters } from "./usage-filters";
 import {
   getAdminUsage,
   PAGE_SIZE,
@@ -51,36 +51,14 @@ export default async function AdminUsagePage({
           </Link>
         </div>
       </div>
-      <form className="flex flex-wrap items-end gap-3" action="/admin/usage">
-        <label className="grid gap-1 text-sm">
-          Activity
-          <select
-            name="kind"
-            defaultValue={usage.kind}
-            className="h-9 rounded-md border bg-background px-3"
-          >
-            {Object.entries(USAGE_KINDS).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="grid gap-1 text-sm">
-          Student name or email
-          <Input
-            name="q"
-            defaultValue={usage.q}
-            placeholder="Search students…"
-          />
-        </label>
-        <input type="hidden" name="classId" value={usage.classId} />
-        <input type="hidden" name="studentId" value={usage.studentId} />
-        <Button type="submit">Apply filters</Button>
-        <Button variant="ghost" asChild>
-          <Link href="/admin/usage">Clear</Link>
-        </Button>
-      </form>
+      <UsageFilters
+        key={`${usage.kind}|${usage.q}`}
+        kinds={USAGE_KINDS}
+        kind={usage.kind}
+        q={usage.q}
+        classId={usage.classId}
+        studentId={usage.studentId}
+      />
       {(usage.classId || usage.studentId) && (
         <p className="text-sm text-muted-foreground">
           Showing{" "}
