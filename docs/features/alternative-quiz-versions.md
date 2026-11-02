@@ -44,6 +44,8 @@ Before starting, a student who has a completed attempt on the quiz can tick **Sk
 - **Scoring:** the score and the `ExamResult` (`correctCount`/`totalCount`) cover only the questions asked, so a 1-of-1 retake reads 100%. That is why such runs are labelled and never mixed into graded statistics. The results page and teacher attempt detail state how many previously-correct questions were left out.
 - Because the excluded questions are never asked, they are not marked wrong anywhere: the student's per-question history still shows the earlier correct result.
 
+Students who miss a question can also **Chat with assistant** about it from their results. The assistant can offer the existing alternative-version question for that exact question, answerable inline, without generating anything new. See [Wrong-answer coach](wrong-answer-coach.md).
+
 ## Setup
 
 - Deploy the web application and worker together. The additive Prisma schema creates `QuizPracticeVersion` and `QuizPracticeAttempt`, plus the round/purpose/feedback/standalone columns on `QuizPracticeVersion`, `QuizPracticeAttempt.quizAttemptId`, `QuizAttempt.practiceVersionId/practiceVersionName/excludedQuestionIds` and `ExamResult.practiceVersionName/excludedCount`. Existing records need no backfill (null/empty means an ordinary attempt); versions from before rounds existed appear only under **Saved versions**.

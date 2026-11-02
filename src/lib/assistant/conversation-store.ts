@@ -22,6 +22,7 @@
 //  3. NEVER FATAL. Persisting a turn must not be able to fail the turn. The
 //     writer swallows and logs; the answer the user asked for still goes out.
 
+import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import {
   buildAssistantTranscriptKey,
@@ -60,6 +61,37 @@ export type ConversationTarget = {
   audience: AssistantAudience;
 };
 
+/**
+ * Identifies the one question a coach conversation is about. The title is the
+ * human label an admin sees in the transcript browser ("Quiz · Question 3").
+ */
+export type CoachConversationKey = {
+  resultId: string;
+  questionNumber: number;
+  title: string;
+  answerKeyAvailable: boolean;
+};
+
+function coachActiveKey(
+  target: ConversationTarget,
+  coach: Pick<
+    CoachConversationKey,
+    "resultId" | "questionNumber" | "answerKeyAvailable"
+  >,
+): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify([
+        target.userId,
+        target.audience,
+        coach.resultId,
+        coach.questionNumber,
+        coach.answerKeyAvailable,
+      ]),
+    )
+    .digest("hex");
+}
+
 /** The instant before which a conversation is out of its owner's window. */
 export function historyCutoff(retentionDays: number, now = new Date()): Date {
   return new Date(now.getTime() - retentionDays * DAY_MS);
@@ -89,6 +121,44 @@ function parseIdArray(raw: string): string[] {
   }
 }
 
+function parseActionArray(raw: string | undefined): unknown[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The caller's coach conversation for one question, if it is still HOT and
+ * inside their history window. Newest wins if a race ever created two.
+ */
+export async function findCoachConversation(
+  target: ConversationTarget,
+  coach: Pick<
+    CoachConversationKey,
+    "resultId" | "questionNumber" | "answerKeyAvailable"
+  >,
+  retentionDays: number,
+  now = new Date(),
+): Promise<{ id: string } | null> {
+  return prisma.assistantConversation.findFirst({
+    where: {
+      userId: target.userId,
+      audience: target.audience,
+      coachResultId: coach.resultId,
+      coachQuestionNumber: coach.questionNumber,
+      coachActiveKey: coachActiveKey(target, coach),
+      archivedAt: null,
+      lastMessageAt: { gte: historyCutoff(retentionDays, now) },
+    },
+    orderBy: { lastMessageAt: "desc" },
+    select: { id: true },
+  });
+}
+
 /**
  * Resolve the conversation this turn belongs to, creating one if the client
  * sent no usable id.
@@ -105,8 +175,47 @@ export async function resolveConversation(
   firstMessage: string,
   retentionDays: number,
   now = new Date(),
+  coach?: CoachConversationKey,
 ): Promise<string | null> {
   try {
+    if (coach) {
+      const key = coachActiveKey(target, coach);
+      // A write-first transaction serializes concurrent first turns in SQLite.
+      // Releasing an expired slot preserves its transcript for the archiver.
+      // Key policy is part of the slot: a final-review reply must never be
+      // replayed to the student or model after a teacher enables more retakes.
+      const created = await prisma.$transaction(async (tx) => {
+        await tx.assistantConversation.updateMany({
+          where: {
+            coachActiveKey: key,
+            OR: [
+              { archivedAt: { not: null } },
+              { lastMessageAt: { lt: historyCutoff(retentionDays, now) } },
+            ],
+          },
+          data: { coachActiveKey: null },
+        });
+        const existing = await tx.assistantConversation.findFirst({
+          where: { coachActiveKey: key },
+          select: { id: true },
+        });
+        if (existing) return existing;
+        return tx.assistantConversation.create({
+          data: {
+            userId: target.userId,
+            audience: target.audience,
+            title: coach.title,
+            lastMessageAt: now,
+            coachResultId: coach.resultId,
+            coachQuestionNumber: coach.questionNumber,
+            coachActiveKey: key,
+          },
+          select: { id: true },
+        });
+      });
+      return created.id;
+    }
+
     if (requestedId) {
       const existing = await prisma.assistantConversation.findFirst({
         where: {
@@ -114,6 +223,9 @@ export async function resolveConversation(
           userId: target.userId,
           audience: target.audience,
           archivedAt: null,
+          // A coach conversation is resumed through its own key; the widget
+          // must not be able to append general turns to one.
+          coachResultId: null,
           lastMessageAt: { gte: historyCutoff(retentionDays, now) },
         },
         select: { id: true },
@@ -163,6 +275,7 @@ export async function appendTurn(
   },
   assistantText: string,
   now = new Date(),
+  actions: unknown[] = [],
 ): Promise<void> {
   try {
     await prisma.$transaction(async (tx) => {
@@ -193,6 +306,7 @@ export async function appendTurn(
             seq: base + 1,
             role: "assistant",
             content: assistantText,
+            actions: JSON.stringify(actions),
             createdAt: now,
           },
         ],
@@ -217,14 +331,19 @@ function rowsToTurns(
     content: string;
     attachmentIds: string;
     attachmentNames: string;
+    actions?: string;
   }[],
 ): AssistantTurn[] {
-  return rows.map((row) => ({
-    role: row.role === "assistant" ? "assistant" : "user",
-    content: row.content,
-    attachmentIds: parseIdArray(row.attachmentIds),
-    attachmentNames: parseIdArray(row.attachmentNames),
-  }));
+  return rows.map((row) => {
+    const actions = parseActionArray(row.actions);
+    return {
+      role: row.role === "assistant" ? "assistant" : "user",
+      content: row.content,
+      attachmentIds: parseIdArray(row.attachmentIds),
+      attachmentNames: parseIdArray(row.attachmentNames),
+      ...(actions.length > 0 ? { actions } : {}),
+    };
+  });
 }
 
 /**
@@ -250,6 +369,7 @@ export async function loadConversationHistory(
         content: true,
         attachmentIds: true,
         attachmentNames: true,
+        actions: true,
       },
     });
     return rowsToTurns(rows.reverse());
@@ -278,6 +398,8 @@ export async function listUserConversations(
       // turns have already moved to S3 and would therefore read as empty.
       archivedAt: null,
       messageCount: { gt: 0 },
+      // Coach conversations live inside their question's dialog, not here.
+      coachResultId: null,
     },
     orderBy: { lastMessageAt: "desc" },
     take: 100,
@@ -317,6 +439,7 @@ export async function readUserConversation(
       audience: target.audience,
       lastMessageAt: { gte: historyCutoff(retentionDays, now) },
       archivedAt: null,
+      coachResultId: null,
     },
     select: {
       id: true,
@@ -373,6 +496,7 @@ function serializeTranscript(
     content: string;
     attachmentIds: string;
     attachmentNames: string;
+    actions: string;
     createdAt: Date;
   }[],
 ): string {
@@ -384,6 +508,7 @@ function serializeTranscript(
         content: row.content,
         attachmentIds: parseIdArray(row.attachmentIds),
         attachmentNames: parseIdArray(row.attachmentNames),
+        actions: parseActionArray(row.actions),
         createdAt: row.createdAt.toISOString(),
       }),
     );
@@ -414,6 +539,9 @@ export function parseTranscript(body: string): AssistantTurn[] {
       attachmentNames: Array.isArray(record.attachmentNames)
         ? (record.attachmentNames as string[])
         : [],
+      ...(Array.isArray(record.actions) && record.actions.length > 0
+        ? { actions: record.actions as unknown[] }
+        : {}),
     });
   }
   return turns;
@@ -506,6 +634,7 @@ export async function archiveAgedConversations(
             content: true,
             attachmentIds: true,
             attachmentNames: true,
+            actions: true,
             createdAt: true,
           },
         });
@@ -733,6 +862,7 @@ export async function readConversationForAdmin(conversationId: string): Promise<
         content: true,
         attachmentIds: true,
         attachmentNames: true,
+        actions: true,
       },
     });
     turns = rowsToTurns(messages);

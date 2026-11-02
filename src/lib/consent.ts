@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { isResearchExempt } from "@/lib/research-exclusion";
 import { prisma } from "@/lib/prisma";
 import { CONSENT_NOT_REQUIRED } from "@/lib/consent-claim";
@@ -167,16 +168,24 @@ export async function getUserConsentClaim(
  */
 export async function hasResearchConsent(
   studentUserId: string,
+  db: Prisma.TransactionClient = prisma,
+  recordedSince?: number,
 ): Promise<boolean> {
-  const active = await getActiveConsentVersion("STUDENT");
+  const active = await db.consentFormVersion.findFirst({
+    where: { role: "STUDENT", isActive: true },
+    orderBy: { createdAt: "desc" },
+  });
   if (!active) return false;
 
-  const record = await prisma.consentRecord.findFirst({
+  const record = await db.consentRecord.findFirst({
     where: { userId: studentUserId, formVersionId: active.id },
     orderBy: [{ signedAt: "desc" }, { id: "desc" }],
-    select: { decision: true },
+    select: { decision: true, signedAt: true },
   });
-  return record?.decision === "AGREE";
+  return (
+    record?.decision === "AGREE" &&
+    (recordedSince === undefined || record.signedAt.getTime() <= recordedSince)
+  );
 }
 
 /** Collapse newest-first consent rows to the current decision for each email. */

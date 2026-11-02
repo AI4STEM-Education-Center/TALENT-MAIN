@@ -13,6 +13,8 @@ describe("isResearcherAdminPath", () => {
     "/admin/consent",
     "/admin/research-pool",
     "/admin/resource-engagement",
+    "/admin/session-replays",
+    "/admin/session-replays/rec1",
     "/admin/logs",
   ])("allows the data page %s", (path) => {
     expect(isResearcherAdminPath(path)).toBe(true);

@@ -36,6 +36,7 @@ import {
   AUDIENCE_USE_CASE,
   type AssistantStreamEvent,
   type AssistantTool,
+  type AssistantToolAction,
   type AssistantToolContext,
   type AssistantTurn,
 } from "./types";
@@ -87,12 +88,26 @@ export type AssistantTurnInput = {
    * Clamped to `MAX_REPLY_TOKENS_CEILING`; omitted, the chat default applies.
    */
   maxReplyTokens?: number;
+  /**
+   * Replaces the audience's skills and system prompt for this turn — how the
+   * wrong-answer coach runs on the student assistant's provider, guardrails and
+   * loop without changing what the assistant widget can do. Everything else
+   * (provider, history, streaming, limits) is shared.
+   */
+  override?: {
+    systemPrompt: string;
+    tools: Map<string, AssistantTool>;
+    /** Cap on cards (tool actions) one reply may surface. */
+    maxActions: number;
+  };
 };
 
 export type AssistantTurnResult = {
   text: string;
   metrics: AiCallMetrics | null;
   toolCallCount: number;
+  /** `stored` halves of the actions surfaced this turn, in order. */
+  actions?: unknown[];
 };
 
 type ChatMessages = OpenAI.Chat.Completions.ChatCompletionMessageParam[];
@@ -171,7 +186,7 @@ async function runToolCall(
   call: StreamedToolCall,
   tools: Map<string, AssistantTool>,
   ctx: AssistantToolContext,
-): Promise<{ content: string; ok: boolean }> {
+): Promise<{ content: string; ok: boolean; action?: AssistantToolAction }> {
   const tool = tools.get(call.name);
   if (!tool) {
     return {
@@ -213,8 +228,23 @@ async function runToolCall(
     // are stored text — a question extracted from an uploaded PDF, a class name
     // a teacher typed. That is the one path by which a poisoned upload reaches
     // a model that holds tools, so it is marked as data on the way in.
-    const result = serializeResult(await tool.handler(parsed.data, ctx));
-    return { ok: true, content: fenceUntrusted(`${call.name} result`, result) };
+    let raw = await tool.handler(parsed.data, ctx);
+    // A card-producing tool returns the card beside its model-facing result.
+    // The card goes to the client; the model reads only the rest.
+    let action: AssistantToolAction | undefined;
+    if (tool.surfacesActions && raw && typeof raw === "object") {
+      const { action: surfaced, ...rest } = raw as {
+        action?: AssistantToolAction;
+      };
+      action = surfaced;
+      raw = rest;
+    }
+    const result = serializeResult(raw);
+    return {
+      ok: true,
+      content: fenceUntrusted(`${call.name} result`, result),
+      ...(action ? { action } : {}),
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     void logSystemEvent({
@@ -319,14 +349,16 @@ export async function runAssistantTurn(
       message:
         "This assistant has no AI model assigned yet. An administrator needs to set one in AI Config.",
     });
-    return { text: "", metrics: null, toolCallCount: 0 };
+    return { text: "", metrics: null, toolCallCount: 0, actions: [] };
   }
 
-  const { skills, tools } = resolveSkills(
-    ctx.audience,
-    settings.enabledSkills,
-    settings.disabledTools,
-  );
+  const { skills, tools } = input.override
+    ? { skills: [], tools: input.override.tools }
+    : resolveSkills(
+        ctx.audience,
+        settings.enabledSkills,
+        settings.disabledTools,
+      );
   const client = await createOpenAIClient(provider);
   // The endpoint the admin picked for this provider, plus the local-server
   // exceptions — the same value every other engine streams through. Building it
@@ -345,12 +377,14 @@ export async function runAssistantTurn(
   const messages: ChatMessages = [
     {
       role: "system",
-      content: buildSystemPrompt(
-        ctx.audience,
-        skills,
-        [...tools.keys()],
-        settings.extraInstructions,
-      ),
+      content:
+        input.override?.systemPrompt ??
+        buildSystemPrompt(
+          ctx.audience,
+          skills,
+          [...tools.keys()],
+          settings.extraInstructions,
+        ),
     },
     ...(await historyMessages(
       input.history,
@@ -368,6 +402,7 @@ export async function runAssistantTurn(
   const parts: AiCallMetrics[] = [];
   let finalText = "";
   let toolCallCount = 0;
+  const actions: unknown[] = [];
 
   // No-op unless the assigned model has a thinking level pinned on the use case
   // in AI config; applies to hosted and local assistants alike. Cleared for the
@@ -456,8 +491,24 @@ export async function runAssistantTurn(
     for (const call of result.toolCalls) {
       const label = tools.get(call.name)?.activityLabel ?? call.name;
       await emit({ type: "tool", name: call.name, label, status: "running" });
-      const outcome = await runToolCall(call, tools, ctx);
+      let outcome = await runToolCall(call, tools, ctx);
       toolCallCount += 1;
+      if (outcome.action) {
+        if (actions.length >= (input.override?.maxActions ?? 0)) {
+          // Past the cap the card is dropped, not shown: the model is told so
+          // it can wrap up in prose rather than assume the student saw it.
+          outcome = {
+            ok: false,
+            content: JSON.stringify({
+              error:
+                "Enough cards have been shown this reply. Finish in plain text.",
+            }),
+          };
+        } else {
+          actions.push(outcome.action.stored);
+          await emit({ type: "action", action: outcome.action.view });
+        }
+      }
       await emit({
         type: "tool",
         name: call.name,
@@ -478,7 +529,7 @@ export async function runAssistantTurn(
 
   const metrics = aggregateMetrics(parts);
 
-  if (!finalText.trim()) {
+  if (!finalText.trim() && actions.length === 0) {
     await emit({
       type: "error",
       message:
@@ -500,5 +551,5 @@ export async function runAssistantTurn(
     });
   }
 
-  return { text: finalText, metrics, toolCallCount };
+  return { text: finalText, metrics, toolCallCount, actions };
 }

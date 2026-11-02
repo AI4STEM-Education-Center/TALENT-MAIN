@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { useReplayArea } from "@/components/session-recorder/use-replay-area";
 import {
   readPreviewEdit,
   type SimulationPreviewEdit,
@@ -72,6 +73,8 @@ export function SimulationViewer({
   /** Escape pressed while focus is inside the simulation (forwarded up). */
   onEscape?: () => void;
 }) {
+  // Tells the session replay's per-area view this pop-up is a simulation.
+  useReplayArea("simulation");
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   // Held in a ref so a new inline handler on every parent render does not tear
   // down and re-add the listener. Only ever read from a user-driven message,

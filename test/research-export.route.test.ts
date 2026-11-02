@@ -397,6 +397,13 @@ describe("admin research export", () => {
   });
 
   it("includes all cold transcript turns alongside hot messages with timestamps", async () => {
+    const actions = [
+      {
+        kind: "material",
+        recommendationIndex: 0,
+        reason: "Review this concept.",
+      },
+    ];
     const hot = await prisma.assistantConversation.create({
       data: {
         userId: "deleted-user",
@@ -430,6 +437,7 @@ describe("admin research export", () => {
         JSON.stringify({
           role: "assistant",
           content: "Cold answer",
+          actions,
           createdAt: "2026-01-01T00:00:01.000Z",
           attachmentIds: [],
           attachmentNames: [],
@@ -452,6 +460,7 @@ describe("admin research export", () => {
             conversationId: cold.id,
             seq: "1",
             content: "Cold answer",
+            actions: JSON.stringify(actions),
             createdAt: "2026-01-01T00:00:01.000Z",
           }),
         ]),

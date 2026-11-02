@@ -65,6 +65,8 @@
     "@radix-ui/react-label": "^2.1.17",
     "@radix-ui/react-select": "^2.4.1",
     "@radix-ui/react-slot": "1.5.0",
+    "@rrweb/record": "^2.2.0",
+    "@rrweb/replay": "^2.2.0",
     "@russellthehippo/honker-node": "^0.5.1",
     "archiver": "^8.0.0",
     "bcryptjs": "^3.0.3",

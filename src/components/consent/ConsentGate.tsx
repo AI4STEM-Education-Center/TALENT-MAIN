@@ -177,7 +177,7 @@ export function ConsentGate() {
         }}
       >
         <DialogContent
-          className="max-h-[90vh] overflow-y-auto sm:max-w-2xl"
+          className="rr-block max-h-[90vh] overflow-y-auto sm:max-w-2xl"
           onInteractOutside={(e) => e.preventDefault()}
         >
           <DialogTitle className={status === "reprompt" ? "" : "sr-only"}>
@@ -221,7 +221,7 @@ export function ConsentGate() {
   return (
     <Dialog open onOpenChange={() => {}}>
       <DialogContent
-        className="max-h-[90vh] overflow-y-auto sm:max-w-2xl"
+        className="rr-block max-h-[90vh] overflow-y-auto sm:max-w-2xl"
         showCloseButton={false}
         onInteractOutside={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => e.preventDefault()}

@@ -4,6 +4,8 @@ import { signOut, useSession } from "next-auth/react";
 import { redirect, usePathname } from "next/navigation";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { ResearchGates } from "@/components/consent/ResearchGates";
+import { SessionRecorder } from "@/components/session-recorder/SessionRecorder";
+import { flushSessionRecording } from "@/components/session-recorder/recorder";
 import { AssistantWidget } from "@/components/assistant/AssistantWidget";
 import { AssistantProvider } from "@/components/assistant/assistant-context";
 import { SessionProvider } from "next-auth/react";
@@ -39,11 +41,15 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     <AssistantProvider>
       <div className="flex min-h-screen bg-background">
         <ResearchGates />
+        {/* Research session replay: students only, server-gated on consent. */}
+        {role === "STUDENT" && <SessionRecorder />}
         <Sidebar
           role={role}
           firstName={session.user.firstName}
           lastName={session.user.lastName}
           onSignOut={async () => {
+            // Upload the tail of the recording while the session still exists.
+            await flushSessionRecording().catch(() => null);
             await signOut({ redirect: false });
             window.location.href = `${window.location.origin}/login`;
           }}
