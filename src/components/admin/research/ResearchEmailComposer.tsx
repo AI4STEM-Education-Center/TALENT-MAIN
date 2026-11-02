@@ -29,6 +29,8 @@ import {
   INTERVIEW_CONSENT_LEVELS,
   MAX_AUDIENCE_PEOPLE,
   parsePeople,
+  normalizeStudentUsage,
+  type StudentUsageFilter,
   POST_SURVEY_TARGET_LABELS,
   POST_SURVEY_TARGETS,
   RESEARCH_EMAIL_VARIABLES,
@@ -466,6 +468,14 @@ export function ResearchEmailComposer({ kind }: { kind: ResearchEmailKind }) {
             audience={draft.audience}
             onChange={(audience) => set({ audience })}
           />
+          {draft.audience.roles.includes("STUDENT") && (
+            <StudentUsageField
+              value={normalizeStudentUsage(draft.audience.studentUsage)}
+              onChange={(studentUsage) =>
+                set({ audience: { ...draft.audience, studentUsage } })
+              }
+            />
+          )}
           <RecipientSummary preview={preview} sendKeys={sendKeys} />
         </CardContent>
       </Card>
@@ -551,6 +561,88 @@ export function ResearchEmailComposer({ kind }: { kind: ResearchEmailKind }) {
 
       <HistoryCard campaigns={campaigns} onCancel={cancel} />
     </div>
+  );
+}
+
+function StudentUsageField({
+  value,
+  onChange,
+}: {
+  value: StudentUsageFilter;
+  onChange: (value: StudentUsageFilter) => void;
+}) {
+  return (
+    <fieldset className="space-y-3 rounded-md border p-3">
+      <legend className="px-1 font-medium">Minimum student usage</legend>
+      <div className="space-y-1">
+        <Label htmlFor="usage-seconds">Minimum seconds (0 = no minimum)</Label>
+        <Input
+          id="usage-seconds"
+          type="number"
+          min={0}
+          step={1}
+          value={value.minimumSeconds}
+          onChange={(e) =>
+            onChange({
+              ...value,
+              minimumSeconds: Math.max(
+                0,
+                Math.floor(Number(e.target.value) || 0),
+              ),
+            })
+          }
+        />
+      </div>
+      <div className="flex flex-wrap gap-4">
+        {(
+          [
+            ["materials", "Learning materials"],
+            ["simulations", "Simulations"],
+          ] as const
+        ).map(([key, label]) => (
+          <label key={key} className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={value[key]}
+              onChange={() => {
+                const next = { ...value, [key]: !value[key] };
+                if (next.materials || next.simulations) onChange(next);
+              }}
+            />
+            {label}
+          </label>
+        ))}
+      </div>
+      {value.materials && value.simulations && (
+        <div className="space-y-1">
+          {(
+            [
+              ["COMBINED", "Combined: add time across selected categories"],
+              [
+                "SEPARATE",
+                "Separate: require the minimum in each selected category",
+              ],
+            ] as const
+          ).map(([mode, label]) => (
+            <label key={mode} className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="student-usage-mode"
+                checked={value.mode === mode}
+                onChange={() => onChange({ ...value, mode })}
+              />
+              {label}
+            </label>
+          ))}
+        </div>
+      )}
+      <p className="text-xs text-muted-foreground">
+        Uses total recorded time across all sessions, including recommended and
+        library opens. Students below the minimum, including those without
+        recorded usage, are excluded. Teachers are unaffected. Usage is recorded
+        only when research consent allows it.
+      </p>
+    </fieldset>
   );
 }
 

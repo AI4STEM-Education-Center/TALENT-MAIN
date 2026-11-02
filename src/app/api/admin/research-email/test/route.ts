@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminApi } from "@/lib/admin-access";
+import { requireResearchEmailApi } from "@/lib/admin-access";
 import { appOrigin } from "@/lib/app-url";
 import {
   getSenderOverride,
@@ -32,7 +32,7 @@ export const runtime = "nodejs";
 export async function POST(req: NextRequest) {
   const limited = rateLimit(req, "research-email-test", 10, 60_000);
   if (limited) return limited;
-  const session = await requireAdminApi();
+  const session = await requireResearchEmailApi();
   if (session instanceof Response) return session;
   let body: Record<string, unknown>;
   try {
