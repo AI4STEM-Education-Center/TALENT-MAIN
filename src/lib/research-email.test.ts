@@ -4,6 +4,7 @@ import {
   completedSurveysLabel,
   normalizeCompensationAudience,
   normalizeAudience,
+  normalizeStudentUsage,
   RESEARCH_EMAIL_KINDS,
   RESEARCH_EMAIL_VARIABLES,
   DEFAULT_RESEARCH_EMAIL_VERSIONS,
@@ -377,6 +378,7 @@ describe("compensation emails", () => {
       match: "ANY",
       excludePreviouslyEmailed: true,
       people: [],
+      studentUsage: normalizeStudentUsage(undefined),
     });
     expect(
       normalizeCompensationAudience({
@@ -392,6 +394,7 @@ describe("compensation emails", () => {
       match: "ALL",
       excludePreviouslyEmailed: false,
       people: ["ann@uga.edu"],
+      studentUsage: normalizeStudentUsage(undefined),
     });
     expect(
       normalizeAudience("COMPENSATION", {
@@ -479,5 +482,34 @@ describe("compensation emails", () => {
       });
     }
     expect(input.versions.STUDENT?.body).not.toContain("surveyLink");
+  });
+});
+
+describe("student usage filter normalization", () => {
+  it("leaves old audiences unfiltered and persists valid settings for every email kind", () => {
+    expect(normalizeStudentUsage(undefined).minimumSeconds).toBe(0);
+    const studentUsage = {
+      minimumSeconds: 45,
+      materials: false,
+      simulations: true,
+      mode: "SEPARATE",
+    };
+    for (const kind of RESEARCH_EMAIL_KINDS) {
+      expect(normalizeAudience(kind, { studentUsage }).studentUsage).toEqual(
+        studentUsage,
+      );
+    }
+  });
+
+  it("normalizes invalid seconds and always keeps a usage category selected", () => {
+    for (const minimumSeconds of [-1, NaN, Infinity, "10", null]) {
+      expect(normalizeStudentUsage({ minimumSeconds }).minimumSeconds).toBe(0);
+    }
+    expect(normalizeStudentUsage({ minimumSeconds: 12.8 }).minimumSeconds).toBe(
+      12,
+    );
+    expect(
+      normalizeStudentUsage({ materials: false, simulations: false }),
+    ).toMatchObject({ materials: true, simulations: false });
   });
 });

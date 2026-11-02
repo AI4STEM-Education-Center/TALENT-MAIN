@@ -4,20 +4,21 @@
  * Research scientists get read-only access to the admin DATA pages (people,
  * classes, content, surveys, consent records, feedback, chats, logs) but never
  * to the CONFIG pages (AI config, e-mail/SMTP, backups, invite codes, pressure
- * tests, system-resource monitoring, consent-form publishing/settings,
- * research e-mail sending). The
+ * tests, system-resource monitoring, and consent-form publishing/settings). Research email composition and sending are allowed. The
  * proxy redirects them off anything not listed here and the sidebar only
  * links to what is listed.
  *
  * This is navigation only — every API route enforces its own role check
- * (src/lib/admin-access.ts), and mutations stay ADMIN-only even on the pages
- * listed here.
+ * (src/lib/admin-access.ts). Only research-email mutations allow researchers.
  *
  * Pure and client-safe so the proxy (edge) and the sidebar can share it.
  */
 
 /** Pages a researcher may open, including every sub-page beneath them. */
 const RESEARCHER_ADMIN_PREFIXES = [
+  "/admin/research-email",
+  "/admin/post-survey-email",
+  "/admin/research-pool/email",
   "/admin/classes",
   "/admin/usage",
   "/admin/quizzes",
@@ -40,7 +41,7 @@ const RESEARCHER_ADMIN_PREFIXES = [
 /**
  * Pages a researcher may open whose sub-pages are admin-only: the consent
  * records list (but not /admin/consent/forms or /settings) and the research
- * pool (but not its /email sender).
+ * pool.
  */
 const RESEARCHER_ADMIN_EXACT = [
   "/admin",
