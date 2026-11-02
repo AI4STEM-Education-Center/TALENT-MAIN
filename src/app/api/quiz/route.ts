@@ -11,6 +11,7 @@ import { shuffleAnswerChoices } from "@/lib/quiz-shuffle";
 import { enqueueExamResult } from "@/lib/queue";
 import { logApiError } from "@/lib/system-log";
 import { QUESTION_ORDER } from "@/lib/question-order";
+import { GRADED_ATTEMPTS } from "@/lib/alternative-retake";
 
 class AttemptLimitError extends Error {}
 class AttemptAlreadySubmittedError extends Error {}
@@ -121,7 +122,13 @@ export async function POST(req: NextRequest) {
       // and then submit them one at a time against the correctness feedback
       // the submit response returns.
       let claimed = await tx.quizAttempt.findFirst({
-        where: { studentId: student.id, classId, quizId, completedAt: null },
+        where: {
+          studentId: student.id,
+          classId,
+          quizId,
+          completedAt: null,
+          ...GRADED_ATTEMPTS,
+        },
         orderBy: { startedAt: "desc" },
         select: { id: true },
       });
@@ -134,6 +141,7 @@ export async function POST(req: NextRequest) {
               classId,
               quizId,
               completedAt: { not: null },
+              ...GRADED_ATTEMPTS,
             },
           });
           if (usedAttempts >= classQuiz.maxAttempts) {
@@ -224,6 +232,14 @@ export async function PATCH(req: NextRequest) {
   });
   if (!attempt || attempt.studentId !== student.id) {
     return NextResponse.json({ error: "Attempt not found" }, { status: 404 });
+  }
+  // Alternative-version retakes carry different questions; grading one against
+  // the quiz's own would corrupt it. They submit through /api/quiz/practice.
+  if (attempt.practiceVersionId) {
+    return NextResponse.json(
+      { error: "Submit alternative-version attempts through practice." },
+      { status: 409 },
+    );
   }
   // SECURITY: an attempt may be graded exactly once. Without this, a student
   // could re-submit the same attemptId indefinitely — the per-class
@@ -354,6 +370,7 @@ export async function PATCH(req: NextRequest) {
             quizId,
             completedAt: { not: null },
             id: { not: attemptId },
+            ...GRADED_ATTEMPTS,
           },
         });
         if (usedAttempts >= cap.maxAttempts) throw new AttemptLimitError();

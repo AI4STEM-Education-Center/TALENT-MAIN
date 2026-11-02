@@ -39,11 +39,12 @@ export const RESEARCH_EXPORT_FIELDS = {
     "id classId quizId published availableFrom availableUntil maxAttempts",
   QuizProgress:
     "id studentId classId quizId status bestScore manualGrade updatedAt",
-  QuizAttempt: "id studentId classId quizId score startedAt completedAt",
+  QuizAttempt:
+    "id studentId classId quizId score startedAt completedAt practiceVersionId practiceVersionName excludedQuestionIds",
   QuizAnswer:
     "id quizAttemptId questionId selectedOptionId selectedOptionIds numericValue isCorrect",
   ExamResult:
-    "id quizAttemptId studentId classId quizId studentName className topicName quizName score correctCount totalCount completedAt reviewSnapshot summary summaryStatus recommendations recommendationsStatus aiModel summaryAiModel summaryAiProvider summaryServiceTier summaryThinkingLevel summaryTtftMs summaryGenerationMs summaryTotalMs summaryTokens summaryTokensEstimated recsAiModel recsAiProvider recsServiceTier recsThinkingLevel recsTtftMs recsGenerationMs recsTotalMs recsTokens recsTokensEstimated createdAt updatedAt",
+    "id quizAttemptId studentId classId quizId studentName className topicName quizName score correctCount totalCount completedAt practiceVersionName excludedCount reviewSnapshot summary summaryStatus recommendations recommendationsStatus aiModel summaryAiModel summaryAiProvider summaryServiceTier summaryThinkingLevel summaryTtftMs summaryGenerationMs summaryTotalMs summaryTokens summaryTokensEstimated recsAiModel recsAiProvider recsServiceTier recsThinkingLevel recsTtftMs recsGenerationMs recsTotalMs recsTokens recsTokensEstimated createdAt updatedAt",
   AiProvider:
     "id name providerType cfAigByokAlias timeoutMs apiSurface isActive createdAt updatedAt",
   AiModel:
@@ -111,7 +112,7 @@ export const RESEARCH_EXPORT_FIELDS = {
   QuizPracticeVersion:
     "id quizId name status variation sourceSnapshot objectives questions validation error aiModel aiTokens batchId purpose feedback revisedFromId standaloneQuizId attempts teacherEdited createdAt updatedAt",
   QuizPracticeAttempt:
-    "id studentId classId quizId versionId versionName questions answers score startedAt completedAt activeKey",
+    "id studentId classId quizId versionId versionName quizAttemptId questions answers score startedAt completedAt activeKey",
   SurveyForm:
     "id kind role period promptInApp promptStartedAt title description questions isEnabled status errorMessage sourceText pdfBucket pdfKey pdfName createdById createdAt updatedAt",
   SurveyResponse:

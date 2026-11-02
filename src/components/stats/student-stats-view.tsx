@@ -285,7 +285,14 @@ export async function StudentStatsView({
                   className="flex items-center justify-between gap-2 rounded-lg border p-3 hover:bg-muted/30"
                 >
                   <div className="min-w-0">
-                    <p className="font-medium text-sm truncate">{a.quizName}</p>
+                    <p className="font-medium text-sm truncate">
+                      {a.quizName}
+                      {a.alternativeVersion && (
+                        <span className="ml-2 text-xs font-normal text-muted-foreground">
+                          Alternative: {a.alternativeVersion}
+                        </span>
+                      )}
+                    </p>
                     <p className="text-xs text-muted-foreground">
                       {fmtDateTime(a.completedAt)}
                     </p>

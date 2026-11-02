@@ -12,6 +12,7 @@ import {
   type PresignedRecommendations,
   type ResultStatus,
 } from "@/lib/exam-results";
+import { alternativeNotice } from "@/lib/alternative-retake";
 import {
   presignStoredRecommendations,
   presignStudentMistakes,
@@ -100,14 +101,33 @@ export default async function ExamResultsPage({
       }}
       backHref="/student/history"
       backLabel="Exam history"
+      notice={
+        examResult.practiceVersionName
+          ? alternativeNotice(
+              examResult.practiceVersionName,
+              examResult.excludedCount,
+            )
+          : undefined
+      }
       actions={
-        <Button asChild variant="outline">
-          <Link
-            href={`/student/classes/${examResult.classId}/quiz/${examResult.quizId}`}
-          >
-            <RotateCcw className="size-4" /> Retake quiz
-          </Link>
-        </Button>
+        <>
+          {examResult.practiceVersionName && (
+            <Button asChild variant="outline">
+              <Link
+                href={`/student/classes/${examResult.classId}/quiz/${examResult.quizId}/practice`}
+              >
+                Practice another version
+              </Link>
+            </Button>
+          )}
+          <Button asChild variant="outline">
+            <Link
+              href={`/student/classes/${examResult.classId}/quiz/${examResult.quizId}`}
+            >
+              <RotateCcw className="size-4" /> Retake quiz
+            </Link>
+          </Button>
+        </>
       }
     />
   );

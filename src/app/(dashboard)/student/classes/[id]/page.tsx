@@ -19,6 +19,7 @@ import {
   ScrollText,
 } from "lucide-react";
 import { ContactTeacherDialog } from "./contact-teacher-dialog";
+import { GRADED_ATTEMPTS } from "@/lib/alternative-retake";
 
 export default async function StudentClassPage({
   params,
@@ -71,6 +72,7 @@ export default async function StudentClassPage({
         classId: id,
         quizId: { in: quizIds },
         completedAt: { not: null },
+        ...GRADED_ATTEMPTS,
       },
       _count: { _all: true },
     }),

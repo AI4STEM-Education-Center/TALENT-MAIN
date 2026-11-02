@@ -51,6 +51,8 @@ export async function QuizStatsView({
             {stats.studentsAttempted} student
             {stats.studentsAttempted !== 1 ? "s" : ""} · {stats.attemptsTotal}{" "}
             attempt{stats.attemptsTotal !== 1 ? "s" : ""}
+            {stats.alternativeAttemptsTotal > 0 &&
+              ` · ${stats.alternativeAttemptsTotal} alternative-version retake${stats.alternativeAttemptsTotal !== 1 ? "s" : ""} (not included in the figures below)`}
           </p>
         </div>
         {audience === "teacher" && (
