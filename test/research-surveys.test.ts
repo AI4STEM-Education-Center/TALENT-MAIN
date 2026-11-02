@@ -40,7 +40,7 @@ import { auth } from "@/lib/auth";
 import { sendEmailToRecipient } from "@/lib/email";
 import { prisma } from "@/lib/prisma";
 import { findSurveyTemplate } from "@/lib/survey-templates";
-import { resetDb, createStudent, createAdmin } from "./db";
+import { resetDb, createStudent, createAdmin, createTeacher } from "./db";
 
 const mockAuth = vi.mocked(auth);
 const mockSend = vi.mocked(sendEmailToRecipient);
@@ -549,6 +549,31 @@ describe("compensation email", () => {
     audience: { roles: ["TEACHER"], periods: [1], match: "ANY" },
   };
 
+  it("applies usage minimums to compensation and excludes accountless history with no attributable usage", async () => {
+    const { user } = await createStudent();
+    await completed(user.id, user.email, 1);
+    await completed(null, "historical@uga.edu", 1);
+    await prisma.simulationSession.create({
+      data: {
+        studentId: user.id,
+        simulationId: "sim",
+        surface: "library",
+        dwellMs: 10000,
+      },
+    });
+    const plan = await previewRecipients(
+      "COMPENSATION",
+      audience({
+        studentUsage: {
+          minimumSeconds: 10,
+          materials: false,
+          simulations: true,
+        },
+      }),
+    );
+    expect(plan.recipients.map((r) => r.userId)).toEqual([user.id]);
+  });
+
   it("matches ANY/ALL across old forms, uses live details, and describes all completions", async () => {
     const { user } = await createStudent({ email: "live@uga.edu" });
     await completed(user.id, "old@uga.edu", 1);
@@ -836,82 +861,217 @@ describe("compensation email", () => {
     ).toHaveLength(4);
   });
 
-  it("supports drafts, previews, test sends, history, cancellation and background delivery without invites", async () => {
+  it.each(["ADMIN", "RESEARCHER"])(
+    "supports %s drafts, previews, test sends, history, cancellation and background delivery without invites",
+    async (role) => {
+      const admin = await createAdmin();
+      admin.role = role;
+      await prisma.user.update({ where: { id: admin.id }, data: { role } });
+      const { user } = await createStudent();
+      await completed(user.id, user.email, 1);
+      asUser(admin);
+      expect(
+        (
+          await templatePut(
+            jsonReq("/api/admin/research-email/template", body, "PUT"),
+          )
+        ).status,
+      ).toBe(200);
+      const template = await (
+        await templateGet(
+          new NextRequest(
+            "http://localhost/api/admin/research-email/template?kind=COMPENSATION",
+          ),
+        )
+      ).json();
+      expect(template.audience).toMatchObject({
+        roles: ["STUDENT"],
+        periods: [1],
+        match: "ANY",
+        excludePreviouslyEmailed: true,
+      });
+      expect(
+        await (
+          await previewPost(jsonReq("/api/admin/research-email/preview", body))
+        ).json(),
+      ).toMatchObject({ count: 1, byVersion: { STUDENT: 1 }, forms: [] });
+      expect(
+        (
+          await testPost(
+            jsonReq("/api/admin/research-email/test", {
+              ...body,
+              to: "admin@uga.edu",
+            }),
+          )
+        ).status,
+      ).toBe(200);
+      expect(mockSend.mock.calls[0][0].text).toContain(
+        "the Period 1 post-survey and the Period 2 post-survey (2)",
+      );
+      const created = await campaignPost(
+        jsonReq("/api/admin/research-email/campaigns", body),
+      );
+      expect(created.status).toBe(201);
+      const ids = await materializeDueCampaigns();
+      expect(ids).toHaveLength(1);
+      expect(await prisma.surveyInvite.count()).toBe(0);
+      expect(await deliverResearchEmail(ids[0])).toEqual({ status: "SENT" });
+      expect(mockSend.mock.calls.at(-1)![0]).toMatchObject({
+        to: user.email,
+        replyTo: body.replyTo,
+        text: "Thank you for the Period 1 post-survey (1). Please reply.",
+      });
+      expect(
+        (await previewRecipients("COMPENSATION", audience())).recipients,
+      ).toEqual([]);
+      const history = await (
+        await campaignsGet(
+          new NextRequest(
+            "http://localhost/api/admin/research-email/campaigns?kind=COMPENSATION",
+          ),
+        )
+      ).json();
+      expect(history.campaigns[0]).toMatchObject({ sent: 1, pending: 0 });
+      const next = await (
+        await campaignPost(jsonReq("/api/admin/research-email/campaigns", body))
+      ).json();
+      expect(
+        (
+          await campaignDelete(new NextRequest("http://localhost"), {
+            params: Promise.resolve({ id: next.campaign.id }),
+          })
+        ).status,
+      ).toBe(200);
+    },
+  );
+});
+
+describe("student usage audience filter", () => {
+  it("sums sessions, includes the exact threshold, supports one or both categories, and leaves teachers eligible", async () => {
+    const { user } = await createStudent();
+    const { user: noUsage } = await createStudent();
+    const { user: teacher } = await createTeacher();
+    await enabledForm("POST");
+    const teacherForm = await enabledForm("PRE");
+    await prisma.surveyForm.update({
+      where: { id: teacherForm.id },
+      data: { kind: "POST", role: "TEACHER" },
+    });
+    await prisma.learningResourceSession.createMany({
+      data: [
+        {
+          studentId: user.id,
+          materialId: "deleted-material",
+          surface: "library",
+          dwellMs: 3000,
+        },
+        {
+          studentId: user.id,
+          materialId: "another-material",
+          surface: "results_page",
+          dwellMs: 2000,
+        },
+      ],
+    });
+    await prisma.simulationSession.create({
+      data: {
+        studentId: user.id,
+        simulationId: "deleted-sim",
+        surface: "library",
+        dwellMs: 5000,
+      },
+    });
+    const base = { roles: ["STUDENT", "TEACHER"], target: "ALL" };
+    const plan = (studentUsage: unknown, people: string[] = []) =>
+      previewRecipients(
+        "POST_SURVEY",
+        JSON.stringify({ ...base, studentUsage, people }),
+      );
+    const usage = {
+      minimumSeconds: 10,
+      materials: true,
+      simulations: true,
+      mode: "COMBINED",
+    };
+    expect((await plan(usage)).recipients.map((r) => r.userId).sort()).toEqual(
+      [user.id, teacher.id].sort(),
+    );
+    expect(
+      (await plan({ ...usage, mode: "SEPARATE" })).recipients.map(
+        (r) => r.userId,
+      ),
+    ).toEqual([teacher.id]);
+    for (const selected of [
+      { materials: true, simulations: false },
+      { materials: false, simulations: true },
+    ]) {
+      expect(
+        (await plan({ ...usage, ...selected, minimumSeconds: 5 })).recipients,
+      ).toHaveLength(2);
+      expect(
+        (await plan({ ...usage, ...selected, minimumSeconds: 6 })).recipients,
+      ).toHaveLength(1);
+    }
+    expect(
+      (await plan({ ...usage, minimumSeconds: 0 })).recipients,
+    ).toHaveLength(3);
+    // Naming a student never bypasses the minimum.
+    expect((await plan(usage, [noUsage.id])).recipients).toHaveLength(0);
+    expect((await plan(usage)).skipped.join()).toContain(
+      "1 student was skipped",
+    );
+  });
+
+  it("persists the filter and rechecks current usage when a scheduled interview campaign is expanded", async () => {
     const admin = await createAdmin();
     const { user } = await createStudent();
-    await completed(user.id, user.email, 1);
+    const consent = await consentForm();
+    await decide(user.id, consent.id, "AGREE");
+    const body = {
+      kind: "POOL",
+      replyTo: "research@uga.edu",
+      attachments: [],
+      versions: {
+        STUDENT_IRB: { subject: "Interview", body: "Please reply" },
+        STUDENT_SURVEY: { subject: "Interview", body: "Please reply" },
+      },
+      audience: {
+        roles: ["STUDENT"],
+        studentUsage: {
+          minimumSeconds: 10,
+          materials: true,
+          simulations: false,
+          mode: "COMBINED",
+        },
+      },
+    };
     asUser(admin);
     expect(
       (
-        await templatePut(
-          jsonReq("/api/admin/research-email/template", body, "PUT"),
-        )
-      ).status,
-    ).toBe(200);
-    const template = await (
-      await templateGet(
-        new NextRequest(
-          "http://localhost/api/admin/research-email/template?kind=COMPENSATION",
-        ),
-      )
-    ).json();
-    expect(template.audience).toMatchObject({
-      roles: ["STUDENT"],
-      periods: [1],
-      match: "ANY",
-      excludePreviouslyEmailed: true,
-    });
-    expect(
-      await (
-        await previewPost(jsonReq("/api/admin/research-email/preview", body))
-      ).json(),
-    ).toMatchObject({ count: 1, byVersion: { STUDENT: 1 }, forms: [] });
-    expect(
-      (
-        await testPost(
-          jsonReq("/api/admin/research-email/test", {
-            ...body,
-            to: "admin@uga.edu",
-          }),
-        )
-      ).status,
-    ).toBe(200);
-    expect(mockSend.mock.calls[0][0].text).toContain(
-      "the Period 1 post-survey and the Period 2 post-survey (2)",
-    );
-    const created = await campaignPost(
+        await (
+          await previewPost(jsonReq("/api/admin/research-email/preview", body))
+        ).json()
+      ).count,
+    ).toBe(0);
+    const response = await campaignPost(
       jsonReq("/api/admin/research-email/campaigns", body),
     );
-    expect(created.status).toBe(201);
-    const ids = await materializeDueCampaigns();
-    expect(ids).toHaveLength(1);
-    expect(await prisma.surveyInvite.count()).toBe(0);
-    expect(await deliverResearchEmail(ids[0])).toEqual({ status: "SENT" });
-    expect(mockSend.mock.calls.at(-1)![0]).toMatchObject({
-      to: user.email,
-      replyTo: body.replyTo,
-      text: "Thank you for the Period 1 post-survey (1). Please reply.",
+    expect(response.status).toBe(201);
+    const { campaign } = await response.json();
+    const saved = await prisma.researchEmailCampaign.findUniqueOrThrow({
+      where: { id: campaign.id },
     });
-    expect(
-      (await previewRecipients("COMPENSATION", audience())).recipients,
-    ).toEqual([]);
-    const history = await (
-      await campaignsGet(
-        new NextRequest(
-          "http://localhost/api/admin/research-email/campaigns?kind=COMPENSATION",
-        ),
-      )
-    ).json();
-    expect(history.campaigns[0]).toMatchObject({ sent: 1, pending: 0 });
-    const next = await (
-      await campaignPost(jsonReq("/api/admin/research-email/campaigns", body))
-    ).json();
-    expect(
-      (
-        await campaignDelete(new NextRequest("http://localhost"), {
-          params: Promise.resolve({ id: next.campaign.id }),
-        })
-      ).status,
-    ).toBe(200);
+    expect(JSON.parse(saved.audience).studentUsage).toEqual(
+      body.audience.studentUsage,
+    );
+    await prisma.learningResourceSession.create({
+      data: {
+        studentId: user.id,
+        materialId: "material",
+        surface: "library",
+        dwellMs: 10000,
+      },
+    });
+    expect(await materializeDueCampaigns()).toHaveLength(1);
   });
 });

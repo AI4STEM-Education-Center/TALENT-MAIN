@@ -10,7 +10,7 @@ import { logSystemEvent } from "@/lib/system-log";
  *
  * Two tiers:
  * - ADMIN-only ("config / actions"): settings, secrets, invite codes, backups,
- *   e-mail sending and EVERY state-changing request. Use requireAdminApi /
+ *   SMTP settings and state-changing requests (except research emails). Use requireAdminApi /
  *   requireAdminPage.
  * - Admin-data readers (ADMIN + RESEARCHER): read-only research data such as
  *   users, classes, content, surveys, consent records and logs. Use
@@ -46,9 +46,16 @@ async function gateApi(
   return session as AuthedSession;
 }
 
-/** ADMIN only. For config routes and every mutation. */
+/** ADMIN only. For config routes and mutations outside research emails. */
 export function requireAdminApi(): Promise<AuthedSession | NextResponse> {
   return gateApi(isAdmin);
+}
+
+/** ADMIN or RESEARCHER, specifically for composing and sending research emails. */
+export function requireResearchEmailApi(): Promise<
+  AuthedSession | NextResponse
+> {
+  return gateApi(canViewAdminData);
 }
 
 /** ADMIN or RESEARCHER. For read-only (GET) admin-data routes only. */

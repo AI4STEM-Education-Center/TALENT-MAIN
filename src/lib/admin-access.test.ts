@@ -13,6 +13,7 @@ import { logSystemEvent } from "@/lib/system-log";
 import {
   logDataExport,
   requireAdminApi,
+  requireResearchEmailApi,
   requireAdminDataPage,
   requireAdminDataReader,
   requireAdminPage,
@@ -113,5 +114,18 @@ describe("logDataExport", () => {
         rows: 3,
       },
     });
+  });
+});
+
+describe("requireResearchEmailApi", () => {
+  it.each([
+    [null, 401],
+    ["STUDENT", 403],
+    ["TEACHER", 403],
+    ["RESEARCHER", 200],
+    ["ADMIN", 200],
+  ])("%s -> %i", async (role, expected) => {
+    as(role as string | null);
+    expect(await status(requireResearchEmailApi())).toBe(expected);
   });
 });

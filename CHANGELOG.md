@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.0.30 - 2026-11-20
+
+- Expanded research scientist access to compose, test, schedule, send, and cancel research emails, with student recipient filters for minimum learning material and simulation usage, counted together or separately.
+- Added consent-based student session recording and administrator replay for simulation, learning material, and quiz views, with separate playback for each area and improved simulation pop-up navigation.
+- Added a per-question coach chat for students reviewing wrong answers.
+- Improved alternative-version practice so completed runs are recorded as quiz retakes, with an option to skip correct questions and recommendations after submission.
+- Added administrator controls to disable a class and pause platform access for students whose classes are all disabled.
+- Improved the student usage records Clear button so it resets the filter fields, and improved live API verification by allowing the CI runner through Cloudflare.
+
 ## v0.0.29 - 2026-11-13
 
 - Added learning material views to the administrator student usage records, listing each time a student opened a material with whether it was recommended after a quiz (including the page range) or self-directed, along with reading time, pages viewed, clicks, and PDF opens, with links between these individual views and the learning resource engagement summary.

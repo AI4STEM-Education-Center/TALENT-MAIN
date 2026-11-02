@@ -26,6 +26,7 @@ import {
   matchPeople,
   mergePoolEntries,
   normalizeCompensationAudience,
+  normalizeStudentUsage,
   normalizePoolAudience,
   normalizePostSurveyAudience,
   parseAttachments,
@@ -402,6 +403,59 @@ async function planRecipients(
       : kind === "POST_SURVEY"
         ? await planPostSurveyRecipients(audienceJson)
         : await planPoolRecipients(audienceJson);
+  const usage = normalizeStudentUsage(
+    (safeJson(audienceJson) as { studentUsage?: unknown } | null)?.studentUsage,
+  );
+  if (usage.minimumSeconds > 0) {
+    const students = plan.recipients.filter((r) =>
+      r.variant.startsWith("STUDENT"),
+    );
+    const ids = students.flatMap((r) => (r.userId ? [r.userId] : []));
+    const where = { studentId: { in: ids } };
+    const [materials, simulations] = await Promise.all([
+      usage.materials && ids.length
+        ? prisma.learningResourceSession.groupBy({
+            by: ["studentId"],
+            where,
+            _sum: { dwellMs: true },
+          })
+        : [],
+      usage.simulations && ids.length
+        ? prisma.simulationSession.groupBy({
+            by: ["studentId"],
+            where,
+            _sum: { dwellMs: true },
+          })
+        : [],
+    ]);
+    const materialMs = new Map(
+      materials.map((r) => [r.studentId, r._sum.dwellMs ?? 0]),
+    );
+    const simulationMs = new Map(
+      simulations.map((r) => [r.studentId, r._sum.dwellMs ?? 0]),
+    );
+    const minimumMs = usage.minimumSeconds * 1000;
+    const before = plan.recipients.length;
+    plan.recipients = plan.recipients.filter((r) => {
+      if (!r.variant.startsWith("STUDENT")) return true;
+      const totals = [
+        ...(usage.materials
+          ? [r.userId ? (materialMs.get(r.userId) ?? 0) : 0]
+          : []),
+        ...(usage.simulations
+          ? [r.userId ? (simulationMs.get(r.userId) ?? 0) : 0]
+          : []),
+      ];
+      return usage.mode === "SEPARATE"
+        ? totals.every((ms) => ms >= minimumMs)
+        : totals.reduce((sum, ms) => sum + ms, 0) >= minimumMs;
+    });
+    const excluded = before - plan.recipients.length;
+    if (excluded)
+      plan.skipped.push(
+        `${excluded} ${excluded === 1 ? "student was" : "students were"} skipped for having less than ${usage.minimumSeconds} seconds of recorded usage (${usage.mode === "COMBINED" ? "combined" : "in each selected category"}).`,
+      );
+  }
   const people = parsePeople(
     (safeJson(audienceJson) as { people?: unknown } | null)?.people,
   );
