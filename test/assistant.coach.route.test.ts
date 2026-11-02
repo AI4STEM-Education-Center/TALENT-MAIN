@@ -342,6 +342,24 @@ describe("GET /api/assistant/coach", () => {
     expect((await GET_COACH(getCoach(ATTEMPT, "abc"))).status).toBe(400);
   });
 
+  it("hides a paused class's questions even from a student with another active class", async () => {
+    const { student, cls } = await fixture();
+    asStudent(student.user.id);
+    expect((await GET_COACH(getCoach(ATTEMPT, 1))).status).toBe(200);
+
+    await prisma.class.update({
+      where: { id: cls.id },
+      data: { disabledAt: new Date() },
+    });
+    expect((await GET_COACH(getCoach(ATTEMPT, 1))).status).toBe(404);
+
+    await prisma.class.update({
+      where: { id: cls.id },
+      data: { disabledAt: null },
+    });
+    expect((await GET_COACH(getCoach(ATTEMPT, 1))).status).toBe(200);
+  });
+
   it("returns the original question and the opening, with no answer key while a retake is possible", async () => {
     await fixture();
     const res = await GET_COACH(getCoach(ATTEMPT, 1));
