@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminApi } from "@/lib/admin-access";
+import { requireResearchEmailApi } from "@/lib/admin-access";
 import { isResearchEmailKind, normalizeAudience } from "@/lib/research-email";
 import { previewRecipients } from "@/lib/research-email-server";
 
@@ -10,7 +10,7 @@ export const runtime = "nodejs";
  * would reach right now, counted per version, with samples for the preview.
  */
 export async function POST(req: NextRequest) {
-  const session = await requireAdminApi();
+  const session = await requireResearchEmailApi();
   if (session instanceof Response) return session;
   let body: Record<string, unknown>;
   try {

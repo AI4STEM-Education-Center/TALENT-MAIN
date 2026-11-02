@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminApi } from "@/lib/admin-access";
+import { requireResearchEmailApi } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 import {
   DEFAULT_RESEARCH_EMAIL_VERSIONS,
@@ -24,7 +24,7 @@ function parseJson(json: string): unknown {
 
 /** GET /api/admin/research-email/template?kind=POOL|POST_SURVEY|COMPENSATION — the saved draft. */
 export async function GET(req: NextRequest) {
-  const session = await requireAdminApi();
+  const session = await requireResearchEmailApi();
   if (session instanceof Response) return session;
   const kind = req.nextUrl.searchParams.get("kind");
   if (!isResearchEmailKind(kind))
@@ -51,7 +51,7 @@ export async function GET(req: NextRequest) {
 
 /** PUT — save the draft (lenient: an unfinished draft is fine to keep). */
 export async function PUT(req: NextRequest) {
-  const session = await requireAdminApi();
+  const session = await requireResearchEmailApi();
   if (session instanceof Response) return session;
   let body: Record<string, unknown>;
   try {

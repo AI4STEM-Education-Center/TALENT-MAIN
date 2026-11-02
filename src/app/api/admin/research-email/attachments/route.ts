@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminApi } from "@/lib/admin-access";
+import { requireResearchEmailApi } from "@/lib/admin-access";
 import {
   buildResearchAttachmentKey,
   getS3Config,
@@ -20,7 +20,7 @@ export const runtime = "nodejs";
  * the list and the campaign snapshots it.
  */
 export async function POST(req: NextRequest) {
-  const session = await requireAdminApi();
+  const session = await requireResearchEmailApi();
   if (session instanceof Response) return session;
 
   let data: FormData;

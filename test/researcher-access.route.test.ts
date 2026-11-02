@@ -233,6 +233,14 @@ describe("RESEARCHER on a DATA route: reads allowed, writes refused", () => {
   });
 });
 
+it("lets researchers read research email history", async () => {
+  asResearcher();
+  expect(
+    (await campaignsGet(req("/api/admin/research-email/campaigns?kind=POOL")))
+      .status,
+  ).toBe(200);
+});
+
 describe("RESEARCHER on CONFIG routes: refused even for GET", () => {
   it.each([
     ["smtp", () => smtpGet()],
@@ -241,11 +249,6 @@ describe("RESEARCHER on CONFIG routes: refused even for GET", () => {
     ["ai-providers", () => aiProvidersGet()],
     ["ai-config export", () => aiConfigExport()],
     ["consent settings", () => consentSettingsGet()],
-    [
-      "research-email campaigns",
-      () =>
-        campaignsGet(req("/api/admin/research-email/campaigns?kind=INTERVIEW")),
-    ],
   ])("GET %s -> 403", async (_name, call) => {
     asResearcher();
     expect((await call()).status).toBe(403);

@@ -111,15 +111,17 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
             <div className="w-full max-w-7xl">
               {/* Research scientists browse the admin data pages read-only;
                   the APIs refuse their writes, and this says so up front. */}
-              {role === "RESEARCHER" && pathname?.startsWith("/admin") && (
-                <div
-                  role="note"
-                  className="mx-4 mt-4 md:mx-8 flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300"
-                >
-                  <Eye className="size-4 shrink-0" />
-                  {RESEARCHER_VIEW_ONLY_NOTICE}
-                </div>
-              )}
+              {role === "RESEARCHER" &&
+                pathname?.startsWith("/admin") &&
+                !pathname.startsWith("/admin/research-email") && (
+                  <div
+                    role="note"
+                    className="mx-4 mt-4 md:mx-8 flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300"
+                  >
+                    <Eye className="size-4 shrink-0" />
+                    {RESEARCHER_VIEW_ONLY_NOTICE}
+                  </div>
+                )}
               {children}
             </div>
           </main>

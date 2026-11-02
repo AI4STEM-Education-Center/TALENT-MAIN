@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminApi } from "@/lib/admin-access";
+import { requireResearchEmailApi } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -12,7 +12,10 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const [session, { id }] = await Promise.all([requireAdminApi(), params]);
+  const [session, { id }] = await Promise.all([
+    requireResearchEmailApi(),
+    params,
+  ]);
   if (session instanceof Response) return session;
   const updated = await prisma.researchEmailCampaign.updateMany({
     where: { id, status: { in: ["SCHEDULED", "SENDING"] } },

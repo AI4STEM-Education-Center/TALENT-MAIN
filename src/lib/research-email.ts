@@ -321,6 +321,36 @@ export function legacyVersions(row: {
 
 // ─── Audience ────────────────────────────────────────────────────────────────
 
+export type StudentUsageFilter = {
+  /** Zero disables the filter. Totals use recorded dwell time across all sessions. */
+  minimumSeconds: number;
+  materials: boolean;
+  simulations: boolean;
+  mode: "COMBINED" | "SEPARATE";
+};
+
+export function normalizeStudentUsage(input: unknown): StudentUsageFilter {
+  const r =
+    input && typeof input === "object"
+      ? (input as Record<string, unknown>)
+      : {};
+  const minimum = r.minimumSeconds;
+  const materials = r.materials !== false;
+  const simulations = r.simulations !== false;
+  return {
+    minimumSeconds:
+      typeof minimum === "number" && Number.isFinite(minimum)
+        ? Math.max(
+            0,
+            Math.min(Math.floor(minimum), Number.MAX_SAFE_INTEGER / 1000),
+          )
+        : 0,
+    materials: materials || !simulations,
+    simulations,
+    mode: r.mode === "SEPARATE" ? "SEPARATE" : "COMBINED",
+  };
+}
+
 /**
  * Who gets the interview email. consentLevels narrows the IRB route (empty
  * means any level that includes an interview); pre-survey opt-ins all agreed
@@ -332,6 +362,7 @@ export type PoolAudience = {
   consentLevels: InterviewConsentLevel[];
   /** Emails or user IDs; when non-empty, only these people get the email. */
   people: string[];
+  studentUsage?: StudentUsageFilter;
 };
 
 /** Who receives a post-survey invitation, before per-person eligibility. */
@@ -355,6 +386,7 @@ export type PostSurveyAudience = {
   period: SurveyPeriod | null;
   /** Emails or user IDs; when non-empty, only these people get the email. */
   people: string[];
+  studentUsage?: StudentUsageFilter;
 };
 
 export const COMPENSATION_MATCHES = ["ANY", "ALL"] as const;
@@ -371,6 +403,7 @@ export type CompensationAudience = {
   excludePreviouslyEmailed: boolean;
   /** Emails or user IDs; when non-empty, only these people get the email. */
   people: string[];
+  studentUsage?: StudentUsageFilter;
 };
 
 export function normalizeCompensationAudience(
@@ -391,6 +424,7 @@ export function normalizeCompensationAudience(
     match: r.match === "ALL" ? "ALL" : "ANY",
     excludePreviouslyEmailed: r.excludePreviouslyEmailed !== false,
     people: parsePeople(r.people),
+    studentUsage: normalizeStudentUsage(r.studentUsage),
   };
 }
 
@@ -485,6 +519,7 @@ export function normalizePoolAudience(input: unknown): PoolAudience {
     sources: sources.length ? [...new Set(sources)] : ["IRB", "SURVEY"],
     consentLevels: [...new Set(consentLevels)],
     people: parsePeople(r.people),
+    studentUsage: normalizeStudentUsage(r.studentUsage),
   };
 }
 
@@ -504,6 +539,7 @@ export function normalizePostSurveyAudience(
     target,
     period: isSurveyPeriod(r.period) ? r.period : null,
     people: parsePeople(r.people),
+    studentUsage: normalizeStudentUsage(r.studentUsage),
   };
 }
 
