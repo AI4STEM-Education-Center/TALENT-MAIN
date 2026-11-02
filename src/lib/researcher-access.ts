@@ -34,6 +34,7 @@ const RESEARCHER_ADMIN_PREFIXES = [
   "/admin/users",
   "/admin/logs",
   "/admin/resource-engagement",
+  "/admin/session-replays",
 ] as const;
 
 /**

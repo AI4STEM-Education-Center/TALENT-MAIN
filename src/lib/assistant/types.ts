@@ -3,6 +3,7 @@
 // components can import from here.
 
 import type { z } from "zod";
+import type { CoachActionView, CoachScope } from "./coach-types";
 
 /** The audiences an assistant can serve. The id doubles as the AssistantConfig row id. */
 export const ASSISTANT_AUDIENCES = [
@@ -69,6 +70,12 @@ export type AssistantToolContext = {
   studentId: string | null;
   /** Set for the teacher audience; null for students. */
   teacherId: string | null;
+  /**
+   * Set only for a wrong-answer coach turn: the one missed question the dialog
+   * was opened on, resolved and verified server-side. Coach tools read it from
+   * here, so they can only ever act on that question.
+   */
+  coach?: CoachScope;
 };
 
 /**
@@ -87,10 +94,26 @@ export type AssistantTool<TSchema extends z.ZodType = z.ZodType> = {
   input: TSchema;
   /** Short present-tense label the UI shows while the tool runs, e.g. "Searching your results". */
   activityLabel: string;
+  /**
+   * Set for tools whose handler may return an `action` (see
+   * AssistantToolAction): the agent loop forwards it to the client as a card
+   * and keeps it out of what the model reads back.
+   */
+  surfacesActions?: boolean;
   handler: (
     args: z.output<TSchema>,
     ctx: AssistantToolContext,
   ) => Promise<unknown>;
+};
+
+/**
+ * What a card-producing tool hands the agent loop alongside its model-facing
+ * result: `stored` is persisted with the assistant turn, `view` is streamed to
+ * the client now. Both are built by the tool, which has already validated them.
+ */
+export type AssistantToolAction = {
+  stored: unknown;
+  view: CoachActionView;
 };
 
 /**
@@ -119,6 +142,11 @@ export type AssistantStreamEvent =
       status: "running" | "done" | "error";
     }
   | { type: "delta"; text: string }
+  /**
+   * A structured card the coach chose to show (material, simulation how-to,
+   * practice question). Only emitted on wrong-answer coach turns.
+   */
+  | { type: "action"; action: CoachActionView }
   /**
    * Emitted once, before the model runs, for the attachments on this turn that
    * were stored. The client keeps the ids on its transcript so a later turn can
@@ -185,6 +213,12 @@ export type AssistantTurn = {
    * per-message attachment limit so the context can't grow without end.
    */
   attachmentIds?: string[];
+  /**
+   * Assistant turns of a coach conversation: the stored action references the
+   * model emitted that turn (see coach-types.ts). Opaque here — the coach
+   * module validates and hydrates them; nothing else reads this field.
+   */
+  actions?: unknown[];
 };
 
 /** One stored conversation as a history list renders it — metadata, no turns. */

@@ -45,6 +45,15 @@ export function useAssistant(): AssistantContextValue {
   return value;
 }
 
+/**
+ * The same value, or null outside a provider. For surfaces (results pages) that
+ * also render in places the dashboard chrome is absent, such as tests: they
+ * hide an assistant-powered control rather than throw.
+ */
+export function useOptionalAssistant(): AssistantContextValue | null {
+  return useContext(AssistantContext);
+}
+
 export function AssistantProvider({ children }: { children: ReactNode }) {
   const [config, setConfig] = useState<WidgetConfig | null>(null);
   const [open, setOpen] = useState(false);

@@ -53,6 +53,7 @@ import {
 } from "./lib/consent-export";
 import { runBackupJob, claimDueBackup } from "./lib/backup";
 import { runS3Gc } from "./lib/s3-gc";
+import { purgeExpiredSessionRecordings } from "./lib/session-recording-retention";
 import { purgeExpiredAssistantAttachments } from "./lib/assistant/attachment-store";
 import {
   archiveAgedConversations,
@@ -661,6 +662,42 @@ async function runAssistantAttachmentRetentionLoop() {
   }
 }
 
+const SESSION_RECORDING_PRUNE_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * Retention sweep for research session recordings: deletes recordings (and,
+ * by cascade, their chunks) older than RECORDING_RETENTION_DAYS. They are the
+ * bulkiest research rows we keep, so they are not held indefinitely. Deleting
+ * by cutoff is idempotent, so a missed or repeated run is harmless.
+ */
+async function runSessionRecordingRetentionLoop() {
+  console.log(
+    "[Worker] Session recording retention loop started (6h interval)...",
+  );
+  for (;;) {
+    try {
+      const count = await purgeExpiredSessionRecordings();
+      if (count > 0) {
+        console.log(`[Worker] Purged ${count} expired session recording(s)`);
+      }
+    } catch (err: unknown) {
+      console.error(
+        "[Worker] Session recording purge failed:",
+        errorMessage(err),
+      );
+      await logSystemEvent({
+        category: "WORKER",
+        type: "SESSION_RECORDING_PURGE_FAILED",
+        severity: "ERROR",
+        message: `Session recording purge failed: ${errorMessage(err)}`,
+      });
+    }
+    await new Promise((resolve) =>
+      setTimeout(resolve, SESSION_RECORDING_PRUNE_INTERVAL_MS),
+    );
+  }
+}
+
 const ASSISTANT_TRANSCRIPT_ARCHIVE_INTERVAL_MS = 60 * 60 * 1000;
 
 /**
@@ -921,6 +958,7 @@ async function startWorker() {
       runLogRetentionLoop(),
       runResourceRetentionLoop(),
       runAssistantAttachmentRetentionLoop(),
+      runSessionRecordingRetentionLoop(),
       runAssistantTranscriptArchiveLoop(),
     ]);
   } catch (err) {
