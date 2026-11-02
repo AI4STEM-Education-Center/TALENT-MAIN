@@ -15,6 +15,7 @@ import {
 import { MathText } from "@/components/ui/math-text";
 import { RESULT_STATUS, type StudentMistakeView } from "@/lib/exam-results";
 import { normalizeNumericValue } from "@/lib/quiz-scoring";
+import { alternativeNotice } from "@/lib/alternative-retake";
 
 import {
   startPracticeQuiz,
@@ -33,18 +34,24 @@ type QuizPlayerProps = {
   backLabel: string;
 } & (
   | { mode: "preview"; classId?: never }
-  | { mode: "student" | "practice"; classId: string }
+  | { mode: "student"; classId: string }
+  | {
+      mode: "practice";
+      classId: string;
+      /** Leave out questions already answered correctly (new starts only). */
+      excludeCorrect?: boolean;
+      /** Return to the practice options to choose another version. */
+      onPracticeAgain?: () => void;
+    }
 );
 
 type Phase = "loading" | "quiz" | "results" | "error";
 
-export function QuizPlayer({
-  quizId,
-  mode,
-  classId,
-  backHref,
-  backLabel,
-}: QuizPlayerProps) {
+export function QuizPlayer(props: QuizPlayerProps) {
+  const { quizId, mode, classId, backHref, backLabel } = props;
+  const excludeCorrect = mode === "practice" && props.excludeCorrect === true;
+  const onPracticeAgain =
+    mode === "practice" ? props.onPracticeAgain : undefined;
   const [phase, setPhase] = useState<Phase>("loading");
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [session, setSession] = useState<QuizSession | null>(null);
@@ -73,7 +80,7 @@ export function QuizPlayer({
         mode === "preview"
           ? await startQuizPreview(quizId)
           : mode === "practice"
-            ? await startPracticeQuiz(classId, quizId)
+            ? await startPracticeQuiz(classId, quizId, excludeCorrect)
             : await startStudentQuiz(classId, quizId);
       setSession(data);
       setQuestions(data.questions);
@@ -88,7 +95,7 @@ export function QuizPlayer({
       setError(error instanceof Error ? error.message : "Failed to load quiz.");
       setPhase("error");
     }
-  }, [mode, classId, quizId]);
+  }, [mode, classId, quizId, excludeCorrect]);
 
   useEffect(() => {
     if (startedRef.current) return;
@@ -236,28 +243,15 @@ export function QuizPlayer({
       },
     );
 
-    if (mode === "preview" || mode === "practice") {
+    if (mode === "preview") {
       return (
         <div className="p-4 md:p-6 max-w-2xl space-y-6">
-          <h2 className="text-xl font-semibold">
-            {mode === "practice"
-              ? `${session?.versionName ?? "Practice"} results`
-              : "Preview results"}
-          </h2>
-          {mode === "practice" && (
-            <p className="text-sm text-muted-foreground">
-              Practice saved. Your grade and graded attempt allowance are
-              unchanged.
-            </p>
-          )}
+          <h2 className="text-xl font-semibold">Preview results</h2>
           <ScoreBanner score={result.score} />
           <StudentMistakesReview mistakes={mistakes} />
           <div className="flex flex-wrap gap-2">
             <Button onClick={() => startQuiz()} variant="outline">
-              <RotateCcw className="size-4" />{" "}
-              {mode === "practice"
-                ? "Practice another version"
-                : "Restart preview"}
+              <RotateCcw className="size-4" /> Restart preview
             </Button>
             <Button asChild>
               <Link href={backHref}>{backLabel}</Link>
@@ -272,7 +266,7 @@ export function QuizPlayer({
     // plus the server's incorrect-id list, never from an answer key.
     return (
       <ExamResultsView
-        attemptId={session!.attemptId!}
+        attemptId={result.quizAttemptId ?? session!.attemptId!}
         score={result.score}
         mistakes={mistakes}
         initial={{
@@ -288,18 +282,40 @@ export function QuizPlayer({
         backHref={backHref}
         backLabel={backLabel}
         simulationSurface="quiz_results"
+        notice={
+          mode === "practice"
+            ? alternativeNotice(
+                session?.versionName ?? "Practice",
+                session?.excludedCount ?? 0,
+              )
+            : undefined
+        }
         actions={
           <>
-            <Button variant="outline" asChild>
-              <Link
-                href={`/student/classes/${classId}/quiz/${quizId}/practice`}
-              >
+            {onPracticeAgain ? (
+              <Button variant="outline" onClick={onPracticeAgain}>
                 Practice another version
-              </Link>
-            </Button>
-            <Button onClick={() => startQuiz()} variant="outline">
-              <RotateCcw className="size-4" /> Retry Quiz
-            </Button>
+              </Button>
+            ) : (
+              <Button variant="outline" asChild>
+                <Link
+                  href={`/student/classes/${classId}/quiz/${quizId}/practice`}
+                >
+                  Practice another version
+                </Link>
+              </Button>
+            )}
+            {mode === "practice" ? (
+              <Button variant="outline" asChild>
+                <Link href={`/student/classes/${classId}/quiz/${quizId}`}>
+                  <RotateCcw className="size-4" /> Retake quiz
+                </Link>
+              </Button>
+            ) : (
+              <Button onClick={() => startQuiz()} variant="outline">
+                <RotateCcw className="size-4" /> Retry Quiz
+              </Button>
+            )}
             <Button asChild>
               <Link href={backHref}>{backLabel}</Link>
             </Button>
@@ -319,9 +335,19 @@ export function QuizPlayer({
       </Button>
 
       {mode === "practice" && (
-        <p className="text-sm font-medium">
-          {session?.versionName} · Ungraded practice
-        </p>
+        <div className="space-y-1">
+          <p className="text-sm font-medium">
+            {session?.versionName} · Alternative version
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Recorded as a retake. Your graded score and attempt allowance are
+            unchanged.
+            {!!session?.excludedCount &&
+              ` ${session.excludedCount} question${session.excludedCount === 1 ? "" : "s"} you answered correctly before ${session.excludedCount === 1 ? "is" : "are"} left out.`}
+            {session?.exclusionIgnored &&
+              " You answered everything correctly before, so the full version is shown."}
+          </p>
+        </div>
       )}
 
       {/* Progress */}

@@ -1,9 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { NextRequest } from "next/server";
 vi.mock("@/lib/auth", () => ({ auth: vi.fn() }));
-vi.mock("@/lib/queue", () => ({ enqueueQuizVariant: vi.fn() }));
+vi.mock("@/lib/queue", () => ({
+  enqueueQuizVariant: vi.fn(),
+  enqueueExamResult: vi.fn(),
+}));
 import { auth } from "@/lib/auth";
-import { enqueueQuizVariant } from "@/lib/queue";
+import { enqueueExamResult, enqueueQuizVariant } from "@/lib/queue";
 import { prisma } from "@/lib/prisma";
 import {
   GET as versions,
@@ -91,7 +94,7 @@ async function fixture() {
   };
 }
 describe("alternative practice lifecycle", () => {
-  it("resumes identical content, ignores source edits, scores once, and leaves grades alone", async () => {
+  it("resumes identical content, ignores source edits, scores once, records a retake, and leaves grades alone", async () => {
     const f = await fixture();
     const first = await (await start(req(f.input))).json();
     expect(first.questions[0].options[0]).not.toHaveProperty("isCorrect");
@@ -109,14 +112,54 @@ describe("alternative practice lifecycle", () => {
       attemptId: first.attemptId,
       answers: [{ questionId: "variant-q", selectedOptionIds: ["v-a"] }],
     };
-    expect(await (await submit(req(answers))).json()).toEqual({
+    const submitted = await (await submit(req(answers))).json();
+    expect(submitted).toEqual({
       score: 100,
       incorrectQuestionIds: [],
+      quizAttemptId: first.quizAttemptId,
     });
     expect((await submit(req(answers))).status).toBe(409);
-    expect(await prisma.quizAttempt.count()).toBe(0);
+    // Recorded as a retake through the ordinary attempt/result pipeline...
+    const retake = await prisma.quizAttempt.findUniqueOrThrow({
+      where: { id: first.quizAttemptId },
+      include: { answers: true },
+    });
+    expect(retake).toMatchObject({
+      studentId: f.student.student.id,
+      classId: f.cls.id,
+      quizId: f.quiz.id,
+      practiceVersionId: f.version.id,
+      practiceVersionName: "Version A",
+      score: 100,
+    });
+    expect(retake.completedAt).not.toBeNull();
+    expect(retake.answers).toMatchObject([
+      {
+        questionId: f.question.id,
+        selectedOptionId: null,
+        selectedOptionIds: JSON.stringify(["v-a"]),
+        isCorrect: true,
+      },
+    ]);
+    const result = await prisma.examResult.findUniqueOrThrow({
+      where: { quizAttemptId: first.quizAttemptId },
+    });
+    expect(result).toMatchObject({
+      practiceVersionName: "Version A",
+      excludedCount: 0,
+      score: 100,
+      correctCount: 1,
+      totalCount: 1,
+      quizName: f.quiz.name,
+    });
+    expect(JSON.parse(result.reviewSnapshot).questions[0]).toMatchObject({
+      questionId: f.question.id,
+      text: "What is 3 + 3?",
+      isCorrect: true,
+    });
+    expect(enqueueExamResult).toHaveBeenCalledWith(result.id);
+    // ...but it never touches graded progress.
     expect(await prisma.quizProgress.count()).toBe(0);
-    expect(await prisma.examResult.count()).toBe(0);
     await prisma.quiz.delete({ where: { id: f.quiz.id } });
     expect(
       (
@@ -130,6 +173,7 @@ describe("alternative practice lifecycle", () => {
     const f = await fixture();
     const a = await (await start(req(f.input))).json();
     await submit(req({ attemptId: a.attemptId, answers: [] }));
+    expect(await prisma.quizAttempt.count()).toBe(1);
     await prisma.quizPracticeVersion.create({
       data: {
         quizId: f.quiz.id,

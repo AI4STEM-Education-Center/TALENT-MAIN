@@ -135,6 +135,7 @@ export async function getAdminUsage(params: AdminSearchParams) {
           studentName: true,
           className: true,
           quizName: true,
+          practiceVersionName: true,
           completedAt: true,
           score: true,
         },
@@ -144,7 +145,9 @@ export async function getAdminUsage(params: AdminSearchParams) {
     total = count;
     records = rows.map((row) => ({
       ...row,
-      title: row.quizName,
+      title: row.practiceVersionName
+        ? `${row.quizName} (alternative: ${row.practiceVersionName})`
+        : row.quizName,
       startedAt: row.completedAt,
       detail: `${Math.round(row.score * 100) / 100}%`,
       href: `/admin/classes/${row.classId}/students/${row.studentId}/attempts/${row.quizAttemptId}`,
@@ -163,6 +166,7 @@ export async function getAdminUsage(params: AdminSearchParams) {
           quizId: true,
           startedAt: true,
           completedAt: true,
+          practiceVersionName: true,
         },
       }),
       prisma.quizAttempt.count({ where: filter }),
@@ -170,7 +174,9 @@ export async function getAdminUsage(params: AdminSearchParams) {
     total = count;
     records = rows.map((row) => ({
       ...row,
-      title: "Quiz",
+      title: row.practiceVersionName
+        ? `Quiz (alternative: ${row.practiceVersionName})`
+        : "Quiz",
       detail: "In progress",
     }));
   } else if (kind === "practice") {

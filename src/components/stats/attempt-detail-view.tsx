@@ -16,6 +16,7 @@ import {
 import { TeacherAttemptResources } from "@/components/teacher/TeacherAttemptResources";
 import { parseReviewSnapshot, type ResultStatus } from "@/lib/exam-results";
 import { presignStoredRecommendations } from "@/lib/exam-results-engine";
+import { alternativeNotice } from "@/lib/alternative-retake";
 import {
   presignQuestionFigure,
   presignOptionImage,
@@ -110,6 +111,14 @@ export async function AttemptDetailView({
           {examResult.quizName} · completed{" "}
           {fmtDateTime(examResult.completedAt)}
         </p>
+        {examResult.practiceVersionName && (
+          <p className="text-muted-foreground text-sm mt-1">
+            {alternativeNotice(
+              examResult.practiceVersionName,
+              examResult.excludedCount,
+            )}
+          </p>
+        )}
       </div>
 
       <Card className="max-w-6xl">
