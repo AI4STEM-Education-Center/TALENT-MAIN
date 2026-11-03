@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.0.31 - 2026-11-27
+
+- Improved the research email minimum student usage filter so it counts each student's recorded learning material and simulation time, instead of treating every student as having no usage and skipping them.
+
 ## v0.0.30 - 2026-11-20
 
 - Expanded research scientist access to compose, test, schedule, send, and cancel research emails, with student recipient filters for minimum learning material and simulation usage, counted together or separately.
