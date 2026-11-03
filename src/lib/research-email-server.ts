@@ -410,7 +410,16 @@ async function planRecipients(
     const students = plan.recipients.filter((r) =>
       r.variant.startsWith("STUDENT"),
     );
-    const ids = students.flatMap((r) => (r.userId ? [r.userId] : []));
+    const userIds = students.flatMap((r) => (r.userId ? [r.userId] : []));
+    // Usage sessions are keyed by the Student profile id, not the User id.
+    const profiles = userIds.length
+      ? await prisma.student.findMany({
+          where: { userId: { in: userIds } },
+          select: { id: true, userId: true },
+        })
+      : [];
+    const userIdByStudentId = new Map(profiles.map((p) => [p.id, p.userId]));
+    const ids = profiles.map((p) => p.id);
     const where = { studentId: { in: ids } };
     const [materials, simulations] = await Promise.all([
       usage.materials && ids.length
@@ -429,10 +438,16 @@ async function planRecipients(
         : [],
     ]);
     const materialMs = new Map(
-      materials.map((r) => [r.studentId, r._sum.dwellMs ?? 0]),
+      materials.map((r) => [
+        userIdByStudentId.get(r.studentId),
+        r._sum.dwellMs ?? 0,
+      ]),
     );
     const simulationMs = new Map(
-      simulations.map((r) => [r.studentId, r._sum.dwellMs ?? 0]),
+      simulations.map((r) => [
+        userIdByStudentId.get(r.studentId),
+        r._sum.dwellMs ?? 0,
+      ]),
     );
     const minimumMs = usage.minimumSeconds * 1000;
     const before = plan.recipients.length;
