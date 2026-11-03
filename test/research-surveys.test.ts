@@ -426,6 +426,71 @@ describe("interview email", () => {
       text: "Via the pre-survey",
     });
   });
+
+  it("reaches students who agreed to the IRB but declined an interview only when that group is selected", async () => {
+    const consent = await consentForm();
+    const noInterview = async (userId: string, email: string) =>
+      prisma.consentRecord.create({
+        data: {
+          userId,
+          role: "STUDENT",
+          formVersionId: consent.id,
+          decision: "AGREE",
+          interviewRecordingChoice: "NO_INTERVIEW",
+          signatureTypedName: "Stu Student",
+          ipAddress: "127.0.0.1",
+          userAgent: "test",
+          deviceType: "desktop",
+          signerNameSnapshot: "Stu Student",
+          signerEmailSnapshot: email,
+        },
+      });
+    const { user: declined } = await createStudent({
+      email: "declined@uga.edu",
+    });
+    await noInterview(declined.id, declined.email);
+    const { user: laterOptIn } = await createStudent({
+      email: "later@uga.edu",
+    });
+    await noInterview(laterOptIn.id, laterOptIn.email);
+    const pre = await enabledForm("PRE");
+    await prisma.surveyResponse.create({
+      data: {
+        formId: pre.id,
+        userId: laterOptIn.id,
+        kind: "PRE",
+        role: "STUDENT",
+        nameSnapshot: "Stu Student",
+        emailSnapshot: laterOptIn.email,
+        answers: "{}",
+        interviewOptIn: true,
+      },
+    });
+    const { user: agreed } = await createStudent({ email: "agreed@uga.edu" });
+    await decide(agreed.id, consent.id, "AGREE");
+
+    const plan = async (sources?: string[]) =>
+      (
+        await previewRecipients(
+          "POOL",
+          JSON.stringify({ roles: ["STUDENT", "TEACHER"], sources }),
+        )
+      ).recipients
+        .map((r) => `${r.email}:${r.variant}`)
+        .sort();
+    expect(await plan()).toEqual([
+      "agreed@uga.edu:STUDENT_IRB",
+      "later@uga.edu:STUDENT_IRB",
+    ]);
+    expect(await plan(["DECLINED"])).toEqual([
+      "declined@uga.edu:STUDENT_DECLINED",
+    ]);
+    expect(await plan(["IRB", "SURVEY", "DECLINED"])).toEqual([
+      "agreed@uga.edu:STUDENT_IRB",
+      "declined@uga.edu:STUDENT_DECLINED",
+      "later@uga.edu:STUDENT_IRB",
+    ]);
+  });
 });
 
 describe("research contact email", () => {

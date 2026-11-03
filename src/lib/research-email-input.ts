@@ -66,7 +66,11 @@ export function parseResearchEmailInput(
     versions,
     attachments: parseAttachments(JSON.stringify(body.attachments ?? [])),
     audience: JSON.stringify(audience),
-    sendKeys: versionKeysFor(kind, audience.roles),
+    sendKeys: versionKeysFor(
+      kind,
+      audience.roles,
+      "sources" in audience ? audience.sources : undefined,
+    ),
   };
 
   const total = value.attachments.reduce((sum, a) => sum + a.size, 0);
