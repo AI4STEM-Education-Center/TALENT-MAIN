@@ -40,6 +40,7 @@ import {
   type CompensationAudience,
   type CompensationMatch,
   type PoolAudience,
+  type PoolSource,
   type PostSurveyAudience,
   type ResearchEmailAttachment,
   type ResearchEmailKind,
@@ -127,6 +128,8 @@ const VERSION_HINTS: Partial<Record<VersionKey, string>> = {
     "For students who agreed to an interview on the IRB consent form. {{consentLevel}} is filled in.",
   STUDENT_SURVEY:
     "For students who opted in to an interview on the pre-survey only.",
+  STUDENT_DECLINED:
+    "For students who agreed to the study on the IRB consent form but chose no interview there and did not opt in on the pre-survey.",
   TEACHER_IRB:
     "For teachers who agreed to an interview on the IRB consent form. {{consentLevel}} is filled in.",
   TEACHER_SURVEY:
@@ -149,8 +152,8 @@ function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
 
-function keysForRole(kind: ResearchEmailKind, role: SurveyRole): VersionKey[] {
-  return versionKeysFor(kind, [role]);
+function audienceSources(audience: Audience): PoolSource[] | undefined {
+  return "sources" in audience ? audience.sources : undefined;
 }
 
 function sampleVarsFor(key: VersionKey): Record<string, string> {
@@ -160,7 +163,11 @@ function sampleVarsFor(key: VersionKey): Record<string, string> {
     firstName: "Alex",
     lastName: "Doe",
     agreedPlace: survey ? "the pre-survey" : "the IRB consent form",
-    consentLevel: survey ? "" : "Interview with audio-only recording",
+    consentLevel: survey
+      ? ""
+      : key.endsWith("_DECLINED")
+        ? CONSENT_LEVEL_LABELS.NO_INTERVIEW
+        : CONSENT_LEVEL_LABELS.AUDIO_ONLY,
     role: key.startsWith("TEACHER") ? "Teacher" : "Student",
     appName: "AI4Talent",
     completedSurveys: "the Period 1 post-survey",
@@ -359,7 +366,11 @@ export function ResearchEmailComposer({ kind }: { kind: ResearchEmailKind }) {
     if (ok) setSavedJson(snapshot);
   }
 
-  const sendKeys = versionKeysFor(kind, draft.audience.roles);
+  const sendKeys = versionKeysFor(
+    kind,
+    draft.audience.roles,
+    audienceSources(draft.audience),
+  );
 
   async function sendTest(testTo: string) {
     await call(
@@ -442,7 +453,11 @@ export function ResearchEmailComposer({ kind }: { kind: ResearchEmailKind }) {
   }
 
   const dirty = JSON.stringify(draft) !== savedJson;
-  const editKeys = keysForRole(kind, editRole);
+  const editKeys = versionKeysFor(
+    kind,
+    [editRole],
+    audienceSources(draft.audience),
+  );
   const roleSelected = draft.audience.roles.includes(editRole);
   const editRoleInfo =
     rolesFor(kind).find((r) => r.value === editRole) ?? rolesFor(kind)[0];
@@ -821,13 +836,17 @@ function AudienceEditor({
       {roles}
       <fieldset className="space-y-1">
         <legend className="text-xs font-medium text-muted-foreground">
-          Agreed to an interview through
+          Send to
         </legend>
-        <div className="flex flex-wrap gap-4">
+        <div className="flex flex-wrap gap-x-4 gap-y-1">
           {(
             [
-              ["IRB", "IRB consent form"],
-              ["SURVEY", "Pre-survey interview opt-in"],
+              ["IRB", "Agreed to an interview on the IRB consent form"],
+              ["SURVEY", "Opted in to an interview on the pre-survey"],
+              [
+                "DECLINED",
+                "Students who agreed to the IRB but declined an interview (no pre-survey opt-in)",
+              ],
             ] as const
           ).map(([value, label]) => (
             <label key={value} className="flex items-center gap-2">
@@ -875,9 +894,10 @@ function AudienceEditor({
         onChange={(people) => onChange({ ...pool, people })}
       />
       <p className="text-xs text-muted-foreground">
-        Only people who agreed to an interview are included — IRB participants
-        who chose &ldquo;{CONSENT_LEVEL_LABELS.NO_INTERVIEW}&rdquo; are left out
-        unless they also opted in on the pre-survey.
+        IRB participants who chose &ldquo;{CONSENT_LEVEL_LABELS.NO_INTERVIEW}
+        &rdquo; are only included when they also opted in on the pre-survey, or
+        when the declined-interview group is checked (students only — they get
+        the declined-interview version).
       </p>
     </div>
   );
