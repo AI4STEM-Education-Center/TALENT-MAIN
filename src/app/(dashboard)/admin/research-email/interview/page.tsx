@@ -5,8 +5,10 @@ export default function InterviewEmailPage() {
     <div className="space-y-6">
       <p className="max-w-3xl text-sm text-muted-foreground">
         Invites people who agreed to an interview — on the IRB consent form or
-        by opting in at the end of the pre-survey. IRB participants get the IRB
-        version; pre-survey opt-ins get the survey version. Replies go to the
+        by opting in at the end of the pre-survey — and, optionally, students
+        who agreed to the IRB but declined an interview. IRB participants get
+        the IRB version, pre-survey opt-ins get the survey version, and students
+        who declined get the declined-interview version. Replies go to the
         reply-to address.
       </p>
       <ResearchEmailComposer kind="POOL" />
