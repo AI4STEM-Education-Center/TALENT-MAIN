@@ -550,12 +550,12 @@ describe("compensation email", () => {
   };
 
   it("applies usage minimums to compensation and excludes accountless history with no attributable usage", async () => {
-    const { user } = await createStudent();
+    const { user, student } = await createStudent();
     await completed(user.id, user.email, 1);
     await completed(null, "historical@uga.edu", 1);
     await prisma.simulationSession.create({
       data: {
-        studentId: user.id,
+        studentId: student.id,
         simulationId: "sim",
         surface: "library",
         dwellMs: 10000,
@@ -948,7 +948,7 @@ describe("compensation email", () => {
 
 describe("student usage audience filter", () => {
   it("sums sessions, includes the exact threshold, supports one or both categories, and leaves teachers eligible", async () => {
-    const { user } = await createStudent();
+    const { user, student } = await createStudent();
     const { user: noUsage } = await createStudent();
     const { user: teacher } = await createTeacher();
     await enabledForm("POST");
@@ -960,13 +960,13 @@ describe("student usage audience filter", () => {
     await prisma.learningResourceSession.createMany({
       data: [
         {
-          studentId: user.id,
+          studentId: student.id,
           materialId: "deleted-material",
           surface: "library",
           dwellMs: 3000,
         },
         {
-          studentId: user.id,
+          studentId: student.id,
           materialId: "another-material",
           surface: "results_page",
           dwellMs: 2000,
@@ -975,7 +975,7 @@ describe("student usage audience filter", () => {
     });
     await prisma.simulationSession.create({
       data: {
-        studentId: user.id,
+        studentId: student.id,
         simulationId: "deleted-sim",
         surface: "library",
         dwellMs: 5000,
@@ -1024,7 +1024,7 @@ describe("student usage audience filter", () => {
 
   it("persists the filter and rechecks current usage when a scheduled interview campaign is expanded", async () => {
     const admin = await createAdmin();
-    const { user } = await createStudent();
+    const { user, student } = await createStudent();
     const consent = await consentForm();
     await decide(user.id, consent.id, "AGREE");
     const body = {
@@ -1066,7 +1066,7 @@ describe("student usage audience filter", () => {
     );
     await prisma.learningResourceSession.create({
       data: {
-        studentId: user.id,
+        studentId: student.id,
         materialId: "material",
         surface: "library",
         dwellMs: 10000,
