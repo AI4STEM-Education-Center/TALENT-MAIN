@@ -38,29 +38,100 @@
 # never running, until the deadman timer terminates it.
 
 bootcmd:
-  # Order matters: take the socket down before the daemon, or socket activation
-  # simply restarts it.
-  - [ sh, -c, "systemctl stop docker.socket || true" ]
-  - [ sh, -c, "systemctl stop docker || true" ]
-  - [ sh, -c, "systemctl stop containerd || true" ]
-  - [ sh, -c, "systemctl mask docker docker.socket || true" ]
+  # NEVER call `systemctl mask` (or anything else that triggers a daemon-reload)
+  # from here. bootcmd runs inside cloud-init-network.service, which is
+  # DefaultDependencies=no and ordered before sysinit.target — systemd is still
+  # mid-transaction. `systemctl mask` writes the symlinks and then asks systemd
+  # to reload; the reload waits for the in-flight transaction to settle, and that
+  # transaction is waiting on cloud-init, which is blocked on the reload. The
+  # boot deadlocks at ~37s, never reaches multi-user.target, and so ssh.service
+  # never starts. The clone then refuses every connection on port 22 and the
+  # runner can only report that it could not log in.
+  #
+  # Masking IS the symlink, so write it directly and skip the D-Bus round trip.
+  # No `systemctl stop` either: those calls force the unit to be LOADED, and a
+  # unit already loaded ignores a later mask symlink without the very reload we
+  # cannot perform. Nothing has started docker at this point anyway — it is
+  # WantedBy=multi-user.target, which is still far off.
+  - [ sh, -c, "ln -sf /dev/null /etc/systemd/system/docker.service; ln -sf /dev/null /etc/systemd/system/docker.socket; ln -sf /dev/null /etc/systemd/system/containerd.service; true" ]
+  # THIS is what actually stops Docker. The symlink above is NOT sufficient, and
+  # that is measured, not assumed: on a real clone systemd reports
+  #   UnitFileState=masked        <- the symlink is on disk
+  #   FragmentPath=/usr/lib/systemd/system/docker.service   <- ignored anyway
+  #   LoadState=loaded
+  # because systemd had already loaded docker.service into its initial boot
+  # transaction before bootcmd ran, and it does not re-read a unit it holds
+  # without a daemon-reload — the reload we cannot perform here without
+  # deadlocking. Docker therefore still tries to start. It fails only because
+  # the daemon cannot be executed (203/EXEC). Remove this and a clone boots the
+  # production stack with production credentials.
+  - [ sh, -c, "for b in /usr/bin/dockerd /usr/sbin/dockerd /usr/bin/containerd /usr/bin/docker; do [ -e \"$b\" ] && chmod 000 \"$b\"; done; true" ]
   # Belt and braces, at the earliest possible moment: even in the impossible case
   # that a container is already running, strip the credentials it would need to
   # delete anything in S3. sanitize-sut.sh does this properly and verifiably;
   # this is the version that runs before anything else can.
-  - [ sh, -c, "sed -i 's|^AWS_ACCESS_KEY_ID=.*|AWS_ACCESS_KEY_ID=\"\"|; s|^AWS_SECRET_ACCESS_KEY=.*|AWS_SECRET_ACCESS_KEY=\"\"|; s|^AWS_SESSION_TOKEN=.*|AWS_SESSION_TOKEN=\"\"|' /home/ubuntu/app/.env || true" ]
+  # The application's home directory differs by base image (Debian's cloud user
+  # is `admin`, Ubuntu's is `ubuntu`), and a hardcoded path silently no-ops via
+  # `|| true` — leaving production's real S3 keys intact on the clone. Glob so
+  # this keeps working whichever image production is rebuilt on.
+  - [ sh, -c, "for env in /home/*/app/.env; do [ -f \"$env\" ] || continue; sed -i 's|^AWS_ACCESS_KEY_ID=.*|AWS_ACCESS_KEY_ID=\"\"|; s|^AWS_SECRET_ACCESS_KEY=.*|AWS_SECRET_ACCESS_KEY=\"\"|; s|^AWS_SESSION_TOKEN=.*|AWS_SESSION_TOKEN=\"\"|' \"$env\"; done || true" ]
+  # Authorize this run's throwaway public key, substituted by provision.sh. The
+  # load generator reaches this clone directly and holds only this key; the
+  # production key pair stays on the operator's machine.
+  #
+  # In `bootcmd`, not `runcmd`: run-ec2.sh probes for SSH BEFORE it waits for
+  # cloud-final, so a key installed in runcmd would not be in place for the
+  # first probes, and "not authorized yet" is indistinguishable from "wrong
+  # login user" over a bare publickey rejection. Appending is idempotent so a
+  # reboot cannot accumulate duplicates.
+  - [ sh, -c, "for ak in /home/*/.ssh/authorized_keys; do [ -f \"$ak\" ] || continue; grep -qF '__PRESSURE_SUT_PUBKEY__' \"$ak\" || printf '%s\\n' '__PRESSURE_SUT_PUBKEY__' >> \"$ak\"; done || true" ]
   # A hard backstop in case cloud-final never completes, or nobody ever drives
   # the run. Paired with --instance-initiated-shutdown-behavior terminate at
   # launch, this guarantees the clone cannot outlive the day.
-  - [ sh, -c, "shutdown -h +300 'benchmark backstop' || true" ]
+  #
+  # NOT `shutdown -h +300`. A *scheduled* shutdown is a systemd-logind operation
+  # (login1.Manager.ScheduleShutdown). bootcmd runs in cloud-init's network
+  # stage, which on the Debian production image is BEFORE systemd-logind has
+  # started, so systemctl cannot schedule and degrades to an immediate poweroff
+  # — which, with shutdown-behavior=terminate, killed the clone ~20s into its
+  # first boot before the runner could ever reach it. `systemd-run --on-active`
+  # arms a transient timer through the service manager's private socket, which
+  # is available that early, so it is not logind-dependent.
+  # The backstop cannot use systemd AT ALL from here. `systemctl mask` and
+  # `systemd-run` both deadlock the pre-sysinit boot (see above), and simply
+  # dropping a .timer on disk does nothing either: systemd does not rescan
+  # /etc/systemd/system without a daemon-reload, so the unit is invisible and
+  # `list-timers` shows nothing. Verified on a clone — 0 timers listed.
+  #
+  # So arm the early backstop with a detached sleep, which needs no systemd.
+  # setsid puts it in its own session so it outlives cloud-init's stage. runcmd
+  # arms a proper, inspectable systemd timer as well, once that is safe; this
+  # one exists for the case where the boot never gets that far.
+  - [ sh, -c, "setsid sh -c 'sleep 18000; /usr/bin/systemctl poweroff || poweroff -f' </dev/null >/dev/null 2>&1 & true" ]
 
 runcmd:
-  - [ sh, -c, "mkdir -p /opt/pressure /var/log/pressure && chown ubuntu:ubuntu /opt/pressure" ]
+  # The inspectable half of the deadman, armed as early as runcmd allows. Safe
+  # here and NOT in bootcmd: cloud-final runs after multi-user.target, so
+  # systemd is idle and will accept a transient unit. `list-timers` shows it.
+  - [ sh, -c, "systemd-run --on-active=300min --unit=pressure-backstop --description='benchmark backstop' /usr/bin/systemctl poweroff || true" ]
+  # Owned by whichever cloud user this image ships (Debian: admin, Ubuntu:
+  # ubuntu). Hardcoding `ubuntu` made this entry fail outright on the Debian
+  # production image, leaving /opt/pressure root-owned and every later
+  # unprivileged write from the runner failing for a non-obvious reason.
+  - [ sh, -c, "mkdir -p /opt/pressure /var/log/pressure && chown \"$(stat -c %U:%G /home/*/app 2>/dev/null | head -1)\" /opt/pressure 2>/dev/null || chown 1000:1000 /opt/pressure" ]
   # sqlite3 is what sanitize-sut.sh uses to neutralize the configuration held in
   # database rows (SMTP, backups, AI providers). Installed now so a missing
   # package is a clear failure at provision time rather than a mystery later.
-  - [ sh, -c, "DEBIAN_FRONTEND=noninteractive apt-get update -y >> /var/log/pressure/boot.log 2>&1 || true" ]
-  - [ sh, -c, "DEBIAN_FRONTEND=noninteractive apt-get install -y sqlite3 >> /var/log/pressure/boot.log 2>&1" ]
+  #
+  # The clone deliberately gets NO public IP, and the source VPC routes egress
+  # through an internet gateway rather than a NAT, so the clone has no route to
+  # the internet at all. An unbounded `apt-get update` therefore does not fail
+  # fast — it stalls cloud-final on DNS and connect timeouts, delaying (or
+  # preventing) the BOOTED marker the runner waits on. Skip entirely when the
+  # image already ships sqlite3, and bound both calls so an offline clone can
+  # still finish booting.
+  - [ sh, -c, "command -v sqlite3 >/dev/null 2>&1 || DEBIAN_FRONTEND=noninteractive timeout 120 apt-get update -y >> /var/log/pressure/boot.log 2>&1 || true" ]
+  - [ sh, -c, "command -v sqlite3 >/dev/null 2>&1 || DEBIAN_FRONTEND=noninteractive timeout 180 apt-get install -y sqlite3 >> /var/log/pressure/boot.log 2>&1" ]
   - [ sh, -c, "printf 'Docker is MASKED. Real production data is present and the app is NOT running.\\nRun pressure/run-ec2.sh to sanitize and start it.\\n' > /opt/pressure/AWAITING_SANITIZE" ]
   # Signals only that cloud-init finished — NOT that the application is up.
   # run-ec2.sh waits on this before it delivers the sanitize payload.

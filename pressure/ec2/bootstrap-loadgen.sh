@@ -44,11 +44,22 @@ retry() {
 
 export DEBIAN_FRONTEND=noninteractive
 
+# `timeout` KILLS apt mid-transfer, and a killed apt keeps almost nothing in
+# /var/cache/apt/archives/partial, so a too-short timeout does not degrade into
+# a slower success — it loops forever re-downloading the same bytes. An observed
+# run spent 3x300s on base-packages and never got past 8 MB of the 76 MB it
+# needed. Let apt do its own per-file retries (which is what the `Ign:` lines in
+# that run were asking for) and give the heavy install a realistic ceiling.
+APT_OPTS=(-o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+
 mark_stage apt-update
-retry 3 timeout 300 apt-get update -y
+retry 3 timeout 300 apt-get "${APT_OPTS[@]}" update -y
 
 mark_stage base-packages
-retry 3 timeout 300 apt-get install -y ca-certificates curl gnupg jq unzip sqlite3 build-essential python3
+# build-essential alone pulls ~76 MB / 269 MB unpacked, because better-sqlite3
+# has to compile its native binding on this box. This is the slowest stage by a
+# wide margin; budget for it rather than thrashing.
+retry 2 timeout 900 apt-get "${APT_OPTS[@]}" install -y ca-certificates curl gnupg jq unzip sqlite3 build-essential python3
 
 mark_stage nodesource-download
 retry 3 timeout 90 curl --retry 3 --retry-all-errors --connect-timeout 15 -fsSL \
@@ -58,7 +69,7 @@ mark_stage nodesource-setup
 retry 2 timeout 300 bash /tmp/nodesource-setup.sh
 
 mark_stage node-install
-retry 3 timeout 300 apt-get install -y nodejs
+retry 3 timeout 300 apt-get "${APT_OPTS[@]}" install -y nodejs
 
 mark_stage k6-install
 timeout 300 "$ROOT/install-k6.sh" --prefix /usr/local/bin
