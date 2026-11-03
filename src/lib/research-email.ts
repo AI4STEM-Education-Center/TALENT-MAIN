@@ -34,16 +34,24 @@ export function isResearchEmailKind(
   );
 }
 
-/** Where someone joined the pool: the IRB consent form, the pre-survey, or both. */
-export const POOL_SOURCES = ["IRB", "SURVEY"] as const;
+/**
+ * Who the interview email can reach: people who agreed to an interview on the
+ * IRB consent form or the pre-survey, and (DECLINED) students who agreed to the
+ * study on the IRB form but chose no interview and never opted in on the
+ * pre-survey.
+ */
+export const POOL_SOURCES = ["IRB", "SURVEY", "DECLINED"] as const;
 export type PoolSource = (typeof POOL_SOURCES)[number];
+
+/** The interview email audience before anyone picks recipient groups. */
+export const DEFAULT_POOL_SOURCES: readonly PoolSource[] = ["IRB", "SURVEY"];
 
 /**
  * Interview emails come in two versions per role: people who agreed through
  * the IRB consent form get the IRB version (so it can reference their consent
  * level); pre-survey opt-ins get the survey version.
  */
-export type EmailVariant = "IRB" | "SURVEY";
+export type EmailVariant = "IRB" | "SURVEY" | "DECLINED";
 
 /** Short, email-friendly wording for the IRB interview-recording choice. */
 export const CONSENT_LEVEL_LABELS: Record<InterviewRecordingChoice, string> = {
@@ -199,7 +207,31 @@ export function agreedPlaceLabel(entry: {
   return "";
 }
 
-export function variantFor(entry: { viaIrb: boolean }): EmailVariant {
+/**
+ * A student who agreed to the study on the IRB consent form but chose no
+ * interview there and did not opt in to one on the pre-survey.
+ */
+export function isDeclinedInterview(entry: {
+  role: SurveyRole;
+  viaIrb: boolean;
+  viaSurvey?: boolean;
+  consentLevel?: string | null;
+}): boolean {
+  return (
+    entry.role === "STUDENT" &&
+    entry.viaIrb &&
+    !entry.viaSurvey &&
+    entry.consentLevel === "NO_INTERVIEW"
+  );
+}
+
+export function variantFor(entry: {
+  role: SurveyRole;
+  viaIrb: boolean;
+  viaSurvey?: boolean;
+  consentLevel?: string | null;
+}): EmailVariant {
+  if (isDeclinedInterview(entry)) return "DECLINED";
   return entry.viaIrb ? "IRB" : "SURVEY";
 }
 
@@ -227,7 +259,13 @@ export function isInterviewConsentLevel(
 export const VERSION_KEYS = {
   POST_SURVEY: ["STUDENT", "TEACHER"],
   COMPENSATION: ["STUDENT"],
-  POOL: ["STUDENT_IRB", "STUDENT_SURVEY", "TEACHER_IRB", "TEACHER_SURVEY"],
+  POOL: [
+    "STUDENT_IRB",
+    "STUDENT_SURVEY",
+    "STUDENT_DECLINED",
+    "TEACHER_IRB",
+    "TEACHER_SURVEY",
+  ],
 } as const satisfies Record<ResearchEmailKind, readonly string[]>;
 
 export type VersionKey =
@@ -242,6 +280,7 @@ export const VERSION_LABELS: Record<VersionKey, string> = {
   TEACHER: "Teacher email",
   STUDENT_IRB: "Student · IRB version",
   STUDENT_SURVEY: "Student · survey version",
+  STUDENT_DECLINED: "Student · declined-interview version",
   TEACHER_IRB: "Teacher · IRB version",
   TEACHER_SURVEY: "Teacher · survey version",
 };
@@ -253,20 +292,36 @@ export function isVersionKey(
   return (VERSION_KEYS[kind] as readonly unknown[]).includes(value);
 }
 
-/** The versions a send to these roles uses, in display order. */
+/**
+ * The versions a send to these roles uses, in display order. For the interview
+ * email, `sources` narrows to the versions of the selected recipient groups
+ * (default: people who agreed to an interview, without the declined version).
+ */
 export function versionKeysFor(
   kind: ResearchEmailKind,
   roles: readonly SurveyRole[],
+  sources: readonly PoolSource[] = DEFAULT_POOL_SOURCES,
 ): VersionKey[] {
   return VERSION_KEYS[kind].filter((k) =>
-    roles.some((role) => k === role || k.startsWith(`${role}_`)),
+    roles.some(
+      (role) =>
+        k === role ||
+        (kind === "POOL"
+          ? sources.some((source) => k === `${role}_${source}`)
+          : k.startsWith(`${role}_`)),
+    ),
   );
 }
 
 /** Which version one recipient gets. */
 export function versionKeyFor(
   kind: ResearchEmailKind,
-  person: { role: SurveyRole; viaIrb: boolean },
+  person: {
+    role: SurveyRole;
+    viaIrb: boolean;
+    viaSurvey?: boolean;
+    consentLevel?: string | null;
+  },
 ): VersionKey {
   return kind !== "POOL"
     ? person.role
@@ -309,7 +364,7 @@ export function legacyVersions(row: {
   irbBody: string;
   surveySubject: string;
   surveyBody: string;
-}): Record<EmailVariant, EmailVersion> {
+}): Record<"IRB" | "SURVEY", EmailVersion> {
   const irb = { subject: row.irbSubject, body: row.irbBody };
   const survey = { subject: row.surveySubject, body: row.surveyBody };
   const pick = (primary: EmailVersion, fallback: EmailVersion) => ({
@@ -509,14 +564,16 @@ export function normalizePoolAudience(input: unknown): PoolAudience {
       : {};
   const roles = (Array.isArray(r.roles) ? r.roles : []).filter(isSurveyRole);
   const sources = (Array.isArray(r.sources) ? r.sources : []).filter(
-    (s): s is PoolSource => s === "IRB" || s === "SURVEY",
+    (s): s is PoolSource => (POOL_SOURCES as readonly unknown[]).includes(s),
   );
   const consentLevels = (
     Array.isArray(r.consentLevels) ? r.consentLevels : []
   ).filter(isInterviewConsentLevel);
   return {
     roles: roles.length ? [...new Set(roles)] : ["STUDENT"],
-    sources: sources.length ? [...new Set(sources)] : ["IRB", "SURVEY"],
+    sources: sources.length
+      ? POOL_SOURCES.filter((s) => sources.includes(s))
+      : [...DEFAULT_POOL_SOURCES],
     consentLevels: [...new Set(consentLevels)],
     people: parsePeople(r.people),
     studentUsage: normalizeStudentUsage(r.studentUsage),
@@ -546,7 +603,8 @@ export function normalizePostSurveyAudience(
 /**
  * Pool members the interview email reaches: people who agreed to an interview,
  * either on the IRB consent form (a level other than "no interview") or by
- * opting in on the pre-survey.
+ * opting in on the pre-survey, plus — when DECLINED is selected — students who
+ * agreed to the study on the IRB form without an interview and never opted in.
  */
 export function filterPool(
   entries: readonly PoolEntry[],
@@ -561,7 +619,9 @@ export function filterPool(
       (audience.consentLevels.length === 0 ||
         audience.consentLevels.includes(e.consentLevel));
     const viaSurvey = e.viaSurvey && audience.sources.includes("SURVEY");
-    return viaIrb || viaSurvey;
+    const declined =
+      audience.sources.includes("DECLINED") && isDeclinedInterview(e);
+    return viaIrb || viaSurvey || declined;
   });
 }
 
@@ -763,6 +823,18 @@ Thank you again for taking part in the {{appName}} research study and for using 
 We would greatly appreciate the opportunity to hear more about your experience with {{appName}}. If you are willing, we would be very happy to invite you to participate in an interview and share your thoughts about what worked well, what was challenging, and how we could improve the platform.
 
 The interview is completely optional. There is no obligation to participate, and choosing not to participate will not affect your course or your participation in the study.
+
+${INTERVIEW_CLOSING}`,
+    },
+    STUDENT_DECLINED: {
+      subject: INTERVIEW_SUBJECT,
+      body: `Hi {{firstName}},
+
+Thank you again for taking part in the {{appName}} research study and for using the platform.
+
+When you signed the consent form, you chose to take part in the study without an interview, and we fully respect that choice. As the study continues, we wanted to let you know that interview spots are still open in case you would now like to share your thoughts about what worked well, what was challenging, and how we could improve the platform.
+
+The interview is completely optional. If you are not interested, you do not need to do anything, and it will not affect your course or your participation in the study.
 
 ${INTERVIEW_CLOSING}`,
     },

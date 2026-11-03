@@ -9,6 +9,8 @@ import {
   RESEARCH_EMAIL_VARIABLES,
   DEFAULT_RESEARCH_EMAIL_VERSIONS,
   filterPool,
+  isDeclinedInterview,
+  POOL_SOURCES,
   legacyVersions,
   matchPeople,
   mergePoolEntries,
@@ -139,6 +141,40 @@ describe("filterPool", () => {
         .consentLevels,
     ).toEqual([]);
   });
+
+  it("adds students who agreed to the IRB but declined an interview only when DECLINED is selected", () => {
+    const declinedPool = mergePoolEntries(
+      [
+        irb({ userId: "a", interviewRecordingChoice: "NO_INTERVIEW" }),
+        irb({ userId: "b", interviewRecordingChoice: "VIDEO_AUDIO" }),
+        irb({ userId: "d", interviewRecordingChoice: "NO_INTERVIEW" }),
+        irb({
+          userId: "t",
+          role: "TEACHER",
+          interviewRecordingChoice: "NO_INTERVIEW",
+        }),
+        irb({ userId: "w", decision: "DECLINE" }),
+      ],
+      [optIn({ userId: "d" })],
+    );
+    const pick = (a: unknown) =>
+      filterPool(declinedPool, normalizePoolAudience(a))
+        .map((p) => p.key)
+        .sort();
+    // "d" opted in on the pre-survey, so it is not a declined student; teachers
+    // and people who declined the study itself never qualify.
+    expect(
+      pick({ roles: ["STUDENT", "TEACHER"], sources: ["DECLINED"] }),
+    ).toEqual(["a"]);
+    expect(
+      pick({ roles: ["STUDENT"], sources: ["IRB", "SURVEY", "DECLINED"] }),
+    ).toEqual(["a", "b", "d"]);
+    expect(pick({ roles: ["STUDENT"] })).toEqual(["b", "d"]);
+    expect(
+      normalizePoolAudience({ sources: ["DECLINED", "IRB", "NOPE"] }).sources,
+    ).toEqual(["IRB", "DECLINED"]);
+    expect(normalizePoolAudience({}).sources).toEqual(["IRB", "SURVEY"]);
+  });
 });
 
 describe("specific people", () => {
@@ -211,9 +247,86 @@ describe("versions", () => {
     );
   });
 
+  it("uses the declined-interview version only for declined students and only when that group is selected", () => {
+    const declined = {
+      role: "STUDENT" as const,
+      viaIrb: true,
+      viaSurvey: false,
+      consentLevel: "NO_INTERVIEW",
+    };
+    expect(isDeclinedInterview(declined)).toBe(true);
+    expect(isDeclinedInterview({ ...declined, viaSurvey: true })).toBe(false);
+    expect(isDeclinedInterview({ ...declined, role: "TEACHER" })).toBe(false);
+    expect(versionKeyFor("POOL", declined)).toBe("STUDENT_DECLINED");
+    expect(versionKeyFor("POOL", { ...declined, viaSurvey: true })).toBe(
+      "STUDENT_IRB",
+    );
+    expect(versionKeyFor("POST_SURVEY", declined)).toBe("STUDENT");
+    expect(versionKeysFor("POOL", ["STUDENT"])).toEqual([
+      "STUDENT_IRB",
+      "STUDENT_SURVEY",
+    ]);
+    expect(
+      versionKeysFor("POOL", ["STUDENT", "TEACHER"], ["DECLINED"]),
+    ).toEqual(["STUDENT_DECLINED"]);
+    expect(
+      versionKeysFor("POOL", ["STUDENT", "TEACHER"], [...POOL_SOURCES]),
+    ).toEqual([
+      "STUDENT_IRB",
+      "STUDENT_SURVEY",
+      "STUDENT_DECLINED",
+      "TEACHER_IRB",
+      "TEACHER_SURVEY",
+    ]);
+  });
+
+  it("requires the declined-interview version only when that group is selected", () => {
+    const base = {
+      kind: "POOL",
+      replyTo: "research@uga.edu",
+      versions: {
+        STUDENT_IRB: { subject: "S", body: "B" },
+        STUDENT_SURVEY: { subject: "S", body: "B" },
+      },
+    };
+    expect(
+      parseResearchEmailInput(
+        { ...base, audience: { roles: ["STUDENT"] } },
+        true,
+      ).ok,
+    ).toBe(true);
+    const missing = parseResearchEmailInput(
+      {
+        ...base,
+        audience: { roles: ["STUDENT"], sources: ["IRB", "DECLINED"] },
+      },
+      true,
+    );
+    expect(missing).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("declined-interview"),
+    });
+    const ok = parseResearchEmailInput(
+      {
+        ...base,
+        versions: {
+          ...base.versions,
+          STUDENT_DECLINED: { subject: "S", body: "B" },
+        },
+        audience: { roles: ["STUDENT"], sources: ["DECLINED"] },
+      },
+      true,
+    );
+    expect(ok.ok && ok.value.sendKeys).toEqual(["STUDENT_DECLINED"]);
+  });
+
   it("ships a default for every version, with a survey link where needed", () => {
     for (const kind of RESEARCH_EMAIL_KINDS)
-      for (const key of versionKeysFor(kind, ["STUDENT", "TEACHER"])) {
+      for (const key of versionKeysFor(
+        kind,
+        ["STUDENT", "TEACHER"],
+        POOL_SOURCES,
+      )) {
         const v = DEFAULT_RESEARCH_EMAIL_VERSIONS[kind][key]!;
         expect(v.subject.trim() && v.body.trim()).toBeTruthy();
         if (kind === "POST_SURVEY") expect(v.body).toContain("{{surveyLink}}");
