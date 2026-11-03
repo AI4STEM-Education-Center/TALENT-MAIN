@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.0.30 - 2026-11-20
+## v0.0.30 - 2026-11-06
 
 - Expanded research scientist access to compose, test, schedule, send, and cancel research emails, with student recipient filters for minimum learning material and simulation usage, counted together or separately.
 - Added consent-based student session recording and administrator replay for simulation, learning material, and quiz views, with separate playback for each area and improved simulation pop-up navigation.
@@ -8,13 +8,14 @@
 - Improved alternative-version practice so completed runs are recorded as quiz retakes, with an option to skip correct questions and recommendations after submission.
 - Added administrator controls to disable a class and pause platform access for students whose classes are all disabled.
 - Improved the student usage records Clear button so it resets the filter fields, and improved live API verification by allowing the CI runner through Cloudflare.
+- Improved the research email minimum student usage filter so it counts each student's recorded learning material and simulation time, instead of treating every student as having no usage and skipping them.
 
-## v0.0.29 - 2026-11-13
+## v0.0.29 - 2026-10-30
 
 - Added learning material views to the administrator student usage records, listing each time a student opened a material with whether it was recommended after a quiz (including the page range) or self-directed, along with reading time, pages viewed, clicks, and PDF opens, with links between these individual views and the learning resource engagement summary.
 - Improved how student usage records show simulation sessions and material views that are not tied to a class, naming the Simulations or Course Materials library they were opened from (or why no class was recorded) and listing the student's current classes, instead of the misleading "Outside a class".
 
-## v0.0.28 - 2026-11-06
+## v0.0.28 - 2026-10-30
 
 - Added an administrator option to exclude a class from research, so its students and teacher are no longer prompted for the IRB consent form, the IRB re-consent request, or the pre- and post-surveys once every class they belong to is excluded, while keeping consent records and survey answers already on file.
 

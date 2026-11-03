@@ -88,9 +88,18 @@ describe("weekly release metadata", () => {
     );
     expect(weeklyReleases[0]?.version).toBe(version.version);
     expect(weeklyReleases[0]?.date).toBe(version.date);
-    expect(new Set(weeklyReleases.map((release) => release.date)).size).toBe(
-      weeklyReleases.length,
-    );
+    // Several releases can ship in the same week and share its Friday cutoff,
+    // but no release may be dated past the current week's Friday.
+    const today = new Date();
+    const currentFriday = new Date(
+      Date.UTC(
+        today.getUTCFullYear(),
+        today.getUTCMonth(),
+        today.getUTCDate() + ((5 - today.getUTCDay() + 7) % 7),
+      ),
+    )
+      .toISOString()
+      .slice(0, 10);
 
     weeklyReleases.forEach((release, index) => {
       expectFriday(release.date);
@@ -98,10 +107,14 @@ describe("weekly release metadata", () => {
         release.notes.length,
         `${release.version} must list at least one feature`,
       ).toBeGreaterThan(0);
+      expect(
+        release.date <= currentFriday,
+        `${release.version} (${release.date}) must not be dated after ${currentFriday}`,
+      ).toBe(true);
       if (index > 0) {
         expect(
           release.date.localeCompare(weeklyReleases[index - 1]?.date ?? ""),
-        ).toBeLessThan(0);
+        ).toBeLessThanOrEqual(0);
       }
     });
   });
