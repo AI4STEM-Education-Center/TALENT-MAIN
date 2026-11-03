@@ -9,6 +9,7 @@
 - Added administrator controls to disable a class and pause platform access for students whose classes are all disabled.
 - Improved the student usage records Clear button so it resets the filter fields, and improved live API verification by allowing the CI runner through Cloudflare.
 - Improved the research email minimum student usage filter so it counts each student's recorded learning material and simulation time, instead of treating every student as having no usage and skipping them.
+- Added an interview email option to invite students who agreed to the IRB consent form but declined an interview there and did not opt in on the pre-survey, with its own email version, for administrators and research scientists.
 
 ## v0.0.29 - 2026-10-30
 
