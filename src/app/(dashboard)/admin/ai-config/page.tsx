@@ -41,6 +41,7 @@ import { formatAiMetrics } from "@/lib/ai-metrics";
 import type { UseCase } from "@/lib/ai-provider";
 import { AiConfigTransfer } from "@/components/admin/AiConfigTransfer";
 import { AssistantSettings } from "@/components/admin/AssistantSettings";
+import { SttSettingsCard } from "@/components/admin/SttSettingsCard";
 import { GuardrailSettings } from "@/components/admin/GuardrailSettings";
 import { GuardrailFeedbackList } from "@/components/admin/GuardrailFeedbackList";
 import { errorMessage } from "@/lib/errors";
@@ -1579,6 +1580,10 @@ export default function AiConfigPage() {
           </p>
         </div>
         <AssistantSettings key={`assistants-${importedAt}`} />
+
+        <div className="mt-4">
+          <SttSettingsCard key={`stt-${importedAt}`} />
+        </div>
 
         <GuardrailSettings
           key={`guardrails-${importedAt}`}

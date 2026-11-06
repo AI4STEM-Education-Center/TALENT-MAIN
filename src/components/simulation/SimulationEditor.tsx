@@ -11,6 +11,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { SimulationViewer } from "./SimulationViewer";
 import { Loader2, Pencil, X } from "lucide-react";
 import { GuardrailFeedbackButton } from "@/components/guardrails/GuardrailFeedbackButton";
+import {
+  SttErrorBanner,
+  SttMicButton,
+} from "@/components/assistant/SttMicButton";
+import { useSttComposer } from "@/components/assistant/use-stt-composer";
 
 const FIELD_CLASS =
   "min-w-0 flex-1 rounded border bg-background px-2 py-1 text-sm";
@@ -94,7 +99,21 @@ function ChatPanel({
     update,
   } = editor;
   const chatReady = assistant.enabled && !!assistant.model;
-  const canSend = !busy && !revising && chatReady && !!draft.trim();
+  const stt = useSttComposer({
+    draft,
+    setDraft: (value) => update({ draft: value }),
+    onSend: (text) => {
+      if (text.trim()) act("chat", text);
+    },
+    disabled: busy || revising || !chatReady,
+    surface: "simulation_editor",
+  });
+  const canSend =
+    !busy &&
+    !revising &&
+    !stt.isBusy &&
+    chatReady &&
+    (!!draft.trim() || stt.isRecording || stt.state === "connecting");
   return (
     <div className="flex min-h-0 flex-col gap-3 overflow-hidden rounded border p-3">
       <p className="text-sm font-semibold break-words">
@@ -163,11 +182,12 @@ function ChatPanel({
       <label htmlFor="simulation-edit-message" className="text-sm">
         Your changes or feedback
       </label>
+      <SttErrorBanner error={stt.error} onDismiss={stt.clearError} />
       <Textarea
         id="simulation-edit-message"
         value={draft}
         maxLength={4000}
-        onChange={(e) => update({ draft: e.target.value })}
+        onChange={(e) => stt.handleDraftChange(e.target.value)}
         onKeyDown={(e) => {
           // Enter sends, Shift+Enter writes a new line. `isComposing` keeps the
           // Enter that commits an IME candidate — Korean and Japanese input —
@@ -175,15 +195,27 @@ function ChatPanel({
           if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing)
             return;
           e.preventDefault();
-          if (canSend) act("chat", draft);
+          if (canSend) void stt.submitOrFinalizeAndSend();
         }}
         placeholder="Change the title, remove the timer, add a speed slider… (Enter to send, Shift+Enter for a new line)"
         rows={3}
         disabled={busy || revising || !chatReady}
       />
-      <Button disabled={!canSend} onClick={() => act("chat", draft)}>
-        {busy && <Loader2 className="size-4 animate-spin" />}Send message
-      </Button>
+      <div className="flex items-center gap-2">
+        <SttMicButton
+          state={stt.state}
+          disabled={busy || revising || !chatReady}
+          onToggle={() => void stt.toggleStt()}
+        />
+        <Button
+          className="flex-1"
+          disabled={!canSend}
+          onClick={() => void stt.submitOrFinalizeAndSend()}
+        >
+          {(busy || stt.isBusy) && <Loader2 className="size-4 animate-spin" />}
+          Send message
+        </Button>
+      </div>
     </div>
   );
 }

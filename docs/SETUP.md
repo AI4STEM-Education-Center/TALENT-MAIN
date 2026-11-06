@@ -119,16 +119,23 @@ The app needs an access key scoped to this bucket.
       "Effect": "Allow",
       "Action": "s3:ListBucket",
       "Resource": "arn:aws:s3:::BUCKET"
+    },
+    {
+      "Sid": "TranscribeStreaming",
+      "Effect": "Allow",
+      "Action": "transcribe:StartStreamTranscriptionWebSocket",
+      "Resource": "*"
     }
   ]
 }
 ```
 
-These permissions cover every S3 operation the code issues: `PutObject`,
-`GetObject`, `HeadObject` (covered by `s3:GetObject`), `DeleteObject`, and
-`ListObjectsV2` (`s3:ListBucket`, needed by the garbage collector). The global
-material-pool flow also uses `CopyObject`, which S3 authorizes as
-`s3:GetObject` on the source plus `s3:PutObject` on the destination.
+These permissions cover every S3 operation the code issues (`PutObject`,
+`GetObject`, `HeadObject` covered by `s3:GetObject`, `DeleteObject`,
+`ListObjectsV2` via `s3:ListBucket` for the garbage collector, and `CopyObject`
+for the global material-pool flow) plus `transcribe:StartStreamTranscriptionWebSocket`
+so the server can sign short-lived WebSocket URLs for real-time Speech-to-Text
+(configured in **Admin → AI Config → Speech-to-Text**).
 
 The example intentionally permits legacy unprefixed keys as well as both
 Compose prefixes. Once every stored database key starts with `prod/` or `dev/`,

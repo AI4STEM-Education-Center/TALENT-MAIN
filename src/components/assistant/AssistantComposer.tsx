@@ -5,7 +5,52 @@ import { Loader2, Paperclip, Send, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatBytes } from "./attachment-input";
+import { SttErrorBanner, SttMicButton } from "./SttMicButton";
+import { useSttComposer } from "./use-stt-composer";
 import type { AssistantConversation } from "./use-assistant-conversation";
+
+function AttachmentStrip({
+  attachments,
+  onRemove,
+}: {
+  attachments: AssistantConversation["attachments"];
+  onRemove: (id: string) => void;
+}) {
+  if (attachments.length === 0) return null;
+  return (
+    <ul className="flex flex-wrap gap-2 border-t border-border px-3 py-2">
+      {attachments.map((attachment) => (
+        <li
+          key={attachment.id}
+          className="flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-1.5 py-1 text-xs"
+        >
+          {attachment.previewUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element -- local object URL, not a remote asset
+            <img
+              src={attachment.previewUrl}
+              alt=""
+              className="size-6 rounded object-cover"
+            />
+          ) : (
+            <Paperclip className="size-3.5 text-muted-foreground" />
+          )}
+          <span className="max-w-[8rem] truncate">{attachment.name}</span>
+          <span className="text-muted-foreground">
+            {formatBytes(attachment.bytes)}
+          </span>
+          <button
+            type="button"
+            onClick={() => onRemove(attachment.id)}
+            aria-label={`Remove ${attachment.name}`}
+            className="rounded p-0.5 text-muted-foreground hover:text-foreground"
+          >
+            <X className="size-3" />
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 export function AssistantComposer({
   conversation,
@@ -25,44 +70,29 @@ export function AssistantComposer({
     send,
     accept,
     attachmentsEnabled,
+    sttEnabled,
   } = conversation;
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const stt = useSttComposer({
+    draft,
+    setDraft,
+    onSend: async (text) => {
+      await send(text);
+    },
+    disabled: sending || preparing,
+    surface: isTeacher ? "teacher_assistant" : "student_assistant",
+  });
+
+  const busy = sending || stt.isBusy;
+  const hasContent =
+    draft.trim().length > 0 || stt.isRecording || stt.state === "connecting";
+  const canSend = !busy && !preparing && hasContent;
+
   return (
     <>
-      {" "}
-      {attachments.length > 0 && (
-        <ul className="flex flex-wrap gap-2 border-t border-border px-3 py-2">
-          {attachments.map((attachment) => (
-            <li
-              key={attachment.id}
-              className="flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-1.5 py-1 text-xs"
-            >
-              {attachment.previewUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element -- local object URL, not a remote asset
-                <img
-                  src={attachment.previewUrl}
-                  alt=""
-                  className="size-6 rounded object-cover"
-                />
-              ) : (
-                <Paperclip className="size-3.5 text-muted-foreground" />
-              )}
-              <span className="max-w-[8rem] truncate">{attachment.name}</span>
-              <span className="text-muted-foreground">
-                {formatBytes(attachment.bytes)}
-              </span>
-              <button
-                type="button"
-                onClick={() => removeAttachment(attachment.id)}
-                aria-label={`Remove ${attachment.name}`}
-                className="rounded p-0.5 text-muted-foreground hover:text-foreground"
-              >
-                <X className="size-3" />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      <AttachmentStrip attachments={attachments} onRemove={removeAttachment} />
+      <SttErrorBanner error={stt.error} onDismiss={stt.clearError} />
       <form
         className={cn(
           "flex items-end gap-2 border-t border-border p-2",
@@ -72,7 +102,7 @@ export function AssistantComposer({
         )}
         onSubmit={(event) => {
           event.preventDefault();
-          void send();
+          void stt.submitOrFinalizeAndSend();
         }}
       >
         {attachmentsEnabled && (
@@ -94,7 +124,7 @@ export function AssistantComposer({
               size="icon"
               className="size-9 shrink-0"
               aria-label="Attach a file"
-              disabled={sending}
+              disabled={busy}
               onClick={() => fileRef.current?.click()}
             >
               <Paperclip className="size-4" />
@@ -104,16 +134,17 @@ export function AssistantComposer({
 
         <textarea
           value={draft}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => stt.handleDraftChange(event.target.value)}
           onKeyDown={(event) => {
-            // Enter sends; Shift+Enter adds a line, matching chat convention.
+            // Enter sends (or stops+finalizes+sends when STT is active);
+            // Shift+Enter adds a line, matching chat convention.
             if (
               event.key === "Enter" &&
               !event.shiftKey &&
               !event.nativeEvent.isComposing
             ) {
               event.preventDefault();
-              void send();
+              void stt.submitOrFinalizeAndSend();
             }
           }}
           onPaste={(event) => {
@@ -132,14 +163,22 @@ export function AssistantComposer({
           className="max-h-32 min-h-9 flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
         />
 
+        {sttEnabled && (
+          <SttMicButton
+            state={stt.state}
+            disabled={sending || preparing}
+            onToggle={() => void stt.toggleStt()}
+          />
+        )}
+
         <Button
           type="submit"
           size="icon"
           className="size-9 shrink-0"
-          disabled={sending || preparing || draft.trim().length === 0}
+          disabled={!canSend}
           aria-label="Send message"
         >
-          {sending ? (
+          {busy ? (
             <Loader2 className="size-4 animate-spin" />
           ) : (
             <Send className="size-4" />
