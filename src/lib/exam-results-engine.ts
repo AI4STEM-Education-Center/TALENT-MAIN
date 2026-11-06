@@ -798,6 +798,15 @@ export async function generateExamResult(examResultId: string): Promise<void> {
     generateRecommendationsSection(),
   ]);
 
+  // A redelivered job for an already-complete result has no new evidence, so
+  // skip Knowledge Tracing rather than re-running its LLM call.
+  if (
+    examResult.summaryStatus === RESULT_STATUS.READY &&
+    examResult.recommendationsStatus === RESULT_STATUS.READY
+  ) {
+    return;
+  }
+
   // Update the student's longitudinal Knowledge Tracing profile with this
   // attempt's correct/incorrect evidence and labeled misconceptions. Best-effort
   // so a Knowledge Tracing LLM failure never fails the ExamResult job itself.
