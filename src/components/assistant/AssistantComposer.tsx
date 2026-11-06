@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { Loader2, Paperclip, Send, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -71,6 +71,9 @@ export function AssistantComposer({
     accept,
     attachmentsEnabled,
     sttEnabled,
+    historyOpen,
+    loadingConversation,
+    bubbles,
   } = conversation;
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -83,6 +86,17 @@ export function AssistantComposer({
     disabled: sending || preparing,
     surface: isTeacher ? "teacher_assistant" : "student_assistant",
   });
+
+  const { abortStt } = stt;
+  const isNewEmptyChat = bubbles.length === 0 && !sending;
+
+  // Cancel any active microphone recording if the user opens history, loads a
+  // past conversation, or starts a fresh conversation.
+  useEffect(() => {
+    if (historyOpen || loadingConversation || isNewEmptyChat) {
+      abortStt();
+    }
+  }, [historyOpen, loadingConversation, isNewEmptyChat, abortStt]);
 
   const busy = sending || stt.isBusy;
   const hasContent =

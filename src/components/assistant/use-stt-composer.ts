@@ -76,22 +76,28 @@ export function useSttComposer({
 
   const stateRef = useRef<SttMachineState>("idle");
   const draftRef = useRef(draft);
-  draftRef.current = draft;
-
   const setDraftRef = useRef(setDraft);
-  setDraftRef.current = setDraft;
-
   const onSendRef = useRef(onSend);
-  onSendRef.current = onSend;
-
   const canSendEmptyRef = useRef(canSendEmptyText);
-  canSendEmptyRef.current = canSendEmptyText;
+
+  useEffect(() => {
+    draftRef.current = draft;
+    setDraftRef.current = setDraft;
+    onSendRef.current = onSend;
+    canSendEmptyRef.current = canSendEmptyText;
+  }, [draft, setDraft, onSend, canSendEmptyText]);
 
   // Monotonically increasing session token so stale async callbacks from an
   // earlier session can never mutate a newer session's state.
   const sessionTokenRef = useRef(0);
   const activeSessionRef = useRef<SttActiveSession | null>(null);
-  const bufferRef = useRef<TranscriptBufferState>(createTranscriptBuffer(""));
+  const bufferRef = useRef<TranscriptBufferState | null>(null);
+  function getBuffer(): TranscriptBufferState {
+    if (!bufferRef.current) {
+      bufferRef.current = createTranscriptBuffer("");
+    }
+    return bufferRef.current;
+  }
   // Set when the user clicks Send or presses Enter while STT is connecting/recording/finalizing.
   const submitAfterFinalizeRef = useRef(false);
   // Promise of an in-flight finalization so repeated Stop/Send clicks join the same run.
@@ -159,7 +165,7 @@ export function useSttComposer({
         // and surface the error rather than silently submitting an incomplete
         // transcript.
         if (finalizationFailed) {
-          const preserved = formatTranscriptBuffer(bufferRef.current, {
+          const preserved = formatTranscriptBuffer(getBuffer(), {
             includeProvisional: true,
           });
           draftRef.current = preserved;
@@ -171,10 +177,10 @@ export function useSttComposer({
 
         // Settle any remaining provisional text into the final buffer and
         // update the composer draft.
-        bufferRef.current = settleTranscriptBuffer(bufferRef.current, {
+        bufferRef.current = settleTranscriptBuffer(getBuffer(), {
           commitProvisional: true,
         });
-        const finalText = formatTranscriptBuffer(bufferRef.current, {
+        const finalText = formatTranscriptBuffer(getBuffer(), {
           includeProvisional: false,
         });
         draftRef.current = finalText;
@@ -194,12 +200,13 @@ export function useSttComposer({
           return;
         }
 
-        updateState("sending");
+        // Transition back to "idle" before invoking `onSendRef.current(finalText)`
+        // because `onSend` in chat surfaces streams the entire AI reply; keeping
+        // the STT state at "sending" during the AI reply would make the mic
+        // button announce "Finalizing voice input…" for the whole response.
+        updateState("idle");
         try {
           await onSendRef.current(finalText);
-          if (sessionTokenRef.current === token) {
-            updateState("idle");
-          }
         } catch (err) {
           if (sessionTokenRef.current === token) {
             // Preserve the finalized text in the composer if submission fails
@@ -255,8 +262,8 @@ export function useSttComposer({
           },
           onTranscript: (event: SttTranscriptEvent) => {
             if (sessionTokenRef.current !== token) return;
-            bufferRef.current = applyTranscriptEvent(bufferRef.current, event);
-            const merged = formatTranscriptBuffer(bufferRef.current, {
+            bufferRef.current = applyTranscriptEvent(getBuffer(), event);
+            const merged = formatTranscriptBuffer(getBuffer(), {
               includeProvisional: true,
             });
             draftRef.current = merged;
@@ -264,10 +271,12 @@ export function useSttComposer({
           },
           onError: (message: string) => {
             if (sessionTokenRef.current !== token) return;
+            const prevSession = activeSessionRef.current;
             activeSessionRef.current = null;
+            prevSession?.abort();
             submitAfterFinalizeRef.current = false;
             // Preserve the draft captured so far
-            const preserved = formatTranscriptBuffer(bufferRef.current, {
+            const preserved = formatTranscriptBuffer(getBuffer(), {
               includeProvisional: true,
             });
             draftRef.current = preserved;
@@ -383,7 +392,8 @@ export function useSttComposer({
       setDraftRef.current(nextValue);
       if (
         stateRef.current === "recording" ||
-        stateRef.current === "connecting"
+        stateRef.current === "connecting" ||
+        stateRef.current === "finalizing"
       ) {
         bufferRef.current = rebaseTranscriptBuffer(nextValue);
       }

@@ -20,6 +20,7 @@ const STT_CONFIG_ID = "stt";
 const CACHE_TTL_MS = 60_000;
 
 let _cache: { data: SttSettings; expiresAt: number } | null = null;
+let _lastKnownSettings: SttSettings | null = null;
 
 export function invalidateSttSettingsCache(): void {
   _cache = null;
@@ -34,6 +35,46 @@ export interface SttSettingsInput {
   languageOptions?: unknown;
   enablePartialResultsStabilization?: unknown;
   partialResultsStability?: unknown;
+}
+
+/**
+ * Deduplicate language codes so at most one dialect per base language family
+ * (e.g. `en-US` vs `en-GB`) appears, with `preferred` always winning its family
+ * and included in the list.
+ */
+export function sanitizeLanguageOptions(
+  raw: readonly SttLanguageCode[],
+  preferred: SttLanguageCode,
+): SttLanguageCode[] {
+  const prefFamily = preferred.split("-")[0].toLowerCase();
+  // Replace any other dialect of the preferred language's base family with `preferred`,
+  // while preserving the caller's ordering.
+  const withPreferredReplaced: SttLanguageCode[] = raw.map((c) =>
+    c.split("-")[0].toLowerCase() === prefFamily ? preferred : c,
+  );
+  if (!withPreferredReplaced.includes(preferred)) {
+    withPreferredReplaced.unshift(preferred);
+  }
+
+  const seenFamilies = new Set<string>();
+  const result: SttLanguageCode[] = [];
+  for (const code of withPreferredReplaced) {
+    const family = code.split("-")[0].toLowerCase();
+    if (seenFamilies.has(family)) continue;
+    seenFamilies.add(family);
+    result.push(code);
+  }
+  if (result.length < 2) {
+    for (const fallback of DEFAULT_STT_SETTINGS.languageOptions) {
+      const family = fallback.split("-")[0].toLowerCase();
+      if (!seenFamilies.has(family)) {
+        seenFamilies.add(family);
+        result.push(fallback);
+      }
+      if (result.length >= 2) break;
+    }
+  }
+  return result;
 }
 
 export function normalizeSttSettings(input: SttSettingsInput): SttSettings {
@@ -53,11 +94,7 @@ export function normalizeSttSettings(input: SttSettingsInput): SttSettings {
   const rawOptions = Array.isArray(input.languageOptions)
     ? input.languageOptions.filter(isSttLanguageCode)
     : defaults.languageOptions;
-  const dedupedOptions = [...new Set(rawOptions)];
-  const languageOptions: SttLanguageCode[] =
-    dedupedOptions.length >= 2
-      ? dedupedOptions
-      : [...new Set([languageCode, ...defaults.languageOptions])];
+  const languageOptions = sanitizeLanguageOptions(rawOptions, languageCode);
 
   const identifyLanguage =
     typeof input.identifyLanguage === "boolean"
@@ -114,11 +151,16 @@ export async function getSttSettings(): Promise<SttSettings> {
       category: "SYSTEM",
       type: "STT_SETTINGS_READ_FAILED",
       severity: "WARNING",
-      message: "Could not read STT settings; using defaults",
+      message:
+        "Could not read STT settings; preserving last known state or failing closed",
     });
-    return DEFAULT_STT_SETTINGS;
+    // Preserve last known setting if available; otherwise fail closed
+    // (`enabled: false`) so a DB error cannot re-enable paid AWS transcription
+    // when an admin disabled it.
+    return _lastKnownSettings ?? { ...DEFAULT_STT_SETTINGS, enabled: false };
   }
 
+  _lastKnownSettings = settings;
   _cache = { data: settings, expiresAt: Date.now() + CACHE_TTL_MS };
   return settings;
 }

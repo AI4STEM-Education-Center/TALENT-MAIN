@@ -50,6 +50,7 @@ import {
   resolveLabeledMisconceptions,
   type MisconceptionLabeling,
 } from "./misconception-labeling";
+import { updateStudentKnowledgeProfile } from "./knowledge-tracing";
 import {
   RESULT_STATUS,
   parseReviewSnapshot,
@@ -796,6 +797,19 @@ export async function generateExamResult(examResultId: string): Promise<void> {
     generateSummarySection(),
     generateRecommendationsSection(),
   ]);
+
+  // Update the student's longitudinal Knowledge Tracing profile with this
+  // attempt's correct/incorrect evidence and labeled misconceptions. Best-effort
+  // so a Knowledge Tracing LLM failure never fails the ExamResult job itself.
+  await updateStudentKnowledgeProfile(
+    examResult.studentId,
+    examResult.id,
+  ).catch((err) => {
+    console.error(
+      `[ExamResults] Knowledge tracing update failed for ${examResult.id}:`,
+      err,
+    );
+  });
 }
 
 /**

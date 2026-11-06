@@ -153,6 +153,7 @@ const USE_CASE_LABELS: Record<UseCase, string> = {
   // the Chat Assistants section further down the page.
   student_assistant: "Student Chat Assistant",
   teacher_assistant: "Teacher Chat Assistant",
+  knowledge_tracing: "Student Knowledge Tracing",
   // Wants a moderation model (e.g. omni-moderation-latest), not a chat model.
   // Free to call, and leaving it unassigned turns content moderation off.
   moderation: "Content Moderation",

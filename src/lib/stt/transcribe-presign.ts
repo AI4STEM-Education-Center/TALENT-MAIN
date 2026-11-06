@@ -139,23 +139,42 @@ export function presignTranscribeStreamingUrl(
 
   // Language selection: either automatic multi-language identification or a
   // single pinned language code.
-  const validOptions = (settings.languageOptions ?? []).filter(
-    isSttLanguageCode,
-  );
+  // AWS Transcribe requires at most one dialect per base language (e.g., not
+  // both en-US and en-GB) in `language-options`, and requires `preferred-language`
+  // to be a member of `language-options`.
+  const preferredLang = isSttLanguageCode(settings.languageCode)
+    ? settings.languageCode
+    : "en-US";
+  const prefFamily = preferredLang.split("-")[0].toLowerCase();
+  const rawOptions = (settings.languageOptions ?? [])
+    .filter(isSttLanguageCode)
+    .map((c) =>
+      c.split("-")[0].toLowerCase() === prefFamily ? preferredLang : c,
+    );
+  const candidatesWithPreferred = rawOptions.includes(preferredLang)
+    ? rawOptions
+    : [preferredLang, ...rawOptions];
+
+  const seenBaseLangs = new Set<string>();
+  const validOptions: string[] = [];
+  for (const code of candidatesWithPreferred) {
+    const base = code.split("-")[0].toLowerCase();
+    if (seenBaseLangs.has(base)) continue;
+    seenBaseLangs.add(base);
+    validOptions.push(code);
+  }
+
   const useIdentifyLanguage =
     settings.identifyLanguage && validOptions.length >= 2;
 
   if (useIdentifyLanguage) {
     queryParams["identify-language"] = "true";
-    queryParams["language-options"] = [...new Set(validOptions)].join(",");
-    if (isSttLanguageCode(settings.languageCode)) {
-      queryParams["preferred-language"] = settings.languageCode;
+    queryParams["language-options"] = validOptions.join(",");
+    if (validOptions.includes(preferredLang)) {
+      queryParams["preferred-language"] = preferredLang;
     }
   } else {
-    const lang = isSttLanguageCode(settings.languageCode)
-      ? settings.languageCode
-      : "en-US";
-    queryParams["language-code"] = lang;
+    queryParams["language-code"] = preferredLang;
   }
 
   // Partial-result stabilization (supported by Amazon Transcribe Streaming for

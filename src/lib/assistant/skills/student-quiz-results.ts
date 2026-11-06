@@ -19,6 +19,10 @@ import {
   PASS_THRESHOLD,
 } from "@/lib/quiz-stats";
 import { retakeStillPossible } from "@/lib/student-answer-key";
+import {
+  getStudentKnowledgeProfile,
+  updateStudentKnowledgeProfile,
+} from "@/lib/knowledge-tracing";
 import type {
   AssistantSkill,
   AssistantTool,
@@ -377,16 +381,55 @@ const summarizePerformance: AssistantTool<typeof trendInput> = {
   },
 };
 
+const ktSelfInput = z.object({});
+
+const getMyKnowledgeTracing: AssistantTool<typeof ktSelfInput> = {
+  name: "get_my_knowledge_tracing",
+  description:
+    "Retrieve the student's own Knowledge Tracing profile synthesized from all of their completed " +
+    "quiz attempts and retakes: clearly lists their Known/Mastered concepts, Unknown/Struggling " +
+    "concepts, recent concept upgrades or downgrades from retakes, and an overall summary.",
+  activityLabel: "Reading your knowledge profile",
+  input: ktSelfInput,
+  handler: async (_args, ctx) => {
+    const studentId = requireStudent(ctx);
+    let profile = await getStudentKnowledgeProfile(studentId);
+    if (!profile) {
+      profile = await updateStudentKnowledgeProfile(studentId);
+    }
+    if (!profile) {
+      return {
+        found: false,
+        message:
+          "No Knowledge Tracing profile is available yet. Complete a quiz to generate one.",
+      };
+    }
+    return {
+      found: true,
+      studentName: profile.studentName,
+      ugaId: profile.ugaId,
+      updatedAt: profile.updatedAt,
+      attemptsAnalyzed: profile.attemptsAnalyzed,
+      promptSummary: profile.promptSummary,
+      knownConcepts: profile.knownConcepts,
+      unknownConcepts: profile.unknownConcepts,
+      transitions: profile.transitions,
+    };
+  },
+};
+
 export const studentQuizResultsSkill: AssistantSkill = {
   id: "student-quiz-results",
   name: "Quiz result lookup",
   description:
     "Lets a student search their own past quiz results by quiz name, topic, class, score, or date, " +
-    "open a single attempt question by question, and see aggregate trends.",
+    "open a single attempt question by question, see aggregate trends, and inspect their Knowledge Tracing profile.",
   audience: "student",
   instructions: [
     "You can look up the student's own past quiz results with the search_quiz_results, " +
-      "get_quiz_result_detail, and summarize_performance tools.",
+      "get_quiz_result_detail, summarize_performance, and get_my_knowledge_tracing tools.",
+    "Use get_my_knowledge_tracing when the student asks what concepts they know vs. struggle with, " +
+      " asks for their knowledge tracing profile, or wants a personalized study plan across quizzes.",
     "Prefer summarize_performance for 'how am I doing' questions and search_quiz_results when the " +
       "student names a quiz, topic, class, or time period. Call search_quiz_results with no filters " +
       "when they ask about everything.",
@@ -401,5 +444,10 @@ export const studentQuizResultsSkill: AssistantSkill = {
     "When you reference a result, name the quiz and the score so the student can find it in their " +
       "Exam History. Never invent a score, a quiz name, or a date that a tool did not return.",
   ].join("\n"),
-  tools: [searchQuizResults, getQuizResultDetail, summarizePerformance],
+  tools: [
+    searchQuizResults,
+    getQuizResultDetail,
+    summarizePerformance,
+    getMyKnowledgeTracing,
+  ],
 };

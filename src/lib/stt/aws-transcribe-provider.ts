@@ -85,11 +85,19 @@ export class AwsTranscribeSttProvider implements SttProvider {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "presign", surface }),
       });
-      const data = (await res.json().catch(() => null)) as PresignResponse | null;
-      if (!res.ok || !data?.url) {
+      if (!res.ok) {
+        const errBody = (await res
+          .json()
+          .catch(() => null)) as PresignResponse | null;
         throw new Error(
-          data?.error ??
+          errBody?.error ??
             "Voice input is unavailable right now. Please try again shortly.",
+        );
+      }
+      const data = (await res.json()) as PresignResponse;
+      if (!data.url) {
+        throw new Error(
+          "Voice input is unavailable right now. Please try again shortly.",
         );
       }
       presign = data;
@@ -102,6 +110,7 @@ export class AwsTranscribeSttProvider implements SttProvider {
 
     // 3. Open the direct WebSocket to Amazon Transcribe Streaming.
     let hasPartialOpen = false;
+    let hasReceivedAnyTranscript = false;
     let finalizeResolve: ((res: { durationMs: number }) => void) | null = null;
     let finalizeReject: ((err: Error) => void) | null = null;
     let finalizeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -135,14 +144,7 @@ export class AwsTranscribeSttProvider implements SttProvider {
       }
     };
 
-    const finishFinalization = () => {
-      if (!finalizeResolve) return;
-      const resolve = finalizeResolve;
-      finalizeResolve = null;
-      finalizeReject = null;
-      clearTimers();
-      const durationMs = startedAt > 0 ? Math.max(0, Date.now() - startedAt) : 0;
-      reportUsage(durationMs);
+    const closeSocketSafely = () => {
       try {
         if (
           ws &&
@@ -154,10 +156,24 @@ export class AwsTranscribeSttProvider implements SttProvider {
       } catch {
         // Ignore
       }
+    };
+
+    const finishFinalization = () => {
+      if (!finalizeResolve) return;
+      const resolve = finalizeResolve;
+      finalizeResolve = null;
+      finalizeReject = null;
+      clearTimers();
+      const durationMs = startedAt > 0 ? Math.max(0, Date.now() - startedAt) : 0;
+      reportUsage(durationMs);
+      closeSocketSafely();
       resolve({ durationMs });
     };
 
     const failFinalization = (message: string) => {
+      const durationMs = startedAt > 0 ? Math.max(0, Date.now() - startedAt) : 0;
+      reportUsage(durationMs);
+      closeSocketSafely();
       if (finalizeReject) {
         const reject = finalizeReject;
         finalizeResolve = null;
@@ -165,6 +181,7 @@ export class AwsTranscribeSttProvider implements SttProvider {
         clearTimers();
         reject(new Error(message));
       } else if (!aborted) {
+        clearTimers();
         callbacks.onError(message);
       }
     };
@@ -175,11 +192,7 @@ export class AwsTranscribeSttProvider implements SttProvider {
         if (!connected) {
           aborted = true;
           audioHandle.stop();
-          try {
-            ws?.close();
-          } catch {
-            // Ignore
-          }
+          closeSocketSafely();
           rejectConnect(
             new Error(
               "Timed out connecting to Amazon Transcribe. Please check your connection and try again.",
@@ -205,11 +218,7 @@ export class AwsTranscribeSttProvider implements SttProvider {
       ws.onopen = () => {
         clearTimeout(connectTimer);
         if (aborted) {
-          try {
-            ws?.close();
-          } catch {
-            // Ignore
-          }
+          closeSocketSafely();
           return;
         }
         connected = true;
@@ -246,18 +255,28 @@ export class AwsTranscribeSttProvider implements SttProvider {
             return;
           }
           if (parsed.kind === "transcript") {
+            if (parsed.events.length > 0) {
+              hasReceivedAnyTranscript = true;
+            }
             for (const item of parsed.events) {
               hasPartialOpen = item.isPartial;
               callbacks.onTranscript(item);
             }
-            // If we are finalizing and the stream just delivered a final
-            // segment (`!hasPartialOpen`), schedule a short settle timer so we
-            // don't wait the full timeout if AWS is done speaking.
-            if (finalizing && !hasPartialOpen) {
-              if (settleTimer) clearTimeout(settleTimer);
-              settleTimer = setTimeout(() => {
-                finishFinalization();
-              }, FINALIZE_IDLE_SETTLE_MS);
+            // If we are finalizing:
+            // - When a new partial arrives (`hasPartialOpen === true`), cancel
+            //   any pending settleTimer so we don't cut off the utterance.
+            // - When a final segment arrives (`!hasPartialOpen`), schedule the
+            //   short settle timer so we finish promptly once AWS settles.
+            if (finalizing) {
+              if (settleTimer) {
+                clearTimeout(settleTimer);
+                settleTimer = null;
+              }
+              if (!hasPartialOpen) {
+                settleTimer = setTimeout(() => {
+                  finishFinalization();
+                }, FINALIZE_IDLE_SETTLE_MS);
+              }
             }
           }
         } catch {
@@ -345,9 +364,12 @@ export class AwsTranscribeSttProvider implements SttProvider {
             return;
           }
 
-          // If no provisional transcript is currently open, settle quickly
-          // while still allowing any in-flight final packet to arrive.
-          if (!hasPartialOpen) {
+          // Only arm the short settle timer immediately if we have ALREADY
+          // received at least one transcript event and no partial is open. If
+          // the user spoke a short utterance and clicked Stop before the first
+          // recognition packet arrived, wait for `onmessage` (or `onclose` /
+          // `finalizeTimer`) so we don't discard their words.
+          if (hasReceivedAnyTranscript && !hasPartialOpen) {
             settleTimer = setTimeout(() => {
               finishFinalization();
             }, FINALIZE_IDLE_SETTLE_MS);

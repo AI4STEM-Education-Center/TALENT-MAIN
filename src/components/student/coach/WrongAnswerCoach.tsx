@@ -29,7 +29,16 @@ function CoachDialogBody({ target }: { target: CoachTarget }) {
   const assistant = useOptionalAssistant();
   const sttEnabled = assistant?.config?.sttEnabled !== false;
   const chat = useCoachChat(target);
-  const { load, bubbles, activity, draft, setDraft, sending, sendText } = chat;
+  const {
+    load,
+    bubbles,
+    openingOptions,
+    activity,
+    draft,
+    setDraft,
+    sending,
+    sendText,
+  } = chat;
 
   const stt = useSttComposer({
     draft,
@@ -48,6 +57,10 @@ function CoachDialogBody({ target }: { target: CoachTarget }) {
     !sending &&
     !stt.isBusy &&
     (draft.trim().length > 0 || stt.isRecording || stt.state === "connecting");
+
+  const hasUserTurn = bubbles.some((b) => b.role === "user");
+  const showOpeningButtons =
+    !hasUserTurn && !sending && openingOptions.length > 0;
 
   const renderCards = useCallback<RenderCards>(
     (cards: CoachActionView[]) => (
@@ -97,6 +110,32 @@ function CoachDialogBody({ target }: { target: CoachTarget }) {
             renderCards={renderCards}
           />
         </div>
+        {showOpeningButtons && (
+          <div
+            role="group"
+            aria-label="Suggested ways you approached this question"
+            className="flex flex-col gap-2 border-t border-border/60 bg-muted/10 px-4 py-2.5"
+          >
+            <p className="text-xs font-medium text-muted-foreground">
+              Pick what matches your thinking, or type / speak your own below:
+            </p>
+            {openingOptions.slice(0, 2).map((option) => (
+              <button
+                key={option}
+                type="button"
+                disabled={sending || stt.isBusy}
+                onClick={() => {
+                  stt.abortStt();
+                  setDraft("");
+                  void sendText(option);
+                }}
+                className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-left text-xs text-foreground transition-colors hover:border-primary hover:bg-primary/10 disabled:opacity-50"
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+        )}
         <SttErrorBanner error={stt.error} onDismiss={stt.clearError} />
         <form
           className="flex items-end gap-2 border-t p-2"

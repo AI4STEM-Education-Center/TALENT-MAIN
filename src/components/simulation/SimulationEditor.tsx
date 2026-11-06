@@ -16,6 +16,7 @@ import {
   SttMicButton,
 } from "@/components/assistant/SttMicButton";
 import { useSttComposer } from "@/components/assistant/use-stt-composer";
+import { useOptionalAssistant } from "@/components/assistant/assistant-context";
 
 const FIELD_CLASS =
   "min-w-0 flex-1 rounded border bg-background px-2 py-1 text-sm";
@@ -98,6 +99,8 @@ function ChatPanel({
     act,
     update,
   } = editor;
+  const assistantCtx = useOptionalAssistant();
+  const sttEnabled = assistantCtx?.config?.sttEnabled !== false;
   const chatReady = assistant.enabled && !!assistant.model;
   const stt = useSttComposer({
     draft,
@@ -202,11 +205,13 @@ function ChatPanel({
         disabled={busy || revising || !chatReady}
       />
       <div className="flex items-center gap-2">
-        <SttMicButton
-          state={stt.state}
-          disabled={busy || revising || !chatReady}
-          onToggle={() => void stt.toggleStt()}
-        />
+        {sttEnabled && (
+          <SttMicButton
+            state={stt.state}
+            disabled={busy || revising || !chatReady}
+            onToggle={() => void stt.toggleStt()}
+          />
+        )}
         <Button
           className="flex-1"
           disabled={!canSend}

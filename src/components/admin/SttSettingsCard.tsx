@@ -1,20 +1,26 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ChevronLeft,
-  ChevronRight,
+  CheckCircle2,
   Clock,
   Loader2,
   Mic,
   RefreshCw,
-  Save,
   Search,
   Users,
+  XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -22,163 +28,630 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
-import type {
-  SttLanguageCode,
-  SttPartialStability,
-  SttSettings,
+import {
+  AWS_TRANSCRIBE_STREAMING_REGIONS,
+  STT_LANGUAGES,
+  STT_PARTIAL_STABILITIES,
+  type SttLanguageCode,
+  type SttPartialStability,
+  type SttSettings,
 } from "@/lib/stt/types";
 
-interface LanguageItem {
-  code: SttLanguageCode;
-  label: string;
+interface SttUsageRecord {
+  id: string;
+  createdAt: string;
+  userId: string | null;
+  userName: string | null;
+  userEmail: string | null;
+  userRole: string | null;
+  surface: string;
+  languageCode: string;
+  durationMs: number;
 }
 
-interface UserUsageSummary {
+interface SttUserUsageSummary {
   userId: string;
   userName: string;
   userEmail: string;
-  role: string;
+  userRole: string;
   sessions: number;
   totalDurationMs: number;
   lastUsedAt: string;
 }
 
-interface SttUsageLogRow {
-  id: string;
-  createdAt: string;
-  userId: string | null;
-  userName: string;
-  userEmail: string;
-  role: string;
-  durationMs: number;
-  surface: string;
-  languageCode: string;
+interface SttAdminPayload {
+  settings: SttSettings;
+  effectiveRegion: string;
+  hasCredentials: boolean;
+  usage: {
+    totalDurationMs: number;
+    totalSessions: number;
+    uniqueUsers: number;
+    userSummaries: SttUserUsageSummary[];
+    recentSessions: SttUsageRecord[];
+  };
 }
 
-interface AdminSttPayload {
-  settings: SttSettings;
-  defaultRegion: string;
-  catalogs: {
-    languages: LanguageItem[];
-    regions: string[];
-    stabilities: SttPartialStability[];
-    surfaces: string[];
-  };
-  usage: {
-    totalSessions: number;
-    totalDurationMs: number;
-    uniqueUsers: number;
-    userSummaries: UserUsageSummary[];
-    logs: SttUsageLogRow[];
-    page: number;
-    pageSize: number;
-  };
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.round(ms / 1000));
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes < 60) {
+    return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const remMinutes = minutes % 60;
+  return remMinutes > 0 ? `${hours}h ${remMinutes}m` : `${hours}h`;
+}
+
+function formatIsoTimestamp(iso: string): string {
+  return iso.replace("T", " ").slice(0, 19) + " UTC";
 }
 
 const SURFACE_LABELS: Record<string, string> = {
-  student_assistant: "Student assistant",
-  teacher_assistant: "Teacher assistant",
-  wrong_answer_coach: "Wrong-answer coach",
-  simulation_editor: "Simulation editing chat",
+  student_assistant: "Student Chat",
+  teacher_assistant: "Teacher Chat",
+  wrong_answer_coach: "Wrong-Answer Coach",
+  simulation_editor: "Simulation Editor",
 };
 
-function formatDuration(ms: number): string {
-  const totalSec = Math.max(0, Math.round(ms / 100) / 10);
-  if (totalSec < 60) {
-    return `${totalSec.toFixed(1)}s`;
-  }
-  const minutes = Math.floor(totalSec / 60);
-  const seconds = Math.round(totalSec % 60);
-  if (minutes < 60) {
-    return `${minutes}m ${seconds}s`;
-  }
-  const hours = Math.floor(minutes / 60);
-  const remMin = minutes % 60;
-  return `${hours}h ${remMin}m ${seconds}s`;
+function SttConfigSection({
+  settings,
+  effectiveRegion,
+  hasCredentials,
+  saving,
+  savedOk,
+  error,
+  onPatch,
+  onToggleLanguageOption,
+  onSave,
+}: {
+  settings: SttSettings;
+  effectiveRegion: string;
+  hasCredentials: boolean;
+  saving: boolean;
+  savedOk: boolean;
+  error: string | null;
+  onPatch: (patch: Partial<SttSettings>) => void;
+  onToggleLanguageOption: (lang: SttLanguageCode) => void;
+  onSave: () => void;
+}) {
+  return (
+    <div className="space-y-4">
+      {!hasCredentials && (
+        <div
+          role="alert"
+          className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300"
+        >
+          AWS credentials (<code>AWS_ACCESS_KEY_ID</code> /{" "}
+          <code>AWS_SECRET_ACCESS_KEY</code>) were not detected on the server.
+          Ensure the application IAM user has{" "}
+          <code>transcribe:StartStreamTranscriptionWebSocket</code> permission.
+        </div>
+      )}
+
+      {error && (
+        <div
+          role="alert"
+          className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+        >
+          <XCircle className="size-4 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border bg-muted/20 p-3">
+        <div>
+          <p className="text-sm font-medium">Enable Speech-to-Text Input</p>
+          <p className="text-xs text-muted-foreground">
+            Show the microphone button in the Student Assistant, Teacher
+            Assistant, Wrong-Answer Coach, and Simulation Editor.
+          </p>
+        </div>
+        <input
+          type="checkbox"
+          aria-label="Enable Speech-to-Text Input"
+          className="size-4 accent-primary"
+          checked={settings.enabled}
+          onChange={(e) => onPatch({ enabled: e.target.checked })}
+        />
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="stt-language">Primary / Default Language</Label>
+          <Select
+            value={settings.languageCode}
+            onValueChange={(value) => {
+              const lang = value as SttLanguageCode;
+              const base = lang.split("-")[0].toLowerCase();
+              const withoutSameBase = settings.languageOptions.filter(
+                (c) => c.split("-")[0].toLowerCase() !== base,
+              );
+              onPatch({
+                languageCode: lang,
+                languageOptions: [lang, ...withoutSameBase],
+              });
+            }}
+          >
+            <SelectTrigger id="stt-language">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STT_LANGUAGES.map((lang) => (
+                <SelectItem key={lang.code} value={lang.code}>
+                  {lang.label} ({lang.code})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Used when single-language mode is active, or as the preferred
+            language during automatic language detection.
+          </p>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="stt-region">AWS Transcribe Region</Label>
+          <Select
+            value={settings.region || "__env_default__"}
+            onValueChange={(value) =>
+              onPatch({ region: value === "__env_default__" ? "" : value })
+            }
+          >
+            <SelectTrigger id="stt-region">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__env_default__">
+                Default from AWS_REGION ({effectiveRegion})
+              </SelectItem>
+              {AWS_TRANSCRIBE_STREAMING_REGIONS.map((region) => (
+                <SelectItem key={region} value={region}>
+                  {region}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Effective region: <code>{settings.region || effectiveRegion}</code>
+          </p>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="stt-stability">Partial Result Stabilization</Label>
+          <Select
+            value={
+              settings.enablePartialResultsStabilization
+                ? settings.partialResultsStability
+                : "off"
+            }
+            onValueChange={(value) => {
+              if (value === "off") {
+                onPatch({ enablePartialResultsStabilization: false });
+              } else {
+                onPatch({
+                  enablePartialResultsStabilization: true,
+                  partialResultsStability: value as SttPartialStability,
+                });
+              }
+            }}
+          >
+            <SelectTrigger id="stt-stability">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STT_PARTIAL_STABILITIES.map((level) => (
+                <SelectItem key={level} value={level}>
+                  {level.charAt(0).toUpperCase() + level.slice(1)} stability
+                </SelectItem>
+              ))}
+              <SelectItem value="off">Off (fastest raw partials)</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Reduces live text flickering while the user is still speaking.
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-2 rounded-lg border border-border p-3">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium">
+              Automatic Multi-Language Identification (e.g., English + Mandarin
+              Chinese)
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Automatically detect which language the speaker is using from the
+              selected candidate languages below (primary language is always
+              included; one dialect per language).
+            </p>
+          </div>
+          <input
+            type="checkbox"
+            aria-label="Automatic Multi-Language Identification"
+            className="size-4 accent-primary"
+            checked={settings.identifyLanguage}
+            onChange={(e) => onPatch({ identifyLanguage: e.target.checked })}
+          />
+        </div>
+
+        {settings.identifyLanguage && (
+          <div className="flex flex-wrap gap-2 pt-2">
+            {STT_LANGUAGES.map((lang) => {
+              const active = settings.languageOptions.includes(lang.code);
+              const isPrimary = lang.code === settings.languageCode;
+              return (
+                <button
+                  key={lang.code}
+                  type="button"
+                  aria-pressed={active}
+                  disabled={isPrimary}
+                  title={
+                    isPrimary
+                      ? "Primary language is always included in automatic identification"
+                      : undefined
+                  }
+                  onClick={() => onToggleLanguageOption(lang.code)}
+                  className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+                    active
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border bg-background text-muted-foreground hover:text-foreground"
+                  } ${isPrimary ? "opacity-80 cursor-default" : ""}`}
+                >
+                  {lang.label} ({lang.code})
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center gap-3">
+        <Button onClick={onSave} disabled={saving}>
+          {saving ? (
+            <>
+              <Loader2 className="mr-1.5 size-4 animate-spin" />
+              Saving…
+            </>
+          ) : (
+            "Save STT Settings"
+          )}
+        </Button>
+        {savedOk && (
+          <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
+            <CheckCircle2 className="size-4" />
+            Settings saved
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SttUsageLogSection({
+  usage,
+  usageTab,
+  userFilter,
+  onTabChange,
+  onFilterChange,
+}: {
+  usage: SttAdminPayload["usage"];
+  usageTab: "users" | "sessions";
+  userFilter: string;
+  onTabChange: (tab: "users" | "sessions") => void;
+  onFilterChange: (q: string) => void;
+}) {
+  const filteredUsers = useMemo(() => {
+    const q = userFilter.trim().toLowerCase();
+    if (!q) return usage.userSummaries;
+    return usage.userSummaries.filter(
+      (u) =>
+        u.userName.toLowerCase().includes(q) ||
+        u.userEmail.toLowerCase().includes(q) ||
+        u.userRole.toLowerCase().includes(q),
+    );
+  }, [usage.userSummaries, userFilter]);
+
+  const filteredSessions = useMemo(() => {
+    const q = userFilter.trim().toLowerCase();
+    if (!q) return usage.recentSessions;
+    return usage.recentSessions.filter(
+      (s) =>
+        (s.userName ?? "").toLowerCase().includes(q) ||
+        (s.userEmail ?? "").toLowerCase().includes(q) ||
+        s.surface.toLowerCase().includes(q) ||
+        s.languageCode.toLowerCase().includes(q),
+    );
+  }, [usage.recentSessions, userFilter]);
+
+  return (
+    <div className="space-y-3 border-t border-border pt-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold">
+            Voice Input Usage Duration Log
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            Tracks who used Speech-to-Text and total audio duration streamed to
+            Amazon Transcribe.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="rounded-md border border-border bg-muted/20 px-3 py-1.5">
+            <div className="flex items-center justify-center gap-1 text-xs text-muted-foreground">
+              <Clock className="size-3" />
+              <span>Total Duration</span>
+            </div>
+            <p className="text-sm font-semibold">
+              {formatDuration(usage.totalDurationMs)}
+            </p>
+          </div>
+          <div className="rounded-md border border-border bg-muted/20 px-3 py-1.5">
+            <div className="flex items-center justify-center gap-1 text-xs text-muted-foreground">
+              <Mic className="size-3" />
+              <span>Sessions</span>
+            </div>
+            <p className="text-sm font-semibold">{usage.totalSessions}</p>
+          </div>
+          <div className="rounded-md border border-border bg-muted/20 px-3 py-1.5">
+            <div className="flex items-center justify-center gap-1 text-xs text-muted-foreground">
+              <Users className="size-3" />
+              <span>Users</span>
+            </div>
+            <p className="text-sm font-semibold">{usage.uniqueUsers}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div
+          role="group"
+          aria-label="Usage log view"
+          className="flex gap-1 rounded-md border border-border p-0.5 text-xs"
+        >
+          <button
+            type="button"
+            aria-pressed={usageTab === "users"}
+            onClick={() => onTabChange("users")}
+            className={`rounded px-2.5 py-1 font-medium transition-colors ${
+              usageTab === "users"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            By User ({filteredUsers.length})
+          </button>
+          <button
+            type="button"
+            aria-pressed={usageTab === "sessions"}
+            onClick={() => onTabChange("sessions")}
+            className={`rounded px-2.5 py-1 font-medium transition-colors ${
+              usageTab === "sessions"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Session Log ({filteredSessions.length})
+          </button>
+        </div>
+
+        <div className="relative w-full sm:w-64">
+          <Search className="pointer-events-none absolute top-2.5 left-2.5 size-3.5 text-muted-foreground" />
+          <Input
+            aria-label="Filter voice usage log by user, email, or surface"
+            value={userFilter}
+            onChange={(e) => onFilterChange(e.target.value)}
+            placeholder="Filter by user, email, or surface…"
+            className="h-8 pl-8 text-xs"
+          />
+        </div>
+      </div>
+
+      {usageTab === "users" ? (
+        <div className="max-h-72 overflow-auto rounded-lg border border-border">
+          <table className="w-full text-left text-xs">
+            <thead className="sticky top-0 bg-muted/80 text-muted-foreground backdrop-blur">
+              <tr>
+                <th className="px-3 py-2 font-medium">User</th>
+                <th className="px-3 py-2 font-medium">Role</th>
+                <th className="px-3 py-2 font-medium">Sessions</th>
+                <th className="px-3 py-2 font-medium">Total Duration</th>
+                <th className="px-3 py-2 font-medium">Last Used</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {filteredUsers.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={5}
+                    className="px-3 py-6 text-center text-muted-foreground"
+                  >
+                    No voice input usage recorded yet.
+                  </td>
+                </tr>
+              ) : (
+                filteredUsers.map((u) => (
+                  <tr key={u.userId} className="hover:bg-muted/30">
+                    <td className="px-3 py-2">
+                      <div className="font-medium">{u.userName}</div>
+                      {u.userEmail && (
+                        <div className="text-[11px] text-muted-foreground">
+                          {u.userEmail}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">{u.userRole}</td>
+                    <td className="px-3 py-2">{u.sessions}</td>
+                    <td className="px-3 py-2 font-medium">
+                      {formatDuration(u.totalDurationMs)}
+                    </td>
+                    <td className="px-3 py-2 text-muted-foreground">
+                      {formatIsoTimestamp(u.lastUsedAt)}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="max-h-72 overflow-auto rounded-lg border border-border">
+          <table className="w-full text-left text-xs">
+            <thead className="sticky top-0 bg-muted/80 text-muted-foreground backdrop-blur">
+              <tr>
+                <th className="px-3 py-2 font-medium">Time</th>
+                <th className="px-3 py-2 font-medium">User</th>
+                <th className="px-3 py-2 font-medium">Surface</th>
+                <th className="px-3 py-2 font-medium">Language</th>
+                <th className="px-3 py-2 font-medium">Duration</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {filteredSessions.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={5}
+                    className="px-3 py-6 text-center text-muted-foreground"
+                  >
+                    No voice input sessions recorded yet.
+                  </td>
+                </tr>
+              ) : (
+                filteredSessions.map((s) => (
+                  <tr key={s.id} className="hover:bg-muted/30">
+                    <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
+                      {formatIsoTimestamp(s.createdAt)}
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="font-medium">
+                        {s.userName ?? s.userId ?? "Unknown"}
+                      </div>
+                      {s.userEmail && (
+                        <div className="text-[11px] text-muted-foreground">
+                          {s.userEmail}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      {SURFACE_LABELS[s.surface] ?? s.surface}
+                    </td>
+                    <td className="px-3 py-2 font-mono">{s.languageCode}</td>
+                    <td className="px-3 py-2 font-medium">
+                      {formatDuration(s.durationMs)}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function SttSettingsCard() {
-  const [payload, setPayload] = useState<AdminSttPayload | null>(null);
-  const [draft, setDraft] = useState<SttSettings | null>(null);
+  const [data, setData] = useState<SttAdminPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  const [page, setPage] = useState(1);
-  const [search, setSearch] = useState("");
-  const [query, setQuery] = useState("");
+  const [savedOk, setSavedOk] = useState(false);
+  const [userFilter, setUserFilter] = useState("");
   const [usageTab, setUsageTab] = useState<"users" | "sessions">("users");
 
-  useEffect(() => {
-    const timer = setTimeout(() => setQuery(search.trim()), 250);
-    return () => clearTimeout(timer);
-  }, [search]);
-
-  const load = useCallback(
-    async (keepDraft = false) => {
-      setLoading(true);
-      try {
-        const params = new URLSearchParams({ page: String(page) });
-        if (query) params.set("q", query);
-        const res = await fetch(`/api/admin/stt?${params}`);
-        if (!res.ok) throw new Error("Failed to load STT settings");
-        const data = (await res.json()) as AdminSttPayload;
-        setPayload(data);
-        if (!keepDraft) {
-          setDraft(data.settings);
-        }
-      } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "Failed to load STT settings",
-        );
-      } finally {
-        setLoading(false);
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/stt");
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error ?? "Failed to load STT settings");
       }
-    },
-    [page, query],
-  );
+      const json = (await res.json()) as SttAdminPayload;
+      setData(json);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to load STT settings",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    void load(draft !== null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    void load();
   }, [load]);
 
-  const updateDraft = (patch: Partial<SttSettings>) => {
-    setDraft((prev) => (prev ? { ...prev, ...patch } : prev));
-    setStatus(null);
+  const updateSettings = (patch: Partial<SttSettings>) => {
+    setSavedOk(false);
+    setData((prev) =>
+      prev ? { ...prev, settings: { ...prev.settings, ...patch } } : prev,
+    );
   };
 
-  const toggleLanguageOption = (code: SttLanguageCode) => {
-    if (!draft) return;
-    const exists = draft.languageOptions.includes(code);
-    const next = exists
-      ? draft.languageOptions.filter((c) => c !== code)
-      : [...draft.languageOptions, code];
-    // Keep at least 2 options when automatic language identification is enabled
-    if (draft.identifyLanguage && next.length < 2) return;
-    updateDraft({ languageOptions: next });
+  const toggleLanguageOption = (lang: SttLanguageCode) => {
+    if (!data) return;
+    if (lang === data.settings.languageCode) return;
+    const current = data.settings.languageOptions;
+    const exists = current.includes(lang);
+    if (exists) {
+      const next = current.filter((item) => item !== lang);
+      if (next.length < 2) return;
+      updateSettings({ languageOptions: next });
+    } else {
+      // Replace any other dialect of the same base language family (e.g. en-US vs en-GB)
+      const family = lang.split("-")[0].toLowerCase();
+      const filtered = current.filter(
+        (item) =>
+          item === data.settings.languageCode ||
+          item.split("-")[0].toLowerCase() !== family,
+      );
+      if (
+        lang.split("-")[0].toLowerCase() ===
+        data.settings.languageCode.split("-")[0].toLowerCase()
+      ) {
+        return;
+      }
+      updateSettings({ languageOptions: [...filtered, lang] });
+    }
   };
 
   const handleSave = async () => {
-    if (!draft) return;
+    if (!data) return;
     setSaving(true);
     setError(null);
-    setStatus(null);
+    setSavedOk(false);
     try {
       const res = await fetch("/api/admin/stt", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ settings: draft }),
+        body: JSON.stringify({ settings: data.settings }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         throw new Error(body?.error ?? "Failed to save STT settings");
       }
-      const { settings } = (await res.json()) as { settings: SttSettings };
-      setDraft(settings);
-      setStatus("Saved");
+      const updated = (await res.json()) as {
+        settings: SttSettings;
+        effectiveRegion: string;
+        hasCredentials: boolean;
+      };
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              settings: updated.settings,
+              effectiveRegion: updated.effectiveRegion,
+              hasCredentials: updated.hasCredentials,
+            }
+          : prev,
+      );
+      setSavedOk(true);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to save STT settings",
@@ -188,470 +661,71 @@ export function SttSettingsCard() {
     }
   };
 
-  if (!payload || !draft) {
-    return (
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="size-4 animate-spin text-primary" /> Loading speech-to-text
-        settings…
-      </div>
-    );
-  }
-
-  const { catalogs, usage, defaultRegion } = payload;
-  const totalPages = Math.max(
-    1,
-    Math.ceil(usage.totalSessions / usage.pageSize),
-  );
-
   return (
     <Card>
-      <CardHeader className="pb-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Mic className="size-4 text-primary" />
+      <CardHeader className="flex flex-row items-start justify-between gap-4">
+        <div className="space-y-1">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Mic className="size-5 text-primary" />
             Speech-to-Text (Amazon Transcribe Streaming)
           </CardTitle>
-          <label className="flex cursor-pointer items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              className="size-4 accent-primary"
-              checked={draft.enabled}
-              onChange={(event) =>
-                updateDraft({ enabled: event.target.checked })
-              }
-            />
-            {draft.enabled ? "Enabled" : "Disabled"}
-          </label>
+          <CardDescription>
+            Real-time browser-to-AWS WebSocket voice transcription for chat
+            assistants. Audio streams directly from the user&apos;s browser to
+            Amazon Transcribe with zero audio buffering on the application
+            server.
+          </CardDescription>
         </div>
-        <p className="text-xs text-muted-foreground">
-          Real-time voice input in the student assistant, teacher assistant,
-          wrong-answer coach, and simulation editing chat. Audio streams directly
-          from the user&apos;s browser to Amazon Transcribe Streaming over a
-          short-lived SigV4-presigned WebSocket — zero audio or ML inference runs
-          on this server.
-        </p>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => void load()}
+          disabled={loading}
+        >
+          <RefreshCw
+            className={`mr-1.5 size-3.5 ${loading ? "animate-spin" : ""}`}
+          />
+          Refresh
+        </Button>
       </CardHeader>
 
       <CardContent className="space-y-6">
-        {error && <p className="text-sm text-destructive">{error}</p>}
-
-        {/* Configuration controls */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <div>
-            <label
-              id="stt-language-label"
-              htmlFor="stt-language-select"
-              className="mb-1 block text-xs font-medium text-muted-foreground"
-            >
-              {draft.identifyLanguage
-                ? "Preferred primary language"
-                : "Transcription language"}
-            </label>
-            <Select
-              aria-labelledby="stt-language-label"
-              value={draft.languageCode}
-              onValueChange={(value) =>
-                updateDraft({ languageCode: value as SttLanguageCode })
-              }
-            >
-              <SelectTrigger id="stt-language-select" className="h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {catalogs.languages.map((lang) => (
-                  <SelectItem key={lang.code} value={lang.code}>
-                    {lang.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        {loading && !data ? (
+          <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+            Loading Speech-to-Text configuration…
           </div>
-
-          <div>
-            <label
-              id="stt-region-label"
-              htmlFor="stt-region-select"
-              className="mb-1 block text-xs font-medium text-muted-foreground"
-            >
-              AWS Transcribe Region
-            </label>
-            <Select
-              aria-labelledby="stt-region-label"
-              value={draft.region || "default"}
-              onValueChange={(value) =>
-                updateDraft({ region: value === "default" ? "" : value })
-              }
-            >
-              <SelectTrigger id="stt-region-select" className="h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="default">
-                  Deployment default ({defaultRegion})
-                </SelectItem>
-                {catalogs.regions.map((region) => (
-                  <SelectItem key={region} value={region}>
-                    {region}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
-            <label
-              id="stt-stability-label"
-              htmlFor="stt-stability-select"
-              className="mb-1 block text-xs font-medium text-muted-foreground"
-            >
-              Partial-result stability
-            </label>
-            <Select
-              aria-labelledby="stt-stability-label"
-              value={
-                draft.enablePartialResultsStabilization
-                  ? draft.partialResultsStability
-                  : "off"
-              }
-              onValueChange={(value) => {
-                if (value === "off") {
-                  updateDraft({ enablePartialResultsStabilization: false });
-                } else {
-                  updateDraft({
-                    enablePartialResultsStabilization: true,
-                    partialResultsStability: value as SttPartialStability,
-                  });
-                }
-              }}
-            >
-              <SelectTrigger id="stt-stability-select" className="h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="high">
-                  High (fewer partial revisions)
-                </SelectItem>
-                <SelectItem value="medium">
-                  Medium (recommended balance)
-                </SelectItem>
-                <SelectItem value="low">Low (fastest partial words)</SelectItem>
-                <SelectItem value="off">Off</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        {/* Automatic language identification */}
-        <div className="rounded-md border border-border p-3 space-y-2">
-          <label className="flex cursor-pointer items-start gap-2">
-            <input
-              type="checkbox"
-              className="mt-0.5 size-4 accent-primary"
-              checked={draft.identifyLanguage}
-              onChange={(event) =>
-                updateDraft({ identifyLanguage: event.target.checked })
-              }
+        ) : data ? (
+          <>
+            <SttConfigSection
+              settings={data.settings}
+              effectiveRegion={data.effectiveRegion}
+              hasCredentials={data.hasCredentials}
+              saving={saving}
+              savedOk={savedOk}
+              error={error}
+              onPatch={updateSettings}
+              onToggleLanguageOption={toggleLanguageOption}
+              onSave={() => void handleSave()}
             />
-            <span className="min-w-0">
-              <span className="block text-sm font-medium">
-                Automatic language identification
-              </span>
-              <span className="block text-xs text-muted-foreground">
-                Automatically detect which language the speaker is using from the
-                candidate languages below (e.g. English and Mandarin Chinese).
-              </span>
-            </span>
-          </label>
-
-          {draft.identifyLanguage && (
-            <div className="pt-2 pl-6">
-              <p className="mb-1.5 text-xs font-medium text-muted-foreground">
-                Candidate languages (select at least 2):
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {catalogs.languages.map((lang) => {
-                  const selected = draft.languageOptions.includes(lang.code);
-                  return (
-                    <label
-                      key={lang.code}
-                      className={cn(
-                        "flex cursor-pointer items-center gap-1.5 rounded-md border px-2 py-1 text-xs",
-                        selected
-                          ? "border-primary bg-primary/5 font-medium"
-                          : "border-border text-muted-foreground",
-                      )}
-                    >
-                      <input
-                        type="checkbox"
-                        className="size-3.5 accent-primary"
-                        checked={selected}
-                        onChange={() => toggleLanguageOption(lang.code)}
-                      />
-                      {lang.label}
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="flex items-center gap-3">
-          <Button
-            size="sm"
-            onClick={() => void handleSave()}
-            disabled={saving}
+            <SttUsageLogSection
+              usage={data.usage}
+              usageTab={usageTab}
+              userFilter={userFilter}
+              onTabChange={setUsageTab}
+              onFilterChange={setUserFilter}
+            />
+          </>
+        ) : (
+          <div
+            role="alert"
+            className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
           >
-            {saving ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Save className="size-4" />
-            )}
-            Save STT Settings
-          </Button>
-          {status && (
-            <span className="text-xs text-muted-foreground">{status}</span>
-          )}
-        </div>
-
-        {/* ─── STT Usage Log (Who used voice input & for how long) ────────── */}
-        <div className="border-t border-border pt-5 space-y-4">
-          <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-            <div>
-              <h4 className="text-sm font-semibold flex items-center gap-2">
-                <Clock className="size-4 text-primary" />
-                Voice Input Usage Log
-              </h4>
-              <p className="text-xs text-muted-foreground">
-                Who used speech-to-text, on which assistant surface, and for how
-                long.
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => void load(true)}
-                disabled={loading}
-              >
-                <RefreshCw
-                  className={cn("mr-1.5 size-3.5", loading && "animate-spin")}
-                />
-                Refresh
-              </Button>
-            </div>
+            <XCircle className="size-4 shrink-0" />
+            <span>{error ?? "Failed to load Speech-to-Text settings."}</span>
           </div>
-
-          {/* Summary KPI cards */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div className="rounded-lg border border-border bg-muted/20 p-3">
-              <p className="text-xs text-muted-foreground">Total Duration</p>
-              <p className="text-lg font-bold tabular-nums">
-                {formatDuration(usage.totalDurationMs)}
-              </p>
-            </div>
-            <div className="rounded-lg border border-border bg-muted/20 p-3">
-              <p className="text-xs text-muted-foreground">Total Sessions</p>
-              <p className="text-lg font-bold tabular-nums">
-                {usage.totalSessions}
-              </p>
-            </div>
-            <div className="rounded-lg border border-border bg-muted/20 p-3">
-              <p className="text-xs text-muted-foreground">Unique Users</p>
-              <p className="text-lg font-bold tabular-nums">
-                {usage.uniqueUsers}
-              </p>
-            </div>
-          </div>
-
-          {/* Filter & View Switcher */}
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div
-              className="flex gap-1.5"
-              role="group"
-              aria-label="STT usage view"
-            >
-              <button
-                type="button"
-                aria-pressed={usageTab === "users"}
-                onClick={() => setUsageTab("users")}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
-                  usageTab === "users"
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-input bg-background hover:bg-accent",
-                )}
-              >
-                <Users className="size-3.5" />
-                By User ({usage.userSummaries.length})
-              </button>
-              <button
-                type="button"
-                aria-pressed={usageTab === "sessions"}
-                onClick={() => setUsageTab("sessions")}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
-                  usageTab === "sessions"
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-input bg-background hover:bg-accent",
-                )}
-              >
-                <Clock className="size-3.5" />
-                Session Log ({usage.totalSessions})
-              </button>
-            </div>
-
-            <div className="relative w-full sm:w-64">
-              <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Filter by user, email, or role…"
-                className="h-8 pl-8 text-xs"
-                value={search}
-                onChange={(event) => {
-                  setSearch(event.target.value);
-                  setPage(1);
-                }}
-              />
-            </div>
-          </div>
-
-          {usageTab === "users" ? (
-            <div className="overflow-x-auto rounded-lg border border-border">
-              <table className="w-full text-left text-xs">
-                <thead className="border-b border-border bg-muted/50 uppercase text-muted-foreground">
-                  <tr>
-                    <th className="px-3 py-2 font-medium">User</th>
-                    <th className="px-3 py-2 font-medium">Role</th>
-                    <th className="px-3 py-2 font-medium">Sessions</th>
-                    <th className="px-3 py-2 font-medium">Total Duration</th>
-                    <th className="px-3 py-2 font-medium">Last Used</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {usage.userSummaries.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={5}
-                        className="px-4 py-6 text-center text-muted-foreground"
-                      >
-                        No voice input sessions recorded yet.
-                      </td>
-                    </tr>
-                  ) : (
-                    usage.userSummaries.map((u) => (
-                      <tr key={u.userId} className="hover:bg-muted/30">
-                        <td className="px-3 py-2">
-                          <span className="block font-medium text-foreground">
-                            {u.userName}
-                          </span>
-                          <span className="block text-muted-foreground">
-                            {u.userEmail}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2">{u.role}</td>
-                        <td className="px-3 py-2 tabular-nums">{u.sessions}</td>
-                        <td className="px-3 py-2 font-medium tabular-nums">
-                          {formatDuration(u.totalDurationMs)}
-                        </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
-                          {/* react-doctor-disable-next-line react-doctor/no-locale-format-in-render -- client-only admin fetch */}
-                          {new Date(u.lastUsedAt).toLocaleString()}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <>
-              <div className="overflow-x-auto rounded-lg border border-border">
-                <table className="w-full text-left text-xs">
-                  <thead className="border-b border-border bg-muted/50 uppercase text-muted-foreground">
-                    <tr>
-                      <th className="px-3 py-2 font-medium">Time</th>
-                      <th className="px-3 py-2 font-medium">User</th>
-                      <th className="px-3 py-2 font-medium">Role</th>
-                      <th className="px-3 py-2 font-medium">Surface</th>
-                      <th className="px-3 py-2 font-medium">Language</th>
-                      <th className="px-3 py-2 font-medium">Duration</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {usage.logs.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={6}
-                          className="px-4 py-6 text-center text-muted-foreground"
-                        >
-                          No voice input sessions match the current filter.
-                        </td>
-                      </tr>
-                    ) : (
-                      usage.logs.map((row) => (
-                        <tr key={row.id} className="hover:bg-muted/30">
-                          <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
-                            {/* react-doctor-disable-next-line react-doctor/no-locale-format-in-render -- client-only admin fetch */}
-                            {new Date(row.createdAt).toLocaleString()}
-                          </td>
-                          <td className="px-3 py-2">
-                            <span className="block font-medium text-foreground">
-                              {row.userName}
-                            </span>
-                            <span className="block text-muted-foreground">
-                              {row.userEmail}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2">{row.role}</td>
-                          <td className="px-3 py-2">
-                            {SURFACE_LABELS[row.surface] ?? row.surface}
-                          </td>
-                          <td className="px-3 py-2 font-mono">
-                            {row.languageCode}
-                          </td>
-                          <td className="px-3 py-2 font-medium tabular-nums">
-                            {formatDuration(row.durationMs)}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-              {usage.totalSessions > usage.pageSize && (
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>
-                    Page {usage.page} of {totalPages}
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPage((p) => Math.max(1, p - 1))}
-                      disabled={page <= 1 || loading}
-                    >
-                      <ChevronLeft className="size-3.5" /> Previous
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        setPage((p) => Math.min(totalPages, p + 1))
-                      }
-                      disabled={page >= totalPages || loading}
-                    >
-                      Next <ChevronRight className="size-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-        </div>
+        )}
       </CardContent>
     </Card>
   );

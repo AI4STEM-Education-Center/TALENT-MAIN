@@ -12,11 +12,30 @@ export interface SttMicButtonProps {
   className?: string;
 }
 
+const STATE_LABELS: Record<SttMachineState, string> = {
+  idle: "Start voice input",
+  error: "Start voice input",
+  connecting: "Cancel connecting voice input",
+  recording: "Stop voice input",
+  finalizing: "Finalizing voice input…",
+  sending: "Finalizing voice input…",
+};
+
+function MicIcon({ state }: { state: SttMachineState }) {
+  if (state === "connecting" || state === "finalizing" || state === "sending") {
+    return <Loader2 className="size-4 animate-spin" aria-hidden />;
+  }
+  if (state === "recording") {
+    return <Square className="size-3.5 fill-current" aria-hidden />;
+  }
+  return <Mic className="size-4" aria-hidden />;
+}
+
 /**
  * Start / Stop Speech-to-Text button that visually indicates the current
  * recording state:
  * - Idle / Error: microphone icon (`Start voice input`)
- * - Connecting: spinning loader (`Connecting voice input…`)
+ * - Connecting: spinning loader (`Cancel connecting voice input`, clickable to cancel)
  * - Recording: pulsing active indicator + stop icon (`Stop voice input`)
  * - Finalizing / Sending: disabled button with spinning loader (`Finalizing voice input…`)
  */
@@ -26,17 +45,9 @@ export function SttMicButton({
   onToggle,
   className,
 }: SttMicButtonProps) {
-  const isConnecting = state === "connecting";
   const isRecording = state === "recording";
   const isFinalizing = state === "finalizing" || state === "sending";
-
-  const label = isRecording
-    ? "Stop voice input"
-    : isConnecting
-      ? "Connecting voice input…"
-      : isFinalizing
-        ? "Finalizing voice input…"
-        : "Start voice input";
+  const label = STATE_LABELS[state];
 
   return (
     <Button
@@ -45,23 +56,16 @@ export function SttMicButton({
       size="icon"
       className={cn(
         "relative size-9 shrink-0 transition-colors",
-        isRecording && "animate-pulse",
+        isRecording && "motion-safe:animate-pulse",
         state === "error" && "text-destructive hover:text-destructive",
         className,
       )}
       aria-label={label}
-      aria-pressed={isRecording || isConnecting}
       title={label}
-      disabled={disabled || isFinalizing || isConnecting}
+      disabled={disabled || isFinalizing}
       onClick={onToggle}
     >
-      {isConnecting || isFinalizing ? (
-        <Loader2 className="size-4 animate-spin" aria-hidden />
-      ) : isRecording ? (
-        <Square className="size-3.5 fill-current" aria-hidden />
-      ) : (
-        <Mic className="size-4" aria-hidden />
-      )}
+      <MicIcon state={state} />
     </Button>
   );
 }
