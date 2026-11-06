@@ -73,6 +73,12 @@ beforeEach(async () => {
           reasoning: "Explore balanced forces",
         },
         misconception_labeling: { misconception_ids: ["force"] },
+        student_knowledge_tracing: {
+          knownConcepts: [],
+          unknownConcepts: [],
+          transitions: [],
+          promptSummary: "Struggles with net force.",
+        },
       };
       if (!(name in values)) throw new Error(`Unexpected schema: ${name}`);
       return { value: values[name], metrics } as never;
@@ -218,7 +224,11 @@ describe("AI learning access and research consent", () => {
           vi
             .mocked(streamJsonCompletion)
             .mock.calls.map((call) => (call[2] as { name: string }).name),
-        ).toEqual(["material_selection", "page_selection"]);
+        ).toEqual([
+          "material_selection",
+          "page_selection",
+          "student_knowledge_tracing",
+        ]);
       }
       expect(
         await prisma.consentRecord.count({ where: { userId: user.id } }),

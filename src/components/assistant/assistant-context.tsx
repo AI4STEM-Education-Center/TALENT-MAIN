@@ -26,6 +26,7 @@ export type WidgetConfig = {
   attachmentKinds?: AttachmentKindInfo[];
   maxAttachments?: number;
   maxAttachmentBytes?: number;
+  sttEnabled?: boolean;
 };
 
 type AssistantContextValue = {

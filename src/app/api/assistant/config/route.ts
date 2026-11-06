@@ -3,6 +3,7 @@ import { resolveAssistantSession } from "@/lib/assistant/session";
 import { attachmentKindInfo } from "@/lib/assistant/attachments";
 import { greeting } from "@/lib/assistant/prompt";
 import { resolveSkills } from "@/lib/assistant/skills";
+import { getSttSettings } from "@/lib/stt/config";
 import { logApiError } from "@/lib/system-log";
 
 export const runtime = "nodejs";
@@ -16,7 +17,10 @@ export const runtime = "nodejs";
  */
 export async function GET() {
   try {
-    const session = await resolveAssistantSession();
+    const [session, stt] = await Promise.all([
+      resolveAssistantSession(),
+      getSttSettings(),
+    ]);
     if (!session || !session.settings.enabled) {
       return NextResponse.json({ available: false });
     }
@@ -36,6 +40,7 @@ export async function GET() {
       maxAttachments: settings.maxAttachments,
       maxAttachmentBytes: settings.maxAttachmentBytes,
       attachmentRetentionDays: settings.attachmentRetentionDays,
+      sttEnabled: stt.enabled,
       // Surfaced so the widget can tell the user what it can look up rather
       // than promising abilities the admin disabled.
       toolCount: tools.size,

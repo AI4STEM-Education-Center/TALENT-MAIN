@@ -41,6 +41,7 @@ import { formatAiMetrics } from "@/lib/ai-metrics";
 import type { UseCase } from "@/lib/ai-provider";
 import { AiConfigTransfer } from "@/components/admin/AiConfigTransfer";
 import { AssistantSettings } from "@/components/admin/AssistantSettings";
+import { SttSettingsCard } from "@/components/admin/SttSettingsCard";
 import { GuardrailSettings } from "@/components/admin/GuardrailSettings";
 import { GuardrailFeedbackList } from "@/components/admin/GuardrailFeedbackList";
 import { errorMessage } from "@/lib/errors";
@@ -152,6 +153,7 @@ const USE_CASE_LABELS: Record<UseCase, string> = {
   // the Chat Assistants section further down the page.
   student_assistant: "Student Chat Assistant",
   teacher_assistant: "Teacher Chat Assistant",
+  knowledge_tracing: "Student Knowledge Tracing",
   // Wants a moderation model (e.g. omni-moderation-latest), not a chat model.
   // Free to call, and leaving it unassigned turns content moderation off.
   moderation: "Content Moderation",
@@ -1579,6 +1581,10 @@ export default function AiConfigPage() {
           </p>
         </div>
         <AssistantSettings key={`assistants-${importedAt}`} />
+
+        <div className="mt-4">
+          <SttSettingsCard key={`stt-${importedAt}`} />
+        </div>
 
         <GuardrailSettings
           key={`guardrails-${importedAt}`}
