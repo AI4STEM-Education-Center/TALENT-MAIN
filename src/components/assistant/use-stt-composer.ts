@@ -386,20 +386,17 @@ export function useSttComposer({
     await onSendRef.current(text);
   }, [disabled, runFinalize, updateState]);
 
-  const handleDraftChange = useCallback(
-    (nextValue: string) => {
-      draftRef.current = nextValue;
-      setDraftRef.current(nextValue);
-      if (
-        stateRef.current === "recording" ||
-        stateRef.current === "connecting" ||
-        stateRef.current === "finalizing"
-      ) {
-        bufferRef.current = rebaseTranscriptBuffer(nextValue);
-      }
-    },
-    [],
-  );
+  const handleDraftChange = useCallback((nextValue: string) => {
+    draftRef.current = nextValue;
+    setDraftRef.current(nextValue);
+    if (
+      stateRef.current === "recording" ||
+      stateRef.current === "connecting" ||
+      stateRef.current === "finalizing"
+    ) {
+      bufferRef.current = rebaseTranscriptBuffer(nextValue);
+    }
+  }, []);
 
   const clearError = useCallback(() => {
     setError(null);

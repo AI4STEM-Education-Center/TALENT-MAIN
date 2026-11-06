@@ -215,7 +215,9 @@ export function decodeEventStreamMessage(
         if (cursor + len > headersEnd) {
           throw new Error("Invalid event-stream string header length");
         }
-        headers[name] = utf8Decoder.decode(bytes.subarray(cursor, cursor + len));
+        headers[name] = utf8Decoder.decode(
+          bytes.subarray(cursor, cursor + len),
+        );
         cursor += len;
         break;
       }

@@ -271,7 +271,8 @@ describe("Knowledge Tracing engine, clash resolution, chat tools, and coach inte
             concept: "Gravitational Acceleration in Free Fall",
             topic: "Kinematics",
             confidence: "high",
-            evidence: "Submitted 0 m/s^2 instead of 9.8 m/s^2 during free fall.",
+            evidence:
+              "Submitted 0 m/s^2 instead of 9.8 m/s^2 during free fall.",
           },
         ],
         transitions: [],
@@ -360,7 +361,10 @@ describe("Knowledge Tracing engine, clash resolution, chat tools, and coach inte
 
     // 4. Verify a SECOND student can also save a KT profile (unique audience per student)
     // and that a second teacher only sees concepts from their own class.
-    const student2 = await createStudent({ email: "stu2@example.com", username: "stu2" });
+    const student2 = await createStudent({
+      email: "stu2@example.com",
+      username: "stu2",
+    });
     await prisma.classEnrollment.create({
       data: { classId: cls.id, studentId: student2.student.id },
     });
@@ -439,26 +443,21 @@ describe("Knowledge Tracing engine, clash resolution, chat tools, and coach inte
   });
 
   it("buildKnowledgeTracingPrompt & formatKnowledgeProfileForPrompt include clash rules and transition history", () => {
-    const prompt = buildKnowledgeTracingPrompt(
-      "Stu Student",
-      null,
-      [],
-      {
-        resultId: "r-1",
-        classId: "cls-1",
-        quizName: "Quiz 1",
-        topicName: "Forces",
-        className: "Physics",
-        isRetakeOrAlt: true,
-        alternativeVersionName: "Version B",
-        score: 80,
-        completedAt: "2026-11-06T12:00:00Z",
-        questionLines: [
-          '  Q1 [CORRECT]: "Force question" — Student answered: 10 N',
-        ],
-        misconceptionLines: [],
-      },
-    );
+    const prompt = buildKnowledgeTracingPrompt("Stu Student", null, [], {
+      resultId: "r-1",
+      classId: "cls-1",
+      quizName: "Quiz 1",
+      topicName: "Forces",
+      className: "Physics",
+      isRetakeOrAlt: true,
+      alternativeVersionName: "Version B",
+      score: 80,
+      completedAt: "2026-11-06T12:00:00Z",
+      questionLines: [
+        '  Q1 [CORRECT]: "Force question" — Student answered: 10 N',
+      ],
+      misconceptionLines: [],
+    });
     expect(prompt[0].content).toContain("CLASH RESOLUTION IS MANDATORY");
     expect(prompt[1].content).toContain(
       "Alternative Practice Retake (Version B)",

@@ -32,12 +32,15 @@ const requestSchema = z.discriminatedUnion("action", [
   }),
 ]);
 
-async function authorizeCaller(surface: SttSurface): Promise<{
-  userId: string;
-  role: string;
-  userName: string;
-  userEmail: string;
-} | Response> {
+async function authorizeCaller(surface: SttSurface): Promise<
+  | {
+      userId: string;
+      role: string;
+      userName: string;
+      userEmail: string;
+    }
+  | Response
+> {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -216,11 +219,7 @@ export async function POST(req: Request) {
       process.env.NODE_ENV === "test" &&
       req.headers.get("x-test-rate-limit") === "1"
     ) {
-      const check = checkRateLimit(
-        `test-stt:${caller.userId}`,
-        2,
-        MINUTE_MS,
-      );
+      const check = checkRateLimit(`test-stt:${caller.userId}`, 2, MINUTE_MS);
       if (!check.allowed) {
         return NextResponse.json(
           { error: "Too many voice input requests. Please wait a moment." },

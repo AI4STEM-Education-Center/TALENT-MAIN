@@ -123,12 +123,7 @@ export const DEFAULT_STT_SETTINGS: SttSettings = {
  * - Error flow: `* -> error -> idle`
  */
 export type SttMachineState =
-  | "idle"
-  | "connecting"
-  | "recording"
-  | "finalizing"
-  | "sending"
-  | "error";
+  "idle" | "connecting" | "recording" | "finalizing" | "sending" | "error";
 
 export interface SttTranscriptEvent {
   resultId: string;

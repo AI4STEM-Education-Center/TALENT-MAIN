@@ -18,7 +18,11 @@ import { createAdmin, createStudent, createTeacher, resetDb } from "./db";
 
 const mockAuth = vi.mocked(auth);
 
-function postJson(url: string, body: unknown, headers?: Record<string, string>) {
+function postJson(
+  url: string,
+  body: unknown,
+  headers?: Record<string, string>,
+) {
   return new Request(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...headers },

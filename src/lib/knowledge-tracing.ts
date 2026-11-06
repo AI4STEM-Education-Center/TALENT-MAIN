@@ -198,7 +198,10 @@ export interface KtLlmOutput {
  */
 export function normalizeOrgId(raw: string | null | undefined): string {
   if (!raw) return "";
-  return raw.replace(/^[#\s]+/, "").replace(/[-\s]/g, "").trim();
+  return raw
+    .replace(/^[#\s]+/, "")
+    .replace(/[-\s]/g, "")
+    .trim();
 }
 
 export interface ResolveStudentUgaIdOptions {
@@ -670,40 +673,46 @@ async function runUpdateStudentKnowledgeProfile(
   studentId: string,
   triggerExamResultId?: string,
 ): Promise<StudentKnowledgeProfile | null> {
-  const [student, newestResults, totalAttemptsCount, previousProfile, ugaId, provider] =
-    await Promise.all([
-      prisma.student.findUnique({
-        where: { id: studentId },
-        select: {
-          id: true,
-          user: { select: { firstName: true, lastName: true } },
-        },
-      }),
-      // Fetch the NEWEST 25 attempts first, then reverse into chronological order
-      // so attempt #26+ is always included rather than truncated.
-      prisma.examResult.findMany({
-        where: { studentId },
-        orderBy: { completedAt: "desc" },
-        take: 25,
-        select: {
-          id: true,
-          classId: true,
-          quizId: true,
-          quizName: true,
-          topicName: true,
-          className: true,
-          score: true,
-          completedAt: true,
-          practiceVersionName: true,
-          reviewSnapshot: true,
-          recommendations: true,
-        },
-      }),
-      prisma.examResult.count({ where: { studentId } }),
-      getStudentKnowledgeProfile(studentId),
-      resolveStudentUgaId(studentId, { allowConsentFallback: false }),
-      resolveKnowledgeTracingProvider(),
-    ]);
+  const [
+    student,
+    newestResults,
+    totalAttemptsCount,
+    previousProfile,
+    ugaId,
+    provider,
+  ] = await Promise.all([
+    prisma.student.findUnique({
+      where: { id: studentId },
+      select: {
+        id: true,
+        user: { select: { firstName: true, lastName: true } },
+      },
+    }),
+    // Fetch the NEWEST 25 attempts first, then reverse into chronological order
+    // so attempt #26+ is always included rather than truncated.
+    prisma.examResult.findMany({
+      where: { studentId },
+      orderBy: { completedAt: "desc" },
+      take: 25,
+      select: {
+        id: true,
+        classId: true,
+        quizId: true,
+        quizName: true,
+        topicName: true,
+        className: true,
+        score: true,
+        completedAt: true,
+        practiceVersionName: true,
+        reviewSnapshot: true,
+        recommendations: true,
+      },
+    }),
+    prisma.examResult.count({ where: { studentId } }),
+    getStudentKnowledgeProfile(studentId),
+    resolveStudentUgaId(studentId, { allowConsentFallback: false }),
+    resolveKnowledgeTracingProvider(),
+  ]);
 
   if (!student || newestResults.length === 0 || !provider) {
     return previousProfile;
@@ -757,7 +766,8 @@ async function runUpdateStudentKnowledgeProfile(
     ? attemptEvidences.find((a) => a.resultId === triggerExamResultId)
     : undefined;
   const latestAttempt =
-    triggerMatch && triggerMatch.completedAt >= mostRecentRow.completedAt.toISOString()
+    triggerMatch &&
+    triggerMatch.completedAt >= mostRecentRow.completedAt.toISOString()
       ? triggerMatch
       : attemptEvidences[attemptEvidences.length - 1];
 
@@ -865,7 +875,9 @@ export async function updateStudentKnowledgeProfile(
   const prevLock = studentUpdateLocks.get(studentId) ?? Promise.resolve(null);
   const nextPromise = prevLock
     .catch(() => null)
-    .then(() => runUpdateStudentKnowledgeProfile(studentId, triggerExamResultId))
+    .then(() =>
+      runUpdateStudentKnowledgeProfile(studentId, triggerExamResultId),
+    )
     .finally(() => {
       if (studentUpdateLocks.get(studentId) === nextPromise) {
         studentUpdateLocks.delete(studentId);
@@ -910,10 +922,12 @@ export function formatKnowledgeProfileForPrompt(
   if (profile.transitions.length > 0) {
     lines.push(
       "Recent Concept Transitions (Clash Resolution):",
-      ...profile.transitions.slice(0, 6).map(
-        (t) =>
-          `- [${t.direction === "upgraded_unknown" ? "UPGRADED unknown -> known" : "DOWNGRADED known -> unknown"}] ${t.concept} (${t.quizName}): ${t.reason}`,
-      ),
+      ...profile.transitions
+        .slice(0, 6)
+        .map(
+          (t) =>
+            `- [${t.direction === "upgraded_unknown" ? "UPGRADED unknown -> known" : "DOWNGRADED known -> unknown"}] ${t.concept} (${t.quizName}): ${t.reason}`,
+        ),
     );
   }
   return fenceUntrusted("student knowledge tracing", lines.join("\n"));
@@ -1095,9 +1109,7 @@ export async function findStudentsKnowledgeTracing(options: {
       ugaId: s.ugaId,
       classIds: [...s.classIds],
       classNames: [...s.classNames],
-      profile: scopedProfile
-        ? { ...scopedProfile, ugaId: s.ugaId }
-        : null,
+      profile: scopedProfile ? { ...scopedProfile, ugaId: s.ugaId } : null,
     };
   });
 }

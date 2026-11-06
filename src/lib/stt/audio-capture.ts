@@ -43,7 +43,8 @@ export function downsampleAndConvertToPcm16(
       sum += input[j];
       count += 1;
     }
-    const sample = count > 0 ? sum / count : input[Math.min(start, input.length - 1)];
+    const sample =
+      count > 0 ? sum / count : input[Math.min(start, input.length - 1)];
     const clamped = Math.max(-1, Math.min(1, sample));
     out[i] =
       clamped < 0 ? Math.round(clamped * 0x8000) : Math.round(clamped * 0x7fff);

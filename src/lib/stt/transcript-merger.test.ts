@@ -115,9 +115,9 @@ describe("transcript-merger", () => {
     });
 
     const settled = settleTranscriptBuffer(buf, { commitProvisional: true });
-    expect(
-      formatTranscriptBuffer(settled, { includeProvisional: false }),
-    ).toBe("Initial unfinalized tail");
+    expect(formatTranscriptBuffer(settled, { includeProvisional: false })).toBe(
+      "Initial unfinalized tail",
+    );
 
     const rebased = rebaseTranscriptBuffer("User edited text");
     const afterEdit = applyTranscriptEvent(rebased, {

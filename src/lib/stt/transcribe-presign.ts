@@ -32,7 +32,10 @@ function hmacSha256(key: Buffer | string, data: string): Buffer {
 }
 
 function formatAmzDate(date: Date): { amzDate: string; dateStamp: string } {
-  const iso = date.toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
+  const iso = date
+    .toISOString()
+    .replace(/[-:]/g, "")
+    .replace(/\.\d+Z$/, "Z");
   return {
     amzDate: iso,
     dateStamp: iso.slice(0, 8),

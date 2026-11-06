@@ -2,10 +2,7 @@
 import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  useSttComposer,
-  type SttComposerController,
-} from "./use-stt-composer";
+import { useSttComposer, type SttComposerController } from "./use-stt-composer";
 import type {
   SttActiveSession,
   SttProvider,

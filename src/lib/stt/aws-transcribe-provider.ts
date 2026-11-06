@@ -164,14 +164,16 @@ export class AwsTranscribeSttProvider implements SttProvider {
       finalizeResolve = null;
       finalizeReject = null;
       clearTimers();
-      const durationMs = startedAt > 0 ? Math.max(0, Date.now() - startedAt) : 0;
+      const durationMs =
+        startedAt > 0 ? Math.max(0, Date.now() - startedAt) : 0;
       reportUsage(durationMs);
       closeSocketSafely();
       resolve({ durationMs });
     };
 
     const failFinalization = (message: string) => {
-      const durationMs = startedAt > 0 ? Math.max(0, Date.now() - startedAt) : 0;
+      const durationMs =
+        startedAt > 0 ? Math.max(0, Date.now() - startedAt) : 0;
       reportUsage(durationMs);
       closeSocketSafely();
       if (finalizeReject) {

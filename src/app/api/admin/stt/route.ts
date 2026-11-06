@@ -63,7 +63,9 @@ export async function GET(req: NextRequest) {
 
     // Resolve live user names/emails for any userIds in the logs
     const userIds = [
-      ...new Set(allLogs.map((l) => l.userId).filter((id): id is string => !!id)),
+      ...new Set(
+        allLogs.map((l) => l.userId).filter((id): id is string => !!id),
+      ),
     ];
     const users =
       userIds.length > 0
