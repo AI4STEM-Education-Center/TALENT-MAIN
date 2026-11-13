@@ -190,16 +190,33 @@ describe("POST /api/assistant/stt & /api/admin/stt", () => {
     expect(adminRes.status).toBe(200);
     const data = await adminRes.json();
 
+    expect(data.effectiveRegion).toBe("us-east-1");
+    expect(data.hasCredentials).toBe(true);
+    expect(data.usage.recentSessions).toHaveLength(3);
+    expect(data.usage.recentSessions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          userId: student.user.id,
+          userRole: "STUDENT",
+          surface: "student_assistant",
+          languageCode: "en-US",
+          durationMs: 4500,
+          createdAt: expect.any(String),
+        }),
+      ]),
+    );
     expect(data.usage.totalSessions).toBe(3);
     expect(data.usage.totalDurationMs).toBe(13700);
     expect(data.usage.uniqueUsers).toBe(2);
     expect(data.usage.userSummaries[0]).toMatchObject({
       userName: "Stu Student",
+      userRole: "STUDENT",
       sessions: 2,
       totalDurationMs: 7700,
     });
     expect(data.usage.userSummaries[1]).toMatchObject({
       userName: "Tess Teacher",
+      userRole: "TEACHER",
       sessions: 1,
       totalDurationMs: 6000,
     });
