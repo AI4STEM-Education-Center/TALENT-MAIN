@@ -69,6 +69,20 @@ describe("AssistantMarkdown", () => {
     expect(html).not.toContain("katex-error");
   });
 
+  it("renders blockquote display math inside the quote", () => {
+    const html = render("> \\[\n> x^2\n> \\]");
+    expect(html).toMatch(
+      /<blockquote>[\s\S]*katex-display[\s\S]*<\/blockquote>/,
+    );
+    expect(html).not.toContain("katex-error");
+  });
+
+  it("keeps currency out of inline code", () => {
+    const html = render("Pay $5, then run `echo $10`.");
+    expect(html).toContain("<code>echo $10</code>");
+    expect(html).not.toContain("katex");
+  });
+
   it("does not throw on malformed TeX", () => {
     expect(() => render("$\\frac{1}{$")).not.toThrow();
   });

@@ -149,6 +149,30 @@ describe("normalizeMathDelimiters", () => {
     expect(n("[see \\(x\\)](https://e.com/\\(q\\))")).toBe(
       "[see $x$](https://e.com/\\(q\\))",
     );
-    expect(n("https://e.com/$5 costs $5")).toBe("https://e.com/$5 costs \\$5");
+    expect(n("see https://e.com/a, costs $5")).toBe(
+      "see https://e.com/a, costs \\$5",
+    );
+    expect(n("<https://e.com/\\(q\\)> and \\(y\\)")).toBe(
+      "<https://e.com/\\(q\\)> and $y$",
+    );
+  });
+
+  it("never lets currency reach into inline code or link targets", () => {
+    expect(n("Pay $5, then run `echo $10`.")).toBe(
+      "Pay \\$5, then run `echo $10`.",
+    );
+    expect(n("Pay $5 at [shop](https://e.com/?p=$10) now")).toBe(
+      "Pay \\$5 at [shop](https://e.com/?p=$10) now",
+    );
+  });
+
+  it("keeps blockquote display math inside the quote", () => {
+    expect(n("> \\[\n> x^2\n> \\]")).toBe("> $$\n> x^2\n> $$");
+    expect(n("> Note:\n> \\[F=ma\\]")).toBe("> Note:\n> $$\n> F=ma\n> $$");
+  });
+
+  it("keeps list-item display math inside the item", () => {
+    expect(n("- \\[F=ma\\]\n- next")).toBe("- $$\n  F=ma\n  $$\n- next");
+    expect(n("1. Use\n   \\[a=b\\]")).toBe("1. Use\n   $$\n   a=b\n   $$");
   });
 });

@@ -21,14 +21,15 @@ import type { Nodes, Root } from "mdast";
 export function normalizeMathDelimiters(markdown: string): string {
   if (!markdown.includes("$") && !/\\[([]/.test(markdown)) return markdown;
 
-  // Parse exactly as the renderer will (GFM + math). `$$` blocks are left
-  // alone; inline math nodes count as prose so the currency rule below still
-  // decides whether a "$5 … $10" pair is really math.
-  const tree = PARSER.parse(markdown);
-  const blocked = collect(tree, (node) =>
+  // Code, links and other literal spans come from a parse WITHOUT math: that
+  // is how the renderer sees the text once currency `$` is escaped. (With math
+  // on, "$5 … `echo $10`" lets the dollars swallow the code span.) The
+  // math-aware parse only contributes `$$` blocks, which may contain blank
+  // lines and so can't be recognised without it.
+  const blocked = collect(MATH_PARSER.parse(markdown), (node) =>
     node.type === "math" ? [span(node)] : null,
   );
-  const prose = collect(tree, (node) =>
+  const prose = collect(PROSE_PARSER.parse(markdown), (node) =>
     PROSE_BLOCKS.has(node.type)
       ? subtract([span(node)], [...literalSpans(node), ...blocked])
       : null,
@@ -38,15 +39,19 @@ export function normalizeMathDelimiters(markdown: string): string {
   let last = 0;
   for (const [start, end] of prose) {
     if (start < last || end <= start) continue;
-    const atLineStart = start === 0 || markdown[start - 1] === "\n";
+    const lineStart = markdown.lastIndexOf("\n", start - 1) + 1;
     out += markdown.slice(last, start);
-    out += rewriteText(markdown.slice(start, end), atLineStart);
+    out += rewriteText(
+      markdown.slice(start, end),
+      markdown.slice(lineStart, start),
+    );
     last = end;
   }
   return out + markdown.slice(last);
 }
 
-const PARSER = unified().use(remarkParse).use(remarkGfm).use(remarkMath);
+const PROSE_PARSER = unified().use(remarkParse).use(remarkGfm);
+const MATH_PARSER = unified().use(remarkParse).use(remarkGfm).use(remarkMath);
 const PROSE_BLOCKS = new Set(["paragraph", "heading", "tableCell"]);
 // Inline nodes whose whole source is literal.
 const OPAQUE_INLINE = new Set([
@@ -93,6 +98,8 @@ function literalSpans(block: Nodes): Span[] {
       const [start, end] = span(node);
       const kids = node.children;
       const labelEnd = kids.length ? span(kids[kids.length - 1])[1] : start;
+      // A bare GFM URL stays prose, so a `$…$` wrapped around it still pairs.
+      if (labelEnd === end && labelEnd > start) return;
       if (end - labelEnd <= 1 || labelEnd <= start) {
         spans.push([start, end]);
         return;
@@ -119,23 +126,67 @@ function subtract(spans: Span[], holes: Span[]): Span[] {
   return result;
 }
 
-function rewriteText(text: string, atLineStart: boolean): string {
-  // A sentinel stops `^` matching mid-line when this prose segment starts
-  // after a list marker, a link target or an inline code span.
-  const lead = atLineStart ? "" : "\u0000";
-  const converted = (lead + text)
-    // \[ … \] filling its own line(s) → a display block.
-    .replace(
-      /^([ \t]*)\\\[([\s\S]+?)\\\][ \t]*$/gm,
-      (_, indent: string, body: string) =>
-        `${indent}$$\n${indent}${body.trim()}\n${indent}$$`,
-    )
-    // \[ … \] inside a sentence → $$ … $$ (rendered inline by remark-math).
-    .replace(/\\\[([\s\S]+?)\\\]/g, (_, body: string) => `$$${body.trim()}$$`)
+/**
+ * `lead` is the source from the start of the line up to this segment: the
+ * container markers (`> `, `- `) or, mid-line, the text before it. It is used
+ * only to recognise a `\[ … \]` standing on its own line(s) and to repeat the
+ * container prefix on the lines a display block adds.
+ */
+function rewriteText(text: string, lead: string): string {
+  const converted = convertDisplay(text, lead)
     // \( … \) on one line → $ … $
-    .replace(/\\\(([^\n]+?)\\\)/g, (_, body: string) => `$${body.trim()}$`)
-    .slice(lead.length);
+    .replace(/\\\(([^\n]+?)\\\)/g, (_, body: string) => `$${body.trim()}$`);
   return escapeNonMathDollars(converted);
+}
+
+// Nothing but container markers (blockquote `>`, list bullets or numbers).
+const CONTAINER_PREFIX =
+  /^(?:[ \t]*(?:>|[-*+](?=[ \t])|\d{1,9}[.)](?=[ \t])))*[ \t]*$/;
+const QUOTE_MARKERS = /^(?:[ \t]*>)*[ \t]*/;
+
+/** A list marker becomes spaces on following lines; `>` repeats. */
+function continuation(prefix: string): string {
+  return prefix.replace(/[-*+](?=[ \t])|\d{1,9}[.)](?=[ \t])/g, (m) =>
+    " ".repeat(m.length),
+  );
+}
+
+function convertDisplay(text: string, lead: string): string {
+  let out = "";
+  let i = 0;
+  for (;;) {
+    const open = text.indexOf("\\[", i);
+    const close = open === -1 ? -1 : text.indexOf("\\]", open + 2);
+    if (close === -1) break;
+    out += text.slice(i, open);
+    const lineStart = text.lastIndexOf("\n", open - 1) + 1;
+    const prefix = (lineStart === 0 ? lead : "") + text.slice(lineStart, open);
+    const lineEnd = text.indexOf("\n", close + 2);
+    const after = text.slice(close + 2, lineEnd === -1 ? text.length : lineEnd);
+    const body = text.slice(open + 2, close);
+    if (CONTAINER_PREFIX.test(prefix) && after.trim() === "") {
+      // A display block on its own line(s): one line per formula line, each
+      // carrying the container prefix so `>` quotes and lists survive.
+      const cont = continuation(prefix);
+      const lines = body
+        .split("\n")
+        .map((line, k) => (k === 0 ? line : line.replace(QUOTE_MARKERS, "")))
+        .map((line) => line.trim())
+        .filter((line) => line !== "");
+      out += ["$$", ...lines.map((l) => cont + l), cont + "$$"].join("\n");
+      out += after;
+      i = close + 2 + after.length;
+    } else if (!body.includes("\n")) {
+      // Inside a sentence → $$ … $$ (rendered inline by remark-math).
+      out += `$$${body.trim()}$$`;
+      i = close + 2;
+    } else {
+      // A multi-line formula mixed into a sentence: leave it as written.
+      out += text.slice(open, close + 2);
+      i = close + 2;
+    }
+  }
+  return out + text.slice(i);
 }
 
 /**
