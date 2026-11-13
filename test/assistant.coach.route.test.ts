@@ -1,3 +1,9 @@
+import {
+  resolveCoachScope,
+  loadCoachCandidates,
+  hydrateCoachAction,
+} from "@/lib/assistant/coach";
+import { signObjectReadUrl } from "@/lib/storage";
 import { studentStudyRecommendationsSkill } from "@/lib/assistant/skills/student-study-recommendations";
 import {
   findStudyCandidates,
@@ -234,6 +240,21 @@ async function fixture(opts: { final?: boolean } = {}) {
           intentExplanation: "Same skill.",
         },
       ]),
+    },
+  });
+  await prisma.learningMaterial.create({
+    data: {
+      id: "mat-1",
+      teacherId: teacher.teacher.id,
+      title: "Arithmetic notes",
+      originalName: "notes.pdf",
+      mimeType: "application/pdf",
+      sizeBytes: 100,
+      storageKey: "mat/notes.pdf",
+      bucket: "test",
+      uploadStatus: "READY",
+      classLinks: { create: { classId: cls.id } },
+      pages: { create: { pageNumber: 1, storageKey: "mat/1.png" } },
     },
   });
   await prisma.examResult.create({
@@ -1163,6 +1184,213 @@ describe("student study recommendations", () => {
       },
     )) as Awaited<ReturnType<typeof findStudyCandidates>>;
   }
+
+  it.each(["removed", "disabled"])(
+    "revalidates %s material access for study and coach discovery, surfacing and history",
+    async (revocation) => {
+      const f = await fixture();
+      // Keep the result's class active: access must follow the material's live
+      // links, not just the result's class or a previously resolved coach scope.
+      const granting = await createClass(f.teacher.teacher.id);
+      await prisma.classEnrollment.create({
+        data: { classId: granting.id, studentId: f.student.student.id },
+      });
+      await prisma.materialClass.deleteMany({ where: { materialId: "mat-1" } });
+      await prisma.materialClass.create({
+        data: { materialId: "mat-1", classId: granting.id },
+      });
+      const candidate = (await discover(f.student.student.id)).find(
+        (c) => c.action.ref.kind === "material",
+      )!;
+      expect(candidate).toBeDefined();
+      const scope = (await resolveCoachScope(
+        f.student.student.id,
+        ATTEMPT,
+        1,
+      ))!;
+      const cached = await loadCoachCandidates(scope);
+      expect(cached.materials).toHaveLength(1);
+      scriptModel([
+        {
+          toolCalls: [
+            { name: "show_study_recommendation", args: candidate.action },
+          ],
+        },
+        { text: "Read this." },
+      ]);
+      const widget = await events(
+        await POST_CHAT(
+          post("/api/assistant/chat", { message: "Recommend reading" }),
+        ),
+      );
+      const conversation = widget.find(
+        (event) => event.type === "conversation",
+      );
+      if (conversation?.type !== "conversation")
+        throw new Error("Missing conversation");
+      scriptModel([
+        {
+          toolCalls: [
+            {
+              name: "recommend_material",
+              args: { materialNumber: 1, reason: "Review this." },
+            },
+          ],
+        },
+        { text: "Read this." },
+      ]);
+      const coach = await events(
+        await POST_COACH_CHAT(
+          post("/api/assistant/coach/chat", {
+            attemptId: ATTEMPT,
+            questionNumber: 1,
+            message: "Recommend reading",
+          }),
+        ),
+      );
+      expect(coach.filter((event) => event.type === "action")).toHaveLength(1);
+      const readWidget = async () =>
+        await (
+          await GET_WIDGET_CONVERSATION(new Request("http://localhost"), {
+            params: Promise.resolve({ id: conversation.id }),
+          })
+        ).json();
+      expect((await readWidget()).turns[1].cards).toHaveLength(1);
+      expect(
+        (await (await GET_COACH(getCoach(ATTEMPT, 1))).json()).turns[1].actions,
+      ).toHaveLength(1);
+      if (revocation === "removed") {
+        await prisma.materialClass.deleteMany({
+          where: { materialId: "mat-1" },
+        });
+      } else {
+        await prisma.class.update({
+          where: { id: granting.id },
+          data: { disabledAt: new Date() },
+        });
+      }
+      vi.mocked(signObjectReadUrl).mockClear();
+      expect(
+        (await discover(f.student.student.id)).some(
+          (c) => c.action.ref.kind === "material",
+        ),
+      ).toBe(false);
+      expect((await loadCoachCandidates(scope)).materials).toEqual([]);
+      expect(
+        await hydrateStudyAction(candidate.action, f.student.student.id),
+      ).toBeNull();
+      expect(
+        await hydrateCoachAction(
+          candidate.action.ref,
+          scope,
+          async () => cached,
+        ),
+      ).toBeNull();
+      expect((await readWidget()).turns[1].cards).toEqual([]);
+      expect(
+        (await (await GET_COACH(getCoach(ATTEMPT, 1))).json()).turns[1].actions,
+      ).toEqual([]);
+      expect(
+        vi
+          .mocked(signObjectReadUrl)
+          .mock.calls.some(([, key]) => key.startsWith("mat/")),
+      ).toBe(false);
+    },
+  );
+
+  it("uses live titles and page keys, resolves legacy page references, and drops missing pages", async () => {
+    const f = await fixture();
+    const candidate = (await discover(f.student.student.id)).find(
+      (c) => c.action.ref.kind === "material",
+    )!;
+    await prisma.learningMaterial.update({
+      where: { id: "mat-1" },
+      data: {
+        title: "Updated notes",
+        pages: {
+          updateMany: {
+            where: { pageNumber: 1 },
+            data: { storageKey: "mat/current.png" },
+          },
+        },
+      },
+    });
+    expect(
+      await hydrateStudyAction(candidate.action, f.student.student.id),
+    ).toMatchObject({
+      recommendation: {
+        materialTitle: "Updated notes",
+        pages: [{ imageUrl: "https://signed.test/mat/current.png" }],
+      },
+    });
+    const result = await prisma.examResult.findUniqueOrThrow({
+      where: { quizAttemptId: ATTEMPT },
+    });
+    const stored = JSON.parse(result.recommendations!);
+    delete stored.items[0].materialId;
+    stored.items[0].pages[0].storageKey = "mat/current.png";
+    await prisma.examResult.update({
+      where: { quizAttemptId: ATTEMPT },
+      data: { recommendations: JSON.stringify(stored) },
+    });
+    expect(
+      await hydrateStudyAction(candidate.action, f.student.student.id),
+    ).toMatchObject({ recommendation: { materialId: "mat-1" } });
+    await prisma.materialPage.deleteMany({ where: { materialId: "mat-1" } });
+    expect(
+      await hydrateStudyAction(candidate.action, f.student.student.id),
+    ).toBeNull();
+    expect(
+      (await discover(f.student.student.id)).some(
+        (c) => c.action.ref.kind === "material",
+      ),
+    ).toBe(false);
+  });
+
+  it("batches discovery lookups across 20 results and keeps the card limit", async () => {
+    const f = await fixture();
+    const { id: _id, ...result } = await prisma.examResult.findUniqueOrThrow({
+      where: { quizAttemptId: ATTEMPT },
+    });
+    const question = {
+      questionId: f.question.id,
+      text: "Addition",
+      isCorrect: false,
+    };
+    await prisma.examResult.createMany({
+      data: Array.from({ length: 19 }, (_, index) => ({
+        ...result,
+        quizAttemptId: `batch-${index}`,
+        reviewSnapshot: JSON.stringify({
+          questions: Array.from({ length: 5 }, () => question),
+        }),
+      })),
+    });
+    const spies = [
+      vi.spyOn(prisma.class, "findMany"),
+      vi.spyOn(prisma.examResult, "findMany"),
+      vi.spyOn(prisma.learningMaterial, "findMany"),
+      vi.spyOn(prisma.quizPracticeVersion, "findMany"),
+      vi.spyOn(prisma.quizPracticeAttempt, "findMany"),
+    ];
+    const perResult = [
+      vi.spyOn(prisma.examResult, "findUnique"),
+      vi.spyOn(prisma.examResult, "findFirst"),
+      vi.spyOn(prisma.classEnrollment, "findUnique"),
+      vi.spyOn(prisma.classQuiz, "findUnique"),
+    ];
+    try {
+      const candidates = await discover(f.student.student.id);
+      expect(candidates.some((c) => c.action.ref.kind === "practice")).toBe(
+        true,
+      );
+      expect(candidates.length).toBeLessThanOrEqual(30);
+      for (const spy of spies) expect(spy).toHaveBeenCalledTimes(1);
+      for (const spy of perResult) expect(spy).not.toHaveBeenCalled();
+    } finally {
+      for (const spy of [...spies, ...perResult]) spy.mockRestore();
+    }
+  });
 
   it("finds all three kinds, only in enrolled classes, without answer fields", async () => {
     const f = await fixture();

@@ -1,5 +1,8 @@
 import { prisma } from "@/lib/prisma";
-import { simulationDisplayKey } from "@/lib/exam-results";
+import {
+  simulationDisplayKey,
+  type StoredRecommendation,
+} from "@/lib/exam-results";
 import { QUESTION_ORDER } from "@/lib/question-order";
 
 /**
@@ -122,7 +125,7 @@ export async function listStudentMaterials(
 }
 
 /** The library access rule: READY and shared with one of the student's classes. */
-function studentMaterialWhere(studentId: string, materialId: string) {
+function studentMaterialWhere(studentId: string, materialId?: string) {
   return {
     id: materialId,
     uploadStatus: "READY",
@@ -132,6 +135,98 @@ function studentMaterialWhere(studentId: string, materialId: string) {
       },
     },
   };
+}
+
+/**
+ * Resolve saved recommendations against the live library before exposing any
+ * metadata or signing pages. Legacy recommendations identify materials by page
+ * key; those keys are only lookup hints, never the keys we sign.
+ * The returned array preserves recommendation indices, including revoked items.
+ */
+export async function resolveStudentMaterialRecommendations(
+  studentId: string,
+  items: StoredRecommendation[],
+) {
+  if (!items.length) return [];
+  // Stored JSON is parsed permissively for older snapshots. Fail closed on a
+  // malformed entry without changing any later recommendation's index.
+  const validItems = items.map((item) =>
+    item &&
+    typeof item.materialTitle === "string" &&
+    (!item.materialId || typeof item.materialId === "string") &&
+    item.pageRange &&
+    Number.isInteger(item.pageRange.start) &&
+    Number.isInteger(item.pageRange.end) &&
+    Array.isArray(item.pages) &&
+    item.pages.every(
+      (page) =>
+        page &&
+        Number.isInteger(page.pageNumber) &&
+        typeof page.storageKey === "string",
+    )
+      ? item
+      : null,
+  );
+  const ids = [
+    ...new Set(
+      validItems.flatMap((item) => (item?.materialId ? [item.materialId] : [])),
+    ),
+  ];
+  const keys = [
+    ...new Set(
+      validItems.flatMap((item) =>
+        item && !item.materialId
+          ? item.pages.map((page) => page.storageKey)
+          : [],
+      ),
+    ),
+  ];
+  const materials = await prisma.learningMaterial.findMany({
+    where: {
+      ...studentMaterialWhere(studentId),
+      OR: [
+        { id: { in: ids } },
+        { pages: { some: { storageKey: { in: keys } } } },
+      ],
+    },
+    select: {
+      id: true,
+      title: true,
+      originalName: true,
+      bucket: true,
+      pages: { select: { pageNumber: true, storageKey: true } },
+    },
+  });
+  return validItems.map((item) => {
+    if (!item) return null;
+    const material = item.materialId
+      ? materials.find((row) => row.id === item.materialId)
+      : materials.find(
+          (row) =>
+            item.pages.length > 0 &&
+            item.pages.every((page) =>
+              row.pages.some((live) => live.storageKey === page.storageKey),
+            ),
+        );
+    if (!material) return null;
+    const pages = item.pages.flatMap((page) => {
+      const live = material.pages.find(
+        (candidate) => candidate.pageNumber === page.pageNumber,
+      );
+      return live ? [live] : [];
+    });
+    if (!pages.length) return null;
+    return {
+      bucket: material.bucket,
+      item: {
+        ...item,
+        materialId: material.id,
+        reason: typeof item.reason === "string" ? item.reason : "",
+        materialTitle: material.title?.trim() || material.originalName,
+        pages,
+      },
+    };
+  });
 }
 
 /**

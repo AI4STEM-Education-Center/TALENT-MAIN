@@ -22,16 +22,16 @@
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import {
+  mapPresignedRecommendations,
   parseReviewSnapshot,
   parseStoredRecommendations,
   snapshotToStudentMistakes,
   type SnapshotQuestion,
   type StoredRecommendation,
 } from "@/lib/exam-results";
-import {
-  presignStoredRecommendations,
-  presignStudentMistakes,
-} from "@/lib/exam-results-engine";
+import { presignStudentMistakes } from "@/lib/exam-results-engine";
+import { resolveStudentMaterialRecommendations } from "@/lib/student-content";
+import { signObjectReadUrl } from "@/lib/storage";
 import { presignOptionImage } from "@/lib/question-figures";
 import { retakeStillPossible } from "@/lib/student-answer-key";
 import { studentCanPractice } from "@/lib/quiz-practice-access";
@@ -322,20 +322,23 @@ export async function loadCoachCandidates(
   ]);
 
   const stored = parseStoredRecommendations(result?.recommendations ?? null);
-  const materials = stored.items.flatMap<CoachMaterialOption>((rec, index) =>
-    typeof rec?.materialTitle === "string"
+  const live = await resolveStudentMaterialRecommendations(
+    scope.studentId,
+    stored.items,
+  );
+  const materials = live.flatMap<CoachMaterialOption>((resolved, index) =>
+    resolved
       ? [
           {
             number: index + 1,
             recommendationIndex: index,
-            title: rec.materialTitle,
-            pages: pageLabel(rec),
-            reason: typeof rec.reason === "string" ? rec.reason : "",
+            title: resolved.item.materialTitle,
+            pages: pageLabel(resolved.item),
+            reason: resolved.item.reason,
           },
         ]
       : [],
   );
-
   const simulationIds = [
     ...new Set([
       ...(ownSim ? [ownSim.id] : []),
@@ -463,20 +466,107 @@ export async function findPracticeOffer(
     : null;
 }
 
+/** Batch discovery for scopes whose active enrollment was already verified. */
+export async function findEnrolledPracticeOffers(scopes: CoachScope[]) {
+  const offers = new Map<
+    string,
+    { versionId: string; variantQuestionId: string }
+  >();
+  if (!scopes.length) return offers;
+  const studentId = scopes[0].studentId;
+  const pairs = [
+    ...new Map(
+      scopes.map((scope) => [
+        `${scope.classId}:${scope.quizId}`,
+        { classId: scope.classId, quizId: scope.quizId },
+      ]),
+    ).values(),
+  ];
+  const [assignments, versions, attempts] = await Promise.all([
+    prisma.classQuiz.findMany({ where: { OR: pairs, published: true } }),
+    prisma.quizPracticeVersion.findMany({
+      where: {
+        quizId: { in: [...new Set(scopes.map((scope) => scope.quizId))] },
+        status: "PUBLISHED",
+      },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, quizId: true, questions: true },
+    }),
+    prisma.quizPracticeAttempt.findMany({
+      where: { studentId, OR: pairs },
+      select: {
+        classId: true,
+        quizId: true,
+        quizAttemptId: true,
+        versionId: true,
+      },
+    }),
+  ]);
+  const now = new Date();
+  const available = new Set(
+    assignments
+      .filter(
+        (assignment) =>
+          !(assignment.availableFrom && now < assignment.availableFrom) &&
+          !(assignment.availableUntil && now > assignment.availableUntil),
+      )
+      .map((assignment) => `${assignment.classId}:${assignment.quizId}`),
+  );
+  const parsed = versions.map((version) => ({
+    ...version,
+    variants: parsePracticeVariants(version.questions),
+  }));
+  for (const scope of scopes) {
+    if (!scope.questionId || !available.has(`${scope.classId}:${scope.quizId}`))
+      continue;
+    const ownVersionId =
+      scope.alternativeVersionName !== null
+        ? (attempts.find((attempt) => attempt.quizAttemptId === scope.resultId)
+            ?.versionId ?? null)
+        : null;
+    const seen = new Set(
+      attempts
+        .filter(
+          (attempt) =>
+            attempt.classId === scope.classId &&
+            attempt.quizId === scope.quizId,
+        )
+        .map((attempt) => attempt.versionId),
+    );
+    const matches = parsed.flatMap((version) => {
+      if (version.quizId !== scope.quizId || version.id === ownVersionId)
+        return [];
+      const variant = version.variants.find(
+        (question) => question.sourceQuestionId === scope.questionId,
+      );
+      return variant
+        ? [{ versionId: version.id, variantQuestionId: variant.id }]
+        : [];
+    });
+    const pick =
+      matches.find((match) => !seen.has(match.versionId)) ?? matches[0];
+    if (pick) offers.set(`${scope.resultId}:${scope.questionNumber}`, pick);
+  }
+  return offers;
+}
+
+function parsePracticeVariants(rawQuestions: string): VariantQuestion[] {
+  try {
+    const parsed = variantQuestionsSchema.safeParse(JSON.parse(rawQuestions));
+    return parsed.success ? parsed.data : [];
+  } catch {
+    return [];
+  }
+}
+
 function parseVariantFor(
   rawQuestions: string,
   sourceQuestionId: string,
 ): VariantQuestion | null {
-  let json: unknown;
-  try {
-    json = JSON.parse(rawQuestions);
-  } catch {
-    return null;
-  }
-  const parsed = variantQuestionsSchema.safeParse(json);
-  if (!parsed.success) return null;
   return (
-    parsed.data.find((q) => q.sourceQuestionId === sourceQuestionId) ?? null
+    parsePracticeVariants(rawQuestions).find(
+      (q) => q.sourceQuestionId === sourceQuestionId,
+    ) ?? null
   );
 }
 
@@ -644,9 +734,16 @@ export async function hydrateCoachAction(
     const item = parseStoredRecommendations(result?.recommendations ?? null)
       .items[ref.recommendationIndex];
     if (!item) return null;
-    // Presign through the same path the results page uses, one item at a time.
-    const presigned = await presignStoredRecommendations(
-      JSON.stringify({ items: [item], truncated: false }),
+    // Recheck even when a tool supplied a cached candidate set. Sign only live
+    // page keys from a material that the student can still open.
+    const [live] = await resolveStudentMaterialRecommendations(
+      scope.studentId,
+      [item],
+    );
+    if (!live) return null;
+    const presigned = await mapPresignedRecommendations(
+      { items: [live.item], truncated: false },
+      (key) => signObjectReadUrl(live.bucket, key),
     );
     const recommendation = presigned.items[0];
     return recommendation

@@ -2,17 +2,20 @@
 // resolves ownership and current enrollment again, never trusts model ids.
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { parseReviewSnapshot } from "@/lib/exam-results";
+import {
+  parseStoredRecommendations,
+  parseReviewSnapshot,
+} from "@/lib/exam-results";
 import { getStudentKnowledgeProfile } from "@/lib/knowledge-tracing";
 import {
   coachActionRefSchema,
-  findPracticeOffer,
+  findEnrolledPracticeOffers,
   hydrateCoachAction,
-  loadCoachCandidates,
   loadSimulationOptions,
   resolveCoachScope,
   simulationActionView,
 } from "./coach";
+import { resolveStudentMaterialRecommendations } from "@/lib/student-content";
 import type { CoachActionView, CoachScope } from "./coach-types";
 
 export const studyActionRefSchema = z.object({
@@ -125,6 +128,11 @@ export async function findStudyCandidates(studentId: string, topic?: string) {
       take: 20,
       select: {
         quizAttemptId: true,
+        classId: true,
+        quizId: true,
+        className: true,
+        practiceVersionName: true,
+        recommendations: true,
         topicName: true,
         quizName: true,
         reviewSnapshot: true,
@@ -166,59 +174,78 @@ export async function findStudyCandidates(studentId: string, topic?: string) {
           : 0),
       0,
     );
-  let practiceLookups = 0;
-  for (const result of results) {
-    const base = await resultScope(studentId, result.quizAttemptId);
-    if (!base) continue;
-    const options = await loadCoachCandidates(base);
-    for (const material of options.materials)
-      candidates.push({
-        action: {
-          source: "study",
-          resultId: base.resultId,
-          ref: {
-            kind: "material",
-            recommendationIndex: material.recommendationIndex,
-            reason: "Review this concept.",
-          },
+  const materialItems = results.flatMap((result) =>
+    parseStoredRecommendations(result.recommendations).items.map(
+      (item, recommendationIndex) => ({ result, item, recommendationIndex }),
+    ),
+  );
+  const liveMaterials = await resolveStudentMaterialRecommendations(
+    studentId,
+    materialItems.map(({ item }) => item),
+  );
+  for (const [index, resolved] of liveMaterials.entries()) {
+    if (!resolved) continue;
+    const { result, recommendationIndex } = materialItems[index];
+    const material = resolved.item;
+    const { start, end } = material.pageRange;
+    candidates.push({
+      action: {
+        source: "study",
+        resultId: result.quizAttemptId,
+        ref: {
+          kind: "material",
+          recommendationIndex,
+          reason: "Review this concept.",
         },
-        title: material.title,
-        topic: result.topicName,
-        description: `${material.pages}: ${material.reason}`,
-        priority: rank(
-          `${result.topicName} ${material.title} ${material.reason}`,
-        ),
-      });
+      },
+      title: material.materialTitle,
+      topic: result.topicName,
+      description: `${start === end ? `page ${start}` : `pages ${start}–${end}`}: ${material.reason}`,
+      priority: rank(
+        `${result.topicName} ${material.materialTitle} ${material.reason}`,
+      ),
+    });
+  }
+  const scopes: CoachScope[] = [];
+  for (const result of results) {
     const questions = parseReviewSnapshot(result.reviewSnapshot).questions;
     for (const [index, question] of questions.entries()) {
-      // Bound database work even for unusually large result snapshots.
-      if (question.isCorrect !== false || practiceLookups >= 40) continue;
-      practiceLookups += 1;
-      const scope = await resolveCoachScope(
+      // Keep the original cap across all results, including legacy questions.
+      if (question.isCorrect !== false || scopes.length >= 40) continue;
+      scopes.push({
+        ...result,
         studentId,
-        base.resultId,
-        index + 1,
-      );
-      if (!scope) continue;
-      const practice = await findPracticeOffer(scope);
-      if (practice)
-        candidates.push({
-          action: {
-            source: "study",
-            resultId: base.resultId,
-            questionNumber: index + 1,
-            ref: {
-              kind: "practice",
-              ...practice,
-              reason: "Try a similar question.",
-            },
-          },
-          title: `${result.quizName} · Question ${index + 1}`,
-          topic: result.topicName,
-          searchText: question.text,
-          priority: rank(`${result.topicName} ${question.text ?? ""}`),
-        });
+        resultId: result.quizAttemptId,
+        questionNumber: index + 1,
+        questionId:
+          typeof question.questionId === "string" ? question.questionId : null,
+        question,
+        alternativeVersionName: result.practiceVersionName,
+        ownVersionId: null,
+        answerKeyAvailable: false,
+      });
     }
+  }
+  const practices = await findEnrolledPracticeOffers(scopes);
+  for (const scope of scopes) {
+    const practice = practices.get(`${scope.resultId}:${scope.questionNumber}`);
+    if (!practice) continue;
+    candidates.push({
+      action: {
+        source: "study",
+        resultId: scope.resultId,
+        questionNumber: scope.questionNumber,
+        ref: {
+          kind: "practice",
+          ...practice,
+          reason: "Try a similar question.",
+        },
+      },
+      title: `${scope.quizName} · Question ${scope.questionNumber}`,
+      topic: scope.topicName,
+      searchText: scope.question.text,
+      priority: rank(`${scope.topicName} ${scope.question.text ?? ""}`),
+    });
   }
   const sims = await loadSimulationOptions(
     { studentId },
