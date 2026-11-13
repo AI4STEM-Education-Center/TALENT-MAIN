@@ -520,23 +520,26 @@ export async function findEnrolledPracticeOffers(scopes: CoachScope[]) {
     ...version,
     variants: parsePracticeVariants(version.questions),
   }));
+  // Index attempts once rather than scanning them for every scope.
+  const versionByAttempt = new Map<string, string>();
+  const seenByQuiz = new Map<string, Set<string>>();
+  for (const attempt of attempts) {
+    if (attempt.quizAttemptId)
+      versionByAttempt.set(attempt.quizAttemptId, attempt.versionId);
+    const key = `${attempt.classId}:${attempt.quizId}`;
+    const seenVersions = seenByQuiz.get(key) ?? new Set<string>();
+    seenVersions.add(attempt.versionId);
+    seenByQuiz.set(key, seenVersions);
+  }
   for (const scope of scopes) {
     if (!scope.questionId || !available.has(`${scope.classId}:${scope.quizId}`))
       continue;
     const ownVersionId =
       scope.alternativeVersionName !== null
-        ? (attempts.find((attempt) => attempt.quizAttemptId === scope.resultId)
-            ?.versionId ?? null)
+        ? (versionByAttempt.get(scope.resultId) ?? null)
         : null;
-    const seen = new Set(
-      attempts
-        .filter(
-          (attempt) =>
-            attempt.classId === scope.classId &&
-            attempt.quizId === scope.quizId,
-        )
-        .map((attempt) => attempt.versionId),
-    );
+    const seen =
+      seenByQuiz.get(`${scope.classId}:${scope.quizId}`) ?? new Set<string>();
     const matches = parsed.flatMap((version) => {
       if (version.quizId !== scope.quizId || version.id === ownVersionId)
         return [];
