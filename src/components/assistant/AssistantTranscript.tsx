@@ -14,8 +14,7 @@
  */
 
 import { memo, type ReactNode } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { AssistantMarkdown } from "@/components/ui/assistant-markdown";
 import { Loader2, Paperclip, Wrench } from "lucide-react";
 import { AiMetricsLine } from "@/components/ai-metrics-line";
 import { GuardrailFeedbackButton } from "@/components/guardrails/GuardrailFeedbackButton";
@@ -89,9 +88,7 @@ const MessageBubble = memo(function MessageBubble({
           <p className="whitespace-pre-wrap text-sm">{bubble.content}</p>
         ) : (
           <div className={MARKDOWN_CLASS} aria-live="polite">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {bubble.content}
-            </ReactMarkdown>
+            <AssistantMarkdown>{bubble.content}</AssistantMarkdown>
           </div>
         )}
 
