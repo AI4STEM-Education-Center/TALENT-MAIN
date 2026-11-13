@@ -1,7 +1,6 @@
 "use client";
 
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { AssistantMarkdown } from "@/components/ui/assistant-markdown";
 import { Loader2, Sparkles } from "lucide-react";
 import { AiMetricsLine } from "@/components/ai-metrics-line";
 import {
@@ -32,7 +31,7 @@ export function ResultSummary({
       {summary ? (
         <>
           <div className={MARKDOWN_CLASS} aria-live="polite">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{summary}</ReactMarkdown>
+            <AssistantMarkdown>{summary}</AssistantMarkdown>
           </div>
           {isResultPending(status) && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
