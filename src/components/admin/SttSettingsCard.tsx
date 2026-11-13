@@ -190,7 +190,9 @@ function SttConfigSection({
           </Select>
           <p className="text-xs text-muted-foreground">
             Effective region:{" "}
-            <code>{settings.region || effectiveRegion || "not configured"}</code>
+            <code>
+              {settings.region || effectiveRegion || "not configured"}
+            </code>
           </p>
         </div>
 

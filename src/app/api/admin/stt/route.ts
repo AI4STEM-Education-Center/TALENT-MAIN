@@ -32,8 +32,11 @@ function settingsPayload(settings: SttSettings): SttAdminSettingsPayload {
   }
   return {
     settings,
-    effectiveRegion:
-      (settings.region || process.env.AWS_REGION?.trim() || "").toLowerCase(),
+    effectiveRegion: (
+      settings.region ||
+      process.env.AWS_REGION?.trim() ||
+      ""
+    ).toLowerCase(),
     hasCredentials,
   };
 }
