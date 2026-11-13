@@ -785,7 +785,7 @@ export function formatCoachContext(input: CoachContextInput): string {
   lines.push("", "Study options you may point the student to:");
   lines.push(
     candidates.materials.length > 0
-      ? "Materials (use recommend_material with the number):\n" +
+      ? "Materials: available (use recommend_material with materialNumber from this list):\n" +
           candidates.materials
             .map(
               (m) =>
@@ -796,7 +796,7 @@ export function formatCoachContext(input: CoachContextInput): string {
   );
   lines.push(
     candidates.simulations.length > 0
-      ? "Simulations (use explain_simulation with the id):\n" +
+      ? "Simulations: available (use explain_simulation with simulationId from this list):\n" +
           candidates.simulations
             .map(
               (s) =>
@@ -809,7 +809,7 @@ export function formatCoachContext(input: CoachContextInput): string {
   );
   lines.push(
     candidates.practice
-      ? "Practice question: an alternative-version question for this exact question exists (use offer_practice_question). You cannot see it."
+      ? "Practice question: available — an existing alternative-version question for this exact question (use offer_practice_question with a reason; no question id needed). Its content is hidden from you; do not describe or invent it."
       : "Practice question: none available — do not offer one.",
   );
 

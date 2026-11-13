@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildSystemPrompt, greeting } from "./prompt";
+import { buildCoachSystemPrompt, buildSystemPrompt, greeting } from "./prompt";
 import type { AssistantSkill } from "./types";
 
 const skill = (id: string, instructions: string): AssistantSkill => ({
@@ -12,6 +12,24 @@ const skill = (id: string, instructions: string): AssistantSkill => ({
 });
 
 describe("buildSystemPrompt", () => {
+  it("uses LaTeX dollar delimiters in shared and coach prompts", () => {
+    const prompts = [
+      buildSystemPrompt("student", [], [], ""),
+      buildSystemPrompt("teacher", [], [], ""),
+      buildCoachSystemPrompt({
+        toolNames: [],
+        context: "",
+        opening: "",
+        extraInstructions: "",
+      }),
+    ];
+    for (const prompt of prompts) {
+      expect(prompt).toContain(
+        "Write math in LaTeX: use $…$ for inline math and $$…$$ for display math.",
+      );
+    }
+  });
+
   it("always carries the injection and no-write rules", () => {
     const prompt = buildSystemPrompt("student", [], [], "");
     expect(prompt).toContain(

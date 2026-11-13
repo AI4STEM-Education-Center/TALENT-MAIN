@@ -124,7 +124,37 @@ describe("formatCoachContext", () => {
     expect(text).toContain('2. "Free fall notes", pages 4–6');
     expect(text).toContain('id sim-1: "Drop a ball" (built for this question)');
     expect(text).toContain("description: Slider for drop time");
-    expect(text).toContain("use offer_practice_question");
+    expect(text).toContain("Materials: available");
+    expect(text).toContain(
+      "recommend_material with materialNumber from this list",
+    );
+    expect(text).toContain("Simulations: available");
+    expect(text).toContain(
+      "explain_simulation with simulationId from this list",
+    );
+    expect(text).toContain("Practice question: available");
+    expect(text).toContain(
+      "offer_practice_question with a reason; no question id needed",
+    );
+    expect(text).toContain(
+      "Its content is hidden from you; do not describe or invent it",
+    );
+    expect(text).not.toContain("none available");
+  });
+
+  it("marks practice available even when materials and simulations are absent", () => {
+    const text = formatCoachContext(
+      input({
+        candidates: {
+          ...NONE,
+          practice: { versionId: "v1", variantQuestionId: "vq1" },
+        },
+      }),
+    );
+    expect(text).toContain("Materials: none available");
+    expect(text).toContain("Simulations: none available");
+    expect(text).toContain("Practice question: available");
+    expect(text).not.toContain("Practice question: none available");
   });
 
   it("fences the whole block and strips forged markers out of question text", () => {
@@ -215,6 +245,51 @@ describe("coachActionText", () => {
 });
 
 describe("coach prompt and tools", () => {
+  it("requires proactive explanation-plus-card teaching after diagnosis", () => {
+    const prompt = buildCoachSystemPrompt({
+      toolNames: [...COACH_TOOL_NAMES],
+      context: "",
+      opening: coachOpening(3),
+      extraInstructions: "",
+    });
+    expect(prompt).toContain(
+      "normally you can start teaching on this first turn",
+    );
+    expect(prompt).toContain(
+      "If the reply is too vague to diagnose, ask ONE short follow-up question",
+    );
+    expect(prompt).toContain(
+      "EVERY teaching reply must pair a short explanation with exactly ONE card",
+    );
+    expect(prompt).toContain(
+      "whenever the question context lists a fitting option",
+    );
+    expect(prompt).toContain("Call the matching tool in that same reply");
+    expect(prompt).toContain(
+      "for a conceptual gap covered by a listed material, call recommend_material",
+    );
+    expect(prompt).toContain(
+      "listed simulation that demonstrates it, call explain_simulation",
+    );
+    expect(prompt).toContain(
+      "student says they understand, or after explaining the concept",
+    );
+    expect(prompt).toContain(
+      "call offer_practice_question if a practice question is available",
+    );
+    expect(prompt).toContain(
+      "If no material or simulation fits but practice exists",
+    );
+    expect(prompt).toContain(
+      "Advice-only replies are allowed only when no listed option fits",
+    );
+    expect(prompt).toContain("never more than two cards");
+    expect(prompt).toContain("Keep replies under 150 words");
+    expect(prompt).toContain("Only offer what the question context lists");
+    expect(prompt).toContain("never reveal the answer");
+    expect(prompt).not.toContain("choose the single most useful next step");
+  });
+
   it("keeps the academic-honesty rules and the opening line in the prompt", () => {
     const prompt = buildCoachSystemPrompt({
       toolNames: [...COACH_TOOL_NAMES],
