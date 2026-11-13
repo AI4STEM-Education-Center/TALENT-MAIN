@@ -28,6 +28,18 @@ describe("AssistantMarkdown", () => {
     expect(html).toContain("<table>");
   });
 
+  it("renders currency as plain text, not math", () => {
+    const html = render("Costs $5 and $10.");
+    expect(html).not.toContain("katex");
+    expect(html).toContain("Costs $5 and $10.");
+  });
+
+  it("renders a standalone \\[ \\] line as display math, even mid-paragraph", () => {
+    const html = render("Use this:\n\\[F = ma\\]\nthen solve.");
+    expect(html).toContain("katex-display");
+    expect(html).toContain("then solve.");
+  });
+
   it("does not throw on malformed TeX", () => {
     expect(() => render("$\\frac{1}{$")).not.toThrow();
   });
