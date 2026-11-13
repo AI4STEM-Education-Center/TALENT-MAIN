@@ -1,6 +1,11 @@
-// The quiz-variant consumer runs jobs serially. Share this gate across jobs,
-// including manual retries and validation, to avoid bursts at the provider.
-const MIN_INTERVAL_MS = 2000;
+// Shared gate for every quiz-variant provider call (worker generation and
+// verification, the synchronous sample preview, manual retries). Several
+// streaming calls may run at once, but starts are spaced out and a transient
+// provider error (429 / 5xx / connection drop) puts every caller into one
+// shared cooldown, so a rate-limited provider is not hammered by the other
+// in-flight jobs while one of them backs off.
+const DEFAULT_MAX_CONCURRENT = 4;
+const DEFAULT_MIN_INTERVAL_MS = 500;
 const MAX_ATTEMPTS = 4;
 const MAX_RETRY_DELAY_MS = 5 * 60_000;
 
@@ -31,15 +36,59 @@ function retryAfterMs(error: unknown): number {
   return Number.isFinite(date) ? Math.max(0, date - Date.now()) : 0;
 }
 
-export function createQuizVariantRequestGate() {
-  let tail: Promise<unknown> = Promise.resolve();
+const sleep = (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+export type QuizVariantRequestGateOptions = {
+  /** Provider calls allowed in flight at once (each holds its slot through retries). */
+  maxConcurrent?: number;
+  /** Minimum spacing between consecutive call starts, across all callers. */
+  minIntervalMs?: number;
+};
+
+export function createQuizVariantRequestGate({
+  maxConcurrent = DEFAULT_MAX_CONCURRENT,
+  minIntervalMs = DEFAULT_MIN_INTERVAL_MS,
+}: QuizVariantRequestGateOptions = {}) {
+  const limit = Math.max(1, Math.floor(maxConcurrent));
+  let active = 0;
+  const waiting: (() => void)[] = [];
+  // Earliest moment the next call may start (start spacing).
   let nextStart = 0;
-  return function request<T>(call: () => Promise<T>): Promise<T> {
-    const result = tail.then(async () => {
+  // Shared Retry-After / backoff window: no caller starts before this.
+  let cooldownUntil = 0;
+
+  async function acquire() {
+    if (active < limit) {
+      active++;
+      return;
+    }
+    // release() hands its slot straight to us, so `active` stays unchanged.
+    await new Promise<void>((resolve) => waiting.push(resolve));
+  }
+  function release() {
+    const next = waiting.shift();
+    if (next) next();
+    else active--;
+  }
+  async function waitForTurn() {
+    for (;;) {
+      const now = Date.now();
+      const start = Math.max(now, nextStart, cooldownUntil);
+      // Reserve the start slot synchronously so concurrent callers queue
+      // behind each other rather than all waking at the same instant.
+      nextStart = start + minIntervalMs;
+      if (start > now) await sleep(start - now);
+      // Another caller may have hit a rate limit while we slept.
+      if (cooldownUntil <= Date.now()) return;
+    }
+  }
+
+  return async function request<T>(call: () => Promise<T>): Promise<T> {
+    await acquire();
+    try {
       for (let attempt = 0; ; attempt++) {
-        const wait = nextStart - Date.now();
-        if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
-        nextStart = Date.now() + MIN_INTERVAL_MS;
+        await waitForTurn();
         try {
           return await call();
         } catch (error) {
@@ -48,15 +97,18 @@ export function createQuizVariantRequestGate() {
             retryAfterMs(error),
             Math.min(60_000, 2000 * 2 ** attempt) + Math.random() * 1000,
           );
-          // Even an exhausted request leaves a cooldown for the next job.
-          nextStart = Math.max(nextStart, Date.now() + delay);
+          // Even an exhausted request leaves a cooldown for every other caller.
+          cooldownUntil = Math.max(
+            cooldownUntil,
+            Date.now() + Math.min(delay, MAX_RETRY_DELAY_MS),
+          );
           if (attempt + 1 >= MAX_ATTEMPTS || delay > MAX_RETRY_DELAY_MS)
             throw error;
         }
       }
-    });
-    tail = result.catch(() => undefined);
-    return result;
+    } finally {
+      release();
+    }
   };
 }
 

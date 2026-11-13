@@ -9,6 +9,7 @@ import {
   ConsentClaimSync,
 } from "./consent-required-client";
 import { sanitizeConsentHtml } from "@/lib/consent-html";
+import { safeRelativeCallbackUrl } from "@/lib/safe-callback-url";
 
 /**
  * Standalone route (deliberately OUTSIDE the (dashboard) route group — no
@@ -24,7 +25,20 @@ import { sanitizeConsentHtml } from "@/lib/consent-html";
  * (nothing published, or already agreed under a stale claim) instead render
  * ConsentClaimSync, which re-stamps the claim client-side and then leaves.
  */
-export default async function TeacherConsentRequiredPage() {
+export default async function TeacherConsentRequiredPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ [key: string]: string | string[] | undefined }>;
+} = {}) {
+  const { callbackUrl: rawCallback } = (await searchParams) ?? {};
+  const candidate = safeRelativeCallbackUrl(
+    typeof rawCallback === "string" ? rawCallback : undefined,
+  );
+  // Never send the teacher back to this page (a redirect loop).
+  const callbackUrl =
+    candidate && !candidate.startsWith("/teacher/consent-required")
+      ? candidate
+      : null;
   const session = await auth();
   if (!session?.user) redirect("/login");
   if (session.user.role !== "TEACHER") {
@@ -33,13 +47,13 @@ export default async function TeacherConsentRequiredPage() {
 
   const activeForm = await getActiveConsentVersion("TEACHER");
   if (await isResearchExempt(session.user.id, "TEACHER")) {
-    return <ConsentClaimSync reason="excluded" />;
+    return <ConsentClaimSync reason="excluded" callbackUrl={callbackUrl} />;
   }
   if (!activeForm) {
     // No instructor form published yet — there is nothing to enforce and
     // nothing to render, so refresh the claim (it becomes NOT_REQUIRED) and
     // hand them back to their dashboard.
-    return <ConsentClaimSync reason="no-form" />;
+    return <ConsentClaimSync reason="no-form" callbackUrl={callbackUrl} />;
   }
 
   const priorDecision = await prisma.consentRecord.findFirst({
@@ -51,7 +65,9 @@ export default async function TeacherConsentRequiredPage() {
   // A stale JWT is the only way to land here already agreed — refresh it
   // (a plain redirect would just bounce off the proxy again) and move on.
   if (priorDecision?.decision === "AGREE")
-    return <ConsentClaimSync reason="already-agreed" />;
+    return (
+      <ConsentClaimSync reason="already-agreed" callbackUrl={callbackUrl} />
+    );
 
   return (
     <ConsentRequiredClient
@@ -62,6 +78,7 @@ export default async function TeacherConsentRequiredPage() {
         bodyHtml: sanitizeConsentHtml(activeForm.bodyHtml),
       }}
       priorDecision={(priorDecision?.decision as "DECLINE" | undefined) ?? null}
+      callbackUrl={callbackUrl}
     />
   );
 }
