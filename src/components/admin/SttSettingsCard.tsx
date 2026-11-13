@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Component,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   CheckCircle2,
   Clock,
@@ -32,45 +39,12 @@ import {
   AWS_TRANSCRIBE_STREAMING_REGIONS,
   STT_LANGUAGES,
   STT_PARTIAL_STABILITIES,
+  type SttAdminPayload,
+  type SttAdminSettingsPayload,
   type SttLanguageCode,
   type SttPartialStability,
   type SttSettings,
 } from "@/lib/stt/types";
-
-interface SttUsageRecord {
-  id: string;
-  createdAt: string;
-  userId: string | null;
-  userName: string | null;
-  userEmail: string | null;
-  userRole: string | null;
-  surface: string;
-  languageCode: string;
-  durationMs: number;
-}
-
-interface SttUserUsageSummary {
-  userId: string;
-  userName: string;
-  userEmail: string;
-  userRole: string;
-  sessions: number;
-  totalDurationMs: number;
-  lastUsedAt: string;
-}
-
-interface SttAdminPayload {
-  settings: SttSettings;
-  effectiveRegion: string;
-  hasCredentials: boolean;
-  usage: {
-    totalDurationMs: number;
-    totalSessions: number;
-    uniqueUsers: number;
-    userSummaries: SttUserUsageSummary[];
-    recentSessions: SttUsageRecord[];
-  };
-}
 
 function formatDuration(ms: number): string {
   const totalSeconds = Math.max(0, Math.round(ms / 1000));
@@ -281,7 +255,9 @@ function SttConfigSection({
         {settings.identifyLanguage && (
           <div className="flex flex-wrap gap-2 pt-2">
             {STT_LANGUAGES.map((lang) => {
-              const active = settings.languageOptions.includes(lang.code);
+              const active = (settings.languageOptions ?? []).includes(
+                lang.code,
+              );
               const isPrimary = lang.code === settings.languageCode;
               return (
                 <button
@@ -346,19 +322,21 @@ function SttUsageLogSection({
 }) {
   const filteredUsers = useMemo(() => {
     const q = userFilter.trim().toLowerCase();
-    if (!q) return usage.userSummaries;
-    return usage.userSummaries.filter(
+    const users = usage.userSummaries ?? [];
+    if (!q) return users;
+    return users.filter(
       (u) =>
         u.userName.toLowerCase().includes(q) ||
         u.userEmail.toLowerCase().includes(q) ||
-        u.userRole.toLowerCase().includes(q),
+        (u.userRole ?? "").toLowerCase().includes(q),
     );
   }, [usage.userSummaries, userFilter]);
 
   const filteredSessions = useMemo(() => {
     const q = userFilter.trim().toLowerCase();
-    if (!q) return usage.recentSessions;
-    return usage.recentSessions.filter(
+    const sessions = usage.recentSessions ?? [];
+    if (!q) return sessions;
+    return sessions.filter(
       (s) =>
         (s.userName ?? "").toLowerCase().includes(q) ||
         (s.userEmail ?? "").toLowerCase().includes(q) ||
@@ -554,7 +532,7 @@ function SttUsageLogSection({
   );
 }
 
-export function SttSettingsCard() {
+function SttSettingsCardContent() {
   const [data, setData] = useState<SttAdminPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -597,7 +575,7 @@ export function SttSettingsCard() {
   const toggleLanguageOption = (lang: SttLanguageCode) => {
     if (!data) return;
     if (lang === data.settings.languageCode) return;
-    const current = data.settings.languageOptions;
+    const current = data.settings.languageOptions ?? [];
     const exists = current.includes(lang);
     if (exists) {
       const next = current.filter((item) => item !== lang);
@@ -636,11 +614,7 @@ export function SttSettingsCard() {
         const body = await res.json().catch(() => null);
         throw new Error(body?.error ?? "Failed to save STT settings");
       }
-      const updated = (await res.json()) as {
-        settings: SttSettings;
-        effectiveRegion: string;
-        hasCredentials: boolean;
-      };
+      const updated = (await res.json()) as SttAdminSettingsPayload;
       setData((prev) =>
         prev
           ? {
@@ -728,5 +702,44 @@ export function SttSettingsCard() {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+// Keep a failed STT render local to this section of AI Config.
+class SttErrorBoundary extends Component<
+  { children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  render() {
+    if (this.state.failed) {
+      return (
+        <Card>
+          <CardHeader>
+            <CardTitle>Speech-to-Text</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p role="alert">Speech-to-Text settings could not be displayed.</p>
+            <Button onClick={() => this.setState({ failed: false })}>
+              Retry STT Settings
+            </Button>
+          </CardContent>
+        </Card>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+export function SttSettingsCard() {
+  return (
+    <SttErrorBoundary>
+      <SttSettingsCardContent />
+    </SttErrorBoundary>
   );
 }

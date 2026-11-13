@@ -178,3 +178,50 @@ export function isSttSurface(value: unknown): value is SttSurface {
     (STT_SURFACES as readonly string[]).includes(value)
   );
 }
+
+export interface SttUsageRecord {
+  id: string;
+  createdAt: string;
+  userId: string | null;
+  userName: string | null;
+  userEmail: string | null;
+  userRole: string | null;
+  surface: string;
+  languageCode: string;
+  durationMs: number;
+}
+
+export interface SttUserUsageSummary {
+  userId: string;
+  userName: string;
+  userEmail: string;
+  userRole: string;
+  sessions: number;
+  totalDurationMs: number;
+  lastUsedAt: string;
+}
+
+export interface SttAdminSettingsPayload {
+  settings: SttSettings;
+  effectiveRegion: string;
+  hasCredentials: boolean;
+}
+
+export interface SttAdminPayload extends SttAdminSettingsPayload {
+  defaultRegion: string;
+  catalogs: {
+    languages: typeof STT_LANGUAGES;
+    regions: typeof AWS_TRANSCRIBE_STREAMING_REGIONS;
+    stabilities: typeof STT_PARTIAL_STABILITIES;
+    surfaces: typeof STT_SURFACES;
+  };
+  usage: {
+    totalDurationMs: number;
+    totalSessions: number;
+    uniqueUsers: number;
+    userSummaries: SttUserUsageSummary[];
+    recentSessions: SttUsageRecord[];
+    page: number;
+    pageSize: number;
+  };
+}

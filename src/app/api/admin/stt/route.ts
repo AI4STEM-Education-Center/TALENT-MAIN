@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { getAwsCredentials } from "@/lib/storage";
 import { prisma } from "@/lib/prisma";
 import { requireAdminApi } from "@/lib/admin-access";
 import { logApiError, logSystemEvent } from "@/lib/system-log";
@@ -9,12 +10,33 @@ import {
   STT_LANGUAGES,
   STT_PARTIAL_STABILITIES,
   STT_SURFACES,
+  type SttAdminPayload,
+  type SttAdminSettingsPayload,
+  type SttUsageRecord,
+  type SttUserUsageSummary,
+  type SttSettings,
 } from "@/lib/stt/types";
 
 export const runtime = "nodejs";
 
 const PAGE_SIZE_DEFAULT = 20;
 const PAGE_SIZE_MAX = 100;
+
+function settingsPayload(settings: SttSettings): SttAdminSettingsPayload {
+  let hasCredentials = false;
+  try {
+    getAwsCredentials();
+    hasCredentials = true;
+  } catch {
+    // Presigning requires the same explicit credentials as storage.
+  }
+  return {
+    settings,
+    effectiveRegion:
+      settings.region || process.env.AWS_REGION?.trim() || "us-east-1",
+    hasCredentials,
+  };
+}
 
 interface SttLogMetadata {
   durationMs?: number;
@@ -82,7 +104,7 @@ export async function GET(req: NextRequest) {
         : [];
     const userMap = new Map(users.map((u) => [u.id, u]));
 
-    const enriched = allLogs.map((log) => {
+    const enriched: SttUsageRecord[] = allLogs.map((log) => {
       const meta = parseSttMetadata(log.metadata);
       const user = log.userId ? userMap.get(log.userId) : undefined;
       const userName = user
@@ -103,7 +125,7 @@ export async function GET(req: NextRequest) {
         userId: log.userId,
         userName,
         userEmail,
-        role,
+        userRole: role,
         durationMs,
         surface,
         languageCode,
@@ -113,26 +135,15 @@ export async function GET(req: NextRequest) {
     const filtered = q
       ? enriched.filter(
           (row) =>
-            row.userName.toLowerCase().includes(q) ||
-            row.userEmail.toLowerCase().includes(q) ||
+            (row.userName ?? "").toLowerCase().includes(q) ||
+            (row.userEmail ?? "").toLowerCase().includes(q) ||
             row.surface.toLowerCase().includes(q) ||
-            row.role.toLowerCase().includes(q),
+            (row.userRole ?? "").toLowerCase().includes(q),
         )
       : enriched;
 
     // Aggregate per-user usage summary across all matching sessions
-    const byUser = new Map<
-      string,
-      {
-        userId: string;
-        userName: string;
-        userEmail: string;
-        role: string;
-        sessions: number;
-        totalDurationMs: number;
-        lastUsedAt: string;
-      }
-    >();
+    const byUser = new Map<string, SttUserUsageSummary>();
 
     let totalDurationMs = 0;
     for (const row of filtered) {
@@ -148,9 +159,9 @@ export async function GET(req: NextRequest) {
       } else {
         byUser.set(key, {
           userId: key,
-          userName: row.userName,
-          userEmail: row.userEmail,
-          role: row.role,
+          userName: row.userName ?? "(deleted user)",
+          userEmail: row.userEmail ?? "—",
+          userRole: row.userRole ?? "—",
           sessions: 1,
           totalDurationMs: row.durationMs,
           lastUsedAt: row.createdAt,
@@ -165,8 +176,8 @@ export async function GET(req: NextRequest) {
     const start = (page - 1) * pageSize;
     const logsPage = filtered.slice(start, start + pageSize);
 
-    return NextResponse.json({
-      settings,
+    return NextResponse.json<SttAdminPayload>({
+      ...settingsPayload(settings),
       defaultRegion: process.env.AWS_REGION?.trim() || "us-east-1",
       catalogs: {
         languages: STT_LANGUAGES,
@@ -179,7 +190,7 @@ export async function GET(req: NextRequest) {
         totalDurationMs,
         uniqueUsers: userSummaries.length,
         userSummaries: userSummaries.slice(0, 50),
-        logs: logsPage,
+        recentSessions: logsPage,
         page,
         pageSize,
       },
@@ -232,7 +243,9 @@ export async function PUT(req: Request) {
       metadata: { settings },
     });
 
-    return NextResponse.json({ settings });
+    return NextResponse.json<SttAdminSettingsPayload>(
+      settingsPayload(settings),
+    );
   } catch (error) {
     logApiError("ADMIN_STT_PUT", error);
     return NextResponse.json(
