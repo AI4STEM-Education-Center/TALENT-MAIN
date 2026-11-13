@@ -175,4 +175,25 @@ describe("normalizeMathDelimiters", () => {
     expect(n("- \\[F=ma\\]\n- next")).toBe("- $$\n  F=ma\n  $$\n- next");
     expect(n("1. Use\n   \\[a=b\\]")).toBe("1. Use\n   $$\n   a=b\n   $$");
   });
+
+  it("keeps prose following a multiline display outside its closing fence", () => {
+    expect(n("\\[\nF=ma\n\\],\nwhere m is mass.")).toBe(
+      "$$\nF=ma\n$$\n,\nwhere m is mass.",
+    );
+    expect(n("> \\[\n> x^2\n> \\] to solve.")).toBe(
+      "> $$\n> x^2\n> $$\n> to solve.",
+    );
+    expect(n("- \\[\n  x^2\n  \\].\n- Next")).toBe(
+      "- $$\n  x^2\n  $$\n  .\n- Next",
+    );
+  });
+
+  it("converts multiline math embedded in a sentence", () => {
+    expect(n("Thus \\[\nx^2 + y^2\n= r^2\n\\] holds.")).toBe(
+      "Thus $$x^2 + y^2 = r^2$$ holds.",
+    );
+    expect(n("> Thus \\[\n> F=ma\n> \\] holds.")).toBe(
+      "> Thus $$F=ma$$ holds.",
+    );
+  });
 });

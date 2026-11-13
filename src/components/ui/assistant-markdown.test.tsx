@@ -83,6 +83,32 @@ describe("AssistantMarkdown", () => {
     expect(html).not.toContain("katex");
   });
 
+  it("renders multiline display math followed by punctuation or prose", () => {
+    const container = document.createElement("div");
+    container.innerHTML = render(
+      "> \\[\n> x^2\n> \\] to solve.\n\n- \\[\n  F=ma\n  \\].\n- Next",
+    );
+    expect(container.querySelectorAll(".katex-display")).toHaveLength(2);
+    expect(container.querySelector("blockquote p")?.textContent).toBe(
+      "to solve.",
+    );
+    expect(container.querySelectorAll("li")).toHaveLength(2);
+    expect(container.querySelectorAll("li")[1]?.textContent).toBe("Next");
+    expect(container.querySelector(".katex-error")).toBeNull();
+    expect(container.textContent).not.toContain("\\]");
+  });
+
+  it("renders multiline math embedded in a quoted sentence", () => {
+    const container = document.createElement("div");
+    container.innerHTML = render("> Thus \\[\n> F=ma\n> \\] holds.");
+    expect(container.querySelector("blockquote .katex")).not.toBeNull();
+    expect(container.querySelector("annotation")?.textContent).toBe("F=ma");
+    expect(container.querySelector("blockquote")?.textContent).toContain(
+      "holds.",
+    );
+    expect(container.querySelector(".katex-error")).toBeNull();
+  });
+
   it("does not throw on malformed TeX", () => {
     expect(() => render("$\\frac{1}{$")).not.toThrow();
   });

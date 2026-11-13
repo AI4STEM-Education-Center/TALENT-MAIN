@@ -164,25 +164,27 @@ function convertDisplay(text: string, lead: string): string {
     const lineEnd = text.indexOf("\n", close + 2);
     const after = text.slice(close + 2, lineEnd === -1 ? text.length : lineEnd);
     const body = text.slice(open + 2, close);
-    if (CONTAINER_PREFIX.test(prefix) && after.trim() === "") {
+    const lines = body
+      .split("\n")
+      .map((line, k) => (k === 0 ? line : line.replace(QUOTE_MARKERS, "")))
+      .map((line) => line.trim())
+      .filter((line) => line !== "");
+    if (
+      CONTAINER_PREFIX.test(prefix) &&
+      (after.trim() === "" || body.includes("\n"))
+    ) {
       // A display block on its own line(s): one line per formula line, each
       // carrying the container prefix so `>` quotes and lists survive.
       const cont = continuation(prefix);
-      const lines = body
-        .split("\n")
-        .map((line, k) => (k === 0 ? line : line.replace(QUOTE_MARKERS, "")))
-        .map((line) => line.trim())
-        .filter((line) => line !== "");
       out += ["$$", ...lines.map((l) => cont + l), cont + "$$"].join("\n");
-      out += after;
+      // A closing fence must be alone on its line. Keep punctuation or prose
+      // after a multiline formula outside the equation, in the same container.
+      out += after.trim() === "" ? after : "\n" + cont + after.trimStart();
       i = close + 2 + after.length;
-    } else if (!body.includes("\n")) {
-      // Inside a sentence → $$ … $$ (rendered inline by remark-math).
-      out += `$$${body.trim()}$$`;
-      i = close + 2;
     } else {
-      // A multi-line formula mixed into a sentence: leave it as written.
-      out += text.slice(open, close + 2);
+      // Inside a sentence → $$ … $$ (rendered inline by remark-math).
+      // Fold source line breaks so a closing $$ cannot become a new block.
+      out += `$$${lines.join(" ")}$$`;
       i = close + 2;
     }
   }
