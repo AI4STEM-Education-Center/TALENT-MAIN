@@ -179,7 +179,7 @@ function SttConfigSection({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="__env_default__">
-                Default from AWS_REGION ({effectiveRegion})
+                Default from AWS_REGION ({effectiveRegion || "not configured"})
               </SelectItem>
               {AWS_TRANSCRIBE_STREAMING_REGIONS.map((region) => (
                 <SelectItem key={region} value={region}>
@@ -189,7 +189,8 @@ function SttConfigSection({
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground">
-            Effective region: <code>{settings.region || effectiveRegion}</code>
+            Effective region:{" "}
+            <code>{settings.region || effectiveRegion || "not configured"}</code>
           </p>
         </div>
 

@@ -68,13 +68,13 @@ describe("admin STT card response contract", () => {
     });
   });
 
-  it("uses the default region when no deployment region is configured", async () => {
+  it("does not advertise a fallback region that the presigner cannot use", async () => {
     vi.stubEnv("AWS_REGION", "");
     const response = await GET(
       new NextRequest("http://localhost/api/admin/stt"),
     );
     expect(await response.json()).toMatchObject({
-      effectiveRegion: "us-east-1",
+      effectiveRegion: "",
     });
   });
 });
