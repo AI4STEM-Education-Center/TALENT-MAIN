@@ -22,14 +22,17 @@ const appEnv = process.env.APP_ENV?.toLowerCase() === "prod" ? "prod" : "dev";
 // Observe violations (wire up a report endpoint), then promote this to
 // `Content-Security-Policy`. Note that enforcing it will need `connect-src`
 // widened to BOTH the CloudFront domain and the S3 host, since uploads `fetch`
-// a presigned PUT straight to the bucket.
+// a presigned PUT straight to the bucket. Speech-to-Text loads its AudioWorklet
+// from `'self'` (`/stt-pcm-capture-worklet.js`, governed by `script-src`) and
+// connects to presigned Amazon Transcribe Streaming WebSockets via
+// `wss://*.amazonaws.com:8443`.
 const cspReportOnly = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  "connect-src 'self'",
+  "connect-src 'self' wss://*.amazonaws.com:8443",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -41,7 +44,7 @@ const securityHeaders = [
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   {
     key: "Permissions-Policy",
-    value: "camera=(), microphone=(), geolocation=(), browsing-topics=()",
+    value: "camera=(), microphone=(self), geolocation=(), browsing-topics=()",
   },
   { key: "Content-Security-Policy-Report-Only", value: cspReportOnly },
   // HSTS only in production: localhost dev is plain HTTP and must not be pinned
@@ -54,6 +57,13 @@ const securityHeaders = [
         },
       ]
     : []),
+];
+
+const simulationSecurityHeaders = [
+  {
+    key: "Permissions-Policy",
+    value: "camera=(), microphone=(), geolocation=(), browsing-topics=()",
+  },
 ];
 
 /** @type {import('next').NextConfig} */
@@ -84,7 +94,17 @@ const nextConfig = {
     NEXT_PUBLIC_CHANGELOG: changelogText,
   },
   async headers() {
-    return [{ source: "/:path*", headers: securityHeaders }];
+    return [
+      { source: "/:path*", headers: securityHeaders },
+      // Override `microphone=(self)` back to `microphone=()` on simulation HTML
+      // responses. Next's server applies `next.config.mjs` headers before route
+      // handler headers and skips route headers whose key is already present,
+      // so this per-route override must live here (later matching rule wins).
+      {
+        source: "/api/simulations/:id/content",
+        headers: simulationSecurityHeaders,
+      },
+    ];
   },
   // Trust X-Forwarded-* headers from Cloudflare Tunnel proxy
   // Cloudflare terminates TLS; requests arrive over HTTP to cloudflared -> localhost

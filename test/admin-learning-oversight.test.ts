@@ -150,6 +150,9 @@ describe("admin learning oversight access", () => {
     expect(response.headers.get("content-security-policy")).toContain(
       "frame-ancestors 'self'",
     );
+    expect(response.headers.get("permissions-policy")).toContain(
+      "microphone=()",
+    );
     expect(await prisma.simulationSession.count()).toBe(0);
   });
 

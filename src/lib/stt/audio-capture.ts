@@ -88,16 +88,46 @@ export interface AudioCaptureHandle {
   stop: () => void;
 }
 
+function isMicrophoneBlockedByPermissionsPolicy(): boolean {
+  if (typeof document === "undefined") return false;
+  const doc = document as Document & {
+    permissionsPolicy?: { allowsFeature?: (feature: string) => boolean };
+    featurePolicy?: { allowsFeature?: (feature: string) => boolean };
+  };
+  const policy = doc.permissionsPolicy ?? doc.featurePolicy;
+  if (typeof policy?.allowsFeature === "function") {
+    try {
+      return policy.allowsFeature("microphone") === false;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
 /**
  * Translate browser `getUserMedia` errors into clear, actionable messages.
  */
 export function describeMicrophoneError(error: unknown): string {
-  const name = (error as { name?: string } | null)?.name ?? "";
+  const errObj = error as { name?: string; message?: string } | null;
+  const name = errObj?.name ?? "";
+  const message = errObj?.message ?? "";
   if (
     name === "NotAllowedError" ||
     name === "PermissionDeniedError" ||
     name === "SecurityError"
   ) {
+    if (
+      isMicrophoneBlockedByPermissionsPolicy() ||
+      /permissions? policy|feature policy|not allowed in this document/i.test(
+        message,
+      )
+    ) {
+      return "Microphone access is blocked by this page's Permissions-Policy header or frame settings.";
+    }
+    if (/by system/i.test(message)) {
+      return "Microphone access was blocked by your operating system. Allow microphone access for your browser in your system privacy settings and try again.";
+    }
     return "Microphone access was denied. Please allow microphone permission in your browser settings and try again.";
   }
   if (name === "NotFoundError" || name === "DevicesNotFoundError") {
@@ -233,26 +263,44 @@ export async function startMicrophoneCapture(
       throw new Error("Web Audio API is not supported in this browser.");
     }
 
-    audioContext = new AudioCtx({ sampleRate: TARGET_SAMPLE_RATE });
+    // Prefer a 16 kHz AudioContext, but fall back to the device's native sample
+    // rate if the browser (e.g. Firefox) rejects connecting a 48 kHz MediaStream
+    // to a 16 kHz AudioContext — `downsampleAndConvertToPcm16` resamples cleanly.
+    try {
+      audioContext = new AudioCtx({ sampleRate: TARGET_SAMPLE_RATE });
+      sourceNode = audioContext.createMediaStreamSource(stream);
+    } catch {
+      if (audioContext && audioContext.state !== "closed") {
+        void audioContext.close().catch(() => {});
+      }
+      audioContext = new AudioCtx();
+      sourceNode = audioContext.createMediaStreamSource(stream);
+    }
     if (audioContext.state === "suspended") {
       await audioContext.resume();
     }
     const actualSampleRate = audioContext.sampleRate || TARGET_SAMPLE_RATE;
-    sourceNode = audioContext.createMediaStreamSource(stream);
 
     let useWorklet = false;
-    if (
-      audioContext.audioWorklet &&
-      typeof AudioWorkletNode !== "undefined" &&
-      typeof Blob !== "undefined" &&
-      typeof URL.createObjectURL === "function"
-    ) {
+    if (audioContext.audioWorklet && typeof AudioWorkletNode !== "undefined") {
       try {
-        const blob = new Blob([WORKLET_PROCESSOR_SOURCE], {
-          type: "application/javascript",
-        });
-        workletUrl = URL.createObjectURL(blob);
-        await audioContext.audioWorklet.addModule(workletUrl);
+        try {
+          await audioContext.audioWorklet.addModule(
+            "/stt-pcm-capture-worklet.js",
+          );
+        } catch (staticErr) {
+          if (
+            typeof Blob === "undefined" ||
+            typeof URL.createObjectURL !== "function"
+          ) {
+            throw staticErr;
+          }
+          const blob = new Blob([WORKLET_PROCESSOR_SOURCE], {
+            type: "application/javascript",
+          });
+          workletUrl = URL.createObjectURL(blob);
+          await audioContext.audioWorklet.addModule(workletUrl);
+        }
         workletNode = new AudioWorkletNode(
           audioContext,
           "stt-pcm-capture-processor",
@@ -263,9 +311,12 @@ export async function startMicrophoneCapture(
           }
         };
         sourceNode.connect(workletNode);
+        // Connect to destination so pull-based audio graphs (Safari/WebKit)
+        // invoke `process()`. The processor leaves outputs untouched (silent 0s).
+        workletNode.connect(audioContext.destination);
         useWorklet = true;
       } catch {
-        // Fall back to ScriptProcessorNode if CSP or browser blocks Blob worklet
+        // Fall back to ScriptProcessorNode if AudioWorklet cannot load
         useWorklet = false;
       }
     }
