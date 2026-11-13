@@ -283,7 +283,8 @@ describe("coach prompt and tools", () => {
     expect(prompt).toContain(
       "Advice-only replies are allowed only when no listed option fits",
     );
-    expect(prompt).toContain("never more than two cards");
+    expect(prompt).toContain("Never show more than one card in any reply");
+    expect(prompt).not.toContain("two cards");
     expect(prompt).toContain("Keep replies under 150 words");
     expect(prompt).toContain("Only offer what the question context lists");
     expect(prompt).toContain("never reveal the answer");

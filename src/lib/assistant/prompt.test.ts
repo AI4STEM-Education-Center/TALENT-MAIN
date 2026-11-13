@@ -12,7 +12,7 @@ const skill = (id: string, instructions: string): AssistantSkill => ({
 });
 
 describe("buildSystemPrompt", () => {
-  it("uses LaTeX dollar delimiters in shared and coach prompts", () => {
+  it("uses LaTeX dollar delimiters in rendered assistant and coach prompts", () => {
     const prompts = [
       buildSystemPrompt("student", [], [], ""),
       buildSystemPrompt("teacher", [], [], ""),
@@ -28,6 +28,12 @@ describe("buildSystemPrompt", () => {
         "Write math in LaTeX: use $…$ for inline math and $$…$$ for display math.",
       );
     }
+  });
+
+  it("does not request LaTeX in the plain-text simulation editing chat", () => {
+    const prompt = buildSystemPrompt("simulation", [], [], "");
+    expect(prompt).not.toContain("Write math in LaTeX");
+    expect(prompt).toContain("write your reply to the teacher as plain prose");
   });
 
   it("always carries the injection and no-write rules", () => {
