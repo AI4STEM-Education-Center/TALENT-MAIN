@@ -1415,6 +1415,39 @@ describe("student study recommendations", () => {
       ).toBeNull();
   });
 
+  it("requires one simulation assignment that is both published and in an active enrolled class", async () => {
+    const f = await fixture();
+    const candidate = (await discover(f.student.student.id)).find(
+      (c) => c.action.ref.kind === "simulation",
+    )!;
+    const scope = (await resolveCoachScope(f.student.student.id, ATTEMPT, 1))!;
+    const paused = await createClass(f.teacher.teacher.id);
+    await prisma.classEnrollment.create({
+      data: { classId: paused.id, studentId: f.student.student.id },
+    });
+    await prisma.class.update({
+      where: { id: paused.id },
+      data: { disabledAt: new Date() },
+    });
+    await prisma.classQuiz.create({
+      data: { classId: paused.id, quizId: f.quiz.id, published: true },
+    });
+    await prisma.classQuiz.update({
+      where: { classId_quizId: { classId: f.cls.id, quizId: f.quiz.id } },
+      data: { published: false },
+    });
+    expect(
+      (await discover(f.student.student.id)).some(
+        (c) => c.action.ref.kind === "simulation",
+      ),
+    ).toBe(false);
+    expect(
+      await hydrateStudyAction(candidate.action, f.student.student.id),
+    ).toBeNull();
+    expect((await loadCoachCandidates(scope)).simulations).toEqual([]);
+    expect(await hydrateCoachAction(candidate.action.ref, scope)).toBeNull();
+  });
+
   it("rechecks enrollment and paused classes when displaying old references", async () => {
     const f = await fixture();
     const candidates = await discover(f.student.student.id);

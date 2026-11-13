@@ -142,7 +142,11 @@ export async function findStudyCandidates(studentId: string, topic?: string) {
       where: {
         status: "READY",
         question: {
-          quiz: { classQuizzes: { some: { classId: { in: classIds } } } },
+          quiz: {
+            classQuizzes: {
+              some: { classId: { in: classIds }, published: true },
+            },
+          },
         },
       },
       select: { id: true },

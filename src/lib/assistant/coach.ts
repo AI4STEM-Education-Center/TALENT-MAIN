@@ -378,15 +378,19 @@ export async function loadSimulationOptions(
   });
   const ready = rows.filter((row) => row.status === "READY" && row.storageKey);
 
-  // The same rule as GET /api/simulations/[id]/content for a student: enrolled
-  // in a class the simulation's quiz is assigned to. Checked here so the coach
-  // never offers a simulation the viewer would then 404.
+  // A simulation needs a published assignment in an active enrolled class.
+  // Apply all three checks to the same assignment so separate classes cannot
+  // combine their grants to expose content neither makes available.
   const assigned = new Set(
     (
       await prisma.classQuiz.findMany({
         where: {
           quizId: { in: [...new Set(ready.map((row) => row.question.quizId))] },
-          class: { enrollments: { some: { studentId: scope.studentId } } },
+          published: true,
+          class: {
+            disabledAt: null,
+            enrollments: { some: { studentId: scope.studentId } },
+          },
         },
         select: { quizId: true },
       })
