@@ -76,9 +76,11 @@ export function normalizeMathDelimiters(markdown: string): string {
   return out.join("\n");
 }
 
-// Inline code (matching backtick runs), link/image destinations, autolinks.
+// Inline code (matching complete backtick runs), link/image destinations,
+// single-line reference definitions, autolinks. Requiring a complete opening
+// run avoids retrying every suffix/length of an unmatched run (cubic work).
 const PROTECTED =
-  /(`+)[\s\S]*?(?<!`)\1(?!`)|\]\((?:[^()\s]|\([^()\s]*\))*(?:\s+"[^"]*")?\)|<[a-zA-Z][a-zA-Z0-9+.-]*:[^>\s]*>/g;
+  /(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)|\]\((?:[^()\s]|\([^()\s]*\))*(?:\s+(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\((?:\\.|[^()\\])*\)))?\)|^ {0,3}\[(?:\\.|[^\]\\\n])+\]:[^\n]*|<[a-zA-Z][a-zA-Z0-9+.-]*:[^>\s]*>/gm;
 
 function rewriteParagraph(text: string): string {
   let result = "";

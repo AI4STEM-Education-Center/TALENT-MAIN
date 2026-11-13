@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
+import { resolve } from "node:path";
 import { normalizeMathDelimiters as n } from "./math-delimiters";
 
 describe("normalizeMathDelimiters", () => {
@@ -59,5 +61,59 @@ describe("normalizeMathDelimiters", () => {
 
   it("keeps an unterminated \\( as literal text", () => {
     expect(n("a \\(b")).toBe("a \\(b");
+  });
+
+  it("protects all three Markdown link title delimiters", () => {
+    for (const title of ['"say \\(x\\)"', "'say \\(x\\)'", "(say \\(x\\))"]) {
+      const link = `[x](https://example.com ${title})`;
+      expect(n(`${link} and \\(y\\)`)).toBe(`${link} and $y$`);
+    }
+  });
+
+  it("preserves single-line reference destinations and titles", () => {
+    const definition = '[x]: https://example.com/a\\(b\\) "Costs $5"';
+    expect(n(`[x] and \\(y\\)\n\n${definition}`)).toBe(
+      `[x] and $y$\n\n${definition}`,
+    );
+  });
+
+  it("does not stall on very long unmatched backtick runs", () => {
+    // Use a subprocess timeout: a synchronous regex cannot be interrupted by
+    // Vitest's own timeout. This case took cubic time before the boundary fix.
+    const modulePath = resolve("src/lib/math-delimiters.ts");
+    execFileSync(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `import { normalizeMathDelimiters as n } from ${JSON.stringify(modulePath)};
+         const input = 'text ' + String.fromCharCode(96).repeat(100000) + 'x$';
+         if (n(input) !== input.slice(0, -1) + '\\\\$') process.exit(1);`,
+      ],
+      { timeout: 5000, stdio: "pipe" },
+    );
+  });
+
+  it("renders nested list continuation math rather than treating it as code", () => {
+    expect(n("- outer\n    - inner\n\n        \\(x\\)")).toBe(
+      "- outer\n    - inner\n\n        $x$",
+    );
+  });
+
+  it("preserves TeX line breaks in display blocks without blank lines", () => {
+    const input =
+      "before\n$$\n\\begin{aligned}a&=b\\\\c&=d\\end{aligned}\n$$\nafter";
+    expect(n(input)).toBe(input);
+  });
+
+  it("preserves unclosed fences through the end of the message", () => {
+    const input = "~~~\n\\(x\\) $5\n\\[y\\]";
+    expect(n(input)).toBe(input);
+  });
+
+  it("leaves ordinary prose byte-identical, including CRLF and Unicode", () => {
+    const input =
+      "**Newton’s law**\r\n\r\n- Force → acceleration.\r\n\t中文 😀\r\n";
+    expect(n(input)).toBe(input);
   });
 });

@@ -40,6 +40,29 @@ describe("AssistantMarkdown", () => {
     expect(html).toContain("then solve.");
   });
 
+  it("renders display math with CRLF input and TeX line breaks", () => {
+    const html = render(
+      "before\r\n\\[\\begin{aligned}a&=b\\\\c&=d\\end{aligned}\\]\r\nafter",
+    );
+    expect(html).toContain("katex-display");
+    expect(html).not.toContain("katex-error");
+    expect(html).toContain("after");
+  });
+
+  it("preserves reference URLs and link titles containing backslash delimiters", () => {
+    const container = document.createElement("div");
+    container.innerHTML = render(
+      "[ref]\n\n[ref]: https://example.com/a\\(b\\)\n\n" +
+        "[title](https://example.com 'say \\(x\\)')",
+    );
+    expect(container.querySelector("a")?.getAttribute("href")).toBe(
+      "https://example.com/a(b)",
+    );
+    expect(container.querySelector("a[title]")?.getAttribute("title")).toBe(
+      "say (x)",
+    );
+  });
+
   it("does not throw on malformed TeX", () => {
     expect(() => render("$\\frac{1}{$")).not.toThrow();
   });
