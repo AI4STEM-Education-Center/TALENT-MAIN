@@ -112,7 +112,7 @@ export default async function StudentDashboard() {
               notifications.map((n) => (
                 <Link
                   key={n.id}
-                  href="/student/notifications"
+                  href={n.href ?? "/student/notifications"}
                   className={cn(
                     "block px-4 py-3 hover:bg-muted/40 transition-colors",
                     !n.readAt && "bg-primary/5",
@@ -125,15 +125,17 @@ export default async function StudentDashboard() {
                         !n.readAt ? "font-semibold" : "font-medium",
                       )}
                     >
-                      {n.message.subject}
+                      {n.message?.subject ?? n.subject ?? "Notification"}
                     </span>
                     {!n.readAt && (
                       <span className="size-2 rounded-full bg-primary shrink-0" />
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    {n.message.sender.firstName} {n.message.sender.lastName}
-                    {n.message.class ? ` · ${n.message.class.name}` : ""} ·{" "}
+                    {n.message
+                      ? `${n.message.sender.firstName} ${n.message.sender.lastName}`
+                      : "AI4Talent"}
+                    {n.message?.class ? ` · ${n.message.class.name}` : ""} ·{" "}
                     {new Date(n.createdAt).toLocaleDateString()}
                   </p>
                 </Link>

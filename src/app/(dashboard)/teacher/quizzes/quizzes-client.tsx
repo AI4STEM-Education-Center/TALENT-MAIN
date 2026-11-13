@@ -40,6 +40,9 @@ interface Quiz {
   topic: QuizTopic | null;
   _count: { questions: number };
   alreadyImported?: boolean;
+  /** Generated versions of this quiz waiting for the teacher's approval. */
+  pendingVariantCount?: number;
+  pendingBatchId?: string | null;
 }
 
 /** Group quizzes under their (optional) topic label; ungrouped quizzes last. */
@@ -340,11 +343,32 @@ export function TeacherQuizzesClient({
                       <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
                         <div className="min-w-0 flex-1">
                           <span className="font-semibold">{quiz.name}</span>
-                          <div className="flex gap-2 mt-1">
+                          <div className="flex flex-wrap gap-2 mt-1">
                             <Badge variant="outline">
                               {quiz._count.questions} question
                               {quiz._count.questions !== 1 ? "s" : ""}
                             </Badge>
+                            {(quiz.pendingVariantCount ?? 0) > 0 && (
+                              <Link
+                                href={
+                                  quiz.pendingBatchId
+                                    ? `/teacher/quizzes/${quiz.id}/versions/${quiz.pendingBatchId}`
+                                    : `/teacher/quizzes/${quiz.id}`
+                                }
+                                className="rounded-full focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+                              >
+                                <Badge
+                                  variant="warning"
+                                  className="hover:underline"
+                                >
+                                  {quiz.pendingVariantCount} version
+                                  {quiz.pendingVariantCount === 1
+                                    ? ""
+                                    : "s"}{" "}
+                                  awaiting approval
+                                </Badge>
+                              </Link>
+                            )}
                           </div>
                         </div>
                         <div className="flex flex-wrap gap-1">

@@ -50,6 +50,7 @@ export default auth(async (req) => {
   }
 
   const { pathname } = req.nextUrl;
+  const requestedPath = `${pathname}${req.nextUrl.search ?? ""}`;
 
   // Feed the admin system log's traffic samples (request + unique-IP counts).
   // Counted after host validation so rejected garbage doesn't inflate usage.
@@ -131,7 +132,9 @@ export default auth(async (req) => {
       );
     }
     const loginUrl = new URL("/login", req.url);
-    loginUrl.searchParams.set("callbackUrl", pathname);
+    // Keep the query string so deep links (e.g. a review page's ?batchId=)
+    // survive the sign-in round trip.
+    loginUrl.searchParams.set("callbackUrl", requestedPath);
     return NextResponse.redirect(loginUrl);
   }
 
@@ -203,9 +206,10 @@ export default auth(async (req) => {
       );
     }
     if (pathname.startsWith("/teacher")) {
-      return NextResponse.redirect(
-        new URL("/teacher/consent-required", req.url),
-      );
+      // Bring the teacher back to the page they asked for once they agree.
+      const consentUrl = new URL("/teacher/consent-required", req.url);
+      consentUrl.searchParams.set("callbackUrl", requestedPath);
+      return NextResponse.redirect(consentUrl);
     }
   }
 

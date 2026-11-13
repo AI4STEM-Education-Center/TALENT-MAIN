@@ -14,14 +14,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { homePathForRole } from "@/lib/roles";
-
-// Accept only same-origin relative paths from the URL to prevent open redirects
-// (reject protocol-relative "//host" and absolute URLs).
-function safeRelativeCallbackUrl(value: string | null): string | undefined {
-  return value && value.startsWith("/") && !value.startsWith("//")
-    ? value
-    : undefined;
-}
+import { safeRelativeCallbackUrl } from "@/lib/safe-callback-url";
 
 function LoginForm() {
   const { push, refresh } = useRouter();
