@@ -1093,6 +1093,27 @@ describe("assistant settings", () => {
     const settings = await getAssistantSettings("student");
     expect(settings.enabledSkills).not.toContain("student-quiz-results");
     expect(settings.enabledSkills).toContain("student-syllabus");
+    expect(settings.enabledSkills).toContain("student-study-recommendations");
+  });
+
+  it("enables recommendations on deployments with an explicit pre-release skill list", async () => {
+    await prisma.assistantConfig.create({
+      data: {
+        id: "student",
+        audience: "student",
+        enabledSkills: JSON.stringify([
+          "student-quiz-results",
+          "student-syllabus",
+        ]),
+        knownSkills: JSON.stringify([
+          "student-quiz-results",
+          "student-syllabus",
+        ]),
+      },
+    });
+    expect((await getAssistantSettings("student")).enabledSkills).toContain(
+      "student-study-recommendations",
+    );
   });
 
   it("keeps a skill off once the admin has saved with it in view", async () => {

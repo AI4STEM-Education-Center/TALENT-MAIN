@@ -22,16 +22,16 @@
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import {
+  mapPresignedRecommendations,
   parseReviewSnapshot,
   parseStoredRecommendations,
   snapshotToStudentMistakes,
   type SnapshotQuestion,
   type StoredRecommendation,
 } from "@/lib/exam-results";
-import {
-  presignStoredRecommendations,
-  presignStudentMistakes,
-} from "@/lib/exam-results-engine";
+import { presignStudentMistakes } from "@/lib/exam-results-engine";
+import { resolveStudentMaterialRecommendations } from "@/lib/student-content";
+import { signObjectReadUrl } from "@/lib/storage";
 import { presignOptionImage } from "@/lib/question-figures";
 import { retakeStillPossible } from "@/lib/student-answer-key";
 import { studentCanPractice } from "@/lib/quiz-practice-access";
@@ -322,20 +322,23 @@ export async function loadCoachCandidates(
   ]);
 
   const stored = parseStoredRecommendations(result?.recommendations ?? null);
-  const materials = stored.items.flatMap<CoachMaterialOption>((rec, index) =>
-    typeof rec?.materialTitle === "string"
+  const live = await resolveStudentMaterialRecommendations(
+    scope.studentId,
+    stored.items,
+  );
+  const materials = live.flatMap<CoachMaterialOption>((resolved, index) =>
+    resolved
       ? [
           {
             number: index + 1,
             recommendationIndex: index,
-            title: rec.materialTitle,
-            pages: pageLabel(rec),
-            reason: typeof rec.reason === "string" ? rec.reason : "",
+            title: resolved.item.materialTitle,
+            pages: pageLabel(resolved.item),
+            reason: resolved.item.reason,
           },
         ]
       : [],
   );
-
   const simulationIds = [
     ...new Set([
       ...(ownSim ? [ownSim.id] : []),
@@ -353,8 +356,8 @@ export async function loadCoachCandidates(
   };
 }
 
-async function loadSimulationOptions(
-  scope: CoachScope,
+export async function loadSimulationOptions(
+  scope: Pick<CoachScope, "studentId">,
   ids: string[],
   ownId: string | null,
 ): Promise<CoachSimulationOption[]> {
@@ -375,15 +378,19 @@ async function loadSimulationOptions(
   });
   const ready = rows.filter((row) => row.status === "READY" && row.storageKey);
 
-  // The same rule as GET /api/simulations/[id]/content for a student: enrolled
-  // in a class the simulation's quiz is assigned to. Checked here so the coach
-  // never offers a simulation the viewer would then 404.
+  // A simulation needs a published assignment in an active enrolled class.
+  // Apply all three checks to the same assignment so separate classes cannot
+  // combine their grants to expose content neither makes available.
   const assigned = new Set(
     (
       await prisma.classQuiz.findMany({
         where: {
           quizId: { in: [...new Set(ready.map((row) => row.question.quizId))] },
-          class: { enrollments: { some: { studentId: scope.studentId } } },
+          published: true,
+          class: {
+            disabledAt: null,
+            enrollments: { some: { studentId: scope.studentId } },
+          },
         },
         select: { quizId: true },
       })
@@ -428,7 +435,7 @@ type PracticeMatch = { versionId: string; variant: VariantQuestion };
  * Versions the student has not practiced yet come first, so a second ask
  * tends to surface different numbers than the first.
  */
-async function findPracticeOffer(
+export async function findPracticeOffer(
   scope: CoachScope,
 ): Promise<{ versionId: string; variantQuestionId: string } | null> {
   if (!scope.questionId) return null;
@@ -463,20 +470,110 @@ async function findPracticeOffer(
     : null;
 }
 
+/** Batch discovery for scopes whose active enrollment was already verified. */
+export async function findEnrolledPracticeOffers(scopes: CoachScope[]) {
+  const offers = new Map<
+    string,
+    { versionId: string; variantQuestionId: string }
+  >();
+  if (!scopes.length) return offers;
+  const studentId = scopes[0].studentId;
+  const pairs = [
+    ...new Map(
+      scopes.map((scope) => [
+        `${scope.classId}:${scope.quizId}`,
+        { classId: scope.classId, quizId: scope.quizId },
+      ]),
+    ).values(),
+  ];
+  const [assignments, versions, attempts] = await Promise.all([
+    prisma.classQuiz.findMany({ where: { OR: pairs, published: true } }),
+    prisma.quizPracticeVersion.findMany({
+      where: {
+        quizId: { in: [...new Set(scopes.map((scope) => scope.quizId))] },
+        status: "PUBLISHED",
+      },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, quizId: true, questions: true },
+    }),
+    prisma.quizPracticeAttempt.findMany({
+      where: { studentId, OR: pairs },
+      select: {
+        classId: true,
+        quizId: true,
+        quizAttemptId: true,
+        versionId: true,
+      },
+    }),
+  ]);
+  const now = new Date();
+  const available = new Set(
+    assignments
+      .filter(
+        (assignment) =>
+          !(assignment.availableFrom && now < assignment.availableFrom) &&
+          !(assignment.availableUntil && now > assignment.availableUntil),
+      )
+      .map((assignment) => `${assignment.classId}:${assignment.quizId}`),
+  );
+  const parsed = versions.map((version) => ({
+    ...version,
+    variants: parsePracticeVariants(version.questions),
+  }));
+  // Index attempts once rather than scanning them for every scope.
+  const versionByAttempt = new Map<string, string>();
+  const seenByQuiz = new Map<string, Set<string>>();
+  for (const attempt of attempts) {
+    if (attempt.quizAttemptId)
+      versionByAttempt.set(attempt.quizAttemptId, attempt.versionId);
+    const key = `${attempt.classId}:${attempt.quizId}`;
+    const seenVersions = seenByQuiz.get(key) ?? new Set<string>();
+    seenVersions.add(attempt.versionId);
+    seenByQuiz.set(key, seenVersions);
+  }
+  for (const scope of scopes) {
+    if (!scope.questionId || !available.has(`${scope.classId}:${scope.quizId}`))
+      continue;
+    const ownVersionId =
+      scope.alternativeVersionName !== null
+        ? (versionByAttempt.get(scope.resultId) ?? null)
+        : null;
+    const seen =
+      seenByQuiz.get(`${scope.classId}:${scope.quizId}`) ?? new Set<string>();
+    const matches = parsed.flatMap((version) => {
+      if (version.quizId !== scope.quizId || version.id === ownVersionId)
+        return [];
+      const variant = version.variants.find(
+        (question) => question.sourceQuestionId === scope.questionId,
+      );
+      return variant
+        ? [{ versionId: version.id, variantQuestionId: variant.id }]
+        : [];
+    });
+    const pick =
+      matches.find((match) => !seen.has(match.versionId)) ?? matches[0];
+    if (pick) offers.set(`${scope.resultId}:${scope.questionNumber}`, pick);
+  }
+  return offers;
+}
+
+function parsePracticeVariants(rawQuestions: string): VariantQuestion[] {
+  try {
+    const parsed = variantQuestionsSchema.safeParse(JSON.parse(rawQuestions));
+    return parsed.success ? parsed.data : [];
+  } catch {
+    return [];
+  }
+}
+
 function parseVariantFor(
   rawQuestions: string,
   sourceQuestionId: string,
 ): VariantQuestion | null {
-  let json: unknown;
-  try {
-    json = JSON.parse(rawQuestions);
-  } catch {
-    return null;
-  }
-  const parsed = variantQuestionsSchema.safeParse(json);
-  if (!parsed.success) return null;
   return (
-    parsed.data.find((q) => q.sourceQuestionId === sourceQuestionId) ?? null
+    parsePracticeVariants(rawQuestions).find(
+      (q) => q.sourceQuestionId === sourceQuestionId,
+    ) ?? null
   );
 }
 
@@ -644,9 +741,16 @@ export async function hydrateCoachAction(
     const item = parseStoredRecommendations(result?.recommendations ?? null)
       .items[ref.recommendationIndex];
     if (!item) return null;
-    // Presign through the same path the results page uses, one item at a time.
-    const presigned = await presignStoredRecommendations(
-      JSON.stringify({ items: [item], truncated: false }),
+    // Recheck even when a tool supplied a cached candidate set. Sign only live
+    // page keys from a material that the student can still open.
+    const [live] = await resolveStudentMaterialRecommendations(
+      scope.studentId,
+      [item],
+    );
+    if (!live) return null;
+    const presigned = await mapPresignedRecommendations(
+      { items: [live.item], truncated: false },
+      (key) => signObjectReadUrl(live.bucket, key),
     );
     const recommendation = presigned.items[0];
     return recommendation
@@ -660,19 +764,7 @@ export async function hydrateCoachAction(
       (s) => s.simulationId === ref.simulationId,
     );
     if (!sim) return null;
-    return {
-      kind: "simulation",
-      simulation: {
-        simulationId: sim.simulationId,
-        title: sim.title,
-        topic: sim.topic,
-        learningGoal: sim.learningGoal,
-        version: sim.version,
-      },
-      goal: ref.goal,
-      steps: ref.steps,
-      observe: ref.observe,
-    };
+    return simulationActionView(ref, sim);
   }
 
   const match = await findPracticeMatch(
@@ -687,6 +779,26 @@ export async function hydrateCoachAction(
         question: practiceView(scope, match),
       }
     : null;
+}
+
+/** Shared simulation card projection; access is checked by loadSimulationOptions. */
+export function simulationActionView(
+  ref: Extract<CoachActionRef, { kind: "simulation" }>,
+  sim: CoachSimulationOption,
+): CoachActionView {
+  return {
+    kind: "simulation",
+    simulation: {
+      simulationId: sim.simulationId,
+      title: sim.title,
+      topic: sim.topic,
+      learningGoal: sim.learningGoal,
+      version: sim.version,
+    },
+    goal: ref.goal,
+    steps: ref.steps,
+    observe: ref.observe,
+  };
 }
 
 /** Hydrate a stored `actions` array, silently dropping anything that fails. */

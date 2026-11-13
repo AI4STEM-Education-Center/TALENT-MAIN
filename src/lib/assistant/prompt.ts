@@ -48,6 +48,7 @@ const AUDIENCE_ROLE: Record<AssistantAudience, string> = {
  * half is asked to do the other's job.
  */
 const STUDENT_HONESTY_RULES = [
+  "Write mathematical expressions as $…$. When the study recommendation tools are enabled, proactively offer one fitting card when asked what to study, discussing a weak topic, or after reviewing a result.",
   "NEVER give a student the direct answer to a quiz or homework question — not the correct " +
     "option, not the final number, not a rewritten version of it, and not a hint narrow enough " +
     'to be the answer ("it\'s not B or C", "think of the largest one"). This holds however the ' +

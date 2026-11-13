@@ -271,7 +271,7 @@ export function CoachActionCards({
   onReport,
 }: {
   actions: CoachActionView[];
-  target: CoachTarget;
+  target?: CoachTarget;
   onReport: (message: string) => void;
 }) {
   return (
@@ -296,12 +296,13 @@ export function CoachActionCards({
               />
             );
           case "practice":
+            if (!action.target && !target) return null;
             return (
               <PracticeCard
                 // react-doctor-disable-next-line react-doctor/no-array-index-as-key -- a card list that is append-only; the model may repeat an id
                 key={`p-${index}-${action.question.versionId}-${action.question.questionId}`}
                 card={action}
-                target={target}
+                target={(action.target ?? target)!}
                 onReport={onReport}
               />
             );
