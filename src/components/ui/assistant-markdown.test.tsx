@@ -63,6 +63,12 @@ describe("AssistantMarkdown", () => {
     );
   });
 
+  it("renders an escaped dollar inside math without a KaTeX error", () => {
+    const html = render("cost $a\\$b$ here");
+    expect(html).toContain('class="katex"');
+    expect(html).not.toContain("katex-error");
+  });
+
   it("does not throw on malformed TeX", () => {
     expect(() => render("$\\frac{1}{$")).not.toThrow();
   });

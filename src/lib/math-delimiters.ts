@@ -1,3 +1,9 @@
+import { unified } from "unified";
+import remarkParse from "remark-parse";
+import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import type { Nodes, Root } from "mdast";
+
 /**
  * Prepares model-written Markdown for remark-math.
  *
@@ -7,95 +13,117 @@
  * This rewrites the backslash delimiters to dollars and escapes any `$` that
  * cannot be math under Pandoc's rule (so "$5 and $10" stays currency).
  *
- * Code (fenced with ``` or ~~~ of any length, indented, or inline) and link
- * destinations are never touched.
+ * Where to rewrite is decided by the same Markdown parser the renderer uses:
+ * only the prose of paragraphs, headings and table cells is touched. Code of
+ * any kind, link and image destinations, titles and alt text, definitions,
+ * raw HTML and `$$` math blocks are left byte-for-byte as written.
  */
 export function normalizeMathDelimiters(markdown: string): string {
   if (!markdown.includes("$") && !/\\[([]/.test(markdown)) return markdown;
 
-  const lines = markdown.split("\n");
-  const out: string[] = [];
-  let paragraph: string[] = [];
-  let fence: { char: string; length: number } | null = null;
-  // The last non-blank line outside code was a list item or continuation,
-  // so an indented line belongs to the list rather than being code.
-  let inList = false;
-  let prevBlank = true;
+  // Parse exactly as the renderer will (GFM + math). `$$` blocks are left
+  // alone; inline math nodes count as prose so the currency rule below still
+  // decides whether a "$5 … $10" pair is really math.
+  const tree = PARSER.parse(markdown);
+  const blocked = collect(tree, (node) =>
+    node.type === "math" ? [span(node)] : null,
+  );
+  const prose = collect(tree, (node) =>
+    PROSE_BLOCKS.has(node.type)
+      ? subtract([span(node)], [...literalSpans(node), ...blocked])
+      : null,
+  ).sort((a, b) => a[0] - b[0]);
 
-  const flush = () => {
-    if (paragraph.length > 0) out.push(rewriteParagraph(paragraph.join("\n")));
-    paragraph = [];
-  };
-
-  for (const line of lines) {
-    if (fence) {
-      out.push(line);
-      const close = line.match(/^ {0,3}(`+|~+)\s*$/);
-      if (
-        close &&
-        close[1][0] === fence.char &&
-        close[1].length >= fence.length
-      )
-        fence = null;
-      continue;
-    }
-    const open = line.match(/^ {0,3}(`{3,}|~{3,})/);
-    if (open) {
-      flush();
-      fence = { char: open[1][0], length: open[1].length };
-      out.push(line);
-      prevBlank = false;
-      continue;
-    }
-    if (line.trim() === "") {
-      flush();
-      out.push(line);
-      prevBlank = true;
-      continue;
-    }
-    const indented = /^( {4}|\t)/.test(line);
-    if (indented && prevBlank && !inList) {
-      // Indented code block line (and its following indented lines).
-      flush();
-      out.push(line);
-      continue;
-    }
-    if (indented && !prevBlank && out.length > 0 && paragraph.length === 0) {
-      // Continuation of an indented code block.
-      const last = out[out.length - 1];
-      if (/^( {4}|\t)/.test(last) && !inList) {
-        out.push(line);
-        continue;
-      }
-    }
-    if (!indented) inList = /^\s{0,3}([-*+]|\d+[.)])\s/.test(line);
-    paragraph.push(line);
-    prevBlank = false;
-  }
-  flush();
-  return out.join("\n");
-}
-
-// Inline code (matching complete backtick runs), link/image destinations,
-// single-line reference definitions, autolinks. Requiring a complete opening
-// run avoids retrying every suffix/length of an unmatched run (cubic work).
-const PROTECTED =
-  /(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)|\]\((?:[^()\s]|\([^()\s]*\))*(?:\s+(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\((?:\\.|[^()\\])*\)))?\)|^ {0,3}\[(?:\\.|[^\]\\\n])+\]:[^\n]*|<[a-zA-Z][a-zA-Z0-9+.-]*:[^>\s]*>/gm;
-
-function rewriteParagraph(text: string): string {
-  let result = "";
+  let out = "";
   let last = 0;
-  for (const m of text.matchAll(PROTECTED)) {
-    result += rewriteText(text.slice(last, m.index));
-    result += m[0];
-    last = m.index + m[0].length;
+  for (const [start, end] of prose) {
+    if (start < last || end <= start) continue;
+    const atLineStart = start === 0 || markdown[start - 1] === "\n";
+    out += markdown.slice(last, start);
+    out += rewriteText(markdown.slice(start, end), atLineStart);
+    last = end;
   }
-  return result + rewriteText(text.slice(last));
+  return out + markdown.slice(last);
 }
 
-function rewriteText(text: string): string {
-  if (!text) return text;
-  const converted = text
+const PARSER = unified().use(remarkParse).use(remarkGfm).use(remarkMath);
+const PROSE_BLOCKS = new Set(["paragraph", "heading", "tableCell"]);
+// Inline nodes whose whole source is literal.
+const OPAQUE_INLINE = new Set([
+  "inlineCode",
+  "image",
+  "imageReference",
+  "html",
+  "footnoteReference",
+]);
+
+type Span = [number, number];
+
+function span(node: Nodes): Span {
+  return [node.position?.start.offset ?? 0, node.position?.end.offset ?? 0];
+}
+
+/** Walk the tree; a visitor that returns spans stops descent into that node. */
+function collect(root: Root, visit: (node: Nodes) => Span[] | null): Span[] {
+  const found: Span[] = [];
+  const walk = (node: Nodes) => {
+    const spans = visit(node);
+    if (spans) {
+      found.push(...spans);
+      return;
+    }
+    if ("children" in node) for (const child of node.children) walk(child);
+  };
+  walk(root);
+  return found;
+}
+
+/** Literal parts inside a prose block: code, images, HTML, link targets. */
+function literalSpans(block: Nodes): Span[] {
+  const spans: Span[] = [];
+  const walk = (node: Nodes) => {
+    if (OPAQUE_INLINE.has(node.type)) {
+      spans.push(span(node));
+      return;
+    }
+    if (node.type === "link" || node.type === "linkReference") {
+      // The label stays prose; whatever follows it — `](url "title")` or
+      // `][ref]` — is literal. Autolinks (`<url>`, bare URLs) have no
+      // separate label, so the whole link is literal.
+      const [start, end] = span(node);
+      const kids = node.children;
+      const labelEnd = kids.length ? span(kids[kids.length - 1])[1] : start;
+      if (end - labelEnd <= 1 || labelEnd <= start) {
+        spans.push([start, end]);
+        return;
+      }
+      spans.push([labelEnd, end]);
+    }
+    if ("children" in node) for (const child of node.children) walk(child);
+  };
+  walk(block);
+  return spans;
+}
+
+function subtract(spans: Span[], holes: Span[]): Span[] {
+  let result = spans;
+  for (const [hs, he] of holes) {
+    result = result.flatMap(([s, e]): Span[] => {
+      if (he <= s || hs >= e) return [[s, e]];
+      const parts: Span[] = [];
+      if (hs > s) parts.push([s, hs]);
+      if (he < e) parts.push([he, e]);
+      return parts;
+    });
+  }
+  return result;
+}
+
+function rewriteText(text: string, atLineStart: boolean): string {
+  // A sentinel stops `^` matching mid-line when this prose segment starts
+  // after a list marker, a link target or an inline code span.
+  const lead = atLineStart ? "" : "\u0000";
+  const converted = (lead + text)
     // \[ … \] filling its own line(s) → a display block.
     .replace(
       /^([ \t]*)\\\[([\s\S]+?)\\\][ \t]*$/gm,
@@ -105,7 +133,8 @@ function rewriteText(text: string): string {
     // \[ … \] inside a sentence → $$ … $$ (rendered inline by remark-math).
     .replace(/\\\[([\s\S]+?)\\\]/g, (_, body: string) => `$$${body.trim()}$$`)
     // \( … \) on one line → $ … $
-    .replace(/\\\(([^\n]+?)\\\)/g, (_, body: string) => `$${body.trim()}$`);
+    .replace(/\\\(([^\n]+?)\\\)/g, (_, body: string) => `$${body.trim()}$`)
+    .slice(lead.length);
   return escapeNonMathDollars(converted);
 }
 
@@ -113,6 +142,8 @@ function rewriteText(text: string): string {
  * Pandoc's rule for single-dollar math: the opening `$` must be followed by a
  * non-space, and the NEXT `$` must be preceded by a non-space and not followed
  * by a digit. Any `$` that can't open such a pair is escaped as currency.
+ * Inside a kept math span, `\$` becomes `{\char36}`: remark-math would
+ * otherwise end the span at the escaped dollar.
  */
 function escapeNonMathDollars(text: string): string {
   let out = "";
@@ -132,7 +163,7 @@ function escapeNonMathDollars(text: string): string {
     if (text[i + 1] === "$") {
       const close = findUnescaped(text, "$$", i + 2);
       if (close !== -1 && text.slice(i + 2, close).trim()) {
-        out += text.slice(i, close + 2);
+        out += "$$" + mathBody(text.slice(i + 2, close)) + "$$";
         i = close + 2;
       } else {
         out += "\\$\\$";
@@ -148,7 +179,7 @@ function escapeNonMathDollars(text: string): string {
       !/\s/.test(text[close - 1]) &&
       !/[0-9]/.test(text[close + 1] ?? "");
     if (opens && closes) {
-      out += text.slice(i, close + 1);
+      out += "$" + mathBody(text.slice(i + 1, close)) + "$";
       i = close + 1;
     } else {
       out += "\\$";
@@ -156,6 +187,10 @@ function escapeNonMathDollars(text: string): string {
     }
   }
   return out;
+}
+
+function mathBody(body: string): string {
+  return body.replace(/\\\$/g, "{\\char36}");
 }
 
 function findUnescaped(text: string, token: string, from: number): number {

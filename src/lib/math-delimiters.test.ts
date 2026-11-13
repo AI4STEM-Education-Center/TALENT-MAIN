@@ -116,4 +116,39 @@ describe("normalizeMathDelimiters", () => {
       "**Newton’s law**\r\n\r\n- Force → acceleration.\r\n\t中文 😀\r\n";
     expect(n(input)).toBe(input);
   });
+  it("leaves code inside list items untouched", () => {
+    const tilde = "- step\n\n  ~~~\n  \\(x\\) $5\n  ~~~\n\n- then \\(y\\)";
+    expect(n(tilde)).toBe("- step\n\n  ~~~\n  \\(x\\) $5\n  ~~~\n\n- then $y$");
+    const indented = "1. step\n\n        \\(x\\) $5\n\n2. \\(y\\)";
+    expect(n(indented)).toBe("1. step\n\n        \\(x\\) $5\n\n2. $y$");
+  });
+
+  it("preserves multi-line reference definitions", () => {
+    const def = "[x]:\n  https://example.com/a\\(b\\)";
+    expect(n(`[x] and \\(y\\)\n\n${def}`)).toBe(`[x] and $y$\n\n${def}`);
+  });
+
+  it("keeps image alt text and destinations literal", () => {
+    const img = "![\\(x\\) $5](https://example.com/a\\(b\\).png)";
+    expect(n(`${img} then \\(y\\)`)).toBe(`${img} then $y$`);
+  });
+
+  it("keeps escaped dollars inside math from closing the span", () => {
+    expect(n("cost $a\\$b$ here")).toBe("cost $a{\\char36}b$ here");
+  });
+
+  it("leaves $$ blocks with blank lines intact", () => {
+    const block = "$$\nx\n\ny\n$$";
+    expect(n(`intro\n\n${block}\n\nthen \\(z\\)`)).toBe(
+      `intro\n\n${block}\n\nthen $z$`,
+    );
+  });
+
+  it("converts math in link labels and headings but not autolinks", () => {
+    expect(n("## Force \\(F\\)")).toBe("## Force $F$");
+    expect(n("[see \\(x\\)](https://e.com/\\(q\\))")).toBe(
+      "[see $x$](https://e.com/\\(q\\))",
+    );
+    expect(n("https://e.com/$5 costs $5")).toBe("https://e.com/$5 costs \\$5");
+  });
 });
