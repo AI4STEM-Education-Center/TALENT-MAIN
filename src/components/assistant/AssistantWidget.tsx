@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { History, Move, Sparkles, SquarePen, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CoachActionCards } from "@/components/student/coach/CoachActionCards";
+import type { CoachActionView } from "@/lib/assistant/coach-types";
 import { AssistantHistory } from "./AssistantHistory";
 import { AssistantComposer } from "./AssistantComposer";
 import { useAssistantConversation } from "./use-assistant-conversation";
@@ -48,7 +50,17 @@ export function AssistantWidget() {
     setHistoryOpen,
     startNewConversation,
     openHistory,
+    send,
   } = conversation;
+  const renderCards = useCallback(
+    (cards: CoachActionView[]) => (
+      <CoachActionCards
+        actions={cards}
+        onReport={(message) => void send(message)}
+      />
+    ),
+    [send],
+  );
   const scrollRef = useRef<HTMLDivElement>(null);
   // Where the panel sits and how big it is. null until the first client-side
   // measurement, and unused on narrow screens, where the panel stays docked
@@ -259,6 +271,7 @@ export function AssistantWidget() {
               bubbles={bubbles}
               activity={activity}
               greeting={config.greeting}
+              renderCards={renderCards}
             />
           </div>
 

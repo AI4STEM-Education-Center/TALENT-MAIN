@@ -210,3 +210,46 @@ describe("assistant request ownership", () => {
     expect(state.current.bubbles).toEqual([]);
   });
 });
+
+describe("assistant study card transport", () => {
+  const card = {
+    kind: "practice",
+    reason: "Try it",
+    target: { attemptId: "result", questionNumber: 1 },
+    question: {
+      versionId: "v",
+      questionId: "q",
+      text: "Try $3+3$",
+      answerMode: "SINGLE_SELECT",
+      answerUnit: null,
+      options: [{ id: "a", text: "6" }],
+    },
+  };
+
+  it("keeps streamed action cards on the assistant bubble and restores hydrated history", async () => {
+    const state = await mount();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            `${JSON.stringify({ type: "action", action: card })}\n${JSON.stringify({ type: "delta", text: "Try this." })}\n`,
+          ),
+      ),
+    );
+    await act(async () => state.current.send("What should I study?"));
+    expect(state.current.bubbles[1].cards).toEqual([card]);
+    expect(state.current.bubbles[1].content).toBe("Try this.");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          turns: [{ role: "assistant", content: "Earlier", cards: [card] }],
+        }),
+      })),
+    );
+    await act(async () => state.current.openConversation("conversation"));
+    expect(state.current.bubbles[0].cards).toEqual([card]);
+  });
+});

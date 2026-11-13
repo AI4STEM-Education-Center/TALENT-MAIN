@@ -353,8 +353,8 @@ export async function loadCoachCandidates(
   };
 }
 
-async function loadSimulationOptions(
-  scope: CoachScope,
+export async function loadSimulationOptions(
+  scope: Pick<CoachScope, "studentId">,
   ids: string[],
   ownId: string | null,
 ): Promise<CoachSimulationOption[]> {
@@ -428,7 +428,7 @@ type PracticeMatch = { versionId: string; variant: VariantQuestion };
  * Versions the student has not practiced yet come first, so a second ask
  * tends to surface different numbers than the first.
  */
-async function findPracticeOffer(
+export async function findPracticeOffer(
   scope: CoachScope,
 ): Promise<{ versionId: string; variantQuestionId: string } | null> {
   if (!scope.questionId) return null;
@@ -660,19 +660,7 @@ export async function hydrateCoachAction(
       (s) => s.simulationId === ref.simulationId,
     );
     if (!sim) return null;
-    return {
-      kind: "simulation",
-      simulation: {
-        simulationId: sim.simulationId,
-        title: sim.title,
-        topic: sim.topic,
-        learningGoal: sim.learningGoal,
-        version: sim.version,
-      },
-      goal: ref.goal,
-      steps: ref.steps,
-      observe: ref.observe,
-    };
+    return simulationActionView(ref, sim);
   }
 
   const match = await findPracticeMatch(
@@ -687,6 +675,26 @@ export async function hydrateCoachAction(
         question: practiceView(scope, match),
       }
     : null;
+}
+
+/** Shared simulation card projection; access is checked by loadSimulationOptions. */
+export function simulationActionView(
+  ref: Extract<CoachActionRef, { kind: "simulation" }>,
+  sim: CoachSimulationOption,
+): CoachActionView {
+  return {
+    kind: "simulation",
+    simulation: {
+      simulationId: sim.simulationId,
+      title: sim.title,
+      topic: sim.topic,
+      learningGoal: sim.learningGoal,
+      version: sim.version,
+    },
+    goal: ref.goal,
+    steps: ref.steps,
+    observe: ref.observe,
+  };
 }
 
 /** Hydrate a stored `actions` array, silently dropping anything that fails. */

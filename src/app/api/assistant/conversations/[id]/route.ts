@@ -1,3 +1,4 @@
+import { hydrateStudyActions } from "@/lib/assistant/study-recommendations";
 import { NextResponse } from "next/server";
 import { resolveAssistantSession } from "@/lib/assistant/session";
 import { readUserConversation } from "@/lib/assistant/conversation-store";
@@ -45,7 +46,17 @@ export async function GET(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    return NextResponse.json(conversation);
+    const turns = await Promise.all(
+      conversation.turns.map(async (turn) => ({
+        ...turn,
+        actions: undefined,
+        cards:
+          ctx.studentId && turn.role === "assistant"
+            ? await hydrateStudyActions(turn.actions, ctx.studentId)
+            : [],
+      })),
+    );
+    return NextResponse.json({ ...conversation, turns });
   } catch (error) {
     logApiError("ASSISTANT_CONVERSATION_GET", error);
     return NextResponse.json(

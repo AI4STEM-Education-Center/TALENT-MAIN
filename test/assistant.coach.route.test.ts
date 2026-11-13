@@ -1,3 +1,9 @@
+import { studentStudyRecommendationsSkill } from "@/lib/assistant/skills/student-study-recommendations";
+import {
+  findStudyCandidates,
+  hydrateStudyAction,
+} from "@/lib/assistant/study-recommendations";
+import { GET as GET_WIDGET_CONVERSATION } from "@/app/api/assistant/conversations/[id]/route";
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 
 vi.mock("@/lib/auth", () => ({ auth: vi.fn() }));
@@ -1140,5 +1146,192 @@ describe("coach on alternative-version retakes", () => {
       await GET_COACH(getCoach(ATTEMPT, 1))
     ).json()) as CoachSessionView;
     expect(body.question.review).toBeNull();
+  });
+});
+
+// Widget study tools deliberately share the coach fixtures and real access
+// helpers, so this exercises the registry skill rather than mocked permissions.
+describe("student study recommendations", () => {
+  async function discover(studentId: string, topic?: string) {
+    return (await studentStudyRecommendationsSkill.tools[0].handler(
+      { topic },
+      {
+        userId: "test-user",
+        audience: "student",
+        studentId,
+        teacherId: null,
+      },
+    )) as Awaited<ReturnType<typeof findStudyCandidates>>;
+  }
+
+  it("finds all three kinds, only in enrolled classes, without answer fields", async () => {
+    const f = await fixture();
+    const candidates = await discover(f.student.student.id);
+    expect(new Set(candidates.map((c) => c.action.ref.kind))).toEqual(
+      new Set(["material", "simulation", "practice"]),
+    );
+    const json = JSON.stringify(candidates);
+    for (const secret of [
+      "isCorrect",
+      "correctNumeric",
+      "solution",
+      "What is 3 + 3?",
+      "What is 2 + 2?",
+    ])
+      expect(json).not.toContain(secret);
+    const other = await createStudent();
+    expect(await discover(other.student.id)).toEqual([]);
+    for (const candidate of candidates)
+      expect(
+        await hydrateStudyAction(candidate.action, other.student.id),
+      ).toBeNull();
+  });
+
+  it("rechecks enrollment and paused classes when displaying old references", async () => {
+    const f = await fixture();
+    const candidates = await discover(f.student.student.id);
+    await prisma.class.update({
+      where: { id: f.cls.id },
+      data: { disabledAt: new Date() },
+    });
+    expect(await discover(f.student.student.id)).toEqual([]);
+    for (const candidate of candidates)
+      expect(
+        await hydrateStudyAction(candidate.action, f.student.student.id),
+      ).toBeNull();
+    await prisma.class.update({
+      where: { id: f.cls.id },
+      data: { disabledAt: null },
+    });
+    await prisma.classEnrollment.deleteMany({
+      where: { studentId: f.student.student.id },
+    });
+    for (const candidate of candidates)
+      expect(
+        await hydrateStudyAction(candidate.action, f.student.student.id),
+      ).toBeNull();
+  });
+
+  it("hides unpublished versions on discovery and hydration and never reveals their keys", async () => {
+    const f = await fixture();
+    const candidate = (await discover(f.student.student.id)).find(
+      (c) => c.action.ref.kind === "practice",
+    )!;
+    const view = await hydrateStudyAction(
+      candidate.action,
+      f.student.student.id,
+    );
+    expect(view?.kind).toBe("practice");
+    expect(view).toMatchObject({
+      target: { attemptId: ATTEMPT, questionNumber: 1 },
+    });
+    for (const secret of [
+      "isCorrect",
+      "solution",
+      "answerNumeric",
+      "intentExplanation",
+    ])
+      expect(JSON.stringify(view)).not.toContain(secret);
+    await prisma.quizPracticeVersion.update({
+      where: { id: f.version.id },
+      data: { status: "DRAFT" },
+    });
+    expect(
+      (await discover(f.student.student.id)).some(
+        (c) => c.action.ref.kind === "practice",
+      ),
+    ).toBe(false);
+    expect(
+      await hydrateStudyAction(candidate.action, f.student.student.id),
+    ).toBeNull();
+  });
+
+  it("ranks unknown concepts ahead of other available content and filters topics", async () => {
+    const f = await fixture();
+    await prisma.assistantConfig.create({
+      data: {
+        id: `kt:${f.student.student.id}`,
+        audience: `kt:${f.student.student.id}`,
+        extraInstructions: JSON.stringify({
+          studentId: f.student.student.id,
+          studentName: "Student",
+          updatedAt: new Date().toISOString(),
+          unknownConcepts: [
+            {
+              concept: "Addition",
+              topic: "",
+              evidence: "Needs practice",
+              classId: f.cls.id,
+            },
+          ],
+        }),
+      },
+    });
+    const candidates = await discover(f.student.student.id);
+    expect(candidates[0].priority).toBeGreaterThan(0);
+    expect(candidates.at(-1)?.priority).toBe(0);
+    expect(await discover(f.student.student.id, "unrelated topic")).toEqual([]);
+  });
+
+  it("keeps stored material recommendations available even on fully correct results", async () => {
+    const f = await fixture();
+    await prisma.examResult.update({
+      where: { quizAttemptId: ATTEMPT },
+      data: {
+        reviewSnapshot: JSON.stringify({
+          questions: [{ text: "Correct", isCorrect: true }],
+        }),
+      },
+    });
+    const candidates = await discover(f.student.student.id);
+    expect(candidates.some((c) => c.action.ref.kind === "material")).toBe(true);
+    expect(candidates.some((c) => c.action.ref.kind === "practice")).toBe(
+      false,
+    );
+  });
+
+  it("streams one widget card, peels it from model context and rehydrates history", async () => {
+    const f = await fixture();
+    const candidate = (await discover(f.student.student.id)).find(
+      (c) => c.action.ref.kind === "practice",
+    )!;
+    const calls = scriptModel([
+      {
+        toolCalls: [
+          { name: "show_study_recommendation", args: candidate.action },
+          { name: "show_study_recommendation", args: candidate.action },
+        ],
+      },
+      { text: "Try this next." },
+    ]);
+    const streamed = await events(
+      await POST_CHAT(
+        post("/api/assistant/chat", { message: "What should I study?" }),
+      ),
+    );
+    expect(streamed.filter((e) => e.type === "action")).toHaveLength(1);
+    const modelResults = calls[1].messages
+      .filter((m) => m.role === "tool")
+      .map((m) => m.content)
+      .join("\n");
+    expect(modelResults).toContain("Showed one study card");
+    expect(modelResults).toContain("Enough cards");
+    expect(modelResults).not.toContain("What is 3 + 3?");
+    expect(modelResults).not.toContain("variantQuestionId");
+    const conversation = streamed.find((e) => e.type === "conversation");
+    if (conversation?.type !== "conversation")
+      throw new Error("Missing conversation");
+    const read = () =>
+      GET_WIDGET_CONVERSATION(new Request("http://localhost"), {
+        params: Promise.resolve({ id: conversation.id }),
+      });
+    expect((await (await read()).json()).turns[1].cards[0].kind).toBe(
+      "practice",
+    );
+    await prisma.quizPracticeVersion.update({
+      where: { id: f.version.id },
+      data: { status: "DRAFT" },
+    });
+    expect((await (await read()).json()).turns[1].cards).toEqual([]);
   });
 });

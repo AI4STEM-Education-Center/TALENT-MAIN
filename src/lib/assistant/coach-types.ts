@@ -131,6 +131,8 @@ export type CoachActionView =
       kind: "practice";
       reason: string;
       question: CoachPracticeQuestionView;
+      /** Source for checking a widget practice answer through the shared coach endpoint. */
+      target?: { attemptId: string; questionNumber: number };
     };
 
 /**
