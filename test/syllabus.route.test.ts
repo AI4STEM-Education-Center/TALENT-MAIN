@@ -26,6 +26,14 @@ vi.mock("@/lib/ai-streaming", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/ai-streaming")>()),
   streamJsonCompletion: vi.fn(),
 }));
+vi.mock("@/lib/retry", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/retry")>();
+  return {
+    ...actual,
+    retryWithExponentialBackoff: <T>(fn: () => Promise<T>, maxRetries = 3) =>
+      actual.retryWithExponentialBackoff(fn, maxRetries, 0, 0),
+  };
+});
 
 import {
   DELETE as syllabusDelete,
