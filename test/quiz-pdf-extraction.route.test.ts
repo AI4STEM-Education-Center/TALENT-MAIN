@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
-import bcrypt from "bcryptjs";
 
 // Auth is mocked per-test. The storage module keeps its PURE key builders /
 // prefix helpers real (so the routes' exact-key checks are exercised) while the
@@ -41,7 +40,12 @@ import {
   buildQuizExtractionFigureKey,
   buildQuizExtractionOptionImageKey,
 } from "@/lib/storage";
-import { resetDb, createTeacher, createStudent } from "./db";
+import {
+  resetDb,
+  createTeacher,
+  createStudent,
+  TEST_PASSWORD_HASH,
+} from "./db";
 
 const mockAuth = vi.mocked(auth);
 const mockPresignPut = vi.mocked(storage.presignPutUpload);
@@ -88,7 +92,7 @@ async function createAdminUser() {
     data: {
       email: `admin-${Math.random().toString(36).slice(2)}@example.com`,
       username: `admin-${Math.random().toString(36).slice(2)}`,
-      hashedPassword: await bcrypt.hash("Password1!", 10),
+      hashedPassword: TEST_PASSWORD_HASH,
       firstName: "Ada",
       lastName: "Admin",
       role: "ADMIN",
