@@ -49,14 +49,27 @@ RUN npx esbuild src/worker.ts --bundle --platform=node --target=node20 \
 # died with "Cannot find module 'pathe'". An isolated install lets npm resolve the
 # CLI's complete dependency closure for us, with no manual tracking of transitives.
 # Pinned to the exact version the app locks so the migration CLI never drifts from
-# the generated client.
+# the generated client, while carrying over the root package.json's security
+# overrides (filtering out `$pkg` self-references that only apply to the app
+# manifest) so transitive fixes such as `effect >= 3.22.1` reach the runtime image.
 FROM base AS migrator
 WORKDIR /migrator
-COPY package-lock.json ./
+COPY package.json package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm \
     PRISMA_VERSION="$(node -p "require('./package-lock.json').packages['node_modules/prisma'].version")" && \
+    node -e ' \
+      const fs = require("fs"); \
+      const pkg = JSON.parse(fs.readFileSync("package.json", "utf8")); \
+      const stripDollar = (obj) => Object.fromEntries( \
+        Object.entries(obj || {}).flatMap(([k, v]) => { \
+          if (typeof v === "string") return v.startsWith("$") ? [] : [[k, v]]; \
+          if (v && typeof v === "object") return [[k, stripDollar(v)]]; \
+          return [[k, v]]; \
+        }) \
+      ); \
+      fs.writeFileSync("package.json", JSON.stringify({ private: true, overrides: stripDollar(pkg.overrides) }, null, 2)); \
+    ' && \
     rm package-lock.json && \
-    npm init -y >/dev/null 2>&1 && \
     npm install --no-audit --no-fund --omit=optional "prisma@${PRISMA_VERSION}"
 
 # ── Stage 3: Production runner ────────────────────────────────────────────────
