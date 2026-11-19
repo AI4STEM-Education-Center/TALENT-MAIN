@@ -9,9 +9,10 @@ export default defineConfig({
     environment: "node",
     globals: true,
     setupFiles: ["./vitest.setup.ts"],
-    // Tier 2 specs share a single on-disk SQLite test DB. Running files serially
-    // (no parallelism) prevents write contention and cross-file data bleed.
-    fileParallelism: false,
+    // Each Vitest worker clones test/test-template.db into its own per-worker
+    // SQLite file (see vitest.setup.ts), so files run in parallel with no
+    // write contention or cross-file bleed.
+    fileParallelism: true,
     // Push the schema to the throwaway test DB once before any spec runs.
     globalSetup: ["./test/global-setup.ts"],
     include: ["src/**/*.test.{ts,tsx}", "test/**/*.test.{ts,tsx}"],

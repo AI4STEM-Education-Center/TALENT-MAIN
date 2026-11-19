@@ -1,25 +1,42 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, rmSync } from "node:fs";
+import { readdirSync, rmSync } from "node:fs";
 import path from "node:path";
 
+const TEST_DIR = path.resolve(process.cwd(), "test");
+const TEMPLATE_DB_FILE = path.join(TEST_DIR, "test-template.db");
+
 /**
- * Absolute path to the throwaway SQLite test database. Using an absolute path
- * avoids Prisma's relative `file:` resolution (which differs between the CLI,
- * which resolves against the schema dir, and the runtime client). Both this
- * file and vitest.setup.ts derive the same path from cwd, so they always agree.
+ * Absolute path to the schema-synced template SQLite database. Using an
+ * absolute path avoids Prisma's relative `file:` resolution (which differs
+ * between the CLI, which resolves against the schema dir, and the runtime
+ * client). Each Vitest worker clones this template into its own per-worker
+ * file (`test/test-<poolId>.db`) so test files can run in parallel with zero
+ * write contention or cross-file bleed.
  */
+export function testTemplateDbPath(): string {
+  return TEMPLATE_DB_FILE;
+}
+
 export function testDbUrl(): string {
-  return `file:${path.resolve(process.cwd(), "test", "test.db")}`;
+  return `file:${TEMPLATE_DB_FILE}`;
+}
+
+function removeThrowawayDbs() {
+  for (const entry of readdirSync(TEST_DIR)) {
+    if (
+      /^test(?:-template|-[\w-]+)?(?:\.queue)?\.db(?:-(?:journal|wal|shm))?$/.test(
+        entry,
+      )
+    ) {
+      rmSync(path.join(TEST_DIR, entry), { force: true });
+    }
+  }
 }
 
 export default function setup() {
-  const dbFile = path.resolve(process.cwd(), "test", "test.db");
-
-  // Clean slate — drop any DB + WAL/SHM sidecars left by a previous run.
-  for (const suffix of ["", "-journal", "-wal", "-shm"]) {
-    const f = `${dbFile}${suffix}`;
-    if (existsSync(f)) rmSync(f);
-  }
+  // Clean slate — drop any template, worker, queue, or WAL/SHM sidecar DBs
+  // left behind by a previous run.
+  removeThrowawayDbs();
 
   // Prisma 7 removed `--skip-generate` from `db push` (push no longer triggers
   // client generation). The datasource URL is read from prisma.config.ts, which
@@ -33,9 +50,10 @@ export default function setup() {
   // an AI coding agent in the environment (CLAUDECODE, AI_AGENT, CURSOR_AGENT,
   // COPILOT_CLI, …) unless PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION is set.
   // That guard exists to stop an agent destroying a REAL database, and this
-  // spawn provably cannot reach one: the target is the absolute test/test.db
-  // path resolved above, the file was just deleted, and DATABASE_URL is
-  // overridden explicitly so a developer's .env cannot redirect it.
+  // spawn provably cannot reach one: the target is the absolute
+  // test/test-template.db path resolved above, the file was just deleted, and
+  // DATABASE_URL is overridden explicitly so a developer's .env cannot
+  // redirect it.
   //
   // Standing consent is scoped to THIS call deliberately. It weakens nothing
   // that currently applies to production: the gate only fires on
@@ -50,7 +68,7 @@ export default function setup() {
     RUST_LOG: "trace",
     PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION:
       process.env.PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION ||
-      "Standing consent: target is the throwaway vitest database test/test.db, deleted and recreated by test/global-setup.ts on every run.",
+      "Standing consent: target is the throwaway vitest database test/test-template.db, deleted and recreated by test/global-setup.ts on every run.",
   };
   // Invoke the installed CLI through node rather than `npx`: Node can't spawn
   // `npx` on Windows (it resolves to npx.cmd, which needs a shell), and going
@@ -73,7 +91,9 @@ export default function setup() {
           env,
         },
       );
-      return;
+      return () => {
+        removeThrowawayDbs();
+      };
     } catch (error) {
       lastError = error;
       if (attempt < 3) {
