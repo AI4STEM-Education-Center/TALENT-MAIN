@@ -24,16 +24,92 @@ type Shared = {
   questions: SourceQuestion[];
 };
 
+/** Staged per-question revision reasons: versionId -> sourceQuestionId -> reason. */
+type StagedRevisions = Record<string, Record<string, string>>;
+
+type Staging = {
+  staged: StagedRevisions;
+  onToggle: (versionId: string, questionId: string) => void;
+  onReason: (versionId: string, questionId: string, reason: string) => void;
+};
+
+const MIN_REASON = 3;
+const canRevise = (v: Version) =>
+  !isGenerating(v) && (v.status === "REVIEW" || v.status === "FAILED");
+const bySlot = (a: Version, b: Version) =>
+  (a.slotIndex ?? 0) - (b.slotIndex ?? 0) ||
+  a.createdAt.localeCompare(b.createdAt);
+
+function chunkPairs<T>(items: T[]) {
+  const pairs: T[][] = [];
+  for (let i = 0; i < items.length; i += 2) pairs.push(items.slice(i, i + 2));
+  return pairs;
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
 /**
  * One generation round: a row per change mode, each comparing the original
- * with the two newest drafts side by side. Save/approve actions sit directly
- * on each draft so the teacher never has to dig for them.
+ * with that mode's drafts two at a time. Save/approve actions sit directly on
+ * each draft, and single questions can be sent back for revision in one batch.
  */
 export function QuizVariantBatch({
   versions,
   stale,
   ...shared
 }: Shared & { versions: Version[]; stale: boolean }) {
+  const { act, busy } = shared;
+  const [staged, setStaged] = useState<StagedRevisions>({});
+  const onToggle = (versionId: string, questionId: string) =>
+    setStaged((prev) => {
+      const forVersion = { ...prev[versionId] };
+      if (questionId in forVersion) delete forVersion[questionId];
+      else forVersion[questionId] = "";
+      const next = { ...prev, [versionId]: forVersion };
+      if (Object.keys(forVersion).length === 0) delete next[versionId];
+      return next;
+    });
+  const onReason = (versionId: string, questionId: string, reason: string) =>
+    setStaged((prev) => ({
+      ...prev,
+      [versionId]: { ...prev[versionId], [questionId]: reason },
+    }));
+  // Only drafts that can still be revised count; one that started
+  // regenerating or was approved meanwhile drops out of the batch.
+  const pendingRevisions = versions
+    .filter((v) => canRevise(v) && staged[v.id])
+    .map((v) => ({
+      versionId: v.id,
+      questionRevisions: Object.entries(staged[v.id]).map(
+        ([sourceQuestionId, reason]) => ({ sourceQuestionId, reason }),
+      ),
+    }))
+    .filter((r) => r.questionRevisions.length > 0);
+  const stagedQuestions = pendingRevisions.reduce(
+    (sum, r) => sum + r.questionRevisions.length,
+    0,
+  );
+  const tooShort = pendingRevisions.some((r) =>
+    r.questionRevisions.some((q) => q.reason.trim().length < MIN_REASON),
+  );
+  async function submitRevisions() {
+    const done = await act(
+      {
+        action: "revise_batch",
+        batchId: versions[0]?.batchId,
+        revisions: pendingRevisions.map((r) => ({
+          versionId: r.versionId,
+          questionRevisions: r.questionRevisions.map((q) => ({
+            sourceQuestionId: q.sourceQuestionId,
+            reason: q.reason.trim(),
+          })),
+        })),
+      },
+      "PATCH",
+    );
+    if (done) setStaged({});
+  }
+  const staging: Staging = { staged, onToggle, onReason };
   return (
     <div className="space-y-6">
       {stale && (
@@ -42,21 +118,58 @@ export function QuizVariantBatch({
           versions to match the current questions.
         </p>
       )}
-      {MODES.map((mode) => (
-        <ModeRow
-          key={mode.value}
-          mode={mode}
-          stale={stale}
-          // Two newest drafts for this mode, oldest first so slots stay put
-          // when one of them is revised.
-          candidates={versions
-            .filter((v) => v.variation === mode.value)
-            .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt))
-            .slice(0, 2)
-            .reverse()}
-          {...shared}
-        />
-      ))}
+      {MODES.map((mode) => {
+        const candidates = versions
+          .filter((v) => v.variation === mode.value)
+          .toSorted(bySlot);
+        return candidates.length > 0 ? (
+          <ModeRow
+            key={mode.value}
+            mode={mode}
+            stale={stale}
+            candidates={candidates}
+            staging={staging}
+            {...shared}
+          />
+        ) : null;
+      })}
+      {stagedQuestions > 0 && (
+        <section
+          aria-label="Staged revisions"
+          className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/40 bg-background/95 p-4 shadow-lg backdrop-blur"
+        >
+          <div className="space-y-1 text-sm">
+            <p role="status" className="font-medium">
+              {plural(stagedQuestions, "question")} staged for revision across{" "}
+              {plural(pendingRevisions.length, "version")} — unflagged questions
+              stay unchanged
+            </p>
+            {tooShort && (
+              <p className="text-xs text-destructive">
+                Each revision reason needs at least {MIN_REASON} characters.
+              </p>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy}
+              onClick={() => setStaged({})}
+            >
+              Clear revisions
+            </Button>
+            <Button
+              size="sm"
+              disabled={busy || tooShort}
+              onClick={() => void submitRevisions()}
+            >
+              <RefreshCw className="size-4" aria-hidden="true" /> Submit all
+              revisions
+            </Button>
+          </div>
+        </section>
+      )}
     </div>
   );
 }
@@ -65,26 +178,27 @@ function ModeRow({
   mode,
   candidates,
   stale,
+  staging,
   ...shared
 }: Shared & {
   mode: (typeof MODES)[number];
   candidates: Version[];
   stale: boolean;
+  staging: Staging;
 }) {
-  const { act, busy, purpose, questions } = shared;
+  const { act, busy, purpose } = shared;
   const [editing, setEditing] = useState<string | null>(null);
   const reviewable = candidates.filter((v) => v.status === "REVIEW");
   const pending = candidates.some(isGenerating);
   const canAddMore =
     !stale &&
     !pending &&
-    candidates.length > 0 &&
     (purpose === "ALTERNATE" ||
       candidates.some((v) => v.status === "PUBLISHED"));
   async function saveAll(action: "publish" | "standalone") {
     for (const v of reviewable) await act({ versionId: v.id, action });
   }
-  const slots = [candidates[0], candidates[1]];
+  const both = reviewable.length === 2;
   const editVersion = candidates.find((v) => v.id === editing);
   return (
     <section
@@ -94,15 +208,17 @@ function ModeRow({
       <header className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/40 px-4 py-3">
         <h3 className="font-semibold">{mode.label}</h3>
         <div className="flex flex-wrap gap-2">
-          {reviewable.length === 2 && (
+          {reviewable.length >= 2 && (
             <>
               <Button
                 size="sm"
                 variant={purpose === "ALTERNATE" ? "default" : "outline"}
-                disabled={busy}
+                disabled={busy || stale}
                 onClick={() => void saveAll("publish")}
               >
-                Approve both as alternates
+                {both
+                  ? "Approve both as alternates"
+                  : `Approve all ${reviewable.length} as alternates`}
               </Button>
               <Button
                 size="sm"
@@ -110,7 +226,9 @@ function ModeRow({
                 disabled={busy}
                 onClick={() => void saveAll("standalone")}
               >
-                Save both as standalone exams
+                {both
+                  ? "Save both as standalone exams"
+                  : `Save all ${reviewable.length} as standalone exams`}
               </Button>
             </>
           )}
@@ -137,6 +255,49 @@ function ModeRow({
           )}
         </div>
       </header>
+      {chunkPairs(candidates).map((pair, block) => (
+        <ComparisonBlock
+          key={pair[0].id}
+          slots={[pair[0], pair[1]]}
+          first={block === 0}
+          stale={stale}
+          staging={staging}
+          onEdit={setEditing}
+          {...shared}
+        />
+      ))}
+      {editVersion && (
+        <VariantEditor
+          key={editVersion.id}
+          version={editVersion}
+          busy={busy}
+          act={act}
+          onClose={() => setEditing(null)}
+        />
+      )}
+    </section>
+  );
+}
+
+/** The original beside up to two drafts, question by question. */
+function ComparisonBlock({
+  slots,
+  first,
+  stale,
+  staging,
+  onEdit,
+  ...shared
+}: Shared & {
+  slots: [Version, Version | undefined];
+  first: boolean;
+  stale: boolean;
+  staging: Staging;
+  onEdit: (versionId: string) => void;
+}) {
+  const { act, busy, questions } = shared;
+  const { staged } = staging;
+  return (
+    <div className={first ? undefined : "border-t-4 border-muted"}>
       <div className="grid divide-y lg:grid-cols-3 lg:divide-x lg:divide-y-0">
         <div className="p-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Original
@@ -147,7 +308,7 @@ function ModeRow({
               <CandidateHeader
                 version={version}
                 stale={stale}
-                onEdit={() => setEditing(version.id)}
+                onEdit={() => onEdit(version.id)}
                 {...shared}
               />
             ) : (
@@ -166,22 +327,38 @@ function ModeRow({
           <div className="grid divide-y lg:grid-cols-3 lg:divide-x lg:divide-y-0">
             <QuestionPreview question={q} />
             {slots.map((version, slot) => {
-              const variant = version?.questions.find(
+              if (!version) return <div key={slot} />;
+              const variant = version.questions.find(
                 (v) => v.sourceQuestionId === q.id,
               );
+              const flagged = staged[version.id];
               return (
-                <QuestionPreview
-                  key={version?.id ?? slot}
-                  question={
-                    version && !isGenerating(version) ? variant : undefined
-                  }
-                  pending={!!version && isGenerating(version)}
-                  check={
-                    version?.validation?.find(
-                      (r) => r.sourceQuestionId === q.id,
-                    )?.explanation
-                  }
-                />
+                <div
+                  key={version.id}
+                  role="group"
+                  aria-label={`${version.name}, question ${index + 1}`}
+                  className="min-w-0"
+                >
+                  <QuestionPreview
+                    question={isGenerating(version) ? undefined : variant}
+                    pending={isGenerating(version)}
+                    check={
+                      version.validation?.find(
+                        (r) => r.sourceQuestionId === q.id,
+                      )?.explanation
+                    }
+                  />
+                  {canRevise(version) && (
+                    <QuestionRevisionControl
+                      version={version}
+                      questionId={q.id}
+                      questionNumber={index + 1}
+                      reason={flagged?.[q.id]}
+                      anyFlagged={!!flagged}
+                      staging={staging}
+                    />
+                  )}
+                </div>
               );
             })}
           </div>
@@ -189,28 +366,73 @@ function ModeRow({
       ))}
       <div className="grid border-t lg:grid-cols-3 lg:divide-x">
         <div className="hidden p-4 text-sm text-muted-foreground lg:block">
-          Tell the generator what to change; the draft is regenerated and
-          re-verified.
+          Flag single questions above, or tell the generator what to change in a
+          whole draft; it is regenerated and re-verified.
         </div>
         {slots.map((version, slot) => (
           <div key={version?.id ?? slot} className="p-4">
-            {version &&
-              (version.status === "REVIEW" || version.status === "FAILED") && (
-                <CandidateFeedback version={version} act={act} busy={busy} />
-              )}
+            {version && canRevise(version) && (
+              <CandidateFeedback version={version} act={act} busy={busy} />
+            )}
           </div>
         ))}
       </div>
-      {editVersion && (
-        <VariantEditor
-          key={editVersion.id}
-          version={editVersion}
-          busy={busy}
-          act={act}
-          onClose={() => setEditing(null)}
-        />
+    </div>
+  );
+}
+
+function QuestionRevisionControl({
+  version,
+  questionId,
+  questionNumber,
+  reason,
+  anyFlagged,
+  staging,
+}: {
+  version: Version;
+  questionId: string;
+  questionNumber: number;
+  /** The staged reason, or undefined when this question is not flagged. */
+  reason: string | undefined;
+  anyFlagged: boolean;
+  staging: Staging;
+}) {
+  const flagged = reason !== undefined;
+  const id = `revision-${version.id}-${questionId}`;
+  return (
+    <div className="space-y-2 px-4 pb-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          variant={flagged ? "ghost" : "outline"}
+          aria-pressed={flagged}
+          onClick={() => staging.onToggle(version.id, questionId)}
+        >
+          {flagged ? "Cancel revision" : "Send back for revision"}
+        </Button>
+        {!flagged && anyFlagged && (
+          <Badge variant="outline">Kept unchanged</Badge>
+        )}
+      </div>
+      {flagged && (
+        <div className="space-y-1">
+          <label htmlFor={id} className="text-xs font-medium">
+            What should change in question {questionNumber} of {version.name}?
+          </label>
+          <Textarea
+            id={id}
+            rows={2}
+            maxLength={2000}
+            value={reason}
+            aria-invalid={reason.trim().length < MIN_REASON}
+            onChange={(e) =>
+              staging.onReason(version.id, questionId, e.target.value)
+            }
+            placeholder="What should change in this question? (e.g. Use whole numbers, change scenario)"
+          />
+        </div>
       )}
-    </section>
+    </div>
   );
 }
 
@@ -233,7 +455,9 @@ function CandidateHeader({
       {isGenerating(version) && (
         <p role="status" className="flex items-center gap-2 text-sm">
           <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-          Generating and verifying…
+          {version.totalCount && version.totalCount > 0
+            ? `Generating and verifying (${version.completedCount ?? 0}/${version.totalCount} questions)…`
+            : "Generating and verifying…"}
         </p>
       )}
       {version.status === "REVIEW" && (

@@ -401,6 +401,7 @@ model Quiz {
   imports        QuestionImport[]
   classQuizzes   ClassQuiz[]
   practiceVersions QuizPracticeVersion[]
+  variantBatchStates QuizVariantBatchState[]
   pdfExtractions QuizPdfExtraction[]
   poolSubmissions PoolSubmission[]
 
@@ -1414,18 +1415,23 @@ model MessageEmailDelivery {
   @@index([status, nextAttemptAt])
 }
 
-// One in-app notification delivered to a single student (their User). The
-// subject/body live on the parent Message; this row carries per-recipient read
-// state and powers the student mailbox.
+// One in-app notification delivered to a single user. For class announcements,
+// subject/body live on the parent Message; system notifications (e.g. finished
+// quiz variant batches or pending-review reminders) populate subject/body/href
+// directly with messageId = null.
 model Notification {
   id        String    @id @default(cuid())
-  messageId String
-  userId    String // recipient student's user id
+  messageId String?
+  userId    String
+  kind      String?
+  subject   String?
+  body      String?
+  href      String?
   readAt    DateTime?
   createdAt DateTime  @default(now())
 
-  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  user    User    @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+  message Message? @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User     @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
 
   // Mailbox list + unread badge: WHERE userId ORDER BY createdAt DESC; unread count
   @@index([userId, createdAt])
@@ -2085,15 +2091,24 @@ model QuizPracticeVersion {
   aiModel String?
   aiTokens Int?
   // Teacher generation workflow. batchId groups one "Generate new version"
-  // round (two NUMBERS + two CONTEXT drafts, plus any "two more"); purpose is
-  // the teacher's starting intent ("ALTERNATE" | "STANDALONE"). A draft revised
-  // with teacher feedback becomes DISCARDED and a new draft records the
-  // feedback and revisedFromId. Saving a draft as its own exam sets status
-  // "STANDALONE" and standaloneQuizId. attempts counts generate/verify rounds;
-  // teacherEdited drafts are only re-verified, never silently regenerated.
+  // round; purpose is the teacher's starting intent ("ALTERNATE" | "STANDALONE").
+  // A draft revised with teacher feedback becomes DISCARDED and a new draft
+  // records feedback / questionFeedback and revisedFromId while keeping slotIndex.
+  // Saving a draft as its own exam sets status "STANDALONE" and standaloneQuizId.
+  // attempts counts generate/verify rounds; teacherEdited drafts are only
+  // re-verified, never silently regenerated.
   batchId String?
+  slotIndex Int @default(0)
+  requestedById String?
+  leaseToken String?
+  heartbeatAt DateTime?
   purpose String @default("ALTERNATE")
   feedback String?
+  // JSON array of { sourceQuestionId, reason } when revising specific questions
+  // while preserving unflagged questions from revisedFromId.
+  questionFeedback String?
+  completedCount Int @default(0)
+  totalCount Int @default(0)
   revisedFromId String?
   standaloneQuizId String?
   attempts Int @default(0)
@@ -2102,6 +2117,55 @@ model QuizPracticeVersion {
   updatedAt DateTime @updatedAt
   @@index([quizId, status])
   @@index([quizId, batchId])
+  @@index([batchId, status])
+  @@index([status, heartbeatAt])
+}
+
+// Tracks completion notifications and unapproved-review reminders (24h, 72h)
+// for a generation round (batchId). Incremented `cycle` lets an atomic batch
+// revision ("Submit all revisions") reset notification state so exactly one
+// ready notice fires after all revised drafts finish.
+model QuizVariantBatchState {
+  batchId            String    @id
+  quizId             String
+  quiz               Quiz      @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  requestedById      String
+  recipientRole      String    @default("TEACHER") // "TEACHER" | "ADMIN"
+  appOrigin          String?
+  cycle              Int       @default(1)
+  kind               String    @default("INITIAL") // "INITIAL" | "REVISION"
+  readyNotifiedCycle Int       @default(0)
+  readyNotifiedAt    DateTime?
+  reminder24hSentAt  DateTime?
+  reminder72hSentAt  DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([quizId])
+  @@index([readyNotifiedAt])
+}
+
+// Durable outbox for quiz-variant ready & reminder emails, mirroring
+// ConsentEmailDelivery's claim/backoff pattern and exempt from teacher quotas.
+// kind: "READY" | "REMINDER_24H" | "REMINDER_72H".
+model QuizVariantEmailDelivery {
+  id            String    @id @default(cuid())
+  batchId       String
+  cycle         Int       @default(1)
+  kind          String
+  userId        String?
+  recipient     String
+  payload       String    // JSON template variables
+  status        String    @default("PENDING")
+  attempts      Int       @default(0)
+  lastError     String?
+  nextAttemptAt DateTime  @default(now())
+  claimedAt     DateTime?
+  sentAt        DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@unique([batchId, cycle, kind])
+  @@index([status, nextAttemptAt])
 }
 
 // Self-contained attempt archive: no content cascade can alter a student's

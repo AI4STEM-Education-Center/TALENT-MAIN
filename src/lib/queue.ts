@@ -187,6 +187,26 @@ export function enqueueQuizVariant(versionId: string) {
   db.queue(QUIZ_VARIANTS_QUEUE).enqueue({ versionId });
 }
 
+export const VARIANT_EMAILS_QUEUE = "variant-emails";
+// One job per QuizVariantEmailDelivery row (ready notice or 24h/72h reminder)
+// — see src/lib/quiz-variant-notifications.ts.
+export type VariantEmailJobPayload = { deliveryId: string };
+
+/**
+ * Enqueue delivery jobs for quiz-variant ready/reminder emails, mirroring
+ * enqueueConsentEmails. Callers swallow failures: the delivery rows are
+ * already PENDING, so a failed enqueue only delays the email until the
+ * worker's variant-email sweeper re-enqueues it.
+ */
+export function enqueueVariantEmails(deliveryIds: string[]): void {
+  if (deliveryIds.length === 0) return;
+  const db = honker.open(resolveQueueDbPath());
+  const queue = db.queue(VARIANT_EMAILS_QUEUE);
+  for (const deliveryId of deliveryIds) {
+    queue.enqueue({ deliveryId } satisfies VariantEmailJobPayload);
+  }
+}
+
 /**
  * Enqueue vision-LLM extraction for a class syllabus. Callers must NOT swallow
  * failures — like enqueueQuizExtraction, the job is the feature, so the caller

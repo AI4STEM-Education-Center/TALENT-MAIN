@@ -143,6 +143,25 @@ const SAMPLE_VARS: Record<string, Record<string, string | number>> = {
     ip: "203.0.113.42",
     useCount: 3,
   },
+  QUIZ_VARIANTS_READY: {
+    appName: "AI4Talent",
+    firstName: "Jordan",
+    quizName: "Kinematics Quiz 2",
+    readyHeading: "Alternative versions ready to review",
+    summaryLine:
+      "3 of 4 versions passed automatic checks and are ready to review. 1 needs your attention.",
+    reviewUrl:
+      "https://app.example.com/teacher/quizzes/quiz_123/versions/batch_456",
+  },
+  QUIZ_VARIANTS_REMINDER: {
+    appName: "AI4Talent",
+    firstName: "Jordan",
+    quizName: "Kinematics Quiz 2",
+    pendingCount: 3,
+    ageLabel: "1 day",
+    reviewUrl:
+      "https://app.example.com/teacher/quizzes/quiz_123/versions/batch_456",
+  },
 };
 
 function ReceiverPreview({

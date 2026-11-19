@@ -91,6 +91,11 @@ const teacherNav: NavItem[] = [
     icon: <MessageSquare className="size-4" />,
   },
   {
+    href: "/teacher/notifications",
+    label: "Notifications",
+    icon: <Inbox className="size-4" />,
+  },
+  {
     href: "/teacher/feedback",
     label: "Feedback",
     icon: <Star className="size-4" />,
@@ -409,7 +414,8 @@ function SidebarContent({
         {item.icon}
         {item.label}
         <span className="ml-auto flex items-center gap-1.5">
-          {item.href === "/student/notifications" && <NotificationsBadge />}
+          {(item.href === "/student/notifications" ||
+            item.href === "/teacher/notifications") && <NotificationsBadge />}
           {active && <ChevronRight className="size-3" />}
         </span>
       </Link>
