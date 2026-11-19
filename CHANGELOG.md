@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.0.31 - 2026-11-20
+
+- Added real-time speech-to-text voice input across assistant surfaces with administrator settings and usage reporting, per-student knowledge tracing with starter thinking prompts, an AI Config payload fix, and same-origin microphone access in the Permissions-Policy header.
+- Updated AI Config model placeholder examples to the GPT-6 generation.
+- Improved assistant replies, administrator chat transcripts, and quiz result summaries to render inline and display LaTeX math equations while preserving code blocks, links, and currency values.
+- Expanded the student Study assistant and wrong-answer coach to proactively recommend relevant course materials, simulations, and practice questions.
+- Improved alternative quiz version generation with a calibration preview modal, per-question batch revisions, quality guards, and teacher and administrator completion and review-reminder notifications.
+- Refreshed production and development dependencies and patched the `effect` ReDoS security advisory (`CVE-2026-121707` / `GHSA-7589-6fvf-x4pw`) across both the lockfile and the runtime Docker image.
+- Improved CI validation speed with per-worker SQLite test databases, parallel test execution, fast test password hashing, and parallel CI jobs.
+
 ## v0.0.30 - 2026-11-06
 
 - Expanded research scientist access to compose, test, schedule, send, and cancel research emails, with student recipient filters for minimum learning material and simulation usage, counted together or separately.
