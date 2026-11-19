@@ -1,5 +1,19 @@
-import { runQuizVariant } from "./lib/quiz-variants-engine";
-import { QUIZ_VARIANTS_QUEUE } from "./lib/queue";
+import {
+  runQuizVariant,
+  sweepStaleQuizVariants,
+} from "./lib/quiz-variants-engine";
+import {
+  QUIZ_VARIANTS_QUEUE,
+  VARIANT_EMAILS_QUEUE,
+  enqueueQuizVariant,
+  type VariantEmailJobPayload,
+} from "./lib/queue";
+import {
+  deliverVariantEmail,
+  failExhaustedVariantEmails,
+  findStrandedVariantEmails,
+  sweepUnapprovedVariantReminders,
+} from "./lib/quiz-variant-notifications";
 import honker from "@russellthehippo/honker-node";
 import { processMaterial } from "./lib/vlm-engine";
 import { prisma } from "./lib/prisma";
@@ -755,15 +769,19 @@ async function runAssistantTranscriptArchiveLoop() {
   }
 }
 
-async function consumeQuizVariants() {
-  for await (const job of db
-    .queue(QUIZ_VARIANTS_QUEUE)
-    .claim("quiz-variants-worker")) {
+/** Concurrent claim loops for the quiz-variant queue (see startWorker). */
+const QUIZ_VARIANT_CONSUMERS = 3;
+
+async function consumeQuizVariants(workerId: string) {
+  for await (const job of db.queue(QUIZ_VARIANTS_QUEUE).claim(workerId)) {
     try {
       await runQuizVariant((job.payload as { versionId: string }).versionId);
       job.ack();
     } catch (error) {
-      console.error("[Worker] Quiz variant job failed", errorMessage(error));
+      console.error(
+        `[Worker] Quiz variant job failed (${workerId})`,
+        errorMessage(error),
+      );
       // Leave unacknowledged on database failure; queue redelivery can retry.
     }
   }
@@ -772,21 +790,102 @@ async function consumeQuizVariants() {
 async function sweepQuizVariants() {
   for (;;) {
     try {
-      // A crashed/terminated worker must not leave a teacher waiting forever.
-      await prisma.quizPracticeVersion.updateMany({
-        where: {
-          status: { in: ["QUEUED", "GENERATING"] },
-          updatedAt: { lt: new Date(Date.now() - 30 * 60_000) },
-        },
-        data: {
-          status: "FAILED",
-          error: "Generation timed out. Retry this version.",
-        },
-      });
+      // A crashed/terminated worker must not leave a teacher waiting forever,
+      // but a draft merely waiting its turn in a busy queue is never failed
+      // for its age: only GENERATING drafts with a dead heartbeat fail, and
+      // QUEUED drafts that may have lost their job are re-enqueued.
+      const { failed, requeued } =
+        await sweepStaleQuizVariants(enqueueQuizVariant);
+      if (failed || requeued)
+        console.log(
+          `[Worker] Variant sweep: ${failed} stalled draft(s) failed, ${requeued} re-enqueued`,
+        );
     } catch (error) {
       console.error("[Worker] Variant sweep failed", errorMessage(error));
     }
     await new Promise((resolve) => setTimeout(resolve, 60_000));
+  }
+}
+
+async function consumeVariantEmails() {
+  console.log(
+    `[Worker] Starting Honker queue consumer for '${VARIANT_EMAILS_QUEUE}'...`,
+  );
+  for await (const job of db
+    .queue(VARIANT_EMAILS_QUEUE)
+    .claim("variant-emails-worker")) {
+    const { deliveryId } = job.payload as VariantEmailJobPayload;
+    try {
+      const result = await deliverVariantEmail(deliveryId);
+      if (result.status === "RETRY") {
+        console.warn(
+          `[Worker] Variant email ${deliveryId} failed (${result.error}); retrying in ${result.delaySeconds}s`,
+        );
+        job.retry(result.delaySeconds, result.error);
+        continue;
+      }
+      if (result.status === "FAILED") {
+        console.error(
+          `[Worker] Variant email ${deliveryId} gave up: ${result.error}`,
+        );
+        await logSystemEvent({
+          category: "WORKER",
+          type: "VARIANT_EMAIL_FAILED",
+          severity: "ERROR",
+          message: `Quiz-variant email gave up: ${result.error}`,
+          metadata: { queue: VARIANT_EMAILS_QUEUE, jobId: job.id, deliveryId },
+        });
+      }
+      job.ack();
+    } catch (err: unknown) {
+      console.error(
+        `[Worker] Error on variant-email job ${job.id}:`,
+        errorMessage(err),
+      );
+      await logSystemEvent({
+        category: "WORKER",
+        type: "JOB_FAILED",
+        severity: "ERROR",
+        message: `Variant-email job failed: ${errorMessage(err)}`,
+        metadata: { queue: VARIANT_EMAILS_QUEUE, jobId: job.id, deliveryId },
+      });
+      job.retry(60, errorMessage(err));
+    }
+  }
+}
+
+const VARIANT_EMAIL_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
+
+async function runVariantEmailSweeper() {
+  console.log("[Worker] Variant-email sweeper started (5m interval)...");
+  for (;;) {
+    try {
+      const stranded = await findStrandedVariantEmails();
+      if (stranded.length > 0) {
+        const queue = db.queue(VARIANT_EMAILS_QUEUE);
+        for (const deliveryId of stranded)
+          queue.enqueue({ deliveryId } satisfies VariantEmailJobPayload);
+        console.log(
+          `[Worker] Re-enqueued ${stranded.length} stranded variant email(s)`,
+        );
+      }
+      const exhausted = await failExhaustedVariantEmails();
+      if (exhausted > 0)
+        console.log(
+          `[Worker] Closed out ${exhausted} variant email(s) that ran out of attempts`,
+        );
+      // 24h / 72h nudges for alternative versions still awaiting review.
+      const reminders = await sweepUnapprovedVariantReminders();
+      if (reminders.sent > 0)
+        console.log(
+          `[Worker] Sent ${reminders.sent} unapproved-version reminder(s)`,
+        );
+    } catch (err: unknown) {
+      console.error("[Worker] Variant-email sweep failed:", errorMessage(err));
+    }
+    await new Promise((resolve) =>
+      setTimeout(resolve, VARIANT_EMAIL_SWEEP_INTERVAL_MS),
+    );
   }
 }
 
@@ -935,8 +1034,12 @@ async function startWorker() {
 
     // Run all consumers + the scheduler concurrently; each blocks on its own loop.
     await Promise.all([
-      consumeQuizVariants(),
+      ...Array.from({ length: QUIZ_VARIANT_CONSUMERS }, (_, i) =>
+        consumeQuizVariants(`quiz-variants-worker-${i + 1}`),
+      ),
       sweepQuizVariants(),
+      consumeVariantEmails(),
+      runVariantEmailSweeper(),
       consumeMaterials(),
       consumeExamResults(),
       consumeQuizExtractions(),

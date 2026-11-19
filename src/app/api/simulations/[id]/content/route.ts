@@ -139,6 +139,10 @@ export async function GET(
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Content-Security-Policy": SIMULATION_CSP,
+      // Also enforced in `next.config.mjs` `headers()` for `/api/simulations/:id/content`
+      // (since Next's server skips route headers whose key was already set by global config).
+      "Permissions-Policy":
+        "camera=(), microphone=(), geolocation=(), browsing-topics=()",
       "X-Content-Type-Options": "nosniff",
       // The URL is authenticated and stable by simulation id while teachers can
       // publish a new artifact version. Never reuse an older response: immutable

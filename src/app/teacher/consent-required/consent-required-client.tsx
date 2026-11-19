@@ -17,13 +17,21 @@ import {
   type ConsentFormActiveVersion,
 } from "@/components/consent/ConsentForm";
 import { isTeacherConsentBlocked } from "@/lib/consent-claim";
+import { safeRelativeCallbackUrl } from "@/lib/safe-callback-url";
+
+/** Where to go once the consent claim clears: the requested page, else /teacher. */
+function destination(callbackUrl: string | null | undefined) {
+  return safeRelativeCallbackUrl(callbackUrl) ?? "/teacher";
+}
 
 function ConsentRequiredInner({
   activeForm,
   priorDecision,
+  callbackUrl,
 }: {
   activeForm: ConsentFormActiveVersion;
   priorDecision: "DECLINE" | null;
+  callbackUrl?: string | null;
 }) {
   const router = useRouter();
   const [reviewing, setReviewing] = useState(priorDecision === null);
@@ -73,7 +81,7 @@ function ConsentRequiredInner({
               if (decision === "AGREE") {
                 // Hard navigation: ConsentForm has just refreshed the session
                 // cookie, and src/proxy.ts only sees it on a fresh request.
-                window.location.replace("/teacher");
+                window.location.replace(destination(callbackUrl));
                 return;
               }
               setReviewing(false);
@@ -93,6 +101,7 @@ function ConsentRequiredInner({
 export function ConsentRequiredClient(props: {
   activeForm: ConsentFormActiveVersion;
   priorDecision: "DECLINE" | null;
+  callbackUrl?: string | null;
 }) {
   return (
     <SessionProvider>
@@ -103,8 +112,10 @@ export function ConsentRequiredClient(props: {
 
 function ConsentClaimSyncInner({
   reason,
+  callbackUrl,
 }: {
   reason: "no-form" | "already-agreed" | "excluded";
+  callbackUrl?: string | null;
 }) {
   const { update, status } = useSession();
   const [stuck, setStuck] = useState(false);
@@ -128,7 +139,7 @@ function ConsentClaimSyncInner({
           session &&
           !isTeacherConsentBlocked(session.user?.consentDecision)
         ) {
-          window.location.replace("/teacher");
+          window.location.replace(destination(callbackUrl));
         } else {
           setStuck(true);
         }
@@ -139,7 +150,7 @@ function ConsentClaimSyncInner({
     return () => {
       cancelled = true;
     };
-  }, [update, status]);
+  }, [update, status, callbackUrl]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
@@ -180,7 +191,9 @@ function ConsentClaimSyncInner({
               </Button>
               <Button
                 variant="outline"
-                onClick={() => window.location.replace("/teacher")}
+                onClick={() =>
+                  window.location.replace(destination(callbackUrl))
+                }
               >
                 Try my dashboard again
               </Button>
@@ -203,12 +216,14 @@ function ConsentClaimSyncInner({
  */
 export function ConsentClaimSync({
   reason,
+  callbackUrl,
 }: {
   reason: "no-form" | "already-agreed" | "excluded";
+  callbackUrl?: string | null;
 }) {
   return (
     <SessionProvider>
-      <ConsentClaimSyncInner reason={reason} />
+      <ConsentClaimSyncInner reason={reason} callbackUrl={callbackUrl} />
     </SessionProvider>
   );
 }

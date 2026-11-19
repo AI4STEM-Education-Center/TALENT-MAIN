@@ -1,13 +1,15 @@
 "use client";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { Sparkles } from "lucide-react";
+import { Loader2, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { QuestionPreview, QuizVariantBatch } from "./QuizVariantBatch";
 import {
-  DEFAULT_OBJECTIVE,
+  VariantPreviewModal,
+  type StartRoundInput,
+} from "./VariantPreviewModal";
+import {
   isGenerating,
   matchesSource,
   type Act,
@@ -25,10 +27,13 @@ async function request(url: string, method = "GET", body?: unknown) {
         }
       : {}),
   });
-  const data = await response.json();
-  if (!response.ok)
+  if (!response.ok) {
+    // A non-JSON error body (an expired session's login page, a proxy error)
+    // still surfaces as a readable error instead of a parse failure.
+    const data = await response.json().catch(() => ({}));
     throw new Error(data.error || "Could not update alternative versions.");
-  return data;
+  }
+  return response.json();
 }
 
 /** Load the quiz's versions, polling while any draft is still generating. */
@@ -69,7 +74,6 @@ export function QuizVariants({
     useVariantVersions(url);
   const [busy, setBusy] = useState(false);
   const [choosing, setChoosing] = useState(false);
-  const [hiddenBatch, setHiddenBatch] = useState<string | null>(null);
   const act: Act = async (body, method = "PATCH") => {
     setBusy(true);
     setError("");
@@ -83,12 +87,44 @@ export function QuizVariants({
       setBusy(false);
     }
   };
+  // Close the popup as soon as the round is accepted; generation runs in the
+  // background and the list refresh only has to catch up afterwards.
+  async function startRound({
+    mix,
+    purpose,
+    objectives,
+    seedSamples,
+  }: StartRoundInput) {
+    setBusy(true);
+    setError("");
+    try {
+      await request(url, "POST", {
+        name: "Version",
+        mix,
+        purpose,
+        objectives,
+        ...(seedSamples?.numbersSample && seedSamples.contextSample
+          ? { seedSamples }
+          : {}),
+      });
+      setChoosing(false);
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "Could not start generating versions.",
+      );
+    } finally {
+      setBusy(false);
+    }
+    await refresh();
+  }
   const supported = supportsVariants(questions);
   const list = versions ?? [];
-  // Versions arrive newest first, so the first batched one is the live round.
-  const batchId = list.find((v) => v.batchId)?.batchId ?? null;
-  const batch = list.filter((v) => v.batchId && v.batchId === batchId);
-  const showBatch = batch.length > 0 && batchId !== hiddenBatch;
+  const batches = groupBatches(list);
+  // Versions arrive newest first: the first round with open drafts is live.
+  const current = batches.find((b) => b.versions.some(isActive));
+  const earlier = batches.filter(
+    (b) => b !== current && b.versions.some(isActive),
+  );
   return (
     <section
       className="space-y-5 rounded-xl border bg-card p-4"
@@ -121,40 +157,34 @@ export function QuizVariants({
           questions.
         </p>
       )}
-      {choosing && (
-        <GenerateChooser
-          key={batchId ?? "none"}
-          questions={questions}
-          initial={list[0]?.objectives ?? []}
-          busy={busy}
-          onCancel={() => setChoosing(false)}
-          onChoose={async (purpose, objectives) => {
-            const started = await act(
-              {
-                name: "Version",
-                variation: "NUMBERS",
-                count: 2,
-                bothModes: true,
-                purpose,
-                objectives,
-              },
-              "POST",
-            );
-            if (started) {
-              setChoosing(false);
-              setHiddenBatch(null);
-            }
-          }}
-        />
-      )}
-      {showBatch && (
+      <VariantPreviewModal
+        open={choosing}
+        onOpenChange={setChoosing}
+        quizId={quizId}
+        questions={questions}
+        initialObjectives={list[0]?.objectives ?? []}
+        busy={busy}
+        onStart={startRound}
+      />
+      {current && (
         <CurrentRound
-          batch={batch}
+          batchId={current.id}
+          batch={current.versions}
           questions={questions}
           act={act}
           busy={busy}
+          quizId={quizId}
           quizHrefBase={quizHrefBase}
-          onHide={() => setHiddenBatch(batchId)}
+        />
+      )}
+      {earlier.length > 0 && (
+        <EarlierRounds
+          batches={earlier}
+          questions={questions}
+          act={act}
+          busy={busy}
+          quizId={quizId}
+          quizHrefBase={quizHrefBase}
         />
       )}
       <SavedVersions
@@ -167,6 +197,22 @@ export function QuizVariants({
       />
     </section>
   );
+}
+
+/** Drafts still waiting on generation or on the teacher. */
+const isActive = (v: Version) =>
+  isGenerating(v) || v.status === "REVIEW" || v.status === "FAILED";
+
+/** Group batched versions by round, keeping the newest-first order. */
+function groupBatches(versions: Version[]) {
+  const byId = new Map<string, Version[]>();
+  for (const v of versions) {
+    if (!v.batchId) continue;
+    const group = byId.get(v.batchId);
+    if (group) group.push(v);
+    else byId.set(v.batchId, [v]);
+  }
+  return [...byId].map(([id, batch]) => ({ id, versions: batch }));
 }
 
 function supportsVariants(questions: SourceQuestion[]) {
@@ -182,156 +228,157 @@ function supportsVariants(questions: SourceQuestion[]) {
   );
 }
 
-function CurrentRound({
-  batch,
-  questions,
-  act,
-  busy,
-  quizHrefBase,
-  onHide,
-}: {
-  batch: Version[];
+type RoundProps = {
   questions: SourceQuestion[];
   act: Act;
   busy: boolean;
+  quizId: string;
   quizHrefBase: string;
-  onHide: () => void;
+};
+
+export function GenerationBanner({
+  batch,
+  batchId,
+  reviewHref,
+}: {
+  batch: Version[];
+  batchId: string | null;
+  /** Direct review page for this round; omitted when already on it. */
+  reviewHref?: string;
 }) {
+  const readyCount = batch.filter(
+    (v) => !isGenerating(v) && v.status !== "FAILED",
+  ).length;
+  const progress = batch.filter(
+    (v) => isGenerating(v) && (v.totalCount ?? 0) > 0,
+  );
+  return (
+    <div
+      role="status"
+      className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm"
+    >
+      <p className="flex items-center gap-2 font-medium">
+        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+        {readyCount} of {batch.length} versions verified
+      </p>
+      {progress.length > 0 && (
+        <ul className="space-y-0.5 text-muted-foreground">
+          {progress.map((v) => (
+            <li key={v.id}>
+              {v.name}: {v.completedCount ?? 0}/{v.totalCount} questions
+            </li>
+          ))}
+        </ul>
+      )}
+      <p>
+        Generating in the background. You can leave this page — we&apos;ll
+        notify you with a direct approval link as soon as all versions finish.
+      </p>
+      {batchId && reviewHref && (
+        <Link className="font-medium underline" href={reviewHref}>
+          Open batch review link
+        </Link>
+      )}
+    </div>
+  );
+}
+
+function CurrentRound({
+  batchId,
+  batch,
+  ...props
+}: RoundProps & { batchId: string; batch: Version[] }) {
+  const { questions, quizId, quizHrefBase } = props;
   const purpose = batch[0].purpose;
+  const reviewHref = `${quizHrefBase}/${quizId}/versions/${batchId}`;
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/50 p-3">
-        <p className="text-sm" role="status">
-          {batch.some(isGenerating)
-            ? "Generating four versions. Each is solved independently and regenerated automatically until it passes verification."
-            : purpose === "STANDALONE"
+      {batch.some(isGenerating) ? (
+        <GenerationBanner
+          batch={batch}
+          batchId={batchId}
+          reviewHref={reviewHref}
+        />
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/50 p-3">
+          <p className="text-sm" role="status">
+            {purpose === "STANDALONE"
               ? "Review the drafts. Save the ones you like as standalone exams, or as alternates of this exam."
               : "Review the drafts. Approve the ones you like as alternates of this exam, or save them as standalone exams."}
-        </p>
-        <Button size="sm" variant="ghost" onClick={onHide}>
-          Hide drafts
-        </Button>
-      </div>
+          </p>
+          <Link className="text-sm underline" href={reviewHref}>
+            Open review page
+          </Link>
+        </div>
+      )}
       <QuizVariantBatch
         versions={batch}
         questions={questions}
         purpose={purpose}
         stale={!batch.every((v) => matchesSource(v, questions))}
-        act={act}
-        busy={busy}
+        act={props.act}
+        busy={props.busy}
         quizHrefBase={quizHrefBase}
       />
     </div>
   );
 }
 
-function GenerateChooser({
-  questions,
-  initial,
-  busy,
-  onChoose,
-  onCancel,
-}: {
-  questions: SourceQuestion[];
-  initial: { sourceQuestionId: string; objective: string }[];
-  busy: boolean;
-  onChoose: (
-    purpose: "ALTERNATE" | "STANDALONE",
-    objectives: { sourceQuestionId: string; objective: string }[],
-  ) => void;
-  onCancel: () => void;
-}) {
-  // Restore restrictions from the last round, skipping the default wording.
-  const [restrictions, setRestrictions] = useState<Record<string, string>>(() =>
-    Object.fromEntries(
-      initial
-        .filter((o) => o.objective !== DEFAULT_OBJECTIVE)
-        .map((o) => [o.sourceQuestionId, o.objective]),
-    ),
-  );
-  const invalid = Object.values(restrictions).some(
-    (value) => value.trim().length > 0 && value.trim().length < 10,
-  );
-  const choose = (purpose: "ALTERNATE" | "STANDALONE") =>
-    onChoose(
-      purpose,
-      questions.map((q) => ({
-        sourceQuestionId: q.id,
-        objective: restrictions[q.id]?.trim() || DEFAULT_OBJECTIVE,
-      })),
-    );
-  const options = [
-    {
-      purpose: "ALTERNATE",
-      title: "Alternate version of this exam",
-      description:
-        "Parallel versions linked to this exam that students can practice.",
-    },
-    {
-      purpose: "STANDALONE",
-      title: "Standalone exam",
-      description:
-        "A separate exam you can edit, assign, and grade on its own.",
-    },
-  ] as const;
+/** Older rounds that still hold open drafts, so none are forgotten. */
+function EarlierRounds({
+  batches,
+  ...props
+}: RoundProps & { batches: { id: string; versions: Version[] }[] }) {
+  const { questions, quizId, quizHrefBase } = props;
   return (
-    <div className="space-y-4 rounded-lg border p-4">
-      <p className="font-medium" id="variant-purpose">
-        What should the new version be?
-      </p>
-      <div
-        className="grid gap-3 md:grid-cols-2"
-        role="group"
-        aria-labelledby="variant-purpose"
-      >
-        {options.map((option) => (
-          <button
-            key={option.purpose}
-            type="button"
-            disabled={busy || invalid}
-            onClick={() => choose(option.purpose)}
-            className="space-y-1 rounded-lg border p-4 text-left transition-colors hover:border-primary hover:bg-primary/5 disabled:opacity-50"
-          >
-            <span className="block font-semibold">{option.title}</span>
-            <span className="block text-sm text-muted-foreground">
-              {option.description}
-            </span>
-          </button>
-        ))}
-      </div>
-      <p className="text-sm text-muted-foreground">
-        Four versions are generated: two that change numbers and choices, and
-        two that also change the context. Only versions that pass independent
-        verification are shown, and you can save either kind afterwards.
-      </p>
-      <details className="space-y-3">
-        <summary className="cursor-pointer text-sm font-medium">
-          Learning objectives & restrictions (optional)
-        </summary>
-        {questions.map((q, index) => (
-          <label key={q.id} className="block space-y-1 text-sm">
-            <span>Question {index + 1}</span>
-            <Textarea
-              rows={2}
-              maxLength={2000}
-              value={restrictions[q.id] ?? ""}
-              onChange={(e) =>
-                setRestrictions((prev) => ({ ...prev, [q.id]: e.target.value }))
-              }
-              placeholder="Keep the same skill and difficulty, or add restrictions such as whole-number answers only."
-            />
-          </label>
-        ))}
-        {invalid && (
-          <p className="text-xs text-destructive">
-            Restrictions need at least 10 characters.
-          </p>
-        )}
-      </details>
-      <Button variant="ghost" onClick={onCancel}>
-        Cancel
-      </Button>
-    </div>
+    <section aria-labelledby="earlier-rounds" className="space-y-3">
+      <h3 id="earlier-rounds" className="font-medium">
+        Earlier rounds awaiting review
+      </h3>
+      {batches.map(({ id, versions: batch }) => {
+        const open = batch.filter(isActive);
+        const started = batch.at(-1)?.createdAt;
+        return (
+          <div key={id} className="space-y-2 rounded-lg border p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+              <span className="flex flex-wrap items-center gap-2">
+                <Badge variant="warning">
+                  {open.length} draft{open.length === 1 ? "" : "s"} open
+                </Badge>
+                {started && (
+                  <span className="text-muted-foreground">
+                    Started{" "}
+                    <time dateTime={started}>{started.slice(0, 10)}</time>
+                  </span>
+                )}
+              </span>
+              <Link
+                className="font-medium underline"
+                href={`${quizHrefBase}/${quizId}/versions/${id}`}
+              >
+                Open review page
+              </Link>
+            </div>
+            <details>
+              <summary className="cursor-pointer text-sm font-medium">
+                Review {open.map((v) => v.name).join(", ")} here
+              </summary>
+              <div className="mt-3">
+                <QuizVariantBatch
+                  versions={batch}
+                  questions={questions}
+                  purpose={batch[0].purpose}
+                  stale={!batch.every((v) => matchesSource(v, questions))}
+                  act={props.act}
+                  busy={props.busy}
+                  quizHrefBase={quizHrefBase}
+                />
+              </div>
+            </details>
+          </div>
+        );
+      })}
+    </section>
   );
 }
 

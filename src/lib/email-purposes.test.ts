@@ -222,6 +222,58 @@ describe("renderPurposeMessage", () => {
     expect(text).toContain("ptr_Ab12Cd");
     expect(text).toContain("203.0.113.42");
   });
+
+  it("renders quiz-variant ready notices for both initial and revision rounds", () => {
+    const base = {
+      appName: "AI4Talent",
+      firstName: "Jordan",
+      quizName: "Kinematics 2",
+      summaryLine: "4 of 4 versions are ready to review.",
+      reviewUrl: "https://app.example/teacher/quizzes/q1/versions/b1",
+    };
+    const initial = renderPurposeMessage("QUIZ_VARIANTS_READY", {
+      ...base,
+      readyHeading: "Alternative versions ready to review",
+    });
+    expect(initial.subject).toBe(
+      "Alternative versions ready to review for Kinematics 2",
+    );
+    expect(initial.text).toContain(base.reviewUrl);
+    expect(initial.text).not.toContain("{{");
+    const revision = renderPurposeMessage("QUIZ_VARIANTS_READY", {
+      ...base,
+      readyHeading: "Revisions ready to review",
+    });
+    expect(revision.subject).toBe("Revisions ready to review for Kinematics 2");
+  });
+
+  it("renders the unapproved-draft reminder with its review link", () => {
+    const { subject, text } = renderPurposeMessage("QUIZ_VARIANTS_REMINDER", {
+      appName: "AI4Talent",
+      firstName: "Jordan",
+      quizName: "Kinematics 2",
+      pendingCount: 3,
+      ageLabel: "3 days",
+      reviewUrl: "https://app.example/teacher/quizzes/q1/versions/b1",
+    });
+    expect(subject).toContain("Kinematics 2");
+    expect(subject).toContain("3");
+    expect(text).toContain("3 days");
+    expect(text).toContain(
+      "https://app.example/teacher/quizzes/q1/versions/b1",
+    );
+    expect(text).not.toContain("{{");
+  });
+
+  it("sends quiz-variant notices from the notification mailbox", () => {
+    for (const purpose of [
+      "QUIZ_VARIANTS_READY",
+      "QUIZ_VARIANTS_REMINDER",
+    ] as const)
+      expect(EMAIL_PURPOSE_DEFINITIONS[purpose].defaultLocalPart).toBe(
+        "notification",
+      );
+  });
 });
 
 describe("catalog integrity", () => {

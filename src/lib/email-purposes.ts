@@ -28,6 +28,8 @@ export const EMAIL_PURPOSES = [
   "CONSENT_EXPORT_READY",
   "SECURITY_ALERT",
   "RESEARCH",
+  "QUIZ_VARIANTS_READY",
+  "QUIZ_VARIANTS_REMINDER",
 ] as const;
 
 export type EmailPurpose = (typeof EMAIL_PURPOSES)[number];
@@ -149,6 +151,33 @@ Review tokens in Admin → Pressure Tests.`,
 const RESEARCH_TEMPLATE = {
   subject: "{{subject}}",
   body: "{{body}}",
+};
+
+const QUIZ_VARIANTS_READY_TEMPLATE = {
+  subject: "{{readyHeading}} for {{quizName}}",
+  body: `Hi {{firstName}},
+
+{{readyHeading}} for "{{quizName}}".
+
+{{summaryLine}}
+
+Review, revise, or approve them here:
+{{reviewUrl}}
+
+Nothing is shown to students until you approve a version.`,
+};
+
+const QUIZ_VARIANTS_REMINDER_TEMPLATE = {
+  subject:
+    "Reminder: {{pendingCount}} draft version(s) of {{quizName}} await your review",
+  body: `Hi {{firstName}},
+
+A friendly reminder: {{pendingCount}} alternative version draft(s) of "{{quizName}}" have been waiting for your review for {{ageLabel}}.
+
+Students only see versions you approve. Review, revise, approve, or discard them here:
+{{reviewUrl}}
+
+If you no longer need these drafts, discarding them stops these reminders.`,
 };
 
 export const EMAIL_PURPOSE_DEFINITIONS: Record<
@@ -295,6 +324,38 @@ export const EMAIL_PURPOSE_DEFINITIONS: Record<
     defaultLocalPart: "research",
     template: RESEARCH_TEMPLATE,
     variables: ["appName", "subject", "body"],
+  },
+  QUIZ_VARIANTS_READY: {
+    key: "QUIZ_VARIANTS_READY",
+    label: "Alternative quiz versions ready",
+    description:
+      "Sent to the teacher or admin who requested alternative quiz versions once every draft in the round (or every revised draft) has finished generating.",
+    defaultLocalPart: "notification",
+    template: QUIZ_VARIANTS_READY_TEMPLATE,
+    variables: [
+      "appName",
+      "firstName",
+      "quizName",
+      "readyHeading",
+      "summaryLine",
+      "reviewUrl",
+    ],
+  },
+  QUIZ_VARIANTS_REMINDER: {
+    key: "QUIZ_VARIANTS_REMINDER",
+    label: "Alternative quiz versions awaiting review",
+    description:
+      "A polite reminder sent 24 hours and again 72 hours after alternative versions are ready, only while drafts are still waiting for review.",
+    defaultLocalPart: "notification",
+    template: QUIZ_VARIANTS_REMINDER_TEMPLATE,
+    variables: [
+      "appName",
+      "firstName",
+      "quizName",
+      "pendingCount",
+      "ageLabel",
+      "reviewUrl",
+    ],
   },
 };
 

@@ -86,11 +86,17 @@ inlining checks.
   violations, wire up a report endpoint, then promote to the enforced
   `Content-Security-Policy`. Enforcing it also needs `connect-src` widened to
   the CloudFront domain **and** the S3 host (uploads `fetch` a presigned PUT
-  directly to the bucket).
+  directly to the bucket); Speech-to-Text loads its AudioWorklet from `'self'`
+  (`/stt-pcm-capture-worklet.js`, governed by `script-src`) and already includes
+  `wss://*.amazonaws.com:8443` in `connect-src` for Amazon Transcribe Streaming.
 - `X-Content-Type-Options: nosniff`
 - `X-Frame-Options: DENY`
 - `Referrer-Policy: strict-origin-when-cross-origin`
-- `Permissions-Policy: camera=(), microphone=(), geolocation=(), browsing-topics=()`
+- `Permissions-Policy: camera=(), microphone=(self), geolocation=(), browsing-topics=()`
+  (`microphone=(self)` allows same-origin Speech-to-Text voice input while
+  blocking cross-origin frames; a subsequent `headers()` rule in
+  `next.config.mjs` overrides `/api/simulations/:id/content` back to
+  `microphone=()`).
 - `Strict-Transport-Security` (max-age 1y, includeSubDomains) — **production
   only**; localhost dev is plain HTTP and must not be HTTPS-pinned.
 

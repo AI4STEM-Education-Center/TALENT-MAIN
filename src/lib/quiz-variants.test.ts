@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
+  checkConceptualNumberMisuse,
+  checkContextRewriteDistinctness,
+  checkWorkedSolutionConsistency,
+  isConceptualQuestion,
+  variantGenerationSchema,
   validateVariant,
   validateVerification,
   scoreVariant,
@@ -138,5 +143,89 @@ describe("alternative quiz validation", () => {
         "a",
       ),
     ).toThrow();
+  });
+});
+
+describe("generation quality checks", () => {
+  const conceptual: VariantQuestion = {
+    ...choice,
+    id: "k",
+    sourceQuestionId: "k",
+    text: "A box slides to the right on a rough floor. Which way does friction act?",
+    options: [
+      { id: "k-a", text: "To the left, opposing the motion", isCorrect: true },
+      { id: "k-b", text: "To the right, along the motion", isCorrect: false },
+    ],
+  };
+  it("recognizes purely conceptual sources", () => {
+    expect(isConceptualQuestion(conceptual)).toBe(true);
+    expect(isConceptualQuestion(choice)).toBe(false);
+    expect(isConceptualQuestion(numeric)).toBe(false);
+  });
+  it("rejects decorative numbers that cannot affect a conceptual answer", () => {
+    expect(
+      checkConceptualNumberMisuse(conceptual, {
+        ...conceptual,
+        text: "A 4 kg box slides to the left at 2 m/s on a rough floor. Which way does friction act?",
+      }),
+    ).toMatch(/decorative numbers/);
+    expect(
+      checkConceptualNumberMisuse(conceptual, {
+        ...conceptual,
+        text: "A box slides to the left on a rough floor. Which way does friction act?",
+      }),
+    ).toBeNull();
+  });
+  it("rejects CONTEXT rewrites that copy the original correct choice or stem", () => {
+    const fresh =
+      "A hockey puck glides north across rough ice before stopping. Toward which direction does the ice push on it?";
+    expect(
+      checkContextRewriteDistinctness(conceptual, {
+        ...conceptual,
+        text: fresh,
+      }),
+    ).toMatch(/verbatim/);
+    expect(
+      checkContextRewriteDistinctness(conceptual, {
+        ...conceptual,
+        text: conceptual.text,
+        options: [
+          { id: "x", text: "South, against the glide", isCorrect: true },
+          { id: "y", text: "North, with the glide", isCorrect: false },
+        ],
+      }),
+    ).toMatch(/too close/);
+    expect(
+      checkContextRewriteDistinctness(conceptual, {
+        ...conceptual,
+        text: fresh,
+        options: [
+          { id: "x", text: "South, against the glide", isCorrect: true },
+          { id: "y", text: "North, with the glide", isCorrect: false },
+        ],
+      }),
+    ).toBeNull();
+  });
+  it("requires a numeric worked solution to reach the answer key", () => {
+    expect(checkWorkedSolutionConsistency(numeric)).toBeNull();
+    expect(
+      checkWorkedSolutionConsistency({
+        ...numeric,
+        solution: "Split six into two equal groups: 3 each.",
+      }),
+    ).toBeNull();
+    expect(
+      checkWorkedSolutionConsistency({ ...numeric, solution: "8/2 = 4" }),
+    ).toMatch(/never arrives/);
+  });
+  it("lets the model refuse through the generation schema with a reason", () => {
+    const refusal = { questions: [], refusalReason: "Key marks two answers." };
+    expect(variantGenerationSchema.parse(refusal)).toEqual(refusal);
+    expect(() => validateVariant(refusal, sources)).toThrow(
+      /Key marks two answers/,
+    );
+    expect(() => validateVariant({ questions: [] }, sources)).toThrow(
+      /refused/,
+    );
   });
 });

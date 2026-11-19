@@ -48,12 +48,16 @@ export async function GET(req: NextRequest) {
     id: n.id,
     // The notification email links by message id (the same message reaches many
     // students), so the mailbox needs it to open the one that was linked.
-    messageId: n.message.id,
-    subject: n.message.subject,
-    body: n.message.body,
-    senderName:
-      `${n.message.sender.firstName} ${n.message.sender.lastName}`.trim(),
-    className: n.message.class?.name ?? null,
+    // System notifications carry subject/body/href directly with messageId = null.
+    messageId: n.message?.id ?? null,
+    kind: n.kind ?? "MESSAGE",
+    href: n.href ?? null,
+    subject: n.message?.subject ?? n.subject ?? "Notification",
+    body: n.message?.body ?? n.body ?? "",
+    senderName: n.message
+      ? `${n.message.sender.firstName} ${n.message.sender.lastName}`.trim()
+      : "AI4Talent",
+    className: n.message?.class?.name ?? null,
     createdAt: n.createdAt,
     readAt: n.readAt,
   }));

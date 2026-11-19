@@ -11,8 +11,11 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-it("serializes requests and spaces starts across generation and validation", async () => {
-  const request = createQuizVariantRequestGate();
+it("serializes requests and spaces starts when limited to one in flight", async () => {
+  const request = createQuizVariantRequestGate({
+    maxConcurrent: 1,
+    minIntervalMs: 2000,
+  });
   let finish!: () => void;
   const first = vi.fn(
     () =>
@@ -102,3 +105,70 @@ it.each(["APIConnectionError", "APIConnectionTimeoutError"])(
     expect(call).toHaveBeenCalledTimes(2);
   },
 );
+
+it("runs up to maxConcurrent calls at once with spaced starts", async () => {
+  const request = createQuizVariantRequestGate({
+    maxConcurrent: 2,
+    minIntervalMs: 500,
+  });
+  const finishers: (() => void)[] = [];
+  const calls = [0, 1, 2].map(() =>
+    vi.fn(
+      () =>
+        new Promise<string>((resolve) => {
+          finishers.push(() => resolve("done"));
+        }),
+    ),
+  );
+  const results = calls.map((call) => request(call));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(calls[0]).toHaveBeenCalledOnce();
+  expect(calls[1]).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(500);
+  // Two in flight at once, the third waits for a free slot.
+  expect(calls[1]).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(calls[2]).not.toHaveBeenCalled();
+  finishers[0]();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(calls[2]).toHaveBeenCalledOnce();
+  finishers[1]();
+  finishers[2]();
+  expect(await Promise.all(results)).toEqual(["done", "done", "done"]);
+});
+
+it("defaults to four concurrent calls", async () => {
+  const request = createQuizVariantRequestGate();
+  const calls = Array.from({ length: 5 }, () =>
+    vi.fn(() => new Promise<void>(() => undefined)),
+  );
+  calls.forEach((call) => void request(call));
+  await vi.advanceTimersByTimeAsync(10_000);
+  expect(calls.slice(0, 4).every((c) => c.mock.calls.length === 1)).toBe(true);
+  expect(calls[4]).not.toHaveBeenCalled();
+});
+
+it("shares a Retry-After cooldown across every concurrent caller", async () => {
+  const request = createQuizVariantRequestGate({
+    maxConcurrent: 4,
+    minIntervalMs: 500,
+  });
+  const limited = vi
+    .fn()
+    .mockRejectedValueOnce({
+      status: 429,
+      headers: new Headers({ "retry-after": "5" }),
+    })
+    .mockResolvedValue("first");
+  const other = vi.fn(async () => "second");
+  const a = request(limited);
+  const b = request(other);
+  await vi.advanceTimersByTimeAsync(4999);
+  expect(limited).toHaveBeenCalledOnce();
+  // The second caller was due at 500ms but must respect the shared cooldown.
+  expect(other).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(await a).toBe("first");
+  expect(await b).toBe("second");
+  expect(other).toHaveBeenCalledOnce();
+});
