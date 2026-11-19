@@ -196,7 +196,7 @@ describe("moving and resizing the panel", () => {
           ),
       );
 
-      expect(panel.style.transform).toBe("translate3d(-40px, -50px, 0)");
+      expect(panel.style.transform).toBe("translate3d(-40px, -50px, 0px)");
       // Untouched mid-gesture — the transform is doing the moving.
       expect(parseFloat(panel.style.left)).toBe(left);
       expect(parseFloat(panel.style.top)).toBe(top);
@@ -246,7 +246,7 @@ describe("moving and resizing the panel", () => {
       // The one frame that does run paints the LAST position, not the first —
       // coalescing must not mean lagging behind the pointer.
       await act(async () => frames[0](0));
-      expect(panel.style.transform).toBe("translate3d(-24px, -24px, 0)");
+      expect(panel.style.transform).toBe("translate3d(-24px, -24px, 0px)");
     } finally {
       cleanup();
     }
