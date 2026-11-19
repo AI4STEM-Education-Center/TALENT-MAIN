@@ -460,6 +460,7 @@ export async function readUserConversation(
       content: true,
       attachmentIds: true,
       attachmentNames: true,
+      actions: true,
     },
   });
 

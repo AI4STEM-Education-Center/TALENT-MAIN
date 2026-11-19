@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { AssistantMarkdown } from "@/components/ui/assistant-markdown";
 import { Archive, Database, Paperclip, X } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
@@ -187,9 +186,7 @@ export function TranscriptDialog({
                   <p className="whitespace-pre-wrap text-sm">{turn.content}</p>
                 ) : (
                   <div className={MARKDOWN_CLASS}>
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {turn.content}
-                    </ReactMarkdown>
+                    <AssistantMarkdown>{turn.content}</AssistantMarkdown>
                   </div>
                 )}
                 {turn.attachmentNames && turn.attachmentNames.length > 0 && (

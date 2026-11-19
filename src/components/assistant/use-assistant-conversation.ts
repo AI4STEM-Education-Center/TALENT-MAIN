@@ -7,6 +7,7 @@ import type {
   AssistantTurn,
   ConversationSummary,
 } from "@/lib/assistant/types";
+import type { CoachActionView } from "@/lib/assistant/coach-types";
 import type { DisplayAiMetrics } from "@/lib/ai-metrics";
 import type { Bubble, ToolActivity } from "./AssistantTranscript";
 import type { WidgetConfig } from "./assistant-context";
@@ -135,7 +136,9 @@ export function useAssistantConversation(config: WidgetConfig | null) {
           setHistoryOpen(false);
           return;
         }
-        const data = (await res.json()) as { turns: AssistantTurn[] };
+        const data = (await res.json()) as {
+          turns: (AssistantTurn & { cards?: CoachActionView[] })[];
+        };
         if (controller.signal.aborted) return;
         setBubbles(
           data.turns.map((turn) => ({
@@ -143,6 +146,7 @@ export function useAssistantConversation(config: WidgetConfig | null) {
             content: turn.content,
             attachmentNames: turn.attachmentNames,
             attachmentIds: turn.attachmentIds,
+            cards: turn.cards,
           })),
         );
         setConversationId(id);
@@ -246,6 +250,14 @@ export function useAssistantConversation(config: WidgetConfig | null) {
             prev.map((bubble, index) =>
               index === prev.length - 1
                 ? { ...bubble, content: bubble.content + event.text }
+                : bubble,
+            ),
+          );
+        } else if (event.type === "action") {
+          setBubbles((prev) =>
+            prev.map((bubble, index) =>
+              index === prev.length - 1
+                ? { ...bubble, cards: [...(bubble.cards ?? []), event.action] }
                 : bubble,
             ),
           );
