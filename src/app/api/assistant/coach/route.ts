@@ -6,6 +6,7 @@ import { resolveAssistantSession } from "@/lib/assistant/session";
 import {
   buildCoachQuestionView,
   coachOpening,
+  coachOpeningOptions,
   hydrateCoachActions,
   resolveCoachScope,
 } from "@/lib/assistant/coach";
@@ -102,6 +103,7 @@ export async function GET(req: Request) {
     const body: CoachSessionView = {
       question,
       opening: coachOpening(scope.questionNumber),
+      openingOptions: coachOpeningOptions(scope),
       conversationId: conversation?.id ?? null,
       turns,
     };

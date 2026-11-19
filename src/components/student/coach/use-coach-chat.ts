@@ -30,6 +30,7 @@ type LoadState =
 export function useCoachChat(target: CoachTarget) {
   const [load, setLoad] = useState<LoadState>({ status: "loading" });
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
+  const [openingOptions, setOpeningOptions] = useState<string[]>([]);
   const [activity, setActivity] = useState<ToolActivity[]>([]);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -67,6 +68,7 @@ export function useCoachChat(target: CoachTarget) {
             ...(turn.actions.length > 0 ? { cards: turn.actions } : {}),
           })),
         ]);
+        setOpeningOptions(data.openingOptions ?? []);
         setLoad({ status: "ready", question: data.question });
       } catch {
         if (controller.signal.aborted) return;
@@ -213,6 +215,7 @@ export function useCoachChat(target: CoachTarget) {
   return {
     load,
     bubbles,
+    openingOptions,
     activity,
     draft,
     setDraft,

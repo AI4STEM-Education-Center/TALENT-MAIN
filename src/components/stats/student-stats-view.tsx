@@ -8,7 +8,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, ChevronRight, Atom, BookOpen } from "lucide-react";
+import { ArrowLeft, ChevronRight, Atom, BookOpen, Brain } from "lucide-react";
 import {
   getStudentStats,
   getStudentSimulationSessions,
@@ -17,6 +17,11 @@ import { StatCard } from "@/components/teacher/stats-ui";
 import { pct } from "@/lib/stats-format";
 import { formatDurationMs } from "@/lib/simulation-stats";
 import { getStudentResourceSessions } from "@/lib/resource-engagement-server";
+import {
+  getStudentKnowledgeProfile,
+  resolveStudentUgaId,
+  type StudentKnowledgeProfile,
+} from "@/lib/knowledge-tracing";
 
 const fmtDateTime = (d: Date | null) =>
   d
@@ -28,6 +33,129 @@ const fmtDateTime = (d: Date | null) =>
         minute: "2-digit",
       })
     : "—";
+
+function KnowledgeTracingCard({
+  ktProfile,
+}: {
+  ktProfile: StudentKnowledgeProfile | null;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Brain className="size-4 text-primary" /> Knowledge Tracing Profile
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {!ktProfile ? (
+          <p className="text-sm text-muted-foreground">
+            No Knowledge Tracing profile generated yet. A profile is
+            automatically created and updated after each completed quiz or
+            alternative-version retake.
+          </p>
+        ) : (
+          <>
+            {ktProfile.promptSummary && (
+              <p className="text-sm leading-relaxed">
+                {ktProfile.promptSummary}
+              </p>
+            )}
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-lg border border-border p-3 space-y-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
+                  Known Concepts ({ktProfile.knownConcepts.length})
+                </h3>
+                {ktProfile.knownConcepts.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    None recorded yet.
+                  </p>
+                ) : (
+                  <ul className="space-y-1.5 text-xs">
+                    {ktProfile.knownConcepts.map((c) => (
+                      <li key={c.concept} className="leading-snug">
+                        <span className="font-medium text-foreground">
+                          {c.concept}
+                        </span>
+                        {c.topic && (
+                          <span className="ml-1 text-muted-foreground">
+                            ({c.topic})
+                          </span>
+                        )}
+                        <span className="block text-muted-foreground">
+                          {c.evidence}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <div className="rounded-lg border border-border p-3 space-y-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">
+                  Unknown / Struggling Concepts (
+                  {ktProfile.unknownConcepts.length})
+                </h3>
+                {ktProfile.unknownConcepts.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    None recorded yet.
+                  </p>
+                ) : (
+                  <ul className="space-y-1.5 text-xs">
+                    {ktProfile.unknownConcepts.map((c) => (
+                      <li key={c.concept} className="leading-snug">
+                        <span className="font-medium text-foreground">
+                          {c.concept}
+                        </span>
+                        {c.topic && (
+                          <span className="ml-1 text-muted-foreground">
+                            ({c.topic})
+                          </span>
+                        )}
+                        <span className="block text-muted-foreground">
+                          {c.evidence}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+
+            {ktProfile.transitions.length > 0 && (
+              <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-1.5">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Recent Concept Updates (Retakes & Clash Resolution)
+                </h3>
+                <ul className="space-y-1 text-xs">
+                  {ktProfile.transitions.slice(0, 6).map((t) => (
+                    <li
+                      key={`${t.concept}-${t.direction}-${t.occurredAt}-${t.quizName}`}
+                    >
+                      <span
+                        className={
+                          t.direction === "upgraded_unknown"
+                            ? "font-medium text-emerald-700 dark:text-emerald-400"
+                            : "font-medium text-amber-700 dark:text-amber-400"
+                        }
+                      >
+                        {t.direction === "upgraded_unknown"
+                          ? "↑ Upgraded to Known"
+                          : "↓ Downgraded to Unknown"}
+                      </span>{" "}
+                      · <span className="font-medium">{t.concept}</span> (
+                      {t.quizName}, {t.occurredAt.slice(0, 10)}):{" "}
+                      <span className="text-muted-foreground">{t.reason}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 export async function StudentStatsView({
   params,
@@ -49,17 +177,26 @@ export async function StudentStatsView({
   });
   if (!enrollment) notFound();
 
-  const [stats, simSessions, resourceSessions] = await Promise.all([
-    getStudentStats(id, studentId),
-    getStudentSimulationSessions(id, studentId),
-    // Research access only: rows exist only for consenting students, so any
-    // row shown to a teacher would reveal participation. The function itself
-    // refuses non-research viewers; the audience check keeps the teacher
-    // route from even asking.
-    audience === "admin"
-      ? getStudentResourceSessions(viewer, id, studentId)
-      : Promise.resolve([]),
-  ]);
+  const [stats, simSessions, resourceSessions, ktProfile, ugaId] =
+    await Promise.all([
+      getStudentStats(id, studentId),
+      getStudentSimulationSessions(id, studentId),
+      // Research access only: rows exist only for consenting students, so any
+      // row shown to a teacher would reveal participation. The function itself
+      // refuses non-research viewers; the audience check keeps the teacher
+      // route from even asking.
+      audience === "admin"
+        ? getStudentResourceSessions(viewer, id, studentId)
+        : Promise.resolve([]),
+      getStudentKnowledgeProfile(
+        studentId,
+        audience === "teacher" ? { allowedClassIds: [id] } : undefined,
+      ),
+      resolveStudentUgaId(studentId, {
+        classIds: [id],
+        allowConsentFallback: audience === "admin",
+      }),
+    ]);
   if (!stats) notFound();
 
   return (
@@ -71,7 +208,14 @@ export async function StudentStatsView({
       </Button>
 
       <div>
-        <h1 className="text-2xl font-bold">{stats.studentName}</h1>
+        <div className="flex flex-wrap items-baseline gap-2">
+          <h1 className="text-2xl font-bold">{stats.studentName}</h1>
+          {ugaId && (
+            <span className="text-sm text-muted-foreground font-mono">
+              (811 ID: {ugaId})
+            </span>
+          )}
+        </div>
         {audience === "admin" && (
           <Link
             className="text-sm text-primary hover:underline"
@@ -107,6 +251,8 @@ export async function StudentStatsView({
           sub="per quiz"
         />
       </div>
+
+      <KnowledgeTracingCard ktProfile={ktProfile} />
 
       {/* Per-quiz breakdown */}
       <Card>

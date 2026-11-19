@@ -29,6 +29,10 @@ export const USE_CASES = [
   // cheap local model for one and a hosted vision model for the other.
   "student_assistant",
   "teacher_assistant",
+  // Per-student Knowledge Tracing profile synthesis: updates known/unknown
+  // concepts and misconceptions after each quiz attempt or alternative retake.
+  // Falls back to recommendation or student_assistant when left unassigned.
+  "knowledge_tracing",
   // Content moderation (OpenAI's free /v1/moderations endpoint). Assigned like
   // any other use case, so leaving it unassigned turns the check off — see
   // src/lib/guardrails.ts. Wants a moderation model (omni-moderation-latest),

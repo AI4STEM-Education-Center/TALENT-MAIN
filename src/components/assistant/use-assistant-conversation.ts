@@ -160,8 +160,8 @@ export function useAssistantConversation(config: WidgetConfig | null) {
     [cancelTurn, clearAttachments],
   );
 
-  const send = async () => {
-    const message = draft.trim();
+  const send = async (overrideText?: string) => {
+    const message = (overrideText ?? draft).trim();
     if (!message || abortRef.current || loadingConversation || preparing)
       return;
 
@@ -339,6 +339,7 @@ export function useAssistantConversation(config: WidgetConfig | null) {
     send,
     accept,
     attachmentsEnabled,
+    sttEnabled: config?.sttEnabled !== false,
   };
 }
 

@@ -171,6 +171,12 @@ export type CoachTurnView = {
 export type CoachSessionView = {
   question: CoachQuestionView;
   opening: string;
+  /**
+   * 1–2 clickable starter buttons representing possible student ways of thinking
+   * or approaches to the first question, shown before the student sends their
+   * first message so the coach can diagnose their issue quickly.
+   */
+  openingOptions?: string[];
   conversationId: string | null;
   turns: CoachTurnView[];
 };
