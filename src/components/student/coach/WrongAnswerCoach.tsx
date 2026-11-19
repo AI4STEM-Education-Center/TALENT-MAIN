@@ -14,6 +14,11 @@ import {
   AssistantTranscript,
   type RenderCards,
 } from "@/components/assistant/AssistantTranscript";
+import {
+  SttErrorBanner,
+  SttMicButton,
+} from "@/components/assistant/SttMicButton";
+import { useSttComposer } from "@/components/assistant/use-stt-composer";
 import { useOptionalAssistant } from "@/components/assistant/assistant-context";
 import type { CoachActionView } from "@/lib/assistant/coach-types";
 import { CoachActionCards } from "./CoachActionCards";
@@ -21,9 +26,41 @@ import { CoachQuestionPane } from "./CoachQuestionPane";
 import { useCoachChat, type CoachTarget } from "./use-coach-chat";
 
 function CoachDialogBody({ target }: { target: CoachTarget }) {
+  const assistant = useOptionalAssistant();
+  const sttEnabled = assistant?.config?.sttEnabled !== false;
   const chat = useCoachChat(target);
-  const { load, bubbles, activity, draft, setDraft, sending, send, sendText } =
-    chat;
+  const {
+    load,
+    bubbles,
+    openingOptions,
+    activity,
+    draft,
+    setDraft,
+    sending,
+    sendText,
+  } = chat;
+
+  const stt = useSttComposer({
+    draft,
+    setDraft,
+    onSend: async (text) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      setDraft("");
+      await sendText(trimmed);
+    },
+    disabled: sending,
+    surface: "wrong_answer_coach",
+  });
+
+  const canSend =
+    !sending &&
+    !stt.isBusy &&
+    (draft.trim().length > 0 || stt.isRecording || stt.state === "connecting");
+
+  const hasUserTurn = bubbles.some((b) => b.role === "user");
+  const showOpeningButtons =
+    !hasUserTurn && !sending && openingOptions.length > 0;
 
   const renderCards = useCallback<RenderCards>(
     (cards: CoachActionView[]) => (
@@ -73,16 +110,43 @@ function CoachDialogBody({ target }: { target: CoachTarget }) {
             renderCards={renderCards}
           />
         </div>
+        {showOpeningButtons && (
+          <div
+            role="group"
+            aria-label="Suggested ways you approached this question"
+            className="flex flex-col gap-2 border-t border-border/60 bg-muted/10 px-4 py-2.5"
+          >
+            <p className="text-xs font-medium text-muted-foreground">
+              Pick what matches your thinking, or type / speak your own below:
+            </p>
+            {openingOptions.slice(0, 2).map((option) => (
+              <button
+                key={option}
+                type="button"
+                disabled={sending || stt.isBusy}
+                onClick={() => {
+                  stt.abortStt();
+                  setDraft("");
+                  void sendText(option);
+                }}
+                className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-left text-xs text-foreground transition-colors hover:border-primary hover:bg-primary/10 disabled:opacity-50"
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+        )}
+        <SttErrorBanner error={stt.error} onDismiss={stt.clearError} />
         <form
           className="flex items-end gap-2 border-t p-2"
           onSubmit={(event) => {
             event.preventDefault();
-            send();
+            void stt.submitOrFinalizeAndSend();
           }}
         >
           <textarea
             value={draft}
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event) => stt.handleDraftChange(event.target.value)}
             onKeyDown={(event) => {
               // Enter sends; Shift+Enter adds a line, as in the assistant widget.
               if (
@@ -91,7 +155,7 @@ function CoachDialogBody({ target }: { target: CoachTarget }) {
                 !event.nativeEvent.isComposing
               ) {
                 event.preventDefault();
-                send();
+                void stt.submitOrFinalizeAndSend();
               }
             }}
             rows={2}
@@ -100,14 +164,21 @@ function CoachDialogBody({ target }: { target: CoachTarget }) {
             aria-label="Your message"
             className="max-h-32 min-h-9 flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
           />
+          {sttEnabled && (
+            <SttMicButton
+              state={stt.state}
+              disabled={sending}
+              onToggle={() => void stt.toggleStt()}
+            />
+          )}
           <Button
             type="submit"
             size="icon"
             className="size-9 shrink-0"
-            disabled={sending || draft.trim().length === 0}
+            disabled={!canSend}
             aria-label="Send message"
           >
-            {sending ? (
+            {sending || stt.isBusy ? (
               <Loader2 className="animate-spin" aria-hidden />
             ) : (
               <Send aria-hidden />

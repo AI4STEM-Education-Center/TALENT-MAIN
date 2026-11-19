@@ -53,6 +53,10 @@ import {
   type CoachQuestionView,
   type CoachScope,
 } from "./coach-types";
+import {
+  formatKnowledgeProfileForPrompt,
+  getStudentKnowledgeProfile,
+} from "@/lib/knowledge-tracing";
 
 /** Longest slice of a simulation's build spec shown to the model. */
 const SIM_DESCRIPTION_CHARS = 900;
@@ -143,6 +147,40 @@ export function coachOpening(questionNumber: number): string {
     `Let's look at question ${questionNumber} together. Before I say anything: ` +
     "what were you thinking when you answered it? Walk me through how you approached it."
   );
+}
+
+/**
+ * 1–2 clickable starter buttons representing possible student ways of thinking
+ * in response to `coachOpening`, tailored to the question's answer mode and the
+ * student's submitted response so the coach can immediately diagnose their
+ * reasoning and recommend targeted resources.
+ */
+export function coachOpeningOptions(scope: CoachScope): string[] {
+  const q = scope.question;
+  const answer = formatStudentAnswer(q);
+  const hasAnswer = answer !== "(no answer given)";
+
+  if (q.answerMode === "NUMERIC") {
+    return hasAnswer
+      ? [
+          `I used a formula and calculated ${answer}, but I'm not sure if I set up the equation or units right.`,
+          "I wasn't sure which concept or equation applies to this problem, so I estimated.",
+        ]
+      : [
+          "I wasn't sure which equation or concept to start with for this problem.",
+          "I knew the general topic, but got stuck setting up the calculation.",
+        ];
+  }
+
+  return hasAnswer
+    ? [
+        `I chose "${answer.slice(0, 80)}" because it seemed to match the main rule, but I may have mixed up how the variables relate.`,
+        "I narrowed it down, but I wasn't sure which principle or concept was the key here.",
+      ]
+    : [
+        "I wasn't sure which concept or rule applies to this question.",
+        "I got confused comparing the choices and how the underlying principle works.",
+      ];
 }
 
 /** Conversation title an admin sees in the transcript browser. */
@@ -680,6 +718,7 @@ export type CoachContextInput = {
   answerKeyAvailable: boolean;
   explanation: string | null;
   candidates: CoachCandidates;
+  knowledgeTracingBlock?: string | null;
 };
 
 function formatStudentAnswer(q: SnapshotQuestion): string {
@@ -774,14 +813,19 @@ export function formatCoachContext(input: CoachContextInput): string {
       : "Practice question: none available — do not offer one.",
   );
 
-  return fenceUntrusted("question context", lines.join("\n"));
+  const fencedQuestion = fenceUntrusted("question context", lines.join("\n"));
+  if (input.knowledgeTracingBlock) {
+    return `${fencedQuestion}\n\n${input.knowledgeTracingBlock}`;
+  }
+  return fencedQuestion;
 }
 
 /** Load everything the system prompt needs for one coach turn. */
 export async function buildCoachContext(scope: CoachScope): Promise<string> {
-  const [candidates, explanation] = await Promise.all([
+  const [candidates, explanation, ktProfile] = await Promise.all([
     loadCoachCandidates(scope),
     scope.answerKeyAvailable ? liveExplanation(scope) : null,
+    getStudentKnowledgeProfile(scope.studentId),
   ]);
   return formatCoachContext({
     quizName: scope.quizName,
@@ -792,5 +836,6 @@ export async function buildCoachContext(scope: CoachScope): Promise<string> {
     answerKeyAvailable: scope.answerKeyAvailable,
     explanation,
     candidates,
+    knowledgeTracingBlock: formatKnowledgeProfileForPrompt(ktProfile),
   });
 }

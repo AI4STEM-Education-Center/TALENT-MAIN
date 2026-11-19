@@ -19,6 +19,11 @@ import {
   getStudentStats,
 } from "@/lib/quiz-stats-server";
 import { PASS_THRESHOLD } from "@/lib/quiz-stats";
+import {
+  findStudentsKnowledgeTracing,
+  scopeKnowledgeProfileToClasses,
+  updateStudentKnowledgeProfile,
+} from "@/lib/knowledge-tracing";
 import type {
   AssistantSkill,
   AssistantTool,
@@ -305,18 +310,102 @@ const findStrugglingStudents: AssistantTool<typeof strugglingInput> = {
   },
 };
 
+const ktTeacherInput = z.object({
+  query: z
+    .string()
+    .max(120)
+    .optional()
+    .describe(
+      "Student name (first, last, or full name), 9-digit UGA 811 number (e.g. '811947904'), or studentId. Omit to list Knowledge Tracing profiles for all students in the teacher's classes.",
+    ),
+  classId: z
+    .string()
+    .max(64)
+    .optional()
+    .describe("Optional classId to restrict the lookup to one class."),
+});
+
+const getStudentKnowledgeTracing: AssistantTool<typeof ktTeacherInput> = {
+  name: "get_student_knowledge_tracing",
+  description:
+    "Retrieve the Knowledge Tracing profile (known concepts, unknown/struggling concepts, and " +
+    "recent concept upgrades or downgrades across retakes) for one or all students in the teacher's " +
+    "classes. You can look up a student by their name, their 9-digit 811 number (UGA ID), or their " +
+    "studentId, or omit `query` to retrieve profiles across all enrolled students.",
+  activityLabel: "Reading student knowledge tracing",
+  input: ktTeacherInput,
+  handler: async (args, ctx) => {
+    const teacherId = requireTeacher(ctx);
+    if (args.classId) {
+      const klass = await ownedClass(ctx, args.classId);
+      if (!klass) return notFound;
+    }
+
+    const matches = await findStudentsKnowledgeTracing({
+      teacherId,
+      classId: args.classId,
+      query: args.query,
+    });
+
+    if (matches.length === 0) {
+      return {
+        found: false,
+        message: args.query
+          ? `No student in your classes matched "${args.query}".`
+          : "No enrolled students found in your classes.",
+      };
+    }
+
+    // If looking up a specific student (1-3 matches) whose profile has not been
+    // generated yet, generate it on the fly if they have completed attempts,
+    // and scope the result to this teacher's classes.
+    const enriched = await Promise.all(
+      matches.slice(0, 30).map(async (m) => {
+        let profile = m.profile;
+        if (!profile && matches.length <= 3) {
+          const generated = await updateStudentKnowledgeProfile(m.studentId);
+          profile = scopeKnowledgeProfileToClasses(generated, m.classIds);
+        }
+        return {
+          studentId: m.studentId,
+          studentName: m.studentName,
+          ugaId: m.ugaId,
+          classes: m.classNames,
+          hasProfile: !!profile,
+          updatedAt: profile?.updatedAt ?? null,
+          attemptsAnalyzed: profile?.attemptsAnalyzed ?? 0,
+          promptSummary: profile?.promptSummary ?? null,
+          knownConcepts: profile?.knownConcepts ?? [],
+          unknownConcepts: profile?.unknownConcepts ?? [],
+          transitions: profile?.transitions ?? [],
+        };
+      }),
+    );
+
+    return {
+      found: true,
+      totalMatched: matches.length,
+      students: enriched,
+    };
+  },
+};
+
 export const teacherClassInsightsSkill: AssistantSkill = {
   id: "teacher-class-insights",
   name: "Class insights",
   description:
     "Lets a teacher ask for insight across their classes: class and quiz statistics, per-question " +
-    "correctness rates, individual student records, and who is falling behind.",
+    "correctness rates, individual student records, Knowledge Tracing profiles (by name or 811 number), and who is falling behind.",
   audience: "teacher",
   instructions: [
-    "You can read statistics for the teacher's own classes with list_classes, get_class_overview, " +
-      "get_quiz_breakdown, get_student_breakdown, and find_struggling_students.",
+    "You can read statistics and Knowledge Tracing profiles for the teacher's own classes with " +
+      "list_classes, get_class_overview, get_quiz_breakdown, get_student_breakdown, " +
+      "find_struggling_students, and get_student_knowledge_tracing.",
+    "Use get_student_knowledge_tracing whenever the teacher asks what concepts a student knows or " +
+      "struggles with, asks for a student's Knowledge Tracing profile, or searches for a student " +
+      "by their 9-digit 811 number (UGA ID) or name.",
     "Always start from list_classes unless the teacher's message already pins down one class you " +
-      "have a classId for. Ask which class they mean rather than guessing when they own several.",
+      "have a classId for, or unless you are calling get_student_knowledge_tracing by name or 811 number.",
     "Ground every claim in numbers a tool returned, and say which quiz or student they came from. " +
       "Never estimate a statistic you did not fetch.",
     "For insight questions, go past restating the numbers: point at the specific quizzes and " +
@@ -333,5 +422,6 @@ export const teacherClassInsightsSkill: AssistantSkill = {
     getQuizBreakdown,
     getStudentBreakdown,
     findStrugglingStudents,
+    getStudentKnowledgeTracing,
   ],
 };

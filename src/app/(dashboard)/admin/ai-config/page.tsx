@@ -41,6 +41,7 @@ import { formatAiMetrics } from "@/lib/ai-metrics";
 import type { UseCase } from "@/lib/ai-provider";
 import { AiConfigTransfer } from "@/components/admin/AiConfigTransfer";
 import { AssistantSettings } from "@/components/admin/AssistantSettings";
+import { SttSettingsCard } from "@/components/admin/SttSettingsCard";
 import { GuardrailSettings } from "@/components/admin/GuardrailSettings";
 import { GuardrailFeedbackList } from "@/components/admin/GuardrailFeedbackList";
 import { errorMessage } from "@/lib/errors";
@@ -152,6 +153,7 @@ const USE_CASE_LABELS: Record<UseCase, string> = {
   // the Chat Assistants section further down the page.
   student_assistant: "Student Chat Assistant",
   teacher_assistant: "Teacher Chat Assistant",
+  knowledge_tracing: "Student Knowledge Tracing",
   // Wants a moderation model (e.g. omni-moderation-latest), not a chat model.
   // Free to call, and leaving it unassigned turns content moderation off.
   moderation: "Content Moderation",
@@ -1196,7 +1198,7 @@ export default function AiConfigPage() {
                         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                           <input
                             type="text"
-                            placeholder="Model ID (e.g. gpt-5.1)"
+                            placeholder="Model ID (e.g. gpt-6.1-sol)"
                             aria-label="Model ID"
                             value={modelForm.modelId}
                             onChange={(e) =>
@@ -1580,6 +1582,10 @@ export default function AiConfigPage() {
         </div>
         <AssistantSettings key={`assistants-${importedAt}`} />
 
+        <div className="mt-4">
+          <SttSettingsCard key={`stt-${importedAt}`} />
+        </div>
+
         <GuardrailSettings
           key={`guardrails-${importedAt}`}
           refreshKey={assignmentsSavedAt}
@@ -1718,7 +1724,7 @@ export default function AiConfigPage() {
                 onChange={(e) =>
                   setEditModelForm((f) => ({ ...f, modelId: e.target.value }))
                 }
-                placeholder="e.g. gpt-5.1"
+                placeholder="e.g. gpt-6.1-sol"
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono focus:border-blue-500 focus:outline-hidden focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
               />
             </div>
