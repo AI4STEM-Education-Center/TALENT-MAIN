@@ -33,6 +33,7 @@ import {
   coachOpening,
   resolveCoachScope,
 } from "@/lib/assistant/coach";
+import { studyActionRefSchema } from "@/lib/assistant/study-recommendations";
 import { COACH_MAX_ACTIONS_PER_TURN } from "@/lib/assistant/coach-types";
 import { buildCoachSystemPrompt } from "@/lib/assistant/prompt";
 import { coachTools } from "@/lib/assistant/skills/coach";
@@ -334,7 +335,15 @@ export async function handleAssistantChat(
           // signal an admin needs to tighten the prompt or the model choice.
           if (result.text.trim() || result.actions?.length) {
             void auditText(
-              [result.text, ...coachActionText(result.actions)].join("\n"),
+              [
+                result.text,
+                ...coachActionText(
+                  (result.actions ?? []).map((action) => {
+                    const study = studyActionRefSchema.safeParse(action);
+                    return study.success ? study.data.ref : action;
+                  }),
+                ),
+              ].join("\n"),
               {
                 surface: "assistant_reply",
                 id: conversationId,

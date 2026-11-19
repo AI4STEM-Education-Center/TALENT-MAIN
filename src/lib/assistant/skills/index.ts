@@ -23,11 +23,13 @@ import { studentQuizResultsSkill } from "./student-quiz-results";
 import { teacherClassInsightsSkill } from "./teacher-class-insights";
 import { simulationEditingSkill } from "./simulation-editing";
 import { studentSyllabusSkill, teacherSyllabusSkill } from "./syllabus";
+import { studentStudyRecommendationsSkill } from "./student-study-recommendations";
 
 const REGISTRY: AssistantSkill[] = [
   simulationEditingSkill,
   studentQuizResultsSkill,
   studentSyllabusSkill,
+  studentStudyRecommendationsSkill,
   teacherClassInsightsSkill,
   teacherSyllabusSkill,
 ];

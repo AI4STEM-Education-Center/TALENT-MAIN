@@ -494,7 +494,10 @@ export async function runAssistantTurn(
       let outcome = await runToolCall(call, tools, ctx);
       toolCallCount += 1;
       if (outcome.action) {
-        if (actions.length >= (input.override?.maxActions ?? 0)) {
+        if (
+          actions.length >=
+          (input.override?.maxActions ?? (ctx.audience === "student" ? 1 : 0))
+        ) {
           // Past the cap the card is dropped, not shown: the model is told so
           // it can wrap up in prose rather than assume the student saw it.
           outcome = {
