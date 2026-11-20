@@ -93,7 +93,10 @@ export function CoachWorkspace({
   if (load.status === "loading") {
     return (
       <div
-        className={cn("flex flex-1 items-center justify-center p-6", className)}
+        className={cn(
+          "relative flex flex-1 items-center justify-center p-6",
+          className,
+        )}
         role="status"
       >
         <Loader2 className="size-5 animate-spin text-primary" aria-hidden />
@@ -113,14 +116,17 @@ export function CoachWorkspace({
     // Stacked on phones (question on top, capped so the chat keeps room), side
     // by side from md up. The question pane scrolls on its own and is never
     // unmounted while chatting, so the original question stays visible.
+    // Both scroll panes are `relative` so `sr-only` (position: absolute)
+    // descendants stay clipped inside their pane instead of escaping to <html>
+    // and extending the page scroll height past the viewport.
     <div className={cn("flex min-h-0 flex-1 flex-col md:flex-row", className)}>
-      <div className="max-h-[34dvh] shrink-0 overflow-y-auto border-b bg-muted/20 p-4 md:max-h-none md:w-2/5 md:border-r md:border-b-0">
+      <div className="relative max-h-[34dvh] shrink-0 overflow-y-auto border-b bg-muted/20 p-4 md:max-h-none md:w-2/5 md:border-r md:border-b-0">
         <CoachQuestionPane question={load.question} />
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col">
         <div
-          className="flex-1 space-y-3 overflow-y-auto p-4"
+          className="relative flex-1 space-y-3 overflow-y-auto p-4"
           role="log"
           aria-label="Conversation with the assistant"
         >

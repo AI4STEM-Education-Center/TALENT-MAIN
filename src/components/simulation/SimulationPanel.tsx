@@ -243,7 +243,7 @@ export function SimulationPanel({
                 <summary className="cursor-pointer text-sm font-medium">
                   Rate this simulation
                 </summary>
-                <div className="max-h-40 overflow-y-auto py-2">
+                <div className="relative max-h-40 overflow-y-auto py-2">
                   <MyFeedbackProvider simulationId={simulationId}>
                     <FeedbackRatingForm
                       subjectType="SIMULATION"

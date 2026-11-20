@@ -239,7 +239,7 @@ export function OptOutPanel({
       {open && (
         <ul
           aria-label="Questions in this attempt"
-          className="max-h-80 divide-y overflow-y-auto rounded-lg border"
+          className="relative max-h-80 divide-y overflow-y-auto rounded-lg border"
         >
           {questions.map((question) => {
             const wasCorrect = correct.has(question.id);

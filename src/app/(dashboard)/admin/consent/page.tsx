@@ -267,7 +267,7 @@ export default function AdminConsentPage() {
           <Loader2 className="mr-2 size-5 animate-spin" /> Loading…
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-md border">
+        <div className="relative overflow-x-auto rounded-md border">
           <table className="w-full text-sm">
             <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
               <tr>

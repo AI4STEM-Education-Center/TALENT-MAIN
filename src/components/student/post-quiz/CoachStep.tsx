@@ -227,7 +227,7 @@ export function CoachStep({
       />
 
       {coachOn ? (
-        <Card className="flex h-[min(80dvh,760px)] min-h-[520px] flex-col overflow-hidden">
+        <Card className="relative flex h-[min(80dvh,760px)] min-h-[520px] flex-col overflow-hidden">
           <CoachWorkspace
             key={`${attemptId}:${questionNumber}`}
             target={target}
