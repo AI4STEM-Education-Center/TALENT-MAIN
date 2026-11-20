@@ -1,3 +1,7 @@
+import {
+  MATH_DELIMITER_RULE,
+  STUDENT_ANSWER_FEEDBACK_RULES,
+} from "../feedback-rules";
 import { getDisabledClassIds } from "@/lib/class-access-pause";
 // Student skill: search and interpret the student's OWN past quiz results.
 //
@@ -426,6 +430,8 @@ export const studentQuizResultsSkill: AssistantSkill = {
     "open a single attempt question by question, see aggregate trends, and inspect their Knowledge Tracing profile.",
   audience: "student",
   instructions: [
+    STUDENT_ANSWER_FEEDBACK_RULES,
+    MATH_DELIMITER_RULE,
     "You can look up the student's own past quiz results with the search_quiz_results, " +
       "get_quiz_result_detail, summarize_performance, and get_my_knowledge_tracing tools.",
     "Use get_my_knowledge_tracing when the student asks what concepts they know vs. struggle with, " +
@@ -440,7 +446,7 @@ export const studentQuizResultsSkill: AssistantSkill = {
       "carries answerKeyWithheld: you have NOT been given the correct answers or the per-question " +
       "correct/incorrect marks, so you must not state, guess, or narrow down which answer is " +
       "right. Say the quiz is still open to them, then work through the underlying idea. When it " +
-      'is "final" the attempt is closed and you may go over the correct answers as review.',
+      'is "final" the attempt is closed. Confirm whether their answer was right or wrong and explain the reasoning.',
     "When you reference a result, name the quiz and the score so the student can find it in their " +
       "Exam History. Never invent a score, a quiz name, or a date that a tool did not return.",
   ].join("\n"),
