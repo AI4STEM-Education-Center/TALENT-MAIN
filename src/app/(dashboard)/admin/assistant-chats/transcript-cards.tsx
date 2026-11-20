@@ -1,20 +1,29 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   Atom,
   BookOpen,
   Check,
   CheckCircle2,
+  ChevronDown,
   Dumbbell,
+  Maximize2,
   MessageSquareMore,
   XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { MathText } from "@/components/ui/math-text";
-import { RecommendationCard } from "@/components/student/RecommendationCard";
 import { SimulationDialog } from "@/components/simulation/SimulationDialog";
 import { cn } from "@/lib/utils";
+import type { PresignedRecommendation } from "@/lib/exam-results";
 import type { CoachActionRef } from "@/lib/assistant/coach-types";
 import type { AdminTranscriptCard } from "@/lib/assistant/admin-transcript-types";
 import { readCardRef } from "./transcript-card-ref";
@@ -22,6 +31,11 @@ import { readCardRef } from "./transcript-card-ref";
 function optionLabel(index: number): string {
   const letter = String.fromCharCode(65 + (index % 26));
   return index < 26 ? letter : optionLabel(Math.floor(index / 26) - 1) + letter;
+}
+
+function pageRangeLabel(rec: PresignedRecommendation): string {
+  const { start, end } = rec.pageRange;
+  return start === end ? `page ${start}` : `pages ${start}–${end}`;
 }
 
 function Tag({
@@ -43,6 +57,58 @@ function Tag({
     >
       {children}
     </span>
+  );
+}
+
+/** Shared compact header row for every collapsible/pop-up card in the log. */
+function CardToggleRow({
+  icon,
+  label,
+  preview,
+  badge,
+  mode,
+  expanded = false,
+  onClick,
+}: {
+  icon: ReactNode;
+  label: string;
+  preview: ReactNode;
+  badge?: ReactNode;
+  mode: "expand" | "popup";
+  expanded?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-expanded={mode === "expand" ? expanded : undefined}
+      aria-haspopup={mode === "popup" ? "dialog" : undefined}
+      className="relative flex w-full cursor-pointer items-center gap-2 px-2.5 py-2 text-left text-xs transition-colors hover:bg-muted/40 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+    >
+      <span className="flex shrink-0 items-center gap-1.5 font-semibold text-foreground">
+        {icon}
+        {label}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-muted-foreground">
+        {preview}
+      </span>
+      {badge}
+      {mode === "popup" ? (
+        <Maximize2
+          aria-hidden
+          className="size-3.5 shrink-0 text-muted-foreground"
+        />
+      ) : (
+        <ChevronDown
+          aria-hidden
+          className={cn(
+            "size-3.5 shrink-0 text-muted-foreground transition-transform",
+            expanded && "rotate-180",
+          )}
+        />
+      )}
+    </button>
   );
 }
 
@@ -85,33 +151,99 @@ function refToFallbackCard(ref: CoachActionRef): AdminTranscriptCard {
   }
 }
 
+function AdminMaterialViewerDialog({
+  rec,
+  coachReason,
+  open,
+  onOpenChange,
+}: {
+  rec: PresignedRecommendation;
+  coachReason: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="grid max-h-[92vh] w-[95vw] max-w-5xl grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
+        <DialogHeader>
+          <DialogTitle className="pr-8">{rec.materialTitle}</DialogTitle>
+          <DialogDescription>
+            {pageRangeLabel(rec)}
+            {coachReason ? (
+              <>
+                {" — "}
+                <MathText text={coachReason} />
+              </>
+            ) : null}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="relative snap-y snap-mandatory space-y-4 overflow-y-auto rounded-lg bg-muted/30 p-3">
+          {rec.pages.map((pg) => (
+            <figure key={pg.pageNumber} className="snap-start">
+              {/* Presigned S3 URL; next/image cannot serve it without static patterns. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={pg.imageUrl}
+                alt={`Page ${pg.pageNumber} of ${rec.materialTitle}`}
+                loading="lazy"
+                className="mx-auto max-h-[75vh] w-auto max-w-full rounded-md bg-background object-contain shadow-xs"
+              />
+              <figcaption className="mt-1.5 text-center text-xs text-muted-foreground">
+                Page {pg.pageNumber}
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function AdminMaterialCard({
   card,
 }: {
   card: Extract<AdminTranscriptCard, { kind: "material" }>;
 }) {
+  const [open, setOpen] = useState(false);
+  const rec = card.recommendation;
+  const hasPages = Boolean(rec && rec.pages.length > 0);
+  const preview = rec
+    ? `${rec.materialTitle} · ${pageRangeLabel(rec)}`
+    : `Recommendation ${card.recommendationIndex + 1}`;
+
   return (
-    <div className="space-y-2 rounded-lg border border-border/80 bg-background p-3 text-xs">
-      <div className="flex items-center justify-between gap-2">
-        <p className="flex items-center gap-1.5 font-semibold text-foreground">
-          <BookOpen className="size-3.5 text-primary" aria-hidden />
-          Course material
-        </p>
-        {card.interaction && <Tag tone="info">Viewed</Tag>}
-      </div>
-      <p className="text-muted-foreground">
-        <MathText text={card.reason} />
-      </p>
-      {card.recommendation ? (
-        // Read-only admin view: omit `attemptId` and `telemetrySurface` so the
-        // card shows the actual title, pages, thumbnail, and full-size viewer
-        // without rendering a student rating form or recording telemetry.
-        <RecommendationCard rec={card.recommendation} audience="teacher" />
-      ) : (
-        <p className="rounded-md border border-dashed border-border/80 px-2.5 py-2 text-muted-foreground">
-          Recommendation {card.recommendationIndex + 1} · Course material
-          preview is no longer available.
-        </p>
+    <div className="overflow-hidden rounded-lg border border-border/80 bg-background text-xs">
+      <CardToggleRow
+        icon={<BookOpen className="size-3.5 text-primary" aria-hidden />}
+        label="Course material"
+        preview={preview}
+        badge={card.interaction ? <Tag tone="info">Viewed</Tag> : undefined}
+        mode={hasPages ? "popup" : "expand"}
+        expanded={!hasPages && open}
+        onClick={() => setOpen((value) => !value)}
+      />
+      {hasPages && rec && (
+        <AdminMaterialViewerDialog
+          rec={rec}
+          coachReason={card.reason}
+          open={open}
+          onOpenChange={setOpen}
+        />
+      )}
+      {!hasPages && open && (
+        <div className="space-y-1.5 border-t border-border/60 px-3 py-2.5 text-muted-foreground">
+          <p>
+            <MathText text={card.reason} />
+          </p>
+          {rec?.reason && rec.reason !== card.reason && (
+            <p>
+              <MathText text={rec.reason} />
+            </p>
+          )}
+          <p className="text-[11px] italic">
+            Page previews are not available for this material.
+          </p>
+        </div>
       )}
     </div>
   );
@@ -122,6 +254,7 @@ function AdminDiagnosticCard({
 }: {
   card: Extract<AdminTranscriptCard, { kind: "diagnostic_options" }>;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const saved =
     card.interaction?.status === "selected" ? card.interaction : null;
   const isChosen = (option: { id: string; label: string }) =>
@@ -132,53 +265,65 @@ function AdminDiagnosticCard({
   const matchedAny = saved !== null && card.options.some(isChosen);
 
   return (
-    <div className="space-y-2 rounded-lg border border-primary/25 bg-background p-3 text-xs">
-      <div className="flex items-center justify-between gap-2">
-        <p className="flex items-center gap-1.5 font-semibold text-primary">
-          <MessageSquareMore className="size-3.5" aria-hidden />
-          Diagnostic options
-        </p>
-        {saved && <Tag tone="info">Chosen</Tag>}
-      </div>
-      <p className="text-sm font-medium text-foreground">
-        <MathText text={card.prompt} />
-      </p>
-      <ul className="space-y-1.5">
-        {card.options.map((option) => {
-          const chosen = isChosen(option);
-          return (
-            <li
-              key={option.id}
-              className={cn(
-                "flex items-start gap-2 rounded-md border px-2.5 py-1.5 text-xs",
-                chosen
-                  ? "border-primary bg-primary/10 font-medium text-foreground"
-                  : "border-border bg-muted/20 text-muted-foreground",
-              )}
-            >
-              <span
-                aria-hidden
-                className={cn(
-                  "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border",
-                  chosen
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-muted-foreground/40",
-                )}
-              >
-                {chosen && <Check className="size-2.5" />}
-              </span>
-              <span className="min-w-0 flex-1">
-                <MathText text={option.label} />
-              </span>
-              {chosen && <Tag tone="info">Selected</Tag>}
-            </li>
-          );
-        })}
-      </ul>
-      {saved && !matchedAny && (
-        <p className="text-muted-foreground">
-          <MathText text={`Selected “${saved.selectedLabel}”`} />
-        </p>
+    <div className="overflow-hidden rounded-lg border border-primary/25 bg-background text-xs">
+      <CardToggleRow
+        icon={
+          <MessageSquareMore className="size-3.5 text-primary" aria-hidden />
+        }
+        label="Diagnostic options"
+        preview={
+          <MathText
+            text={saved ? `Selected “${saved.selectedLabel}”` : card.prompt}
+          />
+        }
+        badge={saved ? <Tag tone="info">Chosen</Tag> : undefined}
+        mode="expand"
+        expanded={expanded}
+        onClick={() => setExpanded((value) => !value)}
+      />
+      {expanded && (
+        <div className="space-y-2 border-t border-border/60 px-3 py-2.5">
+          <p className="text-sm font-medium text-foreground">
+            <MathText text={card.prompt} />
+          </p>
+          <ul className="space-y-1.5">
+            {card.options.map((option) => {
+              const chosen = isChosen(option);
+              return (
+                <li
+                  key={option.id}
+                  className={cn(
+                    "flex items-start gap-2 rounded-md border px-2.5 py-1.5 text-xs",
+                    chosen
+                      ? "border-primary bg-primary/10 font-medium text-foreground"
+                      : "border-border bg-muted/20 text-muted-foreground",
+                  )}
+                >
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border",
+                      chosen
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-muted-foreground/40",
+                    )}
+                  >
+                    {chosen && <Check className="size-2.5" />}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <MathText text={option.label} />
+                  </span>
+                  {chosen && <Tag tone="info">Selected</Tag>}
+                </li>
+              );
+            })}
+          </ul>
+          {saved && !matchedAny && (
+            <p className="text-muted-foreground">
+              <MathText text={`Selected “${saved.selectedLabel}”`} />
+            </p>
+          )}
+        </div>
       )}
     </div>
   );
@@ -304,64 +449,74 @@ function AdminPracticeCard({
 }: {
   card: Extract<AdminTranscriptCard, { kind: "practice" }>;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const interaction =
     card.interaction?.status === "completed" ? card.interaction : undefined;
   const { question } = card;
+  const previewText = question?.text ?? card.questionText ?? card.reason;
 
   return (
-    <div className="space-y-2 rounded-lg border border-border/80 bg-background p-3 text-xs">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="flex items-center gap-1.5 font-semibold text-foreground">
-          <Dumbbell className="size-3.5 text-primary" aria-hidden />
-          Practice question
-          {question?.versionName && (
-            <span className="font-normal text-muted-foreground">
-              · {question.versionName}
-            </span>
-          )}
-        </p>
-        {interaction ? (
-          <Tag tone={interaction.correct ? "good" : "bad"}>
-            {interaction.correct ? "Correct" : "Incorrect"}
-          </Tag>
-        ) : (
-          <Tag tone="neutral">Not answered</Tag>
-        )}
-      </div>
-
-      <p className="text-muted-foreground">
-        <MathText text={card.reason} />
-      </p>
-
-      {question ? (
-        <div className="space-y-2 border-t border-border/60 pt-2">
-          <p className="text-sm font-medium text-foreground">
-            <MathText text={question.text} />
-          </p>
-          {question.answerMode === "NUMERIC" ? (
-            <AdminPracticeNumeric
-              answerNumeric={question.answerNumeric}
-              answerUnit={question.answerUnit}
-              interaction={interaction}
-            />
+    <div className="overflow-hidden rounded-lg border border-border/80 bg-background text-xs">
+      <CardToggleRow
+        icon={<Dumbbell className="size-3.5 text-primary" aria-hidden />}
+        label="Practice question"
+        preview={<MathText text={previewText} />}
+        badge={
+          interaction ? (
+            <Tag tone={interaction.correct ? "good" : "bad"}>
+              {interaction.correct ? "Correct" : "Incorrect"}
+            </Tag>
           ) : (
-            <AdminPracticeOptions
-              options={question.options}
-              interaction={interaction}
-            />
-          )}
-        </div>
-      ) : (
-        <div className="space-y-1 border-t border-border/60 pt-2">
-          {card.questionText && (
-            <p className="text-sm font-medium text-foreground">
-              <MathText text={card.questionText} />
+            <Tag tone="neutral">Not answered</Tag>
+          )
+        }
+        mode="expand"
+        expanded={expanded}
+        onClick={() => setExpanded((value) => !value)}
+      />
+
+      {expanded && (
+        <div className="space-y-2 border-t border-border/60 px-3 py-2.5">
+          {question?.versionName && (
+            <p className="text-[11px] font-medium text-muted-foreground">
+              {question.versionName}
             </p>
           )}
-          {interaction && (
-            <p className="text-muted-foreground">
-              <MathText text={`Answered “${interaction.selectedText}”`} />
-            </p>
+          <p className="text-muted-foreground">
+            <MathText text={card.reason} />
+          </p>
+
+          {question ? (
+            <div className="space-y-2 border-t border-border/60 pt-2">
+              <p className="text-sm font-medium text-foreground">
+                <MathText text={question.text} />
+              </p>
+              {question.answerMode === "NUMERIC" ? (
+                <AdminPracticeNumeric
+                  answerNumeric={question.answerNumeric}
+                  answerUnit={question.answerUnit}
+                  interaction={interaction}
+                />
+              ) : (
+                <AdminPracticeOptions
+                  options={question.options}
+                  interaction={interaction}
+                />
+              )}
+            </div>
+          ) : (
+            <div className="space-y-1 border-t border-border/60 pt-2">
+              {card.questionText && (
+                <p className="text-sm font-medium text-foreground">
+                  <MathText text={card.questionText} />
+                </p>
+              )}
+              {interaction && (
+                <p className="text-muted-foreground">
+                  <MathText text={`Answered “${interaction.selectedText}”`} />
+                </p>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -374,73 +529,80 @@ function AdminSimulationCard({
 }: {
   card: Extract<AdminTranscriptCard, { kind: "simulation" }>;
 }) {
-  const [open, setOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const { simulation } = card;
 
   return (
-    <div className="space-y-2 rounded-lg border border-border/80 bg-background p-3 text-xs">
-      <div className="flex items-center justify-between gap-2">
-        <p className="flex items-center gap-1.5 font-semibold text-foreground">
-          <Atom className="size-3.5 text-primary" aria-hidden />
-          Simulation guide
-        </p>
-        {card.interaction && <Tag tone="info">Opened</Tag>}
-      </div>
-      {simulation && (
-        <p className="text-sm font-medium text-foreground">
-          {simulation.title}
-        </p>
-      )}
-      <p className="text-muted-foreground">
-        <MathText text={card.goal} />
-      </p>
-      <ol className="list-decimal space-y-1 pl-5 text-foreground">
-        {card.steps.map((step, index) => (
-          // react-doctor-disable-next-line react-doctor/no-array-index-as-key -- fixed ordered steps; text can repeat
-          <li key={`${index}-${step}`}>
-            <MathText text={step} />
-          </li>
-        ))}
-      </ol>
-      <p className="text-foreground">
-        <span className="font-medium">What to watch: </span>
-        <MathText text={card.observe} />
-      </p>
-      {simulation?.playable && (
-        <>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            aria-haspopup="dialog"
-            onClick={() => setOpen(true)}
-          >
-            Open current simulation
-          </Button>
-          {open && (
-            <SimulationDialog
-              simulation={{
-                simulationId: simulation.simulationId,
-                title: simulation.title,
-                version: simulation.version,
-              }}
-              description={simulation.learningGoal}
-              context="Showing the current published version of this simulation."
-              onClose={() => setOpen(false)}
-            />
+    <div className="overflow-hidden rounded-lg border border-border/80 bg-background text-xs">
+      <CardToggleRow
+        icon={<Atom className="size-3.5 text-primary" aria-hidden />}
+        label="Simulation guide"
+        preview={simulation ? simulation.title : <MathText text={card.goal} />}
+        badge={card.interaction ? <Tag tone="info">Opened</Tag> : undefined}
+        mode="expand"
+        expanded={expanded}
+        onClick={() => setExpanded((value) => !value)}
+      />
+
+      {expanded && (
+        <div className="space-y-2 border-t border-border/60 px-3 py-2.5">
+          {simulation && (
+            <p className="text-sm font-medium text-foreground">
+              {simulation.title}
+            </p>
           )}
-        </>
+          <p className="text-muted-foreground">
+            <MathText text={card.goal} />
+          </p>
+          <ol className="list-decimal space-y-1 pl-5 text-foreground">
+            {card.steps.map((step, index) => (
+              // react-doctor-disable-next-line react-doctor/no-array-index-as-key -- fixed ordered steps; text can repeat
+              <li key={`${index}-${step}`}>
+                <MathText text={step} />
+              </li>
+            ))}
+          </ol>
+          <p className="text-foreground">
+            <span className="font-medium">What to watch: </span>
+            <MathText text={card.observe} />
+          </p>
+          {simulation?.playable && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              aria-haspopup="dialog"
+              onClick={() => setDialogOpen(true)}
+            >
+              Open current simulation
+            </Button>
+          )}
+        </div>
+      )}
+
+      {dialogOpen && simulation?.playable && (
+        <SimulationDialog
+          simulation={{
+            simulationId: simulation.simulationId,
+            title: simulation.title,
+            version: simulation.version,
+          }}
+          description={simulation.learningGoal}
+          context="Showing the current published version of this simulation."
+          onClose={() => setDialogOpen(false)}
+        />
       )}
     </div>
   );
 }
 
 /**
- * Rich, read-only cards for one assistant turn in the Admin Chat Transcripts
- * dialog. Uses server-hydrated `cards` when available (actual course material
- * pages, full diagnostic options, full practice question choices & key, and
- * playable simulation preview), falling back to defensive parsing of raw
- * `actions` refs when viewing unhydrated data.
+ * Compact, collapsible read-only cards for one assistant turn in the Admin
+ * Chat Transcripts dialog. Every card renders a single-line summary by
+ * default; clicking opens a full-size page viewer (for course materials with
+ * presigned pages) or expands inline to show full diagnostic options, practice
+ * question choices/key, or simulation guide + preview launch.
  */
 export function TranscriptCards({
   cards,
@@ -461,7 +623,7 @@ export function TranscriptCards({
   return (
     <ul
       aria-label="Cards shown with this reply"
-      className="mt-2 space-y-2 border-t border-border/60 pt-2"
+      className="mt-2 space-y-1.5 border-t border-border/60 pt-2"
     >
       {items.map((card, index) => (
         <li
