@@ -1,9 +1,17 @@
+import { NextRequest } from "next/server";
+import {
+  GET as alternativeHistory,
+  POST as startAlternative,
+  PATCH as submitAlternative,
+} from "@/app/api/quiz/practice/route";
+import type { UnifiedQuizOverview } from "@/lib/quiz-overview";
+import type { VariantQuestion } from "@/lib/quiz-variants";
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 
 vi.mock("@/lib/auth", () => ({ auth: vi.fn() }));
 vi.mock("@/lib/queue", () => ({ enqueueExamResult: vi.fn() }));
 
-import { POST, PATCH } from "@/app/api/quiz/route";
+import { GET, POST, PATCH } from "@/app/api/quiz/route";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
@@ -91,16 +99,39 @@ describe("POST /api/quiz (start attempt)", () => {
     expect(res.status).toBe(403);
   });
 
-  it("starts an attempt and returns questions without leaking isCorrect", async () => {
-    const { studentUser, cls, quiz } = await setup();
+  it("starts an attempt without leaking teacher feedback or answer keys", async () => {
+    const { studentUser, cls, quiz, question } = await setup();
+    await prisma.question.update({
+      where: { id: question.id },
+      data: {
+        feedbackGeneral: "Teacher feedback",
+        feedbackCorrect: "Explanation for a correct answer",
+        feedbackIncorrect: "Explanation for an incorrect answer",
+        answerNumeric: 4,
+        answerTolerance: 0.01,
+      },
+    });
     asStudent(studentUser.id);
     const res = await POST(jsonReq({ classId: cls.id, quizId: quiz.id }));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.attemptId).toBeTruthy();
     expect(body.questions).toHaveLength(1);
-    // Options must expose only id + text, never the correct flag.
-    expect(body.questions[0].options[0]).not.toHaveProperty("isCorrect");
+    const [startedQuestion] = body.questions;
+    for (const field of [
+      "feedbackGeneral",
+      "feedbackCorrect",
+      "feedbackIncorrect",
+      "answerNumeric",
+      "answerTolerance",
+      "isCorrect",
+    ]) {
+      expect(startedQuestion).not.toHaveProperty(field);
+    }
+    expect(startedQuestion.options).toHaveLength(question.options.length);
+    for (const option of startedQuestion.options) {
+      expect(option).not.toHaveProperty("isCorrect");
+    }
 
     // Progress is marked IN_PROGRESS.
     const progress = await prisma.quizProgress.findFirst({
@@ -579,5 +610,411 @@ describe("PATCH /api/quiz (submission integrity)", () => {
       }),
     );
     expect(res.status).toBe(400);
+  });
+});
+
+describe("unified quiz overview and question opt-out", () => {
+  const overview = (classId: string, quizId: string) =>
+    GET(
+      new NextRequest(
+        `http://localhost/api/quiz?${new URLSearchParams({ classId, quizId })}`,
+      ),
+    );
+  const practiceReq = (body: object) =>
+    new NextRequest("http://localhost/api/quiz/practice", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+
+  it("allows only students enrolled in an active class with a published quiz", async () => {
+    const { cls, quiz, studentUser } = await setup({ published: false });
+    expect((await overview(cls.id, quiz.id)).status).toBe(401);
+    const { user: stranger } = await createStudent();
+    asStudent(stranger.id);
+    expect((await overview(cls.id, quiz.id)).status).toBe(403);
+    asStudent(studentUser.id);
+    expect((await overview(cls.id, quiz.id)).status).toBe(403);
+    await prisma.classQuiz.updateMany({ data: { published: true } });
+    await prisma.class.update({
+      where: { id: cls.id },
+      data: { disabledAt: new Date() },
+    });
+    const paused = await overview(cls.id, quiz.id);
+    expect(paused.status).toBe(403);
+    expect(await paused.json()).toMatchObject({ code: "PLATFORM_PAUSED" });
+  });
+
+  it("caps the merged attempt history at thirty and reports the official attempt limit", async () => {
+    const { cls, quiz, studentUser, student } = await setup();
+    asStudent(studentUser.id);
+    await prisma.classQuiz.updateMany({ data: { maxAttempts: 2 } });
+    const attempts = Array.from({ length: 32 }, (_, index) => ({
+      id: `overview-attempt-${index}`,
+      studentId: student.id,
+      classId: cls.id,
+      quizId: quiz.id,
+      practiceVersionId: index % 2 ? "alternative" : null,
+      practiceVersionName: index % 2 ? "Alternative" : null,
+      startedAt: new Date(2026, 0, index + 1),
+      completedAt: new Date(2026, 0, index + 1),
+    }));
+    await prisma.quizAttempt.createMany({ data: attempts });
+    const data: UnifiedQuizOverview = await (
+      await overview(cls.id, quiz.id)
+    ).json();
+    expect(data.recentAttempts.map((attempt) => attempt.id)).toEqual(
+      attempts
+        .reverse()
+        .slice(0, 30)
+        .map((attempt) => attempt.id),
+    );
+    expect(data.gradedAttemptCount).toBe(16);
+    expect(data.availability).toMatchObject({
+      attemptsExhausted: true,
+      locked: true,
+    });
+  });
+
+  it("uses latest source correctness across both modes and preserves exclusions through resume, scoring, and review", async () => {
+    const { cls, quiz, topic, question, studentUser, student, optionId } =
+      await setup();
+    asStudent(studentUser.id);
+    const target = { classId: cls.id, quizId: quiz.id };
+    const who = { ...target, studentId: student.id };
+    const [second, third] = await Promise.all([
+      prisma.question.create({
+        data: {
+          quizId: quiz.id,
+          order: 2,
+          text: "Second question. ".repeat(14),
+        },
+      }),
+      prisma.question.create({
+        data: { quizId: quiz.id, order: 3, text: "Third question" },
+      }),
+    ]);
+    const official = await prisma.quizAttempt.create({
+      data: {
+        ...who,
+        startedAt: new Date("2026-01-01"),
+        completedAt: new Date("2026-01-01"),
+        score: 33.33,
+        answers: {
+          create: [
+            { questionId: question.id, isCorrect: true },
+            { questionId: second.id, isCorrect: false },
+          ],
+        },
+      },
+    });
+    const variants: VariantQuestion[] = [question.id, second.id, third.id].map(
+      (sourceQuestionId, index) => ({
+        id: `v${index}`,
+        sourceQuestionId,
+        text: `Variant ${index}`,
+        answerMode: "SINGLE_SELECT",
+        answerUnit: null,
+        answerNumeric: null,
+        answerTolerance: null,
+        options: [
+          { id: `v${index}-right`, text: "right", isCorrect: true },
+          { id: `v${index}-wrong`, text: "wrong", isCorrect: false },
+        ],
+        solution: "Reasoning",
+        intentExplanation: "Same skill",
+      }),
+    );
+    await prisma.quizPracticeVersion.create({
+      data: {
+        quizId: quiz.id,
+        name: "Alternative",
+        variation: "NUMBERS",
+        status: "PUBLISHED",
+        sourceSnapshot: "[]",
+        objectives: "[]",
+        questions: JSON.stringify(variants),
+      },
+    });
+
+    const started = await startAlternative(
+      practiceReq({
+        ...target,
+        excludedQuestionIds: [question.id, second.id, "unknown"],
+      }),
+    );
+    expect(started.status).toBe(200);
+    const alternative = await started.json();
+    expect(alternative).toMatchObject({
+      excludedCount: 1,
+      exclusionIgnored: false,
+      questions: [{ id: "v1" }, { id: "v2" }],
+    });
+    const duringPractice = (await (
+      await overview(cls.id, quiz.id)
+    ).json()) as UnifiedQuizOverview;
+    expect(duringPractice.practiceAttempt).toMatchObject({
+      id: alternative.attemptId,
+      quizAttemptId: alternative.quizAttemptId,
+    });
+    const resumedAlternative = await (
+      await startAlternative(
+        practiceReq({ ...target, excludedQuestionIds: [] }),
+      )
+    ).json();
+    expect(resumedAlternative).toEqual(alternative);
+    const practiced = await submitAlternative(
+      practiceReq({
+        attemptId: alternative.attemptId,
+        answers: [
+          { questionId: "v1", selectedOptionId: "v1-right" },
+          { questionId: "v2", selectedOptionId: "v2-wrong" },
+        ],
+      }),
+    );
+    expect(practiced.status).toBe(200);
+
+    const response = await overview(cls.id, quiz.id);
+    const quizOverview: UnifiedQuizOverview = await response.json();
+    expect(quizOverview).toMatchObject({
+      quiz: { id: quiz.id, name: quiz.name, topicName: topic.name },
+      availability: { locked: false },
+      gradedAttemptCount: 1,
+      gradedAttempt: null,
+      practiceAvailableCount: 1,
+      practiceCanStart: true,
+      practiceAttempt: null,
+      previouslyCorrect: [question.id, second.id],
+      recentAttempts: [
+        {
+          id: alternative.quizAttemptId,
+          kind: "alternative",
+          versionName: "Alternative",
+          excludedCount: 1,
+        },
+        { id: official.id, kind: "official", score: 33.33 },
+      ],
+    });
+    expect(quizOverview.questions).toEqual([
+      { number: 1, id: question.id, previewText: question.text },
+      { number: 2, id: second.id, previewText: expect.stringMatching(/…$/) },
+      { number: 3, id: third.id, previewText: third.text },
+    ]);
+    expect(quizOverview.questions[1].previewText).toHaveLength(140);
+
+    const start = await POST(
+      jsonReq({
+        ...target,
+        excludeCorrect: true,
+        excludedQuestionIds: [second.id, third.id, "unknown"],
+      }),
+    );
+    expect(start.status).toBe(200);
+    const attempt = await start.json();
+    expect(attempt).toMatchObject({
+      excludedCount: 1,
+      exclusionIgnored: false,
+      questions: [{ id: question.id }, { id: third.id }],
+    });
+    expect(await (await overview(cls.id, quiz.id)).json()).toMatchObject({
+      gradedAttempt: {
+        id: attempt.attemptId,
+        excludedQuestionIds: [second.id],
+      },
+    });
+    const resume = await POST(jsonReq({ ...target, excludeCorrect: true }));
+    expect(await resume.json()).toEqual(attempt);
+
+    const submit = (
+      answers: { questionId: string; selectedOptionId?: string }[],
+    ) => PATCH(jsonReq({ attemptId: attempt.attemptId, answers }));
+    expect((await submit([{ questionId: second.id }])).status).toBe(404);
+    expect((await submit([{ questionId: "none" }])).status).toBe(404);
+    const submitted = await submit([
+      { questionId: question.id, selectedOptionId: optionId("4") },
+    ]);
+    expect(await submitted.json()).toEqual({
+      score: 50,
+      incorrectQuestionIds: [third.id],
+    });
+    expect(
+      await prisma.quizAnswer.findMany({
+        where: { quizAttemptId: attempt.attemptId },
+        select: { questionId: true, isCorrect: true },
+        orderBy: { isCorrect: "desc" },
+      }),
+    ).toEqual([
+      { questionId: question.id, isCorrect: true },
+      { questionId: third.id, isCorrect: false },
+    ]);
+    expect(
+      await prisma.quizAnswer.count({
+        where: {
+          quizAttemptId: alternative.quizAttemptId,
+          questionId: second.id,
+          isCorrect: true,
+        },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.examResult.findUnique({
+        where: { quizAttemptId: attempt.attemptId },
+      }),
+    ).toMatchObject({
+      totalCount: 2,
+      correctCount: 1,
+      excludedCount: 1,
+      score: 50,
+    });
+    const storedAttempt = await prisma.quizAttempt.findUniqueOrThrow({
+      where: { id: attempt.attemptId },
+    });
+    expect(storedAttempt.score).toBe(66.67);
+    expect(await prisma.quizProgress.findFirst({ where: who })).toMatchObject({
+      status: "COMPLETED",
+      bestScore: storedAttempt.score,
+    });
+  });
+
+  it("clears stored exclusions if quiz edits leave a resumed attempt empty", async () => {
+    const { cls, quiz, question, studentUser, student } = await setup();
+    asStudent(studentUser.id);
+    const target = { classId: cls.id, quizId: quiz.id };
+    const active = await prisma.question.create({
+      data: { quizId: quiz.id, order: 2, text: "Active question" },
+    });
+    const attempt = await prisma.quizAttempt.create({
+      data: {
+        ...target,
+        studentId: student.id,
+        excludedQuestionIds: JSON.stringify([question.id]),
+      },
+    });
+    await prisma.question.delete({ where: { id: active.id } });
+
+    const resumed = await POST(jsonReq(target));
+    expect(resumed.status).toBe(200);
+    expect(await resumed.json()).toMatchObject({
+      attemptId: attempt.id,
+      questions: [{ id: question.id }],
+      excludedCount: 0,
+      exclusionIgnored: true,
+    });
+    expect(
+      await prisma.quizAttempt.findUniqueOrThrow({ where: { id: attempt.id } }),
+    ).toMatchObject({ excludedQuestionIds: "[]", completedAt: null });
+  });
+
+  it("ignores inline cards for full retake history and version rotation", async () => {
+    const { cls, quiz, question, studentUser, student } = await setup();
+    asStudent(studentUser.id);
+    const target = { classId: cls.id, quizId: quiz.id };
+    const questions = JSON.stringify([
+      {
+        id: "v",
+        sourceQuestionId: question.id,
+        text: "Variant",
+        answerMode: "NUMERIC",
+        answerUnit: null,
+        answerNumeric: 4,
+        answerTolerance: 0.01,
+        options: [],
+        solution: "4",
+        intentExplanation: "Same skill",
+      } satisfies VariantQuestion,
+    ]);
+    const createVersion = (name: string, createdAt: Date) =>
+      prisma.quizPracticeVersion.create({
+        data: {
+          quizId: quiz.id,
+          name,
+          createdAt,
+          variation: "NUMBERS",
+          status: "PUBLISHED",
+          sourceSnapshot: "[]",
+          objectives: "[]",
+          questions,
+        },
+      });
+    const legacy = await createVersion("Legacy", new Date("2026-01-01"));
+    const next = await createVersion("Next", new Date("2026-01-02"));
+    await prisma.quizPracticeAttempt.createMany({
+      data: [
+        { versionId: legacy.id, versionName: legacy.name },
+        { versionId: next.id, versionName: "Next (Coach practice)" },
+        { versionId: next.id, versionName: "Next (Study assistant practice)" },
+      ].map((attempt) => ({
+        ...target,
+        ...attempt,
+        studentId: student.id,
+        questions,
+        completedAt: new Date(),
+      })),
+    });
+    const history = await alternativeHistory(
+      new NextRequest(
+        "http://localhost/api/quiz/practice?" + new URLSearchParams(target),
+      ),
+    );
+    expect(history.status).toBe(200);
+    expect((await history.json()).attempts).toMatchObject([
+      { versionName: legacy.name, quizAttemptId: null },
+    ]);
+
+    const started = await startAlternative(practiceReq(target));
+    expect(started.status).toBe(200);
+    expect(await started.json()).toMatchObject({ versionName: next.name });
+  });
+
+  it("falls back to the full quiz or version if every question would be excluded", async () => {
+    const { cls, quiz, question, studentUser, student } = await setup();
+    asStudent(studentUser.id);
+    const target = { classId: cls.id, quizId: quiz.id };
+    await prisma.quizAttempt.create({
+      data: {
+        ...target,
+        studentId: student.id,
+        completedAt: new Date(),
+        answers: { create: { questionId: question.id, isCorrect: true } },
+      },
+    });
+    await prisma.quizPracticeVersion.create({
+      data: {
+        quizId: quiz.id,
+        name: "Alternative",
+        variation: "NUMBERS",
+        status: "PUBLISHED",
+        sourceSnapshot: "[]",
+        objectives: "[]",
+        questions: JSON.stringify([
+          {
+            id: "v",
+            sourceQuestionId: question.id,
+            text: "Variant",
+            answerMode: "NUMERIC",
+            answerUnit: null,
+            answerNumeric: 4,
+            answerTolerance: 0.01,
+            options: [],
+            solution: "4",
+            intentExplanation: "Same skill",
+          } satisfies VariantQuestion,
+        ]),
+      },
+    });
+    const body = { ...target, excludedQuestionIds: [question.id] };
+    const [official, practice] = await Promise.all([
+      POST(jsonReq(body)),
+      startAlternative(practiceReq(body)),
+    ]);
+    expect(await official.json()).toMatchObject({
+      excludedCount: 0,
+      exclusionIgnored: true,
+      questions: [{ id: question.id }],
+    });
+    expect(await practice.json()).toMatchObject({
+      excludedCount: 0,
+      exclusionIgnored: true,
+      questions: [{ id: "v" }],
+    });
   });
 });

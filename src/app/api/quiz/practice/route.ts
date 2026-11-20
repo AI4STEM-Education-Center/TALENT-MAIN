@@ -3,6 +3,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { pausedClassResponse } from "@/lib/class-access-guard";
 import { prisma } from "@/lib/prisma";
+import { shuffleAnswerChoices } from "@/lib/quiz-shuffle";
 import { studentCanPractice } from "@/lib/quiz-practice-access";
 import {
   scoreVariant,
@@ -33,8 +34,26 @@ const startSchema = z.object({
   // Leave out the questions the student already has correct. Opt-in per start
   // so existing clients keep getting the full version.
   excludeCorrect: z.boolean().optional(),
+  excludedQuestionIds: z.array(z.string().min(1).max(200)).max(500).optional(),
 });
-const historySchema = startSchema.omit({ excludeCorrect: true });
+const historySchema = startSchema.omit({
+  excludeCorrect: true,
+  excludedQuestionIds: true,
+});
+
+// Inline cards have these suffixes and never have a linked quiz attempt.
+// Keep legacy full practice runs, including ones without a linked attempt.
+const fullPracticeAttempts = {
+  NOT: {
+    quizAttemptId: null,
+    completedAt: { not: null },
+    OR: [
+      { versionName: { endsWith: "(Coach practice)" } },
+      { versionName: { endsWith: "(Study assistant practice)" } },
+    ],
+  },
+};
+
 export async function GET(req: NextRequest) {
   const student = await studentActor();
   if (!student)
@@ -60,7 +79,12 @@ export async function GET(req: NextRequest) {
       where: { quizId, status: "PUBLISHED" },
     }),
     prisma.quizPracticeAttempt.findMany({
-      where: { studentId: student.id, classId, quizId },
+      where: {
+        studentId: student.id,
+        classId,
+        quizId,
+        ...fullPracticeAttempts,
+      },
       select: {
         id: true,
         quizAttemptId: true,
@@ -97,7 +121,12 @@ export async function POST(req: NextRequest) {
       { error: "Class and quiz required" },
       { status: 400 },
     );
-  const { classId, quizId, excludeCorrect = false } = input.data;
+  const {
+    classId,
+    quizId,
+    excludeCorrect = false,
+    excludedQuestionIds,
+  } = input.data;
   const paused = await pausedClassResponse(classId);
   if (paused) return paused;
   if (!(await studentCanPractice(student.id, classId, quizId)))
@@ -117,7 +146,12 @@ export async function POST(req: NextRequest) {
     });
     if (!versions.length) return null;
     const previous = await tx.quizPracticeAttempt.findMany({
-      where: { studentId: student.id, classId, quizId },
+      where: {
+        studentId: student.id,
+        classId,
+        quizId,
+        ...fullPracticeAttempts,
+      },
       select: { versionId: true },
       orderBy: { startedAt: "desc" },
     });
@@ -126,17 +160,19 @@ export async function POST(req: NextRequest) {
       versions.find((v) => !seen.has(v.id)) ??
       versions.find((v) => v.id !== previous[0]?.versionId) ??
       versions[0];
-    const { correct } = excludeCorrect
-      ? await loadPreviouslyCorrect(tx, {
-          studentId: student.id,
-          classId,
-          quizId,
-        })
-      : { correct: new Set<string>() };
+    const { correct } =
+      excludeCorrect || excludedQuestionIds?.length
+        ? await loadPreviouslyCorrect(tx, {
+            studentId: student.id,
+            classId,
+            quizId,
+          })
+        : { correct: new Set<string>() };
     const selection = selectRetakeQuestions(
       JSON.parse(selected.questions) as VariantQuestion[],
       correct,
       excludeCorrect,
+      excludedQuestionIds,
     );
     // The retake is recorded as an ordinary (unfinished) attempt from the
     // moment it starts, linked to the version it was taken on.
@@ -332,7 +368,10 @@ export async function PATCH(req: NextRequest) {
         }),
       ]);
       const snapshotInput = variantSnapshotInputs(
-        questions,
+        questions.map((q) => ({
+          ...q,
+          options: shuffleAnswerChoices(q.options, `${attempt.id}:${q.id}`),
+        })),
         result.answerRecords,
       );
       const examResult = await tx.examResult.create({

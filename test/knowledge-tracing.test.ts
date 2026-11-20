@@ -428,16 +428,14 @@ describe("Knowledge Tracing engine, clash resolution, chat tools, and coach inte
     expect(profile2).not.toBeNull();
     expect(profile2?.knownConcepts[0].concept).toBe("Free Fall Kinematics");
 
-    // 5. Wrong-Answer Coach receives both the Knowledge Tracing block and 1-2 starter thinking buttons
+    // 5. The coach receives the Knowledge Tracing block while the student opens in their own words.
     const scope = await resolveCoachScope(student.student.id, attempt.id, 2);
     expect(scope).not.toBeNull();
-    const options = coachOpeningOptions(scope!);
-    expect(options.length).toBeGreaterThanOrEqual(1);
-    expect(options.length).toBeLessThanOrEqual(2);
-    expect(options[0]).toContain("0 m/s^2");
+    expect(coachOpeningOptions(scope!)).toEqual([]);
 
     const coachCtx = await buildCoachContext(scope!);
     expect(coachCtx).toContain("student knowledge tracing");
+    expect(coachCtx).toContain("0 m/s^2");
     expect(coachCtx).toContain("Gravitational Acceleration in Free Fall");
     expect(coachCtx).toContain("Constant Position vs. Zero Velocity");
   });
