@@ -1,10 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { History, Move, Sparkles, SquarePen, X } from "lucide-react";
+import {
+  ChevronDown,
+  History,
+  Move,
+  Sparkles,
+  SquarePen,
+  X,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CoachActionCards } from "@/components/student/coach/CoachActionCards";
-import type { CoachActionView } from "@/lib/assistant/coach-types";
+import { CoachQuestionPane } from "@/components/student/coach/CoachQuestionPane";
+import type {
+  CoachActionView,
+  CoachHistoryContext,
+} from "@/lib/assistant/coach-types";
 import { AssistantHistory } from "./AssistantHistory";
 import { AssistantComposer } from "./AssistantComposer";
 import { useAssistantConversation } from "./use-assistant-conversation";
@@ -39,6 +50,127 @@ const RESIZE_HANDLES: { edge: ResizeEdge; className: string }[] = [
   { edge: "se", className: "bottom-0 right-0 size-2.5 cursor-nwse-resize" },
 ];
 
+/**
+ * The question a reopened coach conversation is about, folded into one line
+ * under the header so the transcript keeps the room. Opening it shows the same
+ * pane as the coach dialog: every option and the student's own choice.
+ */
+function CoachContextDrawer({ coach }: { coach: CoachHistoryContext }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="border-b border-border bg-muted/30">
+      <button
+        type="button"
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={expanded}
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-muted/60"
+      >
+        <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+          Question coach
+        </span>
+        <span className="min-w-0 flex-1 truncate text-muted-foreground">
+          {coach.question.quizName} · Question {coach.questionNumber}
+        </span>
+        <ChevronDown
+          aria-hidden
+          className={cn(
+            "size-3.5 shrink-0 text-muted-foreground transition-transform",
+            expanded && "rotate-180",
+          )}
+        />
+        <span className="sr-only">
+          {expanded ? "Hide the question" : "Show the question"}
+        </span>
+      </button>
+      {expanded && (
+        <div className="max-h-[40vh] overflow-y-auto border-t border-border/60 px-3 py-3">
+          <CoachQuestionPane question={coach.question} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Stands in for the composer on a transcript that can be read but not
+ * continued, with the way forward one click away.
+ */
+function ReadOnlyBanner({
+  reason,
+  onStartNew,
+}: {
+  reason: string | null;
+  onStartNew: () => void;
+}) {
+  return (
+    <div
+      role="note"
+      className="flex items-center gap-2 border-t border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
+    >
+      <p className="min-w-0 flex-1">{reason}</p>
+      <button
+        type="button"
+        onClick={onStartNew}
+        className="shrink-0 rounded-md border border-border bg-background px-2 py-1 font-medium text-foreground transition-colors hover:bg-accent"
+      >
+        Start a new conversation
+      </button>
+    </div>
+  );
+}
+
+const ICON_BUTTON =
+  "rounded-md p-1.5 transition-colors hover:bg-accent hover:text-foreground";
+
+/** History, New conversation and Close, at the right of the header. */
+function HeaderActions({
+  historyOpen,
+  onToggleHistory,
+  onNewConversation,
+  onClose,
+}: {
+  historyOpen: boolean;
+  onToggleHistory: () => void;
+  /** Omitted while the transcript is empty: there is nothing to start over. */
+  onNewConversation?: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <>
+      <button
+        type="button"
+        onClick={onToggleHistory}
+        aria-label="Conversation history"
+        aria-pressed={historyOpen}
+        className={cn(
+          ICON_BUTTON,
+          historyOpen ? "bg-accent text-foreground" : "text-muted-foreground",
+        )}
+      >
+        <History className="size-4" />
+      </button>
+      {onNewConversation && (
+        <button
+          type="button"
+          onClick={onNewConversation}
+          aria-label="New conversation"
+          className={cn(ICON_BUTTON, "text-muted-foreground")}
+        >
+          <SquarePen className="size-4" />
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close assistant"
+        className={cn(ICON_BUTTON, "text-muted-foreground")}
+      >
+        <X className="size-4" />
+      </button>
+    </>
+  );
+}
+
 export function AssistantWidget() {
   const { config, open, setOpen } = useAssistant();
   const conversation = useAssistantConversation(config);
@@ -51,15 +183,32 @@ export function AssistantWidget() {
     startNewConversation,
     openHistory,
     send,
+    conversationId,
+    coachContext,
+    readOnly,
+    readOnlyReason,
+    updateCardInteraction,
   } = conversation;
   const renderCards = useCallback(
     (cards: CoachActionView[]) => (
       <CoachActionCards
         actions={cards}
+        target={
+          coachContext
+            ? {
+                attemptId: coachContext.attemptId,
+                questionNumber: coachContext.questionNumber,
+              }
+            : undefined
+        }
+        conversationId={conversationId}
+        source={coachContext ? "coach" : "widget"}
         onReport={(message) => void send(message)}
+        onInteractionSaved={updateCardInteraction}
+        readOnly={readOnly}
       />
     ),
-    [send],
+    [send, coachContext, conversationId, updateCardInteraction, readOnly],
   );
   const scrollRef = useRef<HTMLDivElement>(null);
   // Where the panel sits and how big it is. null until the first client-side
@@ -218,43 +367,26 @@ export function AssistantWidget() {
                 <Move className="size-4" />
               </button>
             )}
-            <button
-              type="button"
-              onClick={() =>
+            <HeaderActions
+              historyOpen={historyOpen}
+              onToggleHistory={() =>
                 void (historyOpen ? setHistoryOpen(false) : openHistory())
               }
-              aria-label="Conversation history"
-              aria-pressed={historyOpen}
-              className={cn(
-                "rounded-md p-1.5 transition-colors hover:bg-accent hover:text-foreground",
-                historyOpen
-                  ? "bg-accent text-foreground"
-                  : "text-muted-foreground",
-              )}
-            >
-              <History className="size-4" />
-            </button>
-            {bubbles.length > 0 && (
-              <button
-                type="button"
-                onClick={startNewConversation}
-                aria-label="New conversation"
-                className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-              >
-                <SquarePen className="size-4" />
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              aria-label="Close assistant"
-              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            >
-              <X className="size-4" />
-            </button>
+              onNewConversation={
+                bubbles.length > 0 ? startNewConversation : undefined
+              }
+              onClose={() => setOpen(false)}
+            />
           </header>
 
           {historyOpen && <AssistantHistory conversation={conversation} />}
+
+          {!historyOpen && coachContext && (
+            <CoachContextDrawer
+              key={`${coachContext.attemptId}:${coachContext.questionNumber}`}
+              coach={coachContext}
+            />
+          )}
 
           {/*
             Kept mounted while the history list is up rather than swapped out, so
@@ -267,7 +399,12 @@ export function AssistantWidget() {
               historyOpen && "hidden",
             )}
           >
+            {/*
+              Keyed per conversation: cards keep local state (viewed, picked,
+              answered), and none of it may carry over to another transcript.
+            */}
             <AssistantTranscript
+              key={conversationId ?? "new"}
               bubbles={bubbles}
               activity={activity}
               greeting={config.greeting}
@@ -281,7 +418,14 @@ export function AssistantWidget() {
             </p>
           )}
 
-          {!historyOpen && (
+          {!historyOpen && readOnly && (
+            <ReadOnlyBanner
+              reason={readOnlyReason}
+              onStartNew={startNewConversation}
+            />
+          )}
+
+          {!historyOpen && !readOnly && (
             <AssistantComposer
               conversation={conversation}
               isTeacher={isTeacher}

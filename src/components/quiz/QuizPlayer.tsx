@@ -15,7 +15,11 @@ import {
 import { MathText } from "@/components/ui/math-text";
 import { RESULT_STATUS, type StudentMistakeView } from "@/lib/exam-results";
 import { normalizeNumericValue } from "@/lib/quiz-scoring";
-import { alternativeNotice } from "@/lib/alternative-retake";
+import {
+  alternativeNotice,
+  officialExcludedNotice,
+  type QuizQuestionExclusionOptions,
+} from "@/lib/alternative-retake";
 
 import {
   startPracticeQuiz,
@@ -28,30 +32,138 @@ import {
 import { ScoreBanner } from "@/components/student/QuizReviewResult";
 import { StudentMistakesReview } from "@/components/student/StudentMistakesReview";
 
+/** Options shared by the two real (recorded) student modes. */
+type StudentLaunch = {
+  classId: string;
+  /** Questions to leave out of a NEW attempt (ignored when resuming). */
+  exclusionOptions?: QuizQuestionExclusionOptions;
+  /**
+   * Return to the quiz setup screen, optionally with a mode preselected.
+   * When set, "Retake quiz" / "Practice another version" go there so the
+   * student can choose again, instead of starting straight away.
+   */
+  onBackToSetup?: (mode?: "official" | "practice") => void;
+};
+
 type QuizPlayerProps = {
   quizId: string;
   backHref: string;
   backLabel: string;
 } & (
   | { mode: "preview"; classId?: never }
-  | { mode: "student"; classId: string }
-  | {
+  | ({ mode: "student" } & StudentLaunch)
+  | ({
       mode: "practice";
-      classId: string;
-      /** Leave out questions already answered correctly (new starts only). */
+      /** Shortcut for `exclusionOptions: { excludeCorrect: true }`. */
       excludeCorrect?: boolean;
       /** Return to the practice options to choose another version. */
       onPracticeAgain?: () => void;
-    }
+    } & StudentLaunch)
 );
+
+const NO_EXCLUSIONS: QuizQuestionExclusionOptions = {};
+
+/** The calm note during a quiz that some questions were left out. */
+function ExclusionNote({ session }: { session: QuizSession | null }) {
+  const count = session?.excludedCount ?? 0;
+  if (!count && !session?.exclusionIgnored) return null;
+  return (
+    <>
+      {!!count &&
+        ` ${count} question${count === 1 ? "" : "s"} you answered correctly before ${count === 1 ? "is" : "are"} left out.`}
+      {session?.exclusionIgnored &&
+        " You answered everything correctly before, so the full set is shown."}
+    </>
+  );
+}
 
 type Phase = "loading" | "quiz" | "results" | "error";
 
+/** An in-progress attempt's unsent answers, kept across "Quiz options". */
+type QuizDraft = {
+  selections: Record<string, string[]>;
+  numericInputs: Record<string, string>;
+  currentIndex: number;
+};
+
+/** Drafts are per attempt; previews have no attempt to resume. */
+function draftKeyFor(session: QuizSession | null): string | null {
+  const id = session?.attemptId;
+  return id && id !== "preview" ? `quiz-draft:${id}` : null;
+}
+
+/**
+ * The saved draft for this attempt, limited to questions still in it. Storage
+ * can be unavailable or hold anything, so every field is checked.
+ */
+function readDraft(key: string, questions: QuizQuestion[]): QuizDraft | null {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(window.sessionStorage.getItem(key) ?? "null");
+  } catch {
+    return null;
+  }
+  if (!raw || typeof raw !== "object") return null;
+  const draft = raw as Partial<Record<keyof QuizDraft, unknown>>;
+  const ids = new Set(questions.map((q) => q.id));
+  const selections: Record<string, string[]> = {};
+  if (draft.selections && typeof draft.selections === "object")
+    for (const [id, value] of Object.entries(draft.selections))
+      if (
+        ids.has(id) &&
+        Array.isArray(value) &&
+        value.every((v) => typeof v === "string")
+      )
+        selections[id] = value;
+  const numericInputs: Record<string, string> = {};
+  if (draft.numericInputs && typeof draft.numericInputs === "object")
+    for (const [id, value] of Object.entries(draft.numericInputs))
+      if (ids.has(id) && typeof value === "string") numericInputs[id] = value;
+  const index =
+    typeof draft.currentIndex === "number" &&
+    Number.isInteger(draft.currentIndex)
+      ? Math.min(Math.max(draft.currentIndex, 0), questions.length - 1)
+      : 0;
+  return { selections, numericInputs, currentIndex: index };
+}
+
+function writeDraft(key: string, draft: QuizDraft) {
+  try {
+    window.sessionStorage.setItem(key, JSON.stringify(draft));
+  } catch {
+    // Storage full or blocked: the draft just won't survive leaving the quiz.
+  }
+}
+
+function clearDraft(key: string | null) {
+  if (!key) return;
+  try {
+    window.sessionStorage.removeItem(key);
+  } catch {
+    // Nothing to clean up if storage is unavailable.
+  }
+}
+
 export function QuizPlayer(props: QuizPlayerProps) {
   const { quizId, mode, classId, backHref, backLabel } = props;
-  const excludeCorrect = mode === "practice" && props.excludeCorrect === true;
+  // Serialized so a caller passing a fresh object each render does not change
+  // what the start callback depends on.
+  const exclusionKey = JSON.stringify(
+    mode === "preview"
+      ? NO_EXCLUSIONS
+      : (props.exclusionOptions ??
+          (mode === "practice" && props.excludeCorrect
+            ? { excludeCorrect: true }
+            : NO_EXCLUSIONS)),
+  );
+  const onBackToSetup = mode === "preview" ? undefined : props.onBackToSetup;
   const onPracticeAgain =
-    mode === "practice" ? props.onPracticeAgain : undefined;
+    mode === "practice"
+      ? (props.onPracticeAgain ??
+        (onBackToSetup ? () => onBackToSetup("practice") : undefined))
+      : onBackToSetup
+        ? () => onBackToSetup("practice")
+        : undefined;
   const [phase, setPhase] = useState<Phase>("loading");
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [session, setSession] = useState<QuizSession | null>(null);
@@ -75,19 +187,36 @@ export function QuizPlayer(props: QuizPlayerProps) {
 
   const startQuiz = useCallback(async () => {
     setPhase("loading");
+    const exclusionOptions = JSON.parse(
+      exclusionKey,
+    ) as QuizQuestionExclusionOptions;
     try {
       const data =
         mode === "preview"
           ? await startQuizPreview(quizId)
           : mode === "practice"
-            ? await startPracticeQuiz(classId, quizId, excludeCorrect)
-            : await startStudentQuiz(classId, quizId);
+            ? await startPracticeQuiz(classId, quizId, exclusionOptions)
+            : await startStudentQuiz(classId, quizId, exclusionOptions);
+      if (data.questions.length === 0) {
+        // Nothing to answer: say so instead of rendering "Question 1 of 0".
+        setSession(null);
+        setQuestions([]);
+        setError(
+          "This quiz has no questions available right now. Try again, or ask your teacher.",
+        );
+        setPhase("error");
+        return;
+      }
+      // Resuming the same attempt (e.g. back from "Quiz options") restores the
+      // answers given so far.
+      const key = draftKeyFor(data);
+      const draft = key ? readDraft(key, data.questions) : null;
       setSession(data);
       setQuestions(data.questions);
-      setSelections({});
-      setNumericInputs({});
+      setSelections(draft?.selections ?? {});
+      setNumericInputs(draft?.numericInputs ?? {});
       setResult(null);
-      setCurrentIndex(0);
+      setCurrentIndex(draft?.currentIndex ?? 0);
       setZoom(null);
       setError("");
       setPhase("quiz");
@@ -95,13 +224,20 @@ export function QuizPlayer(props: QuizPlayerProps) {
       setError(error instanceof Error ? error.message : "Failed to load quiz.");
       setPhase("error");
     }
-  }, [mode, classId, quizId, excludeCorrect]);
+  }, [mode, classId, quizId, exclusionKey]);
 
   useEffect(() => {
     if (startedRef.current) return;
     startedRef.current = true;
     startQuiz();
   }, [startQuiz]);
+
+  // Keep the in-progress answers for this attempt as they change.
+  const draftKey = draftKeyFor(session);
+  useEffect(() => {
+    if (phase !== "quiz" || !draftKey) return;
+    writeDraft(draftKey, { selections, numericInputs, currentIndex });
+  }, [phase, draftKey, selections, numericInputs, currentIndex]);
 
   function selectOption(questionId: string, optionId: string) {
     setSelections((prev) => ({ ...prev, [questionId]: [optionId] }));
@@ -151,6 +287,7 @@ export function QuizPlayer(props: QuizPlayerProps) {
             : null,
       }));
       const data = await session.submit(answers);
+      clearDraft(draftKeyFor(session));
       setResult(data);
       setPhase("results");
     } catch (error) {
@@ -288,7 +425,7 @@ export function QuizPlayer(props: QuizPlayerProps) {
                 session?.versionName ?? "Practice",
                 session?.excludedCount ?? 0,
               )
-            : undefined
+            : officialExcludedNotice(session?.excludedCount ?? 0) || undefined
         }
         actions={
           <>
@@ -305,7 +442,14 @@ export function QuizPlayer(props: QuizPlayerProps) {
                 </Link>
               </Button>
             )}
-            {mode === "practice" ? (
+            {onBackToSetup ? (
+              <Button
+                variant="outline"
+                onClick={() => onBackToSetup("official")}
+              >
+                <RotateCcw className="size-4" /> Retake quiz
+              </Button>
+            ) : mode === "practice" ? (
               <Button variant="outline" asChild>
                 <Link href={`/student/classes/${classId}/quiz/${quizId}`}>
                   <RotateCcw className="size-4" /> Retake quiz
@@ -342,13 +486,18 @@ export function QuizPlayer(props: QuizPlayerProps) {
           <p className="text-xs text-muted-foreground">
             Recorded as a retake. Your graded score and attempt allowance are
             unchanged.
-            {!!session?.excludedCount &&
-              ` ${session.excludedCount} question${session.excludedCount === 1 ? "" : "s"} you answered correctly before ${session.excludedCount === 1 ? "is" : "are"} left out.`}
-            {session?.exclusionIgnored &&
-              " You answered everything correctly before, so the full version is shown."}
+            <ExclusionNote session={session} />
           </p>
         </div>
       )}
+      {mode === "student" &&
+        (!!session?.excludedCount || session?.exclusionIgnored) && (
+          <p className="rounded-lg border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            Official quiz.
+            <ExclusionNote session={session} /> Your score covers the questions
+            in this attempt.
+          </p>
+        )}
 
       {/* Progress */}
       <div className="flex items-center justify-between">

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Loader2, MessageCircle, Send } from "lucide-react";
+import { Lightbulb, Loader2, MessageCircle, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -20,19 +20,37 @@ import {
 } from "@/components/assistant/SttMicButton";
 import { useSttComposer } from "@/components/assistant/use-stt-composer";
 import { useOptionalAssistant } from "@/components/assistant/assistant-context";
+import { cn } from "@/lib/utils";
 import type { CoachActionView } from "@/lib/assistant/coach-types";
 import { CoachActionCards } from "./CoachActionCards";
 import { CoachQuestionPane } from "./CoachQuestionPane";
 import { useCoachChat, type CoachTarget } from "./use-coach-chat";
 
-function CoachDialogBody({ target }: { target: CoachTarget }) {
+/**
+ * The coach itself: the original question on one side, the chat on the other.
+ * Embeddable — the guided post-quiz review puts it straight on the page, and
+ * the "Chat with assistant" dialog wraps the same component. Give it a bounded
+ * height (it fills its parent and scrolls internally).
+ */
+export function CoachWorkspace({
+  target,
+  onEngaged,
+  className,
+}: {
+  target: CoachTarget;
+  /** Told once the student has written (or had saved) their first message. */
+  onEngaged?: (engaged: boolean) => void;
+  className?: string;
+}) {
   const assistant = useOptionalAssistant();
   const sttEnabled = assistant?.config?.sttEnabled !== false;
-  const chat = useCoachChat(target);
+  const chat = useCoachChat(target, { onEngaged });
   const {
     load,
     bubbles,
-    openingOptions,
+    conversationId,
+    hasUserTurn,
+    updateCardInteraction,
     activity,
     draft,
     setDraft,
@@ -58,21 +76,24 @@ function CoachDialogBody({ target }: { target: CoachTarget }) {
     !stt.isBusy &&
     (draft.trim().length > 0 || stt.isRecording || stt.state === "connecting");
 
-  const hasUserTurn = bubbles.some((b) => b.role === "user");
-  const showOpeningButtons =
-    !hasUserTurn && !sending && openingOptions.length > 0;
-
   const renderCards = useCallback<RenderCards>(
     (cards: CoachActionView[]) => (
-      <CoachActionCards actions={cards} target={target} onReport={sendText} />
+      <CoachActionCards
+        actions={cards}
+        target={target}
+        conversationId={conversationId}
+        source="coach"
+        onReport={(message) => void sendText(message)}
+        onInteractionSaved={updateCardInteraction}
+      />
     ),
-    [target, sendText],
+    [target, conversationId, sendText, updateCardInteraction],
   );
 
   if (load.status === "loading") {
     return (
       <div
-        className="flex flex-1 items-center justify-center p-6"
+        className={cn("flex flex-1 items-center justify-center p-6", className)}
         role="status"
       >
         <Loader2 className="size-5 animate-spin text-primary" aria-hidden />
@@ -82,7 +103,7 @@ function CoachDialogBody({ target }: { target: CoachTarget }) {
   }
   if (load.status === "error") {
     return (
-      <p role="alert" className="p-6 text-sm text-destructive">
+      <p role="alert" className={cn("p-6 text-sm text-destructive", className)}>
         {load.message}
       </p>
     );
@@ -92,8 +113,8 @@ function CoachDialogBody({ target }: { target: CoachTarget }) {
     // Stacked on phones (question on top, capped so the chat keeps room), side
     // by side from md up. The question pane scrolls on its own and is never
     // unmounted while chatting, so the original question stays visible.
-    <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-      <div className="max-h-[34dvh] shrink-0 overflow-y-auto border-b p-4 md:max-h-none md:w-2/5 md:border-r md:border-b-0">
+    <div className={cn("flex min-h-0 flex-1 flex-col md:flex-row", className)}>
+      <div className="max-h-[34dvh] shrink-0 overflow-y-auto border-b bg-muted/20 p-4 md:max-h-none md:w-2/5 md:border-r md:border-b-0">
         <CoachQuestionPane question={load.question} />
       </div>
 
@@ -110,30 +131,23 @@ function CoachDialogBody({ target }: { target: CoachTarget }) {
             renderCards={renderCards}
           />
         </div>
-        {showOpeningButtons && (
+        {!hasUserTurn && !sending && (
           <div
-            role="group"
-            aria-label="Suggested ways you approached this question"
-            className="flex flex-col gap-2 border-t border-border/60 bg-muted/10 px-4 py-2.5"
+            role="note"
+            className="flex items-start gap-2.5 border-t border-primary/15 bg-primary/[0.04] px-4 py-3"
           >
-            <p className="text-xs font-medium text-muted-foreground">
-              Pick what matches your thinking, or type / speak your own below:
+            <Lightbulb
+              className="mt-0.5 size-4 shrink-0 text-primary"
+              aria-hidden
+            />
+            <p className="text-xs leading-relaxed text-foreground/80">
+              <span className="font-semibold text-foreground">
+                Share your thoughts first
+              </span>{" "}
+              — describe how you approached this question or where you got
+              stuck, and the coach will tailor follow-up options to what you
+              need. You can type or use the mic.
             </p>
-            {openingOptions.slice(0, 2).map((option) => (
-              <button
-                key={option}
-                type="button"
-                disabled={sending || stt.isBusy}
-                onClick={() => {
-                  stt.abortStt();
-                  setDraft("");
-                  void sendText(option);
-                }}
-                className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-left text-xs text-foreground transition-colors hover:border-primary hover:bg-primary/10 disabled:opacity-50"
-              >
-                {option}
-              </button>
-            ))}
           </div>
         )}
         <SttErrorBanner error={stt.error} onDismiss={stt.clearError} />
@@ -160,7 +174,11 @@ function CoachDialogBody({ target }: { target: CoachTarget }) {
             }}
             rows={2}
             maxLength={4000}
-            placeholder="Tell the assistant what you were thinking…"
+            placeholder={
+              hasUserTurn
+                ? "Reply to the coach…"
+                : "How did you approach this question? Where did you get stuck?"
+            }
             aria-label="Your message"
             className="max-h-32 min-h-9 flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
           />
@@ -244,7 +262,7 @@ export function WrongAnswerCoachButton({
                 visible while you chat.
               </DialogDescription>
             </DialogHeader>
-            <CoachDialogBody
+            <CoachWorkspace
               key={`${attemptId}:${questionNumber}`}
               target={target}
             />

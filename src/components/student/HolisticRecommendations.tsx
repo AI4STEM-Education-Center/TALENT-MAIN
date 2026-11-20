@@ -1,4 +1,4 @@
-import { Loader2, Sparkles } from "lucide-react";
+import { Check, Loader2, Sparkles } from "lucide-react";
 import { RecommendationCard } from "@/components/student/RecommendationCard";
 import { AiMetricsLine } from "@/components/ai-metrics-line";
 import {
@@ -9,6 +9,7 @@ import {
   type PresignedRecommendation,
 } from "@/lib/exam-results";
 import type { ResourceSurface } from "@/lib/resource-telemetry";
+import { recommendationKey } from "./recommendation-key";
 
 /**
  * Study-material recommendations shared by student results and the authorized
@@ -23,6 +24,9 @@ export function HolisticRecommendations({
   audience = "student",
   attemptId,
   telemetrySurface,
+  onOpen,
+  viewedKeys,
+  showHeading = true,
 }: {
   recommendations: PresignedRecommendation[];
   status: ResultStatus;
@@ -41,6 +45,12 @@ export function HolisticRecommendations({
    * pages as a LearningResourceSession labelled with this surface.
    */
   telemetrySurface?: ResourceSurface;
+  /** Called with a card's recommendationKey each time it is opened. */
+  onOpen?: (key: string) => void;
+  /** recommendationKeys to mark as already viewed. */
+  viewedKeys?: ReadonlySet<string>;
+  /** The section heading; off when a page already introduces it. */
+  showHeading?: boolean;
 }) {
   const pending = isResultPending(status);
 
@@ -50,23 +60,35 @@ export function HolisticRecommendations({
        section gets only part of the page, and the cards must stack instead
        of splitting into slivers. */
     <div className="space-y-3 @container">
-      <h2 className="flex items-center gap-1.5 text-lg font-semibold">
-        <Sparkles className="size-5 text-primary" /> Study recommendations
-      </h2>
+      {showHeading && (
+        <h2 className="flex items-center gap-1.5 text-lg font-semibold">
+          <Sparkles className="size-5 text-primary" /> Study recommendations
+        </h2>
+      )}
 
       {recommendations.length > 0 ? (
         <div className="grid gap-3 @lg:grid-cols-2 @3xl:grid-cols-3">
-          {recommendations.map((rec) => (
-            <RecommendationCard
-              key={`${rec.materialTitle}-${rec.pageRange.start}-${rec.pageRange.end}`}
-              rec={rec}
-              attemptId={attemptId}
-              audience={audience}
-              telemetrySurface={
-                audience === "student" ? telemetrySurface : undefined
-              }
-            />
-          ))}
+          {recommendations.map((rec) => {
+            const key = recommendationKey(rec);
+            return (
+              <div key={key} className="relative">
+                <RecommendationCard
+                  rec={rec}
+                  attemptId={attemptId}
+                  audience={audience}
+                  telemetrySurface={
+                    audience === "student" ? telemetrySurface : undefined
+                  }
+                  onOpen={onOpen ? () => onOpen(key) : undefined}
+                />
+                {viewedKeys?.has(key) && (
+                  <span className="pointer-events-none absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-green-600/10 px-2 py-0.5 text-[11px] font-semibold text-green-700 backdrop-blur-sm dark:text-green-400">
+                    <Check className="size-3" aria-hidden /> Viewed
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
       ) : pending ? (
         <div className="flex items-center gap-2 rounded-xl border p-4 text-sm text-muted-foreground">
