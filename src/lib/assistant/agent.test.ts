@@ -766,8 +766,14 @@ describe("runAssistantTurn — card-producing tools (coach override)", () => {
       ],
       2,
     );
-    expect(events).toContainEqual({ type: "action", action: card.view });
-    expect(result.actions).toEqual([card.stored]);
+    expect(result.actions).toEqual([
+      { ...card.stored, cardId: expect.any(String) },
+    ]);
+    const [{ cardId }] = result.actions as [{ cardId: string }];
+    expect(events).toContainEqual({
+      type: "action",
+      action: { ...card.view, cardId },
+    });
     const second = calls[1].messages as Array<{
       role: string;
       content: string;

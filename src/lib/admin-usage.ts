@@ -66,6 +66,16 @@ export function unassignedClassLabel(row: {
         label: "Course materials library",
         note: "Self-directed open of a material shared with more than one of the student's classes",
       };
+    case "coach_recommendation":
+      return {
+        label: "Wrong-answer coach",
+        note: "Recommended in the coach without a verified class",
+      };
+    case "assistant_recommendation":
+      return {
+        label: "Study assistant",
+        note: "Recommended in the assistant without a verified class",
+      };
     case undefined:
       return { label: "No class recorded", note: "" };
     default:
