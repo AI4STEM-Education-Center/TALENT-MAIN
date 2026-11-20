@@ -2,10 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AssistantMarkdown } from "@/components/ui/assistant-markdown";
-import { Archive, Database, Paperclip, X } from "lucide-react";
+import { Archive, ChevronDown, Database, Paperclip, X } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { CoachQuestionPane } from "@/components/student/coach/CoachQuestionPane";
 import { cn } from "@/lib/utils";
-import type { AssistantTurn } from "@/lib/assistant/types";
+import type { CoachQuestionView } from "@/lib/assistant/coach-types";
+import type { AdminTranscriptTurn } from "@/lib/assistant/admin-transcript-types";
 import { TranscriptCards } from "./transcript-cards";
 
 const MARKDOWN_CLASS =
@@ -30,9 +32,43 @@ export type ListResponse = {
 };
 
 type TranscriptResponse = ConversationRow & {
-  turns: AssistantTurn[];
+  turns: AdminTranscriptTurn[];
+  coachQuestion?: CoachQuestionView | null;
   transcriptUnavailable: boolean;
 };
+
+function OriginalQuestionDrawer({ question }: { question: CoachQuestionView }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="border-b border-border bg-muted/30">
+      <button
+        type="button"
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={expanded}
+        className="relative flex w-full items-center gap-2 px-4 py-2 text-left text-xs transition-colors hover:bg-muted/60"
+      >
+        <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+          Original question
+        </span>
+        <span className="min-w-0 flex-1 truncate text-muted-foreground">
+          {question.quizName} · Question {question.questionNumber}
+        </span>
+        <ChevronDown
+          aria-hidden
+          className={cn(
+            "size-3.5 shrink-0 text-muted-foreground transition-transform",
+            expanded && "rotate-180",
+          )}
+        />
+      </button>
+      {expanded && (
+        <div className="relative max-h-[40vh] overflow-y-auto border-t border-border/60 px-4 py-3">
+          <CoachQuestionPane question={question} />
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function TierBadge({ archived }: { archived: boolean }) {
   return (
@@ -69,7 +105,7 @@ export function TranscriptDialog({
   const openerRef = useRef<HTMLElement | null>(null);
   const [data, setData] = useState<
     | (Omit<TranscriptResponse, "turns"> & {
-        turns: (AssistantTurn & { key: string })[];
+        turns: (AdminTranscriptTurn & { key: string })[];
       })
     | null
   >(null);
@@ -151,7 +187,11 @@ export function TranscriptDialog({
           </button>
         </header>
 
-        <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+        {data?.coachQuestion && (
+          <OriginalQuestionDrawer question={data.coachQuestion} />
+        )}
+
+        <div className="relative flex-1 space-y-3 overflow-y-auto px-4 py-4">
           {failed && (
             <p className="text-sm text-destructive">
               This transcript could not be loaded.
@@ -167,41 +207,53 @@ export function TranscriptDialog({
               empty conversation.
             </p>
           )}
-          {data?.turns.map((turn) => (
-            <div
-              key={turn.key}
-              className={cn(
-                "flex",
-                turn.role === "user" ? "justify-end" : "justify-start",
-              )}
-            >
+          {data?.turns.map((turn) => {
+            const hasCards =
+              turn.role === "assistant" &&
+              Array.isArray(turn.cards) &&
+              turn.cards.length > 0;
+            return (
               <div
+                key={turn.key}
                 className={cn(
-                  "max-w-[85%] rounded-lg px-3 py-2",
-                  turn.role === "user"
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-foreground",
+                  "flex",
+                  turn.role === "user" ? "justify-end" : "justify-start",
                 )}
               >
-                {turn.role === "user" ? (
-                  <p className="whitespace-pre-wrap text-sm">{turn.content}</p>
-                ) : (
-                  <div className={MARKDOWN_CLASS}>
-                    <AssistantMarkdown>{turn.content}</AssistantMarkdown>
-                  </div>
-                )}
-                {turn.attachmentNames && turn.attachmentNames.length > 0 && (
-                  <p className="mt-1 text-xs opacity-80">
-                    <Paperclip className="mr-1 inline size-3" />
-                    {turn.attachmentNames.join(", ")}
-                  </p>
-                )}
-                {turn.role === "assistant" && turn.actions && (
-                  <TranscriptCards actions={turn.actions} />
-                )}
+                <div
+                  className={cn(
+                    "max-w-[85%] rounded-lg px-3 py-2",
+                    hasCards && "w-full max-w-full",
+                    turn.role === "user"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-foreground",
+                  )}
+                >
+                  {turn.role === "user" ? (
+                    <p className="whitespace-pre-wrap text-sm">
+                      {turn.content}
+                    </p>
+                  ) : (
+                    <div className={MARKDOWN_CLASS}>
+                      <AssistantMarkdown>{turn.content}</AssistantMarkdown>
+                    </div>
+                  )}
+                  {turn.attachmentNames && turn.attachmentNames.length > 0 && (
+                    <p className="mt-1 text-xs opacity-80">
+                      <Paperclip className="mr-1 inline size-3" />
+                      {turn.attachmentNames.join(", ")}
+                    </p>
+                  )}
+                  {hasCards && (
+                    <TranscriptCards
+                      cards={turn.cards}
+                      actions={turn.actions}
+                    />
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           {data && !data.transcriptUnavailable && data.turns.length === 0 && (
             <p className="text-sm text-muted-foreground">
               This conversation has no turns.
