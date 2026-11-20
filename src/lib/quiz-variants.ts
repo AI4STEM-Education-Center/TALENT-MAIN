@@ -287,7 +287,13 @@ export function checkWorkedSolutionConsistency(
   if (candidate.answerMode !== "NUMERIC" || candidate.answerNumeric === null) {
     return null;
   }
-  const matches = candidate.solution.match(/-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/gi);
+  const solution = candidate.solution
+    .replace(/(\d)(?:\{,\}|\\,|\\ )(?=\d)/g, "$1")
+    .replace(
+      /([\d.])\s*\\(?:times|cdot)\s*10\s*\^\s*(?:\{\s*([+-]?\d+)\s*\}|([+-]?\d+))/g,
+      "$1e$2$3",
+    );
+  const matches = solution.match(/-?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?/gi);
   if (!matches || matches.length === 0) return null;
   const tol = numericTolerance(
     candidate.answerNumeric,
