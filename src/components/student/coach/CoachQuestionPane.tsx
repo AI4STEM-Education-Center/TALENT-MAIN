@@ -52,7 +52,7 @@ function OptionRow({
   return (
     <li
       className={cn(
-        "flex items-start gap-2.5 rounded-lg border px-2.5 py-2 text-sm",
+        "relative flex items-start gap-2.5 rounded-lg border px-2.5 py-2 text-sm",
         tone === "right" && "border-green-600/40 bg-green-600/5",
         tone === "wrong" && "border-destructive/40 bg-destructive/5",
         tone === "chosen" && "border-primary/50 bg-primary/5",

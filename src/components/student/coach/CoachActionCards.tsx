@@ -470,7 +470,7 @@ function PracticeAnswerInput({
       </div>
     );
   return (
-    <fieldset className="space-y-1" disabled={locked}>
+    <fieldset className="relative space-y-1" disabled={locked}>
       <legend className="sr-only">Choose one answer</legend>
       {question.options.map((option) => (
         <label

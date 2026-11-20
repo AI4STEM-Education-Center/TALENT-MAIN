@@ -63,7 +63,7 @@ function CoachContextDrawer({ coach }: { coach: CoachHistoryContext }) {
         type="button"
         onClick={() => setExpanded((value) => !value)}
         aria-expanded={expanded}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-muted/60"
+        className="relative flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-muted/60"
       >
         <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
           Question coach
@@ -83,7 +83,7 @@ function CoachContextDrawer({ coach }: { coach: CoachHistoryContext }) {
         </span>
       </button>
       {expanded && (
-        <div className="max-h-[40vh] overflow-y-auto border-t border-border/60 px-3 py-3">
+        <div className="relative max-h-[40vh] overflow-y-auto border-t border-border/60 px-3 py-3">
           <CoachQuestionPane question={coach.question} />
         </div>
       )}
@@ -395,7 +395,7 @@ export function AssistantWidget() {
           <div
             ref={scrollRef}
             className={cn(
-              "flex-1 space-y-3 overflow-y-auto px-3 py-3",
+              "relative flex-1 space-y-3 overflow-y-auto px-3 py-3",
               historyOpen && "hidden",
             )}
           >

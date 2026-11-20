@@ -226,13 +226,13 @@ function RatingScale({
   label: string;
 }) {
   return (
-    <fieldset className="flex items-center gap-1">
+    <fieldset className="relative flex items-center gap-1">
       <legend className="sr-only">{label}</legend>
       {FEEDBACK_RATING_SCALE.map((point) => (
         <label
           key={point}
           className={cn(
-            "flex size-7 cursor-pointer items-center justify-center rounded-md border text-xs font-medium transition-colors",
+            "relative flex size-7 cursor-pointer items-center justify-center rounded-md border text-xs font-medium transition-colors",
             "focus-within:ring-2 focus-within:ring-ring",
             value === point
               ? "border-primary bg-primary text-primary-foreground"

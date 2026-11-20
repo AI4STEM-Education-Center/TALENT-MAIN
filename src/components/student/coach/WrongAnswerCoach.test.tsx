@@ -416,6 +416,18 @@ describe("coach dialog", () => {
     ).toHaveLength(1);
   });
 
+  it("positions both inner scroll panes so sr-only labels cannot escape to the document", async () => {
+    await open({});
+    const log = document.querySelector<HTMLElement>('[role="log"]');
+    const questionPane = document.querySelector<HTMLElement>(
+      'section[aria-label^="Question "]',
+    )?.parentElement;
+    expect(log?.className).toContain("overflow-y-auto");
+    expect(log?.className).toContain("relative");
+    expect(questionPane?.className).toContain("overflow-y-auto");
+    expect(questionPane?.className).toContain("relative");
+  });
+
   it("explains an unavailable question instead of showing an empty chat", async () => {
     stubFetch(true, {
       "/api/assistant/coach?": () =>

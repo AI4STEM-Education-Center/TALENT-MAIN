@@ -103,7 +103,11 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
             <ThemeToggle className="ml-auto p-2 rounded-md text-foreground/70 hover:text-foreground hover:bg-accent" />
           </header>
 
-          <main className="flex-1 overflow-auto">
+          {/* `relative` keeps any uncontained position:absolute descendant
+              (such as Tailwind's `sr-only`) from escaping into <html>, which
+              would otherwise grow the document past the min-h-screen flex shell
+              and let the sticky sidebar scroll off the top. */}
+          <main className="relative flex-1 overflow-auto">
             {/* Cap content width so inputs/bars/boxes don't stretch the full
                 viewport, but stay left-aligned (no mx-auto) so content hugs the
                 sidebar instead of floating centered. Views that need the whole
