@@ -1,183 +1,243 @@
+// @vitest-environment jsdom
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import type { AdminTranscriptCard } from "@/lib/assistant/admin-transcript-types";
 import { TranscriptCards } from "./transcript-cards";
 import { readCardRef } from "./transcript-card-ref";
 
+(
+  globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
+
+let host: HTMLDivElement | null = null;
+let root: Root | null = null;
+
+async function mountCards(cards: AdminTranscriptCard[]) {
+  host = document.createElement("div");
+  document.body.appendChild(host);
+  root = createRoot(host);
+  await act(async () => {
+    root!.render(<TranscriptCards cards={cards} />);
+  });
+  return host;
+}
+
+afterEach(async () => {
+  if (root) {
+    await act(async () => root!.unmount());
+    root = null;
+  }
+  host?.remove();
+  host = null;
+});
+
+const SAMPLE_CARDS: AdminTranscriptCard[] = [
+  {
+    cardId: "m-1",
+    kind: "material",
+    recommendationIndex: 0,
+    reason: "Review Newton's third law.",
+    recommendation: {
+      materialId: "mat-1",
+      materialTitle: "Chapter 4: Newton's Laws",
+      pageRange: { start: 12, end: 14 },
+      reason: "Covers force pairs in detail.",
+      pages: [
+        { pageNumber: 12, imageUrl: "https://example.test/page-12.png" },
+        { pageNumber: 13, imageUrl: "https://example.test/page-13.png" },
+      ],
+    },
+    interaction: {
+      status: "viewed",
+      viewedAt: "2026-11-20T00:00:00Z",
+    },
+  },
+  {
+    cardId: "d-1",
+    kind: "diagnostic_options",
+    prompt: "Which step feels uncertain?",
+    options: [
+      { id: "opt-1", label: "Identify the two objects in a force pair" },
+      { id: "opt-2", label: "Compare the forces in a third-law pair" },
+    ],
+    interaction: {
+      status: "selected",
+      selectedOptionId: "opt-1",
+      selectedLabel: "Identify the two objects in a force pair",
+      selectedAt: "2026-11-20T00:00:00Z",
+    },
+  },
+  {
+    cardId: "p-1",
+    kind: "practice",
+    versionId: "ver-1",
+    variantQuestionId: "vq-1",
+    reason: "Try a similar lift problem.",
+    question: {
+      versionId: "ver-1",
+      versionName: "Version B",
+      questionId: "vq-1",
+      text: "A performer stands on a lift accelerating at $1.9\\,\\text{m/s}^2$. How do the forces compare?",
+      answerMode: "SINGLE_SELECT",
+      answerUnit: null,
+      answerNumeric: null,
+      options: [
+        {
+          id: "a",
+          text: "The floor exerts a greater force.",
+          isCorrect: false,
+        },
+        {
+          id: "b",
+          text: "The forces are equal in magnitude and opposite in direction.",
+          isCorrect: true,
+        },
+      ],
+    },
+    interaction: {
+      status: "completed",
+      selectedOptionId: "a",
+      selectedText: "The floor exerts a greater force.",
+      numericValue: null,
+      correct: false,
+      completedAt: "2026-11-20T00:00:00Z",
+    },
+  },
+  {
+    cardId: "p-num",
+    kind: "practice",
+    versionId: "ver-2",
+    variantQuestionId: "vq-2",
+    reason: "Check your arithmetic.",
+    question: {
+      versionId: "ver-2",
+      versionName: "Version C",
+      questionId: "vq-2",
+      text: "Compute the net force.",
+      answerMode: "NUMERIC",
+      answerUnit: "N",
+      answerNumeric: 24,
+      options: [],
+    },
+    interaction: {
+      status: "completed",
+      selectedOptionId: null,
+      selectedText: "18 N",
+      numericValue: 18,
+      correct: false,
+      completedAt: "2026-11-20T00:00:00Z",
+    },
+  },
+  {
+    cardId: "s-1",
+    kind: "simulation",
+    simulationId: "sim-1",
+    simulation: {
+      simulationId: "sim-1",
+      title: "Force Pair Explorer",
+      topic: "Newton's Laws",
+      learningGoal: "Compare interaction pairs under acceleration.",
+      version: 2,
+      playable: true,
+    },
+    goal: "Explore force pairs",
+    steps: ["Set acceleration to $2\\,\\text{m/s}^2$", "Read both gauges"],
+    observe: "Both forces stay equal.",
+    interaction: {
+      status: "opened",
+      openedAt: "2026-11-20T00:00:00Z",
+      lastInteractedAt: "2026-11-20T00:00:00Z",
+    },
+  },
+];
+
 describe("admin transcript cards", () => {
-  it("renders rich hydrated course material, diagnostic options, practice question, and simulation cards", () => {
-    const html = renderToStaticMarkup(
-      <TranscriptCards
-        cards={[
-          {
-            cardId: "m-1",
-            kind: "material",
-            recommendationIndex: 0,
-            reason: "Review Newton's third law.",
-            recommendation: {
-              materialId: "mat-1",
-              materialTitle: "Chapter 4: Newton's Laws",
-              pageRange: { start: 12, end: 14 },
-              reason: "Covers force pairs in detail.",
-              pages: [
-                {
-                  pageNumber: 12,
-                  imageUrl: "https://example.test/page-12.png",
-                },
-                {
-                  pageNumber: 13,
-                  imageUrl: "https://example.test/page-13.png",
-                },
-              ],
-            },
-            interaction: {
-              status: "viewed",
-              viewedAt: "2026-11-20T00:00:00Z",
-            },
-          },
-          {
-            cardId: "d-1",
-            kind: "diagnostic_options",
-            prompt: "Which step feels uncertain?",
-            options: [
-              {
-                id: "opt-1",
-                label: "Identify the two objects in a force pair",
-              },
-              { id: "opt-2", label: "Compare the forces in a third-law pair" },
-            ],
-            interaction: {
-              status: "selected",
-              selectedOptionId: "opt-1",
-              selectedLabel: "Identify the two objects in a force pair",
-              selectedAt: "2026-11-20T00:00:00Z",
-            },
-          },
-          {
-            cardId: "p-1",
-            kind: "practice",
-            versionId: "ver-1",
-            variantQuestionId: "vq-1",
-            reason: "Try a similar lift problem.",
-            question: {
-              versionId: "ver-1",
-              versionName: "Version B",
-              questionId: "vq-1",
-              text: "A performer stands on a lift accelerating at $1.9\\,\\text{m/s}^2$. How do the forces compare?",
-              answerMode: "SINGLE_SELECT",
-              answerUnit: null,
-              answerNumeric: null,
-              options: [
-                {
-                  id: "a",
-                  text: "The floor exerts a greater force.",
-                  isCorrect: false,
-                },
-                {
-                  id: "b",
-                  text: "The forces are equal in magnitude and opposite in direction.",
-                  isCorrect: true,
-                },
-              ],
-            },
-            interaction: {
-              status: "completed",
-              selectedOptionId: "a",
-              selectedText: "The floor exerts a greater force.",
-              numericValue: null,
-              correct: false,
-              completedAt: "2026-11-20T00:00:00Z",
-            },
-          },
-          {
-            cardId: "p-num",
-            kind: "practice",
-            versionId: "ver-2",
-            variantQuestionId: "vq-2",
-            reason: "Check your arithmetic.",
-            question: {
-              versionId: "ver-2",
-              versionName: "Version C",
-              questionId: "vq-2",
-              text: "Compute the net force.",
-              answerMode: "NUMERIC",
-              answerUnit: "N",
-              answerNumeric: 24,
-              options: [],
-            },
-            interaction: {
-              status: "completed",
-              selectedOptionId: null,
-              selectedText: "18 N",
-              numericValue: 18,
-              correct: false,
-              completedAt: "2026-11-20T00:00:00Z",
-            },
-          },
-          {
-            cardId: "s-1",
-            kind: "simulation",
-            simulationId: "sim-1",
-            simulation: {
-              simulationId: "sim-1",
-              title: "Force Pair Explorer",
-              topic: "Newton's Laws",
-              learningGoal: "Compare interaction pairs under acceleration.",
-              version: 2,
-              playable: true,
-            },
-            goal: "Explore force pairs",
-            steps: [
-              "Set acceleration to $2\\,\\text{m/s}^2$",
-              "Read both gauges",
-            ],
-            observe: "Both forces stay equal.",
-            interaction: {
-              status: "opened",
-              openedAt: "2026-11-20T00:00:00Z",
-              lastInteractedAt: "2026-11-20T00:00:00Z",
-            },
-          },
-        ]}
-      />,
-    );
+  it("renders every card in a compact collapsed view by default", () => {
+    const html = renderToStaticMarkup(<TranscriptCards cards={SAMPLE_CARDS} />);
 
-    // Course material renders the actual material title, pages, and viewer trigger (without rating form)
-    expect(html).toContain("Chapter 4: Newton&#x27;s Laws");
-    expect(html).toContain("pages 12–14");
-    expect(html).toContain("https://example.test/page-12.png");
+    // Compact summaries & badges are visible immediately
+    expect(html).toContain("Course material");
+    expect(html).toContain("Chapter 4: Newton&#x27;s Laws · pages 12–14");
     expect(html).toContain("Viewed");
-    expect(html).not.toContain("Was this useful?");
-
-    // Diagnostic options renders the full option list and marks the student's selection
-    expect(html).toContain("Which step feels uncertain?");
-    expect(html).toContain("Identify the two objects in a force pair");
-    expect(html).toContain("Compare the forces in a third-law pair");
-    expect(html).toContain("Selected");
-    expect(html).toContain("Chosen");
-
-    // Practice question renders full choices, student's answer, and correct answer
-    expect(html).toContain("Version B");
-    expect(html).toContain("The floor exerts a greater force.");
+    expect(html).toContain("Diagnostic options");
     expect(html).toContain(
+      "Selected “Identify the two objects in a force pair”",
+    );
+    expect(html).toContain("Chosen");
+    expect(html).toContain("Practice question");
+    expect(html).toContain("Incorrect");
+    expect(html).toContain("Simulation guide");
+    expect(html).toContain("Force Pair Explorer");
+    expect(html).toContain("Opened");
+
+    // Heavy card bodies and inline page thumbnails stay hidden until clicked
+    expect(html).not.toContain("https://example.test/page-12.png");
+    expect(html).not.toContain("Compare the forces in a third-law pair");
+    expect(html).not.toContain(
       "The forces are equal in magnitude and opposite in direction.",
     );
-    expect(html).toContain("Student&#x27;s answer");
-    expect(html).toContain("Correct");
-    expect(html).toContain("Incorrect");
-
-    // Numeric practice question shows student's answer and correct answer with unit
-    expect(html).toContain("18 N");
-    expect(html).toContain("24 N");
-
-    // Simulation renders title, steps, observe, and Open current simulation trigger
-    expect(html).toContain("Force Pair Explorer");
-    expect(html).toContain("Read both gauges");
-    expect(html).toContain("Both forces stay equal.");
-    expect(html).toContain("Open current simulation");
-    expect(html).toContain("Opened");
+    expect(html).not.toContain("Read both gauges");
+    expect(html).not.toContain("Open current simulation");
+    expect(html).not.toContain("Was this useful?");
   });
 
-  it("summarizes unhydrated coach and study refs with graceful fallbacks", () => {
+  it("opens a full-page viewer dialog for course materials and expands diagnostic, practice, and simulation cards on click", async () => {
+    const el = await mountCards(SAMPLE_CARDS);
+    const buttonMatching = (pattern: RegExp) =>
+      Array.from(el.querySelectorAll("button")).find((b) =>
+        pattern.test(b.textContent ?? ""),
+      );
+
+    // Clicking a course material row opens the full-size page viewer dialog
+    await act(async () => buttonMatching(/Course material/)!.click());
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog?.textContent).toContain("Chapter 4: Newton's Laws");
+    expect(dialog?.textContent).toContain("pages 12–14");
+    expect(dialog?.querySelectorAll("img")).toHaveLength(2);
+    expect(dialog?.querySelector("img")?.getAttribute("src")).toBe(
+      "https://example.test/page-12.png",
+    );
+    // Close material dialog
+    const closeBtn = Array.from(dialog?.querySelectorAll("button") ?? []).find(
+      (b) => /close/i.test(b.textContent ?? ""),
+    );
+    await act(async () => closeBtn!.click());
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+
+    // Clicking diagnostic options expands the full option list with Selected pill
+    await act(async () => buttonMatching(/Diagnostic options/)!.click());
+    expect(el.textContent).toContain("Which step feels uncertain?");
+    expect(el.textContent).toContain("Compare the forces in a third-law pair");
+    expect(el.textContent).toContain("Selected");
+
+    // Clicking MCQ practice expands full options, student's answer, and correct answer
+    await act(async () =>
+      buttonMatching(/A performer stands on a lift/)!.click(),
+    );
+    expect(el.textContent).toContain("Version B");
+    expect(el.textContent).toContain("The floor exerts a greater force.");
+    expect(el.textContent).toContain(
+      "The forces are equal in magnitude and opposite in direction.",
+    );
+    expect(el.textContent).toContain("Student's answer");
+    expect(el.textContent).toContain("Correct");
+
+    // Clicking numeric practice expands student's answer and correct answer with unit
+    await act(async () => buttonMatching(/Compute the net force/)!.click());
+    expect(el.textContent).toContain("18 N");
+    expect(el.textContent).toContain("24 N");
+
+    // Clicking simulation expands steps, what to watch, and Open current simulation trigger
+    await act(async () => buttonMatching(/Simulation guide/)!.click());
+    expect(el.textContent).toContain("Read both gauges");
+    expect(el.textContent).toContain("Both forces stay equal.");
+    expect(el.textContent).toContain("Open current simulation");
+  });
+
+  it("summarizes unhydrated coach and study refs in compact collapsed form", () => {
     const html = renderToStaticMarkup(
       <TranscriptCards
         actions={[
@@ -232,16 +292,13 @@ describe("admin transcript cards", () => {
     );
     expect(html).toContain("Practice question");
     expect(html).toContain("What is 3 + 3?");
-    expect(html).toContain("Answered “7”");
     expect(html).toContain("Incorrect");
     expect(html).toContain("Diagnostic options");
-    expect(html).toContain("Carrying");
-    expect(html).toContain("Misreading");
-    expect(html).toContain("Selected");
+    expect(html).toContain("Selected “Carrying”");
     expect(html).toContain("Simulation guide");
+    expect(html).toContain("Explore sums");
     expect(html).toContain("Opened");
     expect(html).toContain("Course material");
-    expect(html).toContain("Read notes");
     expect(html).toContain("Recommendation 1");
     expect(html).not.toContain("Viewed");
   });
@@ -320,7 +377,6 @@ describe("admin transcript cards", () => {
       />,
     );
     expect(html).toContain("Which?");
-    expect(html).toContain("A");
-    expect(html).not.toContain("Selected");
+    expect(html).not.toContain("Chosen");
   });
 });
