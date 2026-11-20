@@ -72,7 +72,7 @@ export type CoachConversationKey = {
   answerKeyAvailable: boolean;
 };
 
-function coachActiveKey(
+export function coachActiveKey(
   target: ConversationTarget,
   coach: Pick<
     CoachConversationKey,
@@ -90,6 +90,26 @@ function coachActiveKey(
       ]),
     )
     .digest("hex");
+}
+
+export function isFinalCoachTranscript(
+  target: ConversationTarget,
+  row: {
+    coachResultId: string | null;
+    coachQuestionNumber: number | null;
+    coachActiveKey: string | null;
+  },
+): boolean {
+  return !!(
+    row.coachResultId &&
+    row.coachQuestionNumber &&
+    row.coachActiveKey !==
+      coachActiveKey(target, {
+        resultId: row.coachResultId,
+        questionNumber: row.coachQuestionNumber,
+        answerKeyAvailable: false,
+      })
+  );
 }
 
 /** The instant before which a conversation is out of its owner's window. */
@@ -398,8 +418,6 @@ export async function listUserConversations(
       // turns have already moved to S3 and would therefore read as empty.
       archivedAt: null,
       messageCount: { gt: 0 },
-      // Coach conversations live inside their question's dialog, not here.
-      coachResultId: null,
     },
     orderBy: { lastMessageAt: "desc" },
     take: 100,
@@ -409,11 +427,16 @@ export async function listUserConversations(
       messageCount: true,
       createdAt: true,
       lastMessageAt: true,
+      coachResultId: true,
+      coachQuestionNumber: true,
     },
   });
 
   return rows.map((row) => ({
     id: row.id,
+    kind: row.coachResultId ? "coach" : "chat",
+    coachResultId: row.coachResultId,
+    coachQuestionNumber: row.coachQuestionNumber,
     title: row.title,
     messageCount: row.messageCount,
     createdAt: row.createdAt.toISOString(),
@@ -431,7 +454,12 @@ export async function readUserConversation(
   conversationId: string,
   retentionDays: number,
   now = new Date(),
-): Promise<{ summary: ConversationSummary; turns: AssistantTurn[] } | null> {
+): Promise<{
+  summary: ConversationSummary;
+  turns: AssistantTurn[];
+  finalCoachTranscript: boolean;
+  coachActiveKey: string | null;
+} | null> {
   const row = await prisma.assistantConversation.findFirst({
     where: {
       id: conversationId,
@@ -439,7 +467,6 @@ export async function readUserConversation(
       audience: target.audience,
       lastMessageAt: { gte: historyCutoff(retentionDays, now) },
       archivedAt: null,
-      coachResultId: null,
     },
     select: {
       id: true,
@@ -447,6 +474,9 @@ export async function readUserConversation(
       messageCount: true,
       createdAt: true,
       lastMessageAt: true,
+      coachResultId: true,
+      coachQuestionNumber: true,
+      coachActiveKey: true,
     },
   });
   if (!row) return null;
@@ -467,12 +497,17 @@ export async function readUserConversation(
   return {
     summary: {
       id: row.id,
+      kind: row.coachResultId ? "coach" : "chat",
+      coachResultId: row.coachResultId,
+      coachQuestionNumber: row.coachQuestionNumber,
       title: row.title,
       messageCount: row.messageCount,
       createdAt: row.createdAt.toISOString(),
       lastMessageAt: row.lastMessageAt.toISOString(),
     },
     turns: rowsToTurns(rows),
+    finalCoachTranscript: isFinalCoachTranscript(target, row),
+    coachActiveKey: row.coachActiveKey,
   };
 }
 
@@ -771,6 +806,8 @@ export async function listConversationsForAdmin(
         messageCount: true,
         createdAt: true,
         lastMessageAt: true,
+        coachResultId: true,
+        coachQuestionNumber: true,
         archivedAt: true,
       },
     }),
@@ -788,6 +825,9 @@ export async function listConversationsForAdmin(
       const user = byId.get(row.userId);
       return {
         id: row.id,
+        kind: row.coachResultId ? "coach" : "chat",
+        coachResultId: row.coachResultId,
+        coachQuestionNumber: row.coachQuestionNumber,
         userId: row.userId,
         // A deleted user leaves their transcripts behind by design; label them
         // rather than hiding the row.
@@ -830,6 +870,8 @@ export async function readConversationForAdmin(conversationId: string): Promise<
       messageCount: true,
       createdAt: true,
       lastMessageAt: true,
+      coachResultId: true,
+      coachQuestionNumber: true,
       archivedAt: true,
       bucket: true,
       storageKey: true,
@@ -871,6 +913,9 @@ export async function readConversationForAdmin(conversationId: string): Promise<
 
   return {
     id: row.id,
+    kind: row.coachResultId ? "coach" : "chat",
+    coachResultId: row.coachResultId,
+    coachQuestionNumber: row.coachQuestionNumber,
     userId: row.userId,
     userName: user
       ? `${user.firstName} ${user.lastName}`.trim()

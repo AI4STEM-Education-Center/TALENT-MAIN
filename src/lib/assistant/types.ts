@@ -3,7 +3,13 @@
 // components can import from here.
 
 import type { z } from "zod";
-import type { CoachActionView, CoachScope } from "./coach-types";
+import type { StudyActionRef } from "./study-recommendations";
+import type {
+  CoachActionRef,
+  CoachActionView,
+  CoachHistoryContext,
+  CoachScope,
+} from "./coach-types";
 
 /** The audiences an assistant can serve. The id doubles as the AssistantConfig row id. */
 export const ASSISTANT_AUDIENCES = [
@@ -112,7 +118,7 @@ export type AssistantTool<TSchema extends z.ZodType = z.ZodType> = {
  * the client now. Both are built by the tool, which has already validated them.
  */
 export type AssistantToolAction = {
-  stored: unknown;
+  stored: CoachActionRef | StudyActionRef;
   view: CoachActionView;
 };
 
@@ -214,9 +220,7 @@ export type AssistantTurn = {
    */
   attachmentIds?: string[];
   /**
-   * Assistant turns of a coach conversation: the stored action references the
-   * model emitted that turn (see coach-types.ts). Opaque here — the coach
-   * module validates and hydrates them; nothing else reads this field.
+   * Stored card references and interactions from an assistant turn.
    */
   actions?: unknown[];
 };
@@ -224,6 +228,9 @@ export type AssistantTurn = {
 /** One stored conversation as a history list renders it — metadata, no turns. */
 export type ConversationSummary = {
   id: string;
+  kind: "chat" | "coach";
+  coachResultId?: string | null;
+  coachQuestionNumber?: number | null;
   /** Derived from the opening message. */
   title: string;
   messageCount: number;
@@ -231,4 +238,13 @@ export type ConversationSummary = {
   createdAt: string;
   /** ISO-8601. */
   lastMessageAt: string;
+};
+
+/** GET /api/assistant/conversations/:id response. */
+export type AssistantConversationDetail = {
+  summary: ConversationSummary;
+  turns: (Omit<AssistantTurn, "actions"> & { cards: CoachActionView[] })[];
+  coach?: CoachHistoryContext;
+  readOnly?: boolean;
+  readOnlyReason?: string;
 };
