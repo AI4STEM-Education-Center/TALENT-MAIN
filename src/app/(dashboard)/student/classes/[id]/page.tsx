@@ -61,7 +61,7 @@ export default async function StudentClassPage({
   const quizIds = quizzes.map((q) => q.id);
 
   // Progress + completed-attempt counts (for the attempt cap) in parallel.
-  const [progressRecords, attemptGroups] = await Promise.all([
+  const [progressRecords, attemptGroups, practiceGroups] = await Promise.all([
     prisma.quizProgress.findMany({
       where: { studentId: student.id, classId: id, quizId: { in: quizIds } },
     }),
@@ -76,7 +76,17 @@ export default async function StudentClassPage({
       },
       _count: { _all: true },
     }),
+    // Published alternative versions, so a quiz whose graded attempts are used
+    // up can still send the student to practise.
+    prisma.quizPracticeVersion.groupBy({
+      by: ["quizId"],
+      where: { quizId: { in: quizIds }, status: "PUBLISHED" },
+      _count: { _all: true },
+    }),
   ]);
+  const practiceByQuiz = new Map(
+    practiceGroups.map((g) => [g.quizId, g._count._all]),
+  );
   const progressMap = new Map(progressRecords.map((p) => [p.quizId, p]));
   const attemptsByQuiz = new Map(
     attemptGroups.flatMap((g) => (g.quizId ? [[g.quizId, g._count._all]] : [])),
@@ -267,19 +277,40 @@ export default async function StudentClassPage({
                               </div>
                             </div>
                           </div>
-                          {locked ? (
+                          {notOpenYet || closed ? (
                             <Button
                               size="sm"
                               variant="secondary"
                               disabled
                               className="shrink-0"
                             >
-                              {notOpenYet
-                                ? "Not open"
-                                : closed
-                                  ? "Closed"
-                                  : "No attempts left"}
+                              {notOpenYet ? "Not open" : "Closed"}
                             </Button>
+                          ) : locked ? (
+                            // Graded attempts used up: alternatives stay open.
+                            (practiceByQuiz.get(quiz.id) ?? 0) > 0 ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                asChild
+                                className="shrink-0"
+                              >
+                                <Link
+                                  href={`/student/classes/${id}/quiz/${quiz.id}/practice`}
+                                >
+                                  Practice
+                                </Link>
+                              </Button>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                disabled
+                                className="shrink-0"
+                              >
+                                No attempts left
+                              </Button>
+                            )
                           ) : (
                             <Button
                               size="sm"
@@ -293,19 +324,10 @@ export default async function StudentClassPage({
                                 href={`/student/classes/${id}/quiz/${quiz.id}`}
                               >
                                 {status === "COMPLETED"
-                                  ? "Retry"
+                                  ? "Retake / Practice"
                                   : status === "IN_PROGRESS"
                                     ? "Continue"
                                     : "Start"}
-                              </Link>
-                            </Button>
-                          )}
-                          {!notOpenYet && !closed && (
-                            <Button size="sm" variant="outline" asChild>
-                              <Link
-                                href={`/student/classes/${id}/quiz/${quiz.id}/practice`}
-                              >
-                                Practice alternatives
                               </Link>
                             </Button>
                           )}

@@ -43,6 +43,7 @@ export function RecommendationCard({
   attemptId,
   audience = "student",
   telemetrySurface,
+  onOpen,
 }: {
   rec: PresignedRecommendation;
   /** The attempt that recommended this card; turns on the rating footer. */
@@ -51,6 +52,8 @@ export function RecommendationCard({
   audience?: "student" | "teacher";
   /** Where this results view lives; enables engagement telemetry. */
   telemetrySurface?: ResourceSurface;
+  /** Called each time the student opens the page viewer. */
+  onOpen?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const cover = rec.pages[0];
@@ -166,7 +169,10 @@ export function RecommendationCard({
       <div className="flex h-full flex-col rounded-xl border bg-card text-sm shadow-xs transition hover:border-primary/50 hover:shadow-md">
         <button
           type="button"
-          onClick={() => setOpen(true)}
+          onClick={() => {
+            setOpen(true);
+            onOpen?.();
+          }}
           aria-label={`Open ${rec.materialTitle}, ${pageRangeLabel(rec)}`}
           className="group flex flex-1 cursor-pointer flex-col rounded-t-xl p-4 text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
         >

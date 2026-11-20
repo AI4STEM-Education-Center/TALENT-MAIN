@@ -61,7 +61,14 @@ export function AssistantHistory({
                   item.id === conversationId && "bg-accent",
                 )}
               >
-                <span className="block truncate text-sm">{item.title}</span>
+                <span className="flex items-center gap-1.5">
+                  {item.kind === "coach" && (
+                    <span className="shrink-0 rounded-full bg-primary/10 px-1.5 py-px text-[10px] font-semibold text-primary">
+                      Question coach
+                    </span>
+                  )}
+                  <span className="min-w-0 truncate text-sm">{item.title}</span>
+                </span>
                 <span className="mt-0.5 block text-xs text-muted-foreground">
                   {formatWhen(item.lastMessageAt)} · {item.messageCount} message
                   {item.messageCount === 1 ? "" : "s"}
