@@ -86,6 +86,11 @@ const teacherNav: NavItem[] = [
     icon: <FileQuestion className="size-4" />,
   },
   {
+    href: "/teacher/coach-reviews",
+    label: "Coach Reviews",
+    icon: <ClipboardCheck className="size-4" />,
+  },
+  {
     href: "/teacher/messages",
     label: "Messages",
     icon: <MessageSquare className="size-4" />,
@@ -262,6 +267,16 @@ const adminNavGroups: NavGroup[] = [
         href: "/admin/assistant-chats",
         label: "Chat Transcripts",
         icon: <MessagesSquare className="size-4" />,
+      },
+      {
+        href: "/admin/coach-reviews",
+        label: "Coach Reviews",
+        icon: <ClipboardCheck className="size-4" />,
+      },
+      {
+        href: "/admin/coach-export",
+        label: "Coach Research Export",
+        icon: <FileUp className="size-4" />,
       },
     ],
   },

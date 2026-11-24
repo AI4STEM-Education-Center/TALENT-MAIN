@@ -61,6 +61,18 @@ function SheetContent({
   );
 }
 
+function SheetHeader({
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      className={cn("flex flex-col space-y-1.5 text-left", className)}
+      {...props}
+    />
+  );
+}
+
 const SheetTitle = DialogPrimitive.Title;
 const SheetDescription = DialogPrimitive.Description;
 
@@ -69,6 +81,7 @@ export {
   SheetTrigger,
   SheetClose,
   SheetContent,
+  SheetHeader,
   SheetOverlay,
   SheetTitle,
   SheetDescription,

@@ -1,8 +1,15 @@
 "use client";
 
-import { useCallback, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { MyFeedbackProvider } from "@/components/feedback/my-feedback";
 import { isResultPending, type StudentMistakeView } from "@/lib/exam-results";
+import type { CoachEligibilityItem } from "@/lib/wrong-answer-coach-types";
 import type { ResourceSurface } from "@/lib/resource-telemetry";
 import type { SimulationSurface } from "@/lib/simulation-telemetry";
 import { CoachStep } from "./post-quiz/CoachStep";
@@ -77,6 +84,32 @@ export function ExamResultsView({
   const ai = useStreamedResults(attemptId, initial);
   const recsPending = isResultPending(ai.recommendationsStatus);
 
+  const [coachEligibility, setCoachEligibility] = useState<
+    Record<number, CoachEligibilityItem>
+  >({});
+  const loadCoachEligibility = useCallback(async () => {
+    if (!attemptId || mistakes.length === 0) return;
+    try {
+      const res = await fetch(
+        `/api/student/attempts/${attemptId}/coach-eligibility`,
+      );
+      if (!res.ok) return;
+      const data = (await res.json()) as { items?: CoachEligibilityItem[] };
+      if (!Array.isArray(data.items)) return;
+      const next: Record<number, CoachEligibilityItem> = {};
+      for (const item of data.items) {
+        next[item.questionNumber] = item;
+      }
+      setCoachEligibility(next);
+    } catch {
+      // Best-effort: never disrupt the results page if eligibility fails.
+    }
+  }, [attemptId, mistakes.length]);
+
+  useEffect(() => {
+    void loadCoachEligibility();
+  }, [loadCoachEligibility]);
+
   const [active, setActive] = useState<GuidedStepId>("summary");
   const [visited, setVisited] = useState<ReadonlySet<GuidedStepId>>(
     () => new Set<GuidedStepId>(["summary"]),
@@ -141,6 +174,8 @@ export function ExamResultsView({
             }}
             engaged={engaged}
             onEngaged={markEngaged}
+            coachEligibility={coachEligibility}
+            onCoachStateChange={loadCoachEligibility}
             nextLabel={nextLabel}
             onFinish={advance}
           />

@@ -95,8 +95,8 @@ type BaseParams = Omit<
 >;
 
 export interface StreamOptions {
-  /** Forwarded to the SDK call (e.g. `{ maxRetries: 0 }` for local providers). */
-  requestOptions?: { maxRetries?: number };
+  /** Forwarded to the SDK call (e.g. `{ maxRetries: 0, signal }` for bounded calls). */
+  requestOptions?: { maxRetries?: number; signal?: AbortSignal };
   /**
    * Which endpoint to call. Defaults to "chat_completions" so an unannotated
    * call keeps its old behaviour; every real caller passes the resolved

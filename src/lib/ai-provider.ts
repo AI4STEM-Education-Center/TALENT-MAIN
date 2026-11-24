@@ -22,6 +22,11 @@ export const USE_CASES = [
   // src/lib/survey-extraction-engine.ts).
   "survey_extraction",
   "quiz_variants",
+  // Wrong Answer Coach: Check 2 explanation classification uses OpenAI's Decisions
+  // API (POST /v1/decisions, e.g. gpt-6-luna) and Task B tutoring uses a
+  // standard chat/responses model.
+  "wrong_answer_coach_classify",
+  "wrong_answer_coach_tutor",
   "simulation_chat",
   "simulation_generation",
   // The two chat assistants. Separate assignments on purpose: the student and
@@ -66,6 +71,15 @@ export function isUseCase(value: unknown): value is UseCase {
  * rejected by the provider, so the connection test has to ask the right one.
  */
 export const MODERATION_USE_CASES: readonly UseCase[] = ["moderation"];
+
+/**
+ * Use cases whose provider is called on OpenAI's POST /v1/decisions endpoint
+ * (structured choice/predicate/score classification, e.g. gpt-6-luna) rather
+ * than a free-form chat completion endpoint.
+ */
+export const DECISIONS_USE_CASES: readonly UseCase[] = [
+  "wrong_answer_coach_classify",
+];
 
 export type ProviderType = "openai" | "local" | "cloudflare";
 

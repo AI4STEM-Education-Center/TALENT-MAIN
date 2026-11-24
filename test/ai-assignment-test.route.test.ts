@@ -4,6 +4,15 @@ vi.mock("@/lib/auth", () => ({ auth: vi.fn() }));
 
 const moderationCreate = vi.fn();
 const chatStream = vi.fn();
+const decisionsCreate = vi.fn();
+
+vi.mock("@/lib/ai-decisions", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/ai-decisions")>();
+  return {
+    ...actual,
+    createDecisions: (...args: unknown[]) => decisionsCreate(...args),
+  };
+});
 
 vi.mock("@/lib/ai-provider", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/ai-provider")>();
@@ -50,6 +59,24 @@ beforeEach(() => {
   mockResolve.mockResolvedValue(PROVIDER as never);
   chatStream.mockResolvedValue({ text: "ok", metrics: { totalMs: 5 } });
   moderationCreate.mockResolvedValue({ results: [{ flagged: false }] });
+  decisionsCreate.mockResolvedValue({
+    id: "dec_test_1",
+    model: "gpt-6-luna",
+    answers: [
+      {
+        name: "check2_probe",
+        type: "choice",
+        choice: "sound",
+        confidence: 0.99,
+        probabilities: [
+          { value: "sound", probability: 0.99 },
+          { value: "neither", probability: 0.01 },
+        ],
+      },
+    ],
+    latencyMs: 12,
+    raw: {},
+  });
 });
 
 describe("/api/admin/ai-assignments/test", () => {

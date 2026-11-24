@@ -2,6 +2,8 @@ import type { Session } from "next-auth";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { QUESTION_ORDER } from "@/lib/question-order";
+import { computeQuestionSourceHash } from "@/lib/wrong-answer-coach-rules";
+import type { CoachOptionLabel } from "@/lib/wrong-answer-coach-types";
 
 // Ownership convention (mirrors prisma/schema.prisma): Quiz.teacherId/Topic.teacherId
 // NULL = global pool (admin-managed), non-null = private to that teacher.
@@ -109,7 +111,11 @@ export async function deepCopyQuiz(
     include: {
       topic: true,
       questions: {
-        include: { options: true, simulation: true },
+        include: {
+          options: { orderBy: { id: "asc" } },
+          simulation: true,
+          coachMetadata: true,
+        },
         orderBy: QUESTION_ORDER,
       },
     },
@@ -188,18 +194,78 @@ export async function deepCopyQuiz(
           figureStorageKey: question.figureStorageKey,
           figureBucket: question.figureBucket,
           figureAlt: question.figureAlt,
-          options: {
-            // Image answer-choices carry their (immutable, shared) crop key too.
-            create: question.options.map((o) => ({
-              text: o.text,
-              isCorrect: o.isCorrect,
-              imageStorageKey: o.imageStorageKey,
-              imageBucket: o.imageBucket,
-              imageAlt: o.imageAlt,
-            })),
-          },
         },
       });
+
+      // Create options individually so we capture an exact oldOptionId -> newOptionId
+      // map (used to remap copied QuestionCoachMetadata reliably).
+      const optionIdMap = new Map<string, string>();
+      for (const o of question.options) {
+        const createdOpt = await tx.option.create({
+          data: {
+            questionId: copied.id,
+            text: o.text,
+            isCorrect: o.isCorrect,
+            imageStorageKey: o.imageStorageKey,
+            imageBucket: o.imageBucket,
+            imageAlt: o.imageAlt,
+          },
+          select: { id: true },
+        });
+        optionIdMap.set(o.id, createdOpt.id);
+      }
+
+      // Carry over system-generated READY coach metadata only when its hash
+      // matches the current question content and all non-correct options remap cleanly.
+      const meta = question.coachMetadata;
+      if (meta && meta.status === "READY") {
+        const copiedHash = computeQuestionSourceHash({
+          text: question.text,
+          answerMode: question.answerMode,
+          figureStorageKey: question.figureStorageKey,
+          figureAlt: question.figureAlt,
+          options: question.options,
+        });
+        let remappedLabels: CoachOptionLabel[] | null = null;
+        if (meta.sourceHash === copiedHash) {
+          try {
+            const rawLabels = JSON.parse(
+              meta.optionLabelsJson,
+            ) as CoachOptionLabel[];
+            if (
+              Array.isArray(rawLabels) &&
+              rawLabels.every((entry) => optionIdMap.has(entry.optionId))
+            ) {
+              remappedLabels = rawLabels.map((entry) => ({
+                ...entry,
+                optionId: optionIdMap.get(entry.optionId)!,
+              }));
+            }
+          } catch {
+            remappedLabels = null;
+          }
+        }
+        if (
+          remappedLabels &&
+          remappedLabels.length === question.options.length
+        ) {
+          await tx.questionCoachMetadata.create({
+            data: {
+              questionId: copied.id,
+              status: "READY",
+              sourceHash: copiedHash,
+              optionLabelsJson: JSON.stringify(remappedLabels),
+              keyPointsJson: meta.keyPointsJson,
+              relevantMisconceptionsJson: meta.relevantMisconceptionsJson,
+              aiModel: meta.aiModel,
+              aiProvider: meta.aiProvider,
+              aiTokens: meta.aiTokens,
+              aiTotalMs: meta.aiTotalMs,
+              labeledAt: meta.labeledAt,
+            },
+          });
+        }
+      }
 
       // Carry the question's simulation along with the copy. Only settled
       // outcomes travel (READY, or DECLINED so the copy shows "not applicable"
