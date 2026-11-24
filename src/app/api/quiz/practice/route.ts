@@ -76,7 +76,7 @@ export async function GET(req: NextRequest) {
     );
   const [available, attempts, history, questionRows] = await Promise.all([
     prisma.quizPracticeVersion.count({
-      where: { quizId, status: "PUBLISHED" },
+      where: { quizId, status: "PUBLISHED", coachRole: "PRACTICE" },
     }),
     prisma.quizPracticeAttempt.findMany({
       where: {
@@ -141,7 +141,7 @@ export async function POST(req: NextRequest) {
     });
     if (active) return { attempt: active, exclusionIgnored: false };
     const versions = await tx.quizPracticeVersion.findMany({
-      where: { quizId, status: "PUBLISHED" },
+      where: { quizId, status: "PUBLISHED", coachRole: "PRACTICE" },
       orderBy: { createdAt: "asc" },
     });
     if (!versions.length) return null;

@@ -370,6 +370,11 @@ export async function generateQuizVariantSample(opts: {
   };
 }
 
+import {
+  ensureQuizCoachMetadata,
+  labelVariantQuestions,
+} from "./wrong-answer-coach-labeling";
+
 export async function runQuizVariant(versionId: string) {
   const row = await prisma.quizPracticeVersion.findUnique({
     where: { id: versionId },
@@ -639,9 +644,18 @@ export async function runQuizVariant(versionId: string) {
       }
 
       if (accepted.size === sources.length) {
+        let labeledQuestions = merged();
+        let coachLabeledAt: Date | null = null;
+        try {
+          const labeled = await labelVariantQuestions(labeledQuestions);
+          labeledQuestions = labeled.questions;
+          if (labeled.labeled) coachLabeledAt = new Date();
+        } catch {
+          // Worker sweeper will backfill labels before Coach serves this variant.
+        }
         const done = await write({
           status: "REVIEW",
-          questions: JSON.stringify(merged()),
+          questions: JSON.stringify(labeledQuestions),
           validation: JSON.stringify(acceptedReviews()),
           aiModel,
           aiTokens: tokens,
@@ -650,8 +664,10 @@ export async function runQuizVariant(versionId: string) {
           totalCount: sources.length,
           leaseToken: null,
           error: null,
+          ...(coachLabeledAt ? { coachLabeledAt } : {}),
         });
         if (!done) return;
+        void ensureQuizCoachMetadata(row.quizId).catch(() => {});
         finalStatus = "REVIEW";
         return;
       }

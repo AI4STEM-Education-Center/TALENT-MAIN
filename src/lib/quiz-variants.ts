@@ -20,6 +20,9 @@ export const variantQuestionSchema = z.object({
         id: z.string().min(1).max(200),
         text: z.string().trim().min(1).max(2000),
         isCorrect: z.boolean(),
+        // Auto-populated against the Misconception catalog for Wrong Answer Coach
+        // (null = no label; omitted on legacy variants until backfilled).
+        misconceptionCode: z.string().min(1).max(100).nullable().optional(),
       }),
     )
     .max(8),

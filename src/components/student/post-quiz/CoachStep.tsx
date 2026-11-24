@@ -1,13 +1,22 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
-import { Check, MessageCircleQuestion, XCircle } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import {
+  Check,
+  MessageCircleQuestion,
+  MessageSquare,
+  XCircle,
+} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { MathText } from "@/components/ui/math-text";
 import { useOptionalAssistant } from "@/components/assistant/assistant-context";
 import { CoachWorkspace } from "@/components/student/coach/WrongAnswerCoach";
+import { WrongAnswerCoachDrawer } from "@/components/student/WrongAnswerCoachDrawer";
 import { cn } from "@/lib/utils";
 import type { StudentMistakeView } from "@/lib/exam-results";
+import type { CoachEligibilityItem } from "@/lib/wrong-answer-coach-types";
 import { AdvanceButton, StepHeader } from "./GuidedChrome";
 
 /** Question 1 … N, with a tick on each one the student has worked through. */
@@ -166,6 +175,8 @@ export function CoachStep({
   onIndexChange,
   engaged,
   onEngaged,
+  coachEligibility,
+  onCoachStateChange,
   nextLabel,
   onFinish,
 }: {
@@ -175,6 +186,8 @@ export function CoachStep({
   onIndexChange: (index: number) => void;
   engaged: ReadonlySet<number>;
   onEngaged: (questionNumber: number) => void;
+  coachEligibility?: Record<number, CoachEligibilityItem>;
+  onCoachStateChange?: () => void;
   /** The button label on the last question (the step after this one). */
   nextLabel: string;
   onFinish: () => void;
@@ -186,6 +199,8 @@ export function CoachStep({
   const questionNumber = current.questionNumber;
   const isLast = index >= mistakes.length - 1;
   const hasEngaged = engaged.has(questionNumber);
+  const diagnosticItem = coachEligibility?.[questionNumber];
+  const [diagnosticDrawerOpen, setDiagnosticDrawerOpen] = useState(false);
 
   const target = useMemo(
     () => ({ attemptId, questionNumber }),
@@ -225,6 +240,60 @@ export function CoachStep({
         engaged={engaged}
         onSelect={onIndexChange}
       />
+
+      {diagnosticItem?.eligible && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/40 px-4 py-3 text-sm">
+          <div className="space-y-0.5">
+            <p className="font-medium">Diagnostic Wrong Answer Coach</p>
+            <p className="text-xs text-muted-foreground">
+              Walk through a quick structured check on Q{questionNumber} to
+              pinpoint what went wrong and unlock a tailored explanation.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {diagnosticItem.sessionStatus === "COMPLETED" && (
+              <Badge variant="success">Reviewed</Badge>
+            )}
+            <Button
+              size="sm"
+              variant={
+                diagnosticItem.sessionStatus === "COMPLETED"
+                  ? "outline"
+                  : "default"
+              }
+              onClick={() => {
+                onEngaged(questionNumber);
+                setDiagnosticDrawerOpen(true);
+              }}
+            >
+              <MessageSquare className="size-3.5" />
+              {diagnosticItem.sessionStatus === "COMPLETED"
+                ? "View explanation"
+                : diagnosticItem.sessionStatus === "IN_PROGRESS"
+                  ? "Resume diagnostic chat"
+                  : diagnosticItem.sessionStatus === "INCOMPLETE"
+                    ? "View saved chat"
+                    : "Start diagnostic chat"}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {diagnosticItem?.eligible && diagnosticDrawerOpen && (
+        <WrongAnswerCoachDrawer
+          open
+          onOpenChange={(open) => {
+            if (!open) setDiagnosticDrawerOpen(false);
+          }}
+          attemptId={attemptId}
+          questionId={diagnosticItem.questionId}
+          questionNumber={questionNumber}
+          onStateChange={() => {
+            onEngaged(questionNumber);
+            onCoachStateChange?.();
+          }}
+        />
+      )}
 
       {coachOn ? (
         <Card className="relative flex h-[min(80dvh,760px)] min-h-[520px] flex-col overflow-hidden">

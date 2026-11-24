@@ -28,6 +28,43 @@ import {
   type ManagedVariantQuiz,
   type VariantRouteContext,
 } from "@/lib/quiz-variant-sources";
+import {
+  computeQuestionSourceHash,
+  isSupportedCoachQuestionShape,
+} from "@/lib/wrong-answer-coach-rules";
+import {
+  ensureQuizCoachMetadata,
+  labelVariantQuestions,
+} from "@/lib/wrong-answer-coach-labeling";
+
+function countMatchingEligibleQuestions(
+  version: { sourceSnapshot: string; questions: string } | null,
+  eligibleWithHash: Array<{ id: string; hash: string }>,
+): number {
+  if (!version || eligibleWithHash.length === 0) return 0;
+  try {
+    const sources = JSON.parse(version.sourceSnapshot) as VariantQuestion[];
+    const vQuestions = JSON.parse(version.questions) as VariantQuestion[];
+    const vBySource = new Set(vQuestions.map((q) => q.sourceQuestionId));
+    let matched = 0;
+    for (const eq of eligibleWithHash) {
+      if (!vBySource.has(eq.id)) continue;
+      const snap = sources.find(
+        (s) => s.id === eq.id || s.sourceQuestionId === eq.id,
+      );
+      if (!snap) continue;
+      const snapHash = computeQuestionSourceHash({
+        text: snap.text,
+        answerMode: snap.answerMode,
+        options: snap.options,
+      });
+      if (snapHash === eq.hash) matched += 1;
+    }
+    return matched;
+  } catch {
+    return 0;
+  }
+}
 
 /** Drafts generating at once per quiz; bounds provider bursts and cost. */
 const MAX_IN_FLIGHT = 8;
@@ -71,17 +108,67 @@ export async function GET(req: NextRequest, context: Context) {
     ...(batchId ? {} : { take: 120 }),
   });
   // A standalone exam may since have been deleted; only link live ones.
-  const standalone = await prisma.quiz.findMany({
-    where: {
-      id: {
-        in: versions.flatMap((v) =>
-          v.standaloneQuizId ? [v.standaloneQuizId] : [],
-        ),
+  const eligibleQuestions = quiz.questions.filter(
+    (q) =>
+      isSupportedCoachQuestionShape({
+        answerMode: q.answerMode,
+        figureStorageKey: q.figureStorageKey,
+        options: q.options,
+      }).ok,
+  );
+  const [standalone, coachMetaRows] = await Promise.all([
+    prisma.quiz.findMany({
+      where: {
+        id: {
+          in: versions.flatMap((v) =>
+            v.standaloneQuizId ? [v.standaloneQuizId] : [],
+          ),
+        },
       },
-    },
-    select: { id: true, name: true },
-  });
+      select: { id: true, name: true },
+    }),
+    eligibleQuestions.length > 0
+      ? prisma.questionCoachMetadata.findMany({
+          where: { questionId: { in: eligibleQuestions.map((q) => q.id) } },
+          select: { questionId: true, status: true, sourceHash: true },
+        })
+      : Promise.resolve([]),
+  ]);
   const standaloneById = new Map(standalone.map((q) => [q.id, q]));
+  const metaByQ = new Map(coachMetaRows.map((m) => [m.questionId, m]));
+
+  const eligibleWithHash = eligibleQuestions.map((q) => ({
+    id: q.id,
+    hash: computeQuestionSourceHash({
+      text: q.text,
+      answerMode: q.answerMode,
+      figureStorageKey: q.figureStorageKey,
+      figureAlt: q.figureAlt,
+      options: q.options,
+    }),
+    coachMetadata: metaByQ.get(q.id) ?? null,
+  }));
+  const metadataReadyCount = eligibleWithHash.filter(
+    (q) =>
+      q.coachMetadata?.status === "READY" &&
+      q.coachMetadata.sourceHash === q.hash,
+  ).length;
+  const published = versions.filter((v) => v.status === "PUBLISHED");
+  const check3 = published.find((v) => v.coachRole === "COACH_CHECK3") ?? null;
+  const heldOut =
+    published.find((v) => v.coachRole === "COACH_HELDOUT") ?? null;
+  const check3MatchedCount = countMatchingEligibleQuestions(
+    check3,
+    eligibleWithHash,
+  );
+  const heldOutMatchedCount = countMatchingEligibleQuestions(
+    heldOut,
+    eligibleWithHash,
+  );
+  const matchedQuestionCount = Math.min(
+    check3MatchedCount,
+    heldOutMatchedCount,
+  );
   return NextResponse.json({
     quizName: quiz.name,
     versions: versions.map((v) => ({
@@ -101,6 +188,21 @@ export async function GET(req: NextRequest, context: Context) {
       completedCount: v.completedCount,
       totalCount: v.totalCount,
     })),
+    coachReadiness: {
+      eligibleQuestionCount: eligibleQuestions.length,
+      metadataReadyCount,
+      matchedQuestionCount,
+      check3VersionId: check3?.id ?? null,
+      check3Labeled: Boolean(check3?.coachLabeledAt),
+      heldOutVersionId: heldOut?.id ?? null,
+      heldOutLabeled: Boolean(heldOut?.coachLabeledAt),
+      ready:
+        eligibleQuestions.length > 0 &&
+        matchedQuestionCount > 0 &&
+        metadataReadyCount === eligibleQuestions.length &&
+        Boolean(check3?.coachLabeledAt) &&
+        Boolean(heldOut?.coachLabeledAt),
+    },
   });
 }
 
@@ -341,7 +443,9 @@ const changeSchema = z.object({
     "standalone",
     "revise_batch",
     "publish_batch",
+    "set_coach_role",
   ]),
+  coachRole: z.enum(["PRACTICE", "COACH_CHECK3", "COACH_HELDOUT"]).optional(),
   questions: z.unknown().optional(),
   feedback: feedbackSchema.optional(),
   questionRevisions: questionRevisionListSchema.optional(),
@@ -371,6 +475,7 @@ const FROM: Record<SingleAction, string[]> = {
   retry: ["FAILED"],
   discard: ["REVIEW", "FAILED"],
   revise: ["REVIEW", "FAILED"],
+  set_coach_role: ["PUBLISHED"],
 };
 const REVISABLE = ["REVIEW", "FAILED"];
 const conflict = () =>
@@ -571,6 +676,144 @@ export async function PATCH(req: NextRequest, context: Context) {
   });
   if (!version)
     return NextResponse.json({ error: "Version not found" }, { status: 404 });
+  if (action === "set_coach_role") {
+    const coachRole = body.data.coachRole;
+    if (!coachRole) {
+      return NextResponse.json(
+        { error: "coachRole is required." },
+        { status: 400 },
+      );
+    }
+    if (version.status !== "PUBLISHED") {
+      return NextResponse.json(
+        {
+          error:
+            "Only published versions can be assigned to Wrong Answer Coach.",
+        },
+        { status: 409 },
+      );
+    }
+
+    if (coachRole !== "PRACTICE") {
+      const priorPracticeCount = await prisma.quizPracticeAttempt.count({
+        where: { versionId },
+      });
+      if (priorPracticeCount > 0) {
+        return NextResponse.json(
+          {
+            error:
+              "This version already has student practice attempts and cannot be used for Wrong Answer Coach. Publish a fresh version instead.",
+          },
+          { status: 409 },
+        );
+      }
+
+      const eligibleWithHash = quiz.questions
+        .filter(
+          (q) =>
+            isSupportedCoachQuestionShape({
+              answerMode: q.answerMode,
+              figureStorageKey: q.figureStorageKey,
+              options: q.options,
+            }).ok,
+        )
+        .map((q) => ({
+          id: q.id,
+          hash: computeQuestionSourceHash({
+            text: q.text,
+            answerMode: q.answerMode,
+            figureStorageKey: q.figureStorageKey,
+            figureAlt: q.figureAlt,
+            options: q.options,
+          }),
+        }));
+      const matchedCount = countMatchingEligibleQuestions(
+        version,
+        eligibleWithHash,
+      );
+      if (matchedCount === 0) {
+        return NextResponse.json(
+          {
+            error:
+              "This version is out of date with the current quiz questions. Generate and publish a fresh alternative set first.",
+          },
+          { status: 400 },
+        );
+      }
+    }
+
+    const versionsReturningToPractice: string[] = [];
+    if (coachRole === "PRACTICE" && version.coachRole !== "PRACTICE") {
+      versionsReturningToPractice.push(versionId);
+    } else if (coachRole !== "PRACTICE") {
+      const displaced = await prisma.quizPracticeVersion.findMany({
+        where: { quizId: quiz.id, coachRole, id: { not: versionId } },
+        select: { id: true },
+      });
+      versionsReturningToPractice.push(...displaced.map((d) => d.id));
+    }
+    if (versionsReturningToPractice.length > 0) {
+      const activeSessions = await prisma.wrongAnswerCoachSession.count({
+        where: {
+          state: { notIn: ["COMPLETED", "INCOMPLETE"] },
+          OR: [
+            { check3VersionId: { in: versionsReturningToPractice } },
+            { heldOutVersionId: { in: versionsReturningToPractice } },
+          ],
+        },
+      });
+      if (activeSessions > 0) {
+        return NextResponse.json(
+          {
+            error:
+              "Cannot move a Coach version back to Practice while students have active Wrong Answer Coach sessions using it.",
+          },
+          { status: 409 },
+        );
+      }
+    }
+
+    await prisma.$transaction(async (tx) => {
+      if (coachRole !== "PRACTICE") {
+        await tx.quizPracticeVersion.updateMany({
+          where: { quizId: quiz.id, coachRole, id: { not: versionId } },
+          data: { coachRole: "PRACTICE" },
+        });
+      }
+      await tx.quizPracticeVersion.update({
+        where: { id: versionId },
+        data: { coachRole },
+      });
+    });
+    if (coachRole !== "PRACTICE") {
+      void ensureQuizCoachMetadata(quiz.id).catch(() => {});
+      if (!version.coachLabeledAt) {
+        void (async () => {
+          try {
+            const parsed = JSON.parse(version.questions) as VariantQuestion[];
+            const { questions: labeledQs, labeled } =
+              await labelVariantQuestions(parsed);
+            if (labeled) {
+              await prisma.quizPracticeVersion.updateMany({
+                where: { id: versionId, coachLabeledAt: null },
+                data: {
+                  questions: JSON.stringify(labeledQs),
+                  coachLabeledAt: new Date(),
+                },
+              });
+            }
+          } catch {
+            // Worker sweeper will retry.
+          }
+        })();
+      }
+    }
+    return NextResponse.json({
+      id: versionId,
+      status: version.status,
+      coachRole,
+    });
+  }
   if (
     !FROM[action].includes(version.status) ||
     (action === "edit" &&
@@ -673,12 +916,14 @@ export async function PATCH(req: NextRequest, context: Context) {
     data: {
       status,
       error: null,
+      ...(action === "retire" ? { coachRole: "PRACTICE" } : {}),
       ...(questions
         ? {
             questions: JSON.stringify(questions),
             validation: null,
             teacherEdited: true,
             completedCount: 0,
+            coachLabeledAt: null,
           }
         : {}),
       // A fresh retry regenerates from scratch; a teacher edit is re-verified.
@@ -686,6 +931,7 @@ export async function PATCH(req: NextRequest, context: Context) {
         ? {
             validation: null,
             completedCount: 0,
+            coachLabeledAt: null,
             ...(version.teacherEdited ? {} : { questions: "[]" }),
           }
         : {}),

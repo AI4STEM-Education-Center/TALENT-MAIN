@@ -17,6 +17,16 @@ import {
   type Version,
 } from "./quiz-variant-types";
 
+type CoachReadiness = {
+  eligibleQuestionCount: number;
+  metadataReadyCount: number;
+  matchedQuestionCount?: number;
+  check3VersionId: string | null;
+  check3Labeled: boolean;
+  heldOutVersionId: string | null;
+  heldOutLabeled: boolean;
+  ready: boolean;
+};
 async function request(url: string, method = "GET", body?: unknown) {
   const response = await fetch(url, {
     method,
@@ -39,10 +49,17 @@ async function request(url: string, method = "GET", body?: unknown) {
 /** Load the quiz's versions, polling while any draft is still generating. */
 function useVariantVersions(url: string) {
   const [versions, setVersions] = useState<Version[] | null>(null);
+  const [coachReadiness, setCoachReadiness] = useState<CoachReadiness | null>(
+    null,
+  );
   const [error, setError] = useState("");
   const refresh = useCallback(async () => {
     try {
-      setVersions((await request(url)).versions as Version[]);
+      const payload = await request(url);
+      setVersions(payload.versions as Version[]);
+      setCoachReadiness(
+        (payload.coachReadiness as CoachReadiness | undefined) ?? null,
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not load versions.");
     }
@@ -56,7 +73,7 @@ function useVariantVersions(url: string) {
     const timer = setInterval(() => void refresh(), 4000);
     return () => clearInterval(timer);
   }, [generating, refresh]);
-  return { versions, error, setError, refresh, generating };
+  return { versions, coachReadiness, error, setError, refresh, generating };
 }
 
 export function QuizVariants({
@@ -70,7 +87,7 @@ export function QuizVariants({
   quizHrefBase: string;
 }) {
   const url = `/api/quizzes/${quizId}/variants`;
-  const { versions, error, setError, refresh, generating } =
+  const { versions, coachReadiness, error, setError, refresh, generating } =
     useVariantVersions(url);
   const [busy, setBusy] = useState(false);
   const [choosing, setChoosing] = useState(false);
@@ -146,6 +163,60 @@ export function QuizVariants({
           version
         </Button>
       </div>
+      {coachReadiness && coachReadiness.eligibleQuestionCount > 0 && (
+        <div
+          className="rounded-lg border bg-muted/30 px-3 py-2 text-xs text-muted-foreground flex flex-wrap items-center justify-between gap-2"
+          role="status"
+        >
+          <span>
+            <strong className="text-foreground">Wrong Answer Coach:</strong>{" "}
+            {coachReadiness.ready
+              ? "Active — Check 3 and Held-Out sets are published and auto-labeled."
+              : "Publish two sets and assign one as Coach Check 3 and one as Coach Held-Out below to enable diagnostic coaching."}
+          </span>
+          <div className="flex flex-wrap gap-1.5">
+            <Badge
+              variant={
+                coachReadiness.check3VersionId && coachReadiness.check3Labeled
+                  ? "success"
+                  : "secondary"
+              }
+            >
+              Check 3:{" "}
+              {coachReadiness.check3VersionId
+                ? coachReadiness.check3Labeled
+                  ? "Ready"
+                  : "Labeling…"
+                : "Needed"}
+            </Badge>
+            <Badge
+              variant={
+                coachReadiness.heldOutVersionId && coachReadiness.heldOutLabeled
+                  ? "success"
+                  : "secondary"
+              }
+            >
+              Held-Out:{" "}
+              {coachReadiness.heldOutVersionId
+                ? coachReadiness.heldOutLabeled
+                  ? "Ready"
+                  : "Labeling…"
+                : "Needed"}
+            </Badge>
+            <Badge
+              variant={
+                coachReadiness.metadataReadyCount >=
+                coachReadiness.eligibleQuestionCount
+                  ? "success"
+                  : "secondary"
+              }
+            >
+              Auto-labels: {coachReadiness.metadataReadyCount}/
+              {coachReadiness.eligibleQuestionCount}
+            </Badge>
+          </div>
+        </div>
+      )}
       {error && (
         <p role="alert" className="text-sm text-destructive">
           {error}
@@ -422,14 +493,49 @@ function SavedVersions({
               </Badge>
             </span>
             {v.status === "PUBLISHED" && (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={busy}
-                onClick={() => void act({ versionId: v.id, action: "retire" })}
-              >
-                Retire
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span>Role:</span>
+                  <select
+                    aria-label={`Wrong Answer Coach role for ${v.name}`}
+                    disabled={busy}
+                    value={v.coachRole ?? "PRACTICE"}
+                    onChange={(e) =>
+                      void act({
+                        versionId: v.id,
+                        action: "set_coach_role",
+                        coachRole: e.target.value,
+                      })
+                    }
+                    className="rounded-md border border-input bg-background px-2 py-1 text-xs text-foreground"
+                  >
+                    <option value="PRACTICE">Practice (default)</option>
+                    <option value="COACH_CHECK3">
+                      Wrong Answer Coach — 2nd Q (Check 3)
+                    </option>
+                    <option value="COACH_HELDOUT">
+                      Wrong Answer Coach — Held-Out Q
+                    </option>
+                  </select>
+                </label>
+                {v.coachRole && v.coachRole !== "PRACTICE" && (
+                  <span className="text-xs text-muted-foreground">
+                    {v.coachLabeledAt
+                      ? "Hidden from Practice · auto-labeled"
+                      : "Hidden from Practice · labeling…"}
+                  </span>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() =>
+                    void act({ versionId: v.id, action: "retire" })
+                  }
+                >
+                  Retire
+                </Button>
+              </div>
             )}
             {v.standaloneQuiz && (
               <Link

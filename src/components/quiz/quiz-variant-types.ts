@@ -30,6 +30,8 @@ export type Version = {
   name: string;
   variation: string;
   status: string;
+  coachRole?: "PRACTICE" | "COACH_CHECK3" | "COACH_HELDOUT";
+  coachLabeledAt?: string | null;
   purpose: string;
   batchId: string | null;
   slotIndex?: number;

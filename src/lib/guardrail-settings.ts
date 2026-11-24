@@ -38,6 +38,7 @@ export const GUARDRAIL_SURFACES = [
   "question_authoring",
   "extraction_commit",
   "question_import",
+  "wrong_answer_coach",
 ] as const;
 
 export type GuardrailSurface = (typeof GUARDRAIL_SURFACES)[number];
@@ -63,6 +64,7 @@ export const GUARDRAIL_SURFACE_LABELS: Record<GuardrailSurface, string> = {
   question_authoring: "Question authoring",
   extraction_commit: "Quiz PDF — commit to questions",
   question_import: "QTI question import",
+  wrong_answer_coach: "Wrong Answer Coach — student explanation",
 };
 
 export interface GuardrailSettings extends GuardrailPolicy {

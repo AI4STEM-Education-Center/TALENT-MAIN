@@ -146,6 +146,9 @@ const USE_CASE_LABELS: Record<UseCase, string> = {
   // Falls back to the Quiz PDF Extraction model when left unassigned.
   survey_extraction: "Research Survey PDF Extraction",
   quiz_variants: "Alternative Quiz Versions",
+  wrong_answer_coach_classify:
+    "Wrong Answer Coach — Explanation Classifier (Decisions API)",
+  wrong_answer_coach_tutor: "Wrong Answer Coach — Tutoring Message",
   simulation_chat: "Simulation Editing Chat",
   simulation_generation: "Question Simulation Generation",
   // The chat assistants take image input, so these two want a vision-capable
@@ -1381,12 +1384,23 @@ export default function AiConfigPage() {
             const effective = getEffectiveAssignment(useCase);
             const selectedModels = getModelsForProvider(effective.providerId);
             const test = testResults[useCase];
+            const isDecisionsUseCase =
+              useCase === "wrong_answer_coach_classify";
+            const isModerationUseCase = useCase === "moderation";
+            const hideThinkingLevel = isDecisionsUseCase || isModerationUseCase;
 
             return (
               <Card key={useCase}>
                 <CardContent className="pt-6">
                   <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-medium text-sm">{label}</h3>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="font-medium text-sm">{label}</h3>
+                      {isDecisionsUseCase && (
+                        <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                          POST /v1/decisions
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-2">
                       {assignments[useCase] && (
                         <button
@@ -1411,7 +1425,19 @@ export default function AiConfigPage() {
                     </div>
                   </div>
 
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {isDecisionsUseCase && (
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Uses OpenAI&apos;s Decisions API (e.g.{" "}
+                      <code className="font-mono">gpt-6-luna</code>) for fast,
+                      fixed-choice Check 2 classification and batch distractor
+                      labeling with calibrated probabilities. Pin one model
+                      version for the duration of a study.
+                    </p>
+                  )}
+
+                  <div
+                    className={`grid gap-3 sm:grid-cols-2 ${hideThinkingLevel ? "" : "lg:grid-cols-3"}`}
+                  >
                     <div>
                       <label
                         id={`provider-label-${useCase}`}
@@ -1507,44 +1533,46 @@ export default function AiConfigPage() {
                         </SelectContent>
                       </Select>
                     </div>
-                    <div>
-                      <label
-                        id={`thinking-label-${useCase}`}
-                        htmlFor={`thinking-select-${useCase}`}
-                        className="flex items-center gap-1 text-xs font-medium text-muted-foreground mb-1"
-                      >
-                        <Brain className="size-3" /> Thinking Level
-                      </label>
-                      <Select
-                        aria-labelledby={`thinking-label-${useCase}`}
-                        value={effective.thinkingLevel || "unset"}
-                        onValueChange={(v) =>
-                          handleAssignmentChange(
-                            useCase,
-                            "thinkingLevel",
-                            v === "unset" ? "" : v,
-                          )
-                        }
-                        disabled={!effective.modelId}
-                      >
-                        <SelectTrigger
-                          id={`thinking-select-${useCase}`}
-                          className="h-9"
+                    {!hideThinkingLevel && (
+                      <div>
+                        <label
+                          id={`thinking-label-${useCase}`}
+                          htmlFor={`thinking-select-${useCase}`}
+                          className="flex items-center gap-1 text-xs font-medium text-muted-foreground mb-1"
                         >
-                          <SelectValue placeholder="No thinking level" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {/* Unset is the safe default: models that don't take
+                          <Brain className="size-3" /> Thinking Level
+                        </label>
+                        <Select
+                          aria-labelledby={`thinking-label-${useCase}`}
+                          value={effective.thinkingLevel || "unset"}
+                          onValueChange={(v) =>
+                            handleAssignmentChange(
+                              useCase,
+                              "thinkingLevel",
+                              v === "unset" ? "" : v,
+                            )
+                          }
+                          disabled={!effective.modelId}
+                        >
+                          <SelectTrigger
+                            id={`thinking-select-${useCase}`}
+                            className="h-9"
+                          >
+                            <SelectValue placeholder="No thinking level" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {/* Unset is the safe default: models that don't take
                               reasoning_effort reject the field outright. */}
-                          <SelectItem value="unset"> - Not set - </SelectItem>
-                          {THINKING_LEVEL_OPTIONS.map((level) => (
-                            <SelectItem key={level} value={level}>
-                              {level}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                            <SelectItem value="unset"> - Not set - </SelectItem>
+                            {THINKING_LEVEL_OPTIONS.map((level) => (
+                              <SelectItem key={level} value={level}>
+                                {level}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
                   </div>
 
                   {/* Test result */}

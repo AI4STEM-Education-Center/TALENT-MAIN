@@ -16,6 +16,8 @@ import {
   questionDeleteSchema,
 } from "@/lib/question-input";
 import { QUESTION_ORDER, nextQuestionOrder } from "@/lib/question-order";
+import { computeQuestionSourceHash } from "@/lib/wrong-answer-coach-rules";
+import { markQuestionCoachMetadataStale } from "@/lib/wrong-answer-coach-labeling";
 
 const badRequest = (error: string) =>
   NextResponse.json({ error }, { status: 400 });
@@ -181,10 +183,21 @@ export async function PATCH(req: NextRequest) {
           });
       }
     }
-    return tx.question.findUnique({
+    const refreshed = await tx.question.findUnique({
       where: { id: existing.id },
-      include: { options: true },
+      include: { options: { orderBy: { id: "asc" } } },
     });
+    if (refreshed) {
+      const newHash = computeQuestionSourceHash({
+        text: refreshed.text,
+        answerMode: refreshed.answerMode,
+        figureStorageKey: refreshed.figureStorageKey,
+        figureAlt: refreshed.figureAlt,
+        options: refreshed.options,
+      });
+      await markQuestionCoachMetadataStale(tx, existing.id, newHash);
+    }
+    return refreshed;
   });
   return NextResponse.json(updated);
 }
