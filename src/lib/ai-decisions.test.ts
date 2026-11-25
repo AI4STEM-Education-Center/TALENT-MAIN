@@ -68,7 +68,7 @@ describe("ai-decisions", () => {
   });
 
   describe("serializeDecisionsBody", () => {
-    it("includes store: false when requested and serializes choice questions", () => {
+    it("serializes string and object choices as wire objects without a store parameter", () => {
       const body = serializeDecisionsBody({
         model: "gpt-6-luna",
         input: "Explain your work",
@@ -77,24 +77,29 @@ describe("ai-decisions", () => {
             name: "check2",
             type: "choice",
             instructions: "Classify",
-            choices: ["sound", "neither"],
+            choices: [
+              "sound",
+              { value: "neither", description: "Unclear or off-topic" },
+            ],
           },
         ],
-        store: false,
       });
-      expect(body.store).toBe(false);
+      expect("store" in body).toBe(false);
       expect(body.model).toBe("gpt-6-luna");
       expect(body.questions).toEqual([
         {
           name: "check2",
           type: "choice",
           instructions: "Classify",
-          choices: ["sound", "neither"],
+          choices: [
+            { value: "sound" },
+            { value: "neither", description: "Unclear or off-topic" },
+          ],
         },
       ]);
     });
 
-    it("omits store when not explicitly false", () => {
+    it("serializes predicate and score level objects properly", () => {
       const body = serializeDecisionsBody({
         model: "gpt-6-luna",
         input: "Text",
@@ -104,9 +109,31 @@ describe("ai-decisions", () => {
             type: "predicate",
             instructions: "Is this valid?",
           },
+          {
+            name: "q2",
+            type: "score",
+            instructions: "Rate clarity",
+            levels: ["low", { label: "high", description: "Clear and exact" }],
+          },
         ],
       });
       expect("store" in body).toBe(false);
+      expect(body.questions).toEqual([
+        {
+          name: "q1",
+          type: "predicate",
+          instructions: "Is this valid?",
+        },
+        {
+          name: "q2",
+          type: "score",
+          instructions: "Rate clarity",
+          levels: [
+            { label: "low" },
+            { label: "high", description: "Clear and exact" },
+          ],
+        },
+      ]);
     });
   });
 
@@ -158,6 +185,52 @@ describe("ai-decisions", () => {
       expect(first.probabilities[0]).toEqual({
         value: "sound",
         probability: 0.85,
+      });
+    });
+
+    it("parses predicate answers without an explicit boolean value and score answers with probabilities", () => {
+      const answers = parseDecisionsPayload({
+        answers: [
+          {
+            name: "is_sound",
+            type: "predicate",
+            probability: 0.92,
+          },
+          {
+            name: "is_off_topic",
+            type: "predicate",
+            probability: 0.12,
+          },
+          {
+            name: "clarity",
+            type: "score",
+            score: 2.0,
+            confidence: 0.95,
+            probabilities: [
+              { value: 0, label: "low", probability: 0.0 },
+              { value: 1, label: "medium", probability: 0.05 },
+              { value: 2, label: "high", probability: 0.95 },
+            ],
+          },
+        ],
+      });
+      expect(answers[0]).toMatchObject({
+        name: "is_sound",
+        type: "predicate",
+        value: true,
+        probability: 0.92,
+      });
+      expect(answers[1]).toMatchObject({
+        name: "is_off_topic",
+        type: "predicate",
+        value: false,
+        probability: 0.12,
+      });
+      expect(answers[2]).toMatchObject({
+        name: "clarity",
+        type: "score",
+        score: 2.0,
+        confidence: 0.95,
       });
     });
 
@@ -239,7 +312,6 @@ describe("ai-decisions", () => {
               choices: ["ok", "other"],
             },
           ],
-          store: false,
         },
         { fetchImpl: fetchMock as unknown as typeof fetch },
       );
@@ -251,6 +323,12 @@ describe("ai-decisions", () => {
       expect((init.headers as Record<string, string>).Authorization).toBe(
         "Bearer sk-test-key",
       );
+      const sentBody = JSON.parse(init.body as string);
+      expect("store" in sentBody).toBe(false);
+      expect(sentBody.questions[0].choices).toEqual([
+        { value: "ok" },
+        { value: "other" },
+      ]);
       expect((res.answers[0] as DecisionsChoiceAnswer).choice).toBe("ok");
     });
 

@@ -77,10 +77,16 @@ async function main() {
         type: "choice",
         instructions:
           "Classify the explanation as 'sound' (correct physics), 'M12' (zero velocity means zero acceleration), or 'neither'.",
-        choices: ["sound", "neither", "M12"],
+        choices: [
+          { value: "sound", description: "Correct physics" },
+          { value: "neither", description: "Neither sound nor M12" },
+          {
+            value: "M12",
+            description: "Zero velocity means zero acceleration",
+          },
+        ],
       },
     ],
-    store: false,
   });
 
   const probeAns = probe.answers[0];
@@ -93,7 +99,23 @@ async function main() {
 
   // 2. 5-run parallel Check 2 stability check
   const allowedCodes = ["M12", "M7"];
-  const choices = ["sound", "neither", ...allowedCodes];
+  const choices = [
+    { value: "sound", description: "Correct physics" },
+    {
+      value: "neither",
+      description: "Neither sound nor a listed misconception",
+    },
+    {
+      value: "M12",
+      description:
+        "A moving object requires a force in the direction of motion.",
+    },
+    {
+      value: "M7",
+      description:
+        "Zero velocity implies zero net force and zero acceleration.",
+    },
+  ];
   const sampleInput =
     "Question: A ball is thrown straight up. At its highest point, what forces act on it?\n" +
     "Correct answer: Only gravity downward.\n" +
@@ -116,7 +138,6 @@ async function main() {
             choices,
           },
         ],
-        store: false,
       });
       const ans = res.answers[0];
       const choice = ans?.type === "choice" ? ans.choice : "";
@@ -153,6 +174,9 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error("[Decisions Live Test FAILED]", err instanceof Error ? err.message : err);
+  console.error(
+    "[Decisions Live Test FAILED]",
+    err instanceof Error ? err.message : err,
+  );
   process.exit(1);
 });

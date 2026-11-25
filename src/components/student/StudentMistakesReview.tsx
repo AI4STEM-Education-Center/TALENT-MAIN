@@ -86,7 +86,7 @@ export function StudentMistakesReview({
                   </p>
                 </div>
 
-                {coachAttemptId && (
+                {coachAttemptId && !coachItem?.eligible && (
                   <div className="ml-6">
                     <WrongAnswerCoachSlot
                       attemptId={coachAttemptId}

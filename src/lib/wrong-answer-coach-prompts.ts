@@ -53,8 +53,22 @@ export function buildCheck2DecisionsRequest(
   const canonicalOptions = [...input.options].sort((a, b) =>
     a.localeCompare(b),
   );
-  const allowedCodes = input.relevantMisconceptions.map((m) => m.code);
-  const choices = ["sound", "neither", ...allowedCodes];
+  const choices = [
+    {
+      value: "sound",
+      description:
+        "Explanation uses the correct physics idea (even if a misreading or calculation slip occurred).",
+    },
+    {
+      value: "neither",
+      description:
+        "Empty, guess ('I don't know'), off-topic, too vague to judge, or matches none of the listed misconceptions.",
+    },
+    ...input.relevantMisconceptions.map((m) => ({
+      value: m.code,
+      description: m.statement,
+    })),
+  ];
 
   const questionBlock = [
     `Question: ${input.questionText}`,
@@ -96,7 +110,6 @@ export function buildCheck2DecisionsRequest(
         choices,
       },
     ],
-    store: false,
   };
 }
 

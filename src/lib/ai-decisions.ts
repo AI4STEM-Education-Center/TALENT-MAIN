@@ -9,11 +9,18 @@ import { errorMessage } from "./errors";
 
 export const DEFAULT_DECISIONS_TIMEOUT_MS = 30_000;
 
+export type DecisionsChoiceOption =
+  | string
+  | {
+      value: string;
+      description?: string;
+    };
+
 export type DecisionsChoiceQuestion = {
   name: string;
   type: "choice";
   instructions: string;
-  choices: string[];
+  choices: DecisionsChoiceOption[];
 };
 
 export type DecisionsPredicateQuestion = {
@@ -22,11 +29,18 @@ export type DecisionsPredicateQuestion = {
   instructions: string;
 };
 
+export type DecisionsScoreLevel =
+  | string
+  | {
+      label: string;
+      description?: string;
+    };
+
 export type DecisionsScoreQuestion = {
   name: string;
   type: "score";
   instructions: string;
-  levels: string[];
+  levels: DecisionsScoreLevel[];
 };
 
 export type DecisionsQuestion =
@@ -36,7 +50,6 @@ export interface DecisionsRequest {
   model: string;
   input: string | Record<string, unknown> | Array<Record<string, unknown>>;
   questions: DecisionsQuestion[];
-  store?: boolean;
 }
 
 export interface DecisionsChoiceProbability {
@@ -111,10 +124,16 @@ const choiceAnswerSchema = z.object({
   confidence: z.number().finite().min(0).max(1).optional(),
 });
 
+const scoreProbabilityItemSchema = z.object({
+  value: z.number().finite(),
+  label: z.string(),
+  probability: z.number().finite().min(0).max(1),
+});
+
 const predicateAnswerSchema = z.object({
   name: z.string().min(1),
   type: z.literal("predicate"),
-  value: z.boolean(),
+  value: z.boolean().optional(),
   probability: z.number().finite().min(0).max(1),
   confidence: z.number().finite().min(0).max(1).optional(),
 });
@@ -123,6 +142,7 @@ const scoreAnswerSchema = z.object({
   name: z.string().min(1),
   type: z.literal("score"),
   score: z.number().finite(),
+  probabilities: z.array(scoreProbabilityItemSchema).optional(),
   confidence: z.number().finite().min(0).max(1).optional(),
 });
 
@@ -159,7 +179,14 @@ export function serializeDecisionsBody(
           name: q.name,
           type: "choice",
           instructions: q.instructions,
-          choices: q.choices,
+          choices: q.choices.map((c) =>
+            typeof c === "string"
+              ? { value: c }
+              : {
+                  value: c.value,
+                  ...(c.description ? { description: c.description } : {}),
+                },
+          ),
         };
       }
       if (q.type === "score") {
@@ -167,7 +194,14 @@ export function serializeDecisionsBody(
           name: q.name,
           type: "score",
           instructions: q.instructions,
-          levels: q.levels,
+          levels: q.levels.map((l) =>
+            typeof l === "string"
+              ? { label: l }
+              : {
+                  label: l.label,
+                  ...(l.description ? { description: l.description } : {}),
+                },
+          ),
         };
       }
       return {
@@ -176,7 +210,6 @@ export function serializeDecisionsBody(
         instructions: q.instructions,
       };
     }),
-    ...(request.store === false ? { store: false } : {}),
   };
 }
 
@@ -197,6 +230,15 @@ export function parseDecisionsPayload(raw: unknown): DecisionsAnswer[] {
         choice: answer.choice,
         probabilities: answer.probabilities,
         confidence: answer.confidence ?? topProb,
+      };
+    }
+    if (answer.type === "predicate") {
+      return {
+        name: answer.name,
+        type: "predicate",
+        value: answer.value ?? answer.probability >= 0.5,
+        probability: answer.probability,
+        confidence: answer.confidence,
       };
     }
     return answer;
