@@ -24,6 +24,13 @@ import { GET as aiProvidersGet } from "@/app/api/admin/ai-providers/route";
 import { GET as aiConfigExport } from "@/app/api/admin/ai-config/export/route";
 import { GET as consentSettingsGet } from "@/app/api/admin/consent/settings/route";
 import { GET as campaignsGet } from "@/app/api/admin/research-email/campaigns/route";
+import { GET as coachReviewsGet } from "@/app/api/admin/coach-reviews/route";
+import {
+  GET as coachReviewDetailGet,
+  PATCH as coachReviewDetailPatch,
+} from "@/app/api/admin/coach-reviews/[sessionId]/route";
+import { GET as coachExportGet } from "@/app/api/admin/coach-export/route";
+import { submitCoachReviewDecision } from "@/lib/wrong-answer-coach-review";
 import {
   GET as quizGet,
   PATCH as quizPatch,
@@ -219,6 +226,140 @@ describe("RESEARCHER on a DATA route: reads allowed, writes refused", () => {
   it("reads consent records", async () => {
     asResearcher();
     expect((await consentGet(req("/api/admin/consent"))).status).toBe(200);
+  });
+
+  it("reads coach sessions list and detail, but cannot submit review decisions", async () => {
+    const { teacher } = await createTeacher();
+    const { user: studentUser, student } = await createStudent();
+    const cls = await createClass(teacher.id);
+    const topic = await prisma.topic.create({
+      data: { name: "Forces", teacherId: teacher.id },
+    });
+    const quiz = await prisma.quiz.create({
+      data: { name: "Newton's Laws", topicId: topic.id, teacherId: teacher.id },
+    });
+    const coachSession = await prisma.wrongAnswerCoachSession.create({
+      data: {
+        attemptId: "att-r1",
+        examResultId: "er-r1",
+        studentId: student.id,
+        studentUserId: studentUser.id,
+        classId: cls.id,
+        quizId: quiz.id,
+        questionId: "q-r1",
+        questionIndex: 0,
+        check3VersionId: "v-c3",
+        heldOutVersionId: "v-ho",
+        questionSnapshotJson: JSON.stringify({
+          protocolRevision: "1.0",
+          sourceHash: "h1",
+          originalQuestion: {
+            questionId: "q-r1",
+            text: "Original Q",
+            options: [],
+            correctOptionId: "o1",
+            correctOptionText: "Right",
+          },
+          keyPoints: [],
+          relevantMisconceptions: [],
+          secondQuestion: {
+            id: "v1",
+            sourceQuestionId: "q-r1",
+            text: "Q2",
+            options: [],
+          },
+          heldOutQuestion: {
+            id: "v2",
+            sourceQuestionId: "q-r1",
+            text: "Q3",
+            options: [],
+          },
+          courseSnippets: [],
+        }),
+        chosenOptionText: "Wrong",
+        state: "COMPLETED",
+        diagnosis: "KNOWLEDGE_GAP",
+        hasFlags: false,
+        reviewStatus: "NONE",
+      },
+    });
+
+    asResearcher();
+    const listRes = await coachReviewsGet(
+      req("/api/admin/coach-reviews?flaggedOnly=false"),
+    );
+    expect(listRes.status).toBe(200);
+    expect((await listRes.json()).sessions).toHaveLength(1);
+
+    const detailRes = await coachReviewDetailGet(
+      req(`/api/admin/coach-reviews/${coachSession.id}`),
+      params({ sessionId: coachSession.id }),
+    );
+    expect(detailRes.status).toBe(200);
+    expect((await detailRes.json()).session.id).toBe(coachSession.id);
+
+    const patchRes = await coachReviewDetailPatch(
+      req(`/api/admin/coach-reviews/${coachSession.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ reviewDecision: "AGREE_DIAGNOSIS" }),
+      }),
+      params({ sessionId: coachSession.id }),
+    );
+    expect(patchRes.status).toBe(403);
+    const unchanged = await prisma.wrongAnswerCoachSession.findUniqueOrThrow({
+      where: { id: coachSession.id },
+    });
+    expect(unchanged.reviewDecision).toBeNull();
+
+    // Service-layer guard also refuses researcher mutations directly.
+    const serviceRes = await submitCoachReviewDecision(
+      { role: "RESEARCHER", userId: "researcher-1", teacherId: null },
+      coachSession.id,
+      { reviewDecision: "AGREE_DIAGNOSIS" },
+    );
+    expect(serviceRes).toEqual({
+      ok: false,
+      status: 403,
+      error: "Forbidden.",
+    });
+
+    // Coach Research Export remains ADMIN-only.
+    expect(
+      (await coachExportGet(req("/api/admin/coach-export?format=summary")))
+        .status,
+    ).toBe(401);
+
+    // Other roles: TEACHER and STUDENT get 403, unauthenticated gets 401.
+    mockAuth.mockResolvedValue({
+      user: { id: teacher.userId, role: "TEACHER" },
+    } as never);
+    expect(
+      (await coachReviewsGet(req("/api/admin/coach-reviews"))).status,
+    ).toBe(403);
+    mockAuth.mockResolvedValue({
+      user: { id: studentUser.id, role: "STUDENT" },
+    } as never);
+    expect(
+      (await coachReviewsGet(req("/api/admin/coach-reviews"))).status,
+    ).toBe(403);
+    mockAuth.mockResolvedValue(null as never);
+    expect(
+      (await coachReviewsGet(req("/api/admin/coach-reviews"))).status,
+    ).toBe(401);
+
+    // ADMIN can still PATCH review decisions.
+    const admin = await createAdmin();
+    mockAuth.mockResolvedValue({
+      user: { id: admin.id, role: "ADMIN" },
+    } as never);
+    const adminPatchRes = await coachReviewDetailPatch(
+      req(`/api/admin/coach-reviews/${coachSession.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ reviewDecision: "AGREE_DIAGNOSIS" }),
+      }),
+      params({ sessionId: coachSession.id }),
+    );
+    expect(adminPatchRes.status).toBe(200);
   });
 
   it("cannot delete a user", async () => {
