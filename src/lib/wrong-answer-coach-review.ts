@@ -12,8 +12,53 @@ import type {
   CoachFlagCode,
   CoachFrozenSessionSnapshot,
   CoachReviewDecision,
+  CoachVariantQuestionSnapshot,
+  OpaqueMcqTokenEntry,
   TutoringAttemptRecord,
 } from "./wrong-answer-coach-types";
+
+const LETTERS = ["A", "B", "C", "D", "E", "F"] as const;
+
+export interface ReviewOptionView {
+  label: string;
+  text: string;
+  isChosen: boolean;
+  isCorrect: boolean;
+  misconceptionCode: string | null;
+}
+
+function buildReviewVariantOptions(
+  variant: CoachVariantQuestionSnapshot | undefined,
+  tokensJson: string | null,
+  selectedKey: string | null,
+  selectedText: string | null,
+): ReviewOptionView[] {
+  if (!variant) return [];
+  const tokens = parseJson<OpaqueMcqTokenEntry[]>(tokensJson, []);
+  if (tokens.length > 0) {
+    const byId = new Map(variant.options.map((o) => [o.id, o]));
+    return tokens.map((t) => {
+      const opt = byId.get(t.variantOptionId);
+      const isChosen = selectedKey
+        ? t.variantOptionId === selectedKey || t.label === selectedKey
+        : Boolean(selectedText && t.text === selectedText);
+      return {
+        label: t.label,
+        text: t.text,
+        isChosen,
+        isCorrect: Boolean(opt?.isCorrect),
+        misconceptionCode: opt?.misconceptionCode ?? null,
+      };
+    });
+  }
+  return variant.options.map((opt, idx) => ({
+    label: LETTERS[idx] ?? String(idx + 1),
+    text: opt.text,
+    isChosen: Boolean(selectedText && opt.text === selectedText),
+    isCorrect: opt.isCorrect,
+    misconceptionCode: opt.misconceptionCode ?? null,
+  }));
+}
 
 export type ReviewActor =
   | { role: "ADMIN"; userId: string; teacherId: null }
@@ -262,6 +307,7 @@ export async function getCoachReviewDetail(
       questionIndex: true,
       studentUserId: true,
       questionSnapshotJson: true,
+      chosenOptionId: true,
       chosenOptionText: true,
       state: true,
       endedReason: true,
@@ -277,6 +323,8 @@ export async function getCoachReviewDetail(
       check2VoteHistogramJson: true,
       check2MeanConfidence: true,
       check2WasTie: true,
+      secondQuestionTokensJson: true,
+      check3SelectedKey: true,
       check3SelectedText: true,
       check3IsCorrect: true,
       check3Label: true,
@@ -284,6 +332,8 @@ export async function getCoachReviewDetail(
       diagnosisMisconceptionCode: true,
       decisionTableRow: true,
       diagnosisReason: true,
+      heldOutQuestionTokensJson: true,
+      heldOutSelectedKey: true,
       heldOutSelectedText: true,
       heldOutIsCorrect: true,
       heldOutLabel: true,
@@ -342,6 +392,32 @@ export async function getCoachReviewDetail(
     null,
   );
 
+  const originalOptions: ReviewOptionView[] = (
+    snapshot?.originalQuestion.options ?? []
+  ).map((opt, idx) => ({
+    label: LETTERS[idx] ?? String(idx + 1),
+    text: opt.optionText,
+    isChosen: row.chosenOptionId
+      ? opt.optionId === row.chosenOptionId
+      : opt.optionText.trim() === row.chosenOptionText.trim(),
+    isCorrect: opt.isCorrect,
+    misconceptionCode: opt.misconceptionCode ?? null,
+  }));
+
+  const secondQuestionOptions = buildReviewVariantOptions(
+    snapshot?.secondQuestion,
+    row.secondQuestionTokensJson,
+    row.check3SelectedKey,
+    row.check3SelectedText,
+  );
+
+  const heldOutQuestionOptions = buildReviewVariantOptions(
+    snapshot?.heldOutQuestion,
+    row.heldOutQuestionTokensJson,
+    row.heldOutSelectedKey,
+    row.heldOutSelectedText,
+  );
+
   return {
     id: row.id,
     classId: row.classId,
@@ -353,6 +429,7 @@ export async function getCoachReviewDetail(
       ? `${studentUser.firstName} ${studentUser.lastName}`.trim()
       : "Former student",
     originalQuestionText: snapshot?.originalQuestion.text ?? "",
+    originalOptions,
     correctOptionText: snapshot?.originalQuestion.correctOptionText ?? "",
     chosenOptionText: row.chosenOptionText,
     state: row.state,
@@ -373,6 +450,7 @@ export async function getCoachReviewDetail(
     check2MeanConfidence: row.check2MeanConfidence,
     check2WasTie: row.check2WasTie,
     secondQuestionText: snapshot?.secondQuestion.text ?? "",
+    secondQuestionOptions,
     check3SelectedText: row.check3SelectedText,
     check3IsCorrect: row.check3IsCorrect,
     check3Label: row.check3Label,
@@ -381,6 +459,7 @@ export async function getCoachReviewDetail(
     decisionTableRow: row.decisionTableRow,
     diagnosisReason: row.diagnosisReason,
     heldOutQuestionText: snapshot?.heldOutQuestion.text ?? "",
+    heldOutQuestionOptions,
     heldOutSelectedText: row.heldOutSelectedText,
     heldOutIsCorrect: row.heldOutIsCorrect,
     heldOutLabel: row.heldOutLabel,

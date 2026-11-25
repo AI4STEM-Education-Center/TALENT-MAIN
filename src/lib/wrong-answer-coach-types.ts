@@ -165,6 +165,22 @@ export type CoachEligibilityItem = {
   sessionStatus: "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED" | "INCOMPLETE";
 };
 
+export type StudentCoachOptionView = {
+  label: string;
+  text: string;
+  isChosen: boolean;
+  // ONLY populated when state === "COMPLETED" (after Step 10!).
+  isCorrect?: boolean;
+};
+
+export type StudentAnsweredMcqView = {
+  step: "second_question" | "held_out_question";
+  text: string;
+  options: StudentCoachOptionView[];
+  // ONLY populated when state === "COMPLETED" (after Step 10!).
+  isCorrect?: boolean;
+};
+
 export type StudentCoachSessionView = {
   sessionId: string;
   attemptId: string;
@@ -174,6 +190,7 @@ export type StudentCoachSessionView = {
   originalQuestion: {
     text: string;
     chosenOptionText: string;
+    options: StudentCoachOptionView[];
     // ONLY populated when state === "COMPLETED" (after Step 10!).
     correctOptionText?: string;
   };
@@ -185,6 +202,7 @@ export type StudentCoachSessionView = {
     structuredTutoring?: StructuredTutoringMessage | null;
     createdAt: string;
   }>;
+  answeredMcqs: StudentAnsweredMcqView[];
   activeMcq: {
     step: "second_question" | "held_out_question";
     text: string;

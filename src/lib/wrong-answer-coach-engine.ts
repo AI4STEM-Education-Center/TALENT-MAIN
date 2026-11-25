@@ -71,6 +71,8 @@ import type {
   CoachVariantQuestionSnapshot,
   OpaqueMcqTokenEntry,
   StructuredTutoringMessage,
+  StudentAnsweredMcqView,
+  StudentCoachOptionView,
   StudentCoachSessionView,
   TutoringAttemptRecord,
 } from "./wrong-answer-coach-types";
@@ -318,16 +320,69 @@ async function loadFrozenClassCourseSnippets(
 
 // ─── Student-Safe Projection (Strict Zero-Leakage Firewall Before Step 10) ────
 
+function buildAnsweredVariantMcq(input: {
+  step: "second_question" | "held_out_question";
+  variant: CoachVariantQuestionSnapshot;
+  tokensJson: string | null;
+  selectedKey: string | null;
+  selectedText: string | null;
+  isCorrect: boolean | null;
+  revealCorrectness: boolean;
+}): StudentAnsweredMcqView | null {
+  if (!input.tokensJson || (!input.selectedKey && !input.selectedText)) {
+    return null;
+  }
+  let tokens: OpaqueMcqTokenEntry[];
+  try {
+    tokens = JSON.parse(input.tokensJson) as OpaqueMcqTokenEntry[];
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(tokens) || tokens.length === 0) return null;
+
+  const optById = new Map(input.variant.options.map((o) => [o.id, o]));
+  const options: StudentCoachOptionView[] = tokens.map((t) => {
+    const matched = optById.get(t.variantOptionId);
+    const isChosen = input.selectedKey
+      ? t.variantOptionId === input.selectedKey || t.label === input.selectedKey
+      : Boolean(input.selectedText && t.text === input.selectedText);
+    return {
+      label: t.label,
+      text: t.text,
+      isChosen,
+      ...(input.revealCorrectness && matched
+        ? { isCorrect: matched.isCorrect }
+        : {}),
+    };
+  });
+
+  return {
+    step: input.step,
+    text: input.variant.text,
+    options,
+    ...(input.revealCorrectness && input.isCorrect !== null
+      ? { isCorrect: input.isCorrect }
+      : {}),
+  };
+}
+
 function toStudentSessionView(session: {
   id: string;
   attemptId: string;
   questionId: string;
   questionIndex: number;
   state: string;
+  chosenOptionId?: string | null;
   chosenOptionText: string;
   questionSnapshotJson: string;
   secondQuestionTokensJson: string | null;
+  check3SelectedKey?: string | null;
+  check3SelectedText?: string | null;
+  check3IsCorrect?: boolean | null;
   heldOutQuestionTokensJson: string | null;
+  heldOutSelectedKey?: string | null;
+  heldOutSelectedText?: string | null;
+  heldOutIsCorrect?: boolean | null;
   tutoringStructuredJson: string | null;
   messages: Array<{
     seq: number;
@@ -389,6 +444,44 @@ function toStudentSessionView(session: {
     };
   }
 
+  const originalOptions: StudentCoachOptionView[] = (
+    snapshot.originalQuestion.options ?? []
+  ).map((opt, idx) => {
+    const isChosen = session.chosenOptionId
+      ? opt.optionId === session.chosenOptionId
+      : opt.optionText.trim() === session.chosenOptionText.trim();
+    return {
+      label: LETTERS[idx] ?? String(idx + 1),
+      text: opt.optionText,
+      isChosen,
+      // FIREWALL: isCorrect is NEVER included before state === COMPLETED!
+      ...(isCompleted ? { isCorrect: opt.isCorrect } : {}),
+    };
+  });
+
+  const answeredMcqs: StudentAnsweredMcqView[] = [];
+  const check3Answered = buildAnsweredVariantMcq({
+    step: "second_question",
+    variant: snapshot.secondQuestion,
+    tokensJson: session.secondQuestionTokensJson,
+    selectedKey: session.check3SelectedKey ?? null,
+    selectedText: session.check3SelectedText ?? null,
+    isCorrect: session.check3IsCorrect ?? null,
+    revealCorrectness: isCompleted,
+  });
+  if (check3Answered) answeredMcqs.push(check3Answered);
+
+  const heldOutAnswered = buildAnsweredVariantMcq({
+    step: "held_out_question",
+    variant: snapshot.heldOutQuestion,
+    tokensJson: session.heldOutQuestionTokensJson,
+    selectedKey: session.heldOutSelectedKey ?? null,
+    selectedText: session.heldOutSelectedText ?? null,
+    isCorrect: session.heldOutIsCorrect ?? null,
+    revealCorrectness: isCompleted,
+  });
+  if (heldOutAnswered) answeredMcqs.push(heldOutAnswered);
+
   return {
     sessionId: session.id,
     attemptId: session.attemptId,
@@ -398,6 +491,7 @@ function toStudentSessionView(session: {
     originalQuestion: {
       text: snapshot.originalQuestion.text,
       chosenOptionText: session.chosenOptionText,
+      options: originalOptions,
       // FIREWALL: correctOptionText is NEVER included before state === COMPLETED!
       ...(isCompleted
         ? { correctOptionText: snapshot.originalQuestion.correctOptionText }
@@ -414,6 +508,7 @@ function toStudentSessionView(session: {
         : {}),
       createdAt: m.createdAt.toISOString(),
     })),
+    answeredMcqs,
     activeMcq,
   };
 }
@@ -942,13 +1037,43 @@ export async function startOrResumeCoachSession(input: {
     keyPoints = [];
   }
 
+  // Preserve the exact option order shown to the student on this attempt so
+  // choice letters (A/B/C...) match the quiz they just took.
+  const labelById = new Map(optionLabels.map((l) => [l.optionId, l]));
+  const orderedOriginalOptions: CoachOptionLabel[] = snapQuestion.options.map(
+    (snapOpt, idx) => {
+      const byId = snapOpt.optionId
+        ? labelById.get(snapOpt.optionId)
+        : undefined;
+      const matched =
+        byId ??
+        optionLabels.find(
+          (l) =>
+            l.optionText.trim().toLowerCase() ===
+            snapOpt.text.trim().toLowerCase(),
+        );
+      return (
+        matched ?? {
+          optionId: snapOpt.optionId ?? `opt_${idx}`,
+          optionText: snapOpt.text,
+          isCorrect: snapOpt.isCorrect,
+          misconceptionCode: null,
+          confidence: null,
+        }
+      );
+    },
+  );
+
   const frozenSnapshot: CoachFrozenSessionSnapshot = {
     protocolRevision: COACH_PROTOCOL_REVISION,
     sourceHash: snapshotHash,
     originalQuestion: {
       questionId: input.questionId,
       text: snapQuestion.text,
-      options: optionLabels,
+      options:
+        orderedOriginalOptions.length > 0
+          ? orderedOriginalOptions
+          : optionLabels,
       correctOptionId: correctSnapOpt.optionId ?? "",
       correctOptionText: correctSnapOpt.text,
     },

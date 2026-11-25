@@ -87,7 +87,7 @@ const teacherNav: NavItem[] = [
   },
   {
     href: "/teacher/coach-reviews",
-    label: "Coach Reviews",
+    label: "Coach Sessions",
     icon: <ClipboardCheck className="size-4" />,
   },
   {
@@ -270,7 +270,7 @@ const adminNavGroups: NavGroup[] = [
       },
       {
         href: "/admin/coach-reviews",
-        label: "Coach Reviews",
+        label: "Coach Sessions",
         icon: <ClipboardCheck className="size-4" />,
       },
       {
@@ -576,7 +576,11 @@ export function Sidebar({
         open={mobileOpen}
         onOpenChange={(open) => !open && onMobileClose?.()}
       >
-        <SheetContent side="left" className="p-0 w-64 overflow-y-auto">
+        <SheetContent
+          side="left"
+          surface="sidebar"
+          className="p-0 w-64 overflow-y-auto"
+        >
           <SidebarContent {...contentProps} onNavigate={onMobileClose} />
         </SheetContent>
       </Sheet>
