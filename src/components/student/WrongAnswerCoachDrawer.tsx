@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   CheckCircle2,
   Loader2,
@@ -19,10 +19,19 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import {
+  SttErrorBanner,
+  SttMicButton,
+} from "@/components/assistant/SttMicButton";
+import { useSttComposer } from "@/components/assistant/use-stt-composer";
+import { useOptionalAssistant } from "@/components/assistant/assistant-context";
 import { MathText } from "@/components/ui/math-text";
+import { cn } from "@/lib/utils";
 import { COACH_MAX_EXPLANATION_CHARS } from "@/lib/wrong-answer-coach-messages";
 import type {
   StructuredTutoringMessage,
+  StudentAnsweredMcqView,
+  StudentCoachOptionView,
   StudentCoachSessionView,
 } from "@/lib/wrong-answer-coach-types";
 
@@ -30,13 +39,10 @@ export interface WrongAnswerCoachPanelProps {
   attemptId: string;
   questionId: string;
   questionNumber: number;
-  /** "inline" renders a full header bar inside a card; "drawer" omits it because SheetHeader renders the title. */
+  /** "inline" renders a side-by-side workspace inside a card; "drawer" fits a right-hand Sheet. */
   variant?: "inline" | "drawer";
-  /** Fires whenever the session state changes (e.g. to refresh eligibility badges). */
   onStateChange?: () => void;
-  /** Fires with `true` once the student has submitted at least one turn or has an active/completed session. */
   onEngaged?: (engaged: boolean) => void;
-  /** Optional status listener so the drawer wrapper can show step pills & badges in SheetHeader. */
   onSessionLoaded?: (session: StudentCoachSessionView | null) => void;
 }
 
@@ -80,6 +86,12 @@ function isSessionEngaged(session: StudentCoachSessionView): boolean {
   );
 }
 
+function clampCoachText(value: string): string {
+  return value.length > COACH_MAX_EXPLANATION_CHARS
+    ? value.slice(0, COACH_MAX_EXPLANATION_CHARS)
+    : value;
+}
+
 function StepPills({ state }: { state: StudentCoachSessionView["state"] }) {
   const activeStep = currentStepIndex(state);
   return (
@@ -112,6 +124,75 @@ function StatusBadge({ state }: { state: StudentCoachSessionView["state"] }) {
   return null;
 }
 
+function OptionList({
+  options,
+  revealCorrectness,
+}: {
+  options: StudentCoachOptionView[];
+  revealCorrectness: boolean;
+}) {
+  return (
+    <ul className="space-y-1.5">
+      {options.map((opt) => {
+        const isRight = revealCorrectness && opt.isCorrect === true;
+        const isWrongPick =
+          revealCorrectness && opt.isChosen && opt.isCorrect === false;
+        const isChosenNeutral = !revealCorrectness && opt.isChosen;
+        return (
+          <li
+            key={opt.label}
+            className={cn(
+              "flex items-start gap-2.5 rounded-lg border px-2.5 py-2 text-xs sm:text-sm",
+              isRight && "border-green-700/40 bg-green-700/5",
+              isWrongPick && "border-destructive/40 bg-destructive/5",
+              isChosenNeutral && "border-primary/50 bg-primary/5",
+              !isRight &&
+                !isWrongPick &&
+                !isChosenNeutral &&
+                "border-border bg-background",
+            )}
+          >
+            <span
+              className={cn(
+                "flex size-6 shrink-0 items-center justify-center rounded-md border text-xs font-bold",
+                isRight && "border-green-700 bg-green-700 text-white",
+                isWrongPick &&
+                  "border-destructive bg-destructive text-destructive-foreground",
+                isChosenNeutral &&
+                  "border-primary bg-primary text-primary-foreground",
+                !isRight &&
+                  !isWrongPick &&
+                  !isChosenNeutral &&
+                  "border-border bg-muted text-muted-foreground",
+              )}
+            >
+              {opt.label}
+            </span>
+            <span className="min-w-0 flex-1 pt-0.5">
+              <MathText text={opt.text} />
+            </span>
+            {opt.isChosen && !revealCorrectness && (
+              <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                Your answer
+              </span>
+            )}
+            {isRight && (
+              <span className="shrink-0 rounded-full bg-green-700/10 px-2 py-0.5 text-[11px] font-semibold text-green-800 dark:text-green-400">
+                {opt.isChosen ? "Your answer · Correct" : "Correct answer"}
+              </span>
+            )}
+            {isWrongPick && (
+              <span className="shrink-0 rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-semibold text-destructive">
+                Your answer
+              </span>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 function TutoringMessageCard({
   structured,
 }: {
@@ -120,7 +201,7 @@ function TutoringMessageCard({
   return (
     <div className="space-y-3">
       <div className="rounded-lg border border-green-300/70 bg-green-50/70 p-3 dark:border-green-800 dark:bg-green-950/30">
-        <p className="text-xs font-semibold uppercase tracking-wide text-green-700 dark:text-green-400">
+        <p className="text-xs font-semibold uppercase tracking-wide text-green-800 dark:text-green-400">
           Correct answer
         </p>
         <p className="mt-1 text-sm font-medium text-foreground">
@@ -154,31 +235,175 @@ function OriginalQuestionCard({
 }: {
   session: StudentCoachSessionView;
 }) {
+  const isCompleted = session.state === "COMPLETED";
+  const options = session.originalQuestion.options ?? [];
+
   return (
-    <div className="space-y-2 rounded-lg border bg-muted/40 p-3.5">
+    <div className="space-y-3">
       <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        Original question
+        Original question · Question {session.questionNumber}
       </p>
-      <p className="text-sm font-medium">
-        <MathText text={session.originalQuestion.text} />
-      </p>
-      <div className="flex items-start gap-2 rounded bg-destructive/10 px-2.5 py-1.5 text-xs text-destructive">
-        <XCircle className="mt-0.5 size-3.5 shrink-0" />
+      <p className="flex items-start gap-2 text-sm font-medium">
+        <XCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
         <span>
-          <strong>Your answer:</strong>{" "}
-          <MathText text={session.originalQuestion.chosenOptionText} />
+          <MathText text={session.originalQuestion.text} />
         </span>
-      </div>
-      {session.state === "COMPLETED" &&
-        session.originalQuestion.correctOptionText && (
-          <div className="flex items-start gap-2 rounded bg-green-50 px-2.5 py-1.5 text-xs text-green-700 dark:bg-green-950/30 dark:text-green-400">
-            <CheckCircle2 className="mt-0.5 size-3.5 shrink-0" />
+      </p>
+
+      {options.length > 0 ? (
+        <div className="space-y-1.5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Options
+          </p>
+          <OptionList options={options} revealCorrectness={isCompleted} />
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <div className="flex items-start gap-2 rounded bg-destructive/10 px-2.5 py-1.5 text-xs text-destructive">
+            <XCircle className="mt-0.5 size-3.5 shrink-0" />
             <span>
-              <strong>Correct answer:</strong>{" "}
-              <MathText text={session.originalQuestion.correctOptionText} />
+              <strong>Your answer:</strong>{" "}
+              <MathText text={session.originalQuestion.chosenOptionText} />
             </span>
           </div>
+          {isCompleted && session.originalQuestion.correctOptionText && (
+            <div className="flex items-start gap-2 rounded bg-green-50 px-2.5 py-1.5 text-xs text-green-800 dark:bg-green-950/30 dark:text-green-400">
+              <CheckCircle2 className="mt-0.5 size-3.5 shrink-0" />
+              <span>
+                <strong>Correct answer:</strong>{" "}
+                <MathText text={session.originalQuestion.correctOptionText} />
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AnsweredMcqCard({
+  mcq,
+  revealCorrectness,
+}: {
+  mcq: StudentAnsweredMcqView;
+  revealCorrectness: boolean;
+}) {
+  const title =
+    mcq.step === "second_question"
+      ? "2. Similar question"
+      : "3. One more check";
+  return (
+    <div className="space-y-2.5 rounded-lg border bg-muted/25 p-3.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          {title}
+        </p>
+        {revealCorrectness && mcq.isCorrect !== undefined && (
+          <Badge
+            variant={mcq.isCorrect ? "success" : "destructive"}
+            className="gap-1"
+          >
+            {mcq.isCorrect ? (
+              <>
+                <CheckCircle2 className="size-3" /> Correct
+              </>
+            ) : (
+              <>
+                <XCircle className="size-3" /> Incorrect
+              </>
+            )}
+          </Badge>
         )}
+      </div>
+      <p className="text-sm font-medium">
+        <MathText text={mcq.text} />
+      </p>
+      <OptionList options={mcq.options} revealCorrectness={revealCorrectness} />
+    </div>
+  );
+}
+
+/**
+ * Mounted ONLY while the student opens "Need to say something?" and keyed by
+ * MCQ step so hiding the box or advancing stops and cleans up STT recording.
+ */
+function ActiveMcqFreeTextComposer({
+  freeText,
+  onFreeTextChange,
+  submitting,
+  sttEnabled,
+  onSendFreeText,
+}: {
+  freeText: string;
+  onFreeTextChange: (value: string) => void;
+  submitting: boolean;
+  sttEnabled: boolean;
+  onSendFreeText: (text: string) => Promise<void>;
+}) {
+  const setClampedDraft = useCallback(
+    (value: string) => onFreeTextChange(clampCoachText(value)),
+    [onFreeTextChange],
+  );
+
+  const stt = useSttComposer({
+    draft: freeText,
+    setDraft: setClampedDraft,
+    onSend: async (text) => {
+      const trimmed = clampCoachText(text).trim();
+      if (!trimmed) return;
+      await onSendFreeText(trimmed);
+    },
+    disabled: submitting,
+    surface: "wrong_answer_coach",
+  });
+
+  const canSendFreeText =
+    !submitting &&
+    !stt.isBusy &&
+    (freeText.trim().length > 0 ||
+      stt.isRecording ||
+      stt.state === "connecting");
+
+  return (
+    <div className="space-y-2 border-t pt-2">
+      <SttErrorBanner error={stt.error} onDismiss={stt.clearError} />
+      <div className="flex items-end gap-2">
+        <Textarea
+          aria-label="Message to coach"
+          rows={2}
+          maxLength={COACH_MAX_EXPLANATION_CHARS}
+          value={freeText}
+          disabled={submitting}
+          onChange={(e) => stt.handleDraftChange(e.target.value)}
+          onKeyDown={(event) => {
+            if (
+              event.key === "Enter" &&
+              !event.shiftKey &&
+              !event.nativeEvent.isComposing
+            ) {
+              event.preventDefault();
+              void stt.submitOrFinalizeAndSend();
+            }
+          }}
+          placeholder="Type a message or use the mic…"
+          className="flex-1"
+        />
+        {sttEnabled && (
+          <SttMicButton
+            state={stt.state}
+            disabled={submitting}
+            onToggle={() => void stt.toggleStt()}
+          />
+        )}
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!canSendFreeText}
+          onClick={() => void stt.submitOrFinalizeAndSend()}
+        >
+          <Send className="size-3.5" /> Send
+        </Button>
+      </div>
     </div>
   );
 }
@@ -192,6 +417,7 @@ function ActiveMcqCard({
   onToggleFreeText,
   freeText,
   onFreeTextChange,
+  sttEnabled,
   onSubmitAnswer,
   onSendFreeText,
 }: {
@@ -203,8 +429,9 @@ function ActiveMcqCard({
   onToggleFreeText: () => void;
   freeText: string;
   onFreeTextChange: (value: string) => void;
+  sttEnabled: boolean;
   onSubmitAnswer: () => void;
-  onSendFreeText: () => void;
+  onSendFreeText: (text: string) => Promise<void>;
 }) {
   return (
     <div className="space-y-3 rounded-lg border border-primary/30 bg-card p-4">
@@ -268,24 +495,14 @@ function ActiveMcqCard({
       </div>
 
       {showFreeText && (
-        <div className="space-y-2 border-t pt-2">
-          <Textarea
-            aria-label="Message to coach"
-            rows={2}
-            maxLength={COACH_MAX_EXPLANATION_CHARS}
-            value={freeText}
-            onChange={(e) => onFreeTextChange(e.target.value)}
-            placeholder="Type a message or let us know if you need help…"
-          />
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={!freeText.trim() || submitting}
-            onClick={onSendFreeText}
-          >
-            <Send className="size-3.5" /> Send message
-          </Button>
-        </div>
+        <ActiveMcqFreeTextComposer
+          key={mcq.step}
+          freeText={freeText}
+          onFreeTextChange={onFreeTextChange}
+          submitting={submitting}
+          sttEnabled={sttEnabled}
+          onSendFreeText={onSendFreeText}
+        />
       )}
     </div>
   );
@@ -297,6 +514,7 @@ function CoachSessionFooter({
   submitting,
   explanationText,
   onExplanationChange,
+  sttEnabled,
   onSubmitExplanation,
   confirmEnd,
   onConfirmEndChange,
@@ -307,11 +525,29 @@ function CoachSessionFooter({
   submitting: boolean;
   explanationText: string;
   onExplanationChange: (value: string) => void;
-  onSubmitExplanation: () => void;
+  sttEnabled: boolean;
+  onSubmitExplanation: (text: string) => Promise<void>;
   confirmEnd: boolean;
   onConfirmEndChange: (value: boolean) => void;
   onEndChat: () => void;
 }) {
+  const setClampedDraft = useCallback(
+    (value: string) => onExplanationChange(clampCoachText(value)),
+    [onExplanationChange],
+  );
+
+  const stt = useSttComposer({
+    draft: explanationText,
+    setDraft: setClampedDraft,
+    // Blank explanations are explicitly supported by the protocol (short-circuits to neither).
+    canSendEmptyText: true,
+    onSend: async (text) => {
+      await onSubmitExplanation(clampCoachText(text));
+    },
+    disabled: submitting,
+    surface: "wrong_answer_coach",
+  });
+
   const canEndChat =
     session.state !== "COMPLETED" &&
     session.state !== "INCOMPLETE" &&
@@ -323,25 +559,46 @@ function CoachSessionFooter({
     <div className="shrink-0 space-y-2.5 border-t bg-background px-5 py-3.5">
       {session.state === "AWAITING_EXPLANATION" && (
         <div className="space-y-2">
-          <Textarea
-            rows={3}
-            maxLength={COACH_MAX_EXPLANATION_CHARS}
-            value={explanationText}
-            onChange={(e) => onExplanationChange(e.target.value)}
-            disabled={submitting}
-            placeholder="Explain your thinking in one or two sentences…"
-            aria-label="Your explanation"
-          />
+          <SttErrorBanner error={stt.error} onDismiss={stt.clearError} />
+          <div className="flex items-end gap-2">
+            <Textarea
+              rows={3}
+              maxLength={COACH_MAX_EXPLANATION_CHARS}
+              value={explanationText}
+              onChange={(e) => stt.handleDraftChange(e.target.value)}
+              onKeyDown={(event) => {
+                if (
+                  event.key === "Enter" &&
+                  !event.shiftKey &&
+                  !event.nativeEvent.isComposing
+                ) {
+                  event.preventDefault();
+                  void stt.submitOrFinalizeAndSend();
+                }
+              }}
+              disabled={submitting}
+              placeholder="Explain your thinking in one or two sentences (type or use the mic)…"
+              aria-label="Your explanation"
+              className="flex-1"
+            />
+            {sttEnabled && (
+              <SttMicButton
+                state={stt.state}
+                disabled={submitting}
+                onToggle={() => void stt.toggleStt()}
+              />
+            )}
+          </div>
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs text-muted-foreground">
               {explanationText.length} / {COACH_MAX_EXPLANATION_CHARS}
             </span>
             <Button
               size="sm"
-              disabled={submitting}
-              onClick={onSubmitExplanation}
+              disabled={submitting || stt.isBusy}
+              onClick={() => void stt.submitOrFinalizeAndSend()}
             >
-              {submitting ? (
+              {submitting || stt.isBusy ? (
                 <>
                   <Loader2 className="size-3.5 animate-spin" /> Reviewing…
                 </>
@@ -401,29 +658,91 @@ function CoachSessionFooter({
   );
 }
 
-/**
- * Structured Diagnose -> Route -> Remediate -> Review Wrong Answer Coach panel.
- * Embeds inline in Step 2 (`CoachStep`) or inside `WrongAnswerCoachDrawer`.
- */
-export function WrongAnswerCoachPanel({
+function CoachTranscript({ session }: { session: StudentCoachSessionView }) {
+  const isCompleted = session.state === "COMPLETED";
+  const answeredByStep = new Map(
+    (session.answeredMcqs ?? []).map((m) => [m.step, m]),
+  );
+
+  return (
+    <div className="space-y-3">
+      {session.messages.map((msg) => {
+        if (msg.kind === "SECOND_QUESTION_ANSWER") {
+          const mcq = answeredByStep.get("second_question");
+          if (mcq) {
+            return (
+              <AnsweredMcqCard
+                key={msg.seq}
+                mcq={mcq}
+                revealCorrectness={isCompleted}
+              />
+            );
+          }
+        }
+        if (msg.kind === "HELDOUT_ANSWER") {
+          const mcq = answeredByStep.get("held_out_question");
+          if (mcq) {
+            return (
+              <AnsweredMcqCard
+                key={msg.seq}
+                mcq={mcq}
+                revealCorrectness={isCompleted}
+              />
+            );
+          }
+        }
+
+        const isStudent = msg.role === "student";
+        return (
+          <div
+            key={msg.seq}
+            className={`flex ${isStudent ? "justify-end" : "justify-start"}`}
+          >
+            <div
+              className={`max-w-[90%] rounded-xl px-3.5 py-2.5 text-sm ${
+                isStudent
+                  ? "bg-primary text-primary-foreground"
+                  : "border bg-card text-card-foreground"
+              }`}
+            >
+              {msg.structuredTutoring ? (
+                <TutoringMessageCard structured={msg.structuredTutoring} />
+              ) : (
+                <p className="whitespace-pre-wrap">
+                  {msg.content ? (
+                    <MathText text={msg.content} />
+                  ) : (
+                    <span className="italic opacity-75">
+                      (No explanation entered)
+                    </span>
+                  )}
+                </p>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function useCoachSession({
   attemptId,
   questionId,
-  questionNumber,
-  variant = "inline",
   onStateChange,
   onEngaged,
   onSessionLoaded,
-}: WrongAnswerCoachPanelProps) {
+}: {
+  attemptId: string;
+  questionId: string;
+  onStateChange?: () => void;
+  onEngaged?: (engaged: boolean) => void;
+  onSessionLoaded?: (session: StudentCoachSessionView | null) => void;
+}) {
   const [session, setSession] = useState<StudentCoachSessionView | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [explanationText, setExplanationText] = useState("");
-  const [selectedToken, setSelectedToken] = useState("");
-  const [showFreeText, setShowFreeText] = useState(false);
-  const [freeText, setFreeText] = useState("");
-  const [confirmEnd, setConfirmEnd] = useState(false);
-  const bottomRef = useRef<HTMLDivElement | null>(null);
 
   const onStateChangeRef = useRef(onStateChange);
   const onEngagedRef = useRef(onEngaged);
@@ -439,9 +758,6 @@ export function WrongAnswerCoachPanel({
     let active = true;
     setLoading(true);
     setError("");
-    setSelectedToken("");
-    setShowFreeText(false);
-    setConfirmEnd(false);
 
     void (async () => {
       try {
@@ -463,9 +779,7 @@ export function WrongAnswerCoachPanel({
           const loaded = data as StudentCoachSessionView;
           setSession(loaded);
           onSessionLoadedRef.current?.(loaded);
-          if (isSessionEngaged(loaded)) {
-            onEngagedRef.current?.(true);
-          }
+          if (isSessionEngaged(loaded)) onEngagedRef.current?.(true);
           onStateChangeRef.current?.();
         }
       } catch {
@@ -483,7 +797,6 @@ export function WrongAnswerCoachPanel({
   const sessionId = session?.sessionId;
   const sessionState = session?.state;
 
-  // Poll cleanly if resumed while tutoring is still generating.
   useEffect(() => {
     if (!sessionId || sessionState !== "GENERATING_TUTORING") return;
     const timer = setInterval(async () => {
@@ -504,76 +817,104 @@ export function WrongAnswerCoachPanel({
     return () => clearInterval(timer);
   }, [sessionId, sessionState]);
 
+  const sendTurn = useCallback(
+    async (
+      payload: Record<string, unknown>,
+      onSuccess?: () => void,
+    ): Promise<void> => {
+      if (!session || submitting) return;
+      setSubmitting(true);
+      setError("");
+      try {
+        const res = await fetch(
+          `/api/student/coach/sessions/${session.sessionId}/respond`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          },
+        );
+        const data = await res.json();
+        if (!res.ok) {
+          setError(data.error || "Something went wrong. Please try again.");
+          const refreshRes = await fetch(
+            `/api/student/coach/sessions/${session.sessionId}`,
+          );
+          if (refreshRes.ok) {
+            const refreshed =
+              (await refreshRes.json()) as StudentCoachSessionView;
+            setSession(refreshed);
+            onSessionLoadedRef.current?.(refreshed);
+          }
+        } else {
+          const updated = data as StudentCoachSessionView;
+          setSession(updated);
+          onSessionLoadedRef.current?.(updated);
+          onSuccess?.();
+          if (isSessionEngaged(updated)) onEngagedRef.current?.(true);
+          onStateChangeRef.current?.();
+        }
+      } catch {
+        setError("Network error. Please try again.");
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [session, submitting],
+  );
+
+  return { session, loading, submitting, error, sendTurn };
+}
+
+/**
+ * Structured Diagnose -> Route -> Remediate -> Review Wrong Answer Coach panel.
+ * Embeds inline in Step 2 (`CoachStep`) or inside `WrongAnswerCoachDrawer`.
+ */
+export function WrongAnswerCoachPanel({
+  attemptId,
+  questionId,
+  questionNumber,
+  variant = "inline",
+  onStateChange,
+  onEngaged,
+  onSessionLoaded,
+}: WrongAnswerCoachPanelProps) {
+  const assistant = useOptionalAssistant();
+  const sttEnabled = assistant?.config?.sttEnabled !== false;
+
+  const { session, loading, submitting, error, sendTurn } = useCoachSession({
+    attemptId,
+    questionId,
+    onStateChange,
+    onEngaged,
+    onSessionLoaded,
+  });
+
+  const [explanationText, setExplanationText] = useState("");
+  const [selectedToken, setSelectedToken] = useState("");
+  const [showFreeText, setShowFreeText] = useState(false);
+  const [freeText, setFreeText] = useState("");
+  const [confirmEnd, setConfirmEnd] = useState(false);
+  const bottomRef = useRef<HTMLDivElement | null>(null);
+
+  const resetInputs = useCallback(() => {
+    setExplanationText("");
+    setSelectedToken("");
+    setFreeText("");
+    setShowFreeText(false);
+    setConfirmEnd(false);
+  }, []);
+
+  useEffect(() => {
+    resetInputs();
+  }, [attemptId, questionId, resetInputs]);
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [session?.messages.length, session?.state]);
 
-  async function sendTurn(payload: Record<string, unknown>) {
-    if (!session || submitting) return;
-    setSubmitting(true);
-    setError("");
-    try {
-      const res = await fetch(
-        `/api/student/coach/sessions/${session.sessionId}/respond`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        },
-      );
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "Something went wrong. Please try again.");
-        // Refresh session state on 503/409 so CLASSIFYING_FAILED retry UI appears.
-        const refreshRes = await fetch(
-          `/api/student/coach/sessions/${session.sessionId}`,
-        );
-        if (refreshRes.ok) {
-          const refreshed =
-            (await refreshRes.json()) as StudentCoachSessionView;
-          setSession(refreshed);
-          onSessionLoadedRef.current?.(refreshed);
-        }
-      } else {
-        const updated = data as StudentCoachSessionView;
-        setSession(updated);
-        onSessionLoadedRef.current?.(updated);
-        setExplanationText("");
-        setSelectedToken("");
-        setFreeText("");
-        setShowFreeText(false);
-        setConfirmEnd(false);
-        if (isSessionEngaged(updated)) {
-          onEngagedRef.current?.(true);
-        }
-        onStateChangeRef.current?.();
-      }
-    } catch {
-      setError("Network error. Please try again.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
+  const chatColumn = (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      {variant === "inline" && (
-        <div className="shrink-0 space-y-2 border-b px-5 py-3.5">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="flex items-center gap-2 text-base font-semibold">
-              <MessageSquare className="size-4 text-primary" />
-              Question {questionNumber} — Wrong Answer Coach
-            </h3>
-            {session && <StatusBadge state={session.state} />}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Answer each short step so we can pinpoint what happened and walk
-            through the solution.
-          </p>
-          {session && <StepPills state={session.state} />}
-        </div>
-      )}
-
       <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
@@ -585,43 +926,13 @@ export function WrongAnswerCoachPanel({
           </div>
         ) : (
           <>
-            <OriginalQuestionCard session={session} />
+            {variant === "drawer" && (
+              <div className="rounded-lg border bg-muted/40 p-3.5">
+                <OriginalQuestionCard session={session} />
+              </div>
+            )}
 
-            <div className="space-y-3">
-              {session.messages.map((msg) => {
-                const isStudent = msg.role === "student";
-                return (
-                  <div
-                    key={msg.seq}
-                    className={`flex ${isStudent ? "justify-end" : "justify-start"}`}
-                  >
-                    <div
-                      className={`max-w-[90%] rounded-xl px-3.5 py-2.5 text-sm ${
-                        isStudent
-                          ? "bg-primary text-primary-foreground"
-                          : "border bg-card text-card-foreground"
-                      }`}
-                    >
-                      {msg.structuredTutoring ? (
-                        <TutoringMessageCard
-                          structured={msg.structuredTutoring}
-                        />
-                      ) : (
-                        <p className="whitespace-pre-wrap">
-                          {msg.content ? (
-                            <MathText text={msg.content} />
-                          ) : (
-                            <span className="italic opacity-75">
-                              (No explanation entered)
-                            </span>
-                          )}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            <CoachTranscript session={session} />
 
             {session.activeMcq && (
               <ActiveMcqCard
@@ -633,14 +944,19 @@ export function WrongAnswerCoachPanel({
                 onToggleFreeText={() => setShowFreeText((v) => !v)}
                 freeText={freeText}
                 onFreeTextChange={setFreeText}
-                onSubmitAnswer={() =>
-                  void sendTurn({
-                    type: session.activeMcq!.step,
-                    optionToken: selectedToken,
-                  })
-                }
-                onSendFreeText={() =>
-                  void sendTurn({ type: "free_text", text: freeText })
+                sttEnabled={sttEnabled}
+                onSubmitAnswer={() => {
+                  setShowFreeText(false);
+                  void sendTurn(
+                    {
+                      type: session.activeMcq!.step,
+                      optionToken: selectedToken,
+                    },
+                    resetInputs,
+                  );
+                }}
+                onSendFreeText={(text) =>
+                  sendTurn({ type: "free_text", text }, resetInputs)
                 }
               />
             )}
@@ -655,7 +971,7 @@ export function WrongAnswerCoachPanel({
                   size="sm"
                   disabled={submitting}
                   onClick={() =>
-                    void sendTurn({ type: "retry_classification" })
+                    void sendTurn({ type: "retry_classification" }, resetInputs)
                   }
                 >
                   {submitting ? (
@@ -696,13 +1012,46 @@ export function WrongAnswerCoachPanel({
           submitting={submitting}
           explanationText={explanationText}
           onExplanationChange={setExplanationText}
-          onSubmitExplanation={() =>
-            void sendTurn({ type: "explanation", text: explanationText })
+          sttEnabled={sttEnabled}
+          onSubmitExplanation={(text) =>
+            sendTurn({ type: "explanation", text }, resetInputs)
           }
           confirmEnd={confirmEnd}
           onConfirmEndChange={setConfirmEnd}
-          onEndChat={() => void sendTurn({ type: "leave" })}
+          onEndChat={() => void sendTurn({ type: "leave" }, resetInputs)}
         />
+      )}
+    </div>
+  );
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      {variant === "inline" && (
+        <div className="shrink-0 space-y-2 border-b px-5 py-3.5">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="flex items-center gap-2 text-base font-semibold">
+              <MessageSquare className="size-4 text-primary" />
+              Question {questionNumber} — Wrong Answer Coach
+            </h3>
+            {session && <StatusBadge state={session.state} />}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Answer each short step so we can pinpoint what happened and walk
+            through the solution.
+          </p>
+          {session && <StepPills state={session.state} />}
+        </div>
+      )}
+
+      {variant === "inline" && session ? (
+        <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+          <div className="relative max-h-[26dvh] shrink-0 overflow-y-auto border-b bg-muted/20 p-4 md:max-h-none md:w-2/5 md:border-r md:border-b-0">
+            <OriginalQuestionCard session={session} />
+          </div>
+          {chatColumn}
+        </div>
+      ) : (
+        chatColumn
       )}
     </div>
   );
@@ -724,8 +1073,8 @@ export function WrongAnswerCoachDrawer({
         side="right"
         className="flex w-full flex-col overflow-hidden p-0 sm:max-w-xl"
       >
-        <SheetHeader className="shrink-0 space-y-2 border-b px-5 py-4">
-          <div className="flex items-center justify-between gap-2 pr-6">
+        <SheetHeader className="shrink-0 space-y-2 border-b px-5 py-4 pr-10">
+          <div className="flex items-center justify-between gap-2">
             <SheetTitle className="flex items-center gap-2 text-base">
               <MessageSquare className="size-4 text-primary" />
               Question {questionNumber} — Review Chat

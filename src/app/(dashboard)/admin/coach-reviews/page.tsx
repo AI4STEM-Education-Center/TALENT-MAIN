@@ -4,8 +4,8 @@ export default function AdminCoachReviewsPage() {
   return (
     <CoachReviewsClient
       apiBasePath="/api/admin/coach-reviews"
-      heading="Wrong Answer Coach Reviews (Admin)"
-      subheading="Inspect flagged diagnostic sessions across all classes and record review decisions."
+      heading="Wrong Answer Coach Sessions (Admin)"
+      subheading="View recorded diagnostic sessions and 5-run Decisions API classifications across all classes."
     />
   );
 }

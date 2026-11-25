@@ -51,8 +51,9 @@ export function countCoachWords(text: string): number {
 export function formatStructuredTutoringPlainText(
   msg: StructuredTutoringMessage,
 ): string {
+  const answerText = msg.correctAnswerText.trim().replace(/\.+$/, "");
   const parts: string[] = [
-    `The correct answer is: ${msg.correctAnswerText}.`,
+    `The correct answer is: ${answerText}.`,
     ...msg.bodyParagraphs.map((p) => p.trim()).filter(Boolean),
   ];
   if (msg.keyPoints && msg.keyPoints.length > 0) {

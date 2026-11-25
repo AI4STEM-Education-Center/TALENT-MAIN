@@ -425,8 +425,20 @@ describe("Wrong Answer Coach end-to-end student workflow", () => {
     expect(startRes.status).toBe(200);
     const started = await startRes.json();
     expect(started.state).toBe("AWAITING_EXPLANATION");
-    // ZERO LEAKAGE: correctOptionText must NOT be present before Step 10
+    // ZERO LEAKAGE: correctOptionText & isCorrect must NOT be present before Step 10
     expect(started.originalQuestion.correctOptionText).toBeUndefined();
+    expect(started.originalQuestion.options).toHaveLength(3);
+    expect(
+      started.originalQuestion.options.every(
+        (o: { isCorrect?: boolean }) => o.isCorrect === undefined,
+      ),
+    ).toBe(true);
+    expect(
+      started.originalQuestion.options.some(
+        (o: { isChosen: boolean; text: string }) =>
+          o.isChosen && o.text === "0 m/s^2",
+      ),
+    ).toBe(true);
 
     // Submit explanation -> Check 2 (5 Decisions API runs) -> Check 3 MCQ
     const expRes = await respondTurn(
@@ -472,6 +484,20 @@ describe("Wrong Answer Coach end-to-end student workflow", () => {
     const afterC3 = await c3Res.json();
     expect(afterC3.state).toBe("AWAITING_HELDOUT_QUESTION");
     expect(afterC3.originalQuestion.correctOptionText).toBeUndefined();
+    expect(afterC3.answeredMcqs).toHaveLength(1);
+    expect(afterC3.answeredMcqs[0].step).toBe("second_question");
+    expect(afterC3.answeredMcqs[0].options).toHaveLength(3);
+    expect(
+      afterC3.answeredMcqs[0].options.find(
+        (o: { isChosen: boolean }) => o.isChosen,
+      )?.text,
+    ).toBe("9.8 m/s^2 downward");
+    expect(afterC3.answeredMcqs[0].isCorrect).toBeUndefined();
+    expect(
+      afterC3.answeredMcqs[0].options.every(
+        (o: { isCorrect?: boolean }) => o.isCorrect === undefined,
+      ),
+    ).toBe(true);
 
     // Answer Held-Out -> Step 10 Tutoring -> COMPLETED
     const hoChoice = afterC3.activeMcq.options[0];
@@ -495,6 +521,24 @@ describe("Wrong Answer Coach end-to-end student workflow", () => {
     expect(completed.originalQuestion.correctOptionText).toBe(
       "9.8 m/s^2 downward",
     );
+    expect(
+      completed.originalQuestion.options.find(
+        (o: { isCorrect?: boolean }) => o.isCorrect,
+      )?.text,
+    ).toBe("9.8 m/s^2 downward");
+    expect(completed.answeredMcqs).toHaveLength(2);
+    expect(completed.answeredMcqs[0]).toMatchObject({
+      step: "second_question",
+      isCorrect: true,
+    });
+    expect(completed.answeredMcqs[1].step).toBe("held_out_question");
+    expect(typeof completed.answeredMcqs[1].isCorrect).toBe("boolean");
+    expect(completed.answeredMcqs[1].options).toHaveLength(3);
+    expect(
+      completed.answeredMcqs[1].options.find(
+        (o: { isChosen: boolean }) => o.isChosen,
+      )?.text,
+    ).toBe(hoChoice.text);
 
     // Verify persisted diagnosis row = Row 2 (SLIP)
     const dbRow = await prisma.wrongAnswerCoachSession.findUnique({
@@ -712,6 +756,28 @@ describe("Wrong Answer Coach end-to-end student workflow", () => {
     expect(completed.originalQuestion.correctOptionText).toBe(
       "9.8 m/s^2 downward",
     );
+    expect(
+      completed.originalQuestion.options.find(
+        (o: { isCorrect?: boolean }) => o.isCorrect,
+      )?.text,
+    ).toBe("9.8 m/s^2 downward");
+    expect(completed.answeredMcqs).toHaveLength(2);
+    expect(completed.answeredMcqs[0].step).toBe("second_question");
+    expect(typeof completed.answeredMcqs[0].isCorrect).toBe("boolean");
+    expect(completed.answeredMcqs[0].options).toHaveLength(3);
+    expect(
+      completed.answeredMcqs[0].options.some(
+        (o: { isChosen: boolean }) => o.isChosen,
+      ),
+    ).toBe(true);
+    expect(completed.answeredMcqs[1].step).toBe("held_out_question");
+    expect(typeof completed.answeredMcqs[1].isCorrect).toBe("boolean");
+    expect(completed.answeredMcqs[1].options).toHaveLength(3);
+    expect(
+      completed.answeredMcqs[1].options.some(
+        (o: { isChosen: boolean }) => o.isChosen,
+      ),
+    ).toBe(true);
 
     const dbRow = await prisma.wrongAnswerCoachSession.findUnique({
       where: { id: sessionId },
