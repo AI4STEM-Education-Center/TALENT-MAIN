@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.0.32 - 2026-11-27
+
+- Added a guided post-quiz review workflow with a reformed wrong-answer coach, thoughts-first diagnostics, interactive resource and practice cards with interaction tracking, and a unified quiz launcher supporting official and alternative question opt-out.
+- Added the end-to-end Wrong Answer Coach workflow backed by the Decisions API, with inline Step 2 diagnostic coaching, restored speech-to-text voice input, full choice and result display, and drawer styling refinements.
+- Improved alternative quiz and Coach variant generation with cached calibration samples, 6-version Coach generation, unbatched drafts, clickable Check 2 runs, and stricter practice feedback and math delimiter prompts.
+- Expanded administrator chat transcripts to hydrate and display full material, diagnostic, practice, and simulation cards collapsed by default with click-to-expand and pop-up viewer controls, and granted research scientists read-only access to coach sessions.
+- Improved page scroll stability by containing screen-reader-only labels inside scroll panes.
+- Refreshed validated production and development dependency sets across AWS SDK, OpenAI, Lucide, Nodemailer, Signature Pad, Tailwind Merge, and Vitest.
+
 ## v0.0.31 - 2026-11-20
 
 - Added real-time speech-to-text voice input across assistant surfaces with administrator settings and usage reporting, per-student knowledge tracing with starter thinking prompts, an AI Config payload fix, and same-origin microphone access in the Permissions-Policy header.
