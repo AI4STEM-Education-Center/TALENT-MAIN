@@ -59,7 +59,14 @@
 
 set -euo pipefail
 
-APP_DIR="${APP_DIR:-/home/ubuntu/app}"
+# The application path comes from the production image, which is Debian (cloud
+# user `admin`), not Ubuntu. Detect it rather than hardcoding one distro's
+# layout; an explicit APP_DIR from the runner still wins.
+APP_DIR="${APP_DIR:-}"
+if [ -z "$APP_DIR" ]; then
+  APP_DIR="$(ls -d /home/*/app 2>/dev/null | head -1)"
+fi
+APP_DIR="${APP_DIR:-/home/admin/app}"
 MARKER_DIR="/opt/pressure"
 MARKER="${MARKER_DIR}/SANITIZED"
 REPORT="${MARKER_DIR}/sanitize-report.json"

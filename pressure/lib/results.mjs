@@ -88,3 +88,64 @@ export function summarizeChecks(checks) {
     errorRate: totalChecks > 0 ? failedChecks / totalChecks : 1,
   };
 }
+
+/**
+ * Collect the thresholds a k6 summary reports as CROSSED.
+ *
+ * The two summary shapes mean opposite things, and confusing them is not a
+ * cosmetic bug — it silently inverts every published verdict:
+ *
+ *   `--summary-export`  "p(95)<800": true   -> crossed (FAILED)
+ *                       "p(95)<800": false  -> held   (passed)
+ *   `handleSummary`     { ok: false }       -> crossed (FAILED)
+ *                       { ok: true }        -> held   (passed)
+ *
+ * This shipped reading the boolean form as `state === false`, i.e. backwards.
+ * Every passing threshold was recorded as a failure, every genuine breach was
+ * dropped from the list, every result reached the dashboard as FAIL, and the
+ * runner exited non-zero on a fully passing run.
+ *
+ * @param {Record<string, ({thresholds?: Record<string, boolean|{ok?: boolean}>}
+ *   & Record<string, unknown>)> | undefined} metrics
+ *   Real k6 metrics carry many other fields (count, avg, p(95)...), so the
+ *   value type is intersected with an index signature; without it a caller
+ *   passing a genuine metric object trips excess-property checking.
+ * @returns {string[]} `"<metric> <threshold>"` for each crossed threshold
+ */
+export function crossedThresholds(metrics) {
+  const crossed = [];
+  for (const [metricName, metric] of Object.entries(metrics ?? {})) {
+    for (const [threshold, state] of Object.entries(metric?.thresholds ?? {})) {
+      const didFail =
+        typeof state === "boolean" ? state === true : state?.ok === false;
+      if (didFail) crossed.push(`${metricName} ${threshold}`);
+    }
+  }
+  return crossed;
+}
+
+/**
+ * Wall-clock duration of the measured phase, in milliseconds.
+ *
+ * k6's `--summary-export` top level is only `{ root_group, metrics }` — there is
+ * no `state` key — so reading `summary.state.testRunDurationMs` yields undefined
+ * and every published result carried durationMs 0. `handleSummary` output DOES
+ * provide state, so the summary value still wins when it is present; otherwise
+ * fall back to the runner's own brackets around the k6 phase in meta.json.
+ *
+ * @param {{state?: {testRunDurationMs?: number}} | undefined} summary
+ * @param {{startedAt?: string, finishedAt?: string} | undefined} meta
+ * @returns {number} non-negative whole milliseconds
+ */
+export function resolveDurationMs(summary, meta) {
+  const fromSummary = summary?.state?.testRunDurationMs;
+  if (typeof fromSummary === "number" && Number.isFinite(fromSummary)) {
+    return Math.max(0, Math.round(fromSummary));
+  }
+  const start = meta?.startedAt ? Date.parse(meta.startedAt) : NaN;
+  const end = meta?.finishedAt ? Date.parse(meta.finishedAt) : NaN;
+  if (Number.isFinite(start) && Number.isFinite(end)) {
+    return Math.max(0, Math.round(end - start));
+  }
+  return 0;
+}

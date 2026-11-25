@@ -20,7 +20,14 @@
 # rather than running with production credentials.
 set -euo pipefail
 
-APP_DIR="${APP_DIR:-/home/ubuntu/app}"
+# The application path comes from the production image, which is Debian (cloud
+# user `admin`), not Ubuntu. Detect it rather than hardcoding one distro's
+# layout; an explicit APP_DIR from the runner still wins.
+APP_DIR="${APP_DIR:-}"
+if [ -z "$APP_DIR" ]; then
+  APP_DIR="$(ls -d /home/*/app 2>/dev/null | head -1)"
+fi
+APP_DIR="${APP_DIR:-/home/admin/app}"
 log() { echo "[bootstrap] $*"; }
 die() { echo "[bootstrap] FATAL: $*" >&2; exit 1; }
 
@@ -36,6 +43,7 @@ PRESSURE_SOURCE_INSTANCE_ID="${PRESSURE_SOURCE_INSTANCE_ID:-}" \
 PRESSURE_ACK_REAL_DATA="${PRESSURE_ACK_REAL_DATA:-}" \
 PRESSURE_DEADMAN_MINUTES="${PRESSURE_DEADMAN_MINUTES:-240}" \
 PRESSURE_DB_PATH="${PRESSURE_DB_PATH:-}" \
+APP_DIR="${APP_DIR}" \
   sudo -E /opt/pressure/sanitize-sut.sh 2>&1 | sudo tee -a /var/log/pressure/sanitize.log
 
 # THE GATE. Written as an explicit test rather than relying on the pipeline's
@@ -45,7 +53,24 @@ PRESSURE_DB_PATH="${PRESSURE_DB_PATH:-}" \
 
 log "sanitize confirmed. Unmasking Docker..."
 sudo rm -f /opt/pressure/AWAITING_SANITIZE
-sudo systemctl unmask docker docker.socket
+# Mirrors the neutralization in user-data-sut.yml exactly. That file masks
+# containerd as well as docker, and additionally strips the exec bits off the
+# daemons as a systemd-independent backstop — the mask is written as a plain
+# symlink there because `systemctl mask` deadlocks the early boot, and a plain
+# symlink is ignored if systemd had already loaded the unit. Undo BOTH halves,
+# or docker unmasks cleanly and then fails to exec for a non-obvious reason.
+#
+# Safe to use systemctl here: this runs over SSH on a fully booted system, not
+# in cloud-init's pre-sysinit stage.
+sudo systemctl unmask docker docker.socket containerd
+# Docker tried to start during boot and hit 203/EXEC against the stripped
+# binary, so systemd has it in `failed` with the restart counter tripped
+# ("Start request repeated too quickly"). Without a reset it refuses to start
+# now that the binary is executable again.
+sudo systemctl reset-failed docker.service docker.socket containerd.service 2>/dev/null || true
+for b in /usr/bin/dockerd /usr/sbin/dockerd /usr/bin/containerd /usr/bin/docker; do
+  [ -e "$b" ] && sudo chmod 755 "$b"
+done
 sudo systemctl start docker
 
 log "starting the benchmark stack (web + worker)..."
