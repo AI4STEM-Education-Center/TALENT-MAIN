@@ -10,7 +10,9 @@ import { MathText } from "@/components/ui/math-text";
 import type { VariantQuestion } from "@/lib/quiz-variants";
 import {
   MODES,
+  isCoachVariation,
   isGenerating,
+  matchesSource,
   type Act,
   type SourceQuestion,
   type Version,
@@ -93,21 +95,44 @@ export function QuizVariantBatch({
     r.questionRevisions.some((q) => q.reason.trim().length < MIN_REASON),
   );
   async function submitRevisions() {
-    const done = await act(
-      {
-        action: "revise_batch",
-        batchId: versions[0]?.batchId,
-        revisions: pendingRevisions.map((r) => ({
+    const batchId = versions[0]?.batchId;
+    if (batchId) {
+      const done = await act(
+        {
+          action: "revise_batch",
+          batchId,
+          revisions: pendingRevisions.map((r) => ({
+            versionId: r.versionId,
+            questionRevisions: r.questionRevisions.map((q) => ({
+              sourceQuestionId: q.sourceQuestionId,
+              reason: q.reason.trim(),
+            })),
+          })),
+        },
+        "PATCH",
+      );
+      if (done) setStaged({});
+      return;
+    }
+    let allOk = true;
+    for (const r of pendingRevisions) {
+      const done = await act(
+        {
+          action: "revise",
           versionId: r.versionId,
           questionRevisions: r.questionRevisions.map((q) => ({
             sourceQuestionId: q.sourceQuestionId,
             reason: q.reason.trim(),
           })),
-        })),
-      },
-      "PATCH",
-    );
-    if (done) setStaged({});
+        },
+        "PATCH",
+      );
+      if (!done) {
+        allOk = false;
+        break;
+      }
+    }
+    if (allOk) setStaged({});
   }
   const staging: Staging = { staged, onToggle, onReason };
   return (
@@ -186,17 +211,21 @@ function ModeRow({
   stale: boolean;
   staging: Staging;
 }) {
-  const { act, busy, purpose } = shared;
+  const { act, busy, purpose, questions } = shared;
   const [editing, setEditing] = useState<string | null>(null);
   const reviewable = candidates.filter((v) => v.status === "REVIEW");
+  const approvable = reviewable.filter((v) => matchesSource(v, questions));
   const pending = candidates.some(isGenerating);
   const canAddMore =
     !stale &&
     !pending &&
+    !isCoachVariation(mode.value) &&
+    Boolean(candidates[0]?.batchId) &&
     (purpose === "ALTERNATE" ||
       candidates.some((v) => v.status === "PUBLISHED"));
   async function saveAll(action: "publish" | "standalone") {
-    for (const v of reviewable) await act({ versionId: v.id, action });
+    const targets = action === "publish" ? approvable : reviewable;
+    for (const v of targets) await act({ versionId: v.id, action });
   }
   const both = reviewable.length === 2;
   const editVersion = candidates.find((v) => v.id === editing);
@@ -213,12 +242,12 @@ function ModeRow({
               <Button
                 size="sm"
                 variant={purpose === "ALTERNATE" ? "default" : "outline"}
-                disabled={busy || stale}
+                disabled={busy || approvable.length === 0}
                 onClick={() => void saveAll("publish")}
               >
-                {both
+                {(approvable.length || reviewable.length) === 2
                   ? "Approve both as alternates"
-                  : `Approve all ${reviewable.length} as alternates`}
+                  : `Approve all ${approvable.length || reviewable.length} as alternates`}
               </Button>
               <Button
                 size="sm"
@@ -442,16 +471,29 @@ function CandidateHeader({
   busy,
   purpose,
   quizHrefBase,
-  stale,
+  questions,
   onEdit,
 }: Shared & { version: Version; stale: boolean; onEdit: () => void }) {
   const save = (action: "publish" | "standalone") =>
     void act({ versionId: version.id, action });
+  const draftStale = !matchesSource(version, questions);
   return (
     <>
-      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        {version.name}
-      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          {version.name}
+        </p>
+        {version.coachRole === "COACH_CHECK3" && (
+          <Badge variant="secondary" className="text-[11px]">
+            Coach · 2nd Q (Check 3)
+          </Badge>
+        )}
+        {version.coachRole === "COACH_HELDOUT" && (
+          <Badge variant="secondary" className="text-[11px]">
+            Coach · Held-Out Q
+          </Badge>
+        )}
+      </div>
       {isGenerating(version) && (
         <p role="status" className="flex items-center gap-2 text-sm">
           <Loader2 className="size-4 animate-spin" aria-hidden="true" />
@@ -465,7 +507,7 @@ function CandidateHeader({
           <Button
             size="sm"
             variant={purpose === "ALTERNATE" ? "default" : "outline"}
-            disabled={busy || stale}
+            disabled={busy || draftStale}
             onClick={() => save("publish")}
           >
             <Check className="size-4" aria-hidden="true" /> Approve as alternate
@@ -481,6 +523,17 @@ function CandidateHeader({
           <Button size="sm" variant="ghost" disabled={busy} onClick={onEdit}>
             Edit
           </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-destructive hover:text-destructive"
+            disabled={busy}
+            onClick={() =>
+              void act({ versionId: version.id, action: "discard" })
+            }
+          >
+            Discard
+          </Button>
         </div>
       )}
       {version.status === "FAILED" && (
@@ -488,13 +541,28 @@ function CandidateHeader({
           <p role="alert" className="text-sm text-destructive">
             {version.error ?? "Generation failed."}
           </p>
-          <Button
-            size="sm"
-            disabled={busy}
-            onClick={() => void act({ versionId: version.id, action: "retry" })}
-          >
-            <RefreshCw className="size-4" aria-hidden="true" /> Regenerate
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              disabled={busy}
+              onClick={() =>
+                void act({ versionId: version.id, action: "retry" })
+              }
+            >
+              <RefreshCw className="size-4" aria-hidden="true" /> Regenerate
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-destructive hover:text-destructive"
+              disabled={busy}
+              onClick={() =>
+                void act({ versionId: version.id, action: "discard" })
+              }
+            >
+              Discard
+            </Button>
+          </div>
         </div>
       )}
       {version.status === "PUBLISHED" && (

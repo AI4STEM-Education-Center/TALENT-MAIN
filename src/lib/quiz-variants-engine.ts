@@ -2,7 +2,9 @@ import {
   buildQuizVariantGenerationPrompt,
   buildQuizVariantVerificationPrompt,
   QUIZ_VARIANT_SYSTEM_PROMPT,
+  type CoachMisconceptionContext,
   type QuizVariantGenerationPromptInput,
+  type QuizVariantVariation,
 } from "./quiz-variant-prompts";
 import { requestQuizVariant } from "./quiz-variant-requests";
 import { z } from "zod";
@@ -21,6 +23,7 @@ import {
   checkConceptualNumberMisuse,
   checkContextRewriteDistinctness,
   checkWorkedSolutionConsistency,
+  isRewriteVariation,
   objectiveSchema,
   questionRevisionListSchema,
   validateVariant,
@@ -35,6 +38,10 @@ import {
 import { notifyVariantBatchIfComplete } from "./quiz-variant-notifications";
 import { logSystemEvent } from "./system-log";
 import { errorMessage } from "./errors";
+import {
+  ensureQuizCoachMetadata,
+  labelVariantQuestions,
+} from "./wrong-answer-coach-labeling";
 
 /** Generate-and-verify rounds per job before a draft is reported as failed. */
 export const MAX_GENERATION_ATTEMPTS = 4;
@@ -129,10 +136,10 @@ async function previousQuestions(quizId: string, excludeId?: string) {
     where: {
       quizId,
       ...(excludeId ? { id: { not: excludeId } } : {}),
-      status: { in: ["REVIEW", "PUBLISHED", "STANDALONE"] },
+      status: { in: ["GENERATING", "REVIEW", "PUBLISHED", "STANDALONE"] },
     },
     orderBy: { createdAt: "desc" },
-    take: 12,
+    take: 24,
     select: { questions: true },
   });
   return siblings.flatMap((sibling) => {
@@ -171,6 +178,86 @@ async function generateCandidates(
   );
 }
 
+function parseVariation(value: string | null | undefined): Variation {
+  if (
+    value === "CONTEXT" ||
+    value === "COACH_CHECK3" ||
+    value === "COACH_HELDOUT"
+  ) {
+    return value;
+  }
+  return "NUMBERS";
+}
+
+function rewriteModeLabel(variation: Variation): string {
+  if (variation === "COACH_CHECK3") return "Coach 2nd Q (COACH_CHECK3)";
+  if (variation === "COACH_HELDOUT") return "Coach Held-Out Q (COACH_HELDOUT)";
+  return "Full rewrite (CONTEXT)";
+}
+
+/**
+ * Load auto-labeled misconception statements for Coach-mode generation so
+ * Check 3 and Held-Out distractors stay aligned with the question's catalog
+ * misconceptions. Safe no-op when metadata is not yet available.
+ */
+async function loadCoachMisconceptionContext(
+  sourceQuestionIds: string[],
+): Promise<CoachMisconceptionContext[]> {
+  if (sourceQuestionIds.length === 0) return [];
+  try {
+    const metaRows = await prisma.questionCoachMetadata.findMany({
+      where: {
+        questionId: { in: sourceQuestionIds },
+        status: "READY",
+      },
+      select: {
+        questionId: true,
+        relevantMisconceptionsJson: true,
+      },
+    });
+    const codesByQuestion = new Map<string, string[]>();
+    const allCodes = new Set<string>();
+    for (const row of metaRows) {
+      let codes: string[] = [];
+      try {
+        const parsed = JSON.parse(row.relevantMisconceptionsJson);
+        if (Array.isArray(parsed)) {
+          codes = parsed.filter((c): c is string => typeof c === "string");
+        }
+      } catch {
+        codes = [];
+      }
+      if (codes.length > 0) {
+        codesByQuestion.set(row.questionId, codes);
+        for (const c of codes) allCodes.add(c);
+      }
+    }
+    if (allCodes.size === 0) return [];
+    const catalogRows = await prisma.misconception.findMany({
+      where: { misconceptionId: { in: [...allCodes] } },
+      select: { misconceptionId: true, statement: true },
+    });
+    const statementByCode = new Map(
+      catalogRows.map((m) => [m.misconceptionId, m.statement]),
+    );
+    const out: CoachMisconceptionContext[] = [];
+    for (const [sourceQuestionId, codes] of codesByQuestion) {
+      const misconceptions = codes
+        .map((code) => {
+          const statement = statementByCode.get(code);
+          return statement ? { code, statement } : null;
+        })
+        .filter((m): m is { code: string; statement: string } => m !== null);
+      if (misconceptions.length > 0) {
+        out.push({ sourceQuestionId, misconceptions });
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 /** Automatic quality checks for one freshly generated candidate. */
 function qualityProblem(
   candidate: VariantQuestion,
@@ -188,8 +275,12 @@ function qualityProblem(
     return "This alternative repeats an existing question. Retry to generate a different version.";
   return (
     checkConceptualNumberMisuse(source, candidate) ??
-    (variation === "CONTEXT"
-      ? checkContextRewriteDistinctness(source, candidate)
+    (isRewriteVariation(variation)
+      ? checkContextRewriteDistinctness(
+          source,
+          candidate,
+          rewriteModeLabel(variation),
+        )
       : null) ??
     checkWorkedSolutionConsistency(candidate)
   );
@@ -291,15 +382,24 @@ function parseQuestions(value: string | null | undefined): unknown[] {
   }
 }
 
+export type VerifiedSamplePair = {
+  question: VariantQuestion;
+  check: VerificationReview;
+};
+
 /**
- * Synchronous one-question preview for the generation modal: one NUMBERS and
- * one CONTEXT alternative of `source`, each generated, quality-checked and
- * blind-verified (with a couple of retries) in parallel.
+ * Synchronous one-question preview for the generation modal: generates,
+ * quality-checks, and blind-verifies the requested styles (by default NUMBERS
+ * and CONTEXT, plus COACH_CHECK3 and COACH_HELDOUT when `includeCoach` is true)
+ * in parallel.
  */
 export async function generateQuizVariantSample(opts: {
   quizId: string;
   source: VariantQuestion;
   objective: string;
+  includeCoach?: boolean;
+  variations?: QuizVariantVariation[];
+  extraPrevious?: VariantQuestion[];
 }) {
   const provider = await resolveProvider("quiz_variants");
   if (!provider)
@@ -319,21 +419,42 @@ export async function generateQuizVariantSample(opts: {
   const objectives: Objective[] = [
     { sourceQuestionId: opts.source.id, objective: opts.objective },
   ];
-  const previous = await previousQuestions(opts.quizId);
+  const requestedVariations: Variation[] = opts.variations?.length
+    ? [...new Set(opts.variations)]
+    : opts.includeCoach
+      ? ["NUMBERS", "CONTEXT", "COACH_CHECK3", "COACH_HELDOUT"]
+      : ["NUMBERS", "CONTEXT"];
+  const needsCoachContext = requestedVariations.some(
+    (v) => v === "COACH_CHECK3" || v === "COACH_HELDOUT",
+  );
+  const [dbPrevious, coachMisconceptionContext] = await Promise.all([
+    previousQuestions(opts.quizId),
+    needsCoachContext
+      ? loadCoachMisconceptionContext([opts.source.id])
+      : Promise.resolve([]),
+  ]);
+  const basePrevious = [...dbPrevious, ...(opts.extraPrevious ?? [])];
   const seed = crypto.randomUUID();
 
-  async function sample(variation: Variation) {
+  async function sample(
+    variation: Variation,
+    extraAvoid: VariantQuestion[] = [],
+  ): Promise<VerifiedSamplePair> {
+    const previous = [...basePrevious, ...extraAvoid];
     const rejections: string[] = [];
     for (let attempt = 0; ; attempt++) {
       try {
         const [question] = await generateCandidates(
           call,
           {
-            seed: `sample-${seed}-${variation}`,
+            seed: `sample-${seed}-${variation}${extraAvoid.length ? "-distinct" : ""}`,
             variation,
             sources,
             objectives,
             rejections,
+            ...(variation === "COACH_CHECK3" || variation === "COACH_HELDOUT"
+              ? { coachMisconceptionContext }
+              : {}),
           },
           previous,
         );
@@ -358,22 +479,60 @@ export async function generateQuizVariantSample(opts: {
     }
   }
 
-  const [numbersSample, contextSample] = await Promise.all([
-    sample("NUMBERS"),
-    sample("CONTEXT"),
-  ]);
+  const settled = await Promise.allSettled(
+    requestedVariations.map(async (v) => [v, await sample(v)] as const),
+  );
+  const byVariation = new Map<Variation, VerifiedSamplePair>();
+  for (let i = 0; i < requestedVariations.length; i++) {
+    const variation = requestedVariations[i];
+    const res = settled[i];
+    if (res.status === "fulfilled") {
+      byVariation.set(res.value[0], res.value[1]);
+    } else if (variation === "NUMBERS" || variation === "CONTEXT") {
+      // Practice styles are required for the modal; Coach preview failure degrades
+      // gracefully so already-verified practice samples are still saved and shown.
+      throw res.reason;
+    }
+  }
+
+  // Guarantee Held-Out is genuinely distinct from Check 3 (not just exact text).
+  const check3 = byVariation.get("COACH_CHECK3");
+  const heldOut = byVariation.get("COACH_HELDOUT");
+  if (
+    check3 &&
+    heldOut &&
+    (normalize(check3.question.text) === normalize(heldOut.question.text) ||
+      checkContextRewriteDistinctness(
+        check3.question,
+        heldOut.question,
+        "Coach Held-Out Q (COACH_HELDOUT)",
+      ) !== null)
+  ) {
+    try {
+      byVariation.set(
+        "COACH_HELDOUT",
+        await sample("COACH_HELDOUT", [check3.question]),
+      );
+    } catch {
+      // Keep the distinct Check 3 sample and omit a colliding Held-Out preview.
+      byVariation.delete("COACH_HELDOUT");
+    }
+  }
+
+  const numbersSample = byVariation.get("NUMBERS");
+  const contextSample = byVariation.get("CONTEXT");
+  const coachCheck3Sample = byVariation.get("COACH_CHECK3");
+  const coachHeldOutSample = byVariation.get("COACH_HELDOUT");
+
   return {
     sourceQuestionId: opts.source.id,
-    numbersSample,
-    contextSample,
+    ...(numbersSample ? { numbersSample } : {}),
+    ...(contextSample ? { contextSample } : {}),
+    ...(coachCheck3Sample ? { coachCheck3Sample } : {}),
+    ...(coachHeldOutSample ? { coachHeldOutSample } : {}),
     aiModel: `${provider.providerType}/${provider.model}`,
   };
 }
-
-import {
-  ensureQuizCoachMetadata,
-  labelVariantQuestions,
-} from "./wrong-answer-coach-labeling";
 
 export async function runQuizVariant(versionId: string) {
   const row = await prisma.quizPracticeVersion.findUnique({
@@ -455,8 +614,11 @@ export async function runQuizVariant(versionId: string) {
     const client = await createOpenAIClient(provider);
     sources = JSON.parse(row.sourceSnapshot) as VariantQuestion[];
     const objectives = objectiveSchema.parse(JSON.parse(row.objectives));
-    const variation: Variation =
-      row.variation === "CONTEXT" ? "CONTEXT" : "NUMBERS";
+    const variation: Variation = parseVariation(row.variation);
+    const coachMisconceptionContext =
+      variation === "COACH_CHECK3" || variation === "COACH_HELDOUT"
+        ? await loadCoachMisconceptionContext(sources.map((s) => s.id))
+        : [];
     const call = makeCall(
       client,
       provider,
@@ -504,20 +666,30 @@ export async function runQuizVariant(versionId: string) {
       const questions = validateVariant({ questions: existing }, sources);
       keep(questions, row.teacherEdited ? null : parseReviews(row.validation));
     } else if (existing.length) {
-      // Pre-seeded subset (verified modal samples): keep it, generate the rest.
+      // Pre-seeded subset (verified modal samples): keep only items that pass
+      // quality/duplicate checks against siblings; generate the rest.
       const seeded = new Set(
         existing.map(
           (q) => (q as { sourceQuestionId?: unknown }).sourceQuestionId,
         ),
       );
       try {
-        keep(
-          validateVariant(
-            { questions: existing },
-            sources.filter((s) => seeded.has(s.id)),
-          ),
-          parseReviews(row.validation),
+        const validatedSeed = validateVariant(
+          { questions: existing },
+          sources.filter((s) => seeded.has(s.id)),
         );
+        const existingSiblings = await previousQuestions(row.quizId, row.id);
+        const usableSeed = validatedSeed.filter((q) => {
+          const source = sources.find((s) => s.id === q.sourceQuestionId);
+          if (!source) return false;
+          return (
+            qualityProblem(q, source, variation, [
+              ...sources,
+              ...existingSiblings,
+            ]) === null
+          );
+        });
+        keep(usableSeed, parseReviews(row.validation));
       } catch {
         latest.clear();
         accepted.clear();
@@ -592,6 +764,13 @@ export async function runQuizVariant(versionId: string) {
               reasons,
               replacing,
               partial: genSources.length < sources.length,
+              ...(coachMisconceptionContext.length
+                ? {
+                    coachMisconceptionContext: coachMisconceptionContext.filter(
+                      (c) => genIds.has(c.sourceQuestionId),
+                    ),
+                  }
+                : {}),
             },
             previous,
           );

@@ -1088,6 +1088,26 @@ export async function startOrResumeCoachSession(input: {
   //    catch Prisma P2002 create race and return existing session cleanly.
   try {
     const created = await prisma.$transaction(async (tx) => {
+      // Revalidate inside the write transaction that both Coach versions are
+      // still live and labeled so a concurrent role swap cannot leave a new
+      // session pointing at a version demoted to Practice.
+      const liveCoachCount = await tx.quizPracticeVersion.count({
+        where: {
+          quizId: examResult.quizId,
+          status: "PUBLISHED",
+          coachLabeledAt: { not: null },
+          OR: [
+            { id: check3Version.id, coachRole: "COACH_CHECK3" },
+            { id: heldOutVersion.id, coachRole: "COACH_HELDOUT" },
+          ],
+        },
+      });
+      if (liveCoachCount !== 2) {
+        throw new CoachHttpError(
+          409,
+          "Alternative questions for Wrong Answer Coach were updated. Please try again.",
+        );
+      }
       const session = await tx.wrongAnswerCoachSession.create({
         data: {
           attemptId: input.attemptId,

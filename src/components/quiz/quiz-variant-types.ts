@@ -58,12 +58,17 @@ export type SampleResponse = {
   sourceQuestionId: string;
   numbersSample: VerifiedSampleItem;
   contextSample: VerifiedSampleItem;
+  coachCheck3Sample?: VerifiedSampleItem;
+  coachHeldOutSample?: VerifiedSampleItem;
   aiModel: string;
+  cached?: boolean;
 };
 
 export type SeedSamples = {
   numbersSample?: VerifiedSampleItem;
   contextSample?: VerifiedSampleItem;
+  coachCheck3Sample?: VerifiedSampleItem;
+  coachHeldOutSample?: VerifiedSampleItem;
 };
 
 export type ReviseBatchItem = {
@@ -81,7 +86,22 @@ export type Act = (
 export const MODES = [
   { value: "NUMBERS", label: "Numbers & choices" },
   { value: "CONTEXT", label: "Context, numbers & choices" },
+  { value: "COACH_CHECK3", label: "Wrong Answer Coach — 2nd Q (Check 3)" },
+  { value: "COACH_HELDOUT", label: "Wrong Answer Coach — Held-Out Q" },
 ] as const;
+
+export function isCoachVariation(variation: string): boolean {
+  return variation === "COACH_CHECK3" || variation === "COACH_HELDOUT";
+}
+
+export function isCoachEligibleSourceQuestion(q: SourceQuestion): boolean {
+  if (q.answerMode !== "SINGLE_SELECT" || q.figureUrl) return false;
+  if (q.options.length < 2 || q.options.length > 6) return false;
+  if (q.options.some((o) => o.imageUrl || !o.text.trim())) return false;
+  if (q.options.filter((o) => o.isCorrect).length !== 1) return false;
+  const distinct = new Set(q.options.map((o) => o.text.trim().toLowerCase()));
+  return distinct.size === q.options.length;
+}
 
 export const MIX_OPTIONS: {
   value: VariantMix;

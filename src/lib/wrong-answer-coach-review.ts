@@ -7,6 +7,7 @@
 
 import { prisma } from "./prisma";
 import { getActiveMisconceptions } from "./misconception-labeling";
+import { CHECK2_BUILTIN_CHOICES } from "./wrong-answer-coach-prompts";
 import type {
   Check2RunSlot,
   CoachFlagCode,
@@ -18,6 +19,14 @@ import type {
 } from "./wrong-answer-coach-types";
 
 const LETTERS = ["A", "B", "C", "D", "E", "F"] as const;
+
+export interface Check2ChoiceDefinition {
+  value: string;
+  label: string;
+  description: string;
+  kind: "sound" | "neither" | "misconception";
+  fromLiveCatalog?: boolean;
+}
 
 export interface ReviewOptionView {
   label: string;
@@ -418,6 +427,81 @@ export async function getCoachReviewDetail(
     row.heldOutSelectedText,
   );
 
+  const check2Runs = parseJson<Check2RunSlot[]>(row.check2RunsJson, []);
+  const misconceptionStatements: Record<string, string> = {};
+  for (const m of snapshot?.relevantMisconceptions ?? []) {
+    misconceptionStatements[m.code] = m.statement;
+  }
+
+  const referencedCodes = new Set<string>();
+  const addCode = (code: string | null | undefined) => {
+    if (!code || code === "sound" || code === "neither") return;
+    referencedCodes.add(code);
+  };
+  addCode(row.check1Label);
+  addCode(row.check2MisconceptionCode);
+  addCode(row.check3Label);
+  addCode(row.heldOutLabel);
+  addCode(row.diagnosisMisconceptionCode);
+  for (const opt of originalOptions) addCode(opt.misconceptionCode);
+  for (const opt of secondQuestionOptions) addCode(opt.misconceptionCode);
+  for (const opt of heldOutQuestionOptions) addCode(opt.misconceptionCode);
+  for (const run of check2Runs) {
+    addCode(run.choice);
+    addCode(run.misconceptionCode);
+    for (const p of run.probabilities) addCode(p.value);
+  }
+  const missingCodes = [...referencedCodes].filter(
+    (code) => !(code in misconceptionStatements),
+  );
+  if (missingCodes.length > 0) {
+    const fallbackRows = await prisma.misconception.findMany({
+      where: { misconceptionId: { in: missingCodes } },
+      select: { misconceptionId: true, statement: true },
+    });
+    for (const m of fallbackRows) {
+      misconceptionStatements[m.misconceptionId] = m.statement;
+    }
+  }
+
+  const seenChoices = new Set<string>();
+  const check2ChoiceDefinitions: Check2ChoiceDefinition[] = [];
+  for (const builtin of CHECK2_BUILTIN_CHOICES) {
+    seenChoices.add(builtin.value);
+    check2ChoiceDefinitions.push({
+      value: builtin.value,
+      label: builtin.label,
+      description: builtin.description,
+      kind: builtin.value,
+    });
+  }
+  for (const m of snapshot?.relevantMisconceptions ?? []) {
+    if (seenChoices.has(m.code)) continue;
+    seenChoices.add(m.code);
+    check2ChoiceDefinitions.push({
+      value: m.code,
+      label: `Misconception ${m.code}`,
+      description: m.statement,
+      kind: "misconception",
+    });
+  }
+  for (const run of check2Runs) {
+    for (const val of [run.choice, ...run.probabilities.map((p) => p.value)]) {
+      if (!val || seenChoices.has(val)) continue;
+      seenChoices.add(val);
+      const fromLiveCatalog = val in misconceptionStatements;
+      check2ChoiceDefinitions.push({
+        value: val,
+        label: `Misconception ${val}`,
+        description:
+          misconceptionStatements[val] ??
+          "No catalog description recorded for this misconception code.",
+        kind: "misconception",
+        ...(fromLiveCatalog ? { fromLiveCatalog: true } : {}),
+      });
+    }
+  }
+
   return {
     id: row.id,
     classId: row.classId,
@@ -438,7 +522,9 @@ export async function getCoachReviewDetail(
     completedAt: row.completedAt?.toISOString() ?? null,
     check1Label: row.check1Label,
     explanationText: row.explanationText,
-    check2Runs: parseJson<Check2RunSlot[]>(row.check2RunsJson, []),
+    check2Runs,
+    check2ChoiceDefinitions,
+    misconceptionStatements,
     check2ShortCircuitReason: row.check2ShortCircuitReason,
     check2ResultKind: row.check2ResultKind,
     check2MisconceptionCode: row.check2MisconceptionCode,
