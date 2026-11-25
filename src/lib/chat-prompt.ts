@@ -1,3 +1,4 @@
+import { MATH_DELIMITER_RULE } from "./assistant/feedback-rules";
 // Pure prompt helpers: the chat-style message shape and the quiz-review prompt
 // builder, kept server-free so they can be unit-tested and reused by the
 // exam-results engine.
@@ -49,6 +50,8 @@ export function buildQuizReviewPrompt(attempt: QuizReviewAttempt): string {
   const lines = [
     "You are an educational assistant reviewing a student's latest completed quiz attempt.",
     "Write a concise markdown response directly to the student.",
+    MATH_DELIMITER_RULE,
+    "This is a summary of a completed quiz, with no live student question. Discuss methods and next steps using separate examples; individual answer feedback belongs in an interactive review that can enforce the quiz's key availability.",
     "Do not review the quiz question by question.",
     "Summarize the student's main misconceptions or learning gaps across the attempt holistically.",
     "Use exactly three short sections titled Summary, Main Misconceptions, and Next Steps.",

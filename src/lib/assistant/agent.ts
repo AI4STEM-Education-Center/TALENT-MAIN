@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { formatCardHistory } from "./card-history";
 // The assistant's tool-calling loop.
 //
 // One turn = repeated streaming chat completions until the model stops asking
@@ -323,7 +325,12 @@ async function historyMessages(
         content: buildUserContent(text, attachments) as never,
       };
     }
-    return { role: turn.role, content: text };
+    const cardHistory =
+      turn.role === "assistant" ? formatCardHistory(turn.actions) : "";
+    return {
+      role: turn.role,
+      content: cardHistory ? `${text}\n\n${cardHistory}` : text,
+    };
   });
 }
 
@@ -508,8 +515,17 @@ export async function runAssistantTurn(
             }),
           };
         } else {
-          actions.push(outcome.action.stored);
-          await emit({ type: "action", action: outcome.action.view });
+          const cardId = randomUUID();
+          const ref = outcome.action.stored;
+          actions.push(
+            "source" in ref
+              ? { ...ref, ref: { ...ref.ref, cardId } }
+              : { ...ref, cardId },
+          );
+          await emit({
+            type: "action",
+            action: { ...outcome.action.view, cardId },
+          });
         }
       }
       await emit({

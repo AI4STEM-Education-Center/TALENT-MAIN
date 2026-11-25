@@ -6,6 +6,7 @@ import { Archive, Database, Paperclip, X } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import type { AssistantTurn } from "@/lib/assistant/types";
+import { TranscriptCards } from "./transcript-cards";
 
 const MARKDOWN_CLASS =
   "text-sm [&_p]:mb-2 [&_p:last-child]:mb-0 [&_h1]:text-base [&_h1]:font-semibold [&_h2]:text-sm [&_h2]:font-semibold [&_h3]:font-semibold [&_ul]:mb-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:mb-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:mb-1 [&_strong]:font-semibold [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-xs [&_table]:w-full [&_table]:text-xs [&_th]:border-b [&_th]:border-border [&_th]:px-1 [&_th]:py-1 [&_th]:text-left [&_td]:border-b [&_td]:border-border/50 [&_td]:px-1 [&_td]:py-1";
@@ -194,6 +195,9 @@ export function TranscriptDialog({
                     <Paperclip className="mr-1 inline size-3" />
                     {turn.attachmentNames.join(", ")}
                   </p>
+                )}
+                {turn.role === "assistant" && turn.actions && (
+                  <TranscriptCards actions={turn.actions} />
                 )}
               </div>
             </div>

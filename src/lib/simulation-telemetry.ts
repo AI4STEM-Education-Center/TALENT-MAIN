@@ -37,6 +37,8 @@ export const SIM_TELEMETRY_MESSAGE_TYPE = "sim-telemetry";
 export const SIMULATION_SURFACES = [
   "quiz_results",
   "results_page",
+  "coach_recommendation",
+  "assistant_recommendation",
   "library",
 ] as const;
 export type SimulationSurface = (typeof SIMULATION_SURFACES)[number];
@@ -65,6 +67,8 @@ export const SIMULATION_SURFACE_LABELS: Record<
 > = {
   quiz_results: "Quiz results (just submitted)",
   results_page: "Results page (past attempt)",
+  coach_recommendation: "Wrong-answer coach",
+  assistant_recommendation: "Study assistant",
   library: "Simulations library",
   rail: "Results rail (legacy, desktop)",
   mobile: "Results rail (legacy, phone/tablet)",

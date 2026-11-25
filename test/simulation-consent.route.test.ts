@@ -178,6 +178,19 @@ describe("simulation session launch labels", () => {
     ).toEqual({ surface: "library", viewport: "phone" });
   });
 
+  it.each(["coach_recommendation", "assistant_recommendation"])(
+    "records the %s launch surface",
+    async (surface) => {
+      const { params } = await setup("AGREE");
+      expect((await openSession(request({ surface }), params)).status).toBe(
+        201,
+      );
+      expect(await prisma.simulationSession.findFirstOrThrow()).toMatchObject({
+        surface,
+      });
+    },
+  );
+
   it("keeps accepting legacy surfaces from cached clients", async () => {
     const { params } = await setup("AGREE");
     const opened = await openSession(request({ surface: "rail" }), params);

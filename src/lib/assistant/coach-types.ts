@@ -32,6 +32,7 @@ export const COACH_TOOL_NAMES = [
   "recommend_material",
   "explain_simulation",
   "offer_practice_question",
+  "offer_diagnostic_options",
 ] as const;
 export type CoachToolName = (typeof COACH_TOOL_NAMES)[number];
 
@@ -73,11 +74,49 @@ export type CoachScope = {
 
 // ─── Stored references ───────────────────────────────────────────────────────
 
+export type CoachMaterialInteraction = {
+  status: "viewed";
+  viewedAt: string;
+  summary?: string;
+};
+
+export type CoachSimulationInteraction = {
+  status: "opened";
+  openedAt: string;
+  lastInteractedAt: string;
+  summary?: string;
+};
+
+export type CoachPracticeInteraction = {
+  status: "completed";
+  selectedOptionId: string | null;
+  selectedText: string;
+  numericValue: number | null;
+  correct: boolean;
+  completedAt: string;
+  questionText?: string;
+};
+
+export type CoachDiagnosticInteraction = {
+  status: "selected";
+  selectedOptionId?: string;
+  selectedLabel: string;
+  selectedAt: string;
+};
+
+export type CoachDiagnosticOptionsRef = {
+  kind: "diagnostic_options";
+  prompt: string;
+  options: { id: string; label: string }[];
+  interaction?: CoachDiagnosticInteraction;
+};
+
 export type CoachMaterialRef = {
   kind: "material";
   /** Index into the attempt's stored recommendation items. */
   recommendationIndex: number;
   reason: string;
+  interaction?: CoachMaterialInteraction;
 };
 export type CoachSimulationRef = {
   kind: "simulation";
@@ -85,6 +124,7 @@ export type CoachSimulationRef = {
   goal: string;
   steps: string[];
   observe: string;
+  interaction?: CoachSimulationInteraction;
 };
 export type CoachPracticeRef = {
   kind: "practice";
@@ -92,9 +132,16 @@ export type CoachPracticeRef = {
   /** The variant question's own id inside the published version. */
   variantQuestionId: string;
   reason: string;
+  interaction?: CoachPracticeInteraction;
+  /** The completed card's prompt at the time the student answered it. */
+  questionText?: string;
 };
-export type CoachActionRef =
-  CoachMaterialRef | CoachSimulationRef | CoachPracticeRef;
+export type CoachActionRef = { cardId?: string } & (
+  | CoachMaterialRef
+  | CoachSimulationRef
+  | CoachPracticeRef
+  | CoachDiagnosticOptionsRef
+);
 
 // ─── Client views ────────────────────────────────────────────────────────────
 
@@ -108,11 +155,42 @@ export type CoachPracticeQuestionView = {
   options: { id: string; text: string }[];
 };
 
-export type CoachActionView =
+export type AssistantCardInteractionInput = {
+  conversationId?: string;
+  attemptId?: string;
+  questionNumber?: number;
+  cardId?: string;
+} & (
+  | {
+      kind: "material";
+      materialId?: string;
+      recommendationIndex?: number;
+      summary?: string;
+    }
+  | { kind: "simulation"; simulationId?: string; summary?: string }
+  | {
+      kind: "diagnostic_options";
+      selectedOptionId?: string;
+      selectedLabel?: string;
+    }
+);
+
+export type AssistantCardInteractionResult = {
+  interaction:
+    | CoachMaterialInteraction
+    | CoachSimulationInteraction
+    | CoachDiagnosticInteraction;
+};
+
+export type CoachActionView = { cardId?: string } & (
+  | CoachDiagnosticOptionsRef
   | {
       kind: "material";
       reason: string;
       recommendation: PresignedRecommendation;
+      recommendationIndex?: number;
+      attemptId?: string;
+      interaction?: CoachMaterialInteraction;
     }
   | {
       kind: "simulation";
@@ -126,6 +204,8 @@ export type CoachActionView =
       goal: string;
       steps: string[];
       observe: string;
+      attemptId?: string;
+      interaction?: CoachSimulationInteraction;
     }
   | {
       kind: "practice";
@@ -133,7 +213,17 @@ export type CoachActionView =
       question: CoachPracticeQuestionView;
       /** Source for checking a widget practice answer through the shared coach endpoint. */
       target?: { attemptId: string; questionNumber: number };
-    };
+      interaction?: CoachPracticeInteraction;
+    }
+);
+
+export type CoachQuestionOptionView = {
+  label: string;
+  text: string;
+  imageUrl: string | null;
+  imageAlt: string | null;
+  selected: boolean;
+};
 
 /**
  * The original question, as the dialog's reference pane shows it. `response`
@@ -143,6 +233,8 @@ export type CoachActionView =
 export type CoachQuestionView = {
   questionNumber: number;
   quizName: string;
+  answerMode: "SINGLE_SELECT" | "MULTI_SELECT" | "NUMERIC";
+  options: CoachQuestionOptionView[];
   text: string;
   figureUrl: string | null;
   figureAlt: string | null;
@@ -173,15 +265,34 @@ export type CoachTurnView = {
 export type CoachSessionView = {
   question: CoachQuestionView;
   opening: string;
-  /**
-   * 1–2 clickable starter buttons representing possible student ways of thinking
-   * or approaches to the first question, shown before the student sends their
-   * first message so the coach can diagnose their issue quickly.
-   */
   openingOptions?: string[];
   conversationId: string | null;
   turns: CoachTurnView[];
 };
 
+export type CoachHistoryContext = {
+  attemptId: string;
+  questionNumber: number;
+  opening: string;
+  question: CoachQuestionView;
+};
+
+export type CoachPracticeInput = {
+  attemptId: string;
+  questionNumber: number;
+  versionId: string;
+  questionId: string;
+  selectedOptionId?: string;
+  numericValue?: number | string;
+  conversationId?: string;
+  cardId?: string;
+  source?: "coach" | "widget";
+};
+
 /** POST /api/assistant/coach/practice response. */
-export type CoachPracticeResult = { correct: boolean };
+export type CoachPracticeResult = {
+  correct: boolean;
+  selectedText: string;
+  questionText: string;
+  interaction: CoachPracticeInteraction;
+};

@@ -1,3 +1,4 @@
+import { completedCoachPractice } from "./card-history";
 // The assistant chat pipeline, shared by the widget route and the per-question
 // wrong-answer coach route. One implementation means one set of guardrails, rate
 // limits, streaming, transcript storage and error handling — the coach differs
@@ -22,6 +23,7 @@ import {
 import {
   appendTurn,
   loadConversationHistory,
+  MAX_TRANSCRIPT_TURNS,
   resolveConversation,
 } from "@/lib/assistant/conversation-store";
 import { runAssistantTurn, MAX_MESSAGE_CHARS } from "@/lib/assistant/agent";
@@ -290,7 +292,7 @@ export async function handleAssistantChat(
           const history = conversationId
             ? await loadConversationHistory(
                 conversationId,
-                settings.maxHistoryMessages,
+                coach ? MAX_TRANSCRIPT_TURNS : settings.maxHistoryMessages,
               )
             : (parsed.data.history ?? []);
 
@@ -302,7 +304,10 @@ export async function handleAssistantChat(
               ? {
                   systemPrompt: buildCoachSystemPrompt({
                     toolNames: [...tools.keys()],
-                    context: await buildCoachContext(coach),
+                    context: await buildCoachContext(
+                      coach,
+                      completedCoachPractice(history),
+                    ),
                     opening: coachOpening(coach.questionNumber),
                     extraInstructions: settings.extraInstructions,
                   }),
@@ -311,17 +316,29 @@ export async function handleAssistantChat(
                 }
               : undefined;
 
+          // Persist the card before making it clickable, even if the model
+          // emitted it early in a reply.
+          const deferred: AssistantStreamEvent[] = [];
           const result = await runAssistantTurn({
             settings,
             ctx: coach ? { ...ctx, coach } : ctx,
             override,
-            history,
+            history: history.slice(-settings.maxHistoryMessages),
             message: parsed.data.message,
             attachments: accepted,
             notices,
             loadHistoryAttachments: (ids, limit) =>
               loadStoredAttachments(ctx.userId, ids, limit),
-            emit,
+            emit: (event) => {
+              if (
+                conversationId &&
+                (event.type === "action" || event.type === "done")
+              ) {
+                deferred.push(event);
+              } else {
+                emit(event);
+              }
+            },
             signal: req.signal,
           });
 
@@ -368,6 +385,7 @@ export async function handleAssistantChat(
               result.actions ?? [],
             );
           }
+          for (const event of deferred) emit(event);
         } catch (error) {
           // A provider outage or a malformed upstream response lands here. The
           // detail goes to the admin log; the user gets a plain sentence.

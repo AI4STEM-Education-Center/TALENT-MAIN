@@ -77,6 +77,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
+  window.sessionStorage.clear();
   vi.unstubAllGlobals();
 });
 
@@ -235,6 +236,83 @@ describe("QuizPlayer", () => {
   });
 });
 
+describe("QuizPlayer resilience", () => {
+  const mountStudent = () =>
+    act(async () =>
+      root.render(
+        <QuizPlayer
+          mode="student"
+          classId="class"
+          quizId="quiz"
+          backHref="/student/classes/class"
+          backLabel="Back to class"
+        />,
+      ),
+    );
+  const startResponse = () =>
+    new Response(JSON.stringify({ attemptId: "attempt", questions }));
+
+  it("explains an empty session instead of showing Question 1 of 0, and retries", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ attemptId: "attempt", questions: [] })),
+    );
+    fetchMock.mockResolvedValueOnce(startResponse());
+    await mountStudent();
+    expect(host.textContent).toContain("no questions available");
+    expect(host.textContent).not.toContain("of 0");
+    await click("Try again");
+    expect(host.textContent).toContain("Question 1 of 3");
+  });
+
+  it("keeps answers in progress when the student leaves and continues the same attempt", async () => {
+    fetchMock.mockImplementation(async () => startResponse());
+    await mountStudent();
+    await click("Wrong choice");
+    await click("Next");
+    await click("Choice A");
+    await click("Next");
+    await enterNumber("9.5");
+
+    // "Quiz options" unmounts the player; "Continue" mounts a fresh one that
+    // resumes the same attempt.
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    await mountStudent();
+    expect(host.textContent).toContain("Question 3 of 3");
+    expect(host.querySelector("input")?.value).toBe("9.5");
+    expect(host.textContent).toContain("3 answered");
+    await click("1");
+    expect(button("Wrong choice").getAttribute("aria-pressed")).toBe("true");
+    expect(host.querySelectorAll('button[aria-pressed="true"]')).toHaveLength(
+      1,
+    );
+  });
+
+  it("forgets the draft once the attempt is submitted", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ attemptId: "attempt", questions: [questions[0]] }),
+      ),
+    );
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ score: 100, incorrectQuestionIds: [] })),
+    );
+    await mountStudent();
+    await click("Correct choice");
+    expect(window.sessionStorage.getItem("quiz-draft:attempt")).not.toBeNull();
+    await click("Submit Quiz");
+    expect(window.sessionStorage.getItem("quiz-draft:attempt")).toBeNull();
+  });
+
+  it("ignores a corrupt draft", async () => {
+    window.sessionStorage.setItem("quiz-draft:attempt", "{not json");
+    fetchMock.mockImplementation(async () => startResponse());
+    await mountStudent();
+    expect(host.textContent).toContain("Question 1 of 3");
+    expect(host.textContent).toContain("0 answered");
+  });
+});
+
 describe("alternative practice player", () => {
   it("records a retake, shows the standard results and recommendations, and returns to practice options", async () => {
     fetchMock.mockResolvedValueOnce(
@@ -301,5 +379,54 @@ describe("alternative practice player", () => {
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({
       attemptId: "practice-1",
     });
+  });
+});
+
+describe("official quiz exclusions", () => {
+  it("starts with the chosen exclusions, says so during the quiz, and notes it on results", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          attemptId: "attempt",
+          excludedCount: 2,
+          exclusionIgnored: false,
+          questions: [questions[0]],
+        }),
+      ),
+    );
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ score: 100, incorrectQuestionIds: [] })),
+    );
+    const onBackToSetup = vi.fn();
+    await act(async () =>
+      root.render(
+        <QuizPlayer
+          mode="student"
+          classId="class"
+          quizId="quiz"
+          exclusionOptions={{ excludedQuestionIds: ["x", "y"] }}
+          onBackToSetup={onBackToSetup}
+          backHref="/student/classes/class"
+          backLabel="Back to class"
+        />,
+      ),
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      classId: "class",
+      quizId: "quiz",
+      excludedQuestionIds: ["x", "y"],
+    });
+    expect(host.textContent).toContain(
+      "2 questions you answered correctly before are left out",
+    );
+    await click("Correct choice");
+    await click("Submit Quiz");
+    expect(host.textContent).toContain(
+      "2 questions you answered correctly before were left out. This attempt's score covers the remaining questions.",
+    );
+    await click("Retake quiz");
+    expect(onBackToSetup).toHaveBeenCalledWith("official");
+    await click("Practice another version");
+    expect(onBackToSetup).toHaveBeenLastCalledWith("practice");
   });
 });

@@ -218,6 +218,29 @@ describe("generation quality checks", () => {
       checkWorkedSolutionConsistency({ ...numeric, solution: "8/2 = 4" }),
     ).toMatch(/never arrives/);
   });
+  it.each([
+    [4900, "$4.9\\times 10^{3}\\,\\text{N}$"],
+    [-0.0049, "$-4.9\\cdot 10^{-3}$"],
+    [4900, "$4.9\\times 10^3$"],
+    [1200, "$1{,}200$"],
+    [1200000, "$1\\,200\\ 000$"],
+  ])(
+    "matches numeric key %s in LaTeX solution %s",
+    (answerNumeric, solution) => {
+      expect(
+        checkWorkedSolutionConsistency({ ...numeric, answerNumeric, solution }),
+      ).toBeNull();
+    },
+  );
+  it("reads a scientific-notation exponent as part of the value", () => {
+    expect(
+      checkWorkedSolutionConsistency({
+        ...numeric,
+        answerNumeric: 3,
+        solution: "$4.9\\times 10^{3}$",
+      }),
+    ).toMatch(/never arrives/);
+  });
   it("lets the model refuse through the generation schema with a reason", () => {
     const refusal = { questions: [], refusalReason: "Key marks two answers." };
     expect(variantGenerationSchema.parse(refusal)).toEqual(refusal);

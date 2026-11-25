@@ -253,3 +253,163 @@ describe("assistant study card transport", () => {
     expect(state.current.bubbles[0].cards).toEqual([card]);
   });
 });
+
+describe("reopening saved conversations", () => {
+  const question = {
+    questionNumber: 4,
+    quizName: "Forces",
+    answerMode: "SINGLE_SELECT" as const,
+    options: [
+      {
+        label: "A",
+        text: "1 N",
+        imageUrl: null,
+        imageAlt: null,
+        selected: true,
+      },
+    ],
+    text: "What is the net force?",
+    figureUrl: null,
+    figureAlt: null,
+    response: { kind: "choices" as const, choices: [] },
+    review: null,
+  };
+
+  function stubConversations(detail: object) {
+    const calls: { url: string; body: unknown }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string, init?: RequestInit) => {
+        calls.push({
+          url: String(input),
+          body: init?.body ? JSON.parse(String(init.body)) : undefined,
+        });
+        if (String(input).startsWith("/api/assistant/conversations/"))
+          return Response.json(detail);
+        return new Response(
+          `${JSON.stringify({ type: "delta", text: "ok" })}\n`,
+        );
+      }),
+    );
+    return calls;
+  }
+
+  it("restores a coach conversation from its opening and keeps follow-ups on the coach", async () => {
+    const calls = stubConversations({
+      summary: { id: "conv-c", kind: "coach" },
+      turns: [
+        { role: "user", content: "I added them", cards: [] },
+        {
+          role: "assistant",
+          content: "Try this",
+          cards: [
+            {
+              cardId: "card-1",
+              kind: "diagnostic_options",
+              prompt: "Which?",
+              options: [{ id: "o", label: "This one" }],
+            },
+          ],
+        },
+      ],
+      coach: {
+        attemptId: "att-9",
+        questionNumber: 4,
+        opening: "Let's look at question 4.",
+        question,
+      },
+    });
+    const state = await mount();
+    await act(async () => state.current.openConversation("conv-c"));
+    expect(state.current.bubbles.map((b) => b.content)).toEqual([
+      "Let's look at question 4.",
+      "I added them",
+      "Try this",
+    ]);
+    expect(state.current.coachContext?.attemptId).toBe("att-9");
+    expect(state.current.conversationId).toBe("conv-c");
+    expect(state.current.attachmentsEnabled).toBe(false);
+
+    await act(async () =>
+      state.current.updateCardInteraction("card-1", {
+        status: "selected",
+        selectedOptionId: "o",
+        selectedLabel: "This one",
+        selectedAt: "2026-11-20T00:00:00Z",
+      }),
+    );
+    expect(state.current.bubbles[2].cards?.[0]).toMatchObject({
+      interaction: { selectedLabel: "This one" },
+    });
+
+    await act(async () => state.current.send("Why?"));
+    expect(calls.at(-1)).toEqual({
+      url: "/api/assistant/coach/chat",
+      body: { message: "Why?", attemptId: "att-9", questionNumber: 4 },
+    });
+
+    await act(async () => state.current.startNewConversation());
+    expect(state.current.coachContext).toBeNull();
+    await act(async () => state.current.send("General question"));
+    expect(calls.at(-1)?.url).toBe("/api/assistant/chat");
+  });
+
+  it("opens an ordinary chat without coach context", async () => {
+    const calls = stubConversations({
+      summary: { id: "conv-g", kind: "chat" },
+      turns: [{ role: "user", content: "Hi", cards: [] }],
+    });
+    const state = await mount();
+    await act(async () => state.current.openConversation("conv-g"));
+    expect(state.current.coachContext).toBeNull();
+    expect(state.current.bubbles.map((b) => b.content)).toEqual(["Hi"]);
+    await act(async () => state.current.send("More"));
+    expect(calls.at(-1)?.url).toBe("/api/assistant/chat");
+    expect(calls.at(-1)?.body).toMatchObject({ conversationId: "conv-g" });
+  });
+
+  it("opens a withheld-key coach transcript read-only and clears it on New conversation", async () => {
+    const calls = stubConversations({
+      summary: { id: "conv-old", kind: "coach" },
+      turns: [{ role: "user", content: "I added them", cards: [] }],
+      coach: {
+        attemptId: "att-9",
+        questionNumber: 4,
+        opening: "Let's look at question 4.",
+        question,
+      },
+      readOnly: true,
+      readOnlyReason: "The quiz's answer-key policy changed.",
+    });
+    const state = await mount();
+    await act(async () => state.current.openConversation("conv-old"));
+    expect(state.current.readOnly).toBe(true);
+    expect(state.current.readOnlyReason).toBe(
+      "The quiz's answer-key policy changed.",
+    );
+    const before = calls.length;
+    await act(async () => state.current.send("Why?"));
+    expect(calls).toHaveLength(before);
+
+    await act(async () => state.current.startNewConversation());
+    expect(state.current.readOnly).toBe(false);
+    expect(state.current.readOnlyReason).toBeNull();
+  });
+
+  it("clears read-only when another conversation is opened", async () => {
+    stubConversations({
+      summary: { id: "conv-old", kind: "coach" },
+      turns: [],
+      readOnly: true,
+    });
+    const state = await mount();
+    await act(async () => state.current.openConversation("conv-old"));
+    expect(state.current.readOnly).toBe(true);
+    stubConversations({
+      summary: { id: "conv-g", kind: "chat" },
+      turns: [{ role: "user", content: "Hi", cards: [] }],
+    });
+    await act(async () => state.current.openConversation("conv-g"));
+    expect(state.current.readOnly).toBe(false);
+  });
+});

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Atom, ChevronRight, CircleOff } from "lucide-react";
+import { Atom, Check, ChevronRight, CircleOff } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { SimulationDialog } from "@/components/simulation/SimulationDialog";
 import { FeedbackRatingForm } from "@/components/feedback/FeedbackRatingForm";
@@ -110,9 +110,11 @@ function SimulationRating({
 function SimulationCardList({
   sims,
   onActivate,
+  exploredIds,
 }: {
   sims: SimulationRecommendationView[];
   onActivate: (id: string) => void;
+  exploredIds?: ReadonlySet<string>;
 }) {
   return (
     <div className="space-y-3">
@@ -153,7 +155,14 @@ function SimulationCardList({
                   </span>
                 )}
               </span>
-              <ChevronRight aria-hidden className="size-4 shrink-0" />
+              <span className="flex shrink-0 items-center gap-2">
+                {exploredIds?.has(sim.simulationId) && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-green-600/10 px-2 py-0.5 text-[11px] font-semibold text-green-700 dark:text-green-400">
+                    <Check className="size-3" aria-hidden /> Explored
+                  </span>
+                )}
+                <ChevronRight aria-hidden className="size-4 shrink-0" />
+              </span>
             </button>
           </Card>
         ),
@@ -180,6 +189,9 @@ export function SimulationRail({
   telemetrySurface,
   audience = "student",
   autoOpen = false,
+  onOpen,
+  exploredIds,
+  showHeading = true,
 }: {
   simulations: SimulationRecommendationView[];
   /** The attempt whose results surfaced these sims. Enables the rating form. */
@@ -197,6 +209,12 @@ export function SimulationRail({
   audience?: "student" | "teacher";
   /** Open the first available simulation until the viewer closes or selects one. */
   autoOpen?: boolean;
+  /** Called with each simulation the viewer opens or switches to. */
+  onOpen?: (simulationId: string) => void;
+  /** Simulations to mark as already explored. */
+  exploredIds?: ReadonlySet<string>;
+  /** The section heading and blurb; off when a page already introduces it. */
+  showHeading?: boolean;
 }) {
   // undefined means no interaction yet; null means explicitly closed. Keeping
   // those distinct lets late recommendations open without undoing dismissal.
@@ -226,22 +244,34 @@ export function SimulationRail({
 
   if (sims.length === 0) return null;
 
+  const activate = (id: string) => {
+    setActiveId(id);
+    onOpen?.(id);
+  };
   const active = openable.find((sim) => sim.simulationId === activeId) ?? null;
   const viewer = { attemptId, audience } as const;
 
   return (
     <section
       aria-label="Explore with simulations"
-      className="space-y-3 lg:sticky lg:top-4"
+      className={cn("space-y-3", showHeading && "lg:sticky lg:top-4")}
     >
-      <h2 className="flex items-center gap-1.5 text-lg font-semibold">
-        <Atom className="size-5 text-primary" /> Explore with simulations
-      </h2>
-      <p className="text-sm text-muted-foreground">
-        Interactive simulations of topics from this quiz — change the parameters
-        and watch what happens.
-      </p>
-      <SimulationCardList sims={sims} onActivate={setActiveId} />
+      {showHeading && (
+        <>
+          <h2 className="flex items-center gap-1.5 text-lg font-semibold">
+            <Atom className="size-5 text-primary" /> Explore with simulations
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Interactive simulations of topics from this quiz — change the
+            parameters and watch what happens.
+          </p>
+        </>
+      )}
+      <SimulationCardList
+        sims={sims}
+        onActivate={activate}
+        exploredIds={exploredIds}
+      />
 
       {active && (
         <SimulationDialog
@@ -257,7 +287,7 @@ export function SimulationRail({
             <SimulationChips
               sims={openable}
               activeId={active.simulationId}
-              onSelect={setActiveId}
+              onSelect={activate}
             />
           }
           footer={

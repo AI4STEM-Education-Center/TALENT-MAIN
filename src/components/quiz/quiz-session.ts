@@ -1,3 +1,7 @@
+import type { QuizQuestionExclusionOptions } from "@/lib/alternative-retake";
+import type { UnifiedQuizOverview } from "@/lib/quiz-overview";
+export type { UnifiedQuizOverview } from "@/lib/quiz-overview";
+
 import { scoreQuiz, type SubmittedAnswer } from "@/lib/quiz-scoring";
 import { shuffleAnswerChoices } from "@/lib/quiz-shuffle";
 
@@ -27,9 +31,9 @@ export interface QuizSession {
   // Only real student sessions have a persisted attempt and AI results.
   attemptId?: string;
   versionName?: string;
-  /** Practice only: previously-correct questions left out of this retake. */
+  /** Previously-correct questions left out of this retake. */
   excludedCount?: number;
-  /** Practice only: exclusion was requested but nothing would remain. */
+  /** Exclusion was requested but nothing would remain. */
   exclusionIgnored?: boolean;
   questions: QuizQuestion[];
   submit: (answers: SubmittedAnswer[]) => Promise<QuizResult>;
@@ -43,18 +47,31 @@ async function readResponse<T>(response: Response): Promise<T> {
   return response.json();
 }
 
+export async function fetchUnifiedQuizOverview(
+  classId: string,
+  quizId: string,
+): Promise<UnifiedQuizOverview> {
+  const query = new URLSearchParams({ classId, quizId });
+  return readResponse<UnifiedQuizOverview>(
+    await fetch(`/api/quiz?${query}`, { cache: "no-store" }),
+  );
+}
+
 export async function startStudentQuiz(
   classId: string,
   quizId: string,
+  options: QuizQuestionExclusionOptions = {},
 ): Promise<QuizSession> {
   const data = await readResponse<{
     attemptId: string;
+    excludedCount: number;
+    exclusionIgnored: boolean;
     questions: QuizQuestion[];
   }>(
     await fetch("/api/quiz", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ classId, quizId }),
+      body: JSON.stringify({ classId, quizId, ...options }),
     }),
   );
   return {
@@ -128,7 +145,7 @@ export async function startQuizPreview(quizId: string): Promise<QuizSession> {
 export async function startPracticeQuiz(
   classId: string,
   quizId: string,
-  excludeCorrect = false,
+  options: QuizQuestionExclusionOptions | boolean = false,
 ): Promise<QuizSession> {
   const data = await readResponse<{
     attemptId: string;
@@ -141,7 +158,13 @@ export async function startPracticeQuiz(
     await fetch("/api/quiz/practice", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ classId, quizId, excludeCorrect }),
+      body: JSON.stringify({
+        classId,
+        quizId,
+        ...(typeof options === "boolean"
+          ? { excludeCorrect: options }
+          : options),
+      }),
     }),
   );
   return {

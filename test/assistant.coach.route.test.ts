@@ -1,3 +1,4 @@
+import { POST as POST_CARD_INTERACTION } from "@/app/api/assistant/card-interaction/route";
 import {
   resolveCoachScope,
   loadCoachCandidates,
@@ -46,7 +47,10 @@ import type { ResolvedProvider } from "@/lib/ai-provider";
 import { resetSurfaceMemo } from "@/lib/ai-streaming";
 import { guardChatTurn } from "@/lib/guardrail-runner";
 import { saveAssistantSettings } from "@/lib/assistant/config";
-import { resolveConversation } from "@/lib/assistant/conversation-store";
+import {
+  readConversationForAdmin,
+  resolveConversation,
+} from "@/lib/assistant/conversation-store";
 import type { AssistantStreamEvent } from "@/lib/assistant/types";
 import type {
   CoachPracticeResult,
@@ -398,9 +402,57 @@ describe("GET /api/assistant/coach", () => {
       choices: [{ text: "3", imageUrl: null, imageAlt: null }],
     });
     expect(body.question.review).toBeNull();
-    expect(JSON.stringify(body)).not.toContain('"4"');
-    expect(body.opening).toContain("what were you thinking");
+    expect(body.question.answerMode).toBe("SINGLE_SELECT");
+    expect(body.question.options).toEqual([
+      { label: "A", text: "3", imageUrl: null, imageAlt: null, selected: true },
+      {
+        label: "B",
+        text: "4",
+        imageUrl: null,
+        imageAlt: null,
+        selected: false,
+      },
+      {
+        label: "C",
+        text: "5",
+        imageUrl: null,
+        imageAlt: null,
+        selected: false,
+      },
+    ]);
+    expect(body.opening).toContain("How did you approach it");
+    expect(body.openingOptions).toEqual([]);
     expect(body.turns).toEqual([]);
+  });
+
+  it("includes presigned images and preserves multi-select mode for choice snapshots", async () => {
+    const { question } = await fixture();
+    await prisma.question.update({
+      where: { id: question.id },
+      data: { answerMode: "MULTI_SELECT" },
+    });
+    const result = await prisma.examResult.findUniqueOrThrow({
+      where: { quizAttemptId: ATTEMPT },
+    });
+    const snapshot = JSON.parse(result.reviewSnapshot);
+    snapshot.questions[0].options[1].imageStorageKey = "choices/graph.png";
+    snapshot.questions[0].options[1].imageAlt = "Graph of the second choice";
+    await prisma.examResult.update({
+      where: { id: result.id },
+      data: { reviewSnapshot: JSON.stringify(snapshot) },
+    });
+    const resultView: CoachSessionView = await (
+      await GET_COACH(getCoach(ATTEMPT, 1))
+    ).json();
+    expect(resultView.question.answerMode).toBe("MULTI_SELECT");
+    expect(resultView.question.options[1]).toEqual({
+      label: "B",
+      text: "4",
+      selected: false,
+      imageUrl: "https://signed.test/choices/graph.png",
+      imageAlt: "Graph of the second choice",
+    });
+    expect(resultView.question.review).toBeNull();
   });
 
   it("includes the key and the teacher's explanation once the attempt is final", async () => {
@@ -465,6 +517,14 @@ describe("POST /api/assistant/coach/chat", () => {
     expect(reopened.question.review).toBeNull();
     expect(reopened.turns).toEqual([]);
     expect(reopened.conversationId).toBeNull();
+    const history = await GET_WIDGET_CONVERSATION(
+      new Request("http://localhost"),
+      {
+        params: Promise.resolve({ id: before.id }),
+      },
+    );
+    expect(history.status).toBe(404);
+    expect(await history.text()).not.toContain("The correct answer is 4.");
     const calls = scriptModel([{ text: "Try a different example." }]);
     await (
       await POST_COACH_CHAT(post("/api/assistant/coach/chat", body))
@@ -476,6 +536,38 @@ describe("POST /api/assistant/coach/chat", () => {
         where: { conversationId: before.id },
       }),
     ).toBe(2);
+  });
+
+  it("reopens a withheld-key transcript as read-only when the quiz becomes final", async () => {
+    await fixture({ final: true });
+    await prisma.classQuiz.updateMany({ data: { maxAttempts: 2 } });
+    scriptModel([{ text: "Try drawing the forces first." }]);
+    await (
+      await POST_COACH_CHAT(post("/api/assistant/coach/chat", body))
+    ).text();
+    const original = await prisma.assistantConversation.findFirstOrThrow();
+    await prisma.classQuiz.updateMany({ data: { maxAttempts: 1 } });
+
+    const history = await GET_WIDGET_CONVERSATION(
+      new Request("http://localhost"),
+      { params: Promise.resolve({ id: original.id }) },
+    );
+    expect(history.status).toBe(200);
+    expect(await history.json()).toMatchObject({
+      summary: { id: original.id },
+      readOnly: true,
+      readOnlyReason: expect.any(String),
+      coach: { question: { review: null } },
+      turns: [
+        { role: "user" },
+        { role: "assistant", content: "Try drawing the forces first." },
+      ],
+    });
+    const current = (await (
+      await GET_COACH(getCoach(ATTEMPT, 1))
+    ).json()) as CoachSessionView;
+    expect(current.question.review).not.toBeNull();
+    expect(current.conversationId).toBeNull();
   });
 
   it("persists and rehydrates a card-only reply", async () => {
@@ -553,7 +645,7 @@ describe("POST /api/assistant/coach/chat", () => {
     const system = calls[0].messages[0].content;
     expect(system).toContain("What is 2 + 2?");
     expect(system).toContain("ANSWER KEY: withheld");
-    expect(system).toContain("what were you thinking");
+    expect(system).toContain("How did you approach it");
     expect(system).not.toContain("Add the numbers carefully.");
     // Tools offered are the coach's, not the widget's.
     const tools = (
@@ -563,6 +655,7 @@ describe("POST /api/assistant/coach/chat", () => {
       "recommend_material",
       "explain_simulation",
       "offer_practice_question",
+      "offer_diagnostic_options",
     ]);
   });
 
@@ -619,6 +712,7 @@ describe("POST /api/assistant/coach/chat", () => {
         versionId: f.version.id,
         variantQuestionId: "variant-q",
         reason: "Try one with different numbers.",
+        cardId: expect.any(String),
       },
     ]);
 
@@ -771,7 +865,7 @@ describe("POST /api/assistant/coach/chat", () => {
     );
   });
 
-  it("keeps coach conversations out of the assistant widget's history and cannot be appended to from it", async () => {
+  it("lists both conversation kinds without letting widget messages append to a coach conversation", async () => {
     await fixture();
     scriptModel([{ text: "Tell me more." }]);
     await (
@@ -781,7 +875,14 @@ describe("POST /api/assistant/coach/chat", () => {
       await prisma.assistantConversation.findFirstOrThrow();
 
     const list = await (await GET_CONVERSATIONS()).json();
-    expect(list.conversations).toEqual([]);
+    expect(list.conversations).toEqual([
+      expect.objectContaining({
+        id: coachConversation.id,
+        kind: "coach",
+        coachResultId: ATTEMPT,
+        coachQuestionNumber: 1,
+      }),
+    ]);
 
     scriptModel([{ text: "General answer." }]);
     await (
@@ -798,6 +899,13 @@ describe("POST /api/assistant/coach/chat", () => {
       }),
     ).toBe(2);
     expect(await prisma.assistantConversation.count()).toBe(2);
+    const both = await (await GET_CONVERSATIONS()).json();
+    expect(both.conversations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "chat", coachResultId: null }),
+        expect.objectContaining({ kind: "coach", coachResultId: ATTEMPT }),
+      ]),
+    );
   });
 
   it("runs the assistant's guardrails: a blocked message never reaches the model", async () => {
@@ -841,16 +949,42 @@ describe("POST /api/assistant/coach/practice", () => {
     ["v-a", true],
     ["v-b", false],
   ])(
-    "grades %s and returns only its verdict",
+    "grades %s, echoes only the submitted response, and records ungraded usage",
     async (selectedOptionId, correct) => {
       const f = await fixture();
+      const count = await prisma.quizAttempt.count();
       const right = await POST_PRACTICE(answer(f, { selectedOptionId }));
       expect(right.status).toBe(200);
-      expect((await right.json()) as CoachPracticeResult).toEqual({
+      const result = (await right.json()) as CoachPracticeResult;
+      const selectedText = selectedOptionId === "v-a" ? "6" : "7";
+      expect(result).toEqual({
         correct,
+        selectedText,
+        questionText: "What is 3 + 3?",
+        interaction: {
+          status: "completed",
+          selectedOptionId,
+          correct,
+          selectedText,
+          numericValue: null,
+          completedAt: expect.any(String),
+        },
       });
-      // Stateless: no practice attempt, no graded attempt, no grade change.
-      expect(await prisma.quizPracticeAttempt.count()).toBe(0);
+      const attempt = await prisma.quizPracticeAttempt.findFirstOrThrow();
+      expect(attempt).toMatchObject({
+        quizAttemptId: null,
+        activeKey: null,
+        versionName: "Alt A (Coach practice)",
+        score: correct ? 100 : 0,
+        completedAt: expect.any(Date),
+      });
+      expect(JSON.parse(attempt.answers)).toMatchObject([
+        { questionId: "variant-q", isCorrect: correct },
+      ]);
+      expect(JSON.parse(attempt.questions)).toMatchObject([
+        { id: "variant-q" },
+      ]);
+      expect(await prisma.quizAttempt.count()).toBe(count);
       expect(await prisma.quizProgress.count()).toBe(0);
     },
   );
@@ -1030,7 +1164,8 @@ describe("coach on alternative-version retakes", () => {
     const alt = (await res.json()) as CoachSessionView;
     expect(alt.question.text).toBe("What is 3 + 3?");
     expect(alt.question.review).toBeNull();
-    expect(JSON.stringify(alt)).not.toContain('"6"');
+    expect(alt.question.options.map((o) => o.text)).toContain("6");
+    expect(JSON.stringify(alt.question.options)).not.toContain("isCorrect");
 
     // Nor does the model get the key.
     const calls = scriptModel([{ text: "Walk me through the sum." }]);
@@ -1142,7 +1277,10 @@ describe("coach on alternative-version retakes", () => {
       }),
     );
     expect(graded.status).toBe(200);
-    expect(await graded.json()).toEqual({ correct: true });
+    expect(await graded.json()).toMatchObject({
+      correct: true,
+      interaction: { status: "completed" },
+    });
   });
 
   it("does not let alternative retakes use up the graded allowance and unlock the key", async () => {
@@ -1595,4 +1733,301 @@ describe("student study recommendations", () => {
     });
     expect((await (await read()).json()).turns[1].cards).toEqual([]);
   });
+});
+
+describe("assistant card interactions", () => {
+  const interact = (body: object) =>
+    POST_CARD_INTERACTION(post("/api/assistant/card-interaction", body));
+  const read = (id: string) =>
+    GET_WIDGET_CONVERSATION(new Request("http://localhost"), {
+      params: Promise.resolve({ id }),
+    });
+  const coachChat = (message: string) =>
+    POST_COACH_CHAT(
+      post("/api/assistant/coach/chat", {
+        attemptId: ATTEMPT,
+        questionNumber: 1,
+        message,
+      }),
+    );
+  const cardFrom = async (response: Response) => {
+    const out = await events(response);
+    const conversation = out.find((e) => e.type === "conversation");
+    const actions = out.filter((e) => e.type === "action").map((e) => e.action);
+    if (conversation?.type !== "conversation")
+      throw new Error("Missing conversation");
+    return { id: conversation.id, actions };
+  };
+
+  it("persists a canonical diagnostic selection and a simultaneous simulation open before replay", async () => {
+    const f = await fixture();
+    scriptModel([
+      {
+        toolCalls: [
+          {
+            name: "offer_diagnostic_options",
+            args: {
+              prompt: "Which step should we unpack?",
+              options: [
+                { id: "count", label: "Count the jumps" },
+                { id: "setup", label: "Set up the number line" },
+              ],
+            },
+          },
+          {
+            name: "explain_simulation",
+            args: {
+              simulationId: f.sim.id,
+              goal: "Connect jumps and addition",
+              steps: ["Start at two", "Compare with three"],
+              observe: "Note the distance",
+            },
+          },
+        ],
+      },
+      { text: "We can work through one step." },
+    ]);
+    const { id, actions } = await cardFrom(
+      await coachChat("I lost track on the number line."),
+    );
+    expect(actions.map((action) => action.kind)).toEqual([
+      "diagnostic_options",
+      "simulation",
+    ]);
+    expect(actions[1]).toMatchObject({ attemptId: ATTEMPT });
+    const diagnostic = {
+      conversationId: id,
+      cardId: actions[0].cardId,
+      kind: "diagnostic_options",
+    };
+    expect(
+      (await interact({ ...diagnostic, selectedOptionId: "fake" })).status,
+    ).toBe(404);
+
+    const [selection, opened] = await Promise.all([
+      interact({
+        ...diagnostic,
+        selectedOptionId: "count",
+        selectedLabel: "client text",
+      }),
+      interact({
+        attemptId: ATTEMPT,
+        questionNumber: 1,
+        simulationId: f.sim.id,
+        kind: "simulation",
+        summary: "Adjusted the first addend",
+      }),
+    ]);
+    expect(selection.status).toBe(200);
+    expect(opened.status).toBe(200);
+    const selected = (await selection.json()).interaction;
+    const initialOpen = (await opened.json()).interaction;
+    expect(selected).toMatchObject({
+      status: "selected",
+      selectedOptionId: "count",
+      selectedLabel: "Count the jumps",
+      selectedAt: expect.any(String),
+    });
+    const updated = await interact({
+      conversationId: id,
+      cardId: actions[1].cardId,
+      kind: "simulation",
+      summary: "Tried two settings",
+    });
+    expect(await updated.json()).toMatchObject({
+      interaction: {
+        status: "opened",
+        openedAt: initialOpen.openedAt,
+        lastInteractedAt: expect.any(String),
+        summary: "Tried two settings",
+      },
+    });
+
+    const detail = await (await read(id)).json();
+    expect(detail.summary.kind).toBe("coach");
+    expect(detail.coach).toMatchObject({
+      attemptId: ATTEMPT,
+      questionNumber: 1,
+      question: { review: null },
+    });
+    expect(detail.turns[1]).not.toHaveProperty("actions");
+    expect(detail.turns[1].cards[0].interaction).toEqual(selected);
+    expect(detail.turns[1].cards[1].interaction.summary).toBe(
+      "Tried two settings",
+    );
+    const admin = await readConversationForAdmin(id);
+    expect(admin?.turns[1].actions).toMatchObject([
+      { kind: "diagnostic_options", interaction: selected },
+      {
+        kind: "simulation",
+        interaction: { status: "opened", summary: "Tried two settings" },
+      },
+    ]);
+
+    const calls = scriptModel([{ text: "Let's count the jumps." }]);
+    await (await coachChat("Let's do that one.")).text();
+    const replay = calls[0].messages.find(
+      (message) => message.role === "assistant",
+    )?.content;
+    expect(replay).toContain("Student selected: Count the jumps");
+    expect(replay).toContain("Opened: Tried two settings");
+  });
+
+  it("records a material view on a widget reference and enforces conversation ownership and body bounds", async () => {
+    const f = await fixture();
+    const candidates = await findStudyCandidates(f.student.student.id);
+    const material = candidates.find(
+      (candidate) => candidate.action.ref.kind === "material",
+    )!;
+    await saveAssistantSettings("student", {
+      enabledSkills: ["student-study-recommendations"],
+    });
+    scriptModel([
+      {
+        toolCalls: [
+          { name: "show_study_recommendation", args: material.action },
+        ],
+      },
+      { text: "Try the reading." },
+    ]);
+    const { id, actions } = await cardFrom(
+      await POST_CHAT(
+        post("/api/assistant/chat", { message: "Show me a reading" }),
+      ),
+    );
+    expect(actions[0]).toMatchObject({ kind: "material", attemptId: ATTEMPT });
+    const body = {
+      conversationId: id,
+      kind: "material",
+      cardId: actions[0].cardId,
+    };
+    expect(
+      (await interact({ ...body, summary: "x".repeat(9000) })).status,
+    ).toBe(413);
+    const other = await createStudent();
+    asStudent(other.user.id);
+    expect((await interact(body)).status).toBe(404);
+    expect((await read(id)).status).toBe(404);
+    asTeacher(f.teacher.user.id);
+    expect((await interact(body)).status).toBe(404);
+    asStudent(f.student.user.id);
+    const viewed = await interact({ ...body, summary: "Read the first page" });
+    expect(viewed.status).toBe(200);
+    const detail = await (await read(id)).json();
+    expect(detail.summary.kind).toBe("chat");
+    expect(detail).not.toHaveProperty("coach");
+    expect(detail.turns[1].cards[0]).toMatchObject({
+      kind: "material",
+      interaction: {
+        status: "viewed",
+        viewedAt: expect.any(String),
+        summary: "Read the first page",
+      },
+    });
+    const admin = await readConversationForAdmin(id);
+    expect(admin?.turns[1].actions).toMatchObject([
+      { source: "study", ref: { interaction: { status: "viewed" } } },
+    ]);
+  });
+
+  it.each(["coach", "widget"] as const)(
+    "persists the %s practice verdict and supplies it to the model on the next turn",
+    async (source) => {
+      const f = await fixture();
+      const candidate = (await findStudyCandidates(f.student.student.id)).find(
+        (item) => item.action.ref.kind === "practice",
+      )!;
+      if (source === "widget") {
+        await saveAssistantSettings("student", {
+          enabledSkills: ["student-study-recommendations"],
+        });
+      }
+      const send = (message: string, id?: string) =>
+        source === "coach"
+          ? coachChat(message)
+          : POST_CHAT(
+              post("/api/assistant/chat", { message, conversationId: id }),
+            );
+      scriptModel([
+        {
+          toolCalls: [
+            source === "coach"
+              ? {
+                  name: "offer_practice_question",
+                  args: { reason: "Check the method" },
+                }
+              : { name: "show_study_recommendation", args: candidate.action },
+          ],
+        },
+        { text: "Try it." },
+      ]);
+      const { id, actions } = await cardFrom(
+        await send("Can I practise this?"),
+      );
+      expect(actions[0]).toMatchObject({ kind: "practice" });
+      const answer = {
+        ...(source === "widget" ? { conversationId: id } : {}),
+        source,
+        cardId: actions[0].cardId,
+        attemptId: ATTEMPT,
+        questionNumber: 1,
+        versionId: f.version.id,
+        questionId: "variant-q",
+        selectedOptionId: "v-b",
+      };
+      const submit = (overrides: object = {}) =>
+        POST_PRACTICE(
+          post("/api/assistant/coach/practice", { ...answer, ...overrides }),
+        );
+      expect(
+        (await submit({ conversationId: "other-conversation" })).status,
+      ).toBe(404);
+      const checked = await submit();
+      expect(checked.status).toBe(200);
+      const verdict = await checked.json();
+      expect(verdict).toMatchObject({
+        correct: false,
+        selectedText: "7",
+        questionText: "What is 3 + 3?",
+      });
+      expect(JSON.stringify(verdict)).not.toContain('"6"');
+      const repeat = await submit({ selectedOptionId: "v-a" });
+      expect(await repeat.json()).toEqual(verdict);
+      expect(await prisma.quizPracticeAttempt.count()).toBe(1);
+      expect(await prisma.quizPracticeAttempt.findFirstOrThrow()).toMatchObject(
+        {
+          quizAttemptId: null,
+          activeKey: null,
+          versionName: `Alt A (${source === "widget" ? "Study assistant" : "Coach"} practice)`,
+        },
+      );
+      expect(await prisma.quizAttempt.count()).toBe(0);
+      expect(await prisma.quizProgress.count()).toBe(0);
+
+      const detail = await (await read(id)).json();
+      expect(detail.turns[1].cards[0].interaction).toEqual(verdict.interaction);
+      if (source === "coach") {
+        await saveAssistantSettings("student", { maxHistoryMessages: 2 });
+        scriptModel([{ text: "Let's revisit the method." }]);
+        await (await send("I still have a question.", id)).text();
+      }
+      const model = scriptModel([{ text: "That was wrong." }]);
+      await (await send("How did I do on that question?", id)).text();
+      const messages = model[0].messages;
+      const replay = messages.find(
+        (message) => message.role === "assistant",
+      )?.content;
+      if (source === "coach") {
+        expect(messages).toHaveLength(4);
+        expect(replay).toBe("Let's revisit the method.");
+        expect(messages[0].content).toContain(
+          "What is 3 + 3? | Student answered: 7 | Result: wrong",
+        );
+      } else {
+        expect(replay).toContain(
+          "What is 3 + 3? | Student answered: 7 | Result: wrong",
+        );
+      }
+    },
+  );
 });

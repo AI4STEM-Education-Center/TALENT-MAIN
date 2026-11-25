@@ -1,7 +1,17 @@
+import type { AssistantConversationDetail } from "@/lib/assistant/types";
+import {
+  buildCoachQuestionView,
+  coachOpening,
+  hydrateCoachActions,
+  resolveCoachScope,
+} from "@/lib/assistant/coach";
 import { hydrateStudyActions } from "@/lib/assistant/study-recommendations";
 import { NextResponse } from "next/server";
 import { resolveAssistantSession } from "@/lib/assistant/session";
-import { readUserConversation } from "@/lib/assistant/conversation-store";
+import {
+  coachActiveKey,
+  readUserConversation,
+} from "@/lib/assistant/conversation-store";
 import { logApiError } from "@/lib/system-log";
 
 export const runtime = "nodejs";
@@ -37,8 +47,9 @@ export async function GET(
     }
 
     const { id } = await params;
+    const owner = { userId: ctx.userId, audience: ctx.audience };
     const conversation = await readUserConversation(
-      { userId: ctx.userId, audience: ctx.audience },
+      owner,
       id,
       settings.historyRetentionDays,
     );
@@ -46,17 +57,53 @@ export async function GET(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    const { summary, finalCoachTranscript } = conversation;
+    const attemptId = summary.coachResultId;
+    const questionNumber = summary.coachQuestionNumber;
+    const scope =
+      summary.kind === "coach" && ctx.studentId && attemptId && questionNumber
+        ? await resolveCoachScope(ctx.studentId, attemptId, questionNumber)
+        : null;
+    // A teacher can reopen a previously final quiz. Its final-review messages
+    // may contain the key even though the current question view withholds it.
+    if (finalCoachTranscript && !scope?.answerKeyAvailable) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    const readOnly =
+      scope !== null &&
+      conversation.coachActiveKey !== coachActiveKey(owner, scope);
     const turns = await Promise.all(
-      conversation.turns.map(async (turn) => ({
+      conversation.turns.map(async ({ actions, ...turn }) => ({
         ...turn,
-        actions: undefined,
         cards:
-          ctx.studentId && turn.role === "assistant"
-            ? await hydrateStudyActions(turn.actions, ctx.studentId)
-            : [],
+          turn.role !== "assistant" || !ctx.studentId
+            ? []
+            : scope
+              ? await hydrateCoachActions(actions, scope)
+              : summary.kind === "chat"
+                ? await hydrateStudyActions(actions, ctx.studentId)
+                : [],
       })),
     );
-    return NextResponse.json({ ...conversation, turns });
+    const coach = scope
+      ? {
+          attemptId: scope.resultId,
+          questionNumber: scope.questionNumber,
+          opening: coachOpening(scope.questionNumber),
+          question: await buildCoachQuestionView(
+            readOnly ? { ...scope, answerKeyAvailable: false } : scope,
+          ),
+        }
+      : undefined;
+    const body: AssistantConversationDetail = { summary, turns, coach };
+    if (readOnly) {
+      body.readOnly = true;
+      body.readOnlyReason =
+        "The quiz's answer-key policy changed. Open a new coaching conversation to continue.";
+    }
+    return NextResponse.json(body, {
+      headers: { "Cache-Control": "no-store" },
+    });
   } catch (error) {
     logApiError("ASSISTANT_CONVERSATION_GET", error);
     return NextResponse.json(

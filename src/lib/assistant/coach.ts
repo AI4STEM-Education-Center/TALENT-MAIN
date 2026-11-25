@@ -14,7 +14,7 @@
 // ANSWER-KEY RULE. The results page is deliberately answer-key-free: missed
 // prompts plus the student's own response, nothing else. While the student can
 // still retake the quiz the coach keeps to that — the model is told the key is
-// withheld and is not given the unselected choices. Once the attempt is final
+// withheld and is given the choices without correctness flags. Once the attempt is final
 // (same `retakeStillPossible` test as the assistant's get_quiz_result_detail)
 // the full question, key and teacher explanation are shared as review. An
 // alternative-version retake is never final, so its key is always withheld.
@@ -49,6 +49,7 @@ import {
   COACH_STEP_MAX,
   type CoachActionRef,
   type CoachActionView,
+  type CoachPracticeInteraction,
   type CoachPracticeQuestionView,
   type CoachQuestionView,
   type CoachScope,
@@ -143,44 +144,16 @@ export async function resolveCoachScope(
 
 /** The assistant's first line. Static: no model call is spent on a greeting. */
 export function coachOpening(questionNumber: number): string {
-  return (
-    `Let's look at question ${questionNumber} together. Before I say anything: ` +
-    "what were you thinking when you answered it? Walk me through how you approached it."
-  );
+  return `Let's work through question ${questionNumber} together. How did you approach it, or where did you get stuck? Start with whatever you remember thinking.`;
 }
 
-/**
- * 1–2 clickable starter buttons representing possible student ways of thinking
- * in response to `coachOpening`, tailored to the question's answer mode and the
- * student's submitted response so the coach can immediately diagnose their
- * reasoning and recommend targeted resources.
- */
-export function coachOpeningOptions(scope: CoachScope): string[] {
-  const q = scope.question;
-  const answer = formatStudentAnswer(q);
-  const hasAnswer = answer !== "(no answer given)";
+export function coachOpeningOptions(_scope?: CoachScope): string[] {
+  return [];
+}
 
-  if (q.answerMode === "NUMERIC") {
-    return hasAnswer
-      ? [
-          `I used a formula and calculated ${answer}, but I'm not sure if I set up the equation or units right.`,
-          "I wasn't sure which concept or equation applies to this problem, so I estimated.",
-        ]
-      : [
-          "I wasn't sure which equation or concept to start with for this problem.",
-          "I knew the general topic, but got stuck setting up the calculation.",
-        ];
-  }
-
-  return hasAnswer
-    ? [
-        `I chose "${answer.slice(0, 80)}" because it seemed to match the main rule, but I may have mixed up how the variables relate.`,
-        "I narrowed it down, but I wasn't sure which principle or concept was the key here.",
-      ]
-    : [
-        "I wasn't sure which concept or rule applies to this question.",
-        "I got confused comparing the choices and how the underlying principle works.",
-      ];
+function optionLabel(index: number): string {
+  const letter = String.fromCharCode(65 + (index % 26));
+  return index < 26 ? letter : optionLabel(Math.floor(index / 26) - 1) + letter;
 }
 
 /** Conversation title an admin sees in the transcript browser. */
@@ -206,24 +179,12 @@ export async function buildCoachQuestionView(
     { ...source, questionNumber: scope.questionNumber },
   ]);
 
-  return {
-    questionNumber: scope.questionNumber,
-    quizName: scope.quizName,
-    text: mistake.text,
-    figureUrl: mistake.figureUrl,
-    figureAlt: mistake.figureAlt,
-    response: mistake.response,
-    review: scope.answerKeyAvailable ? await buildReview(scope) : null,
-  };
-}
-
-async function buildReview(
-  scope: CoachScope,
-): Promise<NonNullable<CoachQuestionView["review"]>> {
   const q = scope.question;
-  const options = Array.isArray(q.options) ? q.options : [];
-  const choices = await Promise.all(
-    options.map(async (option) => ({
+  const sourceOptions =
+    q.answerMode !== "NUMERIC" && Array.isArray(q.options) ? q.options : [];
+  const options = await Promise.all(
+    sourceOptions.map(async (option, index) => ({
+      label: optionLabel(index),
       text: typeof option.text === "string" ? option.text : "",
       imageUrl: await presignOptionImage({
         imageStorageKey:
@@ -234,9 +195,46 @@ async function buildReview(
       }),
       imageAlt: typeof option.imageAlt === "string" ? option.imageAlt : null,
       selected: option.selected === true,
-      correct: option.isCorrect === true,
     })),
   );
+  let answerMode: CoachQuestionView["answerMode"] = "SINGLE_SELECT";
+  if (q.answerMode === "NUMERIC" || q.answerMode === "MULTI_SELECT") {
+    answerMode = q.answerMode;
+  } else if (!q.answerMode && scope.questionId) {
+    // Older snapshots only stored the mode for numeric questions.
+    const live = await prisma.question.findUnique({
+      where: { id: scope.questionId },
+      select: { answerMode: true },
+    });
+    if (live?.answerMode === "MULTI_SELECT") answerMode = live.answerMode;
+  }
+
+  return {
+    questionNumber: scope.questionNumber,
+    quizName: scope.quizName,
+    text: mistake.text,
+    figureUrl: mistake.figureUrl,
+    figureAlt: mistake.figureAlt,
+    response: mistake.response,
+    answerMode,
+    options,
+    review: scope.answerKeyAvailable
+      ? await buildReview(
+          scope,
+          options.map(({ label: _label, ...option }, index) => ({
+            ...option,
+            correct: sourceOptions[index].isCorrect === true,
+          })),
+        )
+      : null,
+  };
+}
+
+async function buildReview(
+  scope: CoachScope,
+  choices: NonNullable<CoachQuestionView["review"]>["choices"],
+): Promise<NonNullable<CoachQuestionView["review"]>> {
+  const q = scope.question;
   return {
     choices,
     correctNumeric:
@@ -588,7 +586,7 @@ async function findPracticeMatch(
   scope: CoachScope,
   versionId: string,
   variantQuestionId: string,
-): Promise<PracticeMatch | null> {
+): Promise<(PracticeMatch & { versionName: string }) | null> {
   if (!scope.questionId) return null;
   if (!(await studentCanPractice(scope.studentId, scope.classId, scope.quizId)))
     return null;
@@ -596,12 +594,12 @@ async function findPracticeMatch(
   if (versionId === scope.ownVersionId) return null;
   const version = await prisma.quizPracticeVersion.findFirst({
     where: { id: versionId, quizId: scope.quizId, status: "PUBLISHED" },
-    select: { id: true, questions: true },
+    select: { id: true, name: true, questions: true },
   });
   if (!version) return null;
   const variant = parseVariantFor(version.questions, scope.questionId);
   if (!variant || variant.id !== variantQuestionId) return null;
-  return { versionId: version.id, variant };
+  return { versionId: version.id, versionName: version.name, variant };
 }
 
 /**
@@ -635,38 +633,54 @@ export const practiceAnswerSchema = z.object({
   numericValue: z.union([z.number(), z.string().max(40)]).optional(),
 });
 
-/**
- * Grade one answer to an offered practice question. Stateless on purpose: a
- * QuizPracticeAttempt archives a whole version's worth of answers and feeds the
- * practice history, and a single coached question is neither. Returns null for
- * anything that does not verify; otherwise ONLY whether the answer was right —
- * the practice feature never exposes keys or solutions to students.
- */
+/** Score one submitted answer against the current published practice question. */
 export async function gradeCoachPractice(
   scope: CoachScope,
   input: z.infer<typeof practiceAnswerSchema>,
-): Promise<{ correct: boolean } | null> {
+) {
   const match = await findPracticeMatch(
     scope,
     input.versionId,
     input.questionId,
   );
   if (!match) return null;
+  const { variant } = match;
   try {
     const scored = scoreVariant(
-      [match.variant],
+      [variant],
       [
         {
-          questionId: match.variant.id,
+          questionId: variant.id,
           selectedOptionId: input.selectedOptionId,
           numericValue: input.numericValue,
         },
       ],
       `coach:${scope.resultId}`,
     );
-    return { correct: scored.answerRecords[0]?.isCorrect === true };
+    const answer = scored.answerRecords[0];
+    const option = variant.options.find(
+      (o) => o.id === answer.selectedOptionId,
+    );
+    const selectedText =
+      variant.answerMode === "NUMERIC"
+        ? answer.numericValue == null
+          ? null
+          : [answer.numericValue, variant.answerUnit]
+              .filter((value) => value != null && value !== "")
+              .join(" ")
+        : (option?.text ?? null);
+    if (selectedText === null) return null;
+    return {
+      variant,
+      versionName: match.versionName,
+      answerRecords: scored.answerRecords,
+      correct: answer.isCorrect,
+      selectedOptionId: answer.selectedOptionId,
+      selectedText,
+      numericValue: answer.numericValue ?? null,
+      questionText: variant.text,
+    };
   } catch {
-    // An option id that is not one of this question's choices.
     return null;
   }
 }
@@ -674,6 +688,21 @@ export async function gradeCoachPractice(
 // ─── Action references ───────────────────────────────────────────────────────
 
 const text = (max: number) => z.string().trim().min(1).max(max);
+const timestamp = z.iso.datetime();
+export const CARD_SUMMARY_MAX = 500;
+export const diagnosticOptionsFields = {
+  prompt: text(COACH_REASON_MAX),
+  options: z
+    .array(z.object({ id: text(64), label: text(160) }))
+    .min(2)
+    .max(4)
+    .refine(
+      (options) =>
+        new Set(options.map((option) => option.id)).size === options.length,
+      "Option ids must be unique.",
+    ),
+};
+const cardIdField = z.string().uuid().optional();
 
 /**
  * The shape of a stored action reference. Also the validator for what comes
@@ -683,21 +712,63 @@ const text = (max: number) => z.string().trim().min(1).max(max);
 export const coachActionRefSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("material"),
+    cardId: cardIdField,
     recommendationIndex: z.number().int().min(0).max(50),
     reason: text(COACH_REASON_MAX),
+    interaction: z
+      .object({
+        status: z.literal("viewed"),
+        viewedAt: timestamp,
+        summary: text(CARD_SUMMARY_MAX).optional(),
+      })
+      .optional(),
   }),
   z.object({
     kind: z.literal("simulation"),
+    cardId: cardIdField,
     simulationId: z.string().min(1).max(64),
     goal: text(COACH_REASON_MAX),
     steps: z.array(text(COACH_STEP_MAX)).min(1).max(COACH_STEPS_MAX),
     observe: text(COACH_OBSERVE_MAX),
+    interaction: z
+      .object({
+        status: z.literal("opened"),
+        openedAt: timestamp,
+        lastInteractedAt: timestamp,
+        summary: text(CARD_SUMMARY_MAX).optional(),
+      })
+      .optional(),
   }),
   z.object({
     kind: z.literal("practice"),
+    cardId: cardIdField,
     versionId: z.string().min(1).max(64),
     variantQuestionId: z.string().min(1).max(200),
+    questionText: z.string().optional(),
     reason: text(COACH_REASON_MAX),
+    interaction: z
+      .object({
+        status: z.literal("completed"),
+        selectedOptionId: z.string().nullable(),
+        selectedText: z.string(),
+        numericValue: z.number().nullable(),
+        correct: z.boolean(),
+        completedAt: timestamp,
+      })
+      .optional(),
+  }),
+  z.object({
+    kind: z.literal("diagnostic_options"),
+    cardId: cardIdField,
+    ...diagnosticOptionsFields,
+    interaction: z
+      .object({
+        status: z.literal("selected"),
+        selectedOptionId: text(64).optional(),
+        selectedLabel: text(160),
+        selectedAt: timestamp,
+      })
+      .optional(),
   }),
 ]);
 
@@ -710,9 +781,10 @@ export function coachActionText(raw: unknown[] | undefined): string[] {
     const parsed = coachActionRefSchema.safeParse(entry);
     if (!parsed.success) return [];
     const ref = parsed.data;
-    return ref.kind === "simulation"
-      ? [ref.goal, ...ref.steps, ref.observe]
-      : [ref.reason];
+    if (ref.kind === "simulation") return [ref.goal, ...ref.steps, ref.observe];
+    if (ref.kind === "diagnostic_options")
+      return [ref.prompt, ...ref.options.map((option) => option.label)];
+    return [ref.reason];
   });
 }
 
@@ -728,6 +800,7 @@ export async function hydrateCoachAction(
   scope: CoachScope,
   getCandidates: () => Promise<CoachCandidates> = memoCandidates(scope),
 ): Promise<CoachActionView | null> {
+  if (ref.kind === "diagnostic_options") return ref;
   if (ref.kind === "material") {
     const candidates = await getCandidates();
     const option = candidates.materials.find(
@@ -754,7 +827,15 @@ export async function hydrateCoachAction(
     );
     const recommendation = presigned.items[0];
     return recommendation
-      ? { kind: "material", reason: ref.reason, recommendation }
+      ? {
+          kind: "material",
+          reason: ref.reason,
+          recommendation,
+          recommendationIndex: ref.recommendationIndex,
+          attemptId: scope.resultId,
+          interaction: ref.interaction,
+          cardId: ref.cardId,
+        }
       : null;
   }
 
@@ -764,7 +845,7 @@ export async function hydrateCoachAction(
       (s) => s.simulationId === ref.simulationId,
     );
     if (!sim) return null;
-    return simulationActionView(ref, sim);
+    return simulationActionView(ref, sim, scope.resultId);
   }
 
   const match = await findPracticeMatch(
@@ -777,6 +858,8 @@ export async function hydrateCoachAction(
         kind: "practice",
         reason: ref.reason,
         question: practiceView(scope, match),
+        interaction: ref.interaction,
+        cardId: ref.cardId,
       }
     : null;
 }
@@ -785,6 +868,7 @@ export async function hydrateCoachAction(
 export function simulationActionView(
   ref: Extract<CoachActionRef, { kind: "simulation" }>,
   sim: CoachSimulationOption,
+  attemptId?: string,
 ): CoachActionView {
   return {
     kind: "simulation",
@@ -798,6 +882,9 @@ export function simulationActionView(
     goal: ref.goal,
     steps: ref.steps,
     observe: ref.observe,
+    attemptId,
+    interaction: ref.interaction,
+    cardId: ref.cardId,
   };
 }
 
@@ -831,6 +918,7 @@ export type CoachContextInput = {
   explanation: string | null;
   candidates: CoachCandidates;
   knowledgeTracingBlock?: string | null;
+  completedPractice?: (CoachPracticeInteraction & { questionText?: string })[];
 };
 
 function formatStudentAnswer(q: SnapshotQuestion): string {
@@ -866,32 +954,49 @@ export function formatCoachContext(input: CoachContextInput): string {
 
   if (input.answerKeyAvailable) {
     lines.push(
-      "ANSWER KEY: available — the attempt is final, so you may review it.",
+      "ANSWER KEY: available — the attempt is final. Confirm right or wrong and walk through the reasoning.",
     );
     if (q.answerMode === "NUMERIC") {
       lines.push(
         `Correct value: ${q.correctNumeric ?? "unknown"}${q.unit ? ` ${q.unit}` : ""}` +
           (typeof q.tolerance === "number" ? ` (±${q.tolerance})` : ""),
       );
-    } else {
-      lines.push("Options:");
-      for (const o of Array.isArray(q.options) ? q.options : []) {
-        const marks = [
-          o.isCorrect ? "correct" : null,
-          o.selected ? "student chose this" : null,
-        ].filter(Boolean);
-        lines.push(
-          `- ${o.text || o.imageAlt || "(image choice)"}${marks.length ? ` [${marks.join(", ")}]` : ""}`,
-        );
-      }
     }
     if (input.explanation)
       lines.push(`Teacher's explanation: ${input.explanation}`);
   } else {
     lines.push(
-      "ANSWER KEY: withheld — the student can still retake this quiz. You do not know the correct " +
-        "answer or the other options and must not state, guess or narrow down which answer is right.",
+      "ANSWER KEY: withheld. Treat the lettered options as reference only. Do not solve the question or eliminate/narrow down any of the listed options. Give conceptual feedback on the student's reasoning or offer a separate practice question for direct feedback.",
     );
+  }
+
+  if (
+    q.answerMode !== "NUMERIC" &&
+    Array.isArray(q.options) &&
+    q.options.length
+  ) {
+    lines.push("Options:");
+    q.options.forEach((option, index) => {
+      const marks = [
+        input.answerKeyAvailable && option.isCorrect ? "correct" : null,
+        option.selected === true ? "student chose this" : null,
+      ].filter(Boolean);
+      lines.push(
+        `- ${optionLabel(index)}. ${option.text || option.imageAlt || "(image choice)"}${marks.length ? ` [${marks.join(", ")}]` : ""}`,
+      );
+    });
+  }
+
+  if (input.completedPractice?.length) {
+    lines.push(
+      "",
+      "Completed inline practice (give clear right/wrong feedback and explain the reasoning):",
+    );
+    for (const practice of input.completedPractice) {
+      lines.push(
+        `- Practice question: ${practice.questionText ?? "(text unavailable)"} | Student answered: ${practice.selectedText} | Result: ${practice.correct ? "right" : "wrong"}`,
+      );
+    }
   }
 
   lines.push("", "Study options you may point the student to:");
@@ -921,7 +1026,7 @@ export function formatCoachContext(input: CoachContextInput): string {
   );
   lines.push(
     candidates.practice
-      ? "Practice question: available — an existing alternative-version question for this exact question (use offer_practice_question with a reason; no question id needed). Its content is hidden from you; do not describe or invent it."
+      ? "Practice question: available — an existing alternative-version question for this exact question (use offer_practice_question with a reason; no question id needed). Before it is answered its content is hidden from you; do not describe or invent it."
       : "Practice question: none available — do not offer one.",
   );
 
@@ -933,7 +1038,10 @@ export function formatCoachContext(input: CoachContextInput): string {
 }
 
 /** Load everything the system prompt needs for one coach turn. */
-export async function buildCoachContext(scope: CoachScope): Promise<string> {
+export async function buildCoachContext(
+  scope: CoachScope,
+  completedPractice: NonNullable<CoachContextInput["completedPractice"]> = [],
+): Promise<string> {
   const [candidates, explanation, ktProfile] = await Promise.all([
     loadCoachCandidates(scope),
     scope.answerKeyAvailable ? liveExplanation(scope) : null,
@@ -949,5 +1057,6 @@ export async function buildCoachContext(scope: CoachScope): Promise<string> {
     explanation,
     candidates,
     knowledgeTracingBlock: formatKnowledgeProfileForPrompt(ktProfile),
+    completedPractice,
   });
 }

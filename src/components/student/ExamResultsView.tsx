@@ -1,29 +1,28 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { ScoreBanner } from "@/components/student/QuizReviewResult";
-import { ResultSummary } from "@/components/results/ResultSummary";
-import { HolisticRecommendations } from "@/components/student/HolisticRecommendations";
-import { SimulationRail } from "@/components/student/SimulationRail";
-import { StudentMistakesReview } from "@/components/student/StudentMistakesReview";
+import { useCallback, useRef, useState, type ReactNode } from "react";
 import { MyFeedbackProvider } from "@/components/feedback/my-feedback";
-import { cn } from "@/lib/utils";
-import type { SimulationSurface } from "@/lib/simulation-telemetry";
-import {
-  isResultPending,
-  type ResultComponentMetrics,
-  type ResultStatus,
-  type PresignedRecommendation,
-  type SimulationRecommendationView,
-  type StudentMistakeView,
-} from "@/lib/exam-results";
+import { isResultPending, type StudentMistakeView } from "@/lib/exam-results";
 import type { ResourceSurface } from "@/lib/resource-telemetry";
-
-const RECONNECT_MS = 1000;
+import type { SimulationSurface } from "@/lib/simulation-telemetry";
+import { CoachStep } from "./post-quiz/CoachStep";
+import { QuietExitLinks, StepProgress } from "./post-quiz/GuidedChrome";
+import {
+  CompleteStep,
+  MaterialsStep,
+  SimulationsStep,
+  SummaryStep,
+} from "./post-quiz/GuidedSteps";
+import {
+  ADVANCE_LABEL,
+  guidedSteps,
+  nextStep,
+  type GuidedStepId,
+} from "./post-quiz/guided-steps";
+import {
+  useStreamedResults,
+  type AiState,
+} from "./post-quiz/use-streamed-results";
 
 /** The learning-resource surface label for each results view. */
 const RESOURCE_SURFACE_FOR: Record<
@@ -33,17 +32,17 @@ const RESOURCE_SURFACE_FOR: Record<
   quiz_results: "results_recommendation",
   results_page: "history_recommendation",
 };
-type AiState = {
-  summary: string | null;
-  summaryStatus: ResultStatus;
-  summaryMetrics: ResultComponentMetrics | null;
-  recommendations: PresignedRecommendation[];
-  simulations: SimulationRecommendationView[];
-  recommendationsStatus: ResultStatus;
-  recommendationMetrics: ResultComponentMetrics | null;
-  truncated: boolean;
-};
 
+/** A Set with one more member, as a new object (state stays immutable). */
+const withMember = <T,>(set: ReadonlySet<T>, value: T): Set<T> =>
+  set.has(value) ? (set as Set<T>) : new Set([...set, value]);
+
+/**
+ * The post-quiz results as a guided, step-by-step review: Summary → each
+ * missed question with the coach → simulations → learning materials →
+ * complete. Steps with nothing in them are left out; quiet links on every
+ * step let the student skip to the end or leave.
+ */
 export function ExamResultsView({
   attemptId,
   score,
@@ -75,163 +74,148 @@ export function ExamResultsView({
     "quiz_results" | "results_page"
   >;
 }) {
-  const [ai, setAi] = useState<AiState>(initial);
-  const needPoll =
-    isResultPending(ai.summaryStatus) ||
-    isResultPending(ai.recommendationsStatus);
+  const ai = useStreamedResults(attemptId, initial);
+  const recsPending = isResultPending(ai.recommendationsStatus);
 
-  useEffect(() => {
-    if (!needPoll) return;
-    let active = true;
-    const abort = new AbortController();
-    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
-    let receivedTerminal = false;
+  const [active, setActive] = useState<GuidedStepId>("summary");
+  const [visited, setVisited] = useState<ReadonlySet<GuidedStepId>>(
+    () => new Set<GuidedStepId>(["summary"]),
+  );
+  const [mistakeIndex, setMistakeIndex] = useState(0);
+  const [engaged, setEngaged] = useState<ReadonlySet<number>>(() => new Set());
+  const [explored, setExplored] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const [viewed, setViewed] = useState<ReadonlySet<string>>(() => new Set());
+  const topRef = useRef<HTMLDivElement>(null);
 
-    const applyUpdate = (data: AiState) => {
-      if (!active) return;
-      receivedTerminal =
-        !isResultPending(data.summaryStatus) &&
-        !isResultPending(data.recommendationsStatus);
-      setAi({
-        summary: data.summary ?? null,
-        summaryStatus: data.summaryStatus,
-        summaryMetrics: data.summaryMetrics ?? null,
-        recommendations: Array.isArray(data.recommendations)
-          ? data.recommendations
-          : [],
-        simulations: Array.isArray(data.simulations) ? data.simulations : [],
-        recommendationsStatus: data.recommendationsStatus,
-        recommendationMetrics: data.recommendationMetrics ?? null,
-        truncated: data.truncated === true,
-      });
-    };
+  const steps = guidedSteps({
+    mistakeCount: mistakes.length,
+    simulationCount: ai.simulations.length,
+    recommendationCount: ai.recommendations.length,
+    recommendationsPending: recsPending,
+    active,
+  });
 
-    const connect = async () => {
-      while (active) {
-        try {
-          const res = await fetch(
-            `/api/student/attempts/${attemptId}/results?stream=1`,
-            { signal: abort.signal },
-          );
-          if (!res.ok || !res.body)
-            throw new Error("Result stream unavailable");
+  const goTo = (step: GuidedStepId) => {
+    setActive(step);
+    setVisited((prev) => withMember(prev, step));
+    topRef.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+  };
+  const advance = () => goTo(nextStep(steps, active) ?? "complete");
+  const nextLabel = ADVANCE_LABEL[nextStep(steps, active) ?? "complete"];
 
-          const reader = res.body.getReader();
-          const decoder = new TextDecoder();
-          let buffered = "";
+  const markEngaged = useCallback(
+    (questionNumber: number) =>
+      setEngaged((prev) => withMember(prev, questionNumber)),
+    [],
+  );
 
-          while (active) {
-            const { done, value } = await reader.read();
-            buffered += decoder.decode(value, { stream: !done });
-            const lines = buffered.split("\n");
-            buffered = lines.pop() ?? "";
-            for (const line of lines) {
-              if (line.trim()) applyUpdate(JSON.parse(line));
-            }
-            if (done) {
-              if (buffered.trim()) applyUpdate(JSON.parse(buffered));
-              if (receivedTerminal) return;
-              throw new Error(
-                "Result stream ended before generation completed",
-              );
-            }
-          }
-        } catch {
-          if (!active || abort.signal.aborted) return;
-          await new Promise<void>((resolve) => {
-            reconnectTimer = setTimeout(resolve, RECONNECT_MS);
-          });
-        }
-      }
-    };
-
-    void connect();
-    return () => {
-      active = false;
-      abort.abort();
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-    };
-  }, [attemptId, needPoll]);
-
-  const hasSimulations = ai.simulations.length > 0;
+  const stepBody = (() => {
+    switch (active) {
+      case "summary":
+        return (
+          <SummaryStep
+            score={score}
+            notice={notice}
+            summary={ai.summary}
+            summaryStatus={ai.summaryStatus}
+            summaryMetrics={ai.summaryMetrics}
+            mistakeCount={mistakes.length}
+            simulationCount={ai.simulations.length}
+            recommendationCount={ai.recommendations.length}
+            recommendationsPending={recsPending}
+            nextLabel={nextLabel}
+            onNext={advance}
+          />
+        );
+      case "coach":
+        return mistakes.length > 0 ? (
+          <CoachStep
+            attemptId={attemptId}
+            mistakes={mistakes}
+            index={Math.min(mistakeIndex, mistakes.length - 1)}
+            onIndexChange={(index) => {
+              setMistakeIndex(index);
+              topRef.current?.scrollIntoView?.({ block: "start" });
+            }}
+            engaged={engaged}
+            onEngaged={markEngaged}
+            nextLabel={nextLabel}
+            onFinish={advance}
+          />
+        ) : null;
+      case "simulations":
+        return (
+          <SimulationsStep
+            attemptId={attemptId}
+            simulations={ai.simulations}
+            pending={recsPending}
+            surface={simulationSurface}
+            explored={explored}
+            onExplore={(id) => setExplored((prev) => withMember(prev, id))}
+            nextLabel={nextLabel}
+            onNext={advance}
+          />
+        );
+      case "materials":
+        return (
+          <MaterialsStep
+            attemptId={attemptId}
+            recommendations={ai.recommendations}
+            status={ai.recommendationsStatus}
+            metrics={ai.recommendationMetrics}
+            surface={RESOURCE_SURFACE_FOR[simulationSurface]}
+            viewed={viewed}
+            onView={(key) => setViewed((prev) => withMember(prev, key))}
+            nextLabel={nextLabel}
+            onNext={advance}
+          />
+        );
+      case "complete":
+        return (
+          <CompleteStep
+            stats={{
+              summarySeen: visited.has("summary"),
+              mistakeCount: mistakes.length,
+              coachedCount: mistakes.filter((m) =>
+                engaged.has(m.questionNumber),
+              ).length,
+              simulationCount: ai.simulations.length,
+              exploredCount: explored.size,
+              recommendationCount: ai.recommendations.length,
+              viewedCount: viewed.size,
+            }}
+            steps={steps}
+            onRevisit={goTo}
+            actions={actions}
+          />
+        );
+    }
+  })();
 
   return (
     /* One lookup of "what have I already rated on this attempt", shared by
-       every material card and the simulation rail below — otherwise each of
-       them would fetch the same list on mount. */
+       every material card and simulation below — otherwise each of them
+       would fetch the same list on mount. */
     <MyFeedbackProvider attemptId={attemptId}>
-      <div
-        className={cn(
-          "p-4 md:p-6 space-y-6",
-          hasSimulations ? "max-w-7xl" : "max-w-6xl",
-        )}
-      >
-        {backHref && (
-          <Button variant="ghost" size="sm" asChild>
-            <Link href={backHref}>
-              <ArrowLeft className="size-4" /> {backLabel}
-            </Link>
-          </Button>
-        )}
+      <div ref={topRef} className="max-w-6xl scroll-mt-4 space-y-6 p-4 md:p-6">
+        <StepProgress
+          steps={steps}
+          active={active}
+          visited={visited}
+          onSelect={goTo}
+        />
 
-        {/* With simulations, desktop splits into content (left) + simulation
-          rail (right); on smaller screens the rail stacks below as a section.
-          Opening a simulation launches a pop-up, so the layout never flips. */}
-        <div
-          className={cn(
-            hasSimulations &&
-              "grid gap-6 lg:items-start lg:grid-cols-[minmax(0,1fr)_minmax(320px,26rem)]",
-          )}
-        >
-          <div className="min-w-0 space-y-6">
-            {/* Unified header: the score banner (percentage only — no per-question
-              count) and the AI summary live in one full-width card. */}
-            <Card>
-              <CardContent className="space-y-4 py-5">
-                {notice && (
-                  <p className="text-sm text-muted-foreground">{notice}</p>
-                )}
-                <ScoreBanner score={score} />
-                <div className="border-t" />
-                <ResultSummary
-                  summary={ai.summary}
-                  status={ai.summaryStatus}
-                  metrics={ai.summaryMetrics}
-                />
-              </CardContent>
-            </Card>
+        {stepBody}
 
-            <StudentMistakesReview
-              mistakes={mistakes}
-              coachAttemptId={attemptId}
-            />
-
-            {/* Holistic study recommendations — up to 3 cards chosen across the
-              whole attempt, with NO per-question correctness or correct answers
-              shown. */}
-            <HolisticRecommendations
-              recommendations={ai.recommendations}
-              status={ai.recommendationsStatus}
-              metrics={ai.recommendationMetrics}
-              attemptId={attemptId}
-              telemetrySurface={RESOURCE_SURFACE_FOR[simulationSurface]}
-            />
-          </div>
-
-          {/* Interactive topic simulations — question-detail-free by construction,
-            so safe to show while the per-question review stays hidden. */}
-          {hasSimulations && (
-            <SimulationRail
-              key={attemptId}
-              simulations={ai.simulations}
-              attemptId={attemptId}
-              telemetrySurface={simulationSurface}
-              autoOpen={simulationSurface === "quiz_results"}
-            />
-          )}
-        </div>
-
-        {actions && <div className="flex flex-wrap gap-3">{actions}</div>}
+        <QuietExitLinks
+          onSkipToEnd={
+            active === "complete" ? undefined : () => goTo("complete")
+          }
+          backHref={backHref}
+          backLabel={backLabel}
+        />
       </div>
     </MyFeedbackProvider>
   );

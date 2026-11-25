@@ -1,13 +1,13 @@
 "use client";
 import { useParams } from "next/navigation";
-import { QuizPlayer } from "@/components/quiz/QuizPlayer";
+import { UnifiedQuizLauncher } from "@/components/quiz/UnifiedQuizLauncher";
 
 export default function QuizPage() {
   const { id: classId, quizId } = useParams<{ id: string; quizId: string }>();
   return (
-    <QuizPlayer
+    <UnifiedQuizLauncher
       key={`${classId}:${quizId}`}
-      mode="student"
+      initialMode="official"
       classId={classId}
       quizId={quizId}
       backHref={`/student/classes/${classId}`}
