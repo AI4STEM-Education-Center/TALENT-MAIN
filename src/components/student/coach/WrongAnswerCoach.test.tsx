@@ -39,6 +39,10 @@ const practice: CoachPracticeQuestionView = {
 const session: CoachSessionView = {
   question: {
     questionNumber: 3,
+    answerMode: "SINGLE_SELECT",
+    options: [
+      { label: "A", text: "3", imageUrl: null, imageAlt: null, selected: true },
+    ],
     quizName: "Sums",
     text: "What is 2 + 2?",
     figureUrl: null,
@@ -252,16 +256,18 @@ describe("coach dialog", () => {
     });
   });
 
-  it("grades an inline practice answer and reports the outcome back to the coach", async () => {
+  it("grades an inline practice answer and automatically reports the outcome to the coach", async () => {
     const calls = await open({
       "/api/assistant/coach/chat": (init) => {
         const sent = JSON.parse(String(init?.body)) as { message: string };
-        return sent.message.startsWith("I tried")
+        return sent.message.startsWith("I answered")
           ? ndjson([{ type: "delta", text: "Great, keep going." }])
           : ndjson([
+              { type: "conversation", id: "conv-9" },
               {
                 type: "action",
                 action: {
+                  cardId: "card-p",
                   kind: "practice",
                   reason: "Same skill",
                   question: practice,
@@ -270,7 +276,20 @@ describe("coach dialog", () => {
               { type: "delta", text: "Try this." },
             ]);
       },
-      "/api/assistant/coach/practice": () => Response.json({ correct: true }),
+      "/api/assistant/coach/practice": () =>
+        Response.json({
+          correct: true,
+          selectedText: "6",
+          questionText: "What is 3 + 3?",
+          interaction: {
+            status: "completed",
+            selectedOptionId: "a",
+            selectedText: "6",
+            numericValue: null,
+            correct: true,
+            completedAt: "2026-11-20T00:00:00.000Z",
+          },
+        }),
     });
     await type("hmm");
     await act(async () => button(/send message/i)!.click());
@@ -281,6 +300,7 @@ describe("coach dialog", () => {
     ) as HTMLInputElement;
     await act(async () => radio.click());
     await act(async () => button(/check my answer/i)!.click());
+    await flush();
     await flush();
 
     expect(document.querySelector('[role="status"]')?.textContent).toContain(
@@ -294,13 +314,118 @@ describe("coach dialog", () => {
       versionId: "v1",
       questionId: "vq1",
       selectedOptionId: "a",
+      conversationId: "conv-9",
+      cardId: "card-p",
+      source: "coach",
     });
-
-    await act(async () => button(/tell the assistant how it went/i)!.click());
-    await flush();
+    // No manual "tell the assistant" step: the outcome is sent as a turn.
+    expect(button(/tell the assistant how it went/i)).toBeUndefined();
+    const chats = calls.filter((c) => c.url === "/api/assistant/coach/chat");
+    expect(chats.at(-1)?.body).toEqual({
+      message: 'I answered the practice question with "6" and got it right.',
+      attemptId: "att-1",
+      questionNumber: 3,
+    });
     expect(document.querySelector('[role="dialog"]')!.textContent).toContain(
       "Great, keep going.",
     );
+  });
+
+  it("asks for the student's own thinking first instead of pre-canned starters", async () => {
+    stubFetch(true, {
+      "/api/assistant/coach?": () =>
+        Response.json({ ...session, openingOptions: ["I guessed"] }),
+      "/api/assistant/coach/chat": () =>
+        ndjson([{ type: "delta", text: "Thanks for sharing." }]),
+    });
+    await mount();
+    await flush();
+    await act(async () => button(/chat with assistant/i)!.click());
+    await flush();
+    const dialog = document.querySelector('[role="dialog"]')!;
+    expect(dialog.textContent).toContain("Share your thoughts first");
+    expect(button(/^I guessed/)).toBeUndefined();
+
+    await type("I mixed up the operations");
+    await act(async () => button(/send message/i)!.click());
+    await flush();
+    expect(dialog.textContent).not.toContain("Share your thoughts first");
+  });
+
+  it("sends a diagnostic choice as the next message and records it once", async () => {
+    const calls = await open({
+      "/api/assistant/coach/chat": (init) => {
+        const sent = JSON.parse(String(init?.body)) as { message: string };
+        return sent.message === "I forgot to carry"
+          ? ndjson([{ type: "delta", text: "Let's look at carrying." }])
+          : ndjson([
+              { type: "conversation", id: "conv-1" },
+              { type: "delta", text: "Which sounds like you?" },
+              {
+                type: "action",
+                action: {
+                  cardId: "card-d",
+                  kind: "diagnostic_options",
+                  prompt: "Where did it go wrong?",
+                  options: [
+                    { id: "o1", label: "I forgot to carry" },
+                    { id: "o2", label: "I misread the question" },
+                  ],
+                },
+              },
+            ]);
+      },
+      "/api/assistant/card-interaction": () =>
+        Response.json({
+          interaction: {
+            status: "selected",
+            selectedOptionId: "o1",
+            selectedLabel: "I forgot to carry",
+            selectedAt: "2026-11-20T00:00:00.000Z",
+          },
+        }),
+    });
+    await type("Not sure");
+    await act(async () => button(/send message/i)!.click());
+    await flush();
+
+    await act(async () => button(/^I forgot to carry/)!.click());
+    await flush();
+
+    expect(
+      calls.find((c) => c.url === "/api/assistant/card-interaction")?.body,
+    ).toEqual({
+      conversationId: "conv-1",
+      cardId: "card-d",
+      kind: "diagnostic_options",
+      selectedOptionId: "o1",
+      selectedLabel: "I forgot to carry",
+    });
+    expect(
+      calls.filter((c) => c.url === "/api/assistant/coach/chat").at(-1)?.body,
+    ).toMatchObject({ message: "I forgot to carry" });
+    const chosen = button(/^I forgot to carry/)!;
+    expect(chosen.getAttribute("aria-pressed")).toBe("true");
+    expect(chosen.textContent).toContain("Selected");
+    expect(button(/^I misread the question/)!.disabled).toBe(true);
+
+    await act(async () => chosen.click());
+    await flush();
+    expect(
+      calls.filter((c) => c.url === "/api/assistant/card-interaction"),
+    ).toHaveLength(1);
+  });
+
+  it("positions both inner scroll panes so sr-only labels cannot escape to the document", async () => {
+    await open({});
+    const log = document.querySelector<HTMLElement>('[role="log"]');
+    const questionPane = document.querySelector<HTMLElement>(
+      'section[aria-label^="Question "]',
+    )?.parentElement;
+    expect(log?.className).toContain("overflow-y-auto");
+    expect(log?.className).toContain("relative");
+    expect(questionPane?.className).toContain("overflow-y-auto");
+    expect(questionPane?.className).toContain("relative");
   });
 
   it("explains an unavailable question instead of showing an empty chat", async () => {

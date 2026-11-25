@@ -180,7 +180,7 @@ export function MaterialPoolClient({
                     </div>
                     {canEdit ? (
                       <div className="flex items-center gap-2">
-                        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <label className="relative flex items-center gap-2 text-sm text-muted-foreground">
                           <Tags className="size-4" />
                           <span className="sr-only">
                             Tag {material.title || material.originalName}

@@ -1,3 +1,4 @@
+import { MATH_DELIMITER_RULE } from "../feedback-rules";
 // The wrong-answer coach's tools.
 //
 // Deliberately NOT in the skill REGISTRY: a coach turn loads exactly this
@@ -23,6 +24,7 @@ import {
   hydrateCoachAction,
   loadCoachCandidates,
   coachActionRefSchema,
+  diagnosticOptionsFields,
 } from "../coach";
 import type {
   AssistantSkill,
@@ -190,6 +192,23 @@ const offerPracticeQuestion: AssistantTool<typeof practiceInput> = {
   },
 };
 
+const diagnosticInput = z.object(diagnosticOptionsFields);
+
+const offerDiagnosticOptions: AssistantTool<typeof diagnosticInput> = {
+  name: "offer_diagnostic_options",
+  description:
+    "Offer 2–4 distinct, concise next steps personalized to the student's reasoning and knowledge profile. Each option should name a concept or step they can choose to unpack.",
+  activityLabel: "Preparing personalized next steps",
+  surfacesActions: true,
+  input: diagnosticInput,
+  handler: (args, ctx) =>
+    surface(
+      ctx,
+      { kind: "diagnostic_options", ...args },
+      "Showed the student personalized next steps.",
+    ),
+};
+
 export const coachSkill: AssistantSkill = {
   id: "wrong-answer-coach",
   name: "Wrong-answer coach",
@@ -197,11 +216,18 @@ export const coachSkill: AssistantSkill = {
     "Per-question coaching: advice, a course material, a simulation how-to, or an existing practice question.",
   audience: "student",
   instructions: [
+    MATH_DELIMITER_RULE,
     "recommend_material shows a card for one listed course material.",
     "explain_simulation shows a how-to card (steps to run, what to observe) for one listed simulation.",
-    "offer_practice_question shows an existing alternative-version question for this question.",
+    "offer_practice_question shows an existing alternative-version question. Once the student answers, explicitly confirm right or wrong and explain the reasoning using the recorded verdict.",
+    "offer_diagnostic_options lets the student choose which part of their reasoning to unpack.",
   ].join("\n"),
-  tools: [recommendMaterial, explainSimulation, offerPracticeQuestion],
+  tools: [
+    recommendMaterial,
+    explainSimulation,
+    offerPracticeQuestion,
+    offerDiagnosticOptions,
+  ],
 };
 
 /** The coach's tools by name, in the shape the agent loop expects. */

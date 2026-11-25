@@ -119,7 +119,7 @@ describe("variant generation worker", () => {
     expect(row.aiTokens).toBe(400);
     const retryPrompt = vi.mocked(streamJsonCompletion).mock.calls[2][1]
       .messages[1].content as string;
-    expect(retryPrompt).toContain("failed automatic checks");
+    expect(retryPrompt).toContain("Earlier automatic checks failed");
     expect(retryPrompt).toContain("disagrees");
   });
   it("fails for teacher attention only after every attempt is rejected, keeping the last draft", async () => {
@@ -574,7 +574,7 @@ describe("quality checks and refusals", () => {
       .mockResolvedValueOnce(answer(choiceReview("v2-a")));
     await runQuizVariant(version.id);
     const calls = vi.mocked(streamJsonCompletion).mock.calls;
-    expect(promptOf(calls[0])).toContain("Full question rewrite");
+    expect(promptOf(calls[0])).toContain("Far-isomorphic structural twin");
     expect(promptOf(calls[1])).toContain("verbatim");
     expect(nameOf(calls[2])).toBe("quiz_variant_review");
     const row = await prisma.quizPracticeVersion.findUniqueOrThrow({
@@ -626,9 +626,7 @@ describe("quality checks and refusals", () => {
       .mockResolvedValueOnce(answer(choiceReview("d2-a")));
     await runQuizVariant(version.id);
     const calls = vi.mocked(streamJsonCompletion).mock.calls;
-    expect(promptOf(calls[0])).toContain(
-      "Limited numerical / condition variation",
-    );
+    expect(promptOf(calls[0])).toContain("Near-isomorphic variation");
     expect(promptOf(calls[1])).toContain("decorative numbers");
     const row = await prisma.quizPracticeVersion.findUniqueOrThrow({
       where: { id: version.id },
@@ -749,7 +747,7 @@ describe("sample preview", () => {
       }
       return answer({
         questions: [
-          prompt.includes("Variation: CONTEXT") ? contextCandidate : candidate,
+          prompt.includes("Mode CONTEXT") ? contextCandidate : candidate,
         ],
       });
     });

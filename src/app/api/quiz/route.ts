@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { pausedClassResponse } from "@/lib/class-access-guard";
@@ -12,56 +13,222 @@ import { shuffleAnswerChoices } from "@/lib/quiz-shuffle";
 import { enqueueExamResult } from "@/lib/queue";
 import { logApiError } from "@/lib/system-log";
 import { QUESTION_ORDER } from "@/lib/question-order";
-import { GRADED_ATTEMPTS } from "@/lib/alternative-retake";
+import {
+  GRADED_ATTEMPTS,
+  loadPreviouslyCorrect,
+  parseExcludedQuestionIds,
+  selectOfficialQuizQuestions,
+} from "@/lib/alternative-retake";
+import { quizAvailability } from "@/lib/quiz-availability";
+import type { UnifiedQuizOverview } from "@/lib/quiz-overview";
 
 class AttemptLimitError extends Error {}
 class AttemptAlreadySubmittedError extends Error {}
 
-// POST: Start a quiz attempt
-export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "STUDENT") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+const quizTargetSchema = z.object({
+  classId: z.string().min(1),
+  quizId: z.string().min(1),
+});
 
+const startSchema = quizTargetSchema.extend({
+  excludeCorrect: z.boolean().optional(),
+  excludedQuestionIds: z.array(z.string().min(1).max(200)).max(500).optional(),
+});
+
+async function resolveQuizAccess(
+  { classId, quizId }: z.infer<typeof quizTargetSchema>,
+  userId: string,
+) {
   const student = await prisma.student.findUnique({
-    where: { userId: session.user.id },
+    where: { userId },
   });
   if (!student)
-    return NextResponse.json({ error: "Student not found" }, { status: 404 });
+    return {
+      response: NextResponse.json(
+        { error: "Student not found" },
+        { status: 404 },
+      ),
+    };
 
-  const { classId, quizId } = await req.json();
-  if (!classId || !quizId) {
-    return NextResponse.json(
-      { error: "classId and quizId required" },
-      { status: 400 },
-    );
-  }
-
-  // Verify student is enrolled
   const enrollment = await prisma.classEnrollment.findUnique({
     where: { classId_studentId: { classId, studentId: student.id } },
   });
-  if (!enrollment)
-    return NextResponse.json(
-      { error: "Not enrolled in this class" },
-      { status: 403 },
-    );
+  if (!enrollment) {
+    return {
+      response: NextResponse.json(
+        { error: "Not enrolled in this class" },
+        { status: 403 },
+      ),
+    };
+  }
 
-  // A disabled class is paused for its students (admin "disable class").
   const paused = await pausedClassResponse(classId);
-  if (paused) return paused;
+  if (paused) return { response: paused };
 
-  // Verify the quiz is published for this class
   const classQuiz = await prisma.classQuiz.findUnique({
     where: { classId_quizId: { classId, quizId } },
   });
   if (!classQuiz?.published) {
-    return NextResponse.json(
-      { error: "This quiz is not yet available." },
-      { status: 403 },
-    );
+    return {
+      response: NextResponse.json(
+        { error: "This quiz is not yet available." },
+        { status: 403 },
+      ),
+    };
   }
+  return { student, classQuiz };
+}
+
+export async function GET(req: NextRequest) {
+  const session = await auth();
+  if (session?.user?.role !== "STUDENT")
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const target = quizTargetSchema.safeParse(
+    Object.fromEntries(new URL(req.url).searchParams),
+  );
+  if (!target.success)
+    return NextResponse.json(
+      { error: "classId and quizId required" },
+      { status: 400 },
+    );
+  const access = await resolveQuizAccess(target.data, session.user.id);
+  if (access.response) return access.response;
+  const { student, classQuiz } = access;
+  const { classId, quizId } = target.data;
+  const who = { studentId: student.id, classId, quizId };
+  const graded = { ...who, ...GRADED_ATTEMPTS };
+  const [
+    quiz,
+    gradedAttemptCount,
+    gradedAttempt,
+    practiceAvailableCount,
+    practiceAttempt,
+    history,
+    questionRows,
+    recent,
+  ] = await Promise.all([
+    prisma.quiz.findUnique({
+      where: { id: quizId },
+      select: { id: true, name: true, topic: { select: { name: true } } },
+    }),
+    prisma.quizAttempt.count({
+      where: { ...graded, completedAt: { not: null } },
+    }),
+    prisma.quizAttempt.findFirst({
+      where: { ...graded, completedAt: null },
+      select: { id: true, startedAt: true, excludedQuestionIds: true },
+      orderBy: { startedAt: "desc" },
+    }),
+    prisma.quizPracticeVersion.count({
+      where: { quizId, status: "PUBLISHED" },
+    }),
+    prisma.quizPracticeAttempt.findUnique({
+      where: { activeKey: JSON.stringify([student.id, classId, quizId]) },
+      select: {
+        id: true,
+        quizAttemptId: true,
+        versionName: true,
+        startedAt: true,
+      },
+    }),
+    loadPreviouslyCorrect(prisma, who),
+    prisma.question.findMany({
+      where: { quizId },
+      select: { id: true, text: true },
+      orderBy: QUESTION_ORDER,
+    }),
+    prisma.quizAttempt.findMany({
+      where: who,
+      select: {
+        id: true,
+        score: true,
+        startedAt: true,
+        completedAt: true,
+        practiceVersionId: true,
+        practiceVersionName: true,
+        excludedQuestionIds: true,
+      },
+      orderBy: [{ startedAt: "desc" }, { id: "desc" }],
+      take: 30,
+    }),
+  ]);
+  if (!quiz)
+    return NextResponse.json({ error: "Quiz not found" }, { status: 404 });
+
+  const availability = quizAvailability(classQuiz, gradedAttemptCount);
+  const response: UnifiedQuizOverview = {
+    classId,
+    quiz: { id: quiz.id, name: quiz.name, topicName: quiz.topic?.name ?? null },
+    availability,
+    availableFrom: classQuiz.availableFrom?.toISOString() ?? null,
+    availableUntil: classQuiz.availableUntil?.toISOString() ?? null,
+    maxAttempts: classQuiz.maxAttempts,
+    gradedAttemptCount,
+    gradedAttempt: gradedAttempt
+      ? {
+          id: gradedAttempt.id,
+          startedAt: gradedAttempt.startedAt.toISOString(),
+          excludedQuestionIds: parseExcludedQuestionIds(
+            gradedAttempt.excludedQuestionIds,
+          ),
+        }
+      : null,
+    practiceAvailableCount,
+    practiceCanStart:
+      practiceAvailableCount > 0 &&
+      !availability.notOpenYet &&
+      !availability.closed,
+    practiceAttempt: practiceAttempt
+      ? {
+          ...practiceAttempt,
+          startedAt: practiceAttempt.startedAt.toISOString(),
+        }
+      : null,
+    previouslyCorrect: questionRows
+      .filter((question) => history.correct.has(question.id))
+      .map((question) => question.id),
+    questions: questionRows.map((question, index) => {
+      const preview = question.text.replace(/\s+/g, " ").trim();
+      return {
+        id: question.id,
+        number: index + 1,
+        previewText:
+          preview.length > 140 ? `${preview.slice(0, 139)}…` : preview,
+      };
+    }),
+    recentAttempts: recent.map((attempt) => ({
+      id: attempt.id,
+      kind: attempt.practiceVersionId ? "alternative" : "official",
+      versionName: attempt.practiceVersionName,
+      excludedCount: parseExcludedQuestionIds(attempt.excludedQuestionIds)
+        .length,
+      score: attempt.score,
+      startedAt: attempt.startedAt.toISOString(),
+      completedAt: attempt.completedAt?.toISOString() ?? null,
+    })),
+  };
+  return NextResponse.json(response, {
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
+// POST: Start a quiz attempt
+export async function POST(req: NextRequest) {
+  const session = await auth();
+  if (session?.user?.role !== "STUDENT")
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const body = startSchema.safeParse(await req.json().catch(() => null));
+  if (!body.success)
+    return NextResponse.json(
+      { error: "Invalid quiz start request" },
+      { status: 400 },
+    );
+  const access = await resolveQuizAccess(body.data, session.user.id);
+  if (access.response) return access.response;
+  const { student, classQuiz } = access;
+  const { classId, quizId, excludeCorrect, excludedQuestionIds } = body.data;
 
   // Enforce the per-class availability window + attempt cap (the source of
   // truth — the student UI mirrors these but server-side wins). The classQuiz
@@ -79,18 +246,21 @@ export async function POST(req: NextRequest) {
       { status: 403 },
     );
   }
-  // Get questions for this quiz. SECURITY: students must never receive the
-  // grading data — `omit` strips the NUMERIC answer/tolerance scalars, options
-  // are selected without `isCorrect`, and the raw figure storage key/bucket are
-  // replaced below with a short-lived presigned URL. Students see only:
-  // id, text, answerMode, answerUnit, points, figureAlt, options { id, text,
-  // imageAlt }, plus the transient figureUrl / option imageUrl. An image
-  // answer-choice exposes its imageAlt + presigned imageUrl but NOT isCorrect.
+  // Allowlist the fields students need during the attempt. Storage keys and
+  // buckets are replaced below with short-lived presigned URLs.
   const questionRows = await prisma.question.findMany({
     where: { quizId },
-    omit: { answerNumeric: true, answerTolerance: true },
-    include: {
+    select: {
+      id: true,
+      text: true,
+      answerMode: true,
+      answerUnit: true,
+      points: true,
+      figureStorageKey: true,
+      figureBucket: true,
+      figureAlt: true,
       options: {
+        orderBy: { id: "asc" },
         select: {
           id: true,
           text: true,
@@ -112,9 +282,13 @@ export async function POST(req: NextRequest) {
 
   // Reserve the attempt before doing optional S3 presigning work. The attempt
   // allocation and progress update must stay together for cap enforcement.
-  let attempt: { id: string };
+  let started: {
+    attempt: { id: string; excludedQuestionIds: string };
+    exclusionIgnored: boolean;
+  };
   try {
-    attempt = await prisma.$transaction(async (tx) => {
+    started = await prisma.$transaction(async (tx) => {
+      let exclusionIgnored = false;
       // Resume before allocating. A student who closes the tab, drops off the
       // network, or just reloads comes back to the SAME attempt instead of
       // burning a slot — with maxAttempts: 1 that would otherwise be an
@@ -135,7 +309,7 @@ export async function POST(req: NextRequest) {
           ...GRADED_ATTEMPTS,
         },
         orderBy: { startedAt: "desc" },
-        select: { id: true },
+        select: { id: true, excludedQuestionIds: true },
       });
 
       if (!claimed) {
@@ -153,10 +327,41 @@ export async function POST(req: NextRequest) {
             throw new AttemptLimitError();
           }
         }
-        claimed = await tx.quizAttempt.create({
-          data: { studentId: student.id, classId, quizId },
-          select: { id: true },
+        const { correct } =
+          excludeCorrect || excludedQuestionIds?.length
+            ? await loadPreviouslyCorrect(tx, {
+                studentId: student.id,
+                classId,
+                quizId,
+              })
+            : { correct: new Set<string>() };
+        const selection = selectOfficialQuizQuestions(questionRows, correct, {
+          excludeCorrect,
+          excludedQuestionIds,
         });
+        exclusionIgnored = selection.exclusionIgnored;
+        claimed = await tx.quizAttempt.create({
+          data: {
+            studentId: student.id,
+            classId,
+            quizId,
+            excludedQuestionIds: JSON.stringify(selection.excludedSourceIds),
+          },
+          select: { id: true, excludedQuestionIds: true },
+        });
+      } else {
+        const excluded = new Set(
+          parseExcludedQuestionIds(claimed.excludedQuestionIds),
+        );
+        // Quiz edits can leave a resumed attempt with only excluded questions.
+        if (questionRows.every((question) => excluded.has(question.id))) {
+          await tx.quizAttempt.updateMany({
+            where: { id: claimed.id, completedAt: null },
+            data: { excludedQuestionIds: "[]" },
+          });
+          claimed.excludedQuestionIds = "[]";
+          exclusionIgnored = true;
+        }
       }
 
       await tx.quizProgress.upsert({
@@ -171,7 +376,7 @@ export async function POST(req: NextRequest) {
           status: "IN_PROGRESS",
         },
       });
-      return claimed;
+      return { attempt: claimed, exclusionIgnored };
     });
   } catch (error) {
     if (error instanceof AttemptLimitError) {
@@ -186,20 +391,34 @@ export async function POST(req: NextRequest) {
   // Reorder each question's choices for this attempt. Seeded by attempt id, so
   // resuming reproduces the same layout while a new attempt gets a new one.
   // Done before presigning so each option's URL rides along with it.
-  const orderedRows = questionRows.map((question) => ({
-    ...question,
-    options: shuffleAnswerChoices(
-      question.options,
-      `${attempt.id}:${question.id}`,
-    ),
-  }));
+  const { attempt, exclusionIgnored } = started;
+  const recordedExclusions = new Set(
+    parseExcludedQuestionIds(attempt.excludedQuestionIds),
+  );
+  const excludedIds = new Set(
+    questionRows.filter((q) => recordedExclusions.has(q.id)).map((q) => q.id),
+  );
+  const orderedRows = questionRows
+    .filter((question) => !excludedIds.has(question.id))
+    .map((question) => ({
+      ...question,
+      options: shuffleAnswerChoices(
+        question.options,
+        `${attempt.id}:${question.id}`,
+      ),
+    }));
 
   // Replace figure + option-image storage keys with transient presigned URLs.
   const questions = await attachFigureUrls(orderedRows).then((rows) =>
     attachOptionImageUrls(rows),
   );
 
-  return NextResponse.json({ attemptId: attempt.id, questions });
+  return NextResponse.json({
+    attemptId: attempt.id,
+    questions,
+    excludedCount: excludedIds.size,
+    exclusionIgnored,
+  });
 }
 
 // PATCH: Submit quiz answers
@@ -307,14 +526,26 @@ export async function PATCH(req: NextRequest) {
   // 100% by omitting every question the student didn't know.
   const quizQuestions = await prisma.question.findMany({
     where: { quizId },
-    include: { options: true },
+    include: { options: { orderBy: { id: "asc" } } },
     orderBy: QUESTION_ORDER,
   });
+  const recordedExclusions = new Set(
+    parseExcludedQuestionIds(attempt.excludedQuestionIds),
+  );
+  const excludedIds = new Set(
+    quizQuestions.filter((q) => recordedExclusions.has(q.id)).map((q) => q.id),
+  );
+  const activeQuestions = quizQuestions.filter((q) => !excludedIds.has(q.id));
+  if (!activeQuestions.length)
+    return NextResponse.json(
+      { error: "No questions remain in this attempt." },
+      { status: 409 },
+    );
   const questionsById = new Map<string, ScorableQuestion>(
-    quizQuestions.map((q) => [q.id, q]),
+    activeQuestions.map((q) => [q.id, q]),
   );
 
-  // Any answer referencing a question outside this quiz is rejected.
+  // Reject unknown and excluded question ids before scoring.
   if (submittedAnswers.some((a) => !questionsById.has(a.questionId))) {
     return NextResponse.json({ error: "Question not found" }, { status: 404 });
   }
@@ -326,7 +557,7 @@ export async function PATCH(req: NextRequest) {
   const submittedByQuestion = new Map(
     submittedAnswers.map((answer) => [answer.questionId, answer]),
   );
-  const completeAnswers = quizQuestions.map(
+  const completeAnswers = activeQuestions.map(
     (question) =>
       submittedByQuestion.get(question.id) ?? { questionId: question.id },
   );
@@ -335,8 +566,16 @@ export async function PATCH(req: NextRequest) {
     attemptId,
     questionsById,
     answers: completeAnswers,
-    totalQuestions: quizQuestions.length,
+    totalQuestions: activeQuestions.length,
   });
+  const progressScore = excludedIds.size
+    ? Math.min(
+        100,
+        Math.round(
+          ((excludedIds.size + correct) / quizQuestions.length) * 10000,
+        ) / 100,
+      )
+    : score;
   const completedAt = new Date();
 
   // The attempt cap, read outside the transaction: it is static config, and
@@ -358,7 +597,7 @@ export async function PATCH(req: NextRequest) {
       // cannot all grade the same attempt before any sees it completed.
       const claimed = await tx.quizAttempt.updateMany({
         where: { id: attemptId, studentId: student.id, completedAt: null },
-        data: { score, completedAt },
+        data: { score: progressScore, completedAt },
       });
       if (claimed.count !== 1) throw new AttemptAlreadySubmittedError();
 
@@ -408,14 +647,14 @@ export async function PATCH(req: NextRequest) {
         },
         update: {
           status: "COMPLETED",
-          bestScore: Math.max(score, existing?.bestScore ?? 0),
+          bestScore: Math.max(progressScore, existing?.bestScore ?? 0),
         },
         create: {
           studentId: student.id,
           classId: attempt.classId,
           quizId,
           status: "COMPLETED",
-          bestScore: score,
+          bestScore: progressScore,
         },
       });
     });
@@ -449,10 +688,11 @@ export async function PATCH(req: NextRequest) {
     });
 
     const snapshot = buildReviewSnapshot(
-      quizQuestions.map((q) => ({
+      activeQuestions.map((q) => ({
         id: q.id,
         text: q.text,
-        options: q.options,
+        // Save the choice order the student saw so the coach's letter labels match.
+        options: shuffleAnswerChoices(q.options, `${attemptId}:${q.id}`),
         // NUMERIC grading data + figure metadata flow into the durable snapshot
         // (see buildReviewSnapshot); ignored for plain choice questions.
         answerMode: q.answerMode,
@@ -482,7 +722,8 @@ export async function PATCH(req: NextRequest) {
         correctCount: correct,
         // The quiz's question count, matching the scored denominator — not the
         // length of the client-supplied answers array.
-        totalCount: quizQuestions.length,
+        totalCount: activeQuestions.length,
+        excludedCount: excludedIds.size,
         completedAt,
         reviewSnapshot: JSON.stringify(snapshot),
       },

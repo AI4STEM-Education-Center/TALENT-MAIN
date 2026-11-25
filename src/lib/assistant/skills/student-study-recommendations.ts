@@ -1,3 +1,8 @@
+import {
+  MATH_DELIMITER_RULE,
+  STUDENT_ANSWER_FEEDBACK_RULES,
+} from "../feedback-rules";
+import { coachActionRefSchema } from "../coach";
 import { z } from "zod";
 import {
   findStudyCandidates,
@@ -12,6 +17,15 @@ function requireStudent(ctx: AssistantToolContext) {
   return ctx.studentId;
 }
 
+const [materialRef, simulationRef, practiceRef] = coachActionRefSchema.options;
+const studyRecommendationInput = studyActionRefSchema.extend({
+  ref: z.discriminatedUnion("kind", [
+    materialRef.omit({ cardId: true, interaction: true }),
+    simulationRef.omit({ cardId: true, interaction: true }),
+    practiceRef.omit({ cardId: true, interaction: true, questionText: true }),
+  ]),
+});
+
 export const studentStudyRecommendationsSkill: AssistantSkill = {
   id: "student-study-recommendations",
   audience: "student",
@@ -19,10 +33,12 @@ export const studentStudyRecommendationsSkill: AssistantSkill = {
   description:
     "Find and offer course materials, simulations and published practice questions, ranked by knowledge gaps.",
   instructions: [
+    STUDENT_ANSWER_FEEDBACK_RULES,
+    MATH_DELIMITER_RULE,
     "When asked what to study, when a student mentions a weak topic, or after reviewing a result, proactively offer ONE fitting study card.",
     "Call find_study_recommendations (optionally with a topic), then show_study_recommendation with one returned action. Candidates are ranked by unknown concepts, then recency.",
     "Keep source ids unchanged. Replace the reason with a short explanation of why it helps. For a simulation, write a goal, concrete steps and what to observe using only its description; never invent controls.",
-    "Practice questions are hidden from you on purpose: do not invent their content or reveal answers. If nothing fits, say so and teach the concept. Write math as $…$.",
+    "Before an inline practice attempt, do not invent its content or reveal a key. After it, use the recorded question, response, and verdict to give direct feedback. If no card fits, teach the concept.",
   ].join("\n"),
   tools: [
     {
@@ -42,10 +58,10 @@ export const studentStudyRecommendationsSkill: AssistantSkill = {
       activityLabel: "Preparing a study card",
       description:
         "Show ONE card using an action from find_study_recommendations. Every selection is checked against the student's current access. Never put answers in card text.",
-      input: studyActionRefSchema,
+      input: studyRecommendationInput,
       surfacesActions: true,
       handler: async (args, ctx) => {
-        const ref = studyActionRefSchema.parse(args);
+        const ref = studyRecommendationInput.parse(args);
         const view = await hydrateStudyAction(ref, requireStudent(ctx));
         return view
           ? {

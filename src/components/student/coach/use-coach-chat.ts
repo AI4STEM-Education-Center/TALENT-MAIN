@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+} from "react";
 import { readNdjson } from "@/lib/assistant/ndjson";
 import type { AssistantStreamEvent } from "@/lib/assistant/types";
 import type {
@@ -8,6 +14,7 @@ import type {
   CoachQuestionView,
   CoachSessionView,
 } from "@/lib/assistant/coach-types";
+import { withCardInteraction, type CardInteraction } from "./card-interaction";
 import type { DisplayAiMetrics } from "@/lib/ai-metrics";
 import type {
   Bubble,
@@ -22,15 +29,24 @@ type LoadState =
   | { status: "ready"; question: CoachQuestionView };
 
 /**
- * State for one coach dialog. Mirrors useAssistantConversation's turn handling
+ * State for one coach session. Mirrors useAssistantConversation's turn handling
  * (same NDJSON stream, same bubble shape) but is scoped to one verified
- * question: the server owns the conversation, so nothing here remembers an id
- * or replays a transcript — reopening the dialog simply loads what was saved.
+ * question: the server owns the conversation and resolves it from the target,
+ * so the id kept here is only what card interactions are filed under.
  */
-export function useCoachChat(target: CoachTarget) {
+export function useCoachChat(
+  target: CoachTarget,
+  {
+    onEngaged,
+  }: {
+    /** Told when the student has a turn: a saved one on load, or a new one. */
+    onEngaged?: (engaged: boolean) => void;
+  } = {},
+) {
+  const reportEngaged = useEffectEvent(() => onEngaged?.(true));
   const [load, setLoad] = useState<LoadState>({ status: "loading" });
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
-  const [openingOptions, setOpeningOptions] = useState<string[]>([]);
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const [activity, setActivity] = useState<ToolActivity[]>([]);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -68,7 +84,8 @@ export function useCoachChat(target: CoachTarget) {
             ...(turn.actions.length > 0 ? { cards: turn.actions } : {}),
           })),
         ]);
-        setOpeningOptions(data.openingOptions ?? []);
+        setConversationId(data.conversationId ?? null);
+        if (data.turns.some((turn) => turn.role === "user")) reportEngaged();
         setLoad({ status: "ready", question: data.question });
       } catch {
         if (controller.signal.aborted) return;
@@ -89,6 +106,7 @@ export function useCoachChat(target: CoachTarget) {
       const text = message.trim();
       if (!text || abortRef.current) return;
 
+      onEngaged?.(true);
       setBubbles((prev) => [
         ...prev,
         { role: "user", content: text },
@@ -148,6 +166,8 @@ export function useCoachChat(target: CoachTarget) {
               next[at] = { ...next[at], status: event.status };
               return next;
             });
+          } else if (event.type === "conversation") {
+            setConversationId(event.id);
           } else if (event.type === "action") {
             const card: CoachActionView = event.action;
             setBubbles((prev) =>
@@ -202,7 +222,7 @@ export function useCoachChat(target: CoachTarget) {
         }
       }
     },
-    [attemptId, questionNumber],
+    [attemptId, questionNumber, onEngaged],
   );
 
   const send = useCallback(() => {
@@ -212,10 +232,23 @@ export function useCoachChat(target: CoachTarget) {
     void sendText(message);
   }, [draft, sendText]);
 
+  /** Record a card interaction on the transcript as soon as it happens. */
+  const updateCardInteraction = useCallback(
+    (cardId: string | undefined, interaction: CardInteraction) => {
+      if (!cardId) return;
+      setBubbles((prev) => withCardInteraction(prev, cardId, interaction));
+    },
+    [],
+  );
+
+  const hasUserTurn = bubbles.some((bubble) => bubble.role === "user");
+
   return {
     load,
     bubbles,
-    openingOptions,
+    conversationId,
+    hasUserTurn,
+    updateCardInteraction,
     activity,
     draft,
     setDraft,

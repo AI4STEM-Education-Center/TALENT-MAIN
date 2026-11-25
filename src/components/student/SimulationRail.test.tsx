@@ -101,3 +101,24 @@ it("does not open on top of another pop-up the student already opened", async ()
   await render([...sims]);
   expect(dialog()).toBeNull();
 });
+
+it("reports each opened simulation and marks explored ones", async () => {
+  const onOpen = vi.fn();
+  await act(async () =>
+    root.render(
+      <SimulationRail
+        simulations={sims}
+        onOpen={onOpen}
+        exploredIds={new Set(["second"])}
+        showHeading={false}
+      />,
+    ),
+  );
+  expect(host.textContent).not.toContain("Explore with simulations");
+  const cards = host.querySelectorAll('[aria-haspopup="dialog"]');
+  expect(cards[0].textContent).not.toContain("Explored");
+  expect(cards[1].textContent).toContain("Explored");
+  await act(async () => (cards[0] as HTMLElement).click());
+  expect(onOpen).toHaveBeenCalledWith("first");
+  expect(dialog()?.textContent).toContain("Pendulum");
+});

@@ -33,6 +33,8 @@ import { canViewAdminData } from "./roles";
 export const RESOURCE_SURFACES = [
   "results_recommendation",
   "history_recommendation",
+  "coach_recommendation",
+  "assistant_recommendation",
   "materials_library",
 ] as const;
 export type ResourceSurface = (typeof RESOURCE_SURFACES)[number];
@@ -41,6 +43,8 @@ export type ResourceSurface = (typeof RESOURCE_SURFACES)[number];
 export const RESOURCE_SURFACE_LABELS: Record<ResourceSurface, string> = {
   results_recommendation: "Quiz results (recommended)",
   history_recommendation: "Exam history (recommended)",
+  coach_recommendation: "Wrong-answer coach (recommended)",
+  assistant_recommendation: "Study assistant (recommended)",
   materials_library: "Course materials library",
 };
 
@@ -54,7 +58,10 @@ export function resourceSurfaceLabel(surface: string): string {
 /** Surfaces that open a post-quiz recommendation (and must be verified as one). */
 export function isRecommendationSurface(surface: ResourceSurface): boolean {
   return (
-    surface === "results_recommendation" || surface === "history_recommendation"
+    surface === "results_recommendation" ||
+    surface === "history_recommendation" ||
+    surface === "coach_recommendation" ||
+    surface === "assistant_recommendation"
   );
 }
 

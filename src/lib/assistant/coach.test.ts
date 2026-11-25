@@ -3,12 +3,14 @@ import {
   coachActionRefSchema,
   coachActionText,
   coachOpening,
+  coachOpeningOptions,
+  hydrateCoachAction,
   formatCoachContext,
   type CoachCandidates,
   type CoachContextInput,
 } from "./coach";
 import { buildCoachSystemPrompt } from "./prompt";
-import { COACH_TOOL_NAMES } from "./coach-types";
+import { COACH_TOOL_NAMES, type CoachScope } from "./coach-types";
 import { coachTools } from "./skills/coach";
 import { listSkills } from "./skills";
 import { parseTranscript } from "./conversation-store";
@@ -41,13 +43,16 @@ const input = (over: Partial<CoachContextInput> = {}): CoachContextInput => ({
 });
 
 describe("formatCoachContext", () => {
-  it("withholds the key AND the unselected choices while a retake is possible", () => {
+  it("labels each choice and identifies only the student selection while a retake is possible", () => {
     const text = formatCoachContext(input());
     expect(text).toContain("9.8 m/s");
     expect(text).toContain("ANSWER KEY: withheld");
-    // The results page hides these too; the coach must not be a side door.
-    expect(text).not.toContain("19.6 m/s");
-    expect(text).not.toContain("4.9 m/s");
+    expect(text).toContain(
+      "Do not solve the question or eliminate/narrow down any of the listed options.",
+    );
+    expect(text).toContain("- A. 9.8 m/s [student chose this]");
+    expect(text).toContain("- B. 19.6 m/s\n");
+    expect(text).toContain("- C. 4.9 m/s\n");
     expect(text).not.toContain("[correct");
   });
 
@@ -137,7 +142,7 @@ describe("formatCoachContext", () => {
       "offer_practice_question with a reason; no question id needed",
     );
     expect(text).toContain(
-      "Its content is hidden from you; do not describe or invent it",
+      "Before it is answered its content is hidden from you; do not describe or invent it",
     );
     expect(text).not.toContain("none available");
   });
@@ -245,50 +250,32 @@ describe("coachActionText", () => {
 });
 
 describe("coach prompt and tools", () => {
-  it("requires proactive explanation-plus-card teaching after diagnosis", () => {
+  it("starts with the student's thoughts and uses the knowledge profile for diagnostic options", () => {
     const prompt = buildCoachSystemPrompt({
       toolNames: [...COACH_TOOL_NAMES],
       context: "",
       opening: coachOpening(3),
       extraInstructions: "",
     });
+    expect(coachOpeningOptions()).toEqual([]);
     expect(prompt).toContain(
-      "normally you can start teaching on this first turn",
+      "their own thoughts and their Knowledge Tracing profile",
     );
+    for (const field of [
+      "knownConcepts",
+      "unknownConcepts",
+      "transitions",
+      "promptSummary",
+    ]) {
+      expect(prompt).toContain(field);
+    }
     expect(prompt).toContain(
-      "If the reply is too vague to diagnose, ask ONE short follow-up question",
+      "Call offer_diagnostic_options to give 2–4 targeted choices",
     );
+    expect(prompt).toContain("up to two cards per reply");
     expect(prompt).toContain(
-      "EVERY teaching reply must pair a short explanation with exactly ONE card",
+      "For a completed inline practice card with a recorded verdict, clearly say right or wrong using that verdict",
     );
-    expect(prompt).toContain(
-      "whenever the question context lists a fitting option",
-    );
-    expect(prompt).toContain("Call the matching tool in that same reply");
-    expect(prompt).toContain(
-      "for a conceptual gap covered by a listed material, call recommend_material",
-    );
-    expect(prompt).toContain(
-      "listed simulation that demonstrates it, call explain_simulation",
-    );
-    expect(prompt).toContain(
-      "student says they understand, or after explaining the concept",
-    );
-    expect(prompt).toContain(
-      "call offer_practice_question if a practice question is available",
-    );
-    expect(prompt).toContain(
-      "If no material or simulation fits but practice exists",
-    );
-    expect(prompt).toContain(
-      "Advice-only replies are allowed only when no listed option fits",
-    );
-    expect(prompt).toContain("Never show more than one card in any reply");
-    expect(prompt).not.toContain("two cards");
-    expect(prompt).toContain("Keep replies under 150 words");
-    expect(prompt).toContain("Only offer what the question context lists");
-    expect(prompt).toContain("never reveal the answer");
-    expect(prompt).not.toContain("choose the single most useful next step");
   });
 
   it("keeps the academic-honesty rules and the opening line in the prompt", () => {
@@ -299,15 +286,20 @@ describe("coach prompt and tools", () => {
       opening: coachOpening(3),
       extraInstructions: "Be brief.",
     });
-    expect(prompt).toContain("NEVER give a student the direct answer");
+    expect(prompt).toContain(
+      "Never give a student the direct answer, confirm a choice, or eliminate or narrow down options",
+    );
+    expect(prompt).toContain(
+      "Do not solve the question or eliminate/narrow down any of the listed options.",
+    );
     expect(prompt).toContain("question 3 together");
     expect(prompt).toContain(
       "recommend_material, explain_simulation, offer_practice_question",
     );
     // The admin's text can add to the rules, never sit above them.
-    expect(prompt.indexOf("NEVER give a student")).toBeLessThan(
-      prompt.indexOf("Be brief."),
-    );
+    expect(
+      prompt.indexOf("Never give a student the direct answer"),
+    ).toBeLessThan(prompt.indexOf("Be brief."));
   });
 
   it("registers exactly the documented tools, outside the widget's skill registry", () => {
@@ -322,7 +314,12 @@ describe("coach prompt and tools", () => {
 
 describe("archived coach transcripts", () => {
   it("keep the card references so a cold transcript still shows what was offered", () => {
-    const ref = { kind: "material", recommendationIndex: 0, reason: "why" };
+    const ref = {
+      kind: "material",
+      recommendationIndex: 0,
+      reason: "why",
+      interaction: { status: "viewed", viewedAt: "2026-01-01T00:00:00.000Z" },
+    };
     const body = [
       JSON.stringify({ v: 1, conversationId: "c" }),
       JSON.stringify({
@@ -336,5 +333,50 @@ describe("archived coach transcripts", () => {
     const turns = parseTranscript(body);
     expect(turns[0].actions).toBeUndefined();
     expect(turns[1].actions).toEqual([ref]);
+  });
+});
+
+describe("diagnostic options", () => {
+  const card = {
+    kind: "diagnostic_options",
+    prompt: "What would you like to unpack?",
+    options: [
+      { id: "setup", label: "Set up the equation" },
+      { id: "units", label: "Check the units" },
+    ],
+  } as const;
+
+  it("checks the size and uniqueness of diagnostic choices", () => {
+    const { options } = card;
+    expect(coachActionRefSchema.safeParse(card).success).toBe(true);
+    for (const invalid of [
+      [],
+      [options[0]],
+      [options[0], options[0]],
+      [...options, ...options, options[0]],
+    ]) {
+      expect(
+        coachActionRefSchema.safeParse({ ...card, options: invalid }).success,
+      ).toBe(false);
+    }
+  });
+
+  it("audits the prompt and every label, and hydrates a stored selection", async () => {
+    expect(coachActionText([card])).toEqual([
+      card.prompt,
+      ...card.options.map((option) => option.label),
+    ]);
+    const validated = coachActionRefSchema.parse({
+      ...card,
+      interaction: {
+        status: "selected",
+        selectedOptionId: "units",
+        selectedLabel: "Check the units",
+        selectedAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+    expect(await hydrateCoachAction(validated, {} as CoachScope)).toEqual(
+      validated,
+    );
   });
 });

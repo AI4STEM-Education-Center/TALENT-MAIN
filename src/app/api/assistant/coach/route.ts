@@ -103,7 +103,7 @@ export async function GET(req: Request) {
     const body: CoachSessionView = {
       question,
       opening: coachOpening(scope.questionNumber),
-      openingOptions: coachOpeningOptions(scope),
+      openingOptions: coachOpeningOptions(),
       conversationId: conversation?.id ?? null,
       turns,
     };

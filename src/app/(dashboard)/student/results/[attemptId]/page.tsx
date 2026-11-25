@@ -12,7 +12,10 @@ import {
   type PresignedRecommendations,
   type ResultStatus,
 } from "@/lib/exam-results";
-import { alternativeNotice } from "@/lib/alternative-retake";
+import {
+  alternativeNotice,
+  officialExcludedNotice,
+} from "@/lib/alternative-retake";
 import {
   presignStoredRecommendations,
   presignStudentMistakes,
@@ -114,7 +117,7 @@ export default async function ExamResultsPage({
               examResult.practiceVersionName,
               examResult.excludedCount,
             )
-          : undefined
+          : officialExcludedNotice(examResult.excludedCount) || undefined
       }
       actions={
         <>

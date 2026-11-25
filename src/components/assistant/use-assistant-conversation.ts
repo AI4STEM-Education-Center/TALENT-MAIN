@@ -3,11 +3,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { readNdjson } from "@/lib/assistant/ndjson";
 import type {
+  AssistantConversationDetail,
   AssistantStreamEvent,
   AssistantTurn,
   ConversationSummary,
 } from "@/lib/assistant/types";
-import type { CoachActionView } from "@/lib/assistant/coach-types";
+import type { CoachHistoryContext } from "@/lib/assistant/coach-types";
+import {
+  withCardInteraction,
+  type CardInteraction,
+} from "@/components/student/coach/card-interaction";
 import type { DisplayAiMetrics } from "@/lib/ai-metrics";
 import type { Bubble, ToolActivity } from "./AssistantTranscript";
 import type { WidgetConfig } from "./assistant-context";
@@ -24,6 +29,14 @@ export function useAssistantConversation(config: WidgetConfig | null) {
   // turn and echoed back on every later one, which is what keeps an exchange
   // landing in one conversation instead of starting a new one per message.
   const [conversationId, setConversationId] = useState<string | null>(null);
+  // Set while the open transcript is a wrong-answer coach conversation: its
+  // question (for the context drawer) and where follow-ups must be sent.
+  const [coachContext, setCoachContext] = useState<CoachHistoryContext | null>(
+    null,
+  );
+  // Set when the open transcript can be read but not continued (e.g. a coach
+  // chat whose quiz's answer-key policy changed): the reason the server gave.
+  const [readOnly, setReadOnly] = useState<{ reason: string } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [history, setHistory] = useState<ConversationSummary[] | null>(null);
   const [historyDays, setHistoryDays] = useState<number | null>(null);
@@ -81,8 +94,19 @@ export function useAssistantConversation(config: WidgetConfig | null) {
     setActivity([]);
     setNotice(null);
     setConversationId(null);
+    setCoachContext(null);
+    setReadOnly(null);
     setHistoryOpen(false);
   };
+
+  /** Record a card interaction on the open transcript as soon as it happens. */
+  const updateCardInteraction = useCallback(
+    (cardId: string | undefined, interaction: CardInteraction) => {
+      if (!cardId) return;
+      setBubbles((prev) => withCardInteraction(prev, cardId, interaction));
+    },
+    [],
+  );
 
   const openHistory = useCallback(async () => {
     conversationAbortRef.current?.abort();
@@ -136,18 +160,32 @@ export function useAssistantConversation(config: WidgetConfig | null) {
           setHistoryOpen(false);
           return;
         }
-        const data = (await res.json()) as {
-          turns: (AssistantTurn & { cards?: CoachActionView[] })[];
-        };
+        const data = (await res.json()) as AssistantConversationDetail;
         if (controller.signal.aborted) return;
+        const coach = data.coach ?? null;
+        const saved: Bubble[] = data.turns.map((turn) => ({
+          role: turn.role,
+          content: turn.content,
+          attachmentNames: turn.attachmentNames,
+          attachmentIds: turn.attachmentIds,
+          ...(turn.cards?.length ? { cards: turn.cards } : {}),
+        }));
+        // The coach's opening line is a static greeting, not a stored turn;
+        // put it back so the saved conversation reads from the beginning.
         setBubbles(
-          data.turns.map((turn) => ({
-            role: turn.role,
-            content: turn.content,
-            attachmentNames: turn.attachmentNames,
-            attachmentIds: turn.attachmentIds,
-            cards: turn.cards,
-          })),
+          coach
+            ? [{ role: "assistant", content: coach.opening }, ...saved]
+            : saved,
+        );
+        setCoachContext(coach);
+        setReadOnly(
+          data.readOnly
+            ? {
+                reason:
+                  data.readOnlyReason ??
+                  "This conversation can no longer be continued.",
+              }
+            : null,
         );
         setConversationId(id);
         setActivity([]);
@@ -166,7 +204,13 @@ export function useAssistantConversation(config: WidgetConfig | null) {
 
   const send = async (overrideText?: string) => {
     const message = (overrideText ?? draft).trim();
-    if (!message || abortRef.current || loadingConversation || preparing)
+    if (
+      !message ||
+      readOnly ||
+      abortRef.current ||
+      loadingConversation ||
+      preparing
+    )
       return;
 
     const outgoing = attachments;
@@ -217,23 +261,36 @@ export function useAssistantConversation(config: WidgetConfig | null) {
       );
 
     try {
-      const res = await fetch("/api/assistant/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          message,
-          // Omitted rather than sent as null on the first turn of a conversation:
-          // the field is optional server-side, and a null would be rejected.
-          conversationId: conversationId ?? undefined,
-          history: fallbackHistory,
-          attachments: outgoing.map(({ name, mimeType, dataBase64 }) => ({
-            name,
-            mimeType,
-            dataBase64,
-          })),
-        }),
-      });
+      // A reopened coach conversation keeps talking to the coach about its
+      // question; the server finds the same transcript from the question.
+      const res = coachContext
+        ? await fetch("/api/assistant/coach/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: controller.signal,
+            body: JSON.stringify({
+              message,
+              attemptId: coachContext.attemptId,
+              questionNumber: coachContext.questionNumber,
+            }),
+          })
+        : await fetch("/api/assistant/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: controller.signal,
+            body: JSON.stringify({
+              message,
+              // Omitted rather than sent as null on the first turn of a conversation:
+              // the field is optional server-side, and a null would be rejected.
+              conversationId: conversationId ?? undefined,
+              history: fallbackHistory,
+              attachments: outgoing.map(({ name, mimeType, dataBase64 }) => ({
+                name,
+                mimeType,
+                dataBase64,
+              })),
+            }),
+          });
 
       if (controller.signal.aborted) return;
       if (!res.ok || !res.body) {
@@ -333,6 +390,10 @@ export function useAssistantConversation(config: WidgetConfig | null) {
     activity,
     notice,
     conversationId,
+    coachContext,
+    readOnly: readOnly !== null,
+    readOnlyReason: readOnly?.reason ?? null,
+    updateCardInteraction,
     historyOpen,
     setHistoryOpen,
     history,
@@ -350,7 +411,8 @@ export function useAssistantConversation(config: WidgetConfig | null) {
     sending,
     send,
     accept,
-    attachmentsEnabled,
+    // The coach endpoint takes text only.
+    attachmentsEnabled: attachmentsEnabled && !coachContext,
     sttEnabled: config?.sttEnabled !== false,
   };
 }

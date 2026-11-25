@@ -201,9 +201,10 @@ export function buildReviewSnapshot(
           return snap;
         }),
       };
+      if (q.answerMode === "MULTI_SELECT") base.answerMode = q.answerMode;
       // NUMERIC questions carry no options; persist the numeric grading data and
       // the student's submitted value so the durable snapshot can render/score
-      // without the live rows. Choice questions stay byte-identical (no keys).
+      // without the live rows.
       if (q.answerMode === "NUMERIC") {
         base.answerMode = q.answerMode;
         base.correctNumeric = q.answerNumeric ?? null;

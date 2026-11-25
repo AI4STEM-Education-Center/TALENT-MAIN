@@ -111,7 +111,7 @@ export function SimulationDialog({
           />
         </div>
         {footer && (
-          <div className="max-h-[40dvh] shrink-0 overflow-y-auto border-t px-4 py-3">
+          <div className="relative max-h-[40dvh] shrink-0 overflow-y-auto border-t px-4 py-3">
             {footer}
           </div>
         )}

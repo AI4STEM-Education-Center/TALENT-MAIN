@@ -194,39 +194,48 @@ describe("opening a learning-resource session", () => {
     expect(await prisma.learningResourceSession.count()).toBe(0);
   });
 
-  it("records a verified recommendation with range, class and quiz from the snapshot", async () => {
-    const { user, student, cls, material } = await setup();
-    await consent(user.id, user.email);
-    await examResult({
-      attemptId: "attempt-1",
-      studentId: student.id,
-      classId: cls.id,
-      items: [
-        {
-          materialId: material.id,
-          materialTitle: "Kinematics notes",
-          pageRange: { start: 2, end: 3 },
-          reason: "Review motion",
-          pages: [{ pageNumber: 2, storageKey: `pages/${material.id}/2.png` }],
-        },
-      ],
-    });
-    const res = await openSession(
-      json({ surface: "history_recommendation", attemptId: "attempt-1" }),
-      openParams(material.id),
-    );
-    expect(res.status).toBe(201);
-    const row = await prisma.learningResourceSession.findFirstOrThrow();
-    expect(row).toMatchObject({
-      recommended: true,
-      surface: "history_recommendation",
-      attemptId: "attempt-1",
-      classId: cls.id,
-      quizId: "quiz-1",
-      pageStart: 2,
-      pageEnd: 3,
-    });
-  });
+  it.each([
+    "history_recommendation",
+    "coach_recommendation",
+    "assistant_recommendation",
+  ])(
+    "records the verified %s with range, class and quiz from the snapshot",
+    async (surface) => {
+      const { user, student, cls, material } = await setup();
+      await consent(user.id, user.email);
+      await examResult({
+        attemptId: "attempt-1",
+        studentId: student.id,
+        classId: cls.id,
+        items: [
+          {
+            materialId: material.id,
+            materialTitle: "Kinematics notes",
+            pageRange: { start: 2, end: 3 },
+            reason: "Review motion",
+            pages: [
+              { pageNumber: 2, storageKey: `pages/${material.id}/2.png` },
+            ],
+          },
+        ],
+      });
+      const res = await openSession(
+        json({ surface, attemptId: "attempt-1" }),
+        openParams(material.id),
+      );
+      expect(res.status).toBe(201);
+      const row = await prisma.learningResourceSession.findFirstOrThrow();
+      expect(row).toMatchObject({
+        recommended: true,
+        surface,
+        attemptId: "attempt-1",
+        classId: cls.id,
+        quizId: "quiz-1",
+        pageStart: 2,
+        pageEnd: 3,
+      });
+    },
+  );
 
   it("verifies legacy snapshots (no materialId) through page storage keys", async () => {
     const { user, student, cls, material } = await setup();

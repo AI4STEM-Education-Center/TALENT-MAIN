@@ -82,41 +82,63 @@ export async function loadPreviouslyCorrect(
   };
 }
 
-export type RetakeSelection = {
-  questions: VariantQuestion[];
-  /** Source question ids left out of this retake. */
+export type QuizQuestionExclusionOptions = {
+  excludeCorrect?: boolean;
+  excludedQuestionIds?: string[];
+};
+
+export type RetakeSelection<T = VariantQuestion> = {
+  questions: T[];
   excludedSourceIds: string[];
-  /**
-   * True when the student asked to exclude correct questions but nothing would
-   * remain (everything was already correct), so the full version is used.
-   */
   exclusionIgnored: boolean;
 };
 
-/**
- * Choose the questions a retake asks. Excluding is opt-in per start; if it
- * would leave nothing, the whole version is asked instead (and flagged) so a
- * student who aced the quiz can still practise rather than hit an empty run.
- */
+function selectQuestions<T>(
+  questions: T[],
+  sourceId: (question: T) => string,
+  correctIds: ReadonlySet<string>,
+  { excludeCorrect, excludedQuestionIds }: QuizQuestionExclusionOptions,
+): RetakeSelection<T> {
+  if (!excludeCorrect && !excludedQuestionIds?.length)
+    return { questions, excludedSourceIds: [], exclusionIgnored: false };
+  // An explicit list takes precedence over the exclude-all shortcut, including
+  // an empty list when the student has cleared every selection.
+  const requested = excludedQuestionIds && new Set(excludedQuestionIds);
+  const excludedSourceIds: string[] = [];
+  const kept = questions.filter((question) => {
+    const id = sourceId(question);
+    if (!correctIds.has(id) || (requested && !requested.has(id))) return true;
+    excludedSourceIds.push(id);
+    return false;
+  });
+  return !kept.length && !!excludedSourceIds.length
+    ? { questions, excludedSourceIds: [], exclusionIgnored: true }
+    : { questions: kept, excludedSourceIds, exclusionIgnored: false };
+}
+
+export function selectOfficialQuizQuestions<T extends { id: string }>(
+  questions: T[],
+  correctIds: ReadonlySet<string>,
+  opts: QuizQuestionExclusionOptions = {},
+): RetakeSelection<T> {
+  return selectQuestions(questions, (q) => q.id, correctIds, opts);
+}
+
 export function selectRetakeQuestions(
   questions: VariantQuestion[],
   correctSourceIds: ReadonlySet<string>,
   excludeCorrect: boolean,
+  requestedExcludeIds?: string[],
 ): RetakeSelection {
-  if (!excludeCorrect)
-    return { questions, excludedSourceIds: [], exclusionIgnored: false };
-  const kept = questions.filter(
-    (q) => !correctSourceIds.has(q.sourceQuestionId),
+  return selectQuestions(
+    questions,
+    (q) => q.sourceQuestionId,
+    correctSourceIds,
+    {
+      excludeCorrect,
+      excludedQuestionIds: requestedExcludeIds,
+    },
   );
-  if (kept.length === 0)
-    return { questions, excludedSourceIds: [], exclusionIgnored: true };
-  return {
-    questions: kept,
-    excludedSourceIds: questions
-      .filter((q) => correctSourceIds.has(q.sourceQuestionId))
-      .map((q) => q.sourceQuestionId),
-    exclusionIgnored: false,
-  };
 }
 
 /**
@@ -184,6 +206,11 @@ export function variantSnapshotInputs(
   };
 }
 
+export function officialExcludedNotice(excludedCount: number): string {
+  if (!excludedCount) return "";
+  return `${excludedCount} question${excludedCount === 1 ? "" : "s"} you answered correctly before ${excludedCount === 1 ? "was" : "were"} left out. This attempt's score covers the remaining questions.`;
+}
+
 /** One-line context for a results view of an alternative-version retake. */
 export function alternativeNotice(
   versionName: string,
@@ -195,12 +222,26 @@ export function alternativeNotice(
   return `Alternative version: ${versionName}. Recorded as a retake; your graded score is unchanged.${left}`;
 }
 
-/** How many source questions a stored `excludedQuestionIds` JSON array lists. */
-export function excludedCountOf(raw: string | null | undefined): number {
+/** Read stored exclusions, including older attempts with no exclusion data. */
+export function parseExcludedQuestionIds(
+  raw: string | null | undefined,
+): string[] {
   try {
     const parsed: unknown = JSON.parse(raw ?? "[]");
-    return Array.isArray(parsed) ? parsed.length : 0;
+    return Array.isArray(parsed)
+      ? [
+          ...new Set(
+            parsed.filter(
+              (id): id is string => typeof id === "string" && id.length > 0,
+            ),
+          ),
+        ]
+      : [];
   } catch {
-    return 0;
+    return [];
   }
+}
+
+export function excludedCountOf(raw: string | null | undefined): number {
+  return parseExcludedQuestionIds(raw).length;
 }

@@ -1123,7 +1123,7 @@ function HistoryCard({
         {campaigns.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nothing sent yet.</p>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="relative overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-left text-xs uppercase text-muted-foreground">
                 <tr>

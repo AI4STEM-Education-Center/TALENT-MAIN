@@ -78,6 +78,7 @@ export async function hydrateStudyAction(
   const parsed = studyActionRefSchema.safeParse(raw);
   if (!parsed.success) return null;
   const { ref, resultId, questionNumber } = parsed.data;
+  if (ref.kind === "diagnostic_options") return ref;
   if (ref.kind === "simulation") {
     const [sim] = await loadSimulationOptions(
       { studentId },
@@ -93,7 +94,13 @@ export async function hydrateStudyAction(
       },
       select: { quizId: true },
     });
-    return sim && assignment ? simulationActionView(ref, sim) : null;
+    if (!sim || !assignment) return null;
+    const result = resultId ? await resultScope(studentId, resultId) : null;
+    return simulationActionView(
+      ref,
+      sim,
+      result?.quizId === assignment.quizId ? resultId : undefined,
+    );
   }
   if (!resultId) return null;
   const base = await resultScope(studentId, resultId);
@@ -149,7 +156,7 @@ export async function findStudyCandidates(studentId: string, topic?: string) {
           },
         },
       },
-      select: { id: true },
+      select: { id: true, question: { select: { quizId: true } } },
       take: 100,
       orderBy: { id: "asc" },
     }),
@@ -256,10 +263,20 @@ export async function findStudyCandidates(studentId: string, topic?: string) {
     simulations.map((s) => s.id),
     null,
   );
-  for (const sim of sims)
+  const quizBySim = new Map(
+    simulations.map((sim) => [sim.id, sim.question.quizId]),
+  );
+  const latestResultByQuiz = new Map<string, string>();
+  for (const result of results) {
+    if (!latestResultByQuiz.has(result.quizId))
+      latestResultByQuiz.set(result.quizId, result.quizAttemptId);
+  }
+  for (const sim of sims) {
+    const quizId = quizBySim.get(sim.simulationId);
     candidates.push({
       action: {
         source: "study",
+        resultId: quizId ? latestResultByQuiz.get(quizId) : undefined,
         ref: {
           kind: "simulation",
           simulationId: sim.simulationId,
@@ -275,6 +292,7 @@ export async function findStudyCandidates(studentId: string, topic?: string) {
         .join("\n"),
       priority: rank(`${sim.title} ${sim.topic} ${sim.learningGoal}`),
     });
+  }
   return candidates
     .filter(
       (c) =>

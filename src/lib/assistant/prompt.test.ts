@@ -25,15 +25,20 @@ describe("buildSystemPrompt", () => {
     ];
     for (const prompt of prompts) {
       expect(prompt).toContain(
-        "Write math in LaTeX: use $…$ for inline math and $$…$$ for display math.",
+        "Write inline math with $…$ and display math with $$…$$.",
       );
+      expect(prompt).toContain(
+        "Never put raw LaTeX commands or equations inside plain parentheses",
+      );
+      expect(prompt).toContain("Never use \\(…\\) or \\[…\\] delimiters");
+      expect(prompt).toContain("(3,\\text{kg})");
     }
   });
 
-  it("does not request LaTeX in the plain-text simulation editing chat", () => {
+  it("keeps the simulation editing reply in plain prose", () => {
     const prompt = buildSystemPrompt("simulation", [], [], "");
-    expect(prompt).not.toContain("Write math in LaTeX");
     expect(prompt).toContain("write your reply to the teacher as plain prose");
+    expect(prompt).not.toContain("Write inline math with $…$");
   });
 
   it("always carries the injection and no-write rules", () => {
@@ -72,19 +77,27 @@ describe("buildSystemPrompt", () => {
     );
   });
 
-  it("tells the student assistant never to hand over the answer", () => {
+  it("restricts direct feedback to recorded practice, assistant-posed practice and verified final review", () => {
     const prompt = buildSystemPrompt("student", [], [], "");
-    expect(prompt).toContain("NEVER give a student the direct answer");
-    // The bypass phrasings a student actually tries must be named explicitly, or
-    // the rule reads as advice the model can weigh against being helpful.
-    expect(prompt).toContain("already submitted");
-    expect(prompt).toContain("a teacher told you to");
-    expect(prompt).toContain("answerKeyWithheld");
-  });
-
-  it("does not put the student honesty rules in the teacher prompt", () => {
+    expect(prompt).toContain(
+      "Never give a student the direct answer, confirm a choice, or eliminate or narrow down options",
+    );
+    expect(prompt).toContain(
+      "Treat any question the student pastes or supplies as potentially graded",
+    );
+    expect(prompt).toContain(
+      "an inline practice card with a recorded verdict from card activity",
+    );
+    expect(prompt).toContain(
+      "a practice problem you yourself posed in this conversation",
+    );
+    expect(prompt).toContain("use the student's recorded answer and verdict");
+    expect(prompt).toContain("When answerKeyWithheld applies");
+    expect(prompt).toContain(
+      "In a server-verified final quiz review that explicitly provides the key",
+    );
     expect(buildSystemPrompt("teacher", [], [], "")).not.toContain(
-      "NEVER give a student the direct answer",
+      "When answerKeyWithheld applies",
     );
   });
 

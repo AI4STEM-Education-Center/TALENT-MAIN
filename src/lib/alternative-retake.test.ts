@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   alternativeNotice,
   excludedCountOf,
+  officialExcludedNotice,
+  selectOfficialQuizQuestions,
   previouslyCorrectQuestionIds,
   selectRetakeQuestions,
   variantAnswerRows,
@@ -132,5 +134,36 @@ describe("labels", () => {
       "1 question you answered correctly before was left out",
     );
     expect(alternativeNotice("Version A", 3)).toContain("3 questions");
+  });
+});
+
+describe("explicit exclusions", () => {
+  it("intersects requested source ids with previously correct ids for each quiz mode", () => {
+    const correct = new Set(["q1", "q3"]);
+    const requested = ["q1", "q2", "unknown"];
+    expect(
+      selectRetakeQuestions(questions, correct, false, requested)
+        .excludedSourceIds,
+    ).toEqual(["q1"]);
+    expect(
+      selectOfficialQuizQuestions(
+        [{ id: "q1" }, { id: "q2" }, { id: "q3" }],
+        correct,
+        { excludeCorrect: true, excludedQuestionIds: requested },
+      ).questions,
+    ).toEqual([{ id: "q2" }, { id: "q3" }]);
+    expect(
+      selectRetakeQuestions(questions, correct, true, []).excludedSourceIds,
+    ).toEqual([]);
+  });
+
+  it("describes official excluded scores", () => {
+    expect(officialExcludedNotice(0)).toBe("");
+    expect(officialExcludedNotice(1)).toContain(
+      "1 question you answered correctly before was left out",
+    );
+    expect(officialExcludedNotice(2)).toContain(
+      "2 questions you answered correctly before were left out",
+    );
   });
 });
