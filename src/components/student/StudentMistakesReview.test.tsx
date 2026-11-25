@@ -69,4 +69,53 @@ describe("StudentMistakesReview", () => {
       "",
     );
   });
+
+  it("renders Wrong Answer Coach button only for eligible missed questions", () => {
+    const html = renderToStaticMarkup(
+      <StudentMistakesReview
+        attemptId="att-1"
+        coachEligibility={{
+          1: {
+            questionId: "q1",
+            questionNumber: 1,
+            eligible: true,
+            sessionId: null,
+            sessionStatus: "NOT_STARTED",
+          },
+          2: {
+            questionId: "q2",
+            questionNumber: 2,
+            eligible: false,
+            sessionId: null,
+            sessionStatus: "NOT_STARTED",
+          },
+        }}
+        mistakes={[
+          {
+            questionNumber: 1,
+            text: "Missed eligible",
+            figureUrl: null,
+            figureAlt: null,
+            response: {
+              kind: "choices",
+              choices: [{ text: "Wrong A", imageUrl: null, imageAlt: null }],
+            },
+          },
+          {
+            questionNumber: 2,
+            text: "Missed ineligible",
+            figureUrl: null,
+            figureAlt: null,
+            response: {
+              kind: "choices",
+              choices: [{ text: "Wrong B", imageUrl: null, imageAlt: null }],
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("Chat about this answer");
+    expect(html.match(/Chat about this answer/g)?.length).toBe(1);
+  });
 });

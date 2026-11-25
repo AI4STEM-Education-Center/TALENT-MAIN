@@ -774,7 +774,7 @@ describe("redesigned generation rounds", () => {
     ["2-2", 2, 2],
     ["0-4", 0, 4],
   ])(
-    "queues a %s mix with ordered slots and batch tracking",
+    "queues a %s mix plus 2 Wrong Answer Coach versions with ordered slots and batch tracking",
     async (mix, n, c) => {
       const f = await fixture();
       login(f.teacher.user.id, "TEACHER");
@@ -791,9 +791,21 @@ describe("redesigned generation rounds", () => {
         where: { batchId: data.batchId },
         orderBy: { slotIndex: "asc" },
       });
-      expect(rows.map((r) => r.slotIndex)).toEqual([0, 1, 2, 3]);
+      expect(rows.map((r) => r.slotIndex)).toEqual([0, 1, 2, 3, 4, 5]);
       expect(rows.filter((r) => r.variation === "NUMBERS")).toHaveLength(n);
       expect(rows.filter((r) => r.variation === "CONTEXT")).toHaveLength(c);
+      expect(
+        rows.filter(
+          (r) =>
+            r.variation === "COACH_CHECK3" && r.coachRole === "COACH_CHECK3",
+        ),
+      ).toHaveLength(1);
+      expect(
+        rows.filter(
+          (r) =>
+            r.variation === "COACH_HELDOUT" && r.coachRole === "COACH_HELDOUT",
+        ),
+      ).toHaveLength(1);
       expect(rows[0].name).toMatch(/^Version · (Numbers|Context) 1$/);
       expect(
         rows.every(
@@ -803,7 +815,7 @@ describe("redesigned generation rounds", () => {
             r.status === "QUEUED",
         ),
       ).toBe(true);
-      expect(enqueueQuizVariant).toHaveBeenCalledTimes(4);
+      expect(enqueueQuizVariant).toHaveBeenCalledTimes(6);
       expect(
         await prisma.quizVariantBatchState.findUniqueOrThrow({
           where: { batchId: data.batchId },
@@ -818,6 +830,27 @@ describe("redesigned generation rounds", () => {
       });
     },
   );
+
+  it("queues 4 versions without Coach sets when purpose is STANDALONE", async () => {
+    const f = await fixture();
+    login(f.teacher.user.id, "TEACHER");
+    const response = await generate(
+      req({
+        mix: "2-2",
+        purpose: "STANDALONE",
+        objectives: objectives(f.question.id),
+      }),
+      ctx(f.quiz.id),
+    );
+    expect(response.status).toBe(202);
+    const data = await response.json();
+    const rows = await prisma.quizPracticeVersion.findMany({
+      where: { batchId: data.batchId },
+      orderBy: { slotIndex: "asc" },
+    });
+    expect(rows).toHaveLength(4);
+    expect(rows.every((r) => r.coachRole === "PRACTICE")).toBe(true);
+  });
 
   it("continues slot numbering when appending to a round", async () => {
     const f = await fixture();
@@ -838,7 +871,7 @@ describe("redesigned generation rounds", () => {
       where: { batchId: round.batchId },
       orderBy: { slotIndex: "asc" },
     });
-    expect(rows.map((r) => r.slotIndex)).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(rows.map((r) => r.slotIndex)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
     expect(
       (
         await prisma.quizVariantBatchState.findUniqueOrThrow({
@@ -848,7 +881,7 @@ describe("redesigned generation rounds", () => {
     ).toBe(2);
   });
 
-  it("seeds verified modal samples into the first draft of each mode", async () => {
+  it("seeds verified distinct modal samples into the first draft of each mode and rejects duplicates across modes or rounds", async () => {
     const f = await fixture();
     login(f.teacher.user.id, "TEACHER");
     const good = sampleFor(f.question.id);
@@ -856,15 +889,40 @@ describe("redesigned generation rounds", () => {
       ...good,
       check: { ...good.check, correctOptionId: "s-b" },
     };
+    const coachCheck3 = {
+      ...good,
+      question: {
+        ...good.question,
+        id: "sample-c3",
+        text: "What is 6 + 6 in a brand new scenario?",
+      },
+    };
+    const coachHeldOut = {
+      ...good,
+      question: {
+        ...good.question,
+        id: "sample-ho",
+        text: "What is 7 + 7 in an independent transfer scenario?",
+      },
+    };
     const round = await startRound(f, {
-      seedSamples: { numbersSample: good, contextSample: bad },
+      seedSamples: {
+        numbersSample: good,
+        contextSample: bad,
+        coachCheck3Sample: coachCheck3,
+        coachHeldOutSample: coachHeldOut,
+      },
     });
     const rows = await prisma.quizPracticeVersion.findMany({
       where: { batchId: round.batchId },
       orderBy: { slotIndex: "asc" },
     });
     const seeded = rows.filter((r) => r.questions !== "[]");
-    expect(seeded).toHaveLength(1);
+    expect(seeded.map((r) => r.variation)).toEqual([
+      "NUMBERS",
+      "COACH_CHECK3",
+      "COACH_HELDOUT",
+    ]);
     expect(seeded[0]).toMatchObject({
       variation: "NUMBERS",
       slotIndex: 0,
@@ -873,36 +931,97 @@ describe("redesigned generation rounds", () => {
     });
     expect(JSON.parse(seeded[0].questions)).toEqual([good.question]);
     expect(JSON.parse(seeded[0].validation!)).toEqual([good.check]);
-    expect(enqueueQuizVariant).toHaveBeenCalledTimes(4);
+    expect(enqueueQuizVariant).toHaveBeenCalledTimes(6);
+
+    // Finish round 1 so round 2 can start, then pass the exact same cached
+    // samples: none may be re-seeded because they already exist in round 1.
+    await prisma.quizPracticeVersion.updateMany({
+      where: { batchId: round.batchId },
+      data: { status: "REVIEW" },
+    });
+    const round2 = await startRound(f, {
+      seedSamples: {
+        numbersSample: good,
+        coachCheck3Sample: coachCheck3,
+        coachHeldOutSample: coachHeldOut,
+      },
+    });
+    const round2Rows = await prisma.quizPracticeVersion.findMany({
+      where: { batchId: round2.batchId },
+    });
+    expect(round2Rows.every((r) => r.questions === "[]")).toBe(true);
   });
 
-  it("previews one verified sample per mode for the first numeric-style question", async () => {
+  it("persists verified calibration samples in DB and only regenerates when refresh is true", async () => {
     const f = await fixture();
     login(f.teacher.user.id, "TEACHER");
-    const preview = {
+    const preview1 = {
       sourceQuestionId: f.question.id,
       numbersSample: sampleFor(f.question.id),
       contextSample: sampleFor(f.question.id),
+      coachCheck3Sample: sampleFor(f.question.id),
+      coachHeldOutSample: sampleFor(f.question.id),
       aiModel: "openai/gpt-test",
     };
-    vi.mocked(generateQuizVariantSample).mockResolvedValue(preview as never);
-    const response = await sample(req({}), ctx(f.quiz.id));
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual(preview);
+    const refreshedSample = {
+      ...sampleFor(f.question.id),
+      question: {
+        ...sampleFor(f.question.id).question,
+        id: "sample-refreshed",
+        text: "What is 8 + 8?",
+      },
+    };
+    const preview2 = {
+      sourceQuestionId: f.question.id,
+      numbersSample: refreshedSample,
+      contextSample: refreshedSample,
+      coachCheck3Sample: refreshedSample,
+      coachHeldOutSample: refreshedSample,
+      aiModel: "openai/gpt-test-2",
+    };
+    vi.mocked(generateQuizVariantSample)
+      .mockResolvedValueOnce(preview1 as never)
+      .mockResolvedValueOnce(preview2 as never);
+
+    const first = await sample(req({}), ctx(f.quiz.id));
+    expect(first.status).toBe(200);
+    expect(await first.json()).toEqual({ ...preview1, cached: false });
     const args = vi.mocked(generateQuizVariantSample).mock.calls[0][0];
     expect(args.quizId).toBe(f.quiz.id);
+    expect(args.includeCoach).toBe(true);
     expect(args.source).toMatchObject({
       id: f.question.id,
       text: f.question.text,
     });
     expect(args.objective.length).toBeGreaterThanOrEqual(10);
+
+    // Second request without refresh returns cached DB samples without invoking AI.
+    const second = await sample(req({}), ctx(f.quiz.id));
+    expect(second.status).toBe(200);
+    expect(await second.json()).toEqual({ ...preview1, cached: true });
+    expect(generateQuizVariantSample).toHaveBeenCalledTimes(1);
+
+    // Explicit refresh: true regenerates and overwrites stored rows with preview2.
+    const refreshed = await sample(req({ refresh: true }), ctx(f.quiz.id));
+    expect(refreshed.status).toBe(200);
+    expect(await refreshed.json()).toEqual({ ...preview2, cached: false });
+    expect(generateQuizVariantSample).toHaveBeenCalledTimes(2);
+
+    // Subsequent ordinary read returns the new refreshed preview2 from DB cache.
+    const third = await sample(req({}), ctx(f.quiz.id));
+    expect(third.status).toBe(200);
+    expect(await third.json()).toEqual({ ...preview2, cached: true });
+    expect(generateQuizVariantSample).toHaveBeenCalledTimes(2);
+
     expect(
       (await sample(req({ questionId: "missing" }), ctx(f.quiz.id))).status,
     ).toBe(404);
     vi.mocked(generateQuizVariantSample).mockRejectedValueOnce(
       new Error("Independent answer disagrees"),
     );
-    expect((await sample(req({}), ctx(f.quiz.id))).status).toBe(502);
+    expect((await sample(req({ refresh: true }), ctx(f.quiz.id))).status).toBe(
+      502,
+    );
     const other = await createTeacher();
     login(other.user.id, "TEACHER");
     expect((await sample(req({}), ctx(f.quiz.id))).status).toBe(404);
@@ -931,7 +1050,7 @@ describe("redesigned generation rounds", () => {
     );
     const data = await response.json();
     expect(data.quizName).toBe(f.quiz.name);
-    expect(data.versions).toHaveLength(4);
+    expect(data.versions).toHaveLength(6);
     expect(data.versions[0]).toMatchObject({
       batchId: round.batchId,
       completedCount: 0,
@@ -940,7 +1059,7 @@ describe("redesigned generation rounds", () => {
     });
     expect(
       data.versions.map((v: { slotIndex: number }) => v.slotIndex).sort(),
-    ).toEqual([0, 1, 2, 3]);
+    ).toEqual([0, 1, 2, 3, 4, 5]);
   });
 
   async function reviewedRound(f: Awaited<ReturnType<typeof fixture>>) {
@@ -1150,9 +1269,18 @@ describe("redesigned generation rounds", () => {
     );
     expect(published.status).toBe(200);
     expect(await published.json()).toEqual({
-      publishedCount: 3,
+      publishedCount: 5,
       status: "PUBLISHED",
     });
+    const publishedRows = await prisma.quizPracticeVersion.findMany({
+      where: { batchId, status: "PUBLISHED" },
+    });
+    expect(
+      publishedRows.filter((r) => r.coachRole === "COACH_CHECK3"),
+    ).toHaveLength(1);
+    expect(
+      publishedRows.filter((r) => r.coachRole === "COACH_HELDOUT"),
+    ).toHaveLength(1);
     expect(
       (
         await prisma.quizPracticeVersion.findUniqueOrThrow({
@@ -1185,5 +1313,43 @@ describe("redesigned generation rounds", () => {
         )
       ).status,
     ).toBe(409);
+  });
+
+  it("preserves the live Coach incumbent if a single Coach draft has a stale snapshot", async () => {
+    const f = await fixture();
+    login(f.teacher.user.id, "TEACHER");
+    await prisma.quizPracticeVersion.update({
+      where: { id: f.version.id },
+      data: {
+        status: "PUBLISHED",
+        coachRole: "COACH_CHECK3",
+        coachLabeledAt: new Date(),
+      },
+    });
+    const staleDraft = await prisma.quizPracticeVersion.create({
+      data: {
+        quizId: f.quiz.id,
+        name: "Stale Coach Draft",
+        status: "REVIEW",
+        variation: "COACH_CHECK3",
+        coachRole: "COACH_CHECK3",
+        sourceSnapshot: JSON.stringify([
+          { ...f.questions[0], id: f.question.id, text: "Old outdated stem" },
+        ]),
+        objectives: JSON.stringify(objectives(f.question.id)),
+        questions: JSON.stringify(f.questions),
+        validation: "[]",
+      },
+    });
+    const res = await change(
+      req({ versionId: staleDraft.id, action: "publish" }),
+      ctx(f.quiz.id),
+    );
+    expect(res.status).toBe(409);
+    const incumbent = await prisma.quizPracticeVersion.findUniqueOrThrow({
+      where: { id: f.version.id },
+    });
+    expect(incumbent.coachRole).toBe("COACH_CHECK3");
+    expect(incumbent.status).toBe("PUBLISHED");
   });
 });

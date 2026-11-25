@@ -48,6 +48,9 @@ export const MAX_RECOMMENDATIONS = 3;
 // ─── Review snapshot ──────────────────────────────────────────────────────────
 
 export type SnapshotOption = {
+  // Optional option row id preserved from submit time so downstream features
+  // (such as Wrong Answer Coach Check 1) can match reliably alongside text.
+  optionId?: string;
   text: string;
   isCorrect: boolean;
   selected: boolean;
@@ -169,9 +172,9 @@ export type SnapshotAnswerInput = {
 
 /**
  * Build the self-contained review snapshot from the questions and graded
- * answers available at submit time. The snapshot stores option text + flags
- * only (no ids), so it renders forever even if the live Question/Option rows
- * are later edited or deleted.
+ * answers available at submit time. Stores durable text + flags alongside
+ * optional `questionId`/`optionId` references so past attempts render forever
+ * even if live Question/Option rows are later edited or deleted.
  */
 export function buildReviewSnapshot(
   questions: SnapshotQuestionInput[],
@@ -188,6 +191,7 @@ export function buildReviewSnapshot(
         isCorrect: answer?.isCorrect ?? false,
         options: q.options.map((opt) => {
           const snap: SnapshotOption = {
+            optionId: opt.id,
             text: opt.text,
             isCorrect: opt.isCorrect,
             selected: selected.has(opt.id),

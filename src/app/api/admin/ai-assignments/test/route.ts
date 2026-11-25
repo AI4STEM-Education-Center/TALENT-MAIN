@@ -5,10 +5,16 @@ import {
   createOpenAIClient,
   thinkingParams,
   isUseCase,
+  DECISIONS_USE_CASES,
   MODERATION_USE_CASES,
   USE_CASES,
   type ResolvedProvider,
 } from "@/lib/ai-provider";
+import {
+  createDecisions,
+  decisionsEndpointUnsupported,
+  decisionsModelUnsupported,
+} from "@/lib/ai-decisions";
 import {
   streamChatCompletion,
   streamOptionsFor,
@@ -97,6 +103,102 @@ async function testModeration(provider: ResolvedProvider) {
 }
 
 /**
+ * Explain a failed Decisions API (/v1/decisions) call in terms of what the
+ * admin needs to change (provider vs model).
+ */
+function decisionsFailure(error: unknown, provider: ResolvedProvider): string {
+  const raw = errorMessage(error) || "the call failed";
+
+  if (decisionsEndpointUnsupported(error)) {
+    return (
+      `This provider does not implement the POST /v1/decisions endpoint — ` +
+      `assign an OpenAI provider (or a gateway exposing /v1/decisions) with a ` +
+      `Decisions-capable model such as gpt-6-luna. Provider said: ${raw}`
+    );
+  }
+
+  if (decisionsModelUnsupported(error)) {
+    return (
+      `${provider.model} does not support the /v1/decisions endpoint — assign a ` +
+      `Decisions-capable model such as gpt-6-luna. Provider said: ${raw}`
+    );
+  }
+
+  return raw;
+}
+
+/**
+ * Connection test for an OpenAI Decisions API assignment (e.g. Check 2
+ * explanation classification). Sends a benign physics classification choice
+ * probe to POST /v1/decisions and verifies choice, probabilities, and confidence.
+ */
+async function testDecisions(provider: ResolvedProvider) {
+  let response;
+  try {
+    response = await createDecisions(provider, {
+      model: provider.model,
+      input:
+        "Question: A ball is thrown straight up. At its highest point, what is its acceleration?\n" +
+        "Correct answer: Downward at g.\n" +
+        "Student explanation: Velocity is zero at the top, but gravity still pulls downward so acceleration is g downward.",
+      questions: [
+        {
+          name: "check2_probe",
+          type: "choice",
+          instructions:
+            "Classify the student explanation as 'sound' (uses correct physics), " +
+            "'M_TEST' (claims zero velocity means zero acceleration), or 'neither'.",
+          choices: [
+            { value: "sound", description: "Uses correct physics" },
+            { value: "neither", description: "Neither sound nor M_TEST" },
+            {
+              value: "M_TEST",
+              description: "Claims zero velocity means zero acceleration",
+            },
+          ],
+        },
+      ],
+    });
+  } catch (error) {
+    return { success: false, error: decisionsFailure(error, provider) };
+  }
+
+  const answer = response.answers.find(
+    (a) => a.name === "check2_probe" && a.type === "choice",
+  );
+  const allowedProbeChoices = new Set(["sound", "neither", "M_TEST"]);
+  if (
+    !answer ||
+    answer.type !== "choice" ||
+    !allowedProbeChoices.has(answer.choice) ||
+    (answer.confidence === null && answer.probabilities.length === 0)
+  ) {
+    return {
+      success: false,
+      error:
+        "Decisions endpoint responded without a valid in-set 'choice' answer and confidence/probabilities for check2_probe.",
+    };
+  }
+
+  const confPct =
+    answer.confidence !== null ? Math.round(answer.confidence * 100) : null;
+  return {
+    success: true,
+    latencyMs: response.latencyMs,
+    ttftMs: null,
+    generationMs: null,
+    tokens: null,
+    tokensEstimated: false,
+    tokensPerSec: null,
+    reply: `Decisions endpoint (/v1/decisions) answered — choice: ${answer.choice} (${confPct !== null ? `confidence ${confPct}%, ` : ""}${response.latencyMs} ms).`,
+    model: response.model,
+    providerType: provider.providerType,
+    serviceTier: null,
+    thinkingLevel: null,
+  };
+}
+
+/**
  * POST /api/admin/ai-assignments/test
  * Send a minimal request to verify a use-case assignment works — a chat
  * completion, or a moderation call for the use cases served by that endpoint.
@@ -133,6 +235,10 @@ export async function POST(req: Request) {
 
     if (MODERATION_USE_CASES.includes(useCase)) {
       return NextResponse.json(await testModeration(provider));
+    }
+
+    if (DECISIONS_USE_CASES.includes(useCase)) {
+      return NextResponse.json(await testDecisions(provider));
     }
 
     const isLocal = provider.providerType === "local";

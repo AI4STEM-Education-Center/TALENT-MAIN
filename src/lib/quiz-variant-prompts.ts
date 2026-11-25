@@ -2,7 +2,8 @@ import { neutralizeUntrusted, UNTRUSTED_CONTENT_RULE } from "./guardrail-fence";
 import { MATH_DELIMITER_RULE } from "./assistant/feedback-rules";
 import type { Objective, VariantQuestion } from "./quiz-variants";
 
-export type QuizVariantVariation = "NUMBERS" | "CONTEXT";
+export type QuizVariantVariation =
+  "NUMBERS" | "CONTEXT" | "COACH_CHECK3" | "COACH_HELDOUT";
 
 export const QUIZ_VARIANT_SYSTEM_PROMPT = [
   "You are a psychometrician and STEM assessment designer. Apply Gierl and Lai's cognitive-model approach to Automated Item Generation (AIG) and Haladyna, Downing, and Rodriguez's item-writing guidelines.",
@@ -17,6 +18,15 @@ const MODE_RULES: Record<QuizVariantVariation, string> = {
     "Mode NUMBERS — Near-isomorphic variation. Retain the recognizable scenario and item style. Change meaningful parameters or conditions using realistic, non-trivial values. Recompute the key and every affected distractor. For a purely conceptual source, vary a relevant direction, condition, or comparison without adding unused decorative numbers.",
   CONTEXT:
     "Mode CONTEXT — Far-isomorphic structural twin. Create a genuinely different scenario and rewrite the stem, sentence structure, and prose answer choices to fit it. Use new values where the source uses numbers. Avoid matching the source key verbatim or merely substituting nouns. For a purely conceptual source, add no unused decorative numbers.",
+  COACH_CHECK3:
+    "Mode COACH_CHECK3 — Wrong Answer Coach Check 3 (Diagnostic Second Question). This item is administered immediately after a student explains a wrong answer, before any feedback or tutoring, to distinguish a careless slip from a persistent misconception. For SINGLE_SELECT items: create a genuinely different surface scenario and freshly rewrite the stem and every prose option so the student cannot match memorized wording from the original item. Strictly preserve the exact target Knowledge Component, reasoning steps, difficulty tier, and option count. Crucially, map each distractor to the SAME specific physics misconceptions targeted by the original question's distractors (and any listed target misconceptions below) so diagnostic Check 1, Check 2, and Check 3 can agree on the exact same misconception. Include zero hints, scaffolding, or giveaway cues, and add no unused decorative numbers to conceptual items. For any NUMERIC items in the same quiz, create a far-isomorphic structural twin with a fresh scenario and recomputed values.",
+  COACH_HELDOUT:
+    "Mode COACH_HELDOUT — Wrong Answer Coach Held-Out Validation Question. This item is administered after Check 3 (still before any tutoring) as an independent near-transfer validation check; it must never feel like a copy of either the original question or Check 3. For SINGLE_SELECT items: invent a distinct, independent physical context and sentence structure (different objects, setting, and phrasing from both the source and any previously listed items) while preserving the exact same target Knowledge Component, reasoning demand, difficulty tier, and option count. Build distractors that probe the same underlying misconception family in this new context so persistent misconceptions transfer cleanly without surface cues or hints. Add no unused decorative numbers to conceptual items. For any NUMERIC items in the same quiz, create a distinct far-isomorphic structural twin with a fresh scenario and recomputed values.",
+};
+
+export type CoachMisconceptionContext = {
+  sourceQuestionId: string;
+  misconceptions: Array<{ code: string; statement: string }>;
 };
 
 export type QuizVariantGenerationPromptInput = {
@@ -30,6 +40,7 @@ export type QuizVariantGenerationPromptInput = {
   reasons?: ReadonlyMap<string, string>;
   replacing?: VariantQuestion[];
   partial?: boolean;
+  coachMisconceptionContext?: CoachMisconceptionContext[];
 };
 
 // Neutralize individual strings before encoding so the JSON stays valid.
@@ -81,6 +92,11 @@ export function buildQuizVariantGenerationPrompt(
       : []),
     ...(input.rejections.length
       ? [`Earlier automatic checks failed: ${promptJson(input.rejections)}`]
+      : []),
+    ...(input.coachMisconceptionContext?.length
+      ? [
+          `Target misconceptions to preserve in distractors (align wrong choices to these misconceptions where applicable): ${promptJson(input.coachMisconceptionContext)}`,
+        ]
       : []),
     `Objectives: ${promptJson(input.objectives)}`,
     `Source quiz: ${promptJson(input.sources)}`,

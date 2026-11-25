@@ -3,8 +3,10 @@ import { requireAdminApi } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 import {
   carryOverLegacyGuardrailAssignment,
+  DECISIONS_USE_CASES,
   invalidateProviderCache,
   isThinkingLevel,
+  MODERATION_USE_CASES,
   resolveThinkingLevel,
   THINKING_LEVELS,
   USE_CASES,
@@ -158,10 +160,13 @@ export async function PUT(req: Request) {
         continue;
       }
 
-      // Unset is a real choice, not a missing field: it keeps `reasoning_effort`
-      // off the wire entirely for models that would reject it.
+      // Decisions & moderation endpoints do not accept reasoning_effort; strip
+      // any incoming thinkingLevel so it is never persisted or sent on the wire.
+      const supportsThinking =
+        !DECISIONS_USE_CASES.includes(useCase) &&
+        !MODERATION_USE_CASES.includes(useCase);
       const rawLevel =
-        typeof assignment.thinkingLevel === "string"
+        supportsThinking && typeof assignment.thinkingLevel === "string"
           ? assignment.thinkingLevel.trim()
           : "";
       const thinkingLevel = rawLevel || null;

@@ -49,8 +49,8 @@ describe("buildReviewSnapshot", () => {
       text: "2 + 2?",
       isCorrect: true,
       options: [
-        { text: "3", isCorrect: false, selected: false },
-        { text: "4", isCorrect: true, selected: true },
+        { optionId: "o1", text: "3", isCorrect: false, selected: false },
+        { optionId: "o2", text: "4", isCorrect: true, selected: true },
       ],
     });
     expect(snapshot.questions[1].isCorrect).toBe(false);
