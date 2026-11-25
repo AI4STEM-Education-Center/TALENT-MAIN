@@ -426,11 +426,14 @@ export function WrongAnswerCoachPanel({
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   const onStateChangeRef = useRef(onStateChange);
-  onStateChangeRef.current = onStateChange;
   const onEngagedRef = useRef(onEngaged);
-  onEngagedRef.current = onEngaged;
   const onSessionLoadedRef = useRef(onSessionLoaded);
-  onSessionLoadedRef.current = onSessionLoaded;
+
+  useEffect(() => {
+    onStateChangeRef.current = onStateChange;
+    onEngagedRef.current = onEngaged;
+    onSessionLoadedRef.current = onSessionLoaded;
+  }, [onStateChange, onEngaged, onSessionLoaded]);
 
   useEffect(() => {
     let active = true;
