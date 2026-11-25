@@ -21,6 +21,7 @@ describe("isResearcherAdminPath", () => {
     "/admin/resource-engagement",
     "/admin/session-replays",
     "/admin/session-replays/rec1",
+    "/admin/coach-reviews",
     "/admin/logs",
   ])("allows the data page %s", (path) => {
     expect(isResearcherAdminPath(path)).toBe(true);
@@ -33,6 +34,7 @@ describe("isResearcherAdminPath", () => {
     "/admin/teacher-codes",
     "/admin/pressure-tests",
     "/admin/resources",
+    "/admin/coach-export",
     "/admin/consent/forms",
     "/admin/consent/settings",
     "/admin/usersx",

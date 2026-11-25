@@ -1,4 +1,4 @@
-// Shared teacher & admin flagged-case review service for Wrong Answer Coach.
+// Shared teacher, admin & researcher review service for Wrong Answer Coach.
 //
 // IRB PRIVACY INVARIANT:
 // This module NEVER queries or includes `WrongAnswerCoachResearchMeta`,
@@ -71,6 +71,7 @@ function buildReviewVariantOptions(
 
 export type ReviewActor =
   | { role: "ADMIN"; userId: string; teacherId: null }
+  | { role: "RESEARCHER"; userId: string; teacherId: null }
   | { role: "TEACHER"; userId: string; teacherId: string };
 
 export async function getReviewActor(
@@ -79,6 +80,9 @@ export async function getReviewActor(
 ): Promise<ReviewActor | null> {
   if (role === "ADMIN") {
     return { role: "ADMIN", userId, teacherId: null };
+  }
+  if (role === "RESEARCHER") {
+    return { role: "RESEARCHER", userId, teacherId: null };
   }
   if (role !== "TEACHER") return null;
   const teacher = await prisma.teacher.findUnique({
@@ -90,7 +94,7 @@ export async function getReviewActor(
 }
 
 async function allowedClassIds(actor: ReviewActor): Promise<string[] | null> {
-  if (actor.role === "ADMIN") return null; // all classes
+  if (actor.role === "ADMIN" || actor.role === "RESEARCHER") return null; // all classes
   const classes = await prisma.class.findMany({
     where: { teacherId: actor.teacherId },
     select: { id: true },
@@ -584,6 +588,9 @@ export async function submitCoachReviewDecision(
     reviewNotes?: string | null;
   },
 ): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  if (actor.role === "RESEARCHER") {
+    return { ok: false, status: 403, error: "Forbidden." };
+  }
   const scopedClassIds = await allowedClassIds(actor);
   const existing = await prisma.wrongAnswerCoachSession.findUnique({
     where: { id: sessionId },

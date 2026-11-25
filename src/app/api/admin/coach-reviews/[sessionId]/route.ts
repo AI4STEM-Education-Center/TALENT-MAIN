@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { auth } from "@/lib/auth";
+import { requireAdminApi, requireAdminDataReader } from "@/lib/admin-access";
 import {
   getCoachReviewDetail,
   getReviewActor,
@@ -19,14 +19,12 @@ export async function GET(
   _req: NextRequest,
   context: { params: Promise<{ sessionId: string }> },
 ) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const session = await requireAdminDataReader();
+  if (session instanceof Response) return session;
 
   const actor = await getReviewActor(session.user.id, session.user.role);
   if (!actor) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const { sessionId } = await context.params;
@@ -49,14 +47,12 @@ export async function PATCH(
   req: NextRequest,
   context: { params: Promise<{ sessionId: string }> },
 ) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const session = await requireAdminApi();
+  if (session instanceof Response) return session;
 
   const actor = await getReviewActor(session.user.id, session.user.role);
   if (!actor) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const body = await req.json().catch(() => null);
