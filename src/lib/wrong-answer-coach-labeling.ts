@@ -68,7 +68,17 @@ async function labelDistractorsViaDecisions(
   }
 
   const catalogCodes = catalog.map((m) => m.misconceptionId);
-  const choices = [NO_LABEL_CHOICE, ...catalogCodes];
+  const choices = [
+    {
+      value: NO_LABEL_CHOICE,
+      description:
+        "Arithmetic/reading error or matches none of the listed misconceptions.",
+    },
+    ...catalog.map((m) => ({
+      value: m.misconceptionId,
+      description: m.statement,
+    })),
+  ];
   const catalogBlock = catalog
     .map((m) => `- ${m.misconceptionId}: ${m.statement}`)
     .join("\n");
@@ -96,7 +106,6 @@ async function labelDistractorsViaDecisions(
         ].join("\n"),
         choices,
       })),
-      store: false,
     });
 
     const allowedSet = new Set(catalogCodes);

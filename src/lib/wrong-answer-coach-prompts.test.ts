@@ -45,11 +45,13 @@ describe("wrong-answer-coach-prompts", () => {
     });
 
     expect(JSON.stringify(reqA)).toBe(JSON.stringify(reqB));
-    expect(reqA.store).toBe(false);
+    expect("store" in reqA).toBe(false);
     expect(reqA.questions).toHaveLength(1);
     const q0 = reqA.questions[0] as DecisionsChoiceQuestion;
     expect(q0.type).toBe("choice");
-    expect(q0.choices).toEqual(["sound", "neither", "M1", "M2"]);
+    expect(
+      q0.choices.map((c) => (typeof c === "string" ? c : c.value)),
+    ).toEqual(["sound", "neither", "M1", "M2"]);
     // Ensure the input text never leaks Check 1 or student's selected option
     expect(String(reqA.input)).not.toContain("Check 1");
     expect(String(reqA.input)).not.toContain("chosen option");

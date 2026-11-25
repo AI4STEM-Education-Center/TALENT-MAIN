@@ -148,10 +148,16 @@ async function testDecisions(provider: ResolvedProvider) {
           instructions:
             "Classify the student explanation as 'sound' (uses correct physics), " +
             "'M_TEST' (claims zero velocity means zero acceleration), or 'neither'.",
-          choices: ["sound", "neither", "M_TEST"],
+          choices: [
+            { value: "sound", description: "Uses correct physics" },
+            { value: "neither", description: "Neither sound nor M_TEST" },
+            {
+              value: "M_TEST",
+              description: "Claims zero velocity means zero acceleration",
+            },
+          ],
         },
       ],
-      store: false,
     });
   } catch (error) {
     return { success: false, error: decisionsFailure(error, provider) };

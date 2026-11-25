@@ -87,8 +87,14 @@ export function ExamResultsView({
   const [coachEligibility, setCoachEligibility] = useState<
     Record<number, CoachEligibilityItem>
   >({});
+  const [coachEligibilityLoading, setCoachEligibilityLoading] = useState(() =>
+    Boolean(attemptId && mistakes.length > 0),
+  );
   const loadCoachEligibility = useCallback(async () => {
-    if (!attemptId || mistakes.length === 0) return;
+    if (!attemptId || mistakes.length === 0) {
+      setCoachEligibilityLoading(false);
+      return;
+    }
     try {
       const res = await fetch(
         `/api/student/attempts/${attemptId}/coach-eligibility`,
@@ -103,6 +109,8 @@ export function ExamResultsView({
       setCoachEligibility(next);
     } catch {
       // Best-effort: never disrupt the results page if eligibility fails.
+    } finally {
+      setCoachEligibilityLoading(false);
     }
   }, [attemptId, mistakes.length]);
 
@@ -175,6 +183,7 @@ export function ExamResultsView({
             engaged={engaged}
             onEngaged={markEngaged}
             coachEligibility={coachEligibility}
+            coachEligibilityLoading={coachEligibilityLoading}
             onCoachStateChange={loadCoachEligibility}
             nextLabel={nextLabel}
             onFinish={advance}
