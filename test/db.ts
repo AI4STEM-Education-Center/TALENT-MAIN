@@ -8,6 +8,11 @@ import { prisma } from "@/lib/prisma";
 export async function resetDb() {
   // Children first, parents last.
   await prisma.$transaction([
+    prisma.wrongAnswerCoachMessage.deleteMany(),
+    prisma.wrongAnswerCoachResearchMeta.deleteMany(),
+    prisma.wrongAnswerCoachSession.deleteMany(),
+    prisma.studentStudyCode.deleteMany(),
+    prisma.questionCoachMetadata.deleteMany(),
     prisma.sessionRecording.deleteMany(),
     prisma.quizVariantEmailDelivery.deleteMany(),
     prisma.quizVariantBatchState.deleteMany(),

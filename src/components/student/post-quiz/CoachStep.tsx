@@ -1,13 +1,15 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
-import { Check, MessageCircleQuestion, XCircle } from "lucide-react";
+import { Check, Loader2, MessageCircleQuestion, XCircle } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { MathText } from "@/components/ui/math-text";
 import { useOptionalAssistant } from "@/components/assistant/assistant-context";
 import { CoachWorkspace } from "@/components/student/coach/WrongAnswerCoach";
+import { WrongAnswerCoachPanel } from "@/components/student/WrongAnswerCoachDrawer";
 import { cn } from "@/lib/utils";
 import type { StudentMistakeView } from "@/lib/exam-results";
+import type { CoachEligibilityItem } from "@/lib/wrong-answer-coach-types";
 import { AdvanceButton, StepHeader } from "./GuidedChrome";
 
 /** Question 1 … N, with a tick on each one the student has worked through. */
@@ -166,6 +168,9 @@ export function CoachStep({
   onIndexChange,
   engaged,
   onEngaged,
+  coachEligibility,
+  coachEligibilityLoading = false,
+  onCoachStateChange,
   nextLabel,
   onFinish,
 }: {
@@ -175,6 +180,9 @@ export function CoachStep({
   onIndexChange: (index: number) => void;
   engaged: ReadonlySet<number>;
   onEngaged: (questionNumber: number) => void;
+  coachEligibility?: Record<number, CoachEligibilityItem>;
+  coachEligibilityLoading?: boolean;
+  onCoachStateChange?: () => void;
   /** The button label on the last question (the step after this one). */
   nextLabel: string;
   onFinish: () => void;
@@ -186,6 +194,9 @@ export function CoachStep({
   const questionNumber = current.questionNumber;
   const isLast = index >= mistakes.length - 1;
   const hasEngaged = engaged.has(questionNumber);
+  const diagnosticItem = coachEligibility?.[questionNumber];
+  const useDiagnosticCoach = Boolean(diagnosticItem?.eligible);
+  const interactiveCoachActive = useDiagnosticCoach || coachOn;
 
   const target = useMemo(
     () => ({ attemptId, questionNumber }),
@@ -213,9 +224,11 @@ export function CoachStep({
           }
           title="Review your missed questions"
         >
-          {coachOn
-            ? "Go through each question you missed with the coach. Tell it how you approached the question first — it will take it from there."
-            : "Go through each question you missed and think about where your reasoning went off track."}
+          {useDiagnosticCoach
+            ? "Walk through each missed question step by step so we can pinpoint what happened and give you a tailored explanation."
+            : coachOn
+              ? "Go through each question you missed with the coach. Tell it how you approached the question first — it will take it from there."
+              : "Go through each question you missed and think about where your reasoning went off track."}
         </StepHeader>
       </div>
 
@@ -226,7 +239,26 @@ export function CoachStep({
         onSelect={onIndexChange}
       />
 
-      {coachOn ? (
+      {coachEligibilityLoading ? (
+        <Card className="relative flex h-[min(80dvh,760px)] min-h-[520px] items-center justify-center overflow-hidden">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+            Loading review coach…
+          </div>
+        </Card>
+      ) : useDiagnosticCoach && diagnosticItem ? (
+        <Card className="relative flex h-[min(80dvh,760px)] min-h-[520px] flex-col overflow-hidden">
+          <WrongAnswerCoachPanel
+            key={`${attemptId}:${diagnosticItem.questionId}`}
+            attemptId={attemptId}
+            questionId={diagnosticItem.questionId}
+            questionNumber={questionNumber}
+            variant="inline"
+            onEngaged={markEngaged}
+            onStateChange={onCoachStateChange}
+          />
+        </Card>
+      ) : coachOn ? (
         <Card className="relative flex h-[min(80dvh,760px)] min-h-[520px] flex-col overflow-hidden">
           <CoachWorkspace
             key={`${attemptId}:${questionNumber}`}
@@ -239,7 +271,7 @@ export function CoachStep({
       )}
 
       <div className="flex flex-wrap items-center justify-end gap-3">
-        {coachOn && !hasEngaged ? (
+        {interactiveCoachActive && !hasEngaged ? (
           <>
             <p className="mr-auto text-sm text-muted-foreground">
               Share your thoughts with the coach above to get personalized help.

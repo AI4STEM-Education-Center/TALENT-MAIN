@@ -2,6 +2,8 @@ import {
   runQuizVariant,
   sweepStaleQuizVariants,
 } from "./lib/quiz-variants-engine";
+import { sweepCoachAutoLabeling } from "./lib/wrong-answer-coach-labeling";
+import { sweepCoachSessions } from "./lib/wrong-answer-coach-engine";
 import {
   QUIZ_VARIANTS_QUEUE,
   VARIANT_EMAILS_QUEUE,
@@ -1025,6 +1027,48 @@ async function runResearchScheduler() {
   }
 }
 
+async function runCoachAutoLabelLoop() {
+  for (;;) {
+    try {
+      const count = await sweepCoachAutoLabeling();
+      if (count > 0) {
+        console.log(
+          `[Worker] Auto-labeled ${count} Wrong Answer Coach target(s)`,
+        );
+      }
+    } catch (error) {
+      console.error(
+        "[Worker] Coach auto-label sweep failed:",
+        errorMessage(error),
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 60_000));
+  }
+}
+
+async function runCoachSessionSweeperLoop() {
+  for (;;) {
+    try {
+      const res = await sweepCoachSessions();
+      if (
+        res.recoveredTutoring > 0 ||
+        res.recoveredCheck2 > 0 ||
+        res.markedIncomplete > 0
+      ) {
+        console.log(
+          `[Worker] Coach session sweep: recoveredTutoring=${res.recoveredTutoring}, recoveredCheck2=${res.recoveredCheck2}, markedIncomplete=${res.markedIncomplete}`,
+        );
+      }
+    } catch (error) {
+      console.error(
+        "[Worker] Coach session sweep failed:",
+        errorMessage(error),
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 60_000));
+  }
+}
+
 async function startWorker() {
   try {
     // This node's own CPU/RAM/storage feed for the admin System Resources tab.
@@ -1040,6 +1084,8 @@ async function startWorker() {
       sweepQuizVariants(),
       consumeVariantEmails(),
       runVariantEmailSweeper(),
+      runCoachAutoLabelLoop(),
+      runCoachSessionSweeperLoop(),
       consumeMaterials(),
       consumeExamResults(),
       consumeQuizExtractions(),

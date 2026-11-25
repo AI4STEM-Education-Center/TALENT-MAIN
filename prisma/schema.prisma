@@ -478,9 +478,11 @@ model Question {
   quiz        Quiz            @relation(fields: [quizId], references: [id], onDelete: Cascade)
   createdBy   Teacher?        @relation("TeacherQuestions", fields: [createdById], references: [id], onDelete: SetNull)
   import      QuestionImport? @relation(fields: [importId], references: [id], onDelete: SetNull)
-  options     Option[]
-  quizAnswers QuizAnswer[]
-  simulation  QuestionSimulation?
+  options            Option[]
+  quizAnswers        QuizAnswer[]
+  simulation         QuestionSimulation?
+  coachMetadata      QuestionCoachMetadata?
+  calibrationSamples QuizVariantCalibrationSample[]
 
   @@index([importId])
   // Quiz generation: WHERE quizId ORDER BY order, createdAt ASC
@@ -2113,12 +2115,44 @@ model QuizPracticeVersion {
   standaloneQuizId String?
   attempts Int @default(0)
   teacherEdited Boolean @default(false)
+  // "PRACTICE" (default — served to student practice attempts) |
+  // "COACH_CHECK3" (reserved as Check 3 second question for Wrong Answer Coach) |
+  // "COACH_HELDOUT" (reserved as Step 9 held-out question for Wrong Answer Coach)
+  coachRole String @default("PRACTICE")
+  // Timestamp when wrong options on this version's SINGLE_SELECT questions were
+  // auto-labeled against the Misconception catalog (null = pending).
+  coachLabeledAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@index([quizId, status])
+  @@index([quizId, status, coachRole])
   @@index([quizId, batchId])
   @@index([batchId, status])
   @@index([status, heartbeatAt])
+}
+
+// Cached, independently verified calibration samples shown in the
+// "Generate new version" preview modal. Keyed by (questionId, variation,
+// sourceHash, objectiveHash) so switching questions or reopening the modal
+// renders immediately without regenerating; clicking "Try another sample"
+// regenerates and overwrites the stored row.
+model QuizVariantCalibrationSample {
+  id            String   @id @default(cuid())
+  quizId        String
+  questionId    String
+  variation     String   // "NUMBERS" | "CONTEXT" | "COACH_CHECK3" | "COACH_HELDOUT"
+  sourceHash    String
+  objectiveHash String
+  questionJson  String   // JSON: VariantQuestion
+  checkJson     String   // JSON: VerificationReview
+  aiModel       String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([questionId, variation, sourceHash, objectiveHash])
+  @@index([quizId, questionId])
 }
 
 // Tracks completion notifications and unapproved-review reminders (24h, 72h)
@@ -2438,4 +2472,206 @@ model SessionRecordingChunk {
   data         Bytes // gzip(JSON.stringify(events))
 
   @@unique([recordingId, seq])
+}
+
+// ─── Wrong Answer Coach: System-Managed Question Metadata (No Teacher Approval) ─
+// Automatically populated by the background worker from the admin-managed
+// Misconception catalog, existing question feedback / variant objectives, and
+// OpenAI Decisions API distractor auto-labeling.
+// status: "PENDING" | "PROCESSING" | "READY" | "FAILED"
+model QuestionCoachMetadata {
+  id         String @id @default(cuid())
+  questionId String @unique
+  status     String @default("PENDING")
+
+  // Content-only SHA-256 fingerprint (NEVER includes Option.id).
+  sourceHash String
+  runId      String?
+
+  // JSON: CoachOptionLabel[] — [{ optionId, optionText, isCorrect, misconceptionCode, confidence? }]
+  optionLabelsJson String @default("[]")
+  // JSON: string[] — 2 to 3 concise key points derived automatically.
+  keyPointsJson String @default("[]")
+  // JSON: string[] — active Misconception.misconceptionId codes relevant to this question.
+  relevantMisconceptionsJson String @default("[]")
+
+  errorMessage String?
+  aiModel      String?
+  aiProvider   String?
+  aiTokens     Int?
+  aiTotalMs    Int?
+  labeledAt    DateTime?
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+}
+
+// ─── Wrong Answer Coach: De-identified Student Study Code (Admin-only) ────────
+model StudentStudyCode {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  studyCode String   @unique // Random non-sequential code, e.g. "S-7K4M2P"
+  createdAt DateTime @default(now())
+}
+
+// ─── Wrong Answer Coach: Admin-Only Research Metadata ─────────────────────────
+// Structurally isolates IRB consent status & study code from WrongAnswerCoachSession
+// so teacher endpoints cannot accidentally expose research participation status.
+model WrongAnswerCoachResearchMeta {
+  id                 String   @id @default(cuid())
+  sessionId          String   @unique
+  studentStudyCode   String
+  consentStatus      String   // "AGREE" | "DECLINE" | "NONE"
+  consentFormVersion String?
+  protocolRevision   String
+  createdAt          DateTime @default(now())
+
+  session WrongAnswerCoachSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([consentStatus])
+  @@index([studentStudyCode])
+}
+
+// ─── Wrong Answer Coach: Diagnostic Chat Session ──────────────────────────────
+// Deliberately RELATION-FREE on User/Student/Class/Quiz/Question/Attempt
+// (mirroring ExamResult & SimulationSession) so records survive deletion.
+//
+// state: "AWAITING_EXPLANATION" | "CLASSIFYING_FAILED" |
+//        "AWAITING_SECOND_QUESTION" | "AWAITING_HELDOUT_QUESTION" |
+//        "GENERATING_TUTORING" | "COMPLETED" | "INCOMPLETE"
+model WrongAnswerCoachSession {
+  id            String @id @default(cuid())
+  attemptId     String
+  examResultId  String
+  studentId     String
+  studentUserId String
+  classId       String
+  quizId        String
+  questionId    String
+  questionIndex Int
+
+  check3VersionId              String
+  heldOutVersionId             String
+  priorSessionCountForQuestion Int    @default(0)
+
+  // Complete frozen snapshot at session start (enables exact replay).
+  questionSnapshotJson String
+
+  // Original quiz answer submitted by student (always non-null).
+  chosenOptionId   String?
+  chosenOptionText String
+
+  // State machine lifecycle & atomic message sequence allocator.
+  state          String    @default("AWAITING_EXPLANATION")
+  endedReason    String?   // "COMPLETED" | "ABANDONED" | "STUDENT_ENDED" | "PERSONAL_SUPPORT" | null
+  nextMessageSeq Int       @default(0)
+  startedAt      DateTime  @default(now())
+  lastActivityAt DateTime  @default(now())
+  completedAt    DateTime?
+
+  // Crash-safe concurrency lease for async AI steps (Check 2 & Task B).
+  processingStep      String?   // "CHECK2" | "TUTORING" | null
+  processingToken     String?
+  processingStartedAt DateTime?
+
+  // Check 1: chosen option label from frozen QuestionCoachMetadata (null = "no label").
+  check1Label String?
+
+  // Check 2: student explanation + 5-run OpenAI Decisions API classification.
+  explanationText          String?
+  explanationSubmittedAt   DateTime?
+  check2RunsJson           String?
+  check2ShortCircuitReason String?   // "EMPTY" | "OFF_TOPIC" | null
+  check2ResultKind         String?   // "misconception" | "sound" | "neither"
+  check2MisconceptionCode  String?
+  check2TopVoteCount       Int?
+  check2VoteHistogramJson  String?
+  check2MeanConfidence     Float?
+  check2WasTie             Boolean   @default(false)
+
+  // Check 3: second (isomorphic) question from COACH_CHECK3 QuizPracticeVersion.
+  secondQuestionTokensJson String?
+  check3SelectedKey        String?
+  check3SelectedText       String?
+  check3IsCorrect          Boolean?
+  check3Label              String?
+  check3SubmittedAt        DateTime?
+
+  // Deterministic decision-rule outcome (Step 8). MUST remain null if Check 3 is missing.
+  diagnosis                  String? // "SLIP" | "KNOWLEDGE_GAP" | "MISCONCEPTION"
+  diagnosisMisconceptionCode String?
+  decisionTableRow           Int?    // 1..14 matching PDF Table 3 & Figure 4
+  diagnosisReason            String?
+
+  // Held-out question from COACH_HELDOUT QuizPracticeVersion (Steps 9-10).
+  heldOutQuestionTokensJson String?
+  heldOutSelectedKey        String?
+  heldOutSelectedText       String?
+  heldOutIsCorrect          Boolean?
+  heldOutLabel              String?
+  heldOutSubmittedAt        DateTime?
+
+  // Task B: tutoring message (Steps 11-12).
+  tutoringMessage        String?
+  tutoringStructuredJson String?
+  tutoringAttemptsJson   String?
+  tutoringUsedFallback   Boolean   @default(false)
+  tutoringGeneratedAt    DateTime?
+  tutoringDeliveredAt    DateTime?
+
+  // Reproducibility & AI metrics (Table 6).
+  classifierModel             String?
+  classifierProvider          String?
+  classifierApiSurface        String?
+  classifierPromptVersion     String?
+  classifierRequestParamsJson String?
+  classifierTotalMs           Int?
+  tutorModel                  String?
+  tutorProvider               String?
+  tutorPromptVersion          String?
+  tutorRequestParamsJson      String?
+  tutorTokens                 Int?
+  tutorTotalMs                Int?
+  courseSnippetsUsedJson      String?
+
+  // Flags & instructor review (Steps 12-13).
+  flagsJson          String    @default("[]")
+  hasFlags           Boolean   @default(false)
+  reviewStatus       String    @default("NONE") // "NONE" | "PENDING" | "REVIEWED"
+  reviewDecision     String?
+  reviewOverrideCode String?
+  reviewNotes        String?
+  reviewedByUserId   String?
+  reviewedAt         DateTime?
+
+  messages     WrongAnswerCoachMessage[]
+  researchMeta WrongAnswerCoachResearchMeta?
+
+  @@unique([attemptId, questionId])
+  @@index([attemptId])
+  @@index([studentId, startedAt])
+  @@index([classId, hasFlags, reviewStatus])
+  @@index([quizId, startedAt])
+  @@index([state, lastActivityAt])
+  @@index([processingStep, processingStartedAt])
+}
+
+// ─── Wrong Answer Coach: Full Timestamped Transcript ──────────────────────────
+model WrongAnswerCoachMessage {
+  id        String   @id @default(cuid())
+  sessionId String
+  seq       Int
+  role      String   // "system" | "student" | "assistant"
+  kind      String
+  content   String
+  metadata  String?
+  createdAt DateTime @default(now())
+
+  session WrongAnswerCoachSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, seq])
 }

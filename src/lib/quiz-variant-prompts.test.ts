@@ -57,7 +57,38 @@ describe("alternative item prompts", () => {
     expect(context).toContain(
       "rewrite the stem, sentence structure, and prose answer choices",
     );
-    for (const prompt of [numbers, context]) {
+    const coachCheck3 = buildQuizVariantGenerationPrompt(
+      {
+        ...input,
+        variation: "COACH_CHECK3",
+        coachMisconceptionContext: [
+          {
+            sourceQuestionId: source.id,
+            misconceptions: [
+              {
+                code: "MIS-004",
+                statement: "Action-reaction forces act on the same object.",
+              },
+            ],
+          },
+        ],
+      },
+      [],
+    );
+    const coachHeldOut = buildQuizVariantGenerationPrompt(
+      { ...input, variation: "COACH_HELDOUT" },
+      [],
+    );
+    expect(coachCheck3).toContain("Wrong Answer Coach Check 3");
+    expect(coachCheck3).toContain("MIS-004");
+    expect(coachCheck3).toContain(
+      "Action-reaction forces act on the same object.",
+    );
+    expect(coachHeldOut).toContain(
+      "Wrong Answer Coach Held-Out Validation Question",
+    );
+    expect(coachHeldOut).toContain("independent near-transfer validation");
+    for (const prompt of [numbers, context, coachCheck3, coachHeldOut]) {
       for (const rule of [
         "Knowledge Component",
         "Depth of Knowledge",

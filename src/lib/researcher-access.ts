@@ -32,6 +32,7 @@ const RESEARCHER_ADMIN_PREFIXES = [
   "/admin/surveys",
   "/admin/feedback",
   "/admin/assistant-chats",
+  "/admin/coach-reviews",
   "/admin/users",
   "/admin/logs",
   "/admin/resource-engagement",

@@ -220,6 +220,7 @@ it("previews both styles, then starts the chosen mix in the background and close
       name: "Version",
       mix: "4-0",
       purpose: "STANDALONE",
+      includeCoach: false,
       objectives: [{ sourceQuestionId: "q1", objective }],
       seedSamples: { numbersSample, contextSample },
     },
@@ -243,13 +244,14 @@ it("still starts a round when no preview sample is available", async () => {
   await act(async () =>
     popup.querySelector<HTMLInputElement>('input[value="0-4"]')!.click(),
   );
-  await click("Generate 4 versions in background", popup);
+  await click("Generate 6 versions in background", popup);
   await flush();
   expect(sent("POST")).toEqual([
     {
       name: "Version",
       mix: "0-4",
       purpose: "ALTERNATE",
+      includeCoach: true,
       objectives: [{ sourceQuestionId: "q1", objective }],
     },
   ]);
@@ -270,9 +272,107 @@ it("offers a retry when the preview fails", async () => {
   const before = sent("POST", sampleUrl).length;
   await click("Retry preview", popup);
   expect(sent("POST", sampleUrl).length).toBeGreaterThan(before);
-  expect(button("Generate 4 versions in background", popup)!.disabled).toBe(
+  expect(button("Generate 6 versions in background", popup)!.disabled).toBe(
     false,
   );
+});
+
+it("caches calibration samples across question switches and only regenerates on Try another sample", async () => {
+  versions = [];
+  const q2 = {
+    ...source,
+    id: "q2",
+    sourceQuestionId: "q2",
+    text: "What is 5 + 5?",
+  };
+  const coachCheck3Sample = {
+    ...contextSample,
+    question: { ...contextSample.question, id: "sample-c3", text: "Check 3 Q" },
+  };
+  const coachHeldOutSample = {
+    ...contextSample,
+    question: {
+      ...contextSample.question,
+      id: "sample-ho",
+      text: "Held-Out Q",
+    },
+  };
+  sampleReply = () =>
+    new Response(
+      JSON.stringify({
+        sourceQuestionId: "q1",
+        numbersSample,
+        contextSample,
+        coachCheck3Sample,
+        coachHeldOutSample,
+        aiModel: "test",
+        cached: true,
+      }),
+    );
+  await render([source, q2]);
+  await click("Generate new version");
+  await flush();
+  const popup = dialog()!;
+  expect(popup.textContent).toContain("Saved sample");
+  expect(popup.textContent).toContain("Wrong Answer Coach · 2nd Q (Check 3)");
+  expect(popup.textContent).toContain("Wrong Answer Coach · Held-Out Q");
+  const afterOpen = sent("POST", sampleUrl).length;
+  expect(afterOpen).toBeGreaterThanOrEqual(1);
+
+  // Switch to Question 2, then back to Question 1 (in-memory cache avoids a refetch).
+  await click("Question 2", popup);
+  await flush();
+  const afterQ2 = sent("POST", sampleUrl).length;
+  expect(afterQ2).toBe(afterOpen + 1);
+  await click("Question 1", popup);
+  await flush();
+  expect(sent("POST", sampleUrl)).toHaveLength(afterQ2);
+
+  // Clicking "Try another sample" forces refresh: true.
+  await click("Try another sample", popup);
+  await flush();
+  expect(sent("POST", sampleUrl)).toHaveLength(afterQ2 + 1);
+  expect(sent("POST", sampleUrl).at(-1)).toEqual({
+    questionId: "q1",
+    objective,
+    refresh: true,
+  });
+});
+
+it("displays legacy unbatched (batchId: null) REVIEW drafts so teachers can approve or discard them", async () => {
+  versions = [
+    version("NUMBERS", 1, {
+      id: "legacy-1",
+      name: "Legacy draft 1",
+      batchId: null,
+      status: "REVIEW",
+    }),
+    version("CONTEXT", 2, {
+      id: "legacy-2",
+      name: "Legacy draft 2",
+      batchId: null,
+      status: "REVIEW",
+    }),
+    version("COACH_CHECK3", 3, {
+      id: "pub-c3",
+      name: "Version · Coach 2nd Q (Check 3)",
+      batchId: "batch-old",
+      status: "PUBLISHED",
+      coachRole: "COACH_CHECK3",
+      coachLabeledAt: "2026-10-01T00:00:00.000Z",
+    }),
+  ];
+  await render();
+  expect(host.textContent).toContain("Drafts awaiting approval");
+  expect(host.textContent).toContain("2 drafts open");
+  expect(host.textContent).toContain("Legacy draft 1");
+  expect(host.textContent).toContain("Coach · 2nd Q (Check 3)");
+  await click("Discard all 2 drafts");
+  await flush();
+  expect(sent("PATCH")).toEqual([
+    { versionId: "legacy-1", action: "discard" },
+    { versionId: "legacy-2", action: "discard" },
+  ]);
 });
 
 it("compares the original with two drafts per mode and approves with one click", async () => {

@@ -8,12 +8,28 @@ vi.mock("@/components/assistant/assistant-context", () => ({
   useOptionalAssistant: () => null,
 }));
 vi.mock("@/components/student/coach/WrongAnswerCoach", () => ({
-  CoachWorkspace: () => null,
+  CoachWorkspace: () => <div data-testid="legacy-coach-workspace" />,
+}));
+vi.mock("@/components/student/WrongAnswerCoachDrawer", () => ({
+  WrongAnswerCoachPanel: ({
+    questionId,
+    questionNumber,
+  }: {
+    questionId: string;
+    questionNumber: number;
+  }) => (
+    <div data-testid="diagnostic-coach-panel">
+      Diagnostic Coach Q{questionNumber} ({questionId})
+    </div>
+  ),
 }));
 
 import { CoachStep } from "./CoachStep";
 
-const render = (mistake: StudentMistakeView) =>
+const render = (
+  mistake: StudentMistakeView,
+  extra?: Partial<Parameters<typeof CoachStep>[0]>,
+) =>
   renderToStaticMarkup(
     <CoachStep
       attemptId="att-1"
@@ -24,6 +40,7 @@ const render = (mistake: StudentMistakeView) =>
       onEngaged={() => {}}
       nextLabel="Next"
       onFinish={() => {}}
+      {...extra}
     />,
   );
 
@@ -75,5 +92,37 @@ describe("CoachStep without the assistant", () => {
     });
     expect(html).toContain('src="https://signed.test/b.png"');
     expect(html).toContain("Graph B");
+  });
+
+  it("embeds the new diagnostic WrongAnswerCoachPanel inline when the question is eligible", () => {
+    const html = render(
+      {
+        questionNumber: 1,
+        text: "Which pair is Newton's Third Law?",
+        figureUrl: null,
+        figureAlt: null,
+        response: {
+          kind: "choices",
+          choices: [
+            { text: "Weight and normal", imageUrl: null, imageAlt: null },
+          ],
+        },
+      },
+      {
+        coachEligibility: {
+          1: {
+            questionId: "q-newton",
+            questionNumber: 1,
+            eligible: true,
+            sessionId: null,
+            sessionStatus: "NOT_STARTED",
+          },
+        },
+      },
+    );
+
+    expect(html).toContain("Diagnostic Coach Q1 (q-newton)");
+    expect(html).not.toContain("legacy-coach-workspace");
+    expect(html).toContain("Skip this question");
   });
 });

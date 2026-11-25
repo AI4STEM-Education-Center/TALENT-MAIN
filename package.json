@@ -24,6 +24,8 @@
     "format:check": "npx --yes prettier@3.9.6 --check \"src/**/*.{ts,tsx}\" \"prisma/**/*.ts\" \"test/**/*.ts\" \"*.{mjs,ts,json}\" \".prettierrc.json\"",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:decisions": "vitest run src/lib/ai-decisions.test.ts test/admin-ai-assignments-test.route.test.ts",
+    "test:decisions:live": "tsx scripts/test-decisions-api.ts",
     "test:release": "vitest run --config vitest.release.config.ts",
     "test:pressure": "vitest run --config vitest.pressure.config.ts",
     "test:watch": "vitest",

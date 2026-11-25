@@ -20,6 +20,9 @@ export const variantQuestionSchema = z.object({
         id: z.string().min(1).max(200),
         text: z.string().trim().min(1).max(2000),
         isCorrect: z.boolean(),
+        // Auto-populated against the Misconception catalog for Wrong Answer Coach
+        // (null = no label; omitted on legacy variants until backfilled).
+        misconceptionCode: z.string().min(1).max(100).nullable().optional(),
       }),
     )
     .max(8),
@@ -230,9 +233,19 @@ export function checkConceptualNumberMisuse(
   return null;
 }
 
+/** True for variation styles that must rewrite scenario, stem, and prose choices. */
+export function isRewriteVariation(variation: string): boolean {
+  return (
+    variation === "CONTEXT" ||
+    variation === "COACH_CHECK3" ||
+    variation === "COACH_HELDOUT"
+  );
+}
+
 /**
  * Enforces genuine stem and answer-choice rewriting in CONTEXT ("Full question
- * rewrite") mode so students cannot match memorized correct-choice wording.
+ * rewrite") and Wrong Answer Coach (COACH_CHECK3 / COACH_HELDOUT) modes so
+ * students cannot match memorized correct-choice wording.
  */
 export function checkContextRewriteDistinctness(
   source: {
@@ -241,6 +254,7 @@ export function checkContextRewriteDistinctness(
     options: { text: string; isCorrect: boolean }[];
   },
   candidate: VariantQuestion,
+  modeLabel = "Full rewrite (CONTEXT)",
 ): string | null {
   const srcTokens = new Set(contentTokens(source.text));
   const candTokens = new Set(contentTokens(candidate.text));
@@ -252,7 +266,7 @@ export function checkContextRewriteDistinctness(
     const union = srcTokens.size + candTokens.size - intersection;
     const jaccard = union > 0 ? intersection / union : 0;
     if (jaccard > 0.75) {
-      return `Full rewrite (CONTEXT) stem is too close to the original wording (${Math.round(jaccard * 100)}% overlap). Use a genuinely new scenario and sentence structure.`;
+      return `${modeLabel} stem is too close to the original wording (${Math.round(jaccard * 100)}% overlap). Use a genuinely new scenario and sentence structure.`;
     }
   }
 
@@ -270,7 +284,7 @@ export function checkContextRewriteDistinctness(
         normalizeChoiceText(srcCorrect.text) ===
           normalizeChoiceText(candCorrect.text)
       ) {
-        return `Full rewrite (CONTEXT) copied the original correct answer choice verbatim ("${candCorrect.text.slice(0, 80)}"). Rewrite all prose answer choices to match the new scenario so memorized option text cannot be matched.`;
+        return `${modeLabel} copied the original correct answer choice verbatim ("${candCorrect.text.slice(0, 80)}"). Rewrite all prose answer choices to match the new scenario so memorized option text cannot be matched.`;
       }
     }
   }

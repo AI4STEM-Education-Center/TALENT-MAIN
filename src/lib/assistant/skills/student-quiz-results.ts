@@ -27,6 +27,7 @@ import {
   getStudentKnowledgeProfile,
   updateStudentKnowledgeProfile,
 } from "@/lib/knowledge-tracing";
+import { getCoachWithheldQuestionsForStudentQuiz } from "@/lib/wrong-answer-coach-engine";
 import type {
   AssistantSkill,
   AssistantTool,
@@ -235,6 +236,22 @@ const getQuizResultDetail: AssistantTool<typeof detailInput> = {
     const retakeable =
       row.practiceVersionName !== null ||
       (await retakeStillPossible(studentId, row.classId, row.quizId));
+    // Cross-attempt & cross-surface Step 10 firewall: even when the quiz is
+    // final, withhold the answer key for any question that has an unfinished
+    // Wrong Answer Coach check on this attempt OR on the student's latest
+    // attempt for the same quiz (prevents leaking Q via an earlier attempt).
+    const coachWithheld = retakeable
+      ? { questionIds: new Set<string>(), normalizedTexts: new Set<string>() }
+      : await getCoachWithheldQuestionsForStudentQuiz({
+          attemptId: row.quizAttemptId,
+          studentId,
+          studentUserId: ctx.userId,
+          classId: row.classId,
+          quizId: row.quizId,
+        });
+    const hasCoachWithheld =
+      coachWithheld.questionIds.size > 0 ||
+      coachWithheld.normalizedTexts.size > 0;
 
     return {
       found: true,
@@ -260,17 +277,33 @@ const getQuizResultDetail: AssistantTool<typeof detailInput> = {
               "per-question correct/incorrect marks are not available to you. Help them reason " +
               "about the questions instead, and do not guess or state which answer is right.",
           }
-        : {}),
+        : hasCoachWithheld
+          ? {
+              answerKeyWithheld: true,
+              answerKeyWithheldReason:
+                "Some missed questions have an unfinished Wrong Answer Coach check. Do not " +
+                "reveal or guess the correct answer for questions whose correctAnswer is omitted; " +
+                "encourage the student to complete the Wrong Answer Coach chat on their results page.",
+            }
+          : {}),
       questions: snapshot.questions.map((question, index) => {
         const yourAnswer =
           question.answerMode === "NUMERIC"
             ? (question.submittedNumeric ?? null)
             : question.options.filter((o) => o.selected).map((o) => o.text);
 
-        // While a retake is possible the student gets back only what they
-        // themselves submitted. `isCorrect` is withheld along with the key: on a
-        // two-option or short-list question, "you were wrong" IS the answer.
-        if (retakeable) {
+        const normText = question.text
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, " ");
+        const isCoachProtected =
+          (question.questionId &&
+            coachWithheld.questionIds.has(question.questionId)) ||
+          (normText && coachWithheld.normalizedTexts.has(normText));
+
+        // While a retake is possible, or while Wrong Answer Coach Step 10 is
+        // pending for this question, withhold the answer key.
+        if (retakeable || isCoachProtected) {
           return {
             number: index + 1,
             text: question.text,
