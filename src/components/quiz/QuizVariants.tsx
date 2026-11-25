@@ -109,6 +109,7 @@ export function QuizVariants({
   async function startRound({
     mix,
     purpose,
+    includeCoach,
     objectives,
     seedSamples,
   }: StartRoundInput) {
@@ -119,6 +120,7 @@ export function QuizVariants({
         name: "Version",
         mix,
         purpose,
+        ...(typeof includeCoach === "boolean" ? { includeCoach } : {}),
         objectives,
         ...(seedSamples?.numbersSample && seedSamples.contextSample
           ? { seedSamples }
@@ -142,6 +144,9 @@ export function QuizVariants({
   const earlier = batches.filter(
     (b) => b !== current && b.versions.some(isActive),
   );
+  // Legacy / unbatched drafts (batchId === null) that are still awaiting review
+  // or failed must also be visible so the teacher can approve or discard them.
+  const unbatchedActive = list.filter((v) => !v.batchId && isActive(v));
   return (
     <section
       className="space-y-5 rounded-xl border bg-card p-4"
@@ -251,6 +256,16 @@ export function QuizVariants({
       {earlier.length > 0 && (
         <EarlierRounds
           batches={earlier}
+          questions={questions}
+          act={act}
+          busy={busy}
+          quizId={quizId}
+          quizHrefBase={quizHrefBase}
+        />
+      )}
+      {unbatchedActive.length > 0 && (
+        <UnbatchedDrafts
+          versions={unbatchedActive}
           questions={questions}
           act={act}
           busy={busy}
@@ -453,6 +468,63 @@ function EarlierRounds({
   );
 }
 
+function UnbatchedDrafts({
+  versions,
+  ...props
+}: RoundProps & { versions: Version[] }) {
+  const { questions, act, busy, quizHrefBase } = props;
+  const discardable = versions.filter(
+    (v) => v.status === "REVIEW" || v.status === "FAILED",
+  );
+  async function discardAll() {
+    for (const v of discardable) {
+      const ok = await act({ versionId: v.id, action: "discard" });
+      if (!ok) break;
+    }
+  }
+  return (
+    <section aria-labelledby="unbatched-drafts" className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/30 bg-amber-50/50 p-3 dark:bg-amber-950/20">
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <h3 id="unbatched-drafts" className="font-medium">
+            Drafts awaiting approval
+          </h3>
+          <Badge variant="warning">
+            {versions.length} draft{versions.length === 1 ? "" : "s"} open
+          </Badge>
+        </div>
+        {discardable.length > 1 && (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() => void discardAll()}
+          >
+            Discard all {discardable.length} drafts
+          </Button>
+        )}
+      </div>
+      <QuizVariantBatch
+        versions={versions}
+        questions={questions}
+        purpose={versions[0]?.purpose ?? "ALTERNATE"}
+        stale={!versions.every((v) => matchesSource(v, questions))}
+        act={act}
+        busy={busy}
+        quizHrefBase={quizHrefBase}
+      />
+    </section>
+  );
+}
+
+function publishedBadgeLabel(v: Version): string {
+  if (v.status === "STANDALONE") return "Standalone exam";
+  if (v.status === "RETIRED") return "Retired";
+  if (v.coachRole === "COACH_CHECK3") return "Coach · 2nd Q (Check 3)";
+  if (v.coachRole === "COACH_HELDOUT") return "Coach · Held-Out Q";
+  return "Alternate · live for practice";
+}
+
 function SavedVersions({
   versions,
   act,
@@ -485,11 +557,7 @@ function SavedVersions({
                       : "success"
                 }
               >
-                {v.status === "PUBLISHED"
-                  ? "Alternate · live for practice"
-                  : v.status === "STANDALONE"
-                    ? "Standalone exam"
-                    : "Retired"}
+                {publishedBadgeLabel(v)}
               </Badge>
             </span>
             {v.status === "PUBLISHED" && (

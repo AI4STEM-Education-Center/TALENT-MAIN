@@ -478,10 +478,11 @@ model Question {
   quiz        Quiz            @relation(fields: [quizId], references: [id], onDelete: Cascade)
   createdBy   Teacher?        @relation("TeacherQuestions", fields: [createdById], references: [id], onDelete: SetNull)
   import      QuestionImport? @relation(fields: [importId], references: [id], onDelete: SetNull)
-  options       Option[]
-  quizAnswers   QuizAnswer[]
-  simulation    QuestionSimulation?
-  coachMetadata QuestionCoachMetadata?
+  options            Option[]
+  quizAnswers        QuizAnswer[]
+  simulation         QuestionSimulation?
+  coachMetadata      QuestionCoachMetadata?
+  calibrationSamples QuizVariantCalibrationSample[]
 
   @@index([importId])
   // Quiz generation: WHERE quizId ORDER BY order, createdAt ASC
@@ -2128,6 +2129,30 @@ model QuizPracticeVersion {
   @@index([quizId, batchId])
   @@index([batchId, status])
   @@index([status, heartbeatAt])
+}
+
+// Cached, independently verified calibration samples shown in the
+// "Generate new version" preview modal. Keyed by (questionId, variation,
+// sourceHash, objectiveHash) so switching questions or reopening the modal
+// renders immediately without regenerating; clicking "Try another sample"
+// regenerates and overwrites the stored row.
+model QuizVariantCalibrationSample {
+  id            String   @id @default(cuid())
+  quizId        String
+  questionId    String
+  variation     String   // "NUMBERS" | "CONTEXT" | "COACH_CHECK3" | "COACH_HELDOUT"
+  sourceHash    String
+  objectiveHash String
+  questionJson  String   // JSON: VariantQuestion
+  checkJson     String   // JSON: VerificationReview
+  aiModel       String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([questionId, variation, sourceHash, objectiveHash])
+  @@index([quizId, questionId])
 }
 
 // Tracks completion notifications and unapproved-review reminders (24h, 72h)

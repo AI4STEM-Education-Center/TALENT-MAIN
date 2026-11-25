@@ -1,5 +1,11 @@
 "use client";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,6 +22,7 @@ import { QuestionPreview } from "./QuizVariantBatch";
 import {
   DEFAULT_OBJECTIVE,
   MIX_OPTIONS,
+  isCoachEligibleSourceQuestion,
   type SampleResponse,
   type SeedSamples,
   type SourceQuestion,
@@ -28,6 +35,7 @@ export type VariantPurpose = "ALTERNATE" | "STANDALONE";
 export type StartRoundInput = {
   mix: VariantMix;
   purpose: VariantPurpose;
+  includeCoach?: boolean;
   objectives: { sourceQuestionId: string; objective: string }[];
   seedSamples?: SeedSamples;
 };
@@ -41,7 +49,7 @@ const PURPOSES: {
     value: "ALTERNATE",
     title: "Alternate version of this exam",
     description:
-      "Parallel versions linked to this exam that students can practice.",
+      "Parallel practice versions linked to this exam (plus 2 Wrong Answer Coach sets for eligible MCQs).",
   },
   {
     value: "STANDALONE",
@@ -55,9 +63,10 @@ const isInvalidRestriction = (value: string) =>
   value.trim().length > 0 && value.trim().length < 10;
 
 /**
- * Calibration popup for a new round: previews one representative question in
- * both change styles, then lets the teacher pick the mix and purpose before
- * the four versions generate in the background.
+ * Calibration popup for a new round: shows persisted verified previews in each
+ * change style (including Wrong Answer Coach Check 3 & Held-Out for eligible
+ * single-select questions), then lets the teacher pick the practice mix and
+ * purpose before the versions generate in the background.
  */
 export function VariantPreviewModal({
   open,
@@ -67,17 +76,23 @@ export function VariantPreviewModal({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 } & BodyProps) {
+  const hasCoachEligible = body.questions.some(isCoachEligibleSourceQuestion);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Generate four new versions</DialogTitle>
+          <DialogTitle>
+            {hasCoachEligible
+              ? "Generate new versions (4 practice + 2 Coach)"
+              : "Generate four new versions"}
+          </DialogTitle>
           <DialogDescription>
             Preview how one question changes in each style, then choose the mix
-            and what the new versions should be.
+            and what the new versions should be. Saved calibration samples load
+            immediately; click &ldquo;Try another sample&rdquo; to regenerate.
           </DialogDescription>
         </DialogHeader>
-        {/* Mounted only while open, so every opening starts fresh. */}
+        {/* Mounted only while open, so modal choices start fresh while DB samples persist. */}
         <PreviewBody {...body} onCancel={() => onOpenChange(false)} />
       </DialogContent>
     </Dialog>
@@ -93,7 +108,12 @@ type BodyProps = {
   onStart: (input: StartRoundInput) => void | Promise<void>;
 };
 
-type SampleRequest = { questionId: string; objective: string; nonce: number };
+type SampleRequest = {
+  questionId: string;
+  objective: string;
+  refresh: boolean;
+  nonce: number;
+};
 type SampleState =
   | { nonce: number; kind: "ready"; sample: SampleResponse }
   | { nonce: number; kind: "unavailable" }
@@ -103,6 +123,10 @@ function hasSamples(data: unknown): data is SampleResponse {
   if (!data || typeof data !== "object") return false;
   const { numbersSample, contextSample } = data as Partial<SampleResponse>;
   return !!numbersSample?.question && !!contextSample?.question;
+}
+
+function sampleCacheKey(questionId: string, objective: string): string {
+  return `${questionId}::${objective.trim()}`;
 }
 
 function PreviewBody({
@@ -131,11 +155,15 @@ function PreviewBody({
   );
   const [mix, setMix] = useState<VariantMix>("2-2");
   const [purpose, setPurpose] = useState<VariantPurpose>("ALTERNATE");
+  // In-memory cache for switching between questions within an open modal session
+  // (reopening the modal loads persisted samples immediately from the database).
+  const memoryCacheRef = useRef<Map<string, SampleResponse>>(new Map());
   // The sample is requested by events (open, switch, retry), not by typing a
   // restriction, so the objective is captured when the request is made.
   const [request, setRequest] = useState<SampleRequest>(() => ({
     questionId: selectedId,
     objective: objectiveFor(selectedId),
+    refresh: false,
     nonce: 0,
   }));
   const [result, setResult] = useState<SampleState | null>(null);
@@ -143,6 +171,16 @@ function PreviewBody({
   const loadSample = useCallback(
     async (req: SampleRequest, signal: AbortSignal) => {
       const { nonce } = req;
+      const cacheKey = sampleCacheKey(req.questionId, req.objective);
+      if (!req.refresh) {
+        const hit = memoryCacheRef.current.get(cacheKey);
+        if (hit) {
+          setResult({ nonce, kind: "ready", sample: { ...hit, cached: true } });
+          return;
+        }
+      } else {
+        memoryCacheRef.current.delete(cacheKey);
+      }
       try {
         const res = await fetch(`/api/quizzes/${quizId}/variants/sample`, {
           method: "POST",
@@ -150,6 +188,7 @@ function PreviewBody({
           body: JSON.stringify({
             questionId: req.questionId,
             objective: req.objective,
+            ...(req.refresh ? { refresh: true } : {}),
           }),
           signal,
         });
@@ -166,6 +205,7 @@ function PreviewBody({
         const data: unknown = await res.json().catch(() => null);
         if (signal.aborted) return;
         if (hasSamples(data)) {
+          memoryCacheRef.current.set(cacheKey, data);
           setResult({ nonce, kind: "ready", sample: data });
         } else {
           setResult({ nonce, kind: "unavailable" });
@@ -191,23 +231,38 @@ function PreviewBody({
 
   const loading = !!request.questionId && result?.nonce !== request.nonce;
   const sample = !loading && result?.kind === "ready" ? result.sample : null;
-  const requestSample = (questionId: string) =>
+  const requestSample = (questionId: string, refresh = false) =>
     setRequest((prev) => ({
       questionId,
       objective: objectiveFor(questionId),
+      refresh,
       nonce: prev.nonce + 1,
     }));
   const selectQuestion = (questionId: string) => {
     setSelectedId(questionId);
-    requestSample(questionId);
+    requestSample(questionId, false);
   };
 
   const selectedSource = questions.find((q) => q.id === selectedId);
+  const selectedCoachEligible = selectedSource
+    ? isCoachEligibleSourceQuestion(selectedSource)
+    : false;
+  const hasCoachEligibleQuestions = questions.some(
+    isCoachEligibleSourceQuestion,
+  );
+  const willIncludeCoach = purpose === "ALTERNATE" && hasCoachEligibleQuestions;
+  const totalVersions = willIncludeCoach ? 6 : 4;
+  const showCoachPreviews =
+    selectedCoachEligible &&
+    (loading ||
+      Boolean(sample?.coachCheck3Sample || sample?.coachHeldOutSample));
+
   const invalid = Object.values(restrictions).some(isInvalidRestriction);
   const start = () =>
     void onStart({
       mix,
       purpose,
+      includeCoach: willIncludeCoach,
       objectives: questions.map((q) => ({
         sourceQuestionId: q.id,
         objective: restrictions[q.id]?.trim() || DEFAULT_OBJECTIVE,
@@ -217,6 +272,12 @@ function PreviewBody({
             seedSamples: {
               numbersSample: sample.numbersSample,
               contextSample: sample.contextSample,
+              ...(willIncludeCoach && sample.coachCheck3Sample
+                ? { coachCheck3Sample: sample.coachCheck3Sample }
+                : {}),
+              ...(willIncludeCoach && sample.coachHeldOutSample
+                ? { coachHeldOutSample: sample.coachHeldOutSample }
+                : {}),
             },
           }
         : {}),
@@ -226,9 +287,16 @@ function PreviewBody({
     <div className="space-y-6">
       <section aria-labelledby="calibration-heading" className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 id="calibration-heading" className="font-semibold">
-            Calibration sample
-          </h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 id="calibration-heading" className="font-semibold">
+              Calibration sample
+            </h3>
+            {sample?.cached && (
+              <Badge variant="outline" className="text-xs font-normal">
+                Saved sample
+              </Badge>
+            )}
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             {questions.length > 1 && (
               <div
@@ -255,17 +323,17 @@ function PreviewBody({
               size="sm"
               variant="ghost"
               disabled={loading || !selectedId}
-              onClick={() => requestSample(selectedId)}
+              onClick={() => requestSample(selectedId, true)}
             >
               <RefreshCw className="size-4" aria-hidden="true" /> Try another
               sample
             </Button>
           </div>
         </div>
-        <div className="grid gap-3 lg:grid-cols-3">
-          <PreviewCard title="Original question">
-            <QuestionPreview question={selectedSource} />
-          </PreviewCard>
+        <PreviewCard title="Original question">
+          <QuestionPreview question={selectedSource} />
+        </PreviewCard>
+        <div className="grid gap-3 md:grid-cols-2">
           <PreviewCard
             title="Style A · Limited Numerical"
             badge="Numbers & choices"
@@ -288,6 +356,32 @@ function PreviewBody({
               failed={!loading && result?.kind === "error"}
             />
           </PreviewCard>
+          {showCoachPreviews && (
+            <>
+              <PreviewCard
+                title="Wrong Answer Coach · 2nd Q (Check 3)"
+                badge="Diagnostic twin"
+                explanation="New scenario preserving the exact concept and misconception distractors to separate slips from misconceptions."
+              >
+                <SampleSlot
+                  item={sample?.coachCheck3Sample}
+                  loading={loading}
+                  failed={!loading && result?.kind === "error"}
+                />
+              </PreviewCard>
+              <PreviewCard
+                title="Wrong Answer Coach · Held-Out Q"
+                badge="Transfer check"
+                explanation="Independent fresh scenario testing the same concept after diagnosis before tutoring."
+              >
+                <SampleSlot
+                  item={sample?.coachHeldOutSample}
+                  loading={loading}
+                  failed={!loading && result?.kind === "error"}
+                />
+              </PreviewCard>
+            </>
+          )}
         </div>
         {!loading && result?.kind === "error" && (
           <div
@@ -299,7 +393,7 @@ function PreviewBody({
               type="button"
               size="sm"
               variant="outline"
-              onClick={() => requestSample(selectedId)}
+              onClick={() => requestSample(selectedId, false)}
             >
               Retry preview
             </Button>
@@ -313,18 +407,27 @@ function PreviewBody({
         )}
       </section>
 
-      <ChoiceGroup
-        name="variant-mix"
-        legend="Mix of change styles"
-        value={mix}
-        onChange={(value) => setMix(value as VariantMix)}
-        options={MIX_OPTIONS.map((o) => ({
-          value: o.value,
-          title: o.title,
-          description: o.subtitle,
-        }))}
-        columns="md:grid-cols-3"
-      />
+      <div className="space-y-2">
+        <ChoiceGroup
+          name="variant-mix"
+          legend="Mix of change styles (4 practice versions)"
+          value={mix}
+          onChange={(value) => setMix(value as VariantMix)}
+          options={MIX_OPTIONS.map((o) => ({
+            value: o.value,
+            title: o.title,
+            description: o.subtitle,
+          }))}
+          columns="md:grid-cols-3"
+        />
+        {willIncludeCoach && (
+          <p className="text-xs text-muted-foreground">
+            + 2 dedicated Wrong Answer Coach versions (Check 3 &amp; Held-Out)
+            are automatically included for eligible single-select questions (6
+            versions total).
+          </p>
+        )}
+      </div>
 
       <ChoiceGroup
         name="variant-purpose"
@@ -366,9 +469,10 @@ function PreviewBody({
       </details>
 
       <p className="rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm">
-        When you start, this popup closes immediately and all 4 versions
-        generate in the background on Flex pricing. We&apos;ll notify you by
-        email and in-app with a direct link to approve once generation finishes.
+        When you start, this popup closes immediately and all {totalVersions}{" "}
+        versions generate in the background on Flex pricing. We&apos;ll notify
+        you by email and in-app with a direct link to approve once generation
+        finishes.
       </p>
 
       <div className="flex flex-wrap justify-end gap-2">
@@ -381,7 +485,7 @@ function PreviewBody({
           ) : (
             <Sparkles className="size-4" aria-hidden="true" />
           )}
-          Generate 4 versions in background
+          Generate {totalVersions} versions in background
         </Button>
       </div>
     </div>

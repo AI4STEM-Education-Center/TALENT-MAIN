@@ -43,6 +43,21 @@ export interface Check2PromptInput {
   studentExplanation: string;
 }
 
+export const CHECK2_BUILTIN_CHOICES = [
+  {
+    value: "sound",
+    label: "Sound reasoning",
+    description:
+      "Explanation uses the correct physics idea (even if a misreading or calculation slip occurred).",
+  },
+  {
+    value: "neither",
+    label: "Neither / unclear",
+    description:
+      "Empty, guess ('I don't know'), off-topic, too vague to judge, or matches none of the listed misconceptions.",
+  },
+] as const;
+
 /**
  * Build a POST /v1/decisions request for one Check 2 classification slot.
  */
@@ -54,16 +69,10 @@ export function buildCheck2DecisionsRequest(
     a.localeCompare(b),
   );
   const choices = [
-    {
-      value: "sound",
-      description:
-        "Explanation uses the correct physics idea (even if a misreading or calculation slip occurred).",
-    },
-    {
-      value: "neither",
-      description:
-        "Empty, guess ('I don't know'), off-topic, too vague to judge, or matches none of the listed misconceptions.",
-    },
+    ...CHECK2_BUILTIN_CHOICES.map(({ value, description }) => ({
+      value,
+      description,
+    })),
     ...input.relevantMisconceptions.map((m) => ({
       value: m.code,
       description: m.statement,

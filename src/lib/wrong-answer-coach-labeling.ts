@@ -395,7 +395,7 @@ const LABEL_BACKOFF_MS = 15 * 60_000;
 export async function ensureQuizCoachMetadata(
   quizId: string,
   options: { isSweep?: boolean } = {},
-): Promise<void> {
+): Promise<number> {
   const [questions, publishedVersions, catalog] = await Promise.all([
     prisma.question.findMany({
       where: { quizId },
@@ -415,7 +415,7 @@ export async function ensureQuizCoachMetadata(
   ]);
 
   if (catalog.length === 0) {
-    return;
+    return 0;
   }
 
   const backoffCutoff = new Date(Date.now() - LABEL_BACKOFF_MS);
@@ -503,7 +503,7 @@ export async function ensureQuizCoachMetadata(
     toLabel.push({ question: q, sourceHash, runId });
   }
 
-  if (toLabel.length === 0) return;
+  if (toLabel.length === 0) return 0;
 
   const items: DistractorToLabel[] = [];
   for (const entry of toLabel) {
@@ -524,6 +524,7 @@ export async function ensureQuizCoachMetadata(
     const { labels, model, providerType, totalMs } =
       await runBatchDistractorLabeling(items, catalog);
 
+    let labeledCount = 0;
     for (const entry of toLabel) {
       const q = entry.question;
       const correct = q.options.find((o) => o.isCorrect)!;
@@ -584,7 +585,7 @@ export async function ensureQuizCoachMetadata(
       });
 
       // Fence on runId + sourceHash so concurrent edits are never overwritten.
-      await prisma.questionCoachMetadata.updateMany({
+      const updated = await prisma.questionCoachMetadata.updateMany({
         where: {
           questionId: q.id,
           runId: entry.runId,
@@ -602,7 +603,9 @@ export async function ensureQuizCoachMetadata(
           errorMessage: null,
         },
       });
+      labeledCount += updated.count;
     }
+    return labeledCount;
   } catch (err) {
     const msg = errorMessage(err).slice(0, 1000);
     for (const entry of toLabel) {
@@ -625,6 +628,7 @@ export async function ensureQuizCoachMetadata(
       message: `Coach metadata auto-labeling failed for quiz ${quizId}: ${msg}`,
       metadata: { quizId },
     });
+    return 0;
   }
 }
 
@@ -736,8 +740,7 @@ export async function sweepCoachAutoLabeling(): Promise<number> {
   });
 
   for (const quizId of touchedQuizIds) {
-    await ensureQuizCoachMetadata(quizId, { isSweep: true });
-    processed += 1;
+    processed += await ensureQuizCoachMetadata(quizId, { isSweep: true });
   }
 
   return processed;
