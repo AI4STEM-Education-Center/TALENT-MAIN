@@ -93,7 +93,7 @@
     "remark-math": "^6.0.0",
     "remark-parse": "^11.0.0",
     "sanitize-html": "^2.18.2",
-    "signature_pad": "^5.1.5",
+    "signature_pad": "^5.1.6",
     "tailwind-merge": "^3.7.1",
     "unified": "^11.0.5",
     "webdav": "^5.11.0",
